@@ -1,14 +1,12 @@
-import { ReportHandler } from 'web-vitals';
+import { onCLS, onFCP, onLCP, onTTFB } from 'web-vitals';
 
-const reportWebVitals = (onPerfEntry?: ReportHandler) => {
-  if (onPerfEntry && onPerfEntry instanceof Function) {
-    import('web-vitals').then(({ getCLS, getFID, getFCP, getLCP, getTTFB }) => {
-      getCLS(onPerfEntry);
-      getFID(onPerfEntry);
-      getFCP(onPerfEntry);
-      getLCP(onPerfEntry);
-      getTTFB(onPerfEntry);
-    });
+// 這個函數處理 Web Vitals 性能指標
+const reportWebVitals = (onPerfEntry?: (metric: { name: string; value: number }) => void) => {
+  if (onPerfEntry) {
+    onCLS(onPerfEntry);  // 用於 CLS 性能指標
+    onFCP(onPerfEntry);  // 用於 FCP 性能指標
+    onLCP(onPerfEntry);  // 用於 LCP 性能指標
+    onTTFB(onPerfEntry); // 用於 TTFB 性能指標
   }
 };
 
