@@ -1,0 +1,19 @@
+{
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["react"],
+  "extends": [
+    "eslint:recommended",
+    "plugin:react/recommended",
+    "plugin:@typescript-eslint/recommended",
+    "plugin:prettier/recommended",
+    "prettier"
+  ],
+  "rules": {
+    "no-console": "off",
+    "react-hooks/exhaustive-deps": "off",
+    // "no-use-before-define": "error",
+    // "@typescript-eslint/no-explicit-any": "warn",
+    // "import/no-anonymous-default-export": "warn",
+    "no-unused-vars": "off"
+  }
+}
