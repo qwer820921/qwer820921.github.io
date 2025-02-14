@@ -1,4 +1,15 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+  /* 去掉默認的外邊距 */
+}
+
 .App {
+  height: 100%;
+  /* 設置 App 的高度為 100% */
+  display: flex;
+  flex-direction: column;
   text-align: center;
 }
 
@@ -13,26 +24,7 @@
   }
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
-}
-
-.App-link {
-  color: #61dafb;
-}
-
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+body {
+  padding-top: 56px;
+  /* 假設你的 Navbar 高度是 56px，根據實際調整 */
 }
