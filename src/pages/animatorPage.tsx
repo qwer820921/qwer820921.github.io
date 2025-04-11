@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Button, Form } from "react-bootstrap";
 import { mockColor } from "../lib/mock";
+import CustomModal from "../components/modals/customModal";
+import ImageCropModal from "../components/ImageCropModal";
 
 const AnimatorPage: React.FC = () => {
   // 🎨 設定目前選擇的顏色
@@ -87,6 +89,10 @@ const AnimatorPage: React.FC = () => {
     }
   };
 
+  // // 新增：儲存上傳圖片的狀態
+  // const [uploadedImage, setUploadedImage] = useState<File | null>(null);
+  // const fileInputRef = useRef<HTMLInputElement>(null);
+
   // 匯出當前畫布的 string[]
   const exportCanvas = () => {
     const currentCanvas = canvasList[activeCanvasIndex];
@@ -94,175 +100,208 @@ const AnimatorPage: React.FC = () => {
     setImportText(canvasString); // 顯示在textarea
   };
 
+  const [isImageUploadModalOpen, setIsImageUploadModalOpen] =
+    useState<boolean>(false);
+
+  // 新增：處理圖片擷取後的資料
+  const handleImageCropConfirm = (pixelColors: string[]) => {
+    setCanvasList([...canvasList, pixelColors]);
+    setActiveCanvasIndex(canvasList.length);
+    setIsImageUploadModalOpen(false);
+  };
+
   return (
-    <div className="container-fluid p-3">
-      {/* 上方匯入區域 */}
-      <div className="mb-3">
-        <Form.Control
-          as="textarea"
-          rows={3}
-          value={importText}
-          onChange={(e) => setImportText(e.target.value)}
-          placeholder="請輸入 16x16 的 JSON 格式 string[]"
-        />
-        <div className="d-flex gap-2 mt-2">
-          <Button className="mt-2" variant="info" onClick={importCanvas}>
-            匯入
-          </Button>
-          <Button className="mt-2" variant="secondary" onClick={exportCanvas}>
-            匯出
-          </Button>
-        </div>
-      </div>
-      {/* 按鈕區域 */}
-      <div className="d-flex justify-content-center align-items-center gap-2 mb-3">
-        <Button
-          variant="secondary"
-          onClick={() =>
-            setCanvasList(canvasList.map(() => Array(16 * 16).fill("#FFFFFF")))
-          }
-        >
-          重置
-        </Button>
-        <Button variant="primary" onClick={addNewCanvas}>
-          新增
-        </Button>
-        <Button
-          variant="danger"
-          onClick={deleteCanvas}
-          disabled={canvasList.length <= 1}
-        >
-          刪除
-        </Button>
-        <Button variant="warning" onClick={copyCanvas}>
-          複製
-        </Button>
-        <Button
-          variant="success"
-          onClick={pasteCanvas}
-          disabled={!copiedCanvas}
-        >
-          貼上
-        </Button>
-      </div>
-
-      {/* 主要工作區域 */}
-      <div className="row d-flex">
-        {/* 左側 - 顏色選擇 */}
-        <div className="col-md-2 col-sm-12 d-flex flex-column align-items-center">
-          <h5>顏色選擇</h5>
-          <div className="d-flex flex-wrap gap-1">
-            {[
-              "#C0C0C0",
-              "#D2B48C",
-              "#8B4513",
-              "#FF0000",
-              "#FFA500",
-              "#FFFF00",
-              "#00FF00",
-              "#00FFFF",
-              "#0000FF",
-              "#800080",
-              "#000000",
-              "#FFFFFF",
-            ].map((color) => (
-              <div
-                key={color}
-                className={`border border-light ${selectedColor === color ? "border-1" : "border-5"}`}
-                style={{
-                  width: "30px",
-                  height: "30px",
-                  backgroundColor: color,
-                  cursor: "pointer",
-                }}
-                onClick={() => setSelectedColor(color)}
-              ></div>
-            ))}
+    <>
+      <div className="container-fluid p-3">
+        {/* 上方匯入區域 */}
+        <div className="mb-3">
+          <Form.Control
+            as="textarea"
+            rows={3}
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+            placeholder="請輸入 16x16 的 JSON 格式 string[]"
+          />
+          <div className="d-flex gap-2 mt-2">
+            <Button className="mt-2" variant="info" onClick={importCanvas}>
+              匯入
+            </Button>
+            <Button className="mt-2" variant="secondary" onClick={exportCanvas}>
+              匯出
+            </Button>
+            <Button
+              className="mt-2 me-2"
+              variant="primary"
+              onClick={() => setIsImageUploadModalOpen(true)}
+            >
+              匯入圖片
+            </Button>
           </div>
         </div>
 
-        {/* 中間 - 畫布區域 */}
-        <div className="col-md-7 col-sm-12 d-flex justify-content-center">
-          <div
-            className="border border-dark p-2"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(16, 20px)", // 每行 16 個元素，寬度 20px
-              gridTemplateRows: "repeat(16, 20px)", // 每列 16 個元素，高度 20px
-              gap: "2px", // 可以調整格子之間的間隙
-            }}
-          >
-            {canvasList[activeCanvasIndex].map((color, index) => (
-              <div
-                key={index}
-                onClick={() => handlePixelClick(index)}
-                style={{
-                  backgroundColor: color,
-                  border: "1px solid #ddd",
-                  cursor: "pointer",
-                }}
-              ></div>
-            ))}
+        {/* 主要工作區域 */}
+        <div className="row">
+          {/* 左側 - 顏色選擇 */}
+          <div className="col-md-3 col-sm-12 d-flex flex-column align-items-center mt-5">
+            <h5>顏色選擇</h5>
+            <div className="d-flex flex-wrap gap-1">
+              {[
+                "#C0C0C0",
+                "#D2B48C",
+                "#8B4513",
+                "#FF0000",
+                "#FFA500",
+                "#FFFF00",
+                "#00FF00",
+                "#00FFFF",
+                "#0000FF",
+                "#800080",
+                "#000000",
+                "#FFFFFF",
+              ].map((color) => (
+                <div
+                  key={color}
+                  className={`border border-light ${selectedColor === color ? "border-1" : "border-5"}`}
+                  style={{
+                    width: "30px",
+                    height: "30px",
+                    backgroundColor: color,
+                    cursor: "pointer",
+                  }}
+                  onClick={() => setSelectedColor(color)}
+                ></div>
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* 右側 - 預覽區域 */}
-        <div className="col-md-3 col-sm-12 d-flex flex-column align-items-center">
-          <h5>預覽</h5>
-          <div
-            className="border border-dark"
-            style={{
-              width: "120px",
-              height: "120px",
-              display: "grid",
-              gridTemplateColumns: "repeat(16, 1fr)",
-              gridTemplateRows: "repeat(16, 1fr)",
-              gap: "1px",
-              backgroundColor: "#ffffff",
-            }}
-          >
-            {canvasList[previewIndex].map((color, index) => (
-              <div key={index} style={{ backgroundColor: color }}></div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* 下方 - 畫布序列 (選擇不同畫布) */}
-      <div className="row mt-3">
-        <div className="col-12 d-flex justify-content-center gap-2">
-          {canvasList.map((canvas, index) => (
-            <>
-              <div
-                key={index}
-                onClick={() => setActiveCanvasIndex(index)}
-                className={`border ${activeCanvasIndex === index ? "border-primary border-3" : "border-dark"}`}
-                style={{
-                  padding: "2px",
-                  width: "85px",
-                  height: "85px",
-                  backgroundColor: "#ffffff",
-                  cursor: "pointer",
-                  display: "grid",
-                  gridTemplateColumns: "repeat(16, 1fr)", // 每行 16 個元素，寬度自動平均分配
-                  gridTemplateRows: "repeat(16, 1fr)", // 每列 16 個元素，高度自動平均分配
-                  gap: "1px", // 可以調整格子之間的間隙
-                }}
-              >
-                {canvas.map((color, index) => (
-                  <div
-                    key={index}
-                    style={{
-                      backgroundColor: color,
-                    }}
-                  ></div>
-                ))}
+          {/* 中間 - 畫布區域 */}
+          <div className="col-md-6 col-sm-12 d-flex justify-content-center">
+            {/* 按鈕區域 */}
+            <div className="row d-flex">
+              <div className="col-12">
+                <div className="d-flex justify-content-center align-items-center gap-2 mb-3">
+                  <Button
+                    variant="secondary"
+                    onClick={() =>
+                      setCanvasList(
+                        canvasList.map(() => Array(16 * 16).fill("#FFFFFF"))
+                      )
+                    }
+                  >
+                    重置
+                  </Button>
+                  <Button variant="primary" onClick={addNewCanvas}>
+                    新增
+                  </Button>
+                  <Button
+                    variant="danger"
+                    onClick={deleteCanvas}
+                    disabled={canvasList.length <= 1}
+                  >
+                    刪除
+                  </Button>
+                  <Button variant="warning" onClick={copyCanvas}>
+                    複製
+                  </Button>
+                  <Button
+                    variant="success"
+                    onClick={pasteCanvas}
+                    disabled={!copiedCanvas}
+                  >
+                    貼上
+                  </Button>
+                </div>
               </div>
-            </>
-          ))}
+              <div className="d-flex justify-content-center align-items-center">
+                <div
+                  className="border border-dark p-2"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(16, 20px)", // 每行 16 個元素，寬度 20px
+                    gridTemplateRows: "repeat(16, 20px)", // 每列 16 個元素，高度 20px
+                    gap: "2px", // 可以調整格子之間的間隙
+                  }}
+                >
+                  {canvasList[activeCanvasIndex].map((color, index) => (
+                    <div
+                      key={index}
+                      onClick={() => handlePixelClick(index)}
+                      style={{
+                        backgroundColor: color,
+                        border: "1px solid #ddd",
+                        cursor: "pointer",
+                      }}
+                    ></div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 右側 - 預覽區域 */}
+          <div className="col-md-3 col-sm-12 d-flex flex-column align-items-center mt-5">
+            <h5>預覽</h5>
+            <div
+              className="border border-dark"
+              style={{
+                width: "120px",
+                height: "120px",
+                display: "grid",
+                gridTemplateColumns: "repeat(16, 1fr)",
+                gridTemplateRows: "repeat(16, 1fr)",
+                gap: "1px",
+                backgroundColor: "#ffffff",
+              }}
+            >
+              {canvasList[previewIndex].map((color, index) => (
+                <div key={index} style={{ backgroundColor: color }}></div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* 下方 - 畫布序列 (選擇不同畫布) */}
+        <div className="row mt-3">
+          <div className="col-12 d-flex justify-content-center gap-2">
+            {canvasList.map((canvas, index) => (
+              <>
+                <div
+                  key={index}
+                  onClick={() => setActiveCanvasIndex(index)}
+                  className={`border ${activeCanvasIndex === index ? "border-primary border-3" : "border-dark"}`}
+                  style={{
+                    padding: "2px",
+                    width: "85px",
+                    height: "85px",
+                    backgroundColor: "#ffffff",
+                    cursor: "pointer",
+                    display: "grid",
+                    gridTemplateColumns: "repeat(16, 1fr)", // 每行 16 個元素，寬度自動平均分配
+                    gridTemplateRows: "repeat(16, 1fr)", // 每列 16 個元素，高度自動平均分配
+                    gap: "1px", // 可以調整格子之間的間隙
+                  }}
+                >
+                  {canvas.map((color, index) => (
+                    <div
+                      key={index}
+                      style={{
+                        backgroundColor: color,
+                      }}
+                    ></div>
+                  ))}
+                </div>
+              </>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+      {/********************* 選擇圖片範圍彈窗 *********************/}
+      <ImageCropModal
+        isOpen={isImageUploadModalOpen}
+        onClose={() => setIsImageUploadModalOpen(false)}
+        onConfirm={handleImageCropConfirm}
+      />
+    </>
   );
 };
 

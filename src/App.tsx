@@ -16,7 +16,7 @@ const App: React.FC = () => {
 
         {/* Main Content */}
         <main>
-          <div className="container mt-5">
+          <div className="container-fluit mt-5">
             <ErrorBoundary>
               <Routes>
                 {routes.map((route) => (
