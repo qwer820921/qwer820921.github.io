@@ -284,13 +284,22 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({
       hasWidth // 設定寬度
     >
       {/* 📁 圖片上傳輸入框 */}
-      <input
-        type="file"
-        ref={fileInputRef}
-        accept="image/*"
-        onChange={handleImageUpload}
-        style={{ marginTop: "10px", display: "block" }}
-      />
+      <div className="p-3 bg-info bg-opacity-10 border border-info rounded">
+        <div className="text-start">
+          <label className="form-label">上傳檔案</label>
+        </div>
+
+        <input
+          id="file"
+          type="file"
+          ref={fileInputRef}
+          accept="image/*"
+          onChange={handleImageUpload}
+          className="form-control"
+          style={{ display: "block" }}
+        />
+      </div>
+
       {/* 🖼 圖片容器，包含裁剪框與拖曳功能 */}
       <div
         ref={containerRef}

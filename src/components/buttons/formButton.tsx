@@ -20,12 +20,12 @@ interface FromButtonProps {
 }
 
 const formButtonStyle: Record<FromButtonStyle, string> = {
-  confirm: "buttonConfirm",
-  deny: "buttonDeny",
-  delete: "buttonDelete",
-  download: "buttonDownload",
-  history: "buttonHistory",
-  handover: "buttonHandover",
+  confirm: "btn btn-primary",
+  deny: "btn btn-secondary",
+  delete: "btn btn-danger",
+  download: "btn btn-success",
+  history: "btn btn-info",
+  handover: "btn btn-warning",
 };
 
 const FormButton: React.FC<FromButtonProps> = ({
