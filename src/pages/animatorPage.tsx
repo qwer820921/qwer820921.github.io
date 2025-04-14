@@ -222,7 +222,7 @@ const AnimatorPage: React.FC = () => {
                     gap: "2px", // 可以調整格子之間的間隙
                   }}
                 >
-                  {canvasList[activeCanvasIndex].map((color, index) => (
+                  {canvasList[activeCanvasIndex]?.map((color, index) => (
                     <div
                       key={index}
                       onClick={() => handlePixelClick(index)}
@@ -253,7 +253,7 @@ const AnimatorPage: React.FC = () => {
                 backgroundColor: "#ffffff",
               }}
             >
-              {canvasList[previewIndex].map((color, index) => (
+              {canvasList[previewIndex]?.map((color, index) => (
                 <div key={index} style={{ backgroundColor: color }}></div>
               ))}
             </div>
@@ -263,7 +263,7 @@ const AnimatorPage: React.FC = () => {
         {/* 下方 - 畫布序列 (選擇不同畫布) */}
         <div className="row mt-3">
           <div className="col-12 d-flex justify-content-center gap-2">
-            {canvasList.map((canvas, index) => (
+            {canvasList?.map((canvas, index) => (
               <>
                 <div
                   key={index}
@@ -281,7 +281,7 @@ const AnimatorPage: React.FC = () => {
                     gap: "1px", // 可以調整格子之間的間隙
                   }}
                 >
-                  {canvas.map((color, index) => (
+                  {canvas?.map((color, index) => (
                     <div
                       key={index}
                       style={{

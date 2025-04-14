@@ -1,17 +1,10 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import CustomModal from "../components/modals/customModal";
-
-// 型別定義
-interface CropBox {
-  x: number;
-  y: number;
-  size: number;
-}
 
 interface ImageCropModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (pixelColors: string[]) => void; // 回傳擷取的像素資料
+  onConfirm: (pixelColors: string[]) => void;
 }
 
 const ImageCropModal: React.FC<ImageCropModalProps> = ({
@@ -19,120 +12,194 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({
   onClose,
   onConfirm,
 }) => {
-  // 儲存上傳的圖片
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [cropBoxPosition, setCropBoxPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [imageSize, setImageSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+  const [minImageSize, setMinImageSize] = useState(100);
+  const [progress, setProgress] = useState(20);
+  const cropBoxSize = (progress / 100) * minImageSize;
 
-  // 儲存正方形框框的狀態
-  const [cropBox, setCropBox] = useState<CropBox>({ x: 50, y: 50, size: 100 });
-
-  // 檔案輸入框的 ref
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // canvas 參考用於圖片處理
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
 
-  // 處理圖片上傳
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      if (file.type.startsWith("image/")) {
-        setUploadedImage(file);
-        setCropBox({ x: 50, y: 50, size: 100 }); // 重置框框
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
-        }
-      } else {
-        alert("請上傳有效的圖片檔案（例如 PNG、JPG）");
-      }
+    if (file && file.type.startsWith("image/")) {
+      const img = new Image();
+      img.onload = () => {
+        setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+      };
+      img.src = URL.createObjectURL(file);
+
+      setUploadedImage(file);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } else {
+      alert("請上傳有效的圖片檔案（例如 PNG、JPG）");
     }
   };
 
-  // 處理框框拖動與調整大小
-  const handleCropBoxMouseDown = (
-    e: React.MouseEvent<HTMLDivElement>,
-    action: "move" | "resize"
-  ) => {
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const initialBox = { ...cropBox };
+  const handleMouseDown = () => setIsDragging(true);
+  const handleMouseUp = () => setIsDragging(false);
 
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      const deltaY = moveEvent.clientY - startY;
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || !containerRef.current) return;
 
-      if (action === "move") {
-        setCropBox({
-          ...cropBox,
-          x: initialBox.x + deltaX,
-          y: initialBox.y + deltaY,
-        });
-      } else if (action === "resize") {
-        const newSize = initialBox.size + deltaX;
-        if (newSize >= 50 && newSize <= 300) {
-          setCropBox({
-            ...cropBox,
-            size: newSize,
-          });
-        }
-      }
+    const rect = containerRef.current.getBoundingClientRect();
+    const cropBoxSize = (progress / 100) * minImageSize;
+    const halfBox = cropBoxSize / 2;
+
+    const newX = e.clientX - rect.left - halfBox;
+    const newY = e.clientY - rect.top - halfBox;
+
+    const maxX = rect.width - cropBoxSize;
+    const maxY = rect.height - cropBoxSize;
+
+    const updatedPosition = {
+      x: Math.max(0, Math.min(newX, maxX)),
+      y: Math.max(0, Math.min(newY, maxY)),
     };
 
-    const handleMouseUp = () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    setCropBoxPosition(updatedPosition);
+    generateLivePreview(updatedPosition);
   };
 
-  // 擷取框框內的圖片內容
-  const handleCropConfirm = () => {
-    if (!uploadedImage || !canvasRef.current) return;
+  const handleTouchStart = (e: React.TouchEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
 
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging || !containerRef.current) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const cropBoxSize = (progress / 100) * minImageSize;
+    const halfBox = cropBoxSize / 2;
+
+    const touch = e.touches[0];
+    const newX = touch.clientX - rect.left - halfBox;
+    const newY = touch.clientY - rect.top - halfBox;
+
+    const maxX = rect.width - cropBoxSize;
+    const maxY = rect.height - cropBoxSize;
+
+    const updatedPosition = {
+      x: Math.max(0, Math.min(newX, maxX)),
+      y: Math.max(0, Math.min(newY, maxY)),
+    };
+
+    setCropBoxPosition(updatedPosition);
+    generateLivePreview(updatedPosition);
+  };
+
+  const generateLivePreview = (position = cropBoxPosition) => {
+    const img = imgRef.current;
+    if (!img || !canvasRef.current) return;
+
+    const naturalWidth = img.naturalWidth;
+    const naturalHeight = img.naturalHeight;
+    const renderedWidth = img.clientWidth;
+    const renderedHeight = img.clientHeight;
+
+    const scaleX = naturalWidth / renderedWidth;
+    const scaleY = naturalHeight / renderedHeight;
+
+    const realX = position.x * scaleX;
+    const realY = position.y * scaleY;
+    const realSize = cropBoxSize * scaleX;
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+
+    canvas.width = 16;
+    canvas.height = 16;
+
+    ctx?.drawImage(img, realX, realY, realSize, realSize, 0, 0, 16, 16);
+
+    setPreviewUrl(canvas.toDataURL());
+  };
+
+  const handleCropConfirm = () => {
+    const img = imgRef.current;
     const canvas = canvasRef.current;
+    if (!img || !canvas) return;
+
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const img = new Image();
-    img.src = URL.createObjectURL(uploadedImage);
-    img.onload = () => {
-      // 設置 canvas 大小為 16x16
-      canvas.width = 16;
-      canvas.height = 16;
+    const naturalWidth = img.naturalWidth;
+    const naturalHeight = img.naturalHeight;
+    const renderedWidth = img.clientWidth;
+    const renderedHeight = img.clientHeight;
 
-      // 將框框內的圖片縮放到 16x16
-      ctx.drawImage(
-        img,
-        cropBox.x,
-        cropBox.y,
-        cropBox.size,
-        cropBox.size,
-        0,
-        0,
-        16,
-        16
-      );
+    const scaleX = naturalWidth / renderedWidth;
+    const scaleY = naturalHeight / renderedHeight;
 
-      // 取得 pixel 資料
-      const imageData = ctx.getImageData(0, 0, 16, 16).data;
-      const pixelColors: string[] = [];
+    const realX = cropBoxPosition.x * scaleX;
+    const realY = cropBoxPosition.y * scaleY;
+    const realSize = cropBoxSize * scaleX;
 
-      for (let i = 0; i < imageData.length; i += 4) {
-        const r = imageData[i].toString(16).padStart(2, "0");
-        const g = imageData[i + 1].toString(16).padStart(2, "0");
-        const b = imageData[i + 2].toString(16).padStart(2, "0");
-        pixelColors.push(`#${r}${g}${b}`);
-      }
+    canvas.width = 16;
+    canvas.height = 16;
 
-      // 回傳擷取的資料
-      onConfirm(pixelColors);
+    ctx.clearRect(0, 0, 16, 16);
+    ctx.drawImage(img, realX, realY, realSize, realSize, 0, 0, 16, 16);
 
-      // 重置狀態
-      setUploadedImage(null);
-      setCropBox({ x: 50, y: 50, size: 100 });
-    };
+    const imageData = ctx.getImageData(0, 0, 16, 16).data;
+    const pixelColors: string[] = [];
+
+    for (let i = 0; i < imageData.length; i += 4) {
+      const r = imageData[i].toString(16).padStart(2, "0");
+      const g = imageData[i + 1].toString(16).padStart(2, "0");
+      const b = imageData[i + 2].toString(16).padStart(2, "0");
+      pixelColors.push(`#${r}${g}${b}`);
+    }
+
+    onConfirm(pixelColors);
   };
+
+  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!progressRef.current) return;
+
+    const rect = progressRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const width = rect.width;
+
+    let percent = (x / width) * 100;
+    percent = Math.max(0, Math.min(100, percent));
+
+    setProgress(Math.round(percent));
+  };
+
+  useEffect(() => {
+    if (imageSize) {
+      setMinImageSize(Math.min(imageSize.width, imageSize.height));
+    } else {
+      setMinImageSize(100);
+    }
+  }, [imageSize]);
+
+  useEffect(() => {
+    if (uploadedImage) {
+      setIsDragging(true);
+      setTimeout(() => {
+        generateLivePreview(cropBoxPosition);
+      }, 0);
+
+      setIsDragging(false);
+    }
+  }, [progress]); // 每次 progress 或位置改變時更新預覽
 
   return (
     <CustomModal
@@ -140,64 +207,118 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({
       onConfirm={handleCropConfirm}
       onClose={() => {
         setUploadedImage(null);
-        setCropBox({ x: 50, y: 50, size: 100 });
+        setPreviewUrl(null);
         onClose();
       }}
       isShowClose={true}
       hasWidth
     >
-      <div style={{ position: "relative", width: "100%", height: "auto" }}>
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept="image/*"
+        onChange={handleImageUpload}
+        style={{ marginTop: "10px", display: "block" }}
+      />
+      <div
+        ref={containerRef}
+        style={{
+          position: "relative",
+          width: imageSize ? `${Math.min(imageSize.width, 400)}px` : "auto",
+          height: imageSize ? `${Math.min(imageSize.height, 400)}px` : "auto",
+          overflow: "hidden",
+        }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         {uploadedImage && (
-          <>
-            <img
-              src={URL.createObjectURL(uploadedImage)}
-              alt="preview"
-              style={{
-                width: "100%",
-                maxHeight: "400px",
-                objectFit: "contain",
-                display: "block",
-              }}
-            />
-            {/* 正方形框框 */}
-            <div
-              style={{
-                position: "absolute",
-                top: `${cropBox.y}px`,
-                left: `${cropBox.x}px`,
-                width: `${cropBox.size}px`,
-                height: `${cropBox.size}px`,
-                border: "2px dashed red",
-                cursor: "move",
-              }}
-              onMouseDown={(e) => handleCropBoxMouseDown(e, "move")}
-            >
-              {/* 右下角調整大小的控制點 */}
-              <div
-                style={{
-                  position: "absolute",
-                  bottom: "-5px",
-                  right: "-5px",
-                  width: "10px",
-                  height: "10px",
-                  backgroundColor: "red",
-                  cursor: "se-resize",
-                }}
-                onMouseDown={(e) => handleCropBoxMouseDown(e, "resize")}
-              />
-            </div>
-          </>
+          <img
+            ref={imgRef}
+            src={URL.createObjectURL(uploadedImage)}
+            alt="preview"
+            style={{
+              display: "block",
+              maxWidth: "100%",
+              maxHeight: "100%",
+              objectFit: "contain", // 保證圖片不會超過容器
+              margin: "0 auto", // 水平置中
+            }}
+          />
         )}
-        <input
-          type="file"
-          ref={fileInputRef}
-          accept="image/*"
-          onChange={handleImageUpload}
-          style={{ marginTop: "10px", display: "block" }}
-        />
-        {/* 隱藏的 canvas 用於圖片處理 */}
+
+        {uploadedImage && (
+          <div
+            style={{
+              position: "absolute",
+              top: cropBoxPosition.y,
+              left: cropBoxPosition.x,
+              width: cropBoxSize,
+              height: cropBoxSize,
+              border: "2px dashed red",
+              boxSizing: "border-box",
+              pointerEvents: "none",
+              zIndex: 10,
+            }}
+          />
+        )}
+
+        {/* 在圖片上層放一個透明層用來處理紅框的拖拉 */}
+        {uploadedImage && (
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
+              backgroundColor: "transparent",
+              zIndex: 5,
+            }}
+          />
+        )}
+
         <canvas ref={canvasRef} style={{ display: "none" }} />
       </div>
+
+      {uploadedImage && (
+        <div
+          ref={progressRef}
+          className="progress mt-3"
+          style={{ width: "100%", height: "20px", cursor: "pointer" }}
+          onClick={handleProgressClick}
+        >
+          <div
+            className="progress-bar"
+            role="progressbar"
+            style={{ width: `${progress}%` }}
+            aria-valuenow={progress}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            {progress}%
+          </div>
+        </div>
+      )}
+
+      {previewUrl && (
+        <div style={{ marginTop: "20px" }}>
+          <h4>即時預覽</h4>
+          <img
+            src={previewUrl}
+            alt="crop-preview"
+            style={{
+              width: "64px",
+              height: "64px",
+              imageRendering: "pixelated",
+              border: "1px solid #ccc",
+            }}
+          />
+        </div>
+      )}
     </CustomModal>
   );
 };
