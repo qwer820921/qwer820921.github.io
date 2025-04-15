@@ -2,6 +2,6 @@
 export const ROUTES = {
   HOME: "/",
   ABOUT: "/about",
-  ANIMATOR: "/animator", // 動畫
+  ANIMATOR: "animator/animator", // 動畫
   PROTECTED: "/protected", // 受保護頁面的路由
 };

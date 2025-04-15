@@ -1,7 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Button, Form } from "react-bootstrap";
-import { mockColor } from "../lib/mock";
-import ImageCropModal from "../components/ImageCropModal";
+import { mockColor } from "../../lib/mock";
+import ImageCropModal from "../../components/ImageCropModal";
+import FormButton from "../../components/buttons/formButton";
+import PreviewCanvas from "./previewCanvas";
 
 const AnimatorPage: React.FC = () => {
   // 🎨 設定目前選擇的顏色，預設為黑色
@@ -79,16 +81,16 @@ const AnimatorPage: React.FC = () => {
     }
   };
 
-  // 🎞 動畫預覽的當前畫布索引
-  const [previewIndex, setPreviewIndex] = useState(0);
+  // // 🎞 動畫預覽的當前畫布索引
+  // const [previewIndex, setPreviewIndex] = useState(0);
 
-  // 🔄 初始化動畫預覽，定時切換畫布
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setPreviewIndex((prev) => (prev + 1) % canvasList.length); // 循環顯示畫布
-    }, 100); // 每 100ms 切換一次
-    return () => clearInterval(interval); // 清除計時器
-  }, [canvasList.length]);
+  // // 🔄 初始化動畫預覽，定時切換畫布
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     setPreviewIndex((prev) => (prev + 1) % canvasList.length); // 循環顯示畫布
+  //   }, 500); // 每 500ms 切換一次
+  //   return () => clearInterval(interval); // 清除計時器
+  // }, [canvasList.length]);
 
   // 📥 儲存匯入的 JSON 字串，預設為 mockColor
   const [importText, setImportText] = useState<string>(mockColor);
@@ -142,27 +144,26 @@ const AnimatorPage: React.FC = () => {
       <div className="container-fluid p-3">
         {/* 上方匯入區域 */}
         <div className="mb-3">
-          <Form.Control
-            as="textarea"
+          <textarea
+            className="form-control w-100"
             rows={3}
             value={importText}
             onChange={(e) => setImportText(e.target.value)}
             placeholder={`請輸入 ${pixelSizeInput}x${pixelSizeInput} 的 JSON 格式 string[]`}
           />
           <div className="d-flex gap-2 mt-2">
-            <Button className="mt-2" variant="info" onClick={importCanvas}>
+            <button className="btn btn-info" onClick={importCanvas}>
               匯入
-            </Button>
-            <Button className="mt-2" variant="secondary" onClick={exportCanvas}>
+            </button>
+            <button className="btn btn-secondary" onClick={exportCanvas}>
               匯出
-            </Button>
-            <Button
-              className="mt-2 me-2"
-              variant="primary"
+            </button>
+            <button
+              className="btn btn-primary"
               onClick={() => setIsImageUploadModalOpen(true)}
             >
               匯入圖片
-            </Button>
+            </button>
           </div>
         </div>
 
@@ -207,29 +208,29 @@ const AnimatorPage: React.FC = () => {
             <div className="row d-flex">
               <div className="col-12">
                 <div className="d-flex justify-content-center align-items-center gap-2 mb-3">
-                  <Button variant="secondary" onClick={resetCanvas}>
+                  <button className="btn btn-secondary" onClick={resetCanvas}>
                     重置
-                  </Button>
-                  <Button variant="primary" onClick={addNewCanvas}>
+                  </button>
+                  <button className="btn btn-primary" onClick={addNewCanvas}>
                     新增
-                  </Button>
-                  <Button
-                    variant="danger"
+                  </button>
+                  <button
+                    className="btn btn-danger"
                     onClick={deleteCanvas}
                     disabled={canvasList.length <= 1}
                   >
                     刪除
-                  </Button>
-                  <Button variant="warning" onClick={copyCanvas}>
+                  </button>
+                  <button className="btn btn-warning" onClick={copyCanvas}>
                     複製
-                  </Button>
-                  <Button
-                    variant="success"
+                  </button>
+                  <button
+                    className="btn btn-success"
                     onClick={pasteCanvas}
                     disabled={!copiedCanvas}
                   >
                     貼上
-                  </Button>
+                  </button>
                   <div className="position-relative">
                     <button
                       type="button"
@@ -316,23 +317,10 @@ const AnimatorPage: React.FC = () => {
 
           {/* 右側 - 預覽區域 */}
           <div className="col-md-3 col-sm-12 d-flex flex-column align-items-center mt-5">
-            <h5>預覽</h5>
-            <div
-              className="border border-dark"
-              style={{
-                width: "120px",
-                height: "120px",
-                display: "grid",
-                gridTemplateColumns: `repeat(${pixelSizeInput}, 1fr)`,
-                gridTemplateRows: `repeat(${pixelSizeInput}, 1fr)`,
-                gap: "1px",
-                backgroundColor: "#ffffff",
-              }}
-            >
-              {canvasList[previewIndex]?.map((color, index) => (
-                <div key={index} style={{ backgroundColor: color }}></div>
-              ))}
-            </div>
+            <PreviewCanvas
+              canvasList={canvasList}
+              pixelSizeInput={pixelSizeInput}
+            ></PreviewCanvas>
           </div>
         </div>
 

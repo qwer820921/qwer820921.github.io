@@ -1,14 +1,14 @@
 "use client";
-import React from "react";
+import React, { memo } from "react";
 import "./styles/formButton.css";
 
 type FromButtonStyle =
-  | "confirm"
-  | "deny"
-  | "delete"
-  | "download"
-  | "history"
-  | "handover";
+  | "primary"
+  | "secondary"
+  | "danger"
+  | "success"
+  | "info"
+  | "warning";
 
 interface FromButtonProps {
   onClick?: () => void;
@@ -20,12 +20,12 @@ interface FromButtonProps {
 }
 
 const formButtonStyle: Record<FromButtonStyle, string> = {
-  confirm: "btn btn-primary",
-  deny: "btn btn-secondary",
-  delete: "btn btn-danger",
-  download: "btn btn-success",
-  history: "btn btn-info",
-  handover: "btn btn-warning",
+  primary: "btn btn-primary",
+  secondary: "btn btn-secondary",
+  danger: "btn btn-danger",
+  success: "btn btn-success",
+  info: "btn btn-info",
+  warning: "btn btn-warning",
 };
 
 const FormButton: React.FC<FromButtonProps> = ({
@@ -34,7 +34,7 @@ const FormButton: React.FC<FromButtonProps> = ({
   },
   text = "",
   type = "button",
-  style = "confirm",
+  style = "primary",
   disabled = false,
   styleClass,
 }) => {
@@ -51,4 +51,4 @@ const FormButton: React.FC<FromButtonProps> = ({
   );
 };
 
-export default FormButton;
+export default memo(FormButton);

@@ -38,13 +38,13 @@ const CustomModal: React.FC<CustomModalProps> = ({
         <div className="modalContainer">
           <FormButton
             text={confirmText}
-            style="confirm"
+            style="primary"
             onClick={onConfirm}
             type={buttonType}
             disabled={isConfirmDisabled}
           />
           {isShowClose && (
-            <FormButton text={closeText} style="deny" onClick={onClose} />
+            <FormButton text={closeText} style="secondary" onClick={onClose} />
           )}
         </div>
       </div>
