@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import ImageCropModal from "../../components/ImageCropModal";
 import { createRefManager } from "../../utils/createRefManager";
 import PreviewCanvas from "./previewCanvas";
+import ColorSelector from "./colorSelector";
 
 const AnimatorPage: React.FC = () => {
   // 🎨 設定目前選擇的顏色，預設為黑色
@@ -198,35 +199,7 @@ const AnimatorPage: React.FC = () => {
         <div className="row">
           {/* 左側 - 顏色選擇 */}
           <div className="col-md-3 col-sm-12 d-flex flex-column align-items-center mt-5">
-            <h5>顏色選擇</h5>
-            <div className="d-flex flex-wrap gap-1">
-              {[
-                "#C0C0C0",
-                "#D2B48C",
-                "#8B4513",
-                "#FF0000",
-                "#FFA500",
-                "#FFFF00",
-                "#00FF00",
-                "#00FFFF",
-                "#0000FF",
-                "#800080",
-                "#000000",
-                "#FFFFFF",
-              ].map((color) => (
-                <div
-                  key={color}
-                  className={`border border-light ${selectedColor === color ? "border-1" : "border-5"}`}
-                  style={{
-                    width: "30px",
-                    height: "30px",
-                    backgroundColor: color,
-                    cursor: "pointer",
-                  }}
-                  onClick={() => setSelectedColor(color)}
-                ></div>
-              ))}
-            </div>
+            <ColorSelector value={selectedColor} onChange={setSelectedColor} />
           </div>
 
           {/* 中間 - 畫布區域 */}
