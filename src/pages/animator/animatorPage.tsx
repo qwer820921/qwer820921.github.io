@@ -38,6 +38,10 @@ const AnimatorPage: React.FC = () => {
   // 📋 儲存複製的畫布資料，供貼上功能使用
   const [copiedCanvas, setCopiedCanvas] = useState<string[] | null>(null);
 
+  // 記錄是否正在拖動畫布
+  // isDragging 為布林值，表示使用者是否正在拖動鼠標來繪製或填充顏色
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+
   // 🔧 canvasRef：主畫布的參考（單一張，使用者目前正在編輯的畫布）
   // 這會用來操作主畫布 <canvas> 的繪圖內容，例如繪製像素方格、顯示格線等。
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -183,37 +187,55 @@ const AnimatorPage: React.FC = () => {
     drawThumbnails();
   }, [canvasList]);
 
-  const [isDragging, setIsDragging] = useState<boolean>(false);
-
+  // 更新畫布像素顏色的邏輯
+  // 這個函數會根據鼠標的當前位置來更新畫布的顏色
   const updateCanvasPixel = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const canvas = canvasRef.current; // 取得 canvas 元素的參考
+    if (!canvas) return; // 如果 canvas 尚未載入，則返回（避免錯誤）
 
+    // 取得畫布的邊界資訊，用來計算鼠標相對於畫布的位置
     const rect = canvas.getBoundingClientRect();
+
+    // 計算鼠標相對於畫布左邊界的 X 座標並轉換為像素位置
     const x = Math.floor((e.clientX - rect.left) / pixelSize);
+
+    // 計算鼠標相對於畫布上邊界的 Y 座標並轉換為像素位置
     const y = Math.floor((e.clientY - rect.top) / pixelSize);
+
+    // 計算當前像素的索引位置
     const index = y * pixelSizeInput + x;
 
+    // 創建新的畫布列表，防止直接修改 state（必須保持不可變性）
     const newCanvasList = [...canvasList];
+
+    // 更新當前畫布的顏色資料，選取該位置的顏色
     const current = [...newCanvasList[activeCanvasIndex]];
-    current[index] = selectedColor;
+    current[index] = selectedColor; // 設定選定顏色到該像素位置
+
+    // 更新新的畫布列表
     newCanvasList[activeCanvasIndex] = current;
+
+    // 更新畫布的 state，觸發重新渲染
     setCanvasList(newCanvasList);
   };
 
+  // 處理鼠標按下事件，開始繪製或填充顏色
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    setIsDragging(true);
-    updateCanvasPixel(e); // Apply color on initial click
+    setIsDragging(true); // 開始拖動，設置狀態為 true
+    updateCanvasPixel(e); // 初次點擊時立即更新畫布顏色
   };
 
+  // 處理鼠標移動事件，在拖動過程中更新顏色
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (isDragging) {
-      updateCanvasPixel(e); // Apply color while dragging
+      // 如果正在拖動（isDragging 為 true），則更新畫布顏色
+      updateCanvasPixel(e); // 在拖動過程中更新顏色
     }
   };
 
+  // 處理鼠標鬆開事件，停止拖動
   const handleMouseUp = () => {
-    setIsDragging(false); // Stop dragging
+    setIsDragging(false); // 停止拖動，設置狀態為 false
   };
 
   return (
