@@ -3,6 +3,7 @@ import ImageCropModal from "../../components/ImageCropModal";
 import { createRefManager } from "../../utils/createRefManager";
 import PreviewCanvas from "./previewCanvas";
 import ColorSelector from "./colorSelector";
+import PixelCanvas from "./pixelCanvas";
 
 const AnimatorPage: React.FC = () => {
   // 🎨 設定目前選擇的顏色，預設為黑色
@@ -182,6 +183,39 @@ const AnimatorPage: React.FC = () => {
     drawThumbnails();
   }, [canvasList]);
 
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+
+  const updateCanvasPixel = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) / pixelSize);
+    const y = Math.floor((e.clientY - rect.top) / pixelSize);
+    const index = y * pixelSizeInput + x;
+
+    const newCanvasList = [...canvasList];
+    const current = [...newCanvasList[activeCanvasIndex]];
+    current[index] = selectedColor;
+    newCanvasList[activeCanvasIndex] = current;
+    setCanvasList(newCanvasList);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    setIsDragging(true);
+    updateCanvasPixel(e); // Apply color on initial click
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isDragging) {
+      updateCanvasPixel(e); // Apply color while dragging
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false); // Stop dragging
+  };
+
   return (
     <>
       <div className="container-fluid p-3">
@@ -289,13 +323,13 @@ const AnimatorPage: React.FC = () => {
                 </div>
               </div>
               <div className="d-flex justify-content-center align-items-center">
-                <canvas
-                  ref={canvasRef}
-                  width={400}
-                  height={400}
-                  style={{ border: "1px solid #000", cursor: "pointer" }}
-                  onClick={handleCanvasClick}
-                />
+                <PixelCanvas
+                  canvasRef={canvasRef}
+                  handleCanvasClick={handleCanvasClick}
+                  handleMouseDown={handleMouseDown}
+                  handleMouseMove={handleMouseMove}
+                  handleMouseUp={handleMouseUp}
+                ></PixelCanvas>
               </div>
             </div>
           </div>
