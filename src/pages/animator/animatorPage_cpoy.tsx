@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
+import { mockColor } from "../../lib/mock";
 import ImageCropModal from "../../components/ImageCropModal";
-import { createRefManager } from "../../utils/createRefManager";
 import PreviewCanvas from "./previewCanvas";
 
 const AnimatorPage: React.FC = () => {
@@ -19,9 +19,6 @@ const AnimatorPage: React.FC = () => {
   // 📐 計算每格像素的實際大小（以 400px 畫布為基準）
   const pixelSize = 400 / pixelSizeInput;
 
-  // 下方顯示列 框框大小
-  const previewSize = 85;
-
   // 📜 控制像素選擇下拉選單的開關狀態
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
@@ -36,51 +33,35 @@ const AnimatorPage: React.FC = () => {
   // 📋 儲存複製的畫布資料，供貼上功能使用
   const [copiedCanvas, setCopiedCanvas] = useState<string[] | null>(null);
 
-  // 🔧 canvasRef：主畫布的參考（單一張，使用者目前正在編輯的畫布）
-  // 這會用來操作主畫布 <canvas> 的繪圖內容，例如繪製像素方格、顯示格線等。
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  // 📦 thumbnailRefManager：縮圖用畫布的管理器（多張，對應 canvasList 中的每張畫布）
-  // 這是一個動態管理多個 <canvas> DOM 元素的工具，用於下方畫布縮圖顯示區域
-  // - 畫布數量不固定（可新增/刪除）
-  // - 確保每個 <canvas> 正確對應到對應的畫布資料
-  // - 提供安全的 get/set 操作，避免 ref 錯位或未掛載時出錯
-  const thumbnailRefManager = createRefManager<HTMLCanvasElement>();
-
-  // 🖼 控制圖片上傳彈窗的開關狀態
-  const [isImageUploadModalOpen, setIsImageUploadModalOpen] =
-    useState<boolean>(false);
-
-  // 🖼 處理圖片裁剪後的資料，將其作為新畫布
-  const handleImageCropConfirm = (pixelColors: string[]) => {
-    setCanvasList([...canvasList, pixelColors]);
-    setActiveCanvasIndex(canvasList.length);
-    setIsImageUploadModalOpen(false);
+  // 🖌 處理點擊格子以變更顏色的事件
+  const handlePixelClick = (index: number) => {
+    const newCanvasList = [...canvasList]; // 複製畫布列表
+    const newCanvas = [...newCanvasList[activeCanvasIndex]]; // 複製當前畫布
+    newCanvas[index] = selectedColor; // 更新指定格子的顏色
+    newCanvasList[activeCanvasIndex] = newCanvas; // 更新畫布列表
+    setCanvasList(newCanvasList); // 儲存變更
   };
 
   // 🔄 重置畫布，清除所有畫布並新增一個空白畫布
   const resetCanvas = () => {
     setCanvasList([Array(canvasPixelCount).fill("#FFFFFF")]);
     setActiveCanvasIndex(0);
-    thumbnailRefManager.reset(canvasList.length);
   };
 
   // ➕ 新增一個空白畫布並切換到它
   const addNewCanvas = () => {
     setCanvasList([...canvasList, Array(canvasPixelCount).fill("#FFFFFF")]);
     setActiveCanvasIndex(canvasList.length); // 切換到新畫布
-    thumbnailRefManager.insert(canvasList.length);
   };
 
   // ❌ 刪除當前畫布（僅在有多於一個畫布時生效）
   const deleteCanvas = () => {
     if (canvasList.length > 1) {
-      const newCanvasList = canvasList?.filter(
+      const newCanvasList = canvasList.filter(
         (_, i) => i !== activeCanvasIndex
       ); // 移除當前畫布
       setCanvasList(newCanvasList);
       setActiveCanvasIndex(Math.max(0, activeCanvasIndex - 1)); // 切換到上一個畫布
-      thumbnailRefManager.remove(activeCanvasIndex);
     }
   };
 
@@ -98,100 +79,90 @@ const AnimatorPage: React.FC = () => {
     }
   };
 
-  // 點擊畫布以上色
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  // // 🎞 動畫預覽的當前畫布索引
+  // const [previewIndex, setPreviewIndex] = useState(0);
 
-    const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) / pixelSize);
-    const y = Math.floor((e.clientY - rect.top) / pixelSize);
-    const index = y * pixelSizeInput + x;
+  // // 🔄 初始化動畫預覽，定時切換畫布
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     setPreviewIndex((prev) => (prev + 1) % canvasList.length); // 循環顯示畫布
+  //   }, 500); // 每 500ms 切換一次
+  //   return () => clearInterval(interval); // 清除計時器
+  // }, [canvasList.length]);
 
-    const newCanvasList = [...canvasList];
-    const current = [...newCanvasList[activeCanvasIndex]];
-    current[index] = selectedColor;
-    newCanvasList[activeCanvasIndex] = current;
-    setCanvasList(newCanvasList);
-  };
+  // 📥 儲存匯入的 JSON 字串，預設為 mockColor
+  const [importText, setImportText] = useState<string>(mockColor);
 
-  // 🎨 繪製主畫布內容
-  const drawMainCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    // 清除畫布內容
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // 取得當前畫布的像素色碼資料
-    const currentCanvas = canvasList[activeCanvasIndex];
-
-    // 每格像素逐一上色
-    for (let i = 0; i < canvasPixelCount; i++) {
-      const x = (i % pixelSizeInput) * pixelSize;
-      const y = Math.floor(i / pixelSizeInput) * pixelSize;
-      ctx.fillStyle = currentCanvas[i];
-      ctx.fillRect(x, y, pixelSize, pixelSize);
-
-      // 顯示格線（可選）
-      ctx.strokeStyle = "#e0e0e0";
-      ctx.strokeRect(x, y, pixelSize, pixelSize);
+  // 📤 處理匯入 JSON 字串，將其轉為畫布
+  const importCanvas = () => {
+    try {
+      const parsedCanvas = JSON.parse(importText);
+      if (
+        Array.isArray(parsedCanvas) &&
+        parsedCanvas.length === canvasPixelCount
+      ) {
+        setCanvasList([...canvasList, parsedCanvas]);
+        setActiveCanvasIndex(canvasList.length);
+        setImportText("");
+      } else {
+        alert(
+          `格式錯誤，請輸入 ${pixelSizeInput}x${pixelSizeInput} 的 string[] 陣列`
+        );
+      }
+    } catch (error) {
+      alert("無效的 JSON 格式");
     }
   };
 
-  // 🖼️ 繪製所有縮圖
-  const drawThumbnails = () => {
-    requestAnimationFrame(() => {
-      canvasList.forEach((data, index) => {
-        const canvas = thumbnailRefManager.get(index);
-        if (!canvas) return;
-
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-
-        const pixel = previewSize / pixelSizeInput;
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        for (let i = 0; i < data.length; i++) {
-          const x = (i % pixelSizeInput) * pixel;
-          const y = Math.floor(i / pixelSizeInput) * pixel;
-          ctx.fillStyle = data[i];
-          ctx.fillRect(x, y, pixel, pixel);
-        }
-      });
-    });
+  // 📥 匯出當前畫布為 JSON 字串
+  const exportCanvas = () => {
+    const currentCanvas = canvasList[activeCanvasIndex];
+    const canvasString = JSON.stringify(currentCanvas);
+    setImportText(canvasString); // 顯示在textarea
   };
 
-  // 🎯 1. 每當 pixelSizeInput 改變，就重設整個畫布
+  // 🖼 控制圖片上傳彈窗的開關狀態
+  const [isImageUploadModalOpen, setIsImageUploadModalOpen] =
+    useState<boolean>(false);
+
+  // 🖼 處理圖片裁剪後的資料，將其作為新畫布
+  const handleImageCropConfirm = (pixelColors: string[]) => {
+    setCanvasList([...canvasList, pixelColors]);
+    setActiveCanvasIndex(canvasList.length);
+    setIsImageUploadModalOpen(false);
+  };
+
+  // 🔄 當像素格數變更時，重新初始化畫布
   useEffect(() => {
     resetCanvas();
   }, [pixelSizeInput]);
-
-  // 🎯 2. 每當 canvasList / activeCanvasIndex 等畫布內容相關資料變化時，重繪主畫布
-  useEffect(() => {
-    drawMainCanvas();
-  }, [canvasList, activeCanvasIndex]);
-
-  // 🎯 3. 每當所有畫布資料或解析度變更時，刷新所有縮圖
-  useEffect(() => {
-    drawThumbnails();
-  }, [canvasList]);
 
   return (
     <>
       <div className="container-fluid p-3">
         {/* 上方匯入區域 */}
         <div className="mb-3">
-          <button
-            className="btn btn-primary"
-            onClick={() => setIsImageUploadModalOpen(true)}
-          >
-            匯入圖片
-          </button>
+          <textarea
+            className="form-control w-100"
+            rows={3}
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+            placeholder={`請輸入 ${pixelSizeInput}x${pixelSizeInput} 的 JSON 格式 string[]`}
+          />
+          <div className="d-flex gap-2 mt-2">
+            <button className="btn btn-info" onClick={importCanvas}>
+              匯入
+            </button>
+            <button className="btn btn-secondary" onClick={exportCanvas}>
+              匯出
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => setIsImageUploadModalOpen(true)}
+            >
+              匯入圖片
+            </button>
+          </div>
         </div>
 
         {/* 主要工作區域 */}
@@ -231,6 +202,7 @@ const AnimatorPage: React.FC = () => {
 
           {/* 中間 - 畫布區域 */}
           <div className="col-md-6 col-sm-12 d-flex justify-content-center">
+            {/* 按鈕區域 */}
             <div className="row d-flex">
               <div className="col-12">
                 <div className="d-flex justify-content-center align-items-center gap-2 mb-3">
@@ -316,13 +288,27 @@ const AnimatorPage: React.FC = () => {
                 </div>
               </div>
               <div className="d-flex justify-content-center align-items-center">
-                <canvas
-                  ref={canvasRef}
-                  width={400}
-                  height={400}
-                  style={{ border: "1px solid #000", cursor: "pointer" }}
-                  onClick={handleCanvasClick}
-                />
+                <div
+                  className="border border-dark p-2"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: `repeat(${pixelSizeInput}, ${pixelSize}px)`,
+                    gridTemplateRows: `repeat(${pixelSizeInput}, ${pixelSize}px)`,
+                    gap: "1px", // 可以調整格子之間的間隙
+                  }}
+                >
+                  {canvasList[activeCanvasIndex]?.map((color, index) => (
+                    <div
+                      key={index}
+                      onClick={() => handlePixelClick(index)}
+                      style={{
+                        backgroundColor: color,
+                        border: "1px solid #ddd",
+                        cursor: "pointer",
+                      }}
+                    ></div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -332,41 +318,46 @@ const AnimatorPage: React.FC = () => {
             <PreviewCanvas
               canvasList={canvasList}
               pixelSizeInput={pixelSizeInput}
-            />
+            ></PreviewCanvas>
           </div>
         </div>
 
         {/* 下方 - 畫布序列 (選擇不同畫布) */}
-        <div className="d-flex justify-content-center align-items-center mt-3">
-          {canvasList?.map((canvas, index) => (
-            <div
-              key={index}
-              style={{
-                border:
-                  activeCanvasIndex === index
-                    ? "3px solid #007bff"
-                    : "1px solid #ccc",
-                padding: "2px",
-                width: "auto",
-                height: "auto",
-                backgroundColor: "#ffffff",
-                cursor: "pointer",
-                display: "grid",
-              }}
-              onClick={() => setActiveCanvasIndex(index)}
-            >
-              <canvas
-                ref={(el) => thumbnailRefManager.set(index, el)}
-                width={previewSize}
-                height={previewSize}
-                style={{ display: "block" }}
-              />
-            </div>
-          ))}
+        <div className="row mt-3">
+          <div className="col-12 d-flex justify-content-center gap-2">
+            {canvasList?.map((canvas, index) => (
+              <>
+                <div
+                  key={index}
+                  onClick={() => setActiveCanvasIndex(index)}
+                  className={`border ${activeCanvasIndex === index ? "border-primary border-3" : "border-dark"}`}
+                  style={{
+                    padding: "2px",
+                    width: "85px",
+                    height: "85px",
+                    backgroundColor: "#ffffff",
+                    cursor: "pointer",
+                    display: "grid",
+                    gridTemplateColumns: `repeat(${pixelSizeInput}, 1fr)`,
+                    gridTemplateRows: `repeat(${pixelSizeInput}, 1fr)`,
+                    gap: "1px", // 可以調整格子之間的間隙
+                  }}
+                >
+                  {canvas?.map((color, index) => (
+                    <div
+                      key={index}
+                      style={{
+                        backgroundColor: color,
+                      }}
+                    ></div>
+                  ))}
+                </div>
+              </>
+            ))}
+          </div>
         </div>
       </div>
-
-      {/* 選擇圖片範圍彈窗 */}
+      {/********************* 選擇圖片範圍彈窗 *********************/}
       <ImageCropModal
         isOpen={isImageUploadModalOpen}
         onClose={() => setIsImageUploadModalOpen(false)}
