@@ -58,7 +58,7 @@ const PreviewCanvas = ({
   }, [canvasList, previewIndex, pixelSizeInput]);
 
   return (
-    <div className="d-flex flex-column align-items-center mt-5">
+    <>
       <h5>預覽</h5>
 
       {/* 畫布顯示預覽動畫 */}
@@ -92,7 +92,7 @@ const PreviewCanvas = ({
       >
         {isPlaying ? "暫停" : "播放"}
       </button>
-    </div>
+    </>
   );
 };
 

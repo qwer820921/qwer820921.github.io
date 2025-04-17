@@ -322,27 +322,26 @@ const AnimatorPage: React.FC = () => {
   return (
     <>
       <div className="container-fluid p-3">
-        {/* 上方匯入區域 */}
-        <div className="mb-3">
-          <button
-            className="btn btn-primary"
-            onClick={() => setIsImageUploadModalOpen(true)}
-          >
-            匯入圖片
-          </button>
-        </div>
-
         {/* 主要工作區域 */}
         <div className="row">
           {/* 左側 - 顏色選擇 */}
-          <div className="col-md-3 col-sm-12 d-flex flex-column align-items-center mt-5">
+          <div className="col-md-3 col-sm-12 d-flex flex-column align-items-center my-3">
             <ColorSelector value={selectedColor} onChange={setSelectedColor} />
           </div>
 
           {/* 中間 - 畫布區域 */}
-          <div className="col-md-6 col-sm-12 d-flex justify-content-center">
+          <div className="col-md-6 col-sm-12 d-flex justify-content-center my-3">
             <div className="row d-flex">
-              <div className="col-12">
+              {/* 上方 - 匯入圖片 */}
+              <div className="col-12 my-2">
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setIsImageUploadModalOpen(true)}
+                >
+                  匯入圖片
+                </button>
+              </div>
+              <div className="col-12 my-2">
                 <div className="d-flex justify-content-center align-items-center gap-2 mb-3">
                   <button className="btn btn-secondary" onClick={resetCanvas}>
                     重置
@@ -437,45 +436,45 @@ const AnimatorPage: React.FC = () => {
                   handleTouchEnd={handleTouchEnd}
                 ></PixelCanvas>
               </div>
+              {/* 下方 - 畫布序列 (選擇不同畫布) */}
+              <div className="row d-flex justify-content-center align-items-center mt-3">
+                {canvasList?.map((canvas, index) => (
+                  <div
+                    key={index}
+                    className="col-auto"
+                    style={{
+                      border:
+                        activeCanvasIndex === index
+                          ? "3px solid #007bff"
+                          : "1px solid #ccc",
+                      padding: "2px",
+                      width: "auto",
+                      height: "auto",
+                      backgroundColor: "#ffffff",
+                      cursor: "pointer",
+                      display: "grid",
+                    }}
+                    onClick={() => handleCanvasSwitch(index)}
+                  >
+                    <canvas
+                      ref={(el) => thumbnailRefManager.set(index, el)}
+                      width={previewSize}
+                      height={previewSize}
+                      style={{ display: "block" }}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
           {/* 右側 - 預覽區域 */}
-          <div className="col-md-3 col-sm-12 d-flex flex-column align-items-center mt-5">
+          <div className="col-md-3 col-sm-12 d-flex flex-column align-items-center my-3">
             <PreviewCanvas
               canvasList={canvasList}
               pixelSizeInput={pixelSizeInput}
             />
           </div>
-        </div>
-
-        {/* 下方 - 畫布序列 (選擇不同畫布) */}
-        <div className="d-flex justify-content-center align-items-center mt-3">
-          {canvasList?.map((canvas, index) => (
-            <div
-              key={index}
-              style={{
-                border:
-                  activeCanvasIndex === index
-                    ? "3px solid #007bff"
-                    : "1px solid #ccc",
-                padding: "2px",
-                width: "auto",
-                height: "auto",
-                backgroundColor: "#ffffff",
-                cursor: "pointer",
-                display: "grid",
-              }}
-              onClick={() => handleCanvasSwitch(index)}
-            >
-              <canvas
-                ref={(el) => thumbnailRefManager.set(index, el)}
-                width={previewSize}
-                height={previewSize}
-                style={{ display: "block" }}
-              />
-            </div>
-          ))}
         </div>
       </div>
 
