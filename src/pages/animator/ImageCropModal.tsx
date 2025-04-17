@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import CustomModal from "../components/modals/customModal";
+import CustomModal from "../../components/modals/customModal";
 
 // 定義 ImageCropModal 組件的屬性介面
 interface ImageCropModalProps {
@@ -56,8 +56,30 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({
     if (file && file.type.startsWith("image/")) {
       const img = new Image();
       img.onload = () => {
-        // 儲存圖片的實際尺寸
-        setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+        const naturalWidth = img.naturalWidth;
+        const naturalHeight = img.naturalHeight;
+
+        // 取得 modal 實際寬度
+        const containerWidth =
+          containerRef.current?.getBoundingClientRect().width ||
+          window.innerWidth;
+        const containerHeight =
+          containerRef.current?.getBoundingClientRect().height ||
+          window.innerHeight;
+
+        // 安全邊距
+        const maxWidth = containerWidth - 40;
+        const maxHeight = containerHeight - 80;
+
+        // 計算縮放比例
+        const widthRatio = maxWidth / naturalWidth;
+        const heightRatio = maxHeight / naturalHeight;
+        const ratio = Math.min(widthRatio, heightRatio, 1);
+
+        setImageSize({
+          width: Math.round(naturalWidth * ratio),
+          height: Math.round(naturalHeight * ratio),
+        });
       };
       img.src = URL.createObjectURL(file); // 創建圖片的臨時 URL
 
@@ -391,14 +413,22 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({
 
       {/* 🖼 即時預覽區域，顯示像素化結果 */}
       {previewUrl && (
-        <div style={{ marginTop: "20px" }}>
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            marginTop: "20px",
+          }}
+        >
           <h4>即時預覽</h4>
           <img
             src={previewUrl}
             alt="crop-preview"
             style={{
-              width: `${pixelSizeInput * 4}px`, // 放大顯示
-              height: `${pixelSizeInput * 4}px`,
+              width: "100%",
+              height: "100%",
+              objectFit: "contain", // 保證圖片不變形
+              margin: "0 auto", // 水平置中
               imageRendering: "pixelated", // 保持像素化效果
               border: "1px solid #ccc",
             }}

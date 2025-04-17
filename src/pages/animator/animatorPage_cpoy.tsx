@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { mockColor } from "../../lib/mock";
-import ImageCropModal from "../../components/ImageCropModal";
+import ImageCropModal from "./ImageCropModal";
 import PreviewCanvas from "./previewCanvas";
 
 const AnimatorPage: React.FC = () => {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import ImageCropModal from "../../components/ImageCropModal";
+import ImageCropModal from "./ImageCropModal";
 import { createRefManager } from "../../utils/createRefManager";
 import PreviewCanvas from "./previewCanvas";
 import ColorSelector from "./colorSelector";
