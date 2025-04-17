@@ -4,16 +4,17 @@ import { createRefManager } from "../../utils/createRefManager";
 import PreviewCanvas from "./previewCanvas";
 import ColorSelector from "./colorSelector";
 import PixelCanvas from "./pixelCanvas";
+import { CanvasList, PixelMap } from "./types";
 
 const AnimatorPage: React.FC = () => {
   // 🎨 設定目前選擇的顏色，預設為黑色
   const [selectedColor, setSelectedColor] = useState("#000000");
 
   // 📏 設定最終的像素格數（畫布邊長）
-  const [pixelSizeInput, setPixelSizeInput] = useState(16);
+  const [pixelSizeInput, setPixelSizeInput] = useState(100);
 
   // 📝 表單內的暫存像素格數，供用戶輸入時使用
-  const [tempPixelSize, setTempPixelSize] = useState(16);
+  const [tempPixelSize, setTempPixelSize] = useState(100);
 
   // 🧮 計算畫布總格數（像素格數的平方）
   const canvasPixelCount = pixelSizeInput * pixelSizeInput;
@@ -28,19 +29,22 @@ const AnimatorPage: React.FC = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   // 📌 畫布陣列，儲存多個畫布的像素顏色資料
-  const [canvasList, setCanvasList] = useState<string[][]>([
-    Array(canvasPixelCount).fill("#FFFFFF"), // 預設一個全白畫布
-  ]);
+  const [canvasList, setCanvasList] = useState<CanvasList>([new Map()]);
 
   // 📌 當前選中的畫布索引，決定正在編輯哪個畫布
   const [activeCanvasIndex, setActiveCanvasIndex] = useState(0);
 
   // 📋 儲存複製的畫布資料，供貼上功能使用
-  const [copiedCanvas, setCopiedCanvas] = useState<string[] | null>(null);
+  const [copiedCanvas, setCopiedCanvas] = useState<PixelMap | null>(null);
 
   // 記錄是否正在拖動畫布
   // isDragging 為布林值，表示使用者是否正在拖動鼠標來繪製或填充顏色
   const [isDragging, setIsDragging] = useState<boolean>(false);
+
+  // 🖌️ 暫存拖動期間的像素變更
+  const [pendingPixels, setPendingPixels] = useState<Map<number, string>>(
+    new Map()
+  );
 
   // 🔧 canvasRef：主畫布的參考（單一張，使用者目前正在編輯的畫布）
   // 這會用來操作主畫布 <canvas> 的繪圖內容，例如繪製像素方格、顯示格線等。
@@ -58,24 +62,31 @@ const AnimatorPage: React.FC = () => {
     useState<boolean>(false);
 
   // 🖼 處理圖片裁剪後的資料，將其作為新畫布
-  const handleImageCropConfirm = (pixelColors: string[]) => {
-    setCanvasList([...canvasList, pixelColors]);
+  const handleImageCropConfirm = (pixelMap: Map<number, string>) => {
+    setCanvasList((prev) => [...prev, pixelMap]);
     setActiveCanvasIndex(canvasList.length);
+    thumbnailRefManager.insert(canvasList.length);
     setIsImageUploadModalOpen(false);
+    // 圖片匯入後需要完整重繪
+    drawMainCanvasFull(pixelMap);
   };
 
   // 🔄 重置畫布，清除所有畫布並新增一個空白畫布
   const resetCanvas = () => {
-    setCanvasList([Array(canvasPixelCount).fill("#FFFFFF")]);
+    setCanvasList([new Map()]);
     setActiveCanvasIndex(0);
     thumbnailRefManager.reset(canvasList.length);
+    // 重置後需要完整重繪
+    drawMainCanvasFull(new Map());
   };
 
   // ➕ 新增一個空白畫布並切換到它
   const addNewCanvas = () => {
-    setCanvasList([...canvasList, Array(canvasPixelCount).fill("#FFFFFF")]);
+    setCanvasList([...canvasList, new Map()]);
     setActiveCanvasIndex(canvasList.length); // 切換到新畫布
     thumbnailRefManager.insert(canvasList.length);
+    // 新增畫布後需要完整重繪（因為是空白畫布）
+    drawMainCanvasFull(new Map());
   };
 
   // ❌ 刪除當前畫布（僅在有多於一個畫布時生效）
@@ -85,65 +96,65 @@ const AnimatorPage: React.FC = () => {
         (_, i) => i !== activeCanvasIndex
       ); // 移除當前畫布
       setCanvasList(newCanvasList);
-      setActiveCanvasIndex(Math.max(0, activeCanvasIndex - 1)); // 切換到上一個畫布
+      const newIndex = Math.max(0, activeCanvasIndex - 1);
+      setActiveCanvasIndex(newIndex); // 切換到上一個畫布
       thumbnailRefManager.remove(activeCanvasIndex);
+      // 刪除後切換到其他畫布，需要完整重繪
+      drawMainCanvasFull(newCanvasList[newIndex]);
     }
   };
 
   // 📋 複製當前畫布的資料
   const copyCanvas = () => {
-    setCopiedCanvas([...canvasList[activeCanvasIndex]]);
+    setCopiedCanvas(new Map(canvasList[activeCanvasIndex]));
   };
 
   // 📌 貼上複製的畫布資料到當前畫布
   const pasteCanvas = () => {
     if (copiedCanvas) {
       const newCanvasList = [...canvasList];
-      newCanvasList[activeCanvasIndex] = [...copiedCanvas];
+      newCanvasList[activeCanvasIndex] = new Map(copiedCanvas);
       setCanvasList(newCanvasList);
+      // 貼上畫布後需要完整重繪
+      drawMainCanvasFull(newCanvasList[activeCanvasIndex]);
     }
   };
 
-  // 點擊畫布以上色
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) / pixelSize);
-    const y = Math.floor((e.clientY - rect.top) / pixelSize);
-    const index = y * pixelSizeInput + x;
-
-    const newCanvasList = [...canvasList];
-    const current = [...newCanvasList[activeCanvasIndex]];
-    current[index] = selectedColor;
-    newCanvasList[activeCanvasIndex] = current;
-    setCanvasList(newCanvasList);
-  };
-
-  // 🎨 繪製主畫布內容
-  const drawMainCanvas = () => {
+  // 全圖重繪：清除畫布並繪製所有像素
+  const drawMainCanvasFull = (pixelMap: Map<number, string>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // 清除畫布內容
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // 取得當前畫布的像素色碼資料
-    const currentCanvas = canvasList[activeCanvasIndex];
-
-    // 每格像素逐一上色
-    for (let i = 0; i < canvasPixelCount; i++) {
-      const x = (i % pixelSizeInput) * pixelSize;
-      const y = Math.floor(i / pixelSizeInput) * pixelSize;
-      ctx.fillStyle = currentCanvas[i];
+    for (const [index, color] of pixelMap.entries()) {
+      const x = (index % pixelSizeInput) * pixelSize;
+      const y = Math.floor(index / pixelSizeInput) * pixelSize;
+      ctx.fillStyle = color;
       ctx.fillRect(x, y, pixelSize, pixelSize);
+      ctx.strokeStyle = "#ffffff";
+      ctx.strokeRect(x, y, pixelSize, pixelSize);
+    }
+  };
 
-      // 顯示格線（可選）
-      ctx.strokeStyle = "#e0e0e0";
+  // 局部繪製：只繪製指定像素
+  const drawMainCanvasPartial = (pixelMap: Map<number, string>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    if (pixelMap.size === 0) return;
+    for (const [index, color] of pixelMap.entries()) {
+      const x = (index % pixelSizeInput) * pixelSize;
+      const y = Math.floor(index / pixelSizeInput) * pixelSize;
+      ctx.clearRect(x, y, pixelSize, pixelSize);
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, pixelSize, pixelSize);
+      ctx.strokeStyle = "#ffffff";
       ctx.strokeRect(x, y, pixelSize, pixelSize);
     }
   };
@@ -162,10 +173,10 @@ const AnimatorPage: React.FC = () => {
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        for (let i = 0; i < data.length; i++) {
+        for (const [i, color] of data.entries()) {
           const x = (i % pixelSizeInput) * pixel;
           const y = Math.floor(i / pixelSizeInput) * pixel;
-          ctx.fillStyle = data[i];
+          ctx.fillStyle = color;
           ctx.fillRect(x, y, pixel, pixel);
         }
       });
@@ -177,65 +188,135 @@ const AnimatorPage: React.FC = () => {
     resetCanvas();
   }, [pixelSizeInput]);
 
-  // 🎯 2. 每當 canvasList / activeCanvasIndex 等畫布內容相關資料變化時，重繪主畫布
-  useEffect(() => {
-    drawMainCanvas();
-  }, [canvasList, activeCanvasIndex]);
-
-  // 🎯 3. 每當所有畫布資料或解析度變更時，刷新所有縮圖
+  // 🎯 3. 每當所有畫布資料變更時，刷新所有縮圖
   useEffect(() => {
     drawThumbnails();
   }, [canvasList]);
 
   // 更新畫布像素顏色的邏輯
   // 這個函數會根據鼠標的當前位置來更新畫布的顏色
-  const updateCanvasPixel = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current; // 取得 canvas 元素的參考
-    if (!canvas) return; // 如果 canvas 尚未載入，則返回（避免錯誤）
-
-    // 取得畫布的邊界資訊，用來計算鼠標相對於畫布的位置
-    const rect = canvas.getBoundingClientRect();
-
-    // 計算鼠標相對於畫布左邊界的 X 座標並轉換為像素位置
-    const x = Math.floor((e.clientX - rect.left) / pixelSize);
-
-    // 計算鼠標相對於畫布上邊界的 Y 座標並轉換為像素位置
-    const y = Math.floor((e.clientY - rect.top) / pixelSize);
-
-    // 計算當前像素的索引位置
+  const updateCanvasPixel = (x: number, y: number) => {
     const index = y * pixelSizeInput + x;
-
-    // 創建新的畫布列表，防止直接修改 state（必須保持不可變性）
     const newCanvasList = [...canvasList];
+    const currentCanvas = new Map(newCanvasList[activeCanvasIndex]);
 
-    // 更新當前畫布的顏色資料，選取該位置的顏色
-    const current = [...newCanvasList[activeCanvasIndex]];
-    current[index] = selectedColor; // 設定選定顏色到該像素位置
-
-    // 更新新的畫布列表
-    newCanvasList[activeCanvasIndex] = current;
-
-    // 更新畫布的 state，觸發重新渲染
-    setCanvasList(newCanvasList);
-  };
-
-  // 處理鼠標按下事件，開始繪製或填充顏色
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    setIsDragging(true); // 開始拖動，設置狀態為 true
-    updateCanvasPixel(e); // 初次點擊時立即更新畫布顏色
-  };
-
-  // 處理鼠標移動事件，在拖動過程中更新顏色
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isDragging) {
-      // 如果正在拖動（isDragging 為 true），則更新畫布顏色
-      updateCanvasPixel(e); // 在拖動過程中更新顏色
+    // 只有當顏色實際改變時才更新
+    if (currentCanvas.get(index) !== selectedColor) {
+      currentCanvas.set(index, selectedColor);
+      newCanvasList[activeCanvasIndex] = currentCanvas;
+      // 拖動時只更新 pendingPixels 和畫布顯示
+      if (isDragging) {
+        setPendingPixels((prev) => new Map(prev).set(index, selectedColor));
+      } else {
+        // 非拖動（單一點擊）時直接更新 canvasList
+        setCanvasList(newCanvasList);
+      }
+      // 更新 畫布
+      const changedPixels = new Map<number, string>().set(index, selectedColor);
+      drawMainCanvasPartial(changedPixels);
     }
   };
 
-  // 處理鼠標鬆開事件，停止拖動
+  // 共用的座標計算邏輯
+  const calculatePixelCoordinates = (
+    clientX: number,
+    clientY: number
+  ): { x: number; y: number } | null => {
+    const canvas = canvasRef.current;
+    if (!canvas || pixelSize <= 0) return null;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((clientX - rect.left) / pixelSize);
+    const y = Math.floor((clientY - rect.top) / pixelSize);
+
+    if (x >= 0 && x < pixelSizeInput && y >= 0 && y < pixelSizeInput) {
+      return { x, y };
+    }
+    return null;
+  };
+
+  // 處理鼠標事件的像素更新
+  const handleMousePixelUpdate = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const coords = calculatePixelCoordinates(e.clientX, e.clientY);
+    if (coords) {
+      updateCanvasPixel(coords.x, coords.y);
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    setIsDragging(true);
+    handleMousePixelUpdate(e);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isDragging) {
+      handleMousePixelUpdate(e);
+    }
+  };
+
   const handleMouseUp = () => {
-    setIsDragging(false); // 停止拖動，設置狀態為 false
+    setIsDragging(false);
+    applyPendingPixels();
+  };
+
+  // 處理觸控事件的像素更新
+  const handleTouchPixelUpdate = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length === 0) return;
+    // 防止瀏覽器默認行為（例如滾動）
+    e.preventDefault();
+    const coords = calculatePixelCoordinates(
+      e.touches[0].clientX,
+      e.touches[0].clientY
+    );
+    if (coords) {
+      updateCanvasPixel(coords.x, coords.y);
+    }
+  };
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    setIsDragging(true);
+    handleTouchPixelUpdate(e);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (isDragging) {
+      handleTouchPixelUpdate(e);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+    applyPendingPixels();
+  };
+
+  // 應用 pendingPixels 的變更到 canvasList
+  const applyPendingPixels = () => {
+    if (pendingPixels.size > 0) {
+      const newCanvasList = [...canvasList];
+      const currentCanvas = new Map(newCanvasList[activeCanvasIndex]);
+      for (const [index, color] of pendingPixels.entries()) {
+        currentCanvas.set(index, color);
+      }
+      newCanvasList[activeCanvasIndex] = currentCanvas;
+      setCanvasList(newCanvasList);
+      setPendingPixels(new Map());
+    }
+  };
+
+  // 切換
+  const handleCanvasSwitch = (index: number) => {
+    // 應用當前畫布的 pendingPixels（若有）
+    if (pendingPixels.size > 0) {
+      applyPendingPixels();
+    }
+    // 切換畫布
+    setActiveCanvasIndex(index);
+    // 繪製新畫布
+    if (canvasList[index]) {
+      drawMainCanvasFull(canvasList[index]);
+    } else {
+      console.warn(`Invalid canvas index: ${index}`);
+    }
   };
 
   return (
@@ -347,10 +428,13 @@ const AnimatorPage: React.FC = () => {
               <div className="d-flex justify-content-center align-items-center">
                 <PixelCanvas
                   canvasRef={canvasRef}
-                  handleCanvasClick={handleCanvasClick}
+                  handleCanvasClick={handleMousePixelUpdate}
                   handleMouseDown={handleMouseDown}
                   handleMouseMove={handleMouseMove}
                   handleMouseUp={handleMouseUp}
+                  handleTouchStart={handleTouchStart}
+                  handleTouchMove={handleTouchMove}
+                  handleTouchEnd={handleTouchEnd}
                 ></PixelCanvas>
               </div>
             </div>
@@ -382,7 +466,7 @@ const AnimatorPage: React.FC = () => {
                 cursor: "pointer",
                 display: "grid",
               }}
-              onClick={() => setActiveCanvasIndex(index)}
+              onClick={() => handleCanvasSwitch(index)}
             >
               <canvas
                 ref={(el) => thumbnailRefManager.set(index, el)}

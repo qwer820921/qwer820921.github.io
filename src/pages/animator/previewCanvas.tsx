@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
+import { CanvasList } from "./types";
 
 const PreviewCanvas = ({
   canvasList,
   pixelSizeInput,
 }: {
-  canvasList: string[][];
+  canvasList: CanvasList;
   pixelSizeInput: number;
 }) => {
   // 🔢 當前播放的 frame index
@@ -41,17 +42,17 @@ const PreviewCanvas = ({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const frameData = canvasList[previewIndex];
-    if (!frameData) return; // 💡 加這行防止 undefined
+    const currentCanvas = canvasList[previewIndex];
+    if (!currentCanvas) return; // 💡 加這行防止 undefined
 
     // 清除畫布內容
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // 根據色碼一格一格畫上去
-    for (let i = 0; i < frameData.length; i++) {
+    for (const [i, color] of currentCanvas.entries()) {
       const x = (i % pixelSizeInput) * pixel;
       const y = Math.floor(i / pixelSizeInput) * pixel;
-      ctx.fillStyle = frameData[i];
+      ctx.fillStyle = color;
       ctx.fillRect(x, y, pixel, pixel);
     }
   }, [canvasList, previewIndex, pixelSizeInput]);

@@ -5,7 +5,7 @@ import CustomModal from "../components/modals/customModal";
 interface ImageCropModalProps {
   isOpen: boolean; // 控制彈窗是否顯示
   onClose: () => void; // 關閉彈窗的回調函數
-  onConfirm: (pixelColors: string[]) => void; // 確認裁剪後回傳像素顏色的回調函數
+  onConfirm: (pixelMap: Map<number, string>) => void; // 確認裁剪後回傳像素顏色的回調函數
   pixelSizeInput: number; // 畫布的像素格數（邊長）
 }
 
@@ -186,24 +186,19 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const naturalWidth = img.naturalWidth;
-    const naturalHeight = img.naturalHeight;
-    const renderedWidth = img.clientWidth;
-    const renderedHeight = img.clientHeight;
-
-    const scaleX = naturalWidth / renderedWidth;
-    const scaleY = naturalHeight / renderedHeight;
+    // 計算圖片縮放比例
+    const scaleX = img.naturalWidth / img.clientWidth;
+    const scaleY = img.naturalHeight / img.clientHeight;
 
     const realX = cropBoxPosition.x * scaleX;
     const realY = cropBoxPosition.y * scaleY;
     const realSize = cropBoxSize * scaleX;
 
-    // 設定畫布尺寸
+    // 設定 Canvas 大小並繪製裁切區域
     canvas.width = pixelSizeInput;
     canvas.height = pixelSizeInput;
 
-    // 清空畫布並繪製裁剪區域
-    ctx.clearRect(0, 0, pixelSizeInput, pixelSizeInput);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(
       img,
       realX,
@@ -212,28 +207,34 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({
       realSize,
       0,
       0,
-      pixelSizeInput,
-      pixelSizeInput
+      canvas.width,
+      canvas.height
     );
 
-    // 獲取畫布像素資料
-    const imageData = ctx.getImageData(
-      0,
-      0,
-      pixelSizeInput,
-      pixelSizeInput
-    ).data;
-    const pixelColors: string[] = [];
+    // 取得像素資料
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const pixelMap: Map<number, string> = new Map();
 
-    // 將像素資料轉為十六進位顏色碼
+    // 轉換 RGBA 為 HEX，排除純白像素
     for (let i = 0; i < imageData.length; i += 4) {
-      const r = imageData[i].toString(16).padStart(2, "0");
-      const g = imageData[i + 1].toString(16).padStart(2, "0");
-      const b = imageData[i + 2].toString(16).padStart(2, "0");
-      pixelColors.push(`#${r}${g}${b}`);
+      const r = imageData[i];
+      const g = imageData[i + 1];
+      const b = imageData[i + 2];
+      const a = imageData[i + 3];
+
+      if (r === 255 && g === 255 && b === 255 && a === 255) {
+        // 白色像素 -> 略過
+        continue;
+      }
+
+      const hex = `#${r.toString(16).padStart(2, "0")}${g
+        .toString(16)
+        .padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+      const pixelIndex = i / 4;
+      pixelMap.set(pixelIndex, hex);
     }
 
-    onConfirm(pixelColors); // 回傳顏色陣列
+    onConfirm(pixelMap); // ✅ 回傳非白色像素的 Map
   };
 
   // 📊 處理進度條點擊事件，調整裁剪框大小
