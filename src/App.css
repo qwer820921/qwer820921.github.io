@@ -1,18 +1,22 @@
 html,
-body {
+body,
+#root {
   height: 100%;
   margin: 0;
   /* 去掉默認的外邊距 */
+  padding: 0;
+  /* 移除所有方向的內邊距 */
 }
 
 .App {
-  height: 100%;
+  min-height: 100vh;
   /* 設置 App 的高度為 100% */
   display: flex;
   flex-direction: column;
   text-align: center;
 }
 
+/* 確保頁面內的 logo 動畫不會影響布局 */
 .App-logo {
   height: 40vmin;
   pointer-events: none;
@@ -24,7 +28,9 @@ body {
   }
 }
 
-body {
+main {
+  flex: 1;
+  /* 這會讓 main 撐開剩下的空間 */
   padding-top: 56px;
-  /* 假設你的 Navbar 高度是 56px，根據實際調整 */
+  /* 保證 main 的內容區域下移，避開 Navbar */
 }

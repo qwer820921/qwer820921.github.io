@@ -1,10 +1,17 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom"; // 使用 useLocation 來獲取當前路由
 import { ROUTES } from "../../constants/routes"; // 引入路由常數
 import routes from "../../config/routes";
 
 const Navbar: React.FC = () => {
   const location = useLocation(); // 用來檢查當前路由位置
+
+  useEffect(() => {
+    const navbarCollapse = document.querySelector(".navbar-collapse");
+    if (navbarCollapse && navbarCollapse.classList.contains("show")) {
+      navbarCollapse.classList.remove("show");
+    }
+  }, [location.pathname]);
 
   return (
     <nav className="navbar navbar-expand-lg navbar-light bg-light shadow-sm fixed-top">

@@ -1,6 +1,6 @@
 import { RouteConfig } from "../types/routeConfig"; // 引入 RouteConfig 接口
 import { ROUTES } from "../constants/routes"; // 引入常數
-import HomePage from "../pages/homePage";
+import HomePage from "../pages/home/homePage";
 import AboutPage from "../pages/aboutPage";
 import AnimatorPage from "../pages/animator/animatorPage";
 import ProtectedPage from "../pages/protectedPage"; // 例如，受保護頁面

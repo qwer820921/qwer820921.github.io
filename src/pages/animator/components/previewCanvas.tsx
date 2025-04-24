@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { CanvasList } from "./types";
+import { CanvasList } from "../types";
 
 const PreviewCanvas = ({
   canvasList,

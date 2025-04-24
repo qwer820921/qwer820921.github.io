@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import CustomModal from "../../components/modals/customModal";
+import CustomModal from "../../../components/modals/customModal";
 
 // 定義 ImageCropModal 組件的屬性介面
 interface ImageCropModalProps {

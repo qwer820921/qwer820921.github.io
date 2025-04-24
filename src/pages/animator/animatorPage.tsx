@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef } from "react";
-import ImageCropModal from "./ImageCropModal";
+import ImageCropModal from "./components/ImageCropModal";
 import { createRefManager } from "../../utils/createRefManager";
-import PreviewCanvas from "./previewCanvas";
-import ColorSelector from "./colorSelector";
-import PixelCanvas from "./pixelCanvas";
+import PreviewCanvas from "./components/previewCanvas";
+import ColorSelector from "./components/colorSelector";
+import PixelCanvas from "./components/pixelCanvas";
 import { CanvasList, PixelMap } from "./types";
 
 const AnimatorPage: React.FC = () => {

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { mockColor } from "../../lib/mock";
-import ImageCropModal from "./ImageCropModal";
-import PreviewCanvas from "./previewCanvas";
+import ImageCropModal from "./components/ImageCropModal";
+import PreviewCanvas from "./components/previewCanvas";
 
 const AnimatorPage: React.FC = () => {
   // 🎨 設定目前選擇的顏色，預設為黑色
