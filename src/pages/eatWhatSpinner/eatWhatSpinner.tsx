@@ -122,7 +122,7 @@ const EatWhatSpinner: React.FC = () => {
   const [baseLatLng, setBaseLatLng] = useState<{
     lat: number;
     lng: number;
-  } | null>({ lat: 24.1397938, lng: 120.6305752 }); // 基準點的經緯度
+  } | null>({ lat: 24.1397996, lng: 120.6486454 }); // 基準點的經緯度
   const [isLoading, setIsLoading] = useState(false);
 
   // ====== 新增食物到目前分組 ======
@@ -259,6 +259,25 @@ const EatWhatSpinner: React.FC = () => {
     }
     setActiveTabIndex(index);
     setSelectedFood(null); // 切換時清除選中的食物
+  };
+
+  // 取得當前位置
+  const handleGetCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          // 更新 baseAddress 與 baseLatLng
+          setBaseAddress("當前位置");
+          setBaseLatLng({ lat: latitude, lng: longitude });
+        },
+        (error) => {
+          alert("取得位置失敗，請檢查瀏覽器權限設定。");
+        }
+      );
+    } else {
+      console.error("此瀏覽器不支援定位功能");
+    }
   };
 
   // 重新查詢基準點的經緯度
@@ -421,6 +440,12 @@ const EatWhatSpinner: React.FC = () => {
               disabled={isLoading || !baseAddress}
             >
               {isLoading ? "查詢中..." : "更新基準點"}
+            </button>
+            <button
+              onClick={handleGetCurrentLocation}
+              className="btn btn-warning"
+            >
+              取得當前位置
             </button>
           </div>
 
