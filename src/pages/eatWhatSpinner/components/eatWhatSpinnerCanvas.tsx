@@ -6,29 +6,52 @@ type Props = {
 };
 
 const EatWhatSpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
+  // ====== 狀態管理 ======
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isSpinning, setIsSpinning] = useState(false);
-  const [selectedFood, setSelectedFood] = useState<string | null>(null);
-  const [hoverAddress, setHoverAddress] = useState<string | null>(null);
-  const [rotateAngleInDegrees, setRotateAngleInDegrees] = useState(0); // 狀態變數儲存角度
+  const [isSpinning, setIsSpinning] = useState(false); // 控制是否正在旋轉
+  const [selectedFood, setSelectedFood] = useState<string | null>(null); // 選中的食物
+  const [hoverAddress, setHoverAddress] = useState<string | null>(null); // 滑鼠懸停的地址
   const [tooltipPosition, setTooltipPosition] = useState<{
     x: number;
     y: number;
-  } | null>(null);
+  } | null>(null); // Tooltip 位置
 
-  const size = 300;
+  // ====== 基本設定 ======
+  // 轉盤大小：動態根據螢幕寬度調整
+  const [size, setSize] = useState(300);
   const center = size / 2;
   const numSegments = foods.length;
-  const anglePerSegment = (2 * Math.PI) / numSegments;
 
+  // 用來記錄文字區塊位置，用來做 hover 判定
   const textBounds = useRef<
     { x: number; y: number; width: number; height: number; index: number }[]
   >([]);
 
+  // ====== 初始畫轉盤 ======
   useEffect(() => {
-    drawWheel(0); // Initialize the wheel with no rotation
-  }, [foods]);
+    drawWheel(0); // 畫初始不旋轉的轉盤
+  }, [foods, size]);
 
+  // ====== 監聽視窗大小變化，自適應設定 size ======
+  useEffect(() => {
+    const handleResize = () => {
+      let screenWidth;
+      if (window.innerWidth > 1200) {
+        screenWidth = window.innerWidth * 0.35;
+      } else if (window.innerWidth > 769) {
+        screenWidth = window.innerWidth * 0.425;
+      } else {
+        screenWidth = window.innerWidth * 0.85;
+      }
+      setSize(screenWidth);
+    };
+
+    handleResize(); // 初始設定
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // ====== 監聽滑鼠移動，處理 hover 地址提示 ======
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -37,9 +60,12 @@ const EatWhatSpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
+
+      // 找到滑鼠在哪個文字範圍內
       const hover = textBounds.current.find(
         (b) => x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height
       );
+
       if (hover) {
         setHoverAddress(foods[hover.index].address ?? null);
         setTooltipPosition({ x: e.clientX, y: e.clientY });
@@ -55,10 +81,8 @@ const EatWhatSpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
     };
   }, [foods]);
 
-  const drawWheel = (angle: number) => {
-    const angleInDegrees = angle * (180 / Math.PI); // 轉換為角度
-    setRotateAngleInDegrees(angleInDegrees); // 儲存角度到狀態
-
+  // ====== 畫轉盤函式 ======
+  const drawWheel = (angleInDegrees: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -67,21 +91,16 @@ const EatWhatSpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
     ctx.clearRect(0, 0, size, size);
     ctx.save();
     ctx.translate(center, center);
+    ctx.rotate((angleInDegrees * Math.PI) / 180); // 將整個轉盤旋轉指定角度
 
-    // Adjust the starting angle to make the first food (三鍋臭媽媽) on the right side
-    const startAngle = -Math.PI / 2; // -90 degrees to make the first food align with the pointer (12 o'clock)
-
-    // Rotate the wheel by the given angle
-    ctx.rotate(angle * (Math.PI / 180)); // Convert degrees to radians
-
+    const startAngle = -Math.PI / 2; // 讓第0個食物從上方（12點鐘方向）開始
     textBounds.current = [];
 
-    // Draw each food segment
     for (let i = 0; i < numSegments; i++) {
       const segmentAngle = (2 * Math.PI) / numSegments;
       const foodStartAngle = startAngle + i * segmentAngle;
 
-      // Draw the food segments
+      // 畫每一個扇形區塊
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.arc(0, 0, center - 10, foodStartAngle, foodStartAngle + segmentAngle);
@@ -89,7 +108,7 @@ const EatWhatSpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
       ctx.fill();
       ctx.stroke();
 
-      // Draw the food name
+      // 畫文字
       ctx.save();
       ctx.rotate(foodStartAngle + segmentAngle / 2);
       ctx.translate(center - 60, 0);
@@ -100,6 +119,7 @@ const EatWhatSpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
       const textWidth = ctx.measureText(text).width;
       ctx.fillText(text, -textWidth / 2, 0);
 
+      // 紀錄文字區域，方便 hover 判定
       const x =
         center +
         Math.cos(foodStartAngle + segmentAngle / 2) * (center - 60) -
@@ -115,7 +135,7 @@ const EatWhatSpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
 
     ctx.restore();
 
-    // Draw the pointer
+    // 畫紅色指針
     ctx.beginPath();
     ctx.moveTo(center, 10);
     ctx.lineTo(center - 10, 30);
@@ -125,60 +145,61 @@ const EatWhatSpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
     ctx.fill();
   };
 
+  // ====== 啟動旋轉 ======
   const spin = () => {
-    if (isSpinning) return; // 如果已經在旋轉，則不執行
+    if (isSpinning) return; // 避免重複觸發旋轉
 
     setIsSpinning(true);
-    setSelectedFood(null); // 清空選中的食物
-    setHoverAddress(null); // 清空 hover 地址
+    setSelectedFood(null);
+    setHoverAddress(null);
 
-    const duration = 3000; // 旋轉時間 3 秒
-    const start = performance.now(); // 記錄動畫開始時間
-    const totalRotation = 10 * 360 + Math.random() * 360; // 旋轉 10 圈加隨機的角度，這裡是度數
+    const duration = 3000; // 動畫時間（毫秒）
+    const start = performance.now();
+    const totalRotation = 10 * 360 + Math.random() * 360; // 10圈 + 隨機角度
 
     const animate = (now: number) => {
-      const elapsed = now - start; // 計算已過時間
-      const progress = Math.min(elapsed / duration, 1); // 計算進度
-      const easing = 1 - Math.pow(1 - progress, 3); // easeOutCubic 調整
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / duration, 1); // 正規化進度 0~1
+      const easing = 1 - Math.pow(1 - progress, 3); // easeOutCubic 緩動曲線
 
-      const newAngle = totalRotation * easing; // 根據進度計算新角度
-      drawWheel(newAngle); // 重新繪製轉盤
+      const currentAngle = totalRotation * easing;
+      drawWheel(currentAngle);
 
       if (progress < 1) {
-        requestAnimationFrame(animate); // 若動畫未結束，繼續執行動畫
+        requestAnimationFrame(animate); // 還沒轉完，持續動畫
       } else {
-        // 動畫結束後處理：
-        // Normalize the final angle to [0, 360)
-        const normalizedAngle = rotateAngleInDegrees % 360;
+        // ====== 動畫結束後處理結果 ======
 
-        // 旋轉的偏移角度是指針相對於 12 點鐘方向的偏移
-        const pointerAngle = (normalizedAngle + 90) % 360; // 12 點鐘為 90 度偏移
-
-        // 根據 12 點鐘方向的角度計算所選區塊
+        const normalizedAngle = totalRotation % 360; // 取最後落點角度
+        const anglePerSegment = 360 / numSegments;
+        const shiftedAngle = (360 - normalizedAngle) % 360; // 逆向計算指針對應的區塊
         const selectedIndex =
-          Math.floor(pointerAngle / (360 / numSegments)) % numSegments;
+          Math.floor(shiftedAngle / anglePerSegment) % numSegments;
 
-        setSelectedFood(foods[selectedIndex].name);
+        setSelectedFood(foods[selectedIndex].name); // 設定選中結果
         setIsSpinning(false);
       }
     };
 
-    requestAnimationFrame(animate); // 啟動動畫循環
+    requestAnimationFrame(animate);
   };
 
+  // ====== 畫面渲染 ======
   return (
-    <div className="container-fluid p-3">
+    <div className="container-fluid p-0">
       <div className="row">
         <div className="col-12">
           <h1 className="text-3xl font-bold">吃什麼轉盤</h1>
         </div>
-        <div className="col-12 position-relative">
+
+        <div className="col-12 position-relative text-center">
           <canvas
             ref={canvasRef}
             width={size}
             height={size}
             className="border rounded-full"
           />
+
           {hoverAddress && tooltipPosition && (
             <div
               style={{
@@ -198,6 +219,7 @@ const EatWhatSpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
             </div>
           )}
         </div>
+
         <div className="col-12 mt-3">
           <button
             onClick={spin}
@@ -208,11 +230,12 @@ const EatWhatSpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
             {isSpinning ? "旋轉中..." : "開始旋轉"}
           </button>
         </div>
-        {/* {selectedFood && (
+
+        {selectedFood && (
           <div className="col-12 mt-2 text-xl text-green-700 fw-bold">
             🎉 選中：{selectedFood}
           </div>
-        )} */}
+        )}
       </div>
     </div>
   );
