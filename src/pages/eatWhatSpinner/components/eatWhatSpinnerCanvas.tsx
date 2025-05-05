@@ -53,6 +53,7 @@ const EatWhatSpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
 
   // ====== 監聽滑鼠移動，處理 hover 地址提示 ======
   useEffect(() => {
+    setSelectedFood(null); // 清除選中食物
     const canvas = canvasRef.current;
     if (!canvas) return;
 
