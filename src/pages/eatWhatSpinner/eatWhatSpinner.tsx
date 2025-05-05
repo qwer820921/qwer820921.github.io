@@ -24,16 +24,24 @@ const EatWhatSpinner: React.FC = () => {
   // 初始化當前組別資料
   useEffect(() => {
     const loadFoods = async () => {
-      const data = await getFoodData(activeGroupIndex); // 根據組別載入資料
+      setIsLoading(true); // 開始載入
 
-      if (baseLatLng) {
-        const updatedData = await updateCurrentTabFoodDistances(
-          data,
-          baseLatLng
-        );
-        setFoods(updatedData);
-      } else {
-        setFoods(data);
+      try {
+        const data = await getFoodData(activeGroupIndex); // 根據組別載入資料
+
+        if (baseLatLng) {
+          const updatedData = await updateCurrentTabFoodDistances(
+            data,
+            baseLatLng
+          );
+          setFoods(updatedData);
+        } else {
+          setFoods(data);
+        }
+      } catch (error) {
+        console.error("Error loading food data:", error);
+      } finally {
+        setIsLoading(false); // 無論成功或失敗都要關閉載入狀態
       }
     };
 
