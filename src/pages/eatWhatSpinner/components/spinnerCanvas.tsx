@@ -5,7 +5,7 @@ type Props = {
   foods: Food[];
 };
 
-const EatWhatSpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
+const SpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
   // ====== 狀態管理 ======
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isSpinning, setIsSpinning] = useState(false); // 控制是否正在旋轉
@@ -242,4 +242,4 @@ const EatWhatSpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
   );
 };
 
-export default EatWhatSpinnerCanvas;
+export default SpinnerCanvas;

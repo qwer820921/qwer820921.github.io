@@ -1,12 +1,15 @@
 /* eslint-disable prettier/prettier */
 import React, { useEffect, useState } from "react";
-import EatWhatSpinnerCanvas from "./components/eatWhatSpinnerCanvas";
+import SpinnerCanvas from "./components/spinnerCanvas";
 import { Coordinates, Food } from "./types";
 import { addFoodData, deleteFoodData, getFoodData } from "./api/foodApi";
 import { printValue } from "../../utils/createElement";
+import SlotMachine from "./components/slotMachine";
+import CardFlip from "./components/cardFlip";
 
 // ====== Tab 標題對應表 ======
 const groupLabels = ["組合1", "組合2", "組合3", "組合4"];
+const modeLabels = ["轉盤", "抽獎機", "卡牌翻轉"];
 
 const EatWhatSpinner: React.FC = () => {
   // ====== 狀態管理 ======
@@ -20,6 +23,7 @@ const EatWhatSpinner: React.FC = () => {
     lng: 120.6486454,
   }); // 基準點的經緯度
   const [isLoading, setIsLoading] = useState(false);
+  const [mode, setMode] = useState<string>("轉盤");
 
   // 初始化當前組別資料
   useEffect(() => {
@@ -301,7 +305,25 @@ const EatWhatSpinner: React.FC = () => {
       <div className="row">
         {/* 左邊：轉盤區域 */}
         <div className="col-md-6 col-sm-12 d-flex flex-column align-items-center my-3">
-          <EatWhatSpinnerCanvas foods={foods} />
+          <div className="row">
+            <div className="col-12">
+              {/* ====== 新增：切換分組 Tab 區塊 ====== */}
+              <div className="btn-group mb-3">
+                {modeLabels.map((label, index) => (
+                  <button
+                    key={index}
+                    className={`btn btn-outline-primary ${mode === label ? "active" : ""}`}
+                    onClick={() => setMode(label)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          {mode === "轉盤" && <SpinnerCanvas foods={foods} />}
+          {mode === "抽獎機" && <SlotMachine foods={foods} />}
+          {mode === "卡牌翻轉" && <CardFlip foods={foods} />}
         </div>
 
         {/* 右邊：編輯食物清單 */}

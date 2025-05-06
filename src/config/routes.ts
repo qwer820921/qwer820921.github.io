@@ -4,7 +4,7 @@ import HomePage from "../pages/home/homePage";
 import AboutPage from "../pages/aboutPage";
 import AnimatorPage from "../pages/animator/animatorPage";
 import ProtectedPage from "../pages/protectedPage"; // 例如，受保護頁面
-import EatWhatSpinner from "../pages/eatWhatSpinner/eatWhatSpinner";
+import EatWhat from "../pages/eatWhatSpinner/eatWhat";
 
 // 設置路由配置
 const routes: RouteConfig[] = [
@@ -24,7 +24,7 @@ const routes: RouteConfig[] = [
   {
     path: ROUTES.EATWHAT,
     name: "吃甚麼",
-    component: EatWhatSpinner,
+    component: EatWhat,
     showInNavbar: true,
   },
   {
