@@ -5,6 +5,7 @@ import AboutPage from "../pages/aboutPage";
 import AnimatorPage from "../pages/animator/animatorPage";
 import ProtectedPage from "../pages/protectedPage"; // 例如，受保護頁面
 import EatWhat from "../pages/eatWhatSpinner/eatWhat";
+import StockInfoPage from "../pages/stockInfo/stockInfoPage";
 
 // 設置路由配置
 const routes: RouteConfig[] = [
@@ -25,6 +26,12 @@ const routes: RouteConfig[] = [
     path: ROUTES.EATWHAT,
     name: "吃甚麼",
     component: EatWhat,
+    showInNavbar: true,
+  },
+  {
+    path: ROUTES.STOCK_INFO,
+    name: "台股資訊",
+    component: StockInfoPage,
     showInNavbar: true,
   },
   {
