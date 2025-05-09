@@ -46,6 +46,22 @@ export const fetchStockData = async (stockListStr: string) => {
         (price, i) => `${formatPrices(price)} (${bidVolumes[i] ?? "-"})`
       );
 
+      // 計算漲跌幅百分比
+      const prevClose = parseFloat(stock.y ?? "");
+      const currentPrice = parseFloat(stock.z ?? "");
+      let changePercent: number | undefined = undefined;
+      let changePoints: number | undefined = undefined;
+
+      if (!isNaN(prevClose) && !isNaN(currentPrice) && prevClose > 0) {
+        // 計算漲跌幅百分比
+        changePercent = parseFloat(
+          (((currentPrice - prevClose) / prevClose) * 100).toFixed(2)
+        );
+
+        // 計算漲跌點數
+        changePoints = parseFloat((currentPrice - prevClose).toFixed(2));
+      }
+
       return {
         ...stock,
         askPrices,
@@ -54,6 +70,8 @@ export const fetchStockData = async (stockListStr: string) => {
         bidPrices,
         bidVolumes,
         bidCombined,
+        changePercent,
+        changePoints, // 加上漲跌點數
       };
     });
   } catch (error) {

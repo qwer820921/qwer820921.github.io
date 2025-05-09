@@ -47,6 +47,9 @@ interface TwseStock {
   bidVolumes?: string[];
   bidCombined?: string[];
 
+  changePercent?: number; // 漲跌幅百分比，例如 2.18（表示 +2.18%）
+  changePoints?: number; // 漲跌點數，例如 20（表示漲了 20 點）或 -20（表示跌了 20 點）
+
   // 額外欄位（應用程式內部用途）
   id?: number;
 }

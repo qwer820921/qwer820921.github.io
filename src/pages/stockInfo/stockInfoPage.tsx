@@ -237,6 +237,8 @@ const StockInfoPage: React.FC = () => {
                   <tr>
                     <th>股票名稱</th>
                     <th>最新價</th>
+                    <th>漲跌</th>
+                    <th className="text-nowrap">幅度</th>
                     <th>開盤</th>
                     <th>最高</th>
                     <th>最低</th>
@@ -253,12 +255,48 @@ const StockInfoPage: React.FC = () => {
                         <td>
                           {stock.n} ({stock.c})
                         </td>
-                        <td>{formatPrices(stock.z) || "-"}</td> {/* 最新價 */}
-                        <td>{formatPrices(stock.o) || "-"}</td> {/* 開盤價 */}
-                        <td>{formatPrices(stock.h) || "-"}</td> {/* 最高價 */}
-                        <td>{formatPrices(stock.l) || "-"}</td> {/* 最低價 */}
-                        <td className="text-nowrap">{stock.v || "-"}</td>{" "}
-                        {/* 成交量 */}
+                        <td>{formatPrices(stock.z) || "-"}</td>
+                        <td>
+                          {stock.changePoints !== undefined ? (
+                            <span
+                              className={
+                                stock.changePoints > 0
+                                  ? "text-danger"
+                                  : stock.changePoints < 0
+                                    ? "text-success"
+                                    : ""
+                              }
+                            >
+                              {stock.changePoints === 0
+                                ? "-"
+                                : stock.changePoints.toFixed(2)}
+                            </span>
+                          ) : (
+                            "N/A"
+                          )}
+                        </td>
+                        <td>
+                          {stock.changePercent !== undefined ? (
+                            <span
+                              className={
+                                stock.changePercent > 0
+                                  ? "text-danger"
+                                  : stock.changePercent < 0
+                                    ? "text-success"
+                                    : ""
+                              }
+                            >
+                              {stock.changePercent > 0 ? "+" : ""}
+                              {stock.changePercent.toFixed(2)}%
+                            </span>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                        <td>{formatPrices(stock.o) || "-"}</td>
+                        <td>{formatPrices(stock.h) || "-"}</td>
+                        <td>{formatPrices(stock.l) || "-"}</td>
+                        <td className="text-nowrap">{stock.v || "-"}</td>
                         <td className="text-nowrap">
                           {stock.bidCombined && stock.bidCombined.length > 0 ? (
                             <div className="d-flex flex-column gap-1">
@@ -283,7 +321,7 @@ const StockInfoPage: React.FC = () => {
                         </td>
                         <td>
                           <button
-                            className="btn btn-sm btn-outline-danger"
+                            className="btn btn-sm btn-outline-danger text-nowrap"
                             onClick={() => {
                               setShowDelModal(true);
                               setRemoveId(stock.id);
@@ -297,7 +335,7 @@ const StockInfoPage: React.FC = () => {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={9} className="text-center text-muted">
+                      <td colSpan={10} className="text-center text-muted">
                         無數據可顯示
                       </td>
                     </tr>
@@ -352,6 +390,11 @@ const StockInfoPage: React.FC = () => {
                           <div className="accordion-body">
                             {[
                               { label: "最新價", value: formatPrices(stock.z) },
+                              { label: "漲跌", value: stock.changePoints },
+                              {
+                                label: "幅度",
+                                value: stock.changePercent,
+                              },
                               { label: "開盤價", value: formatPrices(stock.o) },
                               { label: "最高價", value: formatPrices(stock.h) },
                               { label: "最低價", value: formatPrices(stock.l) },
@@ -360,23 +403,87 @@ const StockInfoPage: React.FC = () => {
                                 value: stock.v ? `${stock.v}` : "N/A",
                               },
                             ].map((item, idx) => (
-                              <div
-                                key={idx}
-                                className="d-flex border-bottom py-2"
-                              >
-                                <div
-                                  className="fw-bold text-start"
-                                  style={{ width: "50%" }}
-                                >
-                                  {item.label}
-                                </div>
-                                <div
-                                  className="text-start"
-                                  style={{ width: "50%" }}
-                                >
-                                  {item.value || "N/A"}
-                                </div>
-                              </div>
+                              <>
+                                {item.label === "漲跌" &&
+                                typeof item.value === "number" ? (
+                                  <div
+                                    key={idx}
+                                    className="d-flex border-bottom py-2"
+                                  >
+                                    <div
+                                      className="fw-bold text-start"
+                                      style={{ width: "50%" }}
+                                    >
+                                      {item.label}
+                                    </div>
+                                    <div
+                                      className="text-start"
+                                      style={{
+                                        width: "50%",
+                                        color:
+                                          item.value > 0
+                                            ? "red" // 漲則顯示紅色
+                                            : item.value < 0
+                                              ? "green" // 跌則顯示綠色
+                                              : "inherit", // 其他狀況（例如為 0 或 undefined）使用默認顏色
+                                      }}
+                                    >
+                                      {item.value !== undefined
+                                        ? `${item.value.toFixed(2)}`
+                                        : "N/A"}
+                                    </div>
+                                  </div>
+                                ) : item.label === "幅度" &&
+                                  typeof item.value === "number" ? (
+                                  <div
+                                    key={idx}
+                                    className="d-flex border-bottom py-2"
+                                  >
+                                    <div
+                                      className="fw-bold text-start"
+                                      style={{ width: "50%" }}
+                                    >
+                                      {item.label}
+                                    </div>
+                                    <div
+                                      className="text-start"
+                                      style={{
+                                        width: "50%",
+                                        color:
+                                          item.value > 0
+                                            ? "red" // 漲則顯示紅色
+                                            : item.value < 0
+                                              ? "green" // 跌則顯示綠色
+                                              : "inherit", // 其他狀況（例如為 0 或 undefined）使用默認顏色
+                                      }}
+                                    >
+                                      {item.value !== undefined
+                                        ? `${item.value.toFixed(2)}%`
+                                        : "N/A"}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div
+                                    key={idx}
+                                    className="d-flex border-bottom py-2"
+                                  >
+                                    <div
+                                      className="fw-bold text-start"
+                                      style={{ width: "50%" }}
+                                    >
+                                      {item.label}
+                                    </div>
+                                    <div
+                                      className="text-start"
+                                      style={{ width: "50%" }}
+                                    >
+                                      {item.value !== undefined
+                                        ? item.value
+                                        : "N/A"}
+                                    </div>
+                                  </div>
+                                )}
+                              </>
                             ))}
 
                             {/* 五檔買價（數量） */}
