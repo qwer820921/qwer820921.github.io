@@ -6,6 +6,7 @@ import { addFoodData, deleteFoodData, getFoodData } from "./api/foodApi";
 import { printValue } from "../../utils/createElement";
 import SlotMachine from "./components/slotMachine";
 import CardFlip from "./components/cardFlip";
+import LoadingOverlay from "../../components/common/loadingOverlay";
 
 // ====== Tab 標題對應表 ======
 const groupLabels = ["組合1", "組合2", "組合3", "組合4"];
@@ -292,16 +293,7 @@ const EatWhatSpinner: React.FC = () => {
   return (
     <div className="container-fluid p-0">
       {/* Loading Spinner Overlay */}
-      {isLoading && (
-        <div
-          className="position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center"
-          style={{ backgroundColor: "rgba(0, 0, 0, 0.5)", zIndex: 1050 }}
-        >
-          <div className="spinner-border text-light" role="status">
-            <span className="visually-hidden">Loading...</span>
-          </div>
-        </div>
-      )}
+      <LoadingOverlay isLoading={isLoading} />
       <div className="row">
         {/* 左邊：轉盤區域 */}
         <div className="col-md-6 col-sm-12 d-flex flex-column align-items-center my-3">
