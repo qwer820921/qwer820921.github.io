@@ -39,10 +39,13 @@ interface TwseStock {
   ts?: string; // 交易狀態碼（例如 "0"）
 
   // 額外解析欄位（非原始 API 回傳，但程式可用來拆解 a/b/f/g）
-  askPrices?: string[];
+  askPrices?: string[]; // 例如 ["938.00", "939.00"]
+  askVolumes?: string[]; // 例如 ["39", "176"]
+  askCombined?: string[]; // 例如 ["938.00 (39)", "939.00 (176)"]
+
   bidPrices?: string[];
-  askVolumes?: string[];
   bidVolumes?: string[];
+  bidCombined?: string[];
 
   // 額外欄位（應用程式內部用途）
   id?: number;

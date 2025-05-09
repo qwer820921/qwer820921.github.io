@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 import React, { useState, useEffect } from "react";
 import { TwseStock, StockListItem } from "./types";
 import {
@@ -7,10 +8,14 @@ import {
   removeStockCode,
 } from "./api/stockApi";
 import { printValue } from "../../utils/createElement";
+import { formatPrices } from "../../utils/format";
+import { Button, Modal } from "react-bootstrap";
+import LoadingOverlay from "../../components/common/loadingOverlay";
 
 const StockInfoPage: React.FC = () => {
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth); //監聽視窗大小
   const [stockData, setStockData] = useState<TwseStock[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAutoRefresh, setIsAutoRefresh] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -18,21 +23,37 @@ const StockInfoPage: React.FC = () => {
     [] // 用來儲存 id 和 code
   );
   const [newStockCode, setNewStockCode] = useState("");
+  const [showDelModal, setShowDelModal] = useState(false); //控制刪除提示視窗
+  const [removeId, setRemoveId] = useState<number | undefined>(undefined); //要刪除的id
+  const [isRemoveLoading, setIsRemoveLoading] = useState(false); //刪除時的狀態
+  const [isAddLoading, setIsAddLoading] = useState(false); //新增時的狀態
 
-  const getStockList = async () => {
+  const getStockListAndData = async () => {
+    setIsLoading(true);
     try {
       const response = await fetchStockList();
-
-      // 假設 response 是物件，其中包含 stockCodes 陣列
       if (Array.isArray(response)) {
-        const stockList = response; // 直接從 stockCodes 中取得陣列
-        setStockList(stockList); // 更新股票清單（包含 id 和 code）
+        setStockList(response); // 更新 stockList（觸發 useEffect，但我們會移除）
+        // 直接接著抓資料
+        const codeStr = response.map((item) => `tse_${item.code}.tw`).join("|");
+        const parsedStocks = await fetchStockData(codeStr);
+
+        const stocksWithId = parsedStocks?.map((stock) => {
+          const stockCode = stock.ch.replace(".tw", "");
+          const matchedStock = response.find((s) => s.code === stockCode);
+          return { ...stock, id: matchedStock ? matchedStock.id : undefined };
+        });
+
+        setStockData(stocksWithId ?? []);
+        setError(null);
       } else {
         throw new Error("stockCodes 不是陣列");
       }
     } catch (err: any) {
-      console.error("Error fetching stock list:", err.message);
-      setError("無法獲取股票代號清單");
+      console.error("錯誤:", err.message);
+      setError("資料載入失敗：" + err.message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -40,7 +61,7 @@ const StockInfoPage: React.FC = () => {
     if (!stockList) return;
 
     try {
-      setLoading(true);
+      setIsLoading(true);
       // 使用 stockCodes 來組合成代號字串
       const codeStr = stockList
         .map((item: StockListItem) => `tse_${item.code}.tw`)
@@ -48,22 +69,20 @@ const StockInfoPage: React.FC = () => {
       const parsedStocks = await fetchStockData(codeStr);
 
       // 將 id 補進來
-      const stocksWithId = parsedStocks
-        ?.filter((stock: TwseStock) => stock.ch) // 只保留有 ch 的資料
-        .map((stock: TwseStock) => {
-          const stockCode = stock.ch.replace(".tw", "");
-          const matchedStock = stockList.find((s) => s.code === stockCode);
-          return { ...stock, id: matchedStock ? matchedStock.id : undefined };
-        });
+      const stocksWithId = parsedStocks?.map((stock: TwseStock) => {
+        const stockCode = stock.ch.replace(".tw", "");
+        const matchedStock = stockList.find((s) => s.code === stockCode);
+        return { ...stock, id: matchedStock ? matchedStock.id : undefined };
+      });
 
       setStockData(stocksWithId ?? []);
       setError(null);
-      setLoading(false);
+      setIsLoading(false);
     } catch (error: any) {
       console.error("Error fetching stock data:", error.message);
       setError(`無法獲取股票數據：${error.message}`);
-      setStockData([]);
-      setLoading(false);
+      // setStockData([]);
+      setIsLoading(false);
     }
   };
 
@@ -75,41 +94,47 @@ const StockInfoPage: React.FC = () => {
       formattedCode = `${formattedCode}`;
     }
 
+    setIsAddLoading(true); // 開始新增，設為 loading
+
     try {
       await addStockCode(formattedCode);
       setNewStockCode("");
-      getStockList();
+      await getStockListAndData(); // 確保等待資料刷新完成
+      setError(null); // 清除錯誤
     } catch (error) {
       console.error("Error adding stock code:", error);
       setError("無法新增股票代號");
+    } finally {
+      setIsAddLoading(false); // 結束 loading
     }
   };
 
-  const handleRemoveStockCode = async (id?: number) => {
-    if (!id) return;
+  const handleRemoveStockCode = async () => {
+    if (!removeId) return;
+
+    // 設定刪除狀態
+    setIsRemoveLoading(true);
+
     try {
-      await removeStockCode(id);
-      getStockList(); // 重新抓取股票清單
+      await removeStockCode(removeId);
+      getStockListAndData(); // 重新抓取股票清單
     } catch (error) {
       console.error("Error deleting stock code:", error);
       setError("無法刪除股票代號");
+    } finally {
+      // 設定刪除狀態結束
+      setIsRemoveLoading(false);
     }
   };
 
   let ignore = true; // 用於判斷是否忽略請求
   useEffect(() => {
     if (ignore) {
-      getStockList();
+      getStockListAndData();
     }
 
     ignore = false; // 清除時設置為 false
   }, []); // 只在組件初始化時執行
-
-  useEffect(() => {
-    if (stockList.length > 0) {
-      getStockData();
-    }
-  }, [stockList]);
 
   useEffect(() => {
     if (isAutoRefresh) {
@@ -126,8 +151,18 @@ const StockInfoPage: React.FC = () => {
     }
   }, [isAutoRefresh, stockList]);
 
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const isDesktop = windowWidth >= 992; // 判斷是否為桌面版
+
   return (
     <div className="container py-4">
+      {/* Loading Spinner Overlay */}
+      <LoadingOverlay isLoading={isLoading} />
       <h1 className="mb-4 text-center">台股資訊</h1>
       {/* <div className="text-start">{printValue(stockData)}</div> */}
       {/* <div className="text-start">{printValue(stockList)}</div> */}
@@ -152,10 +187,10 @@ const StockInfoPage: React.FC = () => {
         {!isAutoRefresh && (
           <button
             className="btn btn-primary"
-            onClick={getStockList}
-            disabled={loading}
+            onClick={getStockListAndData}
+            disabled={isLoading}
           >
-            {loading ? "正在刷新..." : "刷新"}
+            {isLoading ? "正在刷新..." : "刷新"}
           </button>
         )}
       </div>
@@ -166,20 +201,10 @@ const StockInfoPage: React.FC = () => {
           <span>{error}</span>
           <button
             className="btn btn-sm btn-outline-danger"
-            onClick={getStockList}
+            onClick={getStockListAndData}
           >
             重試
           </button>
-        </div>
-      )}
-
-      {/* 加載狀態 */}
-      {loading && !error && (
-        <div className="text-center mb-4">
-          <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">正在加載...</span>
-          </div>
-          <p className="mt-2">正在加載...</p>
         </div>
       )}
 
@@ -195,51 +220,265 @@ const StockInfoPage: React.FC = () => {
         <button
           className="btn btn-outline-secondary"
           onClick={handleAddStockCode}
+          disabled={!newStockCode || isAddLoading}
         >
-          新增
+          {isAddLoading ? "新增中..." : "新增"}
         </button>
       </div>
 
       {/* 股票數據 */}
       {!error && (
-        <div className="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
-          {stockData.length > 0 ? (
-            stockData.map((stock: TwseStock, index: number) => (
-              <div key={index} className="col">
-                <div className="card h-100">
-                  <div className="card-body">
-                    <h5 className="card-title">
-                      {stock.n} ({stock.c})
-                    </h5>
-                    <p className="card-text">最新價: {stock.z || "N/A"}</p>
-                    <p className="card-text">開盤價: {stock.o || "N/A"}</p>
-                    <p className="card-text">最高價: {stock.h || "N/A"}</p>
-                    <p className="card-text">最低價: {stock.l || "N/A"}</p>
-                    <p className="card-text">成交量: {stock.v || "N/A"} 張</p>
-                    <p className="card-text">
-                      五檔買價: {stock.bidPrices?.join(", ") || "N/A"}
-                    </p>
-                    <p className="card-text">
-                      五檔賣價: {stock.askPrices?.join(", ") || "N/A"}
-                    </p>
-                    <button
-                      className="btn btn-sm btn-outline-danger mt-2"
-                      onClick={() => handleRemoveStockCode(stock.id)}
-                      disabled={!stock.id}
+        <>
+          {/* 桌機版：表格呈現 */}
+          {isDesktop ? (
+            <div className="table-responsive">
+              <table className="table table-bordered table-hover align-middle">
+                <thead className="table-light">
+                  <tr>
+                    <th>股票名稱</th>
+                    <th>最新價</th>
+                    <th>開盤</th>
+                    <th>最高</th>
+                    <th>最低</th>
+                    <th className="text-nowrap">成交量(張)</th>
+                    <th className="text-nowrap">五檔買價 (數量)</th>
+                    <th className="text-nowrap">五檔賣價 (數量)</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stockData.length > 0 ? (
+                    stockData.map((stock, index) => (
+                      <tr key={index}>
+                        <td>
+                          {stock.n} ({stock.c})
+                        </td>
+                        <td>{formatPrices(stock.z) || "-"}</td> {/* 最新價 */}
+                        <td>{formatPrices(stock.o) || "-"}</td> {/* 開盤價 */}
+                        <td>{formatPrices(stock.h) || "-"}</td> {/* 最高價 */}
+                        <td>{formatPrices(stock.l) || "-"}</td> {/* 最低價 */}
+                        <td className="text-nowrap">{stock.v || "-"}</td>{" "}
+                        {/* 成交量 */}
+                        <td className="text-nowrap">
+                          {stock.bidCombined && stock.bidCombined.length > 0 ? (
+                            <div className="d-flex flex-column gap-1">
+                              {stock.bidCombined.map((combined, i) => (
+                                <div key={i}>{combined}</div>
+                              ))}
+                            </div>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                        <td className="text-nowrap">
+                          {stock.askCombined && stock.askCombined.length > 0 ? (
+                            <div className="d-flex flex-column gap-1">
+                              {stock.askCombined.map((combined, i) => (
+                                <div key={i}>{combined}</div>
+                              ))}
+                            </div>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                        <td>
+                          <button
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => {
+                              setShowDelModal(true);
+                              setRemoveId(stock.id);
+                            }}
+                            disabled={!stock.id || isRemoveLoading}
+                          >
+                            {isRemoveLoading ? "正在刪除..." : "刪除股票"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={9} className="text-center text-muted">
+                        無數據可顯示
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            // 手機/平板版：每檔一個手風琴
+            <div className="row">
+              {stockData.map((stock, index) => (
+                <div className="col-12 mb-3" key={index}>
+                  <div className="d-flex justify-content-between align-items-top mb-3">
+                    <div className="m-2">
+                      <button
+                        className="btn btn-sm btn-outline-danger"
+                        onClick={() => {
+                          setShowDelModal(true);
+                          setRemoveId(stock.id);
+                        }}
+                        disabled={!stock.id || isRemoveLoading}
+                      >
+                        {isRemoveLoading ? "正在刪除..." : "刪除股票"}
+                      </button>
+                    </div>
+                    <div
+                      className="accordion"
+                      id={`accordion-${index}`}
+                      style={{ flex: 1 }}
                     >
-                      刪除股票
-                    </button>
+                      <div className="accordion-item">
+                        <h2
+                          className="accordion-header"
+                          id={`heading-${index}`}
+                        >
+                          <button
+                            className="accordion-button collapsed"
+                            type="button"
+                            data-bs-toggle="collapse"
+                            data-bs-target={`#collapse-${index}`}
+                            aria-expanded="false"
+                            aria-controls={`collapse-${index}`}
+                          >
+                            {stock.n} ({stock.c})
+                          </button>
+                        </h2>
+                        <div
+                          id={`collapse-${index}`}
+                          className="accordion-collapse collapse"
+                          aria-labelledby={`heading-${index}`}
+                        >
+                          <div className="accordion-body">
+                            {[
+                              { label: "最新價", value: formatPrices(stock.z) },
+                              { label: "開盤價", value: formatPrices(stock.o) },
+                              { label: "最高價", value: formatPrices(stock.h) },
+                              { label: "最低價", value: formatPrices(stock.l) },
+                              {
+                                label: "成交量 (張)",
+                                value: stock.v ? `${stock.v}` : "N/A",
+                              },
+                            ].map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="d-flex border-bottom py-2"
+                              >
+                                <div
+                                  className="fw-bold text-start"
+                                  style={{ width: "50%" }}
+                                >
+                                  {item.label}
+                                </div>
+                                <div
+                                  className="text-start"
+                                  style={{ width: "50%" }}
+                                >
+                                  {item.value || "N/A"}
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* 五檔買價（數量） */}
+                            <div className="d-flex border-bottom py-2">
+                              <div
+                                className="fw-bold text-start"
+                                style={{ width: "50%" }}
+                              >
+                                五檔買價（數量）
+                              </div>
+                              <div
+                                className="text-start"
+                                style={{ width: "50%" }}
+                              >
+                                {stock.bidCombined &&
+                                stock.bidCombined.length > 0 ? (
+                                  <div>
+                                    {stock.bidCombined.map((combined, idx) => (
+                                      <div key={idx} className="text-nowrap">
+                                        {combined}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  "N/A"
+                                )}
+                              </div>
+                            </div>
+
+                            {/* 五檔賣價（數量） */}
+                            <div className="d-flex py-2">
+                              <div
+                                className="fw-bold text-start"
+                                style={{ width: "50%" }}
+                              >
+                                五檔賣價（數量）
+                              </div>
+                              <div
+                                className="text-start"
+                                style={{ width: "50%" }}
+                              >
+                                {stock.askCombined &&
+                                stock.askCombined.length > 0 ? (
+                                  <div>
+                                    {stock.askCombined.map((combined, idx) => (
+                                      <div key={idx} className="text-nowrap">
+                                        {combined}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  "N/A"
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
-          ) : (
-            <div className="col">
-              <p className="text-muted text-center">無數據可顯示</p>
+              ))}
             </div>
           )}
-        </div>
+        </>
       )}
+
+      {/* 確認刪除 Modal */}
+      <Modal
+        show={showDelModal}
+        onHide={() => {
+          setRemoveId(undefined);
+          setShowDelModal(false);
+        }}
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>確認刪除</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>您確定要刪除這隻股票嗎？這將無法復原。</Modal.Body>
+        <Modal.Footer>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setRemoveId(undefined);
+              setShowDelModal(false);
+            }}
+          >
+            取消
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              if (removeId) {
+                handleRemoveStockCode();
+                setShowDelModal(false);
+              }
+            }}
+          >
+            確定刪除
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 };

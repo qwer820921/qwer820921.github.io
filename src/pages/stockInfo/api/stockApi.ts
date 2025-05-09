@@ -1,8 +1,9 @@
 import axios from "axios";
 import { TwseStock, TwseResponse } from "../types";
+import { formatPrices } from "../../../utils/format";
 
 const GAS_URL =
-  "https://script.google.com/macros/s/AKfycbyPWEcSZmrfI1KuusgakPTxFDMORuDwqqAX4nlNFA4pv3Ay9d0_ci6VTpTw2qZlXFy9/exec";
+  "https://script.google.com/macros/s/AKfycbyolCeT20JaxPtv89s6b_r8xrwkqCa2Fw9P_l0t4mC4CgRonWrbeuSpDpYBCuaU0sHd/exec";
 
 // 取得 stock list 字串
 export const fetchStockList = async () => {
@@ -32,13 +33,29 @@ export const fetchStockData = async (stockListStr: string) => {
       throw new Error("API 回傳數據為空");
     }
 
-    return data.msgArray.map((stock: TwseStock) => ({
-      ...stock,
-      askPrices: stock.a?.split("_").filter(Boolean) || [],
-      bidPrices: stock.b?.split("_").filter(Boolean) || [],
-      askVolumes: stock.f?.split("_").filter(Boolean) || [],
-      bidVolumes: stock.g?.split("_").filter(Boolean) || [],
-    }));
+    return data.msgArray.map((stock: TwseStock) => {
+      const askPrices = stock.a?.split("_").filter(Boolean) || [];
+      const bidPrices = stock.b?.split("_").filter(Boolean) || [];
+      const askVolumes = stock.f?.split("_").filter(Boolean) || [];
+      const bidVolumes = stock.g?.split("_").filter(Boolean) || [];
+
+      const askCombined = askPrices.map(
+        (price, i) => `${formatPrices(price)} (${askVolumes[i] ?? "-"})`
+      );
+      const bidCombined = bidPrices.map(
+        (price, i) => `${formatPrices(price)} (${bidVolumes[i] ?? "-"})`
+      );
+
+      return {
+        ...stock,
+        askPrices,
+        askVolumes,
+        askCombined,
+        bidPrices,
+        bidVolumes,
+        bidCombined,
+      };
+    });
   } catch (error) {
     console.error("Error fetchStockData:", error);
   }
