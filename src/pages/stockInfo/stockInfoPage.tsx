@@ -70,10 +70,9 @@ const StockInfoPage: React.FC = () => {
   const handleAddStockCode = async () => {
     if (!newStockCode) return;
 
-    // 自動補齊格式：如果是純數字，轉為 tse_2330.tw 格式
     let formattedCode = newStockCode.trim();
     if (/^\d{4}$/.test(formattedCode)) {
-      formattedCode = `tse_${formattedCode}.tw`;
+      formattedCode = `${formattedCode}`;
     }
 
     try {
@@ -153,7 +152,7 @@ const StockInfoPage: React.FC = () => {
         {!isAutoRefresh && (
           <button
             className="btn btn-primary"
-            onClick={getStockData}
+            onClick={getStockList}
             disabled={loading}
           >
             {loading ? "正在刷新..." : "刷新"}
@@ -167,7 +166,7 @@ const StockInfoPage: React.FC = () => {
           <span>{error}</span>
           <button
             className="btn btn-sm btn-outline-danger"
-            onClick={getStockData}
+            onClick={getStockList}
           >
             重試
           </button>

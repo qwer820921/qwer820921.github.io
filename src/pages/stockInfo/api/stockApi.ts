@@ -2,7 +2,7 @@ import axios from "axios";
 import { TwseStock, TwseResponse } from "../types";
 
 const GAS_URL =
-  "https://script.google.com/macros/s/AKfycbxOcHPKZv6P1f8tDVSoUicHlKhTSGRBr-c4o2xkmsi_GiY7ll-jXXxLvMXO_ehAZcFI/exec";
+  "https://script.google.com/macros/s/AKfycbyPWEcSZmrfI1KuusgakPTxFDMORuDwqqAX4nlNFA4pv3Ay9d0_ci6VTpTw2qZlXFy9/exec";
 
 // 取得 stock list 字串
 export const fetchStockList = async () => {
