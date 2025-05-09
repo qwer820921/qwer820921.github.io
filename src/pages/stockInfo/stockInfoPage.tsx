@@ -12,9 +12,8 @@ const StockInfoPage: React.FC = () => {
   const [stockData, setStockData] = useState<TwseStock[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isAutoRefresh, setIsAutoRefresh] = useState(true);
+  const [isAutoRefresh, setIsAutoRefresh] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [stockListStr, setStockListStr] = useState("");
   const [stockList, setStockList] = useState<StockListItem[]>(
     [] // 用來儲存 id 和 code
   );
@@ -23,17 +22,10 @@ const StockInfoPage: React.FC = () => {
   const getStockList = async () => {
     try {
       const response = await fetchStockList();
-      console.log(response); // 檢查回傳值的結構
 
       // 假設 response 是物件，其中包含 stockCodes 陣列
       if (Array.isArray(response)) {
         const stockList = response; // 直接從 stockCodes 中取得陣列
-
-        // 使用 stockCodes 來組合成代號字串
-        const codeStr = stockList
-          .map((item: StockListItem) => item.code)
-          .join("|");
-        setStockListStr(codeStr); // 更新代號字串
         setStockList(stockList); // 更新股票清單（包含 id 和 code）
       } else {
         throw new Error("stockCodes 不是陣列");
@@ -45,31 +37,32 @@ const StockInfoPage: React.FC = () => {
   };
 
   const getStockData = async () => {
-    if (!stockListStr) return;
+    if (!stockList) return;
 
     try {
       setLoading(true);
-      const parsedStocks = await fetchStockData(stockListStr);
-
-      if (!parsedStocks) {
-        setError("未取得任何股票資料");
-        setStockData([]);
-        setLoading(false);
-        return;
-      }
+      // 使用 stockCodes 來組合成代號字串
+      const codeStr = stockList
+        .map((item: StockListItem) => `tse_${item.code}.tw`)
+        .join("|");
+      const parsedStocks = await fetchStockData(codeStr);
 
       // 將 id 補進來
-      const stocksWithId = parsedStocks.map((stock: TwseStock) => {
-        const matchedStock = stockList.find((s) => s.code === stock.c);
-        return { ...stock, id: matchedStock ? matchedStock.id : undefined };
-      });
+      const stocksWithId = parsedStocks
+        ?.filter((stock: TwseStock) => stock.ch) // 只保留有 ch 的資料
+        .map((stock: TwseStock) => {
+          const stockCode = stock.ch.replace(".tw", "");
+          const matchedStock = stockList.find((s) => s.code === stockCode);
+          return { ...stock, id: matchedStock ? matchedStock.id : undefined };
+        });
 
-      setStockData(stocksWithId);
+      setStockData(stocksWithId ?? []);
       setError(null);
       setLoading(false);
     } catch (error: any) {
       console.error("Error fetching stock data:", error.message);
       setError(`無法獲取股票數據：${error.message}`);
+      setStockData([]);
       setLoading(false);
     }
   };
@@ -104,15 +97,20 @@ const StockInfoPage: React.FC = () => {
     }
   };
 
+  let ignore = true; // 用於判斷是否忽略請求
   useEffect(() => {
-    getStockList();
-  }, []);
+    if (ignore) {
+      getStockList();
+    }
+
+    ignore = false; // 清除時設置為 false
+  }, []); // 只在組件初始化時執行
 
   useEffect(() => {
-    if (stockListStr) {
+    if (stockList.length > 0) {
       getStockData();
     }
-  }, [stockListStr]);
+  }, [stockList]);
 
   useEffect(() => {
     if (isAutoRefresh) {
@@ -127,13 +125,13 @@ const StockInfoPage: React.FC = () => {
       }, 1000);
       return () => clearInterval(interval);
     }
-  }, [isAutoRefresh, stockListStr]);
+  }, [isAutoRefresh, stockList]);
 
   return (
     <div className="container py-4">
       <h1 className="mb-4 text-center">台股資訊</h1>
-      {/* <div className="text-start">{printValue(stockListStr)}</div>
-      <div className="text-start">{printValue(stockList)}</div> */}
+      {/* <div className="text-start">{printValue(stockData)}</div> */}
+      {/* <div className="text-start">{printValue(stockList)}</div> */}
 
       {/* 模式切換 */}
       <div className="d-flex justify-content-between align-items-center mb-4">
@@ -191,7 +189,7 @@ const StockInfoPage: React.FC = () => {
         <input
           type="text"
           className="form-control"
-          placeholder="輸入股票代號 (如 tse_2330.tw)"
+          placeholder="輸入股票代號 (如 2330)"
           value={newStockCode}
           onChange={(e) => setNewStockCode(e.target.value)}
         />
@@ -207,8 +205,8 @@ const StockInfoPage: React.FC = () => {
       {!error && (
         <div className="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
           {stockData.length > 0 ? (
-            stockData.map((stock: TwseStock) => (
-              <div key={stock.id} className="col">
+            stockData.map((stock: TwseStock, index: number) => (
+              <div key={index} className="col">
                 <div className="card h-100">
                   <div className="card-body">
                     <h5 className="card-title">
