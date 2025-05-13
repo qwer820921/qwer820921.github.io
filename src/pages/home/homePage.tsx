@@ -191,8 +191,8 @@ const HomePage: React.FC = () => {
     <div className="home-page">
       <>
         <SEO
-          title="子yee 萬事屋 | 專業技術解決方案與服務"
-          description="子yee 萬事屋提供專業技術解決方案與服務，優化您的商業流程，提升效率，立即探索！"
+          title="子yee 萬事屋｜台股資訊、小工具與生活應用平台"
+          description="子yee 萬事屋提供台股即時資訊查詢、自選股功能、生活小工具與技術資源，打造實用的線上服務平台。"
           keywords="子yee 萬事屋, 技術解決方案, 專業服務, 商業流程優化, 效率提升"
         />
         <div
