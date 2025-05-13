@@ -19,6 +19,7 @@ import {
   CodeSlash,
   Grid,
 } from "react-bootstrap-icons";
+import SEO from "../../components/common/seo/seo";
 
 const carouselItems = [
   {
@@ -188,6 +189,25 @@ const HomePage: React.FC = () => {
 
   return (
     <div className="home-page">
+      <>
+        <SEO
+          title="子yee 萬事屋 | 專業技術解決方案與服務"
+          description="子yee 萬事屋提供專業技術解決方案與服務，優化您的商業流程，提升效率，立即探索！"
+          keywords="子yee 萬事屋, 技術解決方案, 專業服務, 商業流程優化, 效率提升"
+        />
+        <div
+          style={{
+            position: "absolute",
+            width: 1,
+            height: 1,
+            overflow: "hidden",
+            opacity: 0,
+          }}
+        >
+          <h1>子yee 萬事屋 - 首頁</h1>
+          <p>歡迎體驗我們的技術解決方案與服務！</p>
+        </div>
+      </>
       <section className="py-5">
         <Container>
           <Carousel interval={5000} pause="hover">

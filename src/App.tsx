@@ -6,6 +6,7 @@ import Navbar from "./components/common/navbar";
 import Footer from "./components/common/footer";
 import routes from "./config/routes";
 import ErrorBoundary from "./components/common/errorBoundary";
+import BreadcrumbJsonLd from "./components/common/seo/breadcrumbJsonLd";
 
 const App: React.FC = () => {
   return (
@@ -13,6 +14,9 @@ const App: React.FC = () => {
       <div className="App">
         {/* Navbar */}
         <Navbar />
+
+        {/* 結構化資料 - Breadcrumb */}
+        <BreadcrumbJsonLd />
 
         {/* Main Content */}
         <main>

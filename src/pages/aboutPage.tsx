@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Container, Spinner, OverlayTrigger, Tooltip } from "react-bootstrap";
+import SEO from "../components/common/seo/seo";
 
 const AboutPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -21,6 +22,25 @@ const AboutPage: React.FC = () => {
 
   return (
     <div className="about-page">
+      <>
+        <SEO
+          title="子yee 萬事屋 | 關於我們 - 我們的團隊與使命"
+          description="了解子yee 萬事屋的背景、團隊與使命，專注於提供技術解決方案與服務。"
+          keywords="子yee 萬事屋, 關於我們, 技術團隊, 使命, 技術解決方案"
+        />
+        <div
+          style={{
+            position: "absolute",
+            width: 1,
+            height: 1,
+            overflow: "hidden",
+            opacity: 0,
+          }}
+        >
+          <h1>子yee 萬事屋 - 關於我們</h1>
+          <p>了解我們的背景、團隊與使命，專注於技術解決方案與服務！</p>
+        </div>
+      </>
       {/* Card: About Header with Tooltip */}
       <section className="bg-light py-5">
         <div className="container">

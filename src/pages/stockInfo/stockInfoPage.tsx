@@ -11,6 +11,7 @@ import { printValue } from "../../utils/createElement";
 import { formatPrices } from "../../utils/format";
 import { Button, Modal } from "react-bootstrap";
 import LoadingOverlay from "../../components/common/loadingOverlay";
+import SEO from "../../components/common/seo/seo";
 
 const StockInfoPage: React.FC = () => {
   const [windowWidth, setWindowWidth] = useState(window.innerWidth); //監聽視窗大小
@@ -161,6 +162,25 @@ const StockInfoPage: React.FC = () => {
 
   return (
     <div className="container py-4">
+      <>
+        <SEO
+          title="子yee 萬事屋 | 台股資訊 - 即時股市數據"
+          description="子yee 萬事屋提供台股資訊與即時股市數據，幫助您掌握投資機會！"
+          keywords="子yee 萬事屋, 台股資訊, 股市數據, 投資機會"
+        />
+        <div
+          style={{
+            position: "absolute",
+            width: 1,
+            height: 1,
+            overflow: "hidden",
+            opacity: 0,
+          }}
+        >
+          <h1>台股資訊</h1>
+          <p>查看最新的台股數據...</p>
+        </div>
+      </>
       {/* Loading Spinner Overlay */}
       <LoadingOverlay isLoading={isLoading} />
       <h1 className="mb-4 text-center">台股資訊</h1>

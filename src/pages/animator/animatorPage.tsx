@@ -5,6 +5,7 @@ import PreviewCanvas from "./components/previewCanvas";
 import ColorSelector from "./components/colorSelector";
 import PixelCanvas from "./components/pixelCanvas";
 import { CanvasList, PixelMap } from "./types";
+import SEO from "../../components/common/seo/seo";
 
 const AnimatorPage: React.FC = () => {
   // 🎨 設定目前選擇的顏色，預設為黑色
@@ -322,6 +323,25 @@ const AnimatorPage: React.FC = () => {
   return (
     <>
       <div className="container-fluid p-3">
+        <>
+          <SEO
+            title="子yee 萬事屋 | 微動畫 - 創意技術展示"
+            description="探索子yee 萬事屋的微動畫作品，展現創意技術與視覺效果。"
+            keywords="子yee 萬事屋, 微動畫, 創意技術, 視覺效果"
+          />
+          <div
+            style={{
+              position: "absolute",
+              width: 1,
+              height: 1,
+              overflow: "hidden",
+              opacity: 0,
+            }}
+          >
+            <h1>微動畫展示</h1>
+            <p>動手畫畫看吧...</p>
+          </div>
+        </>
         {/* 主要工作區域 */}
         <div className="row">
           {/* 左側 - 顏色選擇 */}

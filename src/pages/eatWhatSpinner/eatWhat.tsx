@@ -7,6 +7,7 @@ import { printValue } from "../../utils/createElement";
 import SlotMachine from "./components/slotMachine";
 import CardFlip from "./components/cardFlip";
 import LoadingOverlay from "../../components/common/loadingOverlay";
+import SEO from "../../components/common/seo/seo";
 
 // ====== Tab 標題對應表 ======
 const groupLabels = ["組合1", "組合2", "組合3", "組合4"];
@@ -292,6 +293,25 @@ const EatWhatSpinner: React.FC = () => {
   // ====== 畫面渲染 ======
   return (
     <div className="container-fluid p-0">
+      <>
+        <SEO
+          title="子yee 萬事屋 | 吃甚麼 - 隨機美食建議"
+          description="子yee 萬事屋的吃甚麼工具，提供隨機美食建議，解決您的用餐選擇難題！"
+          keywords="子yee 萬事屋, 吃甚麼, 美食建議, 隨機選擇"
+        />
+        <div
+          style={{
+            position: "absolute",
+            width: 1,
+            height: 1,
+            overflow: "hidden",
+            opacity: 0,
+          }}
+        >
+          <h1>吃甚麼</h1>
+          <p>不用煩惱吃甚麼...</p>
+        </div>
+      </>
       {/* Loading Spinner Overlay */}
       <LoadingOverlay isLoading={isLoading} />
       <div className="row">
