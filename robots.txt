@@ -1,3 +1,3 @@
 User-agent: *
 Allow: /
-Sitemap: https://qwer820921.github.io/stockInfo/sitemap.xml
+Sitemap: https://qwer820921.github.io/sitemap.xml
