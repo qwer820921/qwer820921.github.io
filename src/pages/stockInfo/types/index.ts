@@ -49,6 +49,7 @@ interface TwseStock {
 
   changePercent?: number; // 漲跌幅百分比，例如 2.18（表示 +2.18%）
   changePoints?: number; // 漲跌點數，例如 20（表示漲了 20 點）或 -20（表示跌了 20 點）
+  currentPrice?: number; // 整理後的現價，優先從 z 取得，若 z 無效（例如 "-"）則依序從 bidPrices[0]、askPrices[0]、o 取得，例如 988.0 或 181.65（若均無效則為 undefined）
 
   // 額外欄位（應用程式內部用途）
   id?: number;

@@ -6,6 +6,7 @@ import {
   fetchStockData,
   addStockCode,
   removeStockCode,
+  fetchStockData2,
 } from "./api/stockApi";
 import { printValue } from "../../utils/createElement";
 import { formatPrices } from "../../utils/format";
@@ -38,6 +39,7 @@ const StockInfoPage: React.FC = () => {
         // 直接接著抓資料
         const codeStr = response.map((item) => `tse_${item.code}.tw`).join("|");
         const parsedStocks = await fetchStockData(codeStr);
+        // await fetchStockData2();
 
         const stocksWithId = parsedStocks?.map((stock) => {
           const stockCode = stock.ch.replace(".tw", "");
@@ -275,7 +277,9 @@ const StockInfoPage: React.FC = () => {
                         <td>
                           {stock.n} ({stock.c})
                         </td>
-                        <td>{formatPrices(stock.z) || "-"}</td>
+                        <td>
+                          {formatPrices(stock.currentPrice?.toString()) || "-"}
+                        </td>
                         <td>
                           {stock.changePoints !== undefined ? (
                             <span
@@ -409,7 +413,12 @@ const StockInfoPage: React.FC = () => {
                         >
                           <div className="accordion-body">
                             {[
-                              { label: "最新價", value: formatPrices(stock.z) },
+                              {
+                                label: "最新價",
+                                value: formatPrices(
+                                  stock.currentPrice?.toString()
+                                ),
+                              },
                               { label: "漲跌", value: stock.changePoints },
                               {
                                 label: "幅度",
