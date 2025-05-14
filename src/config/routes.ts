@@ -6,10 +6,16 @@ import AnimatorPage from "../pages/animator/animatorPage";
 import ProtectedPage from "../pages/protectedPage"; // 例如，受保護頁面
 import EatWhat from "../pages/eatWhatSpinner/eatWhat";
 import StockInfoPage from "../pages/stockInfo/stockInfoPage";
+import CryptoPage from "../pages/crypto/cryptoPage";
 
 // 設置路由配置
 const routes: RouteConfig[] = [
-  { path: ROUTES.HOME, name: "首頁", component: HomePage, showInNavbar: true },
+  {
+    path: ROUTES.HOME,
+    name: "首頁",
+    component: HomePage,
+    showInNavbar: true,
+  },
   {
     path: ROUTES.ABOUT,
     name: "關於我們",
@@ -32,6 +38,12 @@ const routes: RouteConfig[] = [
     path: ROUTES.STOCK_INFO,
     name: "台股資訊",
     component: StockInfoPage,
+    showInNavbar: true,
+  },
+  {
+    path: ROUTES.CRYPTO,
+    name: "虛擬貨幣資訊",
+    component: CryptoPage,
     showInNavbar: true,
   },
   {

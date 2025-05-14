@@ -7,6 +7,7 @@ import Footer from "./components/common/footer";
 import routes from "./config/routes";
 import ErrorBoundary from "./components/common/errorBoundary";
 import BreadcrumbJsonLd from "./components/common/seo/breadcrumbJsonLd";
+import "react-datepicker/dist/react-datepicker.css";
 
 const App: React.FC = () => {
   return (

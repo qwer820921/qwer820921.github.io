@@ -163,7 +163,7 @@ const StockInfoPage: React.FC = () => {
   const isDesktop = windowWidth >= 992; // 判斷是否為桌面版
 
   return (
-    <div className="container py-4">
+    <div className="container py-4 h-100">
       <>
         <SEO
           title="子yee 萬事屋 | 台股資訊 - 即時股市數據"

@@ -1,0 +1,12 @@
+/* 修正 react-datepicker 在 input-group 中無法填滿寬度的問題 */
+.react-datepicker-wrapper {
+  width: 100%;
+}
+
+.react-datepicker__input-container {
+  width: 100%;
+}
+
+.react-datepicker__input-container input {
+  width: 100% !important;
+}
