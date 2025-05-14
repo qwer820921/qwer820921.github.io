@@ -5,6 +5,6 @@ export const ROUTES = {
   ANIMATOR: "/animator", // 動畫
   EATWHAT: "/eatWhat", // 吃甚麼
   STOCK_INFO: "/stockInfo", // 台股資訊
-  CRYPTO: "/crypto", // 虛擬貨幣資訊
+  CRYPTO: "/crypto", // 加密貨幣
   PROTECTED: "/protected", // 受保護頁面的路由
 };

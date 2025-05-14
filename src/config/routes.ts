@@ -42,7 +42,7 @@ const routes: RouteConfig[] = [
   },
   {
     path: ROUTES.CRYPTO,
-    name: "虛擬貨幣資訊",
+    name: "加密貨幣",
     component: CryptoPage,
     showInNavbar: true,
   },
