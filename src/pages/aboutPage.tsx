@@ -23,11 +23,11 @@ const AboutPage: React.FC = () => {
   return (
     <div className="about-page">
       <>
-        <SEO
+        {/* <SEO
           title="子yee 萬事屋 | 關於我們 - 我們的團隊與使命"
           description="了解子yee 萬事屋的背景、團隊與使命，專注於提供技術解決方案與服務。"
           keywords="子yee 萬事屋, 關於我們, 技術團隊, 使命, 技術解決方案"
-        />
+        /> */}
         <div
           style={{
             position: "absolute",

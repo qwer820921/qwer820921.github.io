@@ -294,11 +294,11 @@ const EatWhatSpinner: React.FC = () => {
   return (
     <div className="container-fluid p-0">
       <>
-        <SEO
+        {/* <SEO
           title="子yee 萬事屋 | 吃甚麼 - 隨機美食建議"
           description="子yee 萬事屋的吃甚麼工具，提供隨機美食建議，解決您的用餐選擇難題！"
           keywords="子yee 萬事屋, 吃甚麼, 美食建議, 隨機選擇"
-        />
+        /> */}
         <div
           style={{
             position: "absolute",

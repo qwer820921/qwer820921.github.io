@@ -324,11 +324,11 @@ const AnimatorPage: React.FC = () => {
     <>
       <div className="container-fluid p-3">
         <>
-          <SEO
+          {/* <SEO
             title="子yee 萬事屋 | 微動畫 - 創意技術展示"
             description="探索子yee 萬事屋的微動畫作品，展現創意技術與視覺效果。"
             keywords="子yee 萬事屋, 微動畫, 創意技術, 視覺效果"
-          />
+          /> */}
           <div
             style={{
               position: "absolute",

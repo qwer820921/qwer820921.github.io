@@ -8,11 +8,13 @@ import routes from "./config/routes";
 import ErrorBoundary from "./components/common/errorBoundary";
 import BreadcrumbJsonLd from "./components/common/seo/breadcrumbJsonLd";
 import "react-datepicker/dist/react-datepicker.css";
+import AppSEO from "./components/common/seo/appSEO";
 
 const App: React.FC = () => {
   return (
     <Router>
       <div className="App">
+        <AppSEO />
         {/* Navbar */}
         <Navbar />
 

@@ -109,11 +109,11 @@ const CryptoPage: React.FC = () => {
 
   return (
     <div className="container py-4">
-      <SEO
+      {/* <SEO
         title="子yee 萬事屋 | 加密貨幣資訊 - 即時加密貨幣市場數據"
         description="子yee 萬事屋提供最新的加密貨幣資訊與即時市場數據，幫助您掌握虛擬貨幣投資機會！"
         keywords="子yee 萬事屋, 加密貨幣, 虛擬貨幣, 市場數據, 投資機會, 加密貨幣資訊"
-      />
+      /> */}
       <LoadingOverlay isLoading={isLoading} />
       <h1 className="mb-4 text-center">加密貨幣資訊</h1>
 
