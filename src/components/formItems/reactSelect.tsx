@@ -1,4 +1,5 @@
-/* eslint-disable prettier/prettier */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 "use client";
 import React, { useState } from "react";
 import Select, { components } from "react-select";

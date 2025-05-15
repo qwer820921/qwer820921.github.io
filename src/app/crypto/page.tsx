@@ -1,10 +1,8 @@
-/* eslint-disable prettier/prettier */
+"use client";
 import React, { useState, useEffect, useRef } from "react";
-import Select from "react-select";
 import DatePicker from "react-datepicker";
 import { Rule } from "../../types";
 import LoadingOverlay from "../../components/common/loadingOverlay";
-import SEO from "../../components/common/seo/seo";
 import { CandlestickData, createChart, Time } from "lightweight-charts";
 import { QuickQueryOption, KlineData } from "./types";
 import {
@@ -13,8 +11,12 @@ import {
   getKlines,
   getQuickQueryOptions,
 } from "./api/cryptoApi";
-import ReactSelect from "../../components/formItems/reactSelect";
 import "./styles/datepicker-custom.css";
+import dynamic from "next/dynamic";
+const ReactSelect = dynamic(
+  () => import("@/components/formItems/reactSelect"),
+  { ssr: false }
+);
 
 const CryptoPage: React.FC = () => {
   const [symbolOptions, setSymbolOptions] = useState<Rule[]>([]);

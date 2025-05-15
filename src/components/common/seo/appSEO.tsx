@@ -1,12 +1,13 @@
-import React from "react";
-import { useLocation } from "react-router-dom";
+"use client";
+import { usePathname } from "next/navigation";
+import { seoMap } from "@/constants/seoMap";
 import SEO from "./seo";
-import { seoMap } from "../../../constants/seoMap";
 
-const AppSEO: React.FC = () => {
-  const location = useLocation();
-  const path = location.pathname;
-  const seo = seoMap[path];
+const BASE_URL = "https://qwer820921.github.io";
+
+const AppSEO = () => {
+  const pathname = usePathname();
+  const seo = seoMap[pathname];
 
   if (!seo) return null;
 
@@ -15,7 +16,7 @@ const AppSEO: React.FC = () => {
       title={seo.title}
       description={seo.description}
       keywords={seo.keywords}
-      canonical={`https://qwer820921.github.io${path}`}
+      canonical={`${BASE_URL}${pathname}`}
     />
   );
 };

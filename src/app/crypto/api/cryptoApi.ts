@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from "axios";
-import { Rule } from "../../../types";
-import { GetKlinesParams, KlineData, QuickQueryOption } from "../types";
-import { KlineInterval } from "../../../constants/intervals";
 
+import { GetKlinesParams, KlineData, QuickQueryOption } from "../types";
+import { KlineInterval } from "@/constants/intervals";
+import { Rule } from "@/types";
 // 幣安 API 的 base URL
 const BINANCE_BASE_URL = "https://api.binance.com/api/v3";
 

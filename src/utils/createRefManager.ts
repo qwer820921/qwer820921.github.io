@@ -7,7 +7,7 @@ import { useRef } from "react";
  *
  * @template T - 要管理的 DOM 元素類型，例如 HTMLCanvasElement
  */
-export function createRefManager<T extends HTMLElement>() {
+export function CreateRefManager<T extends HTMLElement>() {
   const refs = useRef<(T | null)[]>([]);
 
   return {

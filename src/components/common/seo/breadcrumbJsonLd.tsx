@@ -1,11 +1,9 @@
-import React from "react";
-import { Helmet } from "react-helmet";
-import routes from "../../../config/routes";
+import Head from "next/head";
+import routes from "@/config/routes";
 
 const BASE_URL = "https://qwer820921.github.io";
 
 const BreadcrumbJsonLd = () => {
-  // 篩選出 showInNavbar 為 true 的路由
   const breadcrumbItems = routes
     .filter((route) => route.showInNavbar)
     .map((route, index) => ({
@@ -22,11 +20,11 @@ const BreadcrumbJsonLd = () => {
   };
 
   return (
-    <Helmet>
+    <Head>
       <script type="application/ld+json">
         {JSON.stringify(breadcrumbJsonLd)}
       </script>
-    </Helmet>
+    </Head>
   );
 };
 

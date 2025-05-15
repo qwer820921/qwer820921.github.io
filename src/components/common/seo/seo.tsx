@@ -1,6 +1,4 @@
-// SEO.tsx
-import React from "react";
-import { Helmet } from "react-helmet";
+import Head from "next/head";
 
 interface SEOProps {
   title: string;
@@ -18,13 +16,13 @@ const SEO: React.FC<SEOProps> = ({
   image = "https://qwer820921.github.io/logo512.png",
 }) => {
   return (
-    <Helmet>
-      {/* 基本 SEO */}
+    <Head>
       <title>{title}</title>
       <meta name="description" content={description} />
       <meta name="keywords" content={keywords} />
       <meta name="robots" content="index, follow" />
       <link rel="canonical" href={canonical} />
+
       {/* Open Graph */}
       <meta property="og:title" content={title} />
       <meta property="og:description" content={description} />
@@ -38,7 +36,7 @@ const SEO: React.FC<SEOProps> = ({
       <meta name="twitter:title" content={title} />
       <meta name="twitter:description" content={description} />
       <meta name="twitter:image" content={image} />
-    </Helmet>
+    </Head>
   );
 };
 

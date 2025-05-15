@@ -1,45 +1,36 @@
-# 子yee 萬事屋 | 技術解決方案平台
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-👉 [點我前往網站](https://qwer820921.github.io/)
+## Getting Started
 
-子yee 萬事屋 提供專業的網頁應用、資料整合、動畫展示與台股資訊查詢服務，提升效率、簡化操作，適合開發者與一般用戶使用。
+First, run the development server:
 
----
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
 
-## 🚀 專案介紹
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-此專案使用 [Create React App](https://github.com/facebook/create-react-app) 建構，並部署於 GitHub Pages 上。網站包含：
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-- 吃什麼轉盤
-- 台股清單資訊查詢
-- 技術動畫展示
-- 帳號保護頁面
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
----
+## Learn More
 
-## 🔧 可用指令
+To learn more about Next.js, take a look at the following resources:
 
-在專案目錄中，可以執行以下指令：
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-### `npm start`
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-在開發模式中啟動網站，網址為 [http://localhost:3000](http://localhost:3000)
+## Deploy on Vercel
 
-### `npm test`
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
-執行測試
-
-### `npm run build`
-
-建立正式環境檔案，輸出到 `build/` 資料夾，可部署到 GitHub Pages
-
-### `npm run eject`
-
-彈出 CRA 的設定檔，供進階使用者自訂
-
----
-
-## 📚 學習資源
-
-- [Create React App 文件](https://facebook.github.io/create-react-app/docs/getting-started)
-- [React 官方網站](https://reactjs.org/)
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

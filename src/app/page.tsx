@@ -1,3 +1,4 @@
+"use client";
 import React, { JSX, useState } from "react";
 import {
   Container,
@@ -9,8 +10,7 @@ import {
   Badge,
   ProgressBar,
 } from "react-bootstrap";
-import projectProgressData from "./config/projectsConfig";
-import { Project } from "./types/project";
+
 import {
   Globe,
   BarChart,
@@ -19,11 +19,55 @@ import {
   CodeSlash,
   Grid,
 } from "react-bootstrap-icons";
-import SEO from "../../components/common/seo/seo";
+import { Project } from "./index.types";
+
+// 專案進度資料
+const projectProgressData: Project[] = [
+  {
+    id: 1,
+    name: "網站設計",
+    status: "進行中",
+    dueDate: "2025/03/30",
+    description: "我們正在開發一個全新設計的企業網站，旨在提升品牌形象。",
+    projectManager: "張經理",
+    budget: 50000,
+    progress: 60, // 進度 60%
+  },
+  {
+    id: 2,
+    name: "行銷策劃",
+    status: "等待中",
+    dueDate: "2025/05/15",
+    description: "行銷策略的計劃階段，將聚焦於社交媒體廣告與內容營銷。",
+    projectManager: "李經理",
+    budget: 30000,
+    progress: 0, // 尚未開始
+  },
+  {
+    id: 3,
+    name: "品牌設計",
+    status: "延遲",
+    dueDate: "2025/06/10",
+    description: "品牌重新設計，包含新的標誌和企業識別系統。",
+    projectManager: "連設計師",
+    budget: 70000,
+    progress: 30, // 進度 30%
+  },
+  {
+    id: 4,
+    name: "軟體開發",
+    status: "準備中",
+    dueDate: "2025/04/25",
+    description: "開發一個定制的企業資源規劃 (ERP) 系統，提升內部運營效率。",
+    projectManager: "連工程師",
+    budget: 120000,
+    progress: 10, // 進度 10%
+  },
+];
 
 const carouselItems = [
   {
-    src: "/img01.jpg",
+    src: "/images/img01.jpg",
     alt: "第1張圖片",
     title: "專業網站開發",
     description: "打造高效能、現代化的網站，提升您的品牌形象。",
@@ -31,7 +75,7 @@ const carouselItems = [
     ctaLink: "/about",
   },
   {
-    src: "/img02.jpg",
+    src: "/images/img02.jpg",
     alt: "第2張圖片",
     title: "數位行銷解決方案",
     description: "透過數據驅動的行銷策略，吸引更多潛在客戶。",
@@ -39,7 +83,7 @@ const carouselItems = [
     ctaLink: "/about",
   },
   {
-    src: "/img03.jpg",
+    src: "/images/img03.jpg",
     alt: "第3張圖片",
     title: "品牌設計",
     description: "打造獨特的品牌識別，脫穎而出。",
@@ -161,7 +205,7 @@ const ProjectDetailModal: React.FC<{
   </Modal>
 );
 
-const HomePage: React.FC = () => {
+export default function HomePage() {
   const [showModal, setShowModal] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 
@@ -189,25 +233,6 @@ const HomePage: React.FC = () => {
 
   return (
     <div className="home-page">
-      <>
-        {/* <SEO
-          title="子yee 萬事屋｜台股即時資訊、自選股追蹤、小工具與技術服務平台"
-          description="子yee 萬事屋是一個提供台股即時查詢、自選股管理、生活小工具與技術解決方案的多功能平台，讓您在投資與生活中更高效。"
-          keywords="子yee 萬事屋, 台股查詢, 自選股, 技術小工具, 股票資訊平台, 技術顧問, 自動化工具"
-        /> */}
-        <div
-          style={{
-            position: "absolute",
-            width: 1,
-            height: 1,
-            overflow: "hidden",
-            opacity: 0,
-          }}
-        >
-          <h1>子yee 萬事屋 - 首頁</h1>
-          <p>歡迎體驗我們的技術解決方案與服務！</p>
-        </div>
-      </>
       <section className="py-5">
         <Container>
           <Carousel interval={5000} pause="hover">
@@ -244,40 +269,36 @@ const HomePage: React.FC = () => {
       </section>
 
       <Container className="py-5">
-        <>
-          <div className="mb-4 d-flex flex-wrap gap-2">
-            {categories.map((cat) => (
-              <Button
-                key={cat}
-                variant={
-                  selectedCategory === cat ? "primary" : "outline-primary"
-                }
-                onClick={() => setSelectedCategory(cat)}
-                className="d-flex align-items-center px-3 py-2 rounded-pill"
-              >
-                {iconMap[cat] || <Grid className="me-2" size={16} />}
-                {cat}
-              </Button>
-            ))}
-          </div>
+        <div className="mb-4 d-flex flex-wrap gap-2">
+          {categories.map((cat) => (
+            <Button
+              key={cat}
+              variant={selectedCategory === cat ? "primary" : "outline-primary"}
+              onClick={() => setSelectedCategory(cat)}
+              className="d-flex align-items-center px-3 py-2 rounded-pill"
+            >
+              {iconMap[cat] || <Grid className="me-2" size={16} />}
+              {cat}
+            </Button>
+          ))}
+        </div>
 
-          <Accordion alwaysOpen>
-            {filteredData.map((item, idx) => (
-              <Accordion.Item
-                eventKey={idx.toString()}
-                key={`${item.title}-${idx}`}
-              >
-                <Accordion.Header>{item.title}</Accordion.Header>
-                <Accordion.Body>{item.content}</Accordion.Body>
-              </Accordion.Item>
-            ))}
-          </Accordion>
-        </>
+        <Accordion alwaysOpen>
+          {filteredData.map((item, idx) => (
+            <Accordion.Item
+              eventKey={idx.toString()}
+              key={`${item.title}-${idx}`}
+            >
+              <Accordion.Header>{item.title}</Accordion.Header>
+              <Accordion.Body>{item.content}</Accordion.Body>
+            </Accordion.Item>
+          ))}
+        </Accordion>
       </Container>
 
       <Container className="py-5">
         <h2 className="mb-4">專案進度</h2>
-        <Table striped bordered hover responsive>
+        <Table striped bordered hover responsive className="text-center">
           <thead className="table-success">
             <tr>
               <th>#</th>
@@ -338,6 +359,4 @@ const HomePage: React.FC = () => {
       </Container>
     </div>
   );
-};
-
-export default HomePage;
+}

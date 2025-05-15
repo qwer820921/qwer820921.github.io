@@ -1,22 +1,24 @@
+"use client";
+
 import React, { useEffect } from "react";
-import { Link, useLocation } from "react-router-dom"; // 使用 useLocation 來獲取當前路由
-import { ROUTES } from "../../constants/routes"; // 引入路由常數
-import routes from "../../config/routes";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import routes from "@/config/routes";
 
 const Navbar: React.FC = () => {
-  const location = useLocation(); // 用來檢查當前路由位置
+  const pathname = usePathname(); // 取得當前路徑
 
   useEffect(() => {
     const navbarCollapse = document.querySelector(".navbar-collapse");
-    if (navbarCollapse && navbarCollapse.classList.contains("show")) {
+    if (navbarCollapse?.classList.contains("show")) {
       navbarCollapse.classList.remove("show");
     }
-  }, [location.pathname]);
+  }, [pathname]);
 
   return (
     <nav className="navbar navbar-expand-lg navbar-light bg-light shadow-sm fixed-top">
       <div className="container">
-        <Link className="navbar-brand text-dark" to={ROUTES.HOME}>
+        <Link className="navbar-brand text-dark" href="/">
           子yee 萬事屋
         </Link>
         <button
@@ -30,17 +32,19 @@ const Navbar: React.FC = () => {
         >
           <span className="navbar-toggler-icon"></span>
         </button>
+
         <div className="collapse navbar-collapse" id="navbarNav">
           <ul className="navbar-nav ms-auto">
-            {/* 根據 routes 配置動態生成導航項目 */}
             {routes
-              .filter((route) => route.showInNavbar) // 只顯示需要顯示在導航列的路由
+              .filter((route) => route.showInNavbar)
               .map((route) => (
                 <li
-                  className={`nav-item ${location.pathname === route.path ? "active" : ""}`} // 根據當前路徑設置 active 樣式
                   key={route.path}
+                  className={`nav-item ${
+                    pathname === route.path ? "active" : ""
+                  }`}
                 >
-                  <Link className="nav-link text-dark" to={route.path}>
+                  <Link className="nav-link text-dark" href={route.path}>
                     {route.name}
                   </Link>
                 </li>
