@@ -1,3 +1,4 @@
+"use client";
 import Head from "next/head";
 
 interface SEOProps {
@@ -15,6 +16,13 @@ const SEO: React.FC<SEOProps> = ({
   canonical = "https://qwer820921.github.io/",
   image = "https://qwer820921.github.io/logo512.png",
 }) => {
+  console.log("SEO Props", {
+    title,
+    description,
+    keywords,
+    canonical,
+    image,
+  });
   return (
     <Head>
       <title>{title}</title>

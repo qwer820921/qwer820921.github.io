@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 "use client";
 
 import reportWebVitals from "@/reportWebVitals";
@@ -7,8 +8,7 @@ const WebVitalsClient = () => {
   useEffect(() => {
     reportWebVitals((metric) => {
       // 傳送至 Google Analytics 或 console
-      console.log(metric);
-
+      // console.log(metric);
       // 傳送到後端分析系統
       // fetch('/api/analytics', {
       //   method: 'POST',

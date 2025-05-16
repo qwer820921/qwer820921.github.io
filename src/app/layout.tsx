@@ -5,18 +5,42 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import Navbar from "@/components/common/navbar";
 import Footer from "@/components/common/footer";
-import AppSEO from "@/components/common/seo/appSEO";
 import BreadcrumbJsonLd from "@/components/common/seo/breadcrumbJsonLd";
 import BootstrapClient from "@/components/common/bootstrapClient";
 import WebVitalsClient from "@/components/common/webVitalsClient";
 
 export const metadata: Metadata = {
-  title: "子yee 萬事屋",
+  metadataBase: new URL("https://qwer820921.github.io"),
+  title: {
+    default: "子yee 萬事屋",
+    template: "%s | 子yee",
+  },
   description:
-    "子yee 萬事屋提供專業技術解決方案與服務，專注於優化商業流程、提升效率，滿足您的業務需求。",
-  themeColor: "#000000",
+    "子yee 萬事屋是一個提供台股即時查詢、自選股管理、生活小工具與技術解決方案的多功能平台，讓您在投資與生活中更高效。",
+  keywords:
+    "子yee 萬事屋, 台股查詢, 自選股, 技術小工具, 股票資訊平台, 技術顧問, 自動化工具",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+  ],
   verification: {
     google: "adHIcDQiasHY4YzPlrpmSSPKl7Oj1WxrPJ_4GV4PQcM",
+  },
+  openGraph: {
+    siteName: "子yee 萬事屋",
+    locale: "zh_TW",
+    type: "website",
+    images: [
+      {
+        url: "https://qwer820921.github.io/logo512.png",
+        width: 512,
+        height: 512,
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    images: ["https://qwer820921.github.io/logo512.png"],
   },
 };
 
@@ -56,8 +80,7 @@ export default function RootLayout({
         />
       </head>
       <body>
-        {/* SEO 組件、結構化資料 */}
-        <AppSEO />
+        {/* 結構化資料 */}
         <BreadcrumbJsonLd />
 
         {/* Navbar */}
@@ -72,38 +95,9 @@ export default function RootLayout({
         {/* Bootstrap JavaScript 客戶端初始化（如果有） */}
         <BootstrapClient />
 
+        {/* WebVitals 指標收集 */}
         <WebVitalsClient />
 
-        {/* 原本的 URL 修正 script（如仍需要） */}
-        {/* <Script id="rewrite-url">
-          {`
-            (function (l) {
-              if (l.search[1] === '/') {
-                var decoded = l.search.slice(1).split('&').map(function (s) {
-                  return s.replace(/~and~/g, '&')
-                }).join('?');
-                window.history.replaceState(null, null,
-                  l.pathname.slice(0, -1) + decoded + l.hash
-                );
-              }
-            }(window.location));
-          `}
-        </Script> */}
-
-        {/* 原本的 SEO 提示內容（非必要，可移除） */}
-        <div style={{ display: "none" }}>
-          <title>子yee 萬事屋｜台股資訊、小工具與生活應用平台</title>
-          <p>
-            子yee
-            萬事屋提供專業技術解決方案與服務，專注於優化商業流程、提升效率，滿足您的業務需求。立即探索我們的技術諮詢、流程優化與產品解決方案！
-          </p>
-          <h2>我們的服務</h2>
-          <ul>
-            <li>技術諮詢與支持</li>
-            <li>商業流程優化</li>
-            <li>產品解決方案</li>
-          </ul>
-        </div>
         {/* noscript 保留提示 */}
         <noscript>You need to enable JavaScript to run this app.</noscript>
       </body>
