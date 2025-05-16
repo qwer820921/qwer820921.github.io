@@ -37,18 +37,22 @@ const Navbar: React.FC = () => {
           <ul className="navbar-nav ms-auto">
             {routes
               .filter((route) => route.showInNavbar)
-              .map((route) => (
-                <li
-                  key={route.path}
-                  className={`nav-item ${
-                    pathname === route.path ? "active" : ""
-                  }`}
-                >
-                  <Link className="nav-link text-dark" href={route.path}>
-                    {route.name}
-                  </Link>
-                </li>
-              ))}
+              .map((route) => {
+                // ✅ 如果 route.protected 為 true，就換成 /protected
+                const targetPath = route.protected ? "/protected" : route.path;
+                const isActive = pathname === route.path;
+
+                return (
+                  <li
+                    key={route.path}
+                    className={`nav-item ${isActive ? "active" : ""}`}
+                  >
+                    <Link className="nav-link text-dark" href={targetPath}>
+                      {route.name}
+                    </Link>
+                  </li>
+                );
+              })}
           </ul>
         </div>
       </div>

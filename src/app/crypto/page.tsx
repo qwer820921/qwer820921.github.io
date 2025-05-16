@@ -23,8 +23,8 @@ const CryptoPage: React.FC = () => {
   const [intervalOptions] = useState<Rule[]>(getIntervalOptions());
   const [quickOptions] = useState<QuickQueryOption[]>(getQuickQueryOptions());
 
-  const [selectedSymbol, setSelectedSymbol] = useState<string>("BTCUSDT");
-  const [selectedInterval, setSelectedInterval] = useState<string>("1h");
+  const [selectedSymbol, setSelectedSymbol] = useState<string>("NXPCUSDT");
+  const [selectedInterval, setSelectedInterval] = useState<string>("1m");
 
   // 日期區間初始值
   const now = new Date();
@@ -111,11 +111,6 @@ const CryptoPage: React.FC = () => {
 
   return (
     <div className="container py-4">
-      {/* <SEO
-        title="子yee 萬事屋 | 加密貨幣資訊 - 即時加密貨幣市場數據"
-        description="子yee 萬事屋提供最新的加密貨幣資訊與即時市場數據，幫助您掌握虛擬貨幣投資機會！"
-        keywords="子yee 萬事屋, 加密貨幣, 虛擬貨幣, 市場數據, 投資機會, 加密貨幣資訊"
-      /> */}
       <LoadingOverlay isLoading={isLoading} />
       <h1 className="mb-4 text-center">加密貨幣資訊</h1>
 
@@ -186,48 +181,6 @@ const CryptoPage: React.FC = () => {
             </div>
           </div>
         </div>
-
-        {/* <div className="col-xl-8 col-lg-12">
-          <div className="row">
-            <div className="col-lg-6">
-              <div className="input-group">
-                <span className="input-group-text">開始日期</span>
-                <div className="flex-grow-1">
-                  <DatePicker
-                    selected={startDate}
-                    onChange={(date: Date | null) => setStartDate(date)}
-                    selectsStart
-                    startDate={startDate}
-                    endDate={endDate}
-                    showTimeSelect
-                    dateFormat="Pp"
-                    className="form-control"
-                    maxDate={endDate ? endDate : undefined}
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="col-lg-6">
-              <div className="input-group">
-                <span className="input-group-text">結束日期</span>
-                <div className="flex-grow-1">
-                  <DatePicker
-                    selected={endDate}
-                    onChange={(date: Date | null) => setEndDate(date)}
-                    selectsEnd
-                    startDate={startDate}
-                    endDate={endDate}
-                    showTimeSelect
-                    dateFormat="Pp"
-                    className="form-control"
-                    minDate={startDate || undefined}
-                  />
-                </div>
-              </div>
-            </div>
-
-          </div>
-        </div> */}
       </form>
 
       <div className="mt-4">

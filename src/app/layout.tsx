@@ -56,9 +56,6 @@ export default function RootLayout({
         />
       </head>
       <body>
-        {/* noscript 保留提示 */}
-        <noscript>You need to enable JavaScript to run this app.</noscript>
-
         {/* SEO 組件、結構化資料 */}
         <AppSEO />
         <BreadcrumbJsonLd />
@@ -107,6 +104,8 @@ export default function RootLayout({
             <li>產品解決方案</li>
           </ul>
         </div>
+        {/* noscript 保留提示 */}
+        <noscript>You need to enable JavaScript to run this app.</noscript>
       </body>
     </html>
   );

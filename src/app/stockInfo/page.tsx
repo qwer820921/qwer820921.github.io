@@ -168,12 +168,6 @@ const StockInfoPage: React.FC = () => {
   return (
     <div className="container py-4 h-100">
       <>
-        {/* <SEO
-          title="子yee 萬事屋 | 台股資訊 - 即時股市數據"
-          description="子yee 萬事屋提供台股資訊與即時股市數據，幫助您掌握投資機會！"
-          keywords="子yee 萬事屋, 台股資訊, 股市數據, 投資機會"
-          canonical="https://qwer820921.github.io/crypto"
-        /> */}
         <div
           style={{
             position: "absolute",
