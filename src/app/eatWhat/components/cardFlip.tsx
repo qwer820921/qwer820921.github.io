@@ -1,3 +1,4 @@
+"use client";
 import React, { useState, useEffect } from "react";
 import { Food } from "../types";
 import { Modal, Button } from "react-bootstrap";
@@ -54,6 +55,17 @@ const CardFlip: React.FC<CardFlipProps> = ({ foods }) => {
 
   return (
     <div className="container d-flex flex-column align-items-center justify-content-center bg-light p-4">
+      <style jsx>{`
+        .card-flipped {
+          transform: rotateY(180deg);
+        }
+        .card {
+          transform-style: preserve-3d;
+        }
+        .card-body {
+          transition: transform 1s;
+        }
+      `}</style>
       <h1 className="text-center mb-4">卡牌翻轉抽獎</h1>
       <div className="row row-cols-2 row-cols-sm-3 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 row-cols-xxl-5 m-0 mb-5">
         {shuffledFoods.map((food, index) => (
@@ -142,23 +154,5 @@ const CardFlip: React.FC<CardFlipProps> = ({ foods }) => {
     </div>
   );
 };
-
-// 內聯 CSS 確保翻轉動畫
-const styles = `
-  .card-flipped {
-    transform: rotateY(180deg);
-  }
-  .card {
-    transform-style: preserve-3d;
-  }
-  .card-body {
-    transition: transform 1s;
-  }
-`;
-
-// 將樣式注入到頁面
-const styleSheet = document.createElement("style");
-styleSheet.textContent = styles;
-document.head.appendChild(styleSheet);
 
 export default CardFlip;
