@@ -16,18 +16,6 @@ body,
   text-align: center;
 }
 
-/* 確保頁面內的 logo 動畫不會影響布局 */
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
-
 main {
   flex: 1;
   /* 這會讓 main 撐開剩下的空間 */

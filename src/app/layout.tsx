@@ -64,7 +64,7 @@ export default function RootLayout({
         <Navbar />
 
         {/* 主內容區塊 */}
-        <main className="container-fluid mt-5">{children}</main>
+        <main className="App container-fluid mt-5">{children}</main>
 
         {/* Footer */}
         <Footer />
