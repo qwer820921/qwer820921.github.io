@@ -81,7 +81,8 @@ export default function YouTubePlayerPage() {
   const [list, setList] = useState<Track[]>([]);
   const [index, setIndex] = useState(0);
   const [shuffle, setShuffle] = useState(false);
-  const [repeat, setRepeat] = useState(false);
+  // repeatMode: 'all' 全部循環, 'one' 單曲循環, 'off' 無循環
+  const [repeatMode, setRepeatMode] = useState<"all" | "one" | "off">("off");
 
   // 取得雲端清單
   const refreshList = useCallback(async () => {
@@ -97,6 +98,15 @@ export default function YouTubePlayerPage() {
   useEffect(() => {
     refreshList();
   }, [refreshList]);
+
+  // 首次進入畫面時自動播放第一首歌（只做一次）
+  const [autoPlayed, setAutoPlayed] = useState(false);
+  useEffect(() => {
+    if (!autoPlayed && list.length > 0 && index === 0) {
+      playById(0);
+      setAutoPlayed(true);
+    }
+  }, [autoPlayed, list, index]);
 
   /****************** Scrobble ***************/
   const scrobble = (event: "play" | "skip" | "complete", vid: string) => {
@@ -114,17 +124,32 @@ export default function YouTubePlayerPage() {
     setTitle(data.title);
     setReady(true);
     setDuration(await p.getDuration());
+    // 不再自動播放第一首，避免每次切歌都跳回第一首
   };
   const onStateChange: YouTubeProps["onStateChange"] = (e) => {
-    if (list.length === 0 || !list[index]) return;
+    if (list.length === 0) return;
+
+    // 當前歌曲結束
     if (e.data === 0) {
-      scrobble("complete", list[index].id);
-      next();
+      scrobble("complete", list[index]?.id);
+      if (repeatMode === "one") {
+        playById(index); // 單曲循環
+      } else if (index < list.length - 1) {
+        next(); // 還有下一首
+      } else if (repeatMode === "all") {
+        playById(0); // 全部循環回第一首
+      } else {
+        setIsPlaying(false); // 無循環，停止
+      }
     }
+
+    // 播放開始
     if (e.data === 1) {
-      scrobble("play", list[index].id);
+      scrobble("play", list[index]?.id);
       setIsPlaying(true);
     }
+
+    // 暫停
     if (e.data === 2) {
       setIsPlaying(false);
     }
@@ -147,11 +172,17 @@ export default function YouTubePlayerPage() {
   const next = useCallback(() => {
     setIndex((i) => {
       if (list.length === 0) return i;
+      // 單曲循環
+      if (repeatMode === "one") {
+        playById(i);
+        return i;
+      }
+      // 隨機播放
       const ni = shuffle
         ? Math.floor(Math.random() * list.length)
         : i + 1 < list.length
           ? i + 1
-          : repeat
+          : repeatMode === "all"
             ? 0
             : i;
       if (ni !== i && list[i]) {
@@ -160,7 +191,7 @@ export default function YouTubePlayerPage() {
       }
       return ni;
     });
-  }, [list, shuffle, repeat]);
+  }, [list, shuffle, repeatMode]);
   const prev = () => {
     if (list.length === 0) return;
     const ni = index === 0 ? list.length - 1 : index - 1;
@@ -190,6 +221,7 @@ export default function YouTubePlayerPage() {
     return () => clearInterval(id);
   }, [ready]);
 
+  // 只在 index 或 list 改變時載入歌詞，不自動呼叫 playById，避免自動切歌時多次觸發
   useEffect(() => {
     (async () => {
       setLyrics("載入中…");
@@ -210,11 +242,11 @@ export default function YouTubePlayerPage() {
     list,
     index,
     shuffle,
-    repeat,
+    repeatMode,
     next,
     prev,
     setShuffle,
-    setRepeat,
+    setRepeatMode,
     setIndex: playById,
   };
 
@@ -309,7 +341,11 @@ export default function YouTubePlayerPage() {
           <YouTube
             ref={playerRef}
             videoId={list[index].id}
-            opts={{ height: "0", width: "0", playerVars: { controls: 0 } }}
+            opts={{
+              height: "0",
+              width: "0",
+              playerVars: { controls: 0, autoplay: 1 },
+            }}
             onReady={onReady}
             onStateChange={onStateChange}
           />
@@ -364,12 +400,43 @@ export default function YouTubePlayerPage() {
         <div className="d-flex justify-content-center align-items-center gap-2 mb-3">
           {/* 循環按鈕（最左） */}
           <button
-            className={`btn btn-circle  ${repeat ? "btn-warning" : "btn-outline-warning"}`}
-            title="循環播放"
+            className={`btn btn-circle btn-outline-secondary${repeatMode !== "off" ? " active" : ""}`}
+            title={
+              repeatMode === "all"
+                ? "全部循環"
+                : repeatMode === "one"
+                  ? "單曲循環"
+                  : "無循環"
+            }
             style={{ width: 40, height: 40, borderRadius: "50%" }}
-            onClick={() => setRepeat(!repeat)}
+            onClick={() => {
+              setRepeatMode((mode) =>
+                mode === "off" ? "all" : mode === "all" ? "one" : "off"
+              );
+            }}
           >
-            <ArrowRepeat />
+            {repeatMode === "all" && (
+              <ArrowRepeat style={{ color: "#0d6efd" }} />
+            )}
+            {repeatMode === "one" && (
+              <span style={{ position: "relative", display: "inline-block" }}>
+                <ArrowRepeat style={{ color: "#0d6efd" }} />
+                <span
+                  style={{
+                    position: "absolute",
+                    top: "45%",
+                    left: "50%",
+                    transform: "translate(-50%, -50%)",
+                    fontSize: "0.7em",
+                    color: "#0d6efd",
+                    fontWeight: "bold",
+                  }}
+                >
+                  1
+                </span>
+              </span>
+            )}
+            {repeatMode === "off" && <ArrowRepeat style={{ color: "#aaa" }} />}
           </button>
           {/* 向後X秒 */}
           <button

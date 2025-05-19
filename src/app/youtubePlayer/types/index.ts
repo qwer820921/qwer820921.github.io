@@ -12,11 +12,11 @@ export interface QueueCtx {
   list: Track[];
   index: number;
   shuffle: boolean;
-  repeat: boolean;
+  repeatMode: "all" | "one" | "off";
   next: () => void;
   prev: () => void;
   setShuffle: (v: boolean) => void;
-  setRepeat: (v: boolean) => void;
+  setRepeatMode: (v: "all" | "one" | "off") => void;
   setIndex: (i: number) => void;
 }
 
