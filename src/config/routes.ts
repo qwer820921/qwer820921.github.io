@@ -34,6 +34,11 @@ const routes: RouteConfig[] = [
     showInNavbar: true,
     protected: false, //受保護的頁面
   },
+  {
+    path: ROUTES.YT_PLAYER,
+    name: "音樂播放器",
+    showInNavbar: true,
+  },
 ];
 
 export default routes;
