@@ -1,11 +1,11 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  CaretRightFill,
-  PauseFill,
   ChevronBarLeft,
   ChevronBarRight,
   MusicNoteBeamed,
+  Pause,
+  Play,
 } from "react-bootstrap-icons";
 
 // 型別宣告
@@ -207,7 +207,7 @@ const SoundCloudPlayerPage: React.FC = () => {
                   title={isPlaying ? "暫停" : "播放"}
                 >
                   {isPlaying ? (
-                    <PauseFill
+                    <Pause
                       size={48}
                       style={{
                         color: "#fff",
@@ -219,7 +219,7 @@ const SoundCloudPlayerPage: React.FC = () => {
                       }}
                     />
                   ) : (
-                    <CaretRightFill
+                    <Play
                       size={48}
                       style={{
                         color: "#fff",
