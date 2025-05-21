@@ -39,4 +39,16 @@ export const seoMap: {
     keywords:
       "子yee 萬事屋, 加密貨幣, 虛擬貨幣, 市場數據, 投資機會, 加密貨幣資訊",
   },
+  [ROUTES.YT_PLAYER]: {
+    title: "YouTube 音樂播放器",
+    description:
+      "線上播放與管理 YouTube 音樂清單，支援歌詞、播放隊列與自動切歌。",
+    keywords: "YouTube, 音樂播放器, 歌詞, 播放清單, 網頁音樂",
+  },
+  [ROUTES.SOUNDCLOUD_PLAYER]: {
+    title: "SoundCloud 播放器",
+    description:
+      "SoundCloud 音樂搜尋、播放清單管理與即時播放，支援多首歌曲自動切換。",
+    keywords: "SoundCloud, 音樂播放器, 播放清單, 搜尋, 網頁音樂",
+  },
 };

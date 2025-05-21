@@ -7,5 +7,6 @@ export const ROUTES = {
   STOCK_INFO: "/stockInfo", // 台股資訊
   CRYPTO: "/crypto", // 加密貨幣
   YT_PLAYER: "/youtubePlayer", // YouTube 播放器
+  SOUNDCLOUD_PLAYER: "/soundcloudPlayer", // SoundCloud 播放器
   PROTECTED: "/protected", // 受保護頁面的路由
 };

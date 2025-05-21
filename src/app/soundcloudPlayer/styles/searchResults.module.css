@@ -1,0 +1,42 @@
+.add-playlist-btn {
+  min-width: 80px;
+  padding: 6px 0;
+  font-size: 15px;
+  margin-left: 12px;
+  font-weight: 500;
+  white-space: normal;
+  word-break: keep-all;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.add-playlist-btn-text {
+  display: inline-block;
+}
+
+@media (max-width: 480px) {
+  .add-playlist-btn-text {
+    display: block;
+    white-space: pre-line;
+    line-height: 1.2;
+  }
+  .add-playlist-btn-text::after {
+    content: "";
+    display: block;
+  }
+  .add-playlist-btn {
+    min-width: 56px;
+    font-size: 14px;
+    padding: 5px 0;
+  }
+}
+
+/* 讓兩字自動換行 */
+@media (max-width: 340px) {
+  .add-playlist-btn-text {
+    white-space: pre-line;
+    word-break: break-all;
+  }
+}

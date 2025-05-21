@@ -39,6 +39,11 @@ const routes: RouteConfig[] = [
     name: "音樂播放器",
     showInNavbar: true,
   },
+  {
+    path: ROUTES.SOUNDCLOUD_PLAYER,
+    name: "SoundCloud 播放器",
+    showInNavbar: true,
+  },
 ];
 
 export default routes;

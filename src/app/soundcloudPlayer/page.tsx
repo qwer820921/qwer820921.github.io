@@ -1,9 +1,9 @@
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
-import YouTubePlayerPage from "./components/youtubePlayerPage";
+import SoundCloudPlayerPage from "./components/soundcloudPlayerPage";
 
-// 抓取 YouTube Player 頁面的 SEO 設定
-const seo = seoMap[ROUTES.YT_PLAYER];
+// 抓取 SoundCloud Player 頁面的 SEO 設定
+const seo = seoMap[ROUTES.SOUNDCLOUD_PLAYER];
 
 export const metadata = {
   title: seo.title,
@@ -12,7 +12,7 @@ export const metadata = {
   openGraph: {
     title: seo.title,
     description: seo.description,
-    url: `https://qwer820921.github.io${ROUTES.YT_PLAYER}`,
+    url: `https://qwer820921.github.io${ROUTES.SOUNDCLOUD_PLAYER}`,
     images: [
       {
         url: "https://qwer820921.github.io/images/img16.jpg",
@@ -30,5 +30,5 @@ export const metadata = {
 };
 
 export default function Page() {
-  return <YouTubePlayerPage />;
+  return <SoundCloudPlayerPage />;
 }
