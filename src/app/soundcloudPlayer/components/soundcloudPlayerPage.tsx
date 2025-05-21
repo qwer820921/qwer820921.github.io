@@ -5,6 +5,7 @@ import {
   PauseFill,
   ChevronBarLeft,
   ChevronBarRight,
+  MusicNoteBeamed,
 } from "react-bootstrap-icons";
 
 // 型別宣告
@@ -286,18 +287,20 @@ const SoundCloudPlayerPage: React.FC = () => {
           borderRadius: "50%",
           width: 60,
           height: 60,
-          fontSize: 28,
+          fontSize: 32, // 稍微大一點
           background: "#ff5500",
           color: "#fff",
           border: "none",
           boxShadow: "0 2px 8px rgba(0,0,0,.2)",
+          display: "flex", // 新增
+          alignItems: "center", // 新增
+          justifyContent: "center", // 新增
+          padding: 0, // 新增，避免預設 padding 影響
         }}
         onClick={() => setShowModal(true)}
         title="管理播放清單與查詢"
       >
-        <span role="img" aria-label="playlist">
-          🎵
-        </span>
+        <MusicNoteBeamed size={32} />
       </button>
 
       {/* Modal */}
