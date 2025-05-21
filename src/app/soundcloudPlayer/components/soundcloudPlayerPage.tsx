@@ -4,8 +4,6 @@ import {
   ChevronBarLeft,
   ChevronBarRight,
   MusicNoteBeamed,
-  Pause,
-  Play,
 } from "react-bootstrap-icons";
 
 // 型別宣告
@@ -144,6 +142,49 @@ const SoundCloudPlayerPage: React.FC = () => {
     return () => clearInterval(interval);
   }, [isPlaying, seeking]);
 
+  // 播放（Play）SVG
+  const PlaySVG = ({ size = 48 }) => (
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none">
+      <circle cx="24" cy="24" r="22" fill="url(#playGrad)" />
+      <polygon points="20,16 36,24 20,32" fill="#fff" />
+      <defs>
+        <linearGradient
+          id="playGrad"
+          x1="0"
+          y1="0"
+          x2="48"
+          y2="48"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#1976d2" />
+          <stop offset="1" stopColor="#00e5ff" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+
+  // 暫停（Pause）SVG
+  const PauseSVG = ({ size = 48 }) => (
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none">
+      <circle cx="24" cy="24" r="22" fill="url(#pauseGrad)" />
+      <rect x="18" y="16" width="5" height="16" rx="2.5" fill="#fff" />
+      <rect x="27" y="16" width="5" height="16" rx="2.5" fill="#fff" />
+      <defs>
+        <linearGradient
+          id="pauseGrad"
+          x1="0"
+          y1="0"
+          x2="48"
+          y2="48"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#ff5500" />
+          <stop offset="1" stopColor="#ffcc00" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+
   return (
     <main style={{ padding: 32 }}>
       {/* 播放區塊 */}
@@ -197,40 +238,26 @@ const SoundCloudPlayerPage: React.FC = () => {
               </div>
               <div className="player-controls-play">
                 <button
-                  className="player-btn player-btn-large"
                   style={{
                     border: isPlaying
-                      ? "8px solid #ffb300" // 橘黃
-                      : "8px solid #00e5ff", // 藍綠
+                      ? "8px solid #ffb300"
+                      : "8px solid #00e5ff",
+                    width: 80,
+                    height: 80,
+                    borderRadius: "50%",
+                    background: "#f0f2f5",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: "0 2px 12px rgba(60,80,120,0.10)",
+                    padding: 0,
+                    outline: "none",
+                    cursor: "pointer",
                   }}
                   onClick={() => setIsPlaying((p) => !p)}
                   title={isPlaying ? "暫停" : "播放"}
                 >
-                  {isPlaying ? (
-                    <Pause
-                      size={48}
-                      style={{
-                        color: "#fff",
-                        background:
-                          "linear-gradient(135deg, #ff5500 60%, #ffcc00 100%)",
-                        borderRadius: "12px",
-                        boxShadow: "0 2px 8px rgba(255,85,0,0.18)",
-                        padding: "6px",
-                      }}
-                    />
-                  ) : (
-                    <Play
-                      size={48}
-                      style={{
-                        color: "#fff",
-                        background:
-                          "linear-gradient(135deg, #1976d2 60%, #00e5ff 100%)",
-                        borderRadius: "12px",
-                        boxShadow: "0 2px 8px rgba(25,118,210,0.18)",
-                        padding: "6px",
-                      }}
-                    />
-                  )}
+                  {isPlaying ? <PauseSVG size={48} /> : <PlaySVG size={48} />}
                 </button>
               </div>
             </div>
