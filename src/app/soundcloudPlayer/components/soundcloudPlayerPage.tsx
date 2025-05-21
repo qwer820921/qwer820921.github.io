@@ -197,13 +197,38 @@ const SoundCloudPlayerPage: React.FC = () => {
               <div className="player-controls-play">
                 <button
                   className="player-btn player-btn-large"
+                  style={{
+                    border: isPlaying
+                      ? "8px solid #ffb300" // 橘黃
+                      : "8px solid #00e5ff", // 藍綠
+                  }}
                   onClick={() => setIsPlaying((p) => !p)}
                   title={isPlaying ? "暫停" : "播放"}
                 >
                   {isPlaying ? (
-                    <PauseFill size={48} color="#fff" />
+                    <PauseFill
+                      size={48}
+                      style={{
+                        color: "#fff",
+                        background:
+                          "linear-gradient(135deg, #ff5500 60%, #ffcc00 100%)",
+                        borderRadius: "12px",
+                        boxShadow: "0 2px 8px rgba(255,85,0,0.18)",
+                        padding: "6px",
+                      }}
+                    />
                   ) : (
-                    <CaretRightFill size={48} color="#fff" />
+                    <CaretRightFill
+                      size={48}
+                      style={{
+                        color: "#fff",
+                        background:
+                          "linear-gradient(135deg, #1976d2 60%, #00e5ff 100%)",
+                        borderRadius: "12px",
+                        boxShadow: "0 2px 8px rgba(25,118,210,0.18)",
+                        padding: "6px",
+                      }}
+                    />
                   )}
                 </button>
               </div>
