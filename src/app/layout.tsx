@@ -3,12 +3,9 @@ import "./globals.css";
 import "bootstrap/dist/css/bootstrap.min.css"; // Bootstrap 样式
 import type { Metadata } from "next";
 import Script from "next/script";
-import Navbar from "@/components/common/navbar";
-import Footer from "@/components/common/footer";
-import BreadcrumbJsonLd from "@/components/common/seo/breadcrumbJsonLd";
-import BootstrapClient from "@/components/common/bootstrapClient";
-import WebVitalsClient from "@/components/common/webVitalsClient";
+import ClientRoot from "./ClientRoot";
 
+// 將 metadata 移動到一個單獨的 server 組件中
 export const metadata: Metadata = {
   metadataBase: new URL("https://qwer820921.github.io"),
   title: {
@@ -80,26 +77,7 @@ export default function RootLayout({
         />
       </head>
       <body>
-        {/* 結構化資料 */}
-        <BreadcrumbJsonLd />
-
-        {/* Navbar */}
-        <Navbar />
-
-        {/* 主內容區塊 */}
-        <main className="App container-fluid mt-5">{children}</main>
-
-        {/* Footer */}
-        <Footer />
-
-        {/* Bootstrap JavaScript 客戶端初始化（如果有） */}
-        <BootstrapClient />
-
-        {/* WebVitals 指標收集 */}
-        <WebVitalsClient />
-
-        {/* noscript 保留提示 */}
-        <noscript>You need to enable JavaScript to run this app.</noscript>
+        <ClientRoot>{children}</ClientRoot>
       </body>
     </html>
   );

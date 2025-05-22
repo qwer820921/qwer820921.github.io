@@ -23,7 +23,7 @@ export default function SearchBar({
         disabled={loading}
       />
       <Button variant="primary" onClick={onSearch} disabled={loading}>
-        {loading ? "搜尋中..." : "搜尋"}
+        {loading ? "作業中..." : "搜尋"}
       </Button>
     </InputGroup>
   );

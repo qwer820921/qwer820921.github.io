@@ -44,6 +44,17 @@ const routes: RouteConfig[] = [
     name: "SoundCloud 播放器",
     showInNavbar: true,
   },
+  {
+    path: ROUTES.LOGIN,
+    name: "登入",
+    showInNavbar: false, // 登入頁面通常不會顯示在導航欄
+  },
+  {
+    path: ROUTES.YT_MUSIC,
+    name: "YouTube 音樂",
+    showInNavbar: true,
+    protected: true, // 受保護的頁面
+  },
 ];
 
 export default routes;

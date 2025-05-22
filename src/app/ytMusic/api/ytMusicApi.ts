@@ -1,52 +1,78 @@
 import axios from "axios";
 import { YtMusicTrack } from "../types";
 
-// Google Apps Script Web App URL
 export const BASE_URL =
-  "https://script.google.com/macros/s/AKfycbxVAX8E86sRdU5pDzAVKov9cQmV-ec-VcBygmOWG4Z8AgWetVK4FEV9jRg7y7Y4f1Rr/exec";
+  "https://script.google.com/macros/s/AKfycbyPcd7XZSeUUoNvZTKJtBYgzgDyh1rB3fUXRMNxo0A38yg-FM2AzvYBcAd60jyA2hEZ/exec";
 
 /**
- * 取得全部 YT Music 清單
+ * ✅ 取得某個使用者的播放清單
  */
-export const getAllYtMusicTracks = async (): Promise<YtMusicTrack[]> => {
-  const res = await axios.get(BASE_URL + "?action=list");
+export const getUserYtMusicTracks = async (
+  user_id: string
+): Promise<YtMusicTrack[]> => {
+  const res = await axios.get(BASE_URL, {
+    params: { user_id },
+  });
   if (!Array.isArray(res.data)) throw new Error("Unexpected response format");
   return res.data as YtMusicTrack[];
 };
 
 /**
- * 取得單筆（by id）
- */
-export const getYtMusicTrackById = async (
-  id: string
-): Promise<YtMusicTrack | undefined> => {
-  const res = await axios.get(
-    `${BASE_URL}?action=detail&id=${encodeURIComponent(id)}`
-  );
-  if (Array.isArray(res.data)) return res.data[0] as YtMusicTrack | undefined;
-  if (res.data && typeof res.data === "object" && res.data.id)
-    return res.data as YtMusicTrack;
-  return undefined;
-};
-
-/**
- * 新增（只需傳入 token 與 youtube_url，其餘自動處理）
+ * ✅ 新增一首歌
  */
 export interface CreateYtMusicTrackParams {
   token: string;
+  action: "create";
+  user_id: string;
   youtube_url: string;
   youtube_id: string;
   title: string;
   artist: string;
-} // id 欄位已移除
+}
 
 export const createYtMusicTrack = async (params: CreateYtMusicTrackParams) => {
-  // 不再傳 id
   const res = await axios.post(BASE_URL, params, {
-    headers: {
-      "Content-Type": "text/plain",
-    },
-    withCredentials: false,
+    headers: { "Content-Type": "text/plain" },
+  });
+  return res.data;
+};
+
+/**
+ * ✅ 刪除一首歌（依 user_id + youtube_id）
+ */
+export interface DeleteYtMusicTrackParams {
+  token: string;
+  action: "delete";
+  user_id: string;
+  youtube_id: string;
+}
+
+export const deleteYtMusicTrack = async (params: DeleteYtMusicTrackParams) => {
+  const res = await axios.post(BASE_URL, params, {
+    headers: { "Content-Type": "text/plain" },
+  });
+  return res.data;
+};
+
+/**
+ * ✅ 使用者登入
+ */
+export interface LoginParams {
+  action: "login";
+  username: string;
+  password: string;
+}
+
+export interface LoginResult {
+  success: boolean;
+  user_id: string;
+  username: string;
+  message: string;
+}
+
+export const loginUser = async (params: LoginParams): Promise<LoginResult> => {
+  const res = await axios.post(BASE_URL, params, {
+    headers: { "Content-Type": "text/plain" },
   });
   return res.data;
 };

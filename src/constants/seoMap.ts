@@ -51,4 +51,15 @@ export const seoMap: {
       "SoundCloud 音樂搜尋、播放清單管理與即時播放，支援多首歌曲自動切換。",
     keywords: "SoundCloud, 音樂播放器, 播放清單, 搜尋, 網頁音樂",
   },
+  [ROUTES.LOGIN]: {
+    title: "子yee 萬事屋 | 會員登入",
+    description: "登入子yee 萬事屋會員帳號，享受更多個人化功能與服務。",
+    keywords: "子yee 萬事屋, 會員登入, 帳號登入, 個人化服務",
+  },
+  [ROUTES.YT_MUSIC]: {
+    title: "子yee 萬事屋 | YouTube 音樂",
+    description:
+      "登入後即可享受個人化的 YouTube 音樂體驗，建立並管理您的專屬播放清單。",
+    keywords: "子yee 萬事屋, YouTube 音樂, 音樂播放, 個人化播放清單, 會員專屬",
+  },
 };

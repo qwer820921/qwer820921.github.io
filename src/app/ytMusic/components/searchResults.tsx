@@ -18,13 +18,6 @@ const SearchResults = ({
   const isInPlaylist = (youtubeId: string) =>
     playlist.some((track) => track.youtube_id === youtubeId);
 
-  if (loading) {
-    return (
-      <div className="text-center my-3">
-        <Spinner animation="border" />
-      </div>
-    );
-  }
   if (!results.length) {
     return <div className="text-muted text-center my-3">請輸入關鍵字搜尋</div>;
   }
@@ -105,7 +98,7 @@ const SearchResults = ({
             <Button
               size="sm"
               variant="success"
-              disabled={isInPlaylist(item.id.videoId)}
+              disabled={isInPlaylist(item.id.videoId) || loading}
               onClick={() => onAddTrack(item, "")}
               style={{
                 marginLeft: 16,
@@ -116,8 +109,19 @@ const SearchResults = ({
             >
               {isInPlaylist(item.id.videoId) ? (
                 "已在清單"
+              ) : loading ? (
+                <>
+                  <Spinner
+                    as="span"
+                    animation="border"
+                    size="sm"
+                    role="status"
+                    aria-hidden="true"
+                  />
+                  <span>加入中...</span>
+                </>
               ) : (
-                <span>加入清單</span>
+                "加入清單"
               )}
             </Button>
           </div>

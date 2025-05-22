@@ -5,6 +5,7 @@ import SearchResults from "./searchResults";
 import { YoutubeSearchResult } from "@/app/youtubePlayer/types";
 import { mockYoutubeResults } from "../mocks/mockData";
 import { createYtMusicTrack } from "../api/ytMusicApi";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface SearchTabProps {
   onAddTrack: (track: YtMusicTrack) => void;
@@ -54,6 +55,7 @@ const SearchBar = ({
 };
 
 export default function SearchTab({ onAddTrack, playlist }: SearchTabProps) {
+  const { userId } = useAuth();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<YoutubeSearchResult[]>(
     mockYoutubeResults as YoutubeSearchResult[]
@@ -92,6 +94,8 @@ export default function SearchTab({ onAddTrack, playlist }: SearchTabProps) {
       // 1. 呼叫 API 新增
       await createYtMusicTrack({
         token: "YOUR_SECRET_TOKEN",
+        action: "create", // 新增這行
+        user_id: userId ?? "", // 使用從 useAuth 獲取的 userId
         youtube_url: `https://www.youtube.com/watch?v=${track.id.videoId}`,
         youtube_id: track.id.videoId,
         title: track.snippet.title,

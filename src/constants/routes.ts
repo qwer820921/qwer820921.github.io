@@ -9,4 +9,6 @@ export const ROUTES = {
   YT_PLAYER: "/youtubePlayer", // YouTube 播放器
   SOUNDCLOUD_PLAYER: "/soundcloudPlayer", // SoundCloud 播放器
   PROTECTED: "/protected", // 受保護頁面的路由
+  LOGIN: "/logIn", // 登入頁面
+  YT_MUSIC: "/ytMusic", // YouTube 音樂頁面
 };
