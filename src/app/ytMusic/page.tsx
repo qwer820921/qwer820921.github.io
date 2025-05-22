@@ -308,15 +308,17 @@ export default function YtMusicPage() {
                       marginLeft: "8px",
                     }}
                   >
-                    {playMode === "sequential" && (
-                      <ArrowRepeat className="control-icon" />
-                    )}
-                    {playMode === "shuffle" && (
-                      <Shuffle className="control-icon" />
-                    )}
-                    {playMode === "repeat" && (
-                      <Repeat1 className="control-icon" />
-                    )}
+                    <div className="d-flex align-items-center">
+                      {playMode === "sequential" && (
+                        <ArrowRepeat className="control-icon" />
+                      )}
+                      {playMode === "shuffle" && (
+                        <Shuffle className="control-icon" />
+                      )}
+                      {playMode === "repeat" && (
+                        <Repeat1 className="control-icon" />
+                      )}
+                    </div>
                   </button>
 
                   {/* 快退 */}
@@ -339,7 +341,9 @@ export default function YtMusicPage() {
                     onClick={playPrev}
                     title="上一首"
                   >
-                    <ChevronBarLeft className="control-icon" />
+                    <div className="d-flex align-items-center">
+                      <ChevronBarLeft className="control-icon" />
+                    </div>
                   </button>
 
                   {/* 下一首 */}
@@ -348,7 +352,9 @@ export default function YtMusicPage() {
                     onClick={playNext}
                     title="下一首"
                   >
-                    <ChevronBarRight className="control-icon" />
+                    <div className="d-flex align-items-center">
+                      <ChevronBarRight className="control-icon" />
+                    </div>
                   </button>
 
                   {/* 快進 */}
