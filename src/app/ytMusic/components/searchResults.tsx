@@ -1,19 +1,11 @@
 import { ListGroup, Button, Spinner } from "react-bootstrap";
 import { YtMusicTrack } from "../types";
-
-type YoutubeSearchResult = {
-  id: { videoId: string };
-  snippet: {
-    title: string;
-    channelTitle: string;
-    thumbnails: { default: { url: string } };
-  };
-};
+import { YoutubeSearchResult } from "@/app/youtubePlayer/types";
 
 interface SearchResultsProps {
   results: YoutubeSearchResult[];
   playlist: YtMusicTrack[];
-  onAddTrack: (track: YtMusicTrack) => void;
+  onAddTrack: (track: YoutubeSearchResult, embedHtml: string) => void;
   loading?: boolean;
 }
 
@@ -38,8 +30,8 @@ const SearchResults = ({
   }
   return (
     <ListGroup>
-      {results.map((item) => (
-        <ListGroup.Item key={item.id.videoId}>
+      {results.map((item, index) => (
+        <ListGroup.Item key={item.id?.videoId || `video-${index}`}>
           <div className="d-flex align-items-center">
             {/* 左側內容自動填滿剩餘空間 */}
             <div
@@ -114,18 +106,7 @@ const SearchResults = ({
               size="sm"
               variant="success"
               disabled={isInPlaylist(item.id.videoId)}
-              onClick={() =>
-                onAddTrack({
-                  id: item.id.videoId,
-                  title: item.snippet.title,
-                  artist: item.snippet.channelTitle,
-                  youtube_url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
-                  youtube_id: item.id.videoId,
-                  mp3_url: "",
-                  status: "pending",
-                  note: "",
-                })
-              }
+              onClick={() => onAddTrack(item, "")}
               style={{
                 marginLeft: 16,
                 fontWeight: 500,

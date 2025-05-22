@@ -1,10 +1,6 @@
 import React, { useState } from "react";
 import { PlaylistTrack, TrackSearchResult } from "../types/soundcloud";
-import {
-  searchTracks,
-  addToPlaylist,
-  getPlaylist,
-} from "../api/soundcloudPlaylistApi";
+import { searchTracks, addToPlaylist } from "../api/soundcloudPlaylistApi";
 import SearchBar from "./searchBar";
 import SearchResults from "./searchResults";
 
@@ -43,7 +39,6 @@ const SearchTab: React.FC<SearchTabProps> = ({ playlist, onAddTrack }) => {
       artwork_url: track.artwork_url || "",
     });
     setTimeout(async () => {
-      await getPlaylist();
       // 這裡直接呼叫 onAddTrack，讓父元件刷新資料
       onAddTrack(track, embedHtml);
     }, 1000);

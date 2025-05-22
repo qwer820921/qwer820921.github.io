@@ -7,7 +7,6 @@ interface PlaylistListProps {
   currentTrackId?: string;
   onPlay: (id: string) => void;
   onDelete: (id: string) => void;
-  onEdit?: (track: YtMusicTrack) => void;
 }
 
 const PlaylistList: React.FC<PlaylistListProps> = ({
@@ -15,50 +14,87 @@ const PlaylistList: React.FC<PlaylistListProps> = ({
   currentTrackId,
   onPlay,
   onDelete,
-  onEdit,
 }) => {
+  if (playlist.length === 0) {
+    return <div className="text-muted text-center my-3">播放清單是空的</div>;
+  }
+
   return (
     <ListGroup>
-      {playlist.map((track) => (
-        <ListGroup.Item
-          key={track.id || track.youtube_id}
-          active={currentTrackId === (track.id || track.youtube_id)}
-          className="d-flex align-items-center justify-content-between"
-        >
-          <div
-            style={{ flex: 1, cursor: "pointer" }}
-            onClick={() => onPlay(track.id || track.youtube_id)}
+      {playlist.map((track, index) => {
+        const trackId = track.id || track.youtube_id;
+        const isActive = currentTrackId === trackId;
+        const thumbnailUrl = `https://img.youtube.com/vi/${track.youtube_id}/hqdefault.jpg`;
+
+        return (
+          <ListGroup.Item
+            key={trackId || `video-${index}`}
+            active={isActive}
+            className="d-flex align-items-center"
           >
-            <div>
-              <strong>{track.title}</strong>
-              <span style={{ color: "#888" }}> by {track.artist}</span>
+            <div
+              className="flex-grow-1 d-flex align-items-center"
+              style={{ minWidth: 0 }}
+            >
+              <img
+                src={thumbnailUrl}
+                alt={track.title}
+                style={{
+                  width: 48,
+                  height: 48,
+                  objectFit: "cover",
+                  borderRadius: 6,
+                  marginRight: 12,
+                }}
+              />
+              <div style={{ overflow: "hidden" }}>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "normal",
+                    maxWidth: "100%",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => onPlay(trackId)}
+                >
+                  {track.title}
+                </div>
+                <div
+                  className="text-muted small mt-1"
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {track.artist}
+                </div>
+              </div>
             </div>
-            <div style={{ fontSize: 12, color: "#bbb" }}>
-              {track.youtube_url}
-            </div>
-            <div style={{ fontSize: 12, color: "#bbb" }}>{track.status}</div>
-          </div>
-          <div>
-            {onEdit && (
-              <Button
-                size="sm"
-                variant="outline-primary"
-                className="me-2"
-                onClick={() => onEdit(track)}
-              >
-                編輯
-              </Button>
-            )}
             <Button
-              size="sm"
               variant="outline-danger"
-              onClick={() => onDelete(track.id || track.youtube_id)}
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(trackId);
+              }}
+              style={{
+                marginLeft: 16,
+                fontWeight: 500,
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }}
             >
               刪除
             </Button>
-          </div>
-        </ListGroup.Item>
-      ))}
+          </ListGroup.Item>
+        );
+      })}
     </ListGroup>
   );
 };

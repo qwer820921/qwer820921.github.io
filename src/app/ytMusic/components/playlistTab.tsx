@@ -1,21 +1,17 @@
 import { YtMusicTrack } from "../types";
-
+import PlaylistList from "./playlistList";
 interface PlaylistTabProps {
   playlist: YtMusicTrack[];
   currentTrackId?: string;
   onPlay: (id: string) => void;
   onDelete: (id: string) => void;
-  onEdit?: (track: YtMusicTrack) => void;
 }
-
-import PlaylistList from "./playlistList";
 
 export default function PlaylistTab({
   playlist,
   currentTrackId,
   onPlay,
   onDelete,
-  onEdit,
 }: PlaylistTabProps) {
   return (
     <div>
@@ -27,7 +23,6 @@ export default function PlaylistTab({
           currentTrackId={currentTrackId}
           onPlay={onPlay}
           onDelete={onDelete}
-          onEdit={onEdit}
         />
       )}
     </div>

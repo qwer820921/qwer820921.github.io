@@ -11,7 +11,6 @@ interface YtMusicPlaylistModalProps {
   currentTrackId?: string;
   onPlay: (id: string) => void;
   onDelete: (id: string) => void;
-  onEdit?: (track: YtMusicTrack) => void;
   onAddTrack: (track: YtMusicTrack) => void;
 }
 
@@ -22,7 +21,6 @@ export default function YtMusicPlaylistModal({
   currentTrackId,
   onPlay,
   onDelete,
-  onEdit,
   onAddTrack,
 }: YtMusicPlaylistModalProps) {
   const [activeTab, setActiveTab] = useState<"playlist" | "search">("playlist");
@@ -46,17 +44,25 @@ export default function YtMusicPlaylistModal({
         </Nav>
       </Modal.Header>
       <Modal.Body style={{ minHeight: 400 }}>
-        {activeTab === "playlist" ? (
+        <div
+          className={
+            activeTab === "playlist" ? "tab-pane active" : "tab-pane d-none"
+          }
+        >
           <PlaylistTab
             playlist={playlist}
             currentTrackId={currentTrackId}
             onPlay={onPlay}
             onDelete={onDelete}
-            onEdit={onEdit}
           />
-        ) : (
+        </div>
+        <div
+          className={
+            activeTab === "search" ? "tab-pane active" : "tab-pane d-none"
+          }
+        >
           <SearchTab onAddTrack={onAddTrack} playlist={playlist} />
-        )}
+        </div>
       </Modal.Body>
     </Modal>
   );

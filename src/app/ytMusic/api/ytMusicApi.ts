@@ -3,7 +3,7 @@ import { YtMusicTrack } from "../types";
 
 // Google Apps Script Web App URL
 export const BASE_URL =
-  "https://script.google.com/macros/s/AKfycbwGBc88EWVv6G1x-mChE8EBVaPgdVoaYE3H86QwDRQUNB1H3o5pAnAKJCDahfNlLz7L/exec";
+  "https://script.google.com/macros/s/AKfycbxVAX8E86sRdU5pDzAVKov9cQmV-ec-VcBygmOWG4Z8AgWetVK4FEV9jRg7y7Y4f1Rr/exec";
 
 /**
  * 取得全部 YT Music 清單
