@@ -33,8 +33,8 @@ export default function LoginPage() {
         // 使用 AuthContext 的 login 方法更新全局狀態
         login(res.user_id, res.username);
 
-        // 登入成功後導向首頁
-        router.push("/");
+        // 登入成功後導向 YT Music 頁面
+        router.push("/ytMusic");
       } else {
         setError(res.message || "登入失敗，請確認帳號密碼");
       }
