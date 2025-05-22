@@ -185,6 +185,99 @@ export default function YtMusicPage() {
 
   const { userId } = useAuth();
 
+  // 緩存指定索引的歌曲
+  const cacheTrack = useCallback(
+    async (track: YtMusicTrack): Promise<YtMusicTrack> => {
+      if (!track || track.objectUrl) {
+        return track; // 已經緩存過或無效的 track，直接返回
+      }
+
+      console.log(`[${new Date().toISOString()}] 開始緩存音頻: ${track.title}`);
+
+      try {
+        console.log(
+          `[${new Date().toISOString()}] 發起音頻請求: ${track.title}`
+        );
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超時
+
+        try {
+          const audioRes = await fetch(track.mp3_url, {
+            method: "GET",
+            cache: "no-store",
+            credentials: "omit",
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          if (!audioRes.ok) {
+            throw new Error(
+              `音頻請求失敗: ${audioRes.status} ${audioRes.statusText}`
+            );
+          }
+
+          // 檢查內容類型是否為音頻
+          const contentType = audioRes.headers.get("content-type") || "";
+          if (!contentType.startsWith("audio/")) {
+            throw new Error(`無效的音頻內容類型: ${contentType}`);
+          }
+
+          const blob = await audioRes.blob();
+
+          if (!blob || blob.size === 0) {
+            throw new Error("獲取到的音頻數據為空");
+          }
+
+          const objectUrl = URL.createObjectURL(blob);
+          console.log(`[${new Date().toISOString()}] 成功緩存: ${track.title}`);
+          return { ...track, objectUrl };
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          throw fetchError;
+        }
+      } catch (error) {
+        console.error(
+          `[${new Date().toISOString()}] 音頻緩存失敗: ${track.title}`,
+          error
+        );
+        return track; // 返回原始 track，不包含 objectUrl
+      }
+    },
+    []
+  );
+
+  // 預緩存下一首歌曲
+  const preloadNextTrack = useCallback(
+    async (currentIndex: number) => {
+      if (!playlist.length) return;
+
+      const nextIndex = (currentIndex + 1) % playlist.length;
+      const nextTrack = playlist[nextIndex];
+
+      if (!nextTrack || nextTrack.objectUrl) return; // 已經緩存過則跳過
+
+      try {
+        const cachedTrack = await cacheTrack(nextTrack);
+        // 只有在 track 發生變化時才更新狀態
+        if (cachedTrack !== nextTrack) {
+          setPlaylist((prev) => {
+            // 檢查是否需要更新（防止重複設置相同的值）
+            if (prev[nextIndex]?.objectUrl === cachedTrack.objectUrl)
+              return prev;
+            const newPlaylist = [...prev];
+            newPlaylist[nextIndex] = cachedTrack;
+            return newPlaylist;
+          });
+        }
+      } catch (error) {
+        console.error("預緩存下一首歌曲失敗:", error);
+      }
+    },
+    [playlist, cacheTrack]
+  );
+
   // 初始化播放列表
   useEffect(() => {
     const fetchPlaylist = async () => {
@@ -198,33 +291,34 @@ export default function YtMusicPage() {
         console.log(`正在獲取用戶 ${userId} 的播放列表...`);
         const data = await getUserYtMusicTracks(userId);
 
-        const tracksWithUrls = await Promise.all(
-          data.map(async (track: YtMusicTrack) => {
-            try {
-              console.log(`緩存音頻: ${track.title}`);
-              const res = await fetch(track.mp3_url);
-              if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        // 初始只設置播放列表，不緩存音頻
+        setPlaylist(data);
+        console.log(`成功加載 ${data.length} 首歌曲`);
 
-              const blob = await res.blob();
-              const objectUrl = URL.createObjectURL(blob);
-              return { ...track, objectUrl };
-            } catch (error) {
-              console.error(`快取失敗: ${track.title}`, error);
-              return track; // 返回原始 track，不包含 objectUrl
-            }
-          })
-        );
-
-        setPlaylist(tracksWithUrls);
-        console.log(`成功加載 ${tracksWithUrls.length} 首歌曲`);
+        // 如果播放列表不為空，預加載第一首歌曲
+        if (data.length > 0) {
+          const firstTrack = await cacheTrack(data[0]);
+          setPlaylist((prev) => {
+            if (prev[0]?.objectUrl === firstTrack.objectUrl) return prev;
+            const newPlaylist = [...prev];
+            newPlaylist[0] = firstTrack;
+            return newPlaylist;
+          });
+        }
       } catch (error) {
         console.error("獲取播放列表失敗:", error);
-        // 可以考慮在這裡設置一個錯誤狀態，以便在 UI 中顯示錯誤信息
       }
     };
 
     fetchPlaylist();
-  }, [userId]); // 當 userId 變化時重新獲取播放列表
+  }, [userId, cacheTrack]);
+
+  // 當當前播放歌曲變化時，預緩存下一首
+  useEffect(() => {
+    if (playlist.length > 0) {
+      preloadNextTrack(currentTrackIndex);
+    }
+  }, [currentTrackIndex, preloadNextTrack]); // 移除了 playlist 依賴
 
   // 組件卸載時清理
   useEffect(() => {
@@ -302,13 +396,19 @@ export default function YtMusicPage() {
     setIsPlaying(false);
   };
 
-  const playNext = () => {
-    setCurrentTrackIndex(getNextTrackIndex());
-  };
+  const playNext = useCallback(() => {
+    const nextIndex = getNextTrackIndex();
+    setCurrentTrackIndex(nextIndex);
+    // 切換歌曲後，預緩存再下一首
+    preloadNextTrack(nextIndex);
+  }, [getNextTrackIndex, preloadNextTrack]);
 
-  const playPrev = () => {
-    setCurrentTrackIndex(getPrevTrackIndex());
-  };
+  const playPrev = useCallback(() => {
+    const prevIndex = getPrevTrackIndex();
+    setCurrentTrackIndex(prevIndex);
+    // 切換歌曲後，預緩存上一首
+    preloadNextTrack(prevIndex);
+  }, [getPrevTrackIndex, preloadNextTrack]);
 
   const handleSeek = (time: number) => {
     if (audioRef.current) {
