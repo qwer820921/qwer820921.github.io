@@ -1,5 +1,5 @@
 export interface YtMusicTrack {
-  id: string; // 主鍵，等於 youtube_id
+  key_id: string; // 主鍵，等於 youtube_id
   title: string;
   artist: string;
   youtube_url: string;
@@ -14,13 +14,5 @@ export interface YtMusicTrack {
   audioSrc?: string; // 可以是 blob:https:// 開頭或 https://...，餵給 audio 元素用
   isCached?: boolean; // 是否來自 Cache API
   isDownloaded?: boolean; // 是否為本次 session 下載
-}
-
-export interface CreateYtMusicTrackParams {
-  token: string;
-  id: string; // = youtube_id
-  title: string;
-  artist: string;
-  youtube_url: string;
-  youtube_id: string;
+  isVisibleInExternalPlaylist?: boolean; // 是否在外部播放清單中顯示
 }

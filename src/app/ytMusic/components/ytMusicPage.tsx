@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext"; // 用於獲取用戶認證資訊
 import { deleteYtMusicTrack, getUserYtMusicTracks } from "../api/ytMusicApi"; // API 函數，用於與後端交互
-import PlaylistModal from "../components/playlistModal"; // 播放列表管理模態框組件
+import YtMusicPlaylistModal from "../components/playlistModal"; // 播放列表管理模態框組件
 import "../styles/player.css"; // 播放器樣式
 import { YtMusicTrack } from "../types"; // 音樂曲目資料型別
 import {
@@ -30,6 +30,7 @@ type PlayMode = "sequential" | "shuffle" | "repeat";
 // YouTube 音樂播放器頁面主組件
 export default function YtMusicPage() {
   // 狀態管理
+  // const [originalPlaylist, setOriginalPlaylist] = useState<YtMusicTrack[]>([]); // "原始播放清單", 用於模態框
   const [playlist, setPlaylist] = useState<YtMusicTrack[]>([]); // "播放歌曲清單", 非播放中的歌曲序列
   const [playIndices, setPlayIndices] = useState<number[]>([]); // " '播放歌曲清單'的索引列表",會因為模式而打亂
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0); // "播放歌曲清單的索引列表"的播放中的索引
@@ -194,17 +195,22 @@ export default function YtMusicPage() {
   };
 
   // 生成隨機播放索引列表，確保當前曲目始終位於第一位
-  const generateShufflePlaylist = (currentIndex: number, length: number) => {
-    if (length === 0) return [];
-    const indices = Array.from({ length }, (_, i) => i).filter(
-      (i) => i !== currentIndex
-    );
-    // Fisher-Yates 洗牌演算法，隨機打亂索引
-    for (let i = indices.length - 1; i > 0; i--) {
+  const generateShufflePlaylist = (
+    currentIndex: number,
+    visibleIndices: number[]
+  ) => {
+    if (visibleIndices.length === 0) return [];
+
+    const currentInVisible = visibleIndices.includes(currentIndex);
+    const shuffled = visibleIndices.filter((i) => i !== currentIndex);
+
+    // Fisher-Yates 洗牌
+    for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [indices[i], indices[j]] = [indices[j], indices[i]];
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
-    return [currentIndex, ...indices];
+
+    return currentInVisible ? [currentIndex, ...shuffled] : shuffled;
   };
 
   // 獲取當前曲目縮圖 URL
@@ -219,26 +225,35 @@ export default function YtMusicPage() {
       return;
     }
 
+    // 過濾出可顯示的項目及其原始索引
+    const visibleIndices = playlist
+      .map((item, index) => ({
+        index,
+        isVisible: item.isVisibleInExternalPlaylist,
+      }))
+      .filter((item) => item.isVisible)
+      .map((item) => item.index); // 最後保留的是 index 組成的陣列
+
     switch (playMode) {
       case "shuffle":
         setPlayIndices(
-          generateShufflePlaylist(currentTrackIndex, playlist.length)
+          generateShufflePlaylist(currentTrackIndex, visibleIndices)
         );
         break;
 
       case "sequential":
-        setPlayIndices(Array.from({ length: playlist.length }, (_, i) => i));
+        setPlayIndices(visibleIndices);
         break;
 
       case "repeat":
-        setPlayIndices([currentTrackIndex]);
+        setPlayIndices(Array(visibleIndices.length).fill(currentTrackIndex));
         break;
 
       default:
         setPlayIndices([]);
         break;
     }
-  }, [playMode]);
+  }, [playMode, playlist]);
 
   // 監聽用戶首次交互（點擊或按鍵），解決瀏覽器自動播放限制
   useEffect(() => {
@@ -268,30 +283,21 @@ export default function YtMusicPage() {
 
       try {
         const data = await getUserYtMusicTracks(userId);
-        setPlaylist(data);
+        const patchedData = data.map((item) => ({
+          ...item,
+          isVisibleInExternalPlaylist: true,
+        }));
 
+        setPlaylist(patchedData);
         if (data.length > 0) {
-          // 根據播放模式產生播放索引
-          const initialIndices = (() => {
-            switch (playMode) {
-              case "shuffle":
-                return generateShufflePlaylist(0, data.length);
-              case "repeat":
-                return [0];
-              case "sequential":
-              default:
-                return Array.from({ length: data.length }, (_, i) => i);
-            }
-          })();
-
-          setPlayIndices(initialIndices);
+          setPlayIndices(Array.from({ length: data.length }, (_, i) => i));
           setCurrentTrackIndex(0);
 
           // ✅ 緩存第一首曲目前，標記為 loading
           const firstTrack = data[0];
           setLoadingTracks((prev) => {
             const newSet = new Set(prev);
-            newSet.add(firstTrack.id);
+            newSet.add(firstTrack.key_id);
             return newSet;
           });
 
@@ -309,7 +315,7 @@ export default function YtMusicPage() {
             // ✅ 不論成功與否都移除 loading 標記
             setLoadingTracks((prev) => {
               const newSet = new Set(prev);
-              newSet.delete(firstTrack.id);
+              newSet.delete(firstTrack.key_id);
               return newSet;
             });
           }
@@ -428,7 +434,11 @@ export default function YtMusicPage() {
     const nextTrack = playlist[nextTrackIndex];
 
     // 檢查曲目是否已經加載或正在加載
-    if (!nextTrack || nextTrack.objectUrl || loadingTracks.has(nextTrack.id)) {
+    if (
+      !nextTrack ||
+      nextTrack.objectUrl ||
+      loadingTracks.has(nextTrack.key_id)
+    ) {
       return;
     }
 
@@ -436,7 +446,7 @@ export default function YtMusicPage() {
       // 標記為正在加載
       setLoadingTracks((prev) => {
         const newSet = new Set(prev);
-        newSet.add(nextTrack.id);
+        newSet.add(nextTrack.key_id);
         return newSet;
       });
 
@@ -458,7 +468,7 @@ export default function YtMusicPage() {
       // 無論成功與否，都從加載中移除
       setLoadingTracks((prev) => {
         const newSet = new Set(prev);
-        newSet.delete(nextTrack.id);
+        newSet.delete(nextTrack.key_id);
         return newSet;
       });
     }
@@ -493,13 +503,13 @@ export default function YtMusicPage() {
       audio.load(); // 清空舊音訊
 
       const loadCurrentTrack = async () => {
-        if (loadingTracks.has(currentTrack.id)) return;
+        if (loadingTracks.has(currentTrack.key_id)) return;
 
         try {
           // 標記正在加載
           setLoadingTracks((prev) => {
             const newSet = new Set(prev);
-            newSet.add(currentTrack.id);
+            newSet.add(currentTrack.key_id);
             return newSet;
           });
 
@@ -510,7 +520,7 @@ export default function YtMusicPage() {
           // ✅ 改成使用 currentTrackIndex 直接更新
           setPlaylist((prev) => {
             if (
-              prev[currentTrackIndex]?.id !== cachedTrack.id ||
+              prev[currentTrackIndex]?.key_id !== cachedTrack.key_id ||
               prev[currentTrackIndex]?.objectUrl === cachedTrack.objectUrl
             ) {
               return prev;
@@ -526,7 +536,7 @@ export default function YtMusicPage() {
           // 移除 loading 狀態
           setLoadingTracks((prev) => {
             const newSet = new Set(prev);
-            newSet.delete(currentTrack.id);
+            newSet.delete(currentTrack.key_id);
             return newSet;
           });
         }
@@ -691,9 +701,11 @@ export default function YtMusicPage() {
                     }
                   }}
                   title={isPlaying ? "暫停" : "播放"}
-                  disabled={currentTrack && loadingTracks.has(currentTrack.id)} // 🔐 防止點擊
+                  disabled={
+                    currentTrack && loadingTracks.has(currentTrack.key_id)
+                  } // 🔐 防止點擊
                 >
-                  {currentTrack && loadingTracks.has(currentTrack.id) ? (
+                  {currentTrack && loadingTracks.has(currentTrack.key_id) ? (
                     <Spinner
                       animation="border"
                       variant="secondary"
@@ -788,11 +800,11 @@ export default function YtMusicPage() {
       </button>
 
       {/* 播放列表管理模態框 */}
-      <PlaylistModal
-        show={showModal}
+      <YtMusicPlaylistModal
+        showModal={showModal}
         onClose={() => setShowModal(false)}
         playlist={playlist}
-        currentTrackId={currentTrack?.youtube_id}
+        currentTrackId={currentTrack?.key_id}
         onPlay={(trackId) => {
           const index = playlist.findIndex(
             (track) => track.youtube_id === trackId
@@ -815,12 +827,12 @@ export default function YtMusicPage() {
             setPlaylist((prevPlaylist) => {
               // 建立現有曲目的映射表，保留額外欄位
               const existingTracks = new Map(
-                prevPlaylist.map((track) => [track.id, track])
+                prevPlaylist.map((track) => [track.key_id, track])
               );
 
               // 合併新舊數據
               return newTracks.map((track) => {
-                const existingTrack = existingTracks.get(track.id);
+                const existingTrack = existingTracks.get(track.key_id);
                 return existingTrack
                   ? { ...track, ...existingTrack } // 保留現有曲目的所有欄位
                   : track; // 新曲目直接使用
@@ -830,7 +842,10 @@ export default function YtMusicPage() {
             console.error("更新播放列表失敗:", error);
           }
         }}
+        setPlaylist={setPlaylist}
       />
+      <div className="text-start">{printValue({ playIndices })}</div>
+      <div className="text-start">{printValue({ currentTrackIndex })}</div>
       <div className="text-start">{printValue({ currentTrack })}</div>
     </main>
   );

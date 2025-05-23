@@ -105,7 +105,7 @@ export default function SearchTab({ onAddTrack, playlist }: SearchTabProps) {
       // 2. 新增成功後重新取得清單
       setTimeout(async () => {
         onAddTrack({
-          id: track.id.videoId,
+          key_id: track.id.videoId,
           title: track.snippet.title,
           artist: track.snippet.channelTitle,
           youtube_url: `https://www.youtube.com/watch?v=${track.id.videoId}`,

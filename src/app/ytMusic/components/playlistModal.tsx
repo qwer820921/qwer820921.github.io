@@ -5,28 +5,30 @@ import PlaylistTab from "./playlistTab";
 import SearchTab from "./searchTab";
 
 interface YtMusicPlaylistModalProps {
-  show: boolean;
+  showModal: boolean;
   onClose: () => void;
   playlist: YtMusicTrack[];
   currentTrackId?: string;
   onPlay: (id: string) => void;
   onDelete: (id: string) => void;
   onAddTrack: (track: YtMusicTrack) => void;
+  setPlaylist: (tracks: YtMusicTrack[]) => void;
 }
 
 export default function YtMusicPlaylistModal({
-  show,
+  showModal,
   onClose,
   playlist,
   currentTrackId,
   onPlay,
   onDelete,
   onAddTrack,
+  setPlaylist,
 }: YtMusicPlaylistModalProps) {
   const [activeTab, setActiveTab] = useState<"playlist" | "search">("playlist");
 
   return (
-    <Modal show={show} onHide={onClose} size="xl" centered scrollable>
+    <Modal show={showModal} onHide={onClose} size="xl" centered scrollable>
       <Modal.Header closeButton>
         <Nav
           variant="tabs"
@@ -43,17 +45,20 @@ export default function YtMusicPlaylistModal({
           </Nav.Item>
         </Nav>
       </Modal.Header>
-      <Modal.Body style={{ minHeight: 400 }}>
+      <Modal.Body style={{ minHeight: 400, paddingTop: 0 }}>
         <div
           className={
             activeTab === "playlist" ? "tab-pane active" : "tab-pane d-none"
           }
         >
           <PlaylistTab
+            showModal={showModal}
             playlist={playlist}
             currentTrackId={currentTrackId}
             onPlay={onPlay}
             onDelete={onDelete}
+            setPlaylist={setPlaylist}
+            onClose={onClose}
           />
         </div>
         <div
