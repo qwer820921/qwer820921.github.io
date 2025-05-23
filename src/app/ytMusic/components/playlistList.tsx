@@ -28,7 +28,7 @@ const PlaylistList: React.FC<PlaylistListProps> = ({
 
         return (
           <ListGroup.Item
-            key={trackId || `video-${index}`}
+            key={`${trackId}-${index}`}
             active={isActive}
             className="d-flex align-items-center"
           >
