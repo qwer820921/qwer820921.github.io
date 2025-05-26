@@ -271,17 +271,17 @@ export default function YtMusicPage() {
     };
   }, []);
 
-  let ignore = false;
-  useEffect(() => {
-    return () => {
-      ignore = true;
-    };
-  }, []);
+  // let ignore = false;
+  // useEffect(() => {
+  //   return () => {
+  //     ignore = true;
+  //   };
+  // }, []);
 
   // 初始化播放列表，從後端獲取用戶的音樂數據
   useEffect(() => {
     const fetchPlaylist = async () => {
-      if (!ignore) return;
+      // if (!ignore) return;
 
       if (!userId) {
         // setPlaylist([]);
@@ -344,10 +344,8 @@ export default function YtMusicPage() {
       }
     };
 
-    if (ignore) {
-      fetchPlaylist();
-    }
-  }, [ignore, userId]);
+    fetchPlaylist();
+  }, [userId]);
 
   // 緩存音頻檔案，將遠端 MP3 轉為本地 Blob URL
   const cacheTrack = async (track: YtMusicTrack): Promise<YtMusicTrack> => {
