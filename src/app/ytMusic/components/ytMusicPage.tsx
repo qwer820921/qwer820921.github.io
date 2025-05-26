@@ -286,6 +286,7 @@ export default function YtMusicPage() {
       if (!userId) {
         // setPlaylist([]);
         // setPlayIndices([]);
+        console.log("user not logged in");
         return;
       }
 
@@ -345,7 +346,7 @@ export default function YtMusicPage() {
     };
 
     fetchPlaylist();
-  }, [userId]);
+  }, []);
 
   // 緩存音頻檔案，將遠端 MP3 轉為本地 Blob URL
   const cacheTrack = async (track: YtMusicTrack): Promise<YtMusicTrack> => {
