@@ -42,7 +42,7 @@ export default function YtMusicPage() {
   const [playMode, setPlayMode] = useState<PlayMode>("sequential"); // 當前播放模式
 
   const audioRef = useRef<HTMLAudioElement>(null); // 音頻元素引用
-  const [currentTrack, setCurrentTrack] = useState<YtMusicTrack | null>(null);
+  const [currentTrack, setCurrentTrack] = useState<YtMusicTrack | null>(null); // "播放中的曲目"
   const [loadingTracks, setLoadingTracks] = useState<Set<string>>(new Set()); // 追蹤正在加載的曲目 ID
 
   const { userId } = useAuth(); // 從認證上下文中獲取用戶 ID
@@ -506,7 +506,7 @@ export default function YtMusicPage() {
     )
       return;
 
-    const currentTrack = playlist[currentTrackIndex];
+    const currentTrack = playlist[playIndices[currentTrackIndex]];
     if (!currentTrack) return;
 
     const audio = audioRef.current;
@@ -533,9 +533,9 @@ export default function YtMusicPage() {
           if (cachedTrack?.objectUrl) {
             setPlaylist((prev) => {
               const newList = [...prev];
-              if (newList[currentTrackIndex]) {
-                newList[currentTrackIndex] = {
-                  ...newList[currentTrackIndex],
+              if (newList[playIndices[currentTrackIndex]]) {
+                newList[playIndices[currentTrackIndex]] = {
+                  ...newList[playIndices[currentTrackIndex]],
                   objectUrl: cachedTrack.objectUrl,
                 };
               }
@@ -577,6 +577,7 @@ export default function YtMusicPage() {
     };
   }, [currentTrack, userInteracted]);
 
+  //currentTrackIndex 改變要刷新 CurrentTrack
   useEffect(() => {
     if (
       playlist.length > 0 &&
@@ -584,11 +585,28 @@ export default function YtMusicPage() {
       currentTrackIndex < playIndices.length
     ) {
       const track = playlist[playIndices[currentTrackIndex]];
-      setCurrentTrack(track || null);
+      setCurrentTrack(track);
     } else {
       setCurrentTrack(null);
     }
-  }, [currentTrackIndex, playlist]);
+  }, [currentTrackIndex]);
+
+  //playlist 改變要刷新 CurrentTrack
+  useEffect(() => {
+    if (
+      playlist.length > 0 &&
+      playIndices.length > 0 &&
+      currentTrackIndex < playIndices.length
+    ) {
+      const track = playlist[playIndices[currentTrackIndex]];
+      //當前的 currentTrack 有沒有 objectUrl, 如果沒有才寫入 setCurrentTrack
+      if (!currentTrack?.objectUrl) {
+        setCurrentTrack(track);
+      }
+    } else {
+      setCurrentTrack(null);
+    }
+  }, [playlist]);
 
   // 渲染播放器 UI
   return (
