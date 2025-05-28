@@ -55,6 +55,12 @@ const routes: RouteConfig[] = [
     showInNavbar: true,
     protected: true, // 受保護的頁面
   },
+  {
+    path: ROUTES.INSTA_STORY_EDITOR,
+    name: "限時動態編輯器",
+    showInNavbar: true,
+    protected: false, // 公開頁面
+  },
 ];
 
 export default routes;

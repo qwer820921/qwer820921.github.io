@@ -62,4 +62,11 @@ export const seoMap: {
       "登入後即可享受個人化的 YouTube 音樂體驗，建立並管理您的專屬播放清單。",
     keywords: "子yee 萬事屋, YouTube 音樂, 音樂播放, 個人化播放清單, 會員專屬",
   },
+  [ROUTES.INSTA_STORY_EDITOR]: {
+    title: "子yee 萬事屋 | 限時動態編輯器",
+    description:
+      "創建精美的限時動態，添加文字、貼圖、濾鏡等效果，讓您的故事更生動有趣。",
+    keywords:
+      "子yee 萬事屋, 限時動態, 動態編輯器, 故事創作, 社交媒體工具, 圖片編輯",
+  },
 };

@@ -11,4 +11,5 @@ export const ROUTES = {
   PROTECTED: "/protected", // 受保護頁面的路由
   LOGIN: "/logIn", // 登入頁面
   YT_MUSIC: "/ytMusic", // YouTube 音樂頁面
+  INSTA_STORY_EDITOR: "/instaStoryEditor", // 限時動態編輯器
 };

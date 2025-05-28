@@ -34,7 +34,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
       <Navbar />
 
       {/* 主內容區塊 */}
-      <main className="App container-fluid mt-5">{children}</main>
+      <main className="container-fluid mt-5">{children}</main>
 
       {/* Footer */}
       <Footer />

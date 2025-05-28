@@ -1,24 +1,30 @@
 html,
 body,
-#root {
+#__next {
   height: 100%;
   margin: 0;
-  /* 去掉默認的外邊距 */
   padding: 0;
-  /* 移除所有方向的內邊距 */
 }
 
-.App {
-  min-height: 100vh;
-  /* 設置 App 的高度為 100% */
+body {
   display: flex;
   flex-direction: column;
-  text-align: center;
+  min-height: 100vh;
+  /* 使用視窗高度作為最小高度 */
 }
 
+/* 主內容區域樣式 */
 main {
-  flex: 1;
-  /* 這會讓 main 撐開剩下的空間 */
-  padding-top: 56px;
-  /* 保證 main 的內容區域下移，避開 Navbar */
+  flex: 1 0 auto;
+  /* 允許擴展但不允許收縮 */
+  width: 100%;
+  padding-top: 32px;
+  overflow-y: auto;
+  /* 當內容過多時顯示滾動條 */
+}
+
+/* 確保頁腳跟隨內容滾動 */
+footer {
+  flex-shrink: 0;
+  /* 防止 footer 被壓縮 */
 }
