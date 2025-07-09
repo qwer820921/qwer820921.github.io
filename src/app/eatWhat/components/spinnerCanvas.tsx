@@ -195,12 +195,7 @@ const SpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
         </div>
 
         <div className="col-12 position-relative text-center">
-          <canvas
-            ref={canvasRef}
-            width={size}
-            height={size}
-            className="border rounded-full"
-          />
+          <canvas ref={canvasRef} width={size} height={size} />
 
           {hoverAddress && tooltipPosition && (
             <div

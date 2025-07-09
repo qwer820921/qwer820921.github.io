@@ -22,7 +22,7 @@ import {
 } from "react-bootstrap-icons"; // 圖標組件，用於播放器控制按鈕
 import { formatTime } from "@/utils/format"; // 格式化時間
 import { Spinner } from "react-bootstrap";
-import { printValue } from "@/utils/createElement";
+// import { printValue } from "@/utils/createElement";
 
 // 定義播放模式的型別：順序播放、隨機播放、單曲循環
 type PlayMode = "sequential" | "shuffle" | "repeat";
@@ -883,10 +883,10 @@ export default function YtMusicPage() {
         }}
         setPlaylist={setPlaylist}
       />
-      <div className="text-start">{printValue({ playIndices })}</div>
+      {/* <div className="text-start">{printValue({ playIndices })}</div>
       <div className="text-start">{printValue({ currentTrackIndex })}</div>
       <div className="text-start">{printValue({ currentTrack })}</div>
-      <div className="text-start">{printValue({ playlist })}</div>
+      <div className="text-start">{printValue({ playlist })}</div> */}
     </main>
   );
 }

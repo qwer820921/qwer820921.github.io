@@ -15,7 +15,7 @@ export const metadata = {
     url: `https://qwer820921.github.io${ROUTES.ANIMATOR}`,
     images: [
       {
-        url: "https://qwer820921.github.io/images/img09.jpg", // ✅ 請確認這張圖存在
+        url: "https://qwer820921.github.io/images/img09.jpg",
         width: 1200,
         height: 630,
         alt: seo.title,

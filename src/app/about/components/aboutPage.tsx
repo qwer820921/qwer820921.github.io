@@ -37,7 +37,7 @@ const AboutPage: React.FC = () => {
         </div>
       </>
       {/* Card: About Header with Tooltip */}
-      <section className="bg-light py-5">
+      <section className="py-5">
         <div className="container">
           <div className="card shadow-lg bg-info-subtle text-info-emphasis">
             <div className="card-body text-center">
@@ -60,7 +60,7 @@ const AboutPage: React.FC = () => {
       </section>
 
       {/* Card: Company Story Section with Popover */}
-      <section className="bg-light py-5">
+      <section className="py-5">
         <div className="container">
           <div className="card shadow-lg">
             <div className="card-body text-center">
@@ -74,7 +74,7 @@ const AboutPage: React.FC = () => {
       </section>
 
       {/* Card: Our Team Section */}
-      <section className="bg-light py-5">
+      <section className="py-5">
         <div className="container">
           <div className="card shadow-lg">
             <div className="card-body text-center">
@@ -121,7 +121,7 @@ const AboutPage: React.FC = () => {
       </section>
 
       {/* Card: Our Mission Section */}
-      <section className="bg-light py-5">
+      <section className="py-5">
         <div className="container">
           <div className="card shadow-lg">
             <div className="card-body text-center">

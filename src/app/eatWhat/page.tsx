@@ -15,7 +15,7 @@ export const metadata = {
     url: `https://qwer820921.github.io${ROUTES.EATWHAT}`,
     images: [
       {
-        url: "https://qwer820921.github.io/images/img03.jp", // 確保你有這張圖
+        url: "https://qwer820921.github.io/images/img03.jp",
         width: 1200,
         height: 630,
         alt: seo.title,
