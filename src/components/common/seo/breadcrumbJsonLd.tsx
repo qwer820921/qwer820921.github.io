@@ -1,9 +1,12 @@
 import Head from "next/head";
-import routes from "@/config/routes";
+import routeGroups from "@/config/routes";
 
 const BASE_URL = "https://qwer820921.github.io";
 
 const BreadcrumbJsonLd = () => {
+  // 先展平，取得所有 routeConfig，然後篩選 showInNavbar
+  const routes = routeGroups.flatMap((group) => group.routeConfig);
+
   const breadcrumbItems = routes
     .filter((route) => route.showInNavbar)
     .map((route, index) => ({
