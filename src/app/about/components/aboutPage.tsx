@@ -66,7 +66,7 @@ const AboutPage: React.FC = () => {
             <div className="card-body text-center">
               <h2 className="card-title mb-4">我們的故事</h2>
               <p className="card-text lead">
-                成立於2010年，我們的公司從一家小型設計工作室發展成為業界領先的數位行銷與設計公司。我們致力於為客戶提供量身定制的數位行銷策略，並且不斷創新，推動行業發展。
+                成立於2024年，我們的公司從一家小型設計工作室發展成為業界領先的數位行銷與設計公司。我們致力於為客戶提供量身定制的數位行銷策略，並且不斷創新，推動行業發展。
               </p>
             </div>
           </div>

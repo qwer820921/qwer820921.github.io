@@ -32,17 +32,17 @@ const routes: RouteGroup[] = [
   {
     type: "媒體",
     routeConfig: [
-      { path: ROUTES.YT_PLAYER, name: "音樂播放器", showInNavbar: true },
+      {
+        path: ROUTES.YT_MUSIC,
+        name: "YouTube 播放器",
+        showInNavbar: true,
+        protected: true,
+      },
+      { path: ROUTES.YT_PLAYER, name: "YouTube 播放器_2", showInNavbar: true },
       {
         path: ROUTES.SOUNDCLOUD_PLAYER,
         name: "SoundCloud 播放器",
         showInNavbar: true,
-      },
-      {
-        path: ROUTES.YT_MUSIC,
-        name: "YouTube 音樂",
-        showInNavbar: true,
-        protected: true,
       },
     ],
   },
