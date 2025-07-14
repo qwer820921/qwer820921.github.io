@@ -26,7 +26,11 @@ const PixelCanvas: React.FC<PixelCanvasProps> = ({
         ref={canvasRef}
         width={400}
         height={400}
-        style={{ border: "1px solid #000", cursor: "pointer" }}
+        style={{
+          border: "1px solid #BEBEBE",
+          cursor: "pointer",
+          backgroundColor: "#fff",
+        }}
         onClick={handleCanvasClick}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}

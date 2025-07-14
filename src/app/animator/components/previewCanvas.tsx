@@ -17,8 +17,8 @@ const PreviewCanvas = ({
   // 🎨 canvas 參考
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // 🖼️ 預覽畫布大小固定為 120x120 像素
-  const canvasSize = 120;
+  // 🖼️ 預覽畫布大小固定為 240x240 像素
+  const canvasSize = 240;
 
   // 📏 每格像素的大小（依據畫布解析度決定）
   const pixel = canvasSize / pixelSizeInput;

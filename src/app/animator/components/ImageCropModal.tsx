@@ -38,7 +38,7 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({
   const [minImageSize, setMinImageSize] = useState(100);
 
   // 📊 裁剪框大小的進度百分比（0-100）
-  const [progress, setProgress] = useState(20);
+  const [progress, setProgress] = useState(40);
 
   // 🧮 根據進度計算裁剪框的實際大小
   const cropBoxSize = (progress / 100) * minImageSize;
@@ -306,135 +306,139 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({
       isShowClose={true} // 顯示關閉按鈕
       hasWidth // 設定寬度
     >
-      {/* 📁 圖片上傳輸入框 */}
-      <div className="p-3 bg-info bg-opacity-10 border border-info rounded">
-        <div className="text-start">
-          <label className="form-label">上傳檔案</label>
-        </div>
+      <div className="row w-100">
+        <div className="col-md-9 col-xs-12">
+          {/* 📁 圖片上傳輸入框 */}
+          <div className="p-3 bg-info bg-opacity-10 border border-info rounded">
+            <div className="text-start">
+              <label className="form-label">上傳檔案</label>
+            </div>
 
-        <input
-          id="file"
-          type="file"
-          ref={fileInputRef}
-          accept="image/*"
-          onChange={handleImageUpload}
-          className="form-control"
-          style={{ display: "block" }}
-        />
-      </div>
+            <input
+              id="file"
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="form-control"
+              style={{ display: "block" }}
+            />
+          </div>
 
-      {/* 🖼 圖片容器，包含裁剪框與拖曳功能 */}
-      <div
-        ref={containerRef}
-        style={{
-          position: "relative",
-          width: imageSize ? `${Math.min(imageSize.width, 400)}px` : "auto", // 限制最大寬度
-          height: imageSize ? `${Math.min(imageSize.height, 400)}px` : "auto", // 限制最大高度
-          overflow: "hidden",
-        }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        {uploadedImage && (
-          <img
-            ref={imgRef}
-            src={URL.createObjectURL(uploadedImage)}
-            alt="preview"
-            style={{
-              display: "block",
-              maxWidth: "100%",
-              maxHeight: "100%",
-              objectFit: "contain", // 保證圖片不變形
-              margin: "0 auto", // 水平置中
-            }}
-          />
-        )}
-
-        {/* 🔲 裁剪框，顯示紅色虛線框 */}
-        {uploadedImage && (
+          {/* 📊 進度條，調整裁剪框大小 */}
+          {uploadedImage && (
+            <div
+              ref={progressRef}
+              className="progress my-3 border border-info rounded"
+              style={{ width: "100%", height: "60px", cursor: "pointer" }}
+              onClick={handleProgressClick}
+            >
+              <div
+                className="progress-bar fs-6"
+                role="progressbar"
+                style={{ width: `${progress}%` }}
+                aria-valuenow={progress}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                點擊調整裁剪框大小 {progress}%
+              </div>
+            </div>
+          )}
+          {/* 🖼 圖片容器，包含裁剪框與拖曳功能 */}
           <div
+            ref={containerRef}
             style={{
-              position: "absolute",
-              top: cropBoxPosition.y,
-              left: cropBoxPosition.x,
-              width: cropBoxSize,
-              height: cropBoxSize,
-              border: "2px dashed red",
-              boxSizing: "border-box",
-              pointerEvents: "none", // 不阻擋滑鼠事件
-              zIndex: 10,
+              position: "relative",
+              width: imageSize ? `${Math.min(imageSize.width, 400)}px` : "auto", // 限制最大寬度
+              height: imageSize
+                ? `${Math.min(imageSize.height, 400)}px`
+                : "auto", // 限制最大高度
+              overflow: "hidden",
             }}
-          />
-        )}
-
-        {/* 🛡 透明層，用於處理拖曳事件 */}
-        {uploadedImage && (
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              backgroundColor: "transparent",
-              zIndex: 5,
-            }}
-          />
-        )}
-
-        {/* 🖼 隱藏的畫布，用於生成裁剪結果 */}
-        <canvas ref={canvasRef} style={{ display: "none" }} />
-      </div>
-
-      {/* 📊 進度條，調整裁剪框大小 */}
-      {uploadedImage && (
-        <div
-          ref={progressRef}
-          className="progress mt-3"
-          style={{ width: "100%", height: "20px", cursor: "pointer" }}
-          onClick={handleProgressClick}
-        >
-          <div
-            className="progress-bar"
-            role="progressbar"
-            style={{ width: `${progress}%` }}
-            aria-valuenow={progress}
-            aria-valuemin={0}
-            aria-valuemax={100}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
           >
-            {progress}%
+            {uploadedImage && (
+              <img
+                ref={imgRef}
+                src={URL.createObjectURL(uploadedImage)}
+                alt="preview"
+                style={{
+                  display: "block",
+                  maxWidth: "100%",
+                  maxHeight: "100%",
+                  objectFit: "contain", // 保證圖片不變形
+                  margin: "0 auto", // 水平置中
+                }}
+              />
+            )}
+
+            {/* 🔲 裁剪框，顯示紅色虛線框 */}
+            {uploadedImage && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: cropBoxPosition.y,
+                  left: cropBoxPosition.x,
+                  width: cropBoxSize,
+                  height: cropBoxSize,
+                  border: "2px dashed red",
+                  boxSizing: "border-box",
+                  pointerEvents: "none", // 不阻擋滑鼠事件
+                  zIndex: 10,
+                }}
+              />
+            )}
+
+            {/* 🛡 透明層，用於處理拖曳事件 */}
+            {uploadedImage && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  backgroundColor: "transparent",
+                  zIndex: 5,
+                }}
+              />
+            )}
+
+            {/* 🖼 隱藏的畫布，用於生成裁剪結果 */}
+            <canvas ref={canvasRef} style={{ display: "none" }} />
           </div>
         </div>
-      )}
-
-      {/* 🖼 即時預覽區域，顯示像素化結果 */}
-      {previewUrl && (
-        <div
-          style={{
-            width: "100%",
-            height: "100%",
-            marginTop: "20px",
-          }}
-        >
+        <div className="col-md-3 col-xs-12">
+          {/* 🖼 即時預覽區域，顯示像素化結果 */}
           <h4>即時預覽</h4>
-          <img
-            src={previewUrl}
-            alt="crop-preview"
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "contain", // 保證圖片不變形
-              margin: "0 auto", // 水平置中
-              imageRendering: "pixelated", // 保持像素化效果
-              border: "1px solid #ccc",
-            }}
-          />
+          {previewUrl && (
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+              }}
+            >
+              <img
+                src={previewUrl}
+                alt="crop-preview"
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain", // 保證圖片不變形
+                  margin: "0 auto", // 水平置中
+                  imageRendering: "pixelated", // 保持像素化效果
+                }}
+              />
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </CustomModal>
   );
 };
