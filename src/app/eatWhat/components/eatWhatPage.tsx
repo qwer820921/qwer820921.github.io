@@ -306,9 +306,9 @@ const EatWhatPage: React.FC = () => {
           <p>不用煩惱吃甚麼...</p>
         </div>
       </>
-      {/* Loading Spinner Overlay */}
-      <LoadingOverlay isLoading={isLoading} />
       <div className="row">
+        {/* Loading Spinner Overlay */}
+        <LoadingOverlay isLoading={isLoading} />
         {/* 左邊：轉盤區域 */}
         <div className="col-md-6 col-sm-12 d-flex flex-column align-items-center my-3">
           <div className="row">

@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import routeGroups from "@/config/routes"; // RouteGroup[]
+import routeGroups from "@/config/routes";
 import type { RouteConfig, RouteGroup } from "@/types/routeConfig";
+import RouteProgressBar from "@/components/common/routeProgressBar";
 
 const Navbar: React.FC = () => {
   const pathname = usePathname();
@@ -31,104 +32,131 @@ const Navbar: React.FC = () => {
     }))
     .filter((g) => g.routeConfig.length > 0); // 全空的不顯示
 
+  const [navHeight, setNavHeight] = useState(0);
+
+  useEffect(() => {
+    const navbar = document.querySelector(".navbar.fixed-top");
+    if (navbar) {
+      const height = navbar.getBoundingClientRect().height;
+      setNavHeight(height);
+    }
+
+    // 如果 navbar 高度會變，建議監聽 resize 或 mutation observer
+  }, []);
+
   return (
-    <nav className="navbar navbar-expand-lg navbar-pastel-blue shadow-sm fixed-top">
-      <div className="container">
-        {/* ---- Brand ---- */}
-        <Link className="navbar-brand text-dark" href="/">
-          子yee 萬事屋
-        </Link>
+    <>
+      <nav className="navbar navbar-expand-lg navbar-pastel-blue shadow-sm fixed-top">
+        <div className="container">
+          {/* ---- Brand ---- */}
+          <Link className="navbar-brand text-dark" href="/">
+            子yee 萬事屋
+          </Link>
 
-        {/* ---- Mobile toggler ---- */}
-        <button
-          className="navbar-toggler"
-          type="button"
-          data-bs-toggle="collapse"
-          data-bs-target="#navbarNav"
-          aria-controls="navbarNav"
-          aria-expanded="false"
-          aria-label="Toggle navigation"
-        >
-          <span className="navbar-toggler-icon" />
-        </button>
+          {/* ---- Mobile toggler ---- */}
+          <button
+            className="navbar-toggler"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#navbarNav"
+            aria-controls="navbarNav"
+            aria-expanded="false"
+            aria-label="Toggle navigation"
+          >
+            <span className="navbar-toggler-icon" />
+          </button>
 
-        {/* ---- Links / Dropdowns ---- */}
-        <div className="collapse navbar-collapse" id="navbarNav">
-          <ul className="navbar-nav ms-auto">
-            {filteredGroups.map((group) => {
-              const { type, routeConfig } = group;
+          {/* ---- Links / Dropdowns ---- */}
+          <div className="collapse navbar-collapse" id="navbarNav">
+            <ul className="navbar-nav ms-auto">
+              {filteredGroups.map((group) => {
+                const { type, routeConfig } = group;
 
-              // 只有一條 → 直接顯示普通連結
-              if (routeConfig.length === 1) {
-                const r = routeConfig[0];
-                const isActive = pathname === r.path;
+                // 只有一條 → 直接顯示普通連結
+                if (routeConfig.length === 1) {
+                  const r = routeConfig[0];
+                  const isActive = pathname === r.path;
+                  return (
+                    <li
+                      key={r.path}
+                      className={`nav-item ${isActive ? "active" : ""}`}
+                    >
+                      <Link className="nav-link text-dark" href={r.path}>
+                        {r.name}
+                      </Link>
+                    </li>
+                  );
+                }
+
+                // 多條 → 顯示分類下拉
                 return (
-                  <li
-                    key={r.path}
-                    className={`nav-item ${isActive ? "active" : ""}`}
-                  >
-                    <Link className="nav-link text-dark" href={r.path}>
-                      {r.name}
-                    </Link>
+                  <li key={type} className="nav-item dropdown">
+                    <a
+                      role="button"
+                      className="nav-link dropdown-toggle text-dark"
+                      data-bs-toggle="dropdown"
+                      aria-expanded="false"
+                    >
+                      {type}
+                    </a>
+                    <ul className="dropdown-menu">
+                      {routeConfig.map((r: RouteConfig) => (
+                        <li key={r.path}>
+                          <Link
+                            className={`dropdown-item ${
+                              pathname === r.path ? "active" : ""
+                            }`}
+                            href={r.path}
+                          >
+                            {r.name}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
                   </li>
                 );
-              }
+              })}
 
-              // 多條 → 顯示分類下拉
-              return (
-                <li key={type} className="nav-item dropdown">
-                  <a
-                    role="button"
-                    className="nav-link dropdown-toggle text-dark"
-                    data-bs-toggle="dropdown"
-                    aria-expanded="false"
+              {/* ---- 登入 / 登出 ---- */}
+              {isAuthenticated ? (
+                <li className="nav-item">
+                  <button
+                    className="nav-link text-dark"
+                    onClick={logout}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
                   >
-                    {type}
-                  </a>
-                  <ul className="dropdown-menu">
-                    {routeConfig.map((r: RouteConfig) => (
-                      <li key={r.path}>
-                        <Link
-                          className={`dropdown-item ${
-                            pathname === r.path ? "active" : ""
-                          }`}
-                          href={r.path}
-                        >
-                          {r.name}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
+                    登出
+                  </button>
                 </li>
-              );
-            })}
-
-            {/* ---- 登入 / 登出 ---- */}
-            {isAuthenticated ? (
-              <li className="nav-item">
-                <button
-                  className="nav-link text-dark"
-                  onClick={logout}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  登出
-                </button>
-              </li>
-            ) : (
-              <li className="nav-item">
-                <Link className="nav-link text-dark" href="/logIn">
-                  登入
-                </Link>
-              </li>
-            )}
-          </ul>
+              ) : (
+                <li className="nav-item">
+                  <Link className="nav-link text-dark" href="/logIn">
+                    登入
+                  </Link>
+                </li>
+              )}
+            </ul>
+          </div>
         </div>
+      </nav>
+
+      {/* 進度條容器*/}
+      <div
+        className="fixed-top"
+        style={{
+          top: navHeight, // 動態貼在 navbar 底部
+          height: "4px",
+          zIndex: 1050,
+          width: "100%",
+        }}
+      >
+        <RouteProgressBar />
       </div>
-    </nav>
+    </>
   );
 };
 
