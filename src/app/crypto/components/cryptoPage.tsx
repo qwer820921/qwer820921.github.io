@@ -1,7 +1,5 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
-import DatePicker from "react-datepicker";
-
 import { CandlestickData, createChart, Time } from "lightweight-charts";
 import { QuickQueryOption, KlineData } from "../types";
 import {
@@ -10,10 +8,10 @@ import {
   getKlines,
   getQuickQueryOptions,
 } from "../api/cryptoApi";
-import "../styles/datepicker-custom.css";
 import dynamic from "next/dynamic";
 import { Rule } from "@/types";
 import LoadingOverlay from "@/components/common/loadingOverlay";
+import CustomDatePicker from "@/components/formItems/customDatePicker";
 const ReactSelect = dynamic(
   () => import("@/components/formItems/reactSelect"),
   { ssr: false }
@@ -147,37 +145,37 @@ const CryptoPage: React.FC = () => {
         </div>
 
         <div className="col-xl-3 col-lg-6">
-          <div className="input-group">
+          <div className="input-group w-100">
             <span className="input-group-text">開始日期</span>
             <div className="flex-grow-1">
-              <DatePicker
-                selected={startDate}
-                onChange={(date: Date | null) => setStartDate(date)}
+              <CustomDatePicker
+                selectedDate={startDate}
+                onDateChange={setStartDate}
                 selectsStart
-                startDate={startDate}
-                endDate={endDate}
+                startDate={startDate || undefined}
+                endDate={endDate || undefined}
                 showTimeSelect
-                dateFormat="Pp"
-                className="form-control"
-                maxDate={endDate ? endDate : undefined}
+                maxDate={endDate || undefined}
+                className="w-100"
+                timeIntervals={30}
               />
             </div>
           </div>
         </div>
         <div className="col-xl-3 col-lg-6">
-          <div className="input-group">
+          <div className="input-group w-100">
             <span className="input-group-text">結束日期</span>
             <div className="flex-grow-1">
-              <DatePicker
-                selected={endDate}
-                onChange={(date: Date | null) => setEndDate(date)}
+              <CustomDatePicker
+                selectedDate={endDate}
+                onDateChange={setEndDate}
                 selectsEnd
-                startDate={startDate}
-                endDate={endDate}
+                startDate={startDate || undefined}
+                endDate={endDate || undefined}
                 showTimeSelect
-                dateFormat="Pp"
-                className="form-control"
                 minDate={startDate || undefined}
+                className="w-100"
+                timeIntervals={30}
               />
             </div>
           </div>
