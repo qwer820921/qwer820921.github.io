@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { YtMusicTrack } from "../types";
 import { Button, Form, ListGroup } from "react-bootstrap";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface PlaylistListProps {
   showModal: boolean;
@@ -22,7 +23,7 @@ const PlaylistList: React.FC<PlaylistListProps> = ({
   onClose,
 }) => {
   const [selectedTracks, setSelectedTracks] = useState<string[]>([]); // 紀錄勾選的曲目 ID
-
+  const { userId } = useAuth();
   // 每次 showModal 變化時，初始化 selectedTracks
   useEffect(() => {
     if (showModal) {
@@ -256,8 +257,9 @@ const PlaylistList: React.FC<PlaylistListProps> = ({
                     whiteSpace: "nowrap",
                     flexShrink: 0,
                   }}
+                  disabled={!userId}
                 >
-                  刪除
+                  {userId ? "刪除" : "請登入"}
                 </Button>
               </ListGroup.Item>
             );

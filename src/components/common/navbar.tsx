@@ -25,7 +25,7 @@ const Navbar: React.FC = () => {
       ...group,
       routeConfig: group.routeConfig.filter((r) => {
         if (!r.showInNavbar || r.path === "/logIn") return false;
-        if (r.protected && !isAuthenticated) return false;
+        // if (r.protected && !isAuthenticated) return false;
         return true;
       }),
     }))

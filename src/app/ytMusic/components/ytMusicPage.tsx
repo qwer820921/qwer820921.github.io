@@ -47,6 +47,68 @@ export default function YtMusicPage() {
 
   const { userId } = useAuth(); // 從認證上下文中獲取用戶 ID
 
+  // const [isLogIn, setIsLogIn] = useState<boolean>(false);
+
+  // 初始化播放列表，從後端獲取用戶的音樂數據
+  useEffect(() => {
+    const fetchPlaylist = async () => {
+      // 如果沒有登入，使用預設用戶 ID '1'
+      // 否則使用登入用戶的 ID
+      const targetUserId = userId || "1";
+      // setIsLogIn(!!userId);
+
+      try {
+        const data = await getUserYtMusicTracks(targetUserId);
+        const patchedData = data.map((item) => ({
+          ...item,
+          isVisibleInExternalPlaylist: true,
+        }));
+
+        setPlaylist(patchedData);
+        if (patchedData.length > 0) {
+          setPlayIndices(
+            Array.from({ length: patchedData.length }, (_, i) => i)
+          );
+          setCurrentTrackIndex(0);
+
+          // ✅ 緩存第一首曲目前，標記為 loading
+          const firstTrack = patchedData[0];
+          setLoadingTracks((prev) => {
+            const newSet = new Set(prev);
+            newSet.add(firstTrack.key_id);
+            return newSet;
+          });
+
+          try {
+            const cachedTrack = await cacheTrack(firstTrack);
+            setPlaylist((prev) => {
+              if (prev[0]?.objectUrl === cachedTrack.objectUrl) return prev;
+              const newPlaylist = [...prev];
+              newPlaylist[0] = {
+                ...newPlaylist[0],
+                ...cachedTrack,
+              };
+              return newPlaylist;
+            });
+          } catch (e) {
+            console.error("第一首曲目快取失敗:", e);
+          } finally {
+            // ✅ 不論成功與否都移除 loading 標記
+            setLoadingTracks((prev) => {
+              const newSet = new Set(prev);
+              newSet.delete(firstTrack.key_id);
+              return newSet;
+            });
+          }
+        }
+      } catch (error) {
+        console.error("獲取播放列表失敗:", error);
+      }
+    };
+
+    fetchPlaylist();
+  }, []);
+
   // 切換播放模式：順序 -> 隨機 -> 單曲循環
   const togglePlayMode = () => {
     setPlayMode((prev) => {
@@ -277,76 +339,6 @@ export default function YtMusicPage() {
   //     ignore = true;
   //   };
   // }, []);
-
-  // 初始化播放列表，從後端獲取用戶的音樂數據
-  useEffect(() => {
-    const fetchPlaylist = async () => {
-      // if (!ignore) return;
-
-      if (!userId) {
-        // setPlaylist([]);
-        // setPlayIndices([]);
-        console.log("user not logged in");
-        return;
-      }
-
-      try {
-        const data = await getUserYtMusicTracks(userId);
-        const patchedData = data.map((item) => ({
-          ...item,
-          isVisibleInExternalPlaylist: true,
-        }));
-
-        setPlaylist(patchedData);
-        if (patchedData.length > 0) {
-          setPlayIndices(
-            Array.from({ length: patchedData.length }, (_, i) => i)
-          );
-          setCurrentTrackIndex(0);
-
-          // ✅ 緩存第一首曲目前，標記為 loading
-          const firstTrack = patchedData[0];
-          setLoadingTracks((prev) => {
-            const newSet = new Set(prev);
-            newSet.add(firstTrack.key_id);
-            return newSet;
-          });
-
-          try {
-            const cachedTrack = await cacheTrack(firstTrack);
-            setPlaylist((prev) => {
-              if (prev[0]?.objectUrl === cachedTrack.objectUrl) return prev;
-              const newPlaylist = [...prev];
-              newPlaylist[0] = {
-                ...newPlaylist[0],
-                ...cachedTrack,
-              };
-              return newPlaylist;
-            });
-          } catch (e) {
-            console.error("第一首曲目快取失敗:", e);
-          } finally {
-            // ✅ 不論成功與否都移除 loading 標記
-            setLoadingTracks((prev) => {
-              const newSet = new Set(prev);
-              newSet.delete(firstTrack.key_id);
-              return newSet;
-            });
-          }
-        }
-        // else {
-        //   setPlayIndices([]);
-        //   setCurrentTrackIndex(0);
-        // }
-      } catch (error) {
-        console.error("獲取播放列表失敗:", error);
-        // setPlaylist([]);
-        //setPlayIndices([]);
-      }
-    };
-
-    fetchPlaylist();
-  }, []);
 
   // 緩存音頻檔案，將遠端 MP3 轉為本地 Blob URL
   const cacheTrack = async (track: YtMusicTrack): Promise<YtMusicTrack> => {

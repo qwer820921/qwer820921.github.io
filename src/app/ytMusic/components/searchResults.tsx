@@ -1,6 +1,7 @@
 import { ListGroup, Button, Spinner } from "react-bootstrap";
 import { YtMusicTrack } from "../types";
 import { YoutubeSearchResult } from "@/app/youtubePlayer/types";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface SearchResultsProps {
   results: YoutubeSearchResult[];
@@ -15,6 +16,7 @@ const SearchResults = ({
   onAddTrack,
   loading,
 }: SearchResultsProps) => {
+  const { userId } = useAuth();
   const isInPlaylist = (youtubeId: string) =>
     playlist.some((track) => track.youtube_id === youtubeId);
 
@@ -98,7 +100,7 @@ const SearchResults = ({
             <Button
               size="sm"
               variant="success"
-              disabled={isInPlaylist(item.id.videoId) || loading}
+              disabled={!userId || isInPlaylist(item.id.videoId) || loading}
               onClick={() => onAddTrack(item, "")}
               style={{
                 marginLeft: 16,
@@ -120,8 +122,10 @@ const SearchResults = ({
                   />
                   <span>加入中...</span>
                 </>
-              ) : (
+              ) : userId ? (
                 "加入清單"
+              ) : (
+                "請登入"
               )}
             </Button>
           </div>
