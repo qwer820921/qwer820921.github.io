@@ -140,22 +140,23 @@ const ChatWidget = () => {
           </div>
           <div className="card-footer border-top">
             <form onSubmit={handleSendMessage} className="d-flex gap-2">
-              <input
-                type="text"
+              <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="輸入消息..."
                 className="form-control"
                 aria-label="聊天輸入"
                 disabled={loading}
+                rows={2}
+                style={{ resize: "vertical", minHeight: "38px" }}
               />
               <button
                 type="submit"
-                className="btn btn-primary"
+                className="btn btn-primary text-nowrap"
                 disabled={loading || !input.trim()}
                 aria-label="發送消息"
               >
-                {loading ? "..." : "發送"}
+                發送
               </button>
             </form>
           </div>
