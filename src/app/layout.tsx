@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import ClientRoot from "./ClientRoot";
 import { Toaster } from "react-hot-toast";
+import ChatWidget from "@/components/common/chatWidget";
 
 // 將 metadata 移動到一個單獨的 server 組件中
 export const metadata: Metadata = {
@@ -79,6 +80,8 @@ export default function RootLayout({
       </head>
       <body>
         <ClientRoot>{children}</ClientRoot>
+        {/* 全站浮動聊天組件 */}
+        <ChatWidget />
         <Toaster
           position="top-right"
           toastOptions={{
