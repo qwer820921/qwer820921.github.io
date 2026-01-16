@@ -12,4 +12,5 @@ export const ROUTES = {
   LOGIN: "/logIn", // 登入頁面
   YT_MUSIC: "/ytMusic", // YouTube 音樂頁面
   INSTA_STORY_EDITOR: "/instaStoryEditor", // 限時動態編輯器
+  NO_WASH_GAMES: "/noWashGames", // 免洗遊戲
 };

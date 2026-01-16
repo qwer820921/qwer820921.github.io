@@ -69,4 +69,9 @@ export const seoMap: {
     keywords:
       "子yee 萬事屋, 限時動態, 動態編輯器, 故事創作, 社交媒體工具, 圖片編輯",
   },
+  [ROUTES.NO_WASH_GAMES]: {
+    title: "子yee 萬事屋 | 免洗遊戲 - 輕鬆玩樂小遊戲集",
+    description: "精選多款免洗小遊戲，隨時隨地輕鬆玩樂，打發時間最佳選擇！",
+    keywords: "子yee 萬事屋, 免洗遊戲, 小遊戲, 休閒遊戲, 線上遊戲, 打發時間",
+  },
 };

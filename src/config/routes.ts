@@ -47,6 +47,12 @@ const routes: RouteGroup[] = [
     ],
   },
   {
+    type: "遊戲",
+    routeConfig: [
+      { path: ROUTES.NO_WASH_GAMES, name: "免洗遊戲", showInNavbar: true },
+    ],
+  },
+  {
     type: "帳戶",
     routeConfig: [{ path: ROUTES.LOGIN, name: "登入", showInNavbar: false }],
   },
