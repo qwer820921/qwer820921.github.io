@@ -13,4 +13,5 @@ export const ROUTES = {
   YT_MUSIC: "/ytMusic", // YouTube 音樂頁面
   INSTA_STORY_EDITOR: "/instaStoryEditor", // 限時動態編輯器
   NO_WASH_GAMES: "/noWashGames", // 免洗遊戲
+  CLICK_ASCENSION: "/clickAscension", //點擊飛昇
 };

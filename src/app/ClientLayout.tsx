@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { AuthProvider } from "@/contexts/AuthContext";
 import dynamic from "next/dynamic";
 
@@ -24,20 +25,32 @@ const WebVitalsClient = dynamic(
   { ssr: false }
 );
 
+// 不顯示 Footer 的頁面路徑
+const HIDE_FOOTER_PAGES = ["/clickAscension"];
+
 export default function ClientLayout({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+
+  // 檢查當前路徑是否需要隱藏 Footer
+  const shouldHideFooter = HIDE_FOOTER_PAGES.some((path) =>
+    pathname?.startsWith(path)
+  );
+
   return (
     <AuthProvider>
       {/* 結構化資料 */}
       <BreadcrumbJsonLd />
 
-      {/* Navbar */}
+      {/* Navbar - 始終顯示 */}
       <Navbar />
 
       {/* 主內容區塊 */}
-      <main className="container-fluid mt-5">{children}</main>
+      <main className={shouldHideFooter ? "" : "container-fluid mt-5 p-0"}>
+        {children}
+      </main>
 
-      {/* Footer */}
-      <Footer />
+      {/* Footer - 特定頁面不顯示 */}
+      {!shouldHideFooter && <Footer />}
 
       {/* Bootstrap JavaScript 客戶端初始化（如果有） */}
       <BootstrapClient />

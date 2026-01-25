@@ -52,6 +52,34 @@ export default function NoWashGamesPage() {
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isShaking, setIsShaking] = useState(false);
   const [saveKey, setSaveKey] = useState<string>("");
+
+  // 初始化時從 localStorage 讀取 saveKey 並自動下載存檔
+  useEffect(() => {
+    const autoLoadSave = async () => {
+      const storedKey = localStorage.getItem("noWashGames_saveKey");
+      if (storedKey) {
+        setSaveKey(storedKey);
+        // 自動下載存檔
+        try {
+          const data = await loadPlayerSave(storedKey);
+          if (data) {
+            setGameState(data);
+            setLastSaveTime(new Date());
+          }
+        } catch (error) {
+          console.error("自動讀取存檔失敗:", error);
+        }
+      }
+    };
+    autoLoadSave();
+  }, []);
+
+  // 當 saveKey 變更時，自動存入 localStorage
+  useEffect(() => {
+    if (saveKey) {
+      localStorage.setItem("noWashGames_saveKey", saveKey);
+    }
+  }, [saveKey]);
   const [lastSaveTime, setLastSaveTime] = useState<Date | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -143,26 +171,34 @@ export default function NoWashGamesPage() {
     [saveKey, gameState]
   );
 
-  const handleLoad = async () => {
-    if (!saveKey) return alert("請輸入存檔代碼");
-    setIsSyncing(true);
-
-    try {
-      const data = await loadPlayerSave(saveKey);
-      if (data) {
-        setGameState(data);
-        setLastSaveTime(new Date());
-        alert("📥 讀檔成功！歡迎回來，冒險者。");
-        setIsSaveModalOpen(false);
-      } else {
-        alert("❓ 找不到存檔。請確認代碼是否正確。");
+  const handleLoad = useCallback(
+    async (isAuto = false) => {
+      if (!saveKey) {
+        if (!isAuto) alert("請輸入存檔代碼");
+        return;
       }
-    } catch (error) {
-      console.error("讀取存檔失敗:", error);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
+      setIsSyncing(true);
+
+      try {
+        const data = await loadPlayerSave(saveKey);
+        if (data) {
+          setGameState(data);
+          setLastSaveTime(new Date());
+          if (!isAuto) {
+            alert("📥 讀檔成功！歡迎回來，冒險者。");
+            setIsSaveModalOpen(false);
+          }
+        } else {
+          if (!isAuto) alert("❓ 找不到存檔。請確認代碼是否正確。");
+        }
+      } catch (error) {
+        console.error("讀取存檔失敗:", error);
+      } finally {
+        setIsSyncing(false);
+      }
+    },
+    [saveKey]
+  );
 
   useEffect(() => {
     if (!saveKey) return;
@@ -419,7 +455,7 @@ export default function NoWashGamesPage() {
         <div className="container">
           <div className="row g-4 justify-content-center">
             <div className="col-12 d-flex justify-content-between align-items-center text-dark">
-              <h4 className="fw-bold mb-0">萬事屋手遊版</h4>
+              <h4 className="fw-bold mb-0">萬事屋免洗遊戲</h4>
               {saveKey && (
                 <span className="badge bg-white text-dark border shadow-sm">
                   {isSyncing ? "⚡ 同步中" : `存檔: ${saveKey}`}
@@ -729,7 +765,7 @@ export default function NoWashGamesPage() {
                   <div className="col-6">
                     <button
                       className="btn btn-outline-primary w-100 fw-bold"
-                      onClick={handleLoad}
+                      onClick={() => handleLoad(false)}
                       disabled={isSyncing}
                     >
                       {isSyncing ? "⌛ 等待中" : "📥 下載讀檔"}

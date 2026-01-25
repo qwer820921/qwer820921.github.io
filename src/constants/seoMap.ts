@@ -74,4 +74,11 @@ export const seoMap: {
     description: "精選多款免洗小遊戲，隨時隨地輕鬆玩樂，打發時間最佳選擇！",
     keywords: "子yee 萬事屋, 免洗遊戲, 小遊戲, 休閒遊戲, 線上遊戲, 打發時間",
   },
+  [ROUTES.CLICK_ASCENSION]: {
+    title: "Click Ascension | 點擊飛昇 - 萬事屋點擊遊戲",
+    description:
+      "Tap into the Void. 在 Click Ascension 中體驗從微小存在到掌控虛空的無限進化。萬事屋推出的全新深淵系點擊遊戲。",
+    keywords:
+      "Click Ascension, 點擊飛昇, 點擊遊戲, 點擊進化, 萬事屋, 飛昇, 點擊冒險, Clicker Game, Incremental",
+  },
 };
