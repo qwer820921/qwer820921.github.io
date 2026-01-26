@@ -207,6 +207,7 @@ export default function ClickAscensionGame() {
       const saveData = {
         player,
         stage,
+        upgradeLevels,
         timestamp: Date.now(),
       };
 
@@ -240,6 +241,8 @@ export default function ClickAscensionGame() {
           setPlayer((prev) => ({ ...prev, ...(cloudData.player as any) }));
         if (cloudData.stage)
           setStage((prev) => ({ ...prev, ...(cloudData.stage as any) }));
+        if (cloudData.upgradeLevels)
+          setUpgradeLevels(cloudData.upgradeLevels as Record<string, number>);
         return; // Success
       } else {
         console.log(`[Login] Cloud save not found or new user.`);
@@ -256,6 +259,8 @@ export default function ClickAscensionGame() {
         const localData = JSON.parse(localStr);
         setPlayer((prev) => ({ ...prev, ...localData.player }));
         setStage((prev) => ({ ...prev, ...localData.stage }));
+        if (localData.upgradeLevels)
+          setUpgradeLevels(localData.upgradeLevels as Record<string, number>);
       } catch (e) {}
     }
   };
@@ -265,6 +270,7 @@ export default function ClickAscensionGame() {
     localStorage.removeItem("ca_last_user_id");
     setPlayer(INITIAL_PLAYER);
     setStage(INITIAL_STAGE);
+    setUpgradeLevels({});
   };
 
   const handleManualSave = async () => {
@@ -273,6 +279,7 @@ export default function ClickAscensionGame() {
     const saveData = {
       player,
       stage,
+      upgradeLevels,
       timestamp: Date.now(),
     };
 
@@ -940,6 +947,25 @@ export default function ClickAscensionGame() {
             >
               <span>💎</span>
               <span>{player.wallet.diamonds.toLocaleString()}</span>
+            </div>
+            <div
+              className="ca-currency"
+              style={{
+                fontSize: "0.8rem",
+                color: "var(--ca-accent-cyan, #22d3ee)",
+              }}
+            >
+              <span>⚡</span>
+              <span>
+                {Math.floor(player.wallet.clickPoints).toLocaleString()}
+              </span>
+            </div>
+            <div
+              className="ca-currency"
+              style={{ fontSize: "0.8rem", color: "#4ade80" }}
+            >
+              <span>🆙</span>
+              <span>{player.wallet.levelPoints.toLocaleString()}</span>
             </div>
           </div>
         }
