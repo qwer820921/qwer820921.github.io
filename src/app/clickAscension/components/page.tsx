@@ -2,14 +2,20 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { PlayerState, StageState, Monster } from "../types";
+import {
+  PlayerState,
+  StageState,
+  Monster,
+  EquipmentSlot,
+  GameConfig,
+} from "../types";
 import Header from "./Header";
 import MonsterBattle from "./MonsterBattle";
-import FooterNav, { ModalType } from "./FooterNav";
+import FooterNav, { ModalType, ViewType } from "./FooterNav";
 import Modal from "./Modal";
-import UpgradePage from "./UpgradePage";
 import ShopPage from "./ShopPage";
 import ProfilePage from "./ProfilePage";
+import CharacterView from "./CharacterView";
 import { getRandomMonster } from "../utils/MonsterData";
 import { clickAscensionApi } from "../api/clickAscensionApi";
 import "../styles/clickAscension.css";
@@ -20,7 +26,13 @@ import "../styles/clickAscension.css";
 
 const INITIAL_PLAYER: PlayerState = {
   system: { level: 1, currentXp: 0, requiredXp: 100 },
-  wallet: { gold: 0, clickPoints: 0, diamonds: 10, levelPoints: 0 },
+  wallet: {
+    gold: 0,
+    clickPoints: 0,
+    diamonds: 10,
+    levelPoints: 0,
+    ascensionPoints: 0,
+  },
   stats: {
     baseDamage: 1,
     autoAttackDamage: 0,
@@ -40,29 +52,28 @@ const INITIAL_PLAYER: PlayerState = {
     monstersKilled: 0,
     bossesKilled: 0,
   },
-  clickShop: {
-    clickPowerLevel: 0,
-    critDamageLevel: 0,
-    goldBonusLevel: 0,
-  },
-  levelShop: {
-    wisdomLevel: 0,
-    greedLevel: 0,
-    autoClickLevel: 0,
-    bossSlayerLevel: 0,
-    luckLevel: 0,
-  },
+  clickShop: {},
+  levelShop: {},
   goldShop: {
     weaponLevel: 0,
     mercenaryLevel: 0,
     partnerLevel: 0,
+    archerLevel: 0,
+    knightLevel: 0,
+    amuletLevel: 0,
   },
+  ascensionShop: {},
   inventory: {
     ragePotionCount: 0,
   },
   activeBuffs: {
     ragePotionExpiresAt: 0,
   },
+  equipment: {
+    inventory: {},
+    equipped: {},
+  },
+  lastDailyRewardClaimTime: 0,
 };
 
 const INITIAL_STAGE: StageState = {
@@ -83,22 +94,167 @@ export default function ClickAscensionGame() {
   // State
   // --------------------------------------------------------------------------
   const [activeModal, setActiveModal] = useState<ModalType>(null);
+  const [activeView, setActiveView] = useState<ViewType>("BATTLE");
   const [player, setPlayer] = useState<PlayerState>(INITIAL_PLAYER);
   const [stage, setStage] = useState<StageState>(INITIAL_STAGE);
   const [monster, setMonster] = useState<Monster | null>(null);
-  const [upgradeLevels, setUpgradeLevels] = useState<Record<string, number>>(
-    {}
-  );
-  const [gameConfig, setGameConfig] = useState<any | null>(null); // Use any for now or modify ShopPage to accept proper type
+  const [gameConfig, setGameConfig] = useState<GameConfig | null>(null); // Use GameConfig type
+  const [lastAutoAttack, setLastAutoAttack] = useState<{
+    time: number;
+    damage: number;
+    breakdown?: {
+      mercenary: number;
+      partner: number;
+      archer: number;
+      knight: number;
+      player: number;
+    };
+  } | null>(null);
 
   // Initial Spawn Wait Flag? No, useEffect handles it below.
 
-  // Derived Stats
+  // Derived Stats (Base + Equipment + Shop etc.)
+  const effectiveStats = React.useMemo(() => {
+    // Start with base stats from state, ensuring defaults
+    const stats = {
+      baseDamage: player.stats.baseDamage || 1,
+      autoAttackDamage: player.stats.autoAttackDamage || 0,
+      criticalChance: player.stats.criticalChance || 0.05,
+      criticalDamage: player.stats.criticalDamage || 1.5,
+      goldMultiplier: player.stats.goldMultiplier || 1.0,
+      cpMultiplier: player.stats.cpMultiplier || 1.0,
+      xpMultiplier: player.stats.xpMultiplier || 1.0,
+      bossDamageMultiplier: player.stats.bossDamageMultiplier || 1.0,
+    };
+
+    if (!gameConfig?.equipments) return stats;
+
+    // Add Equipment Bonuses
+    Object.values(player.equipment.equipped).forEach((equippedId) => {
+      if (!equippedId) return;
+      // Ensure comparison is string-safe
+      const config = gameConfig.equipments.find(
+        (e: any) => String(e.ID) === String(equippedId)
+      );
+      if (config) {
+        const level = Number(player.equipment.inventory[equippedId] || 1);
+        const baseVal = Number(config.Base_Val || 0);
+        const multVal = Number(config.Level_Mult || 0);
+        const val = baseVal + (level - 1) * multVal;
+
+        const effectType = String(config.Effect_Type || "")
+          .toUpperCase()
+          .trim();
+
+        // Map effect types to stat fields (Handles multiple variations + User's specific sheet names)
+        switch (effectType) {
+          case "ADD_BASE_DMG":
+          case "CLICK_DMG":
+          case "CLICK_DAMAGE":
+          case "ADD_DAMAGE":
+          case "ADD_CLICK_DMG":
+            stats.baseDamage += val;
+            break;
+          case "ADD_AUTO_DMG":
+          case "AUTO_DMG":
+          case "AUTO_DAMAGE":
+          case "ADD_AUTO":
+            stats.autoAttackDamage += val;
+            break;
+          case "ADD_CRIT_CHANCE":
+          case "CRIT_RATE":
+          case "ADD_CRIT_RATE":
+          case "LUCK":
+            stats.criticalChance += val / 100; // 5 -> +5%
+            break;
+          case "ADD_CRIT_DMG":
+          case "CRIT_DMG":
+          case "CRIT_DAMAGE":
+          case "ADD_CRIT_DMG":
+            stats.criticalDamage += val / 100; // 10 -> +10%
+            break;
+          case "ADD_GOLD_MULT":
+          case "GOLD_MULT":
+          case "ADD_GOLD":
+          case "GOLD_BONUS":
+            stats.goldMultiplier += val / 100; // 10 -> +10%
+            break;
+          case "ADD_XP_MULT":
+          case "XP_MULT":
+          case "ADD_XP":
+          case "XP_BONUS":
+            stats.xpMultiplier += val / 100; // 5 -> +5%
+            break;
+          case "ADD_BOSS_DMG":
+          case "BOSS_DMG":
+          case "BOSS_DAMAGE":
+            stats.bossDamageMultiplier += val / 100; // 10 -> +10% (1.16 + 0.10 = 1.26)
+            break;
+          case "CP_MULT":
+          case "CP_BONUS":
+          case "ADD_CP_MULT":
+            stats.cpMultiplier += val / 100; // 10 -> +10%
+            break;
+        }
+      }
+    });
+
+    return stats;
+  }, [
+    player.stats,
+    player.equipment.equipped,
+    player.equipment.inventory,
+    gameConfig,
+  ]);
+
+  // Helper for deep merging player state (handles nested objects like stats, wallet, system)
+  const deepMergePlayer = useCallback(
+    (base: PlayerState, saved: any): PlayerState => {
+      return {
+        ...base,
+        ...saved,
+        system: { ...base.system, ...(saved.system || {}) },
+        wallet: { ...base.wallet, ...(saved.wallet || {}) },
+        stats: { ...base.stats, ...(saved.stats || {}) },
+        clickShop: { ...base.clickShop, ...(saved.clickShop || {}) },
+        levelShop: { ...base.levelShop, ...(saved.levelShop || {}) },
+        goldShop: { ...base.goldShop, ...(saved.goldShop || {}) },
+        ascensionShop: {
+          ...base.ascensionShop,
+          ...(saved.ascensionShop || {}),
+        },
+        inventory: { ...base.inventory, ...(saved.inventory || {}) },
+        activeBuffs: { ...base.activeBuffs, ...(saved.activeBuffs || {}) },
+        equipment: {
+          ...base.equipment,
+          ...(saved.equipment || {}),
+          inventory: {
+            ...(base.equipment?.inventory || {}),
+            ...(saved.equipment?.inventory || {}),
+          },
+          equipped: {
+            ...(base.equipment?.equipped || {}),
+            ...(saved.equipment?.equipped || {}),
+          },
+        },
+      };
+    },
+    []
+  );
+
+  const allyBaseDmg =
+    (player.goldShop.mercenaryLevel || 0) * 2 +
+    (player.goldShop.partnerLevel || 0) * 5 +
+    (player.goldShop.archerLevel || 0) * 20 +
+    (player.goldShop.knightLevel || 0) * 100;
+
+  const totalDps = effectiveStats.autoAttackDamage + allyBaseDmg;
+
   const combatPower = Math.floor(
-    player.stats.baseDamage * 10 +
-      player.stats.autoAttackDamage * 20 +
-      player.stats.criticalChance * 1000 +
-      player.stats.criticalDamage * 500
+    effectiveStats.baseDamage * 10 +
+      totalDps * 20 +
+      effectiveStats.criticalChance * 1000 +
+      effectiveStats.criticalDamage * 500
   );
 
   // --------------------------------------------------------------------------
@@ -198,6 +354,16 @@ export default function ClickAscensionGame() {
     }
   }, []);
 
+  // Refs to hold latest state for Auto-Save without resetting the interval
+  const playerRef = React.useRef(player);
+  const stageRef = React.useRef(stage);
+
+  // Sync refs with state
+  useEffect(() => {
+    playerRef.current = player;
+    stageRef.current = stage;
+  }, [player, stage]);
+
   // Auto-Save Loop (30s)
   useEffect(() => {
     if (!userId) return;
@@ -205,9 +371,8 @@ export default function ClickAscensionGame() {
     const interval = setInterval(async () => {
       console.log(`[AutoSave] Saving for ${userId} to Cloud...`);
       const saveData = {
-        player,
-        stage,
-        upgradeLevels,
+        player: playerRef.current,
+        stage: stageRef.current,
         timestamp: Date.now(),
       };
 
@@ -223,7 +388,7 @@ export default function ClickAscensionGame() {
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [userId, player, stage]);
+  }, [userId]); // Only reset if userId changes
 
   const handleLogin = async (id: string) => {
     if (!id) return;
@@ -238,11 +403,9 @@ export default function ClickAscensionGame() {
       if (cloudData) {
         console.log(`[Login] Cloud save found!`);
         if (cloudData.player)
-          setPlayer((prev) => ({ ...prev, ...(cloudData.player as any) }));
+          setPlayer((prev) => deepMergePlayer(prev, cloudData.player));
         if (cloudData.stage)
           setStage((prev) => ({ ...prev, ...(cloudData.stage as any) }));
-        if (cloudData.upgradeLevels)
-          setUpgradeLevels(cloudData.upgradeLevels as Record<string, number>);
         return; // Success
       } else {
         console.log(`[Login] Cloud save not found or new user.`);
@@ -259,8 +422,6 @@ export default function ClickAscensionGame() {
         const localData = JSON.parse(localStr);
         setPlayer((prev) => ({ ...prev, ...localData.player }));
         setStage((prev) => ({ ...prev, ...localData.stage }));
-        if (localData.upgradeLevels)
-          setUpgradeLevels(localData.upgradeLevels as Record<string, number>);
       } catch (e) {}
     }
   };
@@ -270,7 +431,6 @@ export default function ClickAscensionGame() {
     localStorage.removeItem("ca_last_user_id");
     setPlayer(INITIAL_PLAYER);
     setStage(INITIAL_STAGE);
-    setUpgradeLevels({});
   };
 
   const handleManualSave = async () => {
@@ -279,7 +439,6 @@ export default function ClickAscensionGame() {
     const saveData = {
       player,
       stage,
-      upgradeLevels,
       timestamp: Date.now(),
     };
 
@@ -302,65 +461,88 @@ export default function ClickAscensionGame() {
 
   // Auto-Attack Loop
   useEffect(() => {
+    // Determine if we have any auto-attack capability
+    const allyBaseDmg =
+      (player.goldShop.mercenaryLevel || 0) * 2 +
+      (player.goldShop.partnerLevel || 0) * 5 +
+      (player.goldShop.archerLevel || 0) * 20 +
+      (player.goldShop.knightLevel || 0) * 100;
+
     if (
       !monster ||
       monster.currentHp <= 0 ||
-      player.stats.autoAttackDamage <= 0
+      (effectiveStats.autoAttackDamage <= 0 && allyBaseDmg <= 0)
     )
       return;
 
     const interval = setInterval(() => {
-      // Apply Boss Multiplier to Auto Damage too? Usually yes.
-      let damage = player.stats.autoAttackDamage;
-      if (monster.isBoss) {
-        damage = Math.ceil(damage * player.stats.bossDamageMultiplier);
-      }
+      // 1. Calculate Base Total Damage
+      const baseTotalDmg = effectiveStats.autoAttackDamage + allyBaseDmg;
 
-      // Re-use click logic but mark as AUTO
-      // We can't directly call handleMonsterClick because it might expect event or be tied to click stats
-      // Let's modify handleMonsterClick or create a separate damage handler.
-      // For simplicity, let's just apply damage directly here or call a shared function.
-      // But handleMonsterClick calculates damage inside. Let's refactor?
-      // Minimally invasive: just apply damage.
+      // 2. Apply Multipliers (Boss, etc.)
+      const bossMult = monster.isBoss
+        ? effectiveStats.bossDamageMultiplier || 1.0
+        : 1.0;
+      const finalTotalDmg = Math.ceil(baseTotalDmg * bossMult);
 
+      // 3. Apply Damage to Monster
       setMonster((prev) => {
         if (!prev || prev.currentHp <= 0) return prev;
-        const newHp = prev.currentHp - damage;
-
-        // Visual fetch: floating text is in MonsterBattle.tsx, we can't trigger it from here easily without ref like 'useImperativeHandle' or context.
-        // For now, auto-attack might be silent text-wise or we just update HP.
-        // Actually user probably wants to see numbers.
-        // Since FloatingTexts are inside MonsterBattle, we can't add them from page.tsx easily.
-        // WE WILL IGNORE FLOATING TEXT FOR AUTO ATTACK FOR NOW (or move FloatingText state up, but that's a big refactor)
+        const newHp = prev.currentHp - finalTotalDmg;
 
         if (newHp <= 0) {
-          // We need to trigger death outside setMonster usually, but here we can't.
-          // We'll rely on a separate Effect to check for death? Or just call handleMonsterDeath?
-          // handleMonsterDeath uses 'monster' state, so inside setMonster callback 'monster' is stale 'prev'?
-          // No, handleMonsterDeath needs the monster object.
-          // We can set a flag or call it after.
           setTimeout(() => handleMonsterDeath(prev as Monster), 0);
           return { ...prev, currentHp: 0 };
         }
-
         return { ...prev, currentHp: Math.max(0, newHp) };
       });
 
-      // Update Records (Auto damage counts for Total Damage but not Clicks)
-      setPlayer((prev) => ({
-        ...prev,
-        records: {
-          ...prev.records,
-          totalDamageDealt: prev.records.totalDamageDealt + damage,
+      // 4. Update Records & Click Points
+      setPlayer((prev) => {
+        const cpGain = 1 * effectiveStats.cpMultiplier;
+        return {
+          ...prev,
+          wallet: {
+            ...prev.wallet,
+            clickPoints: prev.wallet.clickPoints + cpGain,
+          },
+          records: {
+            ...prev.records,
+            totalDamageDealt: prev.records.totalDamageDealt + finalTotalDmg,
+          },
+        };
+      });
+
+      // 5. Trigger Visuals
+      setLastAutoAttack({
+        time: Date.now(),
+        damage: finalTotalDmg,
+        breakdown: {
+          mercenary: Math.ceil(
+            (player.goldShop.mercenaryLevel || 0) * 2 * bossMult
+          ),
+          partner: Math.ceil(
+            (player.goldShop.partnerLevel || 0) * 5 * bossMult
+          ),
+          archer: Math.ceil((player.goldShop.archerLevel || 0) * 20 * bossMult),
+          knight: Math.ceil(
+            (player.goldShop.knightLevel || 0) * 100 * bossMult
+          ),
+          player: Math.ceil(effectiveStats.autoAttackDamage * bossMult),
         },
-      }));
-    }, 1000); // 1 second interval
+      });
+    }, 1000);
 
     return () => clearInterval(interval);
   }, [
-    monster,
-    player.stats.autoAttackDamage,
-    player.stats.bossDamageMultiplier,
+    monster?.id,
+    effectiveStats.autoAttackDamage,
+    effectiveStats.bossDamageMultiplier,
+    effectiveStats.cpMultiplier,
+    player.goldShop.mercenaryLevel,
+    player.goldShop.partnerLevel,
+    player.goldShop.archerLevel,
+    player.goldShop.knightLevel,
   ]);
 
   // --------------------------------------------------------------------------
@@ -373,7 +555,7 @@ export default function ClickAscensionGame() {
     // Apply Boss Multiplier
     let finalDamage = damage;
     if (monster.isBoss) {
-      finalDamage = Math.ceil(damage * player.stats.bossDamageMultiplier);
+      finalDamage = Math.ceil(damage * effectiveStats.bossDamageMultiplier);
     }
 
     const newHp = monster.currentHp - finalDamage;
@@ -391,7 +573,7 @@ export default function ClickAscensionGame() {
       },
       wallet: {
         ...prev.wallet,
-        clickPoints: prev.wallet.clickPoints + 1 * prev.stats.cpMultiplier,
+        clickPoints: prev.wallet.clickPoints + 1 * effectiveStats.cpMultiplier,
       },
     }));
 
@@ -406,9 +588,11 @@ export default function ClickAscensionGame() {
     if (!dyingMonster) return;
 
     const goldGain = Math.ceil(
-      dyingMonster.rewardGold * player.stats.goldMultiplier
+      dyingMonster.rewardGold * effectiveStats.goldMultiplier
     );
-    const xpGain = Math.ceil(dyingMonster.rewardXp * player.stats.xpMultiplier);
+    const xpGain = Math.ceil(
+      dyingMonster.rewardXp * effectiveStats.xpMultiplier
+    );
 
     // Handle Rewards & Level Up
     setPlayer((prev) => {
@@ -470,57 +654,6 @@ export default function ClickAscensionGame() {
     setMonster(null); // Trigger respawn
   };
 
-  const handlePurchaseUpgrade = (upgradeId: string, cost: number) => {
-    if (player.wallet.gold < cost) return;
-
-    setPlayer((prev) => ({
-      ...prev,
-      wallet: { ...prev.wallet, gold: prev.wallet.gold - cost },
-    }));
-
-    setUpgradeLevels((prev) => ({
-      ...prev,
-      [upgradeId]: (prev[upgradeId] || 0) + 1,
-    }));
-
-    // Apply upgrade effect
-    switch (upgradeId) {
-      case "click_power":
-        setPlayer((prev) => ({
-          ...prev,
-          stats: { ...prev.stats, baseDamage: prev.stats.baseDamage + 1 },
-        }));
-        break;
-      case "crit_chance":
-        setPlayer((prev) => ({
-          ...prev,
-          stats: {
-            ...prev.stats,
-            criticalChance: Math.min(0.5, prev.stats.criticalChance + 0.01),
-          },
-        }));
-        break;
-      case "gold_bonus":
-        setPlayer((prev) => ({
-          ...prev,
-          stats: {
-            ...prev.stats,
-            goldMultiplier: prev.stats.goldMultiplier + 0.1,
-          },
-        }));
-        break;
-      case "auto_attack":
-        setPlayer((prev) => ({
-          ...prev,
-          stats: {
-            ...prev.stats,
-            autoAttackDamage: prev.stats.autoAttackDamage + 1,
-          },
-        }));
-        break;
-    }
-  };
-
   const handleShopPurchase = (itemId: string) => {
     // Daily Check-in Logic
     if (itemId === "daily_checkin") {
@@ -537,190 +670,86 @@ export default function ClickAscensionGame() {
     }
 
     // --- Level Shop (Talent) Upgrades ---
-    if (itemId.startsWith("level_shop_")) {
-      const { levelShop } = player;
-      let cost = 0;
+    // --- CLICK SHOP (Dynamic from Sheet) ---
+    if (itemId.startsWith("click_shop_")) {
+      const config = gameConfig?.upgrades?.find((u: any) => u.ID === itemId);
+      if (!config) return;
 
-      switch (itemId) {
-        // 1. Wisdom (XP) - Base 3, +1 per level
-        case "level_shop_wisdom":
-          cost = 3 + levelShop.wisdomLevel;
-          if (player.wallet.levelPoints >= cost) {
-            setPlayer((prev) => ({
-              ...prev,
-              wallet: {
-                ...prev.wallet,
-                levelPoints: prev.wallet.levelPoints - cost,
-              },
-              levelShop: {
-                ...prev.levelShop,
-                wisdomLevel: prev.levelShop.wisdomLevel + 1,
-              },
-              stats: {
-                ...prev.stats,
-                xpMultiplier: prev.stats.xpMultiplier + 0.05,
-              }, // +5% XP
-            }));
-          }
-          break;
+      const currentLevel = player.clickShop[itemId] || 0;
+      const cost = Math.floor(
+        config.Cost_Base * Math.pow(config.Cost_Mult, currentLevel)
+      );
 
-        // 2. Greed (Gold) - Base 2, +1 per level
-        case "level_shop_greed":
-          cost = 2 + levelShop.greedLevel;
-          if (player.wallet.levelPoints >= cost) {
-            setPlayer((prev) => ({
-              ...prev,
-              wallet: {
-                ...prev.wallet,
-                levelPoints: prev.wallet.levelPoints - cost,
-              },
-              levelShop: {
-                ...prev.levelShop,
-                greedLevel: prev.levelShop.greedLevel + 1,
-              },
-              stats: {
-                ...prev.stats,
-                goldMultiplier: prev.stats.goldMultiplier + 0.05,
-              }, // +5% Gold
-            }));
-          }
-          break;
+      if (player.wallet.clickPoints >= cost) {
+        setPlayer((prev) => {
+          const newStats = { ...prev.stats };
+          const effectType = config.Effect_Type;
+          const val = Number(config.Effect_Val || 0);
 
-        // 3. Auto Click (Auto Dmg)
-        case "level_shop_auto":
-          // Unlock cost 10, then upgrade cost 2 + level
-          cost =
-            levelShop.autoClickLevel === 0 ? 10 : 2 + levelShop.autoClickLevel;
-          if (player.wallet.levelPoints >= cost) {
-            setPlayer((prev) => ({
-              ...prev,
-              wallet: {
-                ...prev.wallet,
-                levelPoints: prev.wallet.levelPoints - cost,
-              },
-              levelShop: {
-                ...prev.levelShop,
-                autoClickLevel: prev.levelShop.autoClickLevel + 1,
-              },
-              // Add base 5 auto damage per level
-              stats: {
-                ...prev.stats,
-                autoAttackDamage: prev.stats.autoAttackDamage + 5,
-              },
-            }));
-          }
-          break;
+          if (effectType === "ADD_DAMAGE" || effectType === "CLICK_DMG")
+            newStats.baseDamage += val;
+          if (effectType === "ADD_CRIT_DMG" || effectType === "CRIT_DMG")
+            newStats.criticalDamage += val / 100;
+          if (effectType === "ADD_GOLD" || effectType === "GOLD_MULT")
+            newStats.goldMultiplier += val / 100;
 
-        // 4. Slayer (Boss Dmg) - Base 3, +1 per level
-        case "level_shop_slayer":
-          cost = 3 + levelShop.bossSlayerLevel;
-          if (player.wallet.levelPoints >= cost) {
-            setPlayer((prev) => ({
-              ...prev,
-              wallet: {
-                ...prev.wallet,
-                levelPoints: prev.wallet.levelPoints - cost,
-              },
-              levelShop: {
-                ...prev.levelShop,
-                bossSlayerLevel: prev.levelShop.bossSlayerLevel + 1,
-              },
-              stats: {
-                ...prev.stats,
-                bossDamageMultiplier: prev.stats.bossDamageMultiplier + 0.1,
-              }, // +10% Boss Dmg
-            }));
-          }
-          break;
-
-        // 5. Luck (Crit Rate) - Base 4, +2 per level
-        case "level_shop_luck":
-          cost = 4 + levelShop.luckLevel * 2;
-          if (player.wallet.levelPoints >= cost) {
-            setPlayer((prev) => ({
-              ...prev,
-              wallet: {
-                ...prev.wallet,
-                levelPoints: prev.wallet.levelPoints - cost,
-              },
-              levelShop: {
-                ...prev.levelShop,
-                luckLevel: prev.levelShop.luckLevel + 1,
-              },
-              stats: {
-                ...prev.stats,
-                criticalChance: prev.stats.criticalChance + 0.01,
-              }, // +1% Crit Chance
-            }));
-          }
-          break;
+          return {
+            ...prev,
+            wallet: {
+              ...prev.wallet,
+              clickPoints: prev.wallet.clickPoints - cost,
+            },
+            clickShop: { ...prev.clickShop, [itemId]: currentLevel + 1 },
+            stats: newStats,
+          };
+        });
+      } else {
+        alert("點擊點數不足！");
       }
       return;
     }
 
-    // --- Click Shop Upgrades (Consume Click Points) ---
-    if (itemId.startsWith("click_shop_")) {
-      const { clickShop } = player;
-      let cost = 0;
+    // --- LEVEL SHOP (Dynamic from Sheet) ---
+    if (itemId.startsWith("level_shop_")) {
+      const config = gameConfig?.upgrades?.find((u: any) => u.ID === itemId);
+      if (!config) return;
 
-      switch (itemId) {
-        case "click_shop_damage":
-          cost = Math.floor(10 * Math.pow(1.5, clickShop.clickPowerLevel));
-          if (player.wallet.clickPoints >= cost) {
-            setPlayer((prev) => ({
-              ...prev,
-              wallet: {
-                ...prev.wallet,
-                clickPoints: prev.wallet.clickPoints - cost,
-              },
-              clickShop: {
-                ...prev.clickShop,
-                clickPowerLevel: prev.clickShop.clickPowerLevel + 1,
-              },
-              stats: { ...prev.stats, baseDamage: prev.stats.baseDamage + 5 },
-            }));
-          }
-          break;
-        case "click_shop_crit":
-          cost = Math.floor(50 * Math.pow(1.5, clickShop.critDamageLevel));
-          if (player.wallet.clickPoints >= cost) {
-            setPlayer((prev) => ({
-              ...prev,
-              wallet: {
-                ...prev.wallet,
-                clickPoints: prev.wallet.clickPoints - cost,
-              },
-              clickShop: {
-                ...prev.clickShop,
-                critDamageLevel: prev.clickShop.critDamageLevel + 1,
-              },
-              stats: {
-                ...prev.stats,
-                criticalDamage: prev.stats.criticalDamage + 0.1,
-              }, // +10%
-            }));
-          }
-          break;
-        case "click_shop_gold":
-          cost = Math.floor(100 * Math.pow(1.5, clickShop.goldBonusLevel));
-          if (player.wallet.clickPoints >= cost) {
-            setPlayer((prev) => ({
-              ...prev,
-              wallet: {
-                ...prev.wallet,
-                clickPoints: prev.wallet.clickPoints - cost,
-              },
-              clickShop: {
-                ...prev.clickShop,
-                goldBonusLevel: prev.clickShop.goldBonusLevel + 1,
-              },
-              stats: {
-                ...prev.stats,
-                goldMultiplier: prev.stats.goldMultiplier + 0.1,
-              }, // +10%
-            }));
-          }
-          break;
+      const currentLevel = player.levelShop[itemId] || 0;
+      const cost = Math.floor(
+        config.Cost_Base * Math.pow(config.Cost_Mult, currentLevel)
+      );
+      // Special check for Level Shop cost logic if it's not exponential?
+      // User sheet usually defines it. We use the Sheet's formula.
+
+      if (player.wallet.levelPoints >= cost) {
+        setPlayer((prev) => {
+          const newStats = { ...prev.stats };
+          const effectType = config.Effect_Type;
+          const val = Number(config.Effect_Val || 0);
+
+          if (effectType === "ADD_XP" || effectType === "XP_MULT")
+            newStats.xpMultiplier += val / 100;
+          if (effectType === "ADD_GOLD" || effectType === "GOLD_MULT")
+            newStats.goldMultiplier += val / 100;
+          if (effectType === "ADD_AUTO" || effectType === "AUTO_DMG")
+            newStats.autoAttackDamage += val;
+          if (effectType === "ADD_BOSS_DMG" || effectType === "BOSS_DMG")
+            newStats.bossDamageMultiplier += val / 100;
+          if (effectType === "ADD_CRIT" || effectType === "CRIT_RATE")
+            newStats.criticalChance += val / 100;
+
+          return {
+            ...prev,
+            wallet: {
+              ...prev.wallet,
+              levelPoints: prev.wallet.levelPoints - cost,
+            },
+            levelShop: { ...prev.levelShop, [itemId]: currentLevel + 1 },
+            stats: newStats,
+          };
+        });
+      } else {
+        alert("等級積分不足！");
       }
       return;
     }
@@ -819,7 +848,64 @@ export default function ClickAscensionGame() {
           }
           break;
 
-        // 4. Rage Potion
+        // 4. Archer (+20 Auto) - Cost: 2000 * 1.4^L
+        case "gold_shop_archer":
+          cost = Math.floor(2000 * Math.pow(1.4, goldShop.archerLevel || 0));
+          if (player.wallet.gold >= cost) {
+            setPlayer((prev) => ({
+              ...prev,
+              wallet: { ...prev.wallet, gold: prev.wallet.gold - cost },
+              goldShop: {
+                ...prev.goldShop,
+                archerLevel: (prev.goldShop.archerLevel || 0) + 1,
+              },
+              stats: {
+                ...prev.stats,
+                autoAttackDamage: prev.stats.autoAttackDamage + 20,
+              },
+            }));
+          }
+          break;
+
+        // 5. Knight (+100 Auto) - Cost: 10000 * 1.5^L
+        case "gold_shop_knight":
+          cost = Math.floor(10000 * Math.pow(1.5, goldShop.knightLevel || 0));
+          if (player.wallet.gold >= cost) {
+            setPlayer((prev) => ({
+              ...prev,
+              wallet: { ...prev.wallet, gold: prev.wallet.gold - cost },
+              goldShop: {
+                ...prev.goldShop,
+                knightLevel: (prev.goldShop.knightLevel || 0) + 1,
+              },
+              stats: {
+                ...prev.stats,
+                autoAttackDamage: prev.stats.autoAttackDamage + 100,
+              },
+            }));
+          }
+          break;
+
+        // 6. Amulet (+5% Gold) - Cost: 5000 * 1.5^L
+        case "gold_shop_amulet":
+          cost = Math.floor(5000 * Math.pow(1.5, goldShop.amuletLevel || 0));
+          if (player.wallet.gold >= cost) {
+            setPlayer((prev) => ({
+              ...prev,
+              wallet: { ...prev.wallet, gold: prev.wallet.gold - cost },
+              goldShop: {
+                ...prev.goldShop,
+                amuletLevel: (prev.goldShop.amuletLevel || 0) + 1,
+              },
+              stats: {
+                ...prev.stats,
+                goldMultiplier: prev.stats.goldMultiplier + 0.05,
+              },
+            }));
+          }
+          break;
+
+        // 7. Rage Potion
         case "gold_potion_rage":
           cost = 500;
           if (player.wallet.gold >= cost) {
@@ -835,6 +921,142 @@ export default function ClickAscensionGame() {
           break;
       }
     }
+
+    // --- EQUIPMENT GACHA SHOP (New) ---
+    if (itemId === "gacha_equipment_basic") {
+      const cost = 1000; // Basic Gacha Cost
+      if (player.wallet.gold >= cost) {
+        const pool = gameConfig?.equipments || [];
+        if (pool.length > 0) {
+          // Weighted Random selection
+          const totalWeight = pool.reduce(
+            (sum: number, eq: any) => sum + (Number(eq.Gacha_Weight) || 0),
+            0
+          );
+          let random = Math.random() * totalWeight;
+          let selectedItem = pool[0];
+
+          for (const item of pool) {
+            const weight = Number(item.Gacha_Weight) || 0;
+            if (random < weight) {
+              selectedItem = item;
+              break;
+            }
+            random -= weight;
+          }
+
+          // Add to inventory (Increase Level)
+          setPlayer((prev) => {
+            const currentLevel =
+              prev.equipment?.inventory?.[selectedItem.ID] || 0;
+            const maxLevel = selectedItem.Max_Level || 99;
+
+            if (currentLevel >= maxLevel) {
+              const refund = Math.floor(cost * 0.5);
+              alert(
+                `${selectedItem.Name} 已達最高等級 (Lv.${maxLevel})！\n轉化為補償金幣：${refund}`
+              );
+              return {
+                ...prev,
+                wallet: {
+                  ...prev.wallet,
+                  gold: prev.wallet.gold - cost + refund,
+                },
+              };
+            }
+
+            return {
+              ...prev,
+              wallet: { ...prev.wallet, gold: prev.wallet.gold - cost },
+              equipment: {
+                ...prev.equipment,
+                inventory: {
+                  ...prev.equipment.inventory,
+                  [selectedItem.ID]: currentLevel + 1,
+                },
+              },
+            };
+          });
+          alert(
+            `獲得裝備：${selectedItem.Name} (Rarity: ${selectedItem.Rarity})`
+          );
+        } else {
+          alert("暫無裝備可抽取");
+        }
+      } else {
+        alert("金幣不足！");
+      }
+    }
+
+    // --- ASCENSION SHOP (Dynamic from Sheet) ---
+    if (itemId.startsWith("ascension_shop_")) {
+      const config = gameConfig?.upgrades?.find((u: any) => u.ID === itemId);
+      if (!config) return;
+
+      const currentLevel = player.ascensionShop[itemId] || 0;
+      const cost = Math.floor(
+        config.Cost_Base * Math.pow(config.Cost_Mult, currentLevel)
+      );
+
+      if (player.wallet.ascensionPoints >= cost) {
+        setPlayer((prev) => {
+          const newStats = { ...prev.stats };
+          const effectType = config.Effect_Type;
+          const val = Number(config.Effect_Val || 0);
+
+          if (effectType === "ADD_CRIT" || effectType === "CRIT_RATE")
+            newStats.criticalChance += val / 100;
+          if (effectType === "ADD_DAMAGE" || effectType === "CLICK_DMG")
+            newStats.baseDamage += val;
+          if (effectType === "ADD_GOLD" || effectType === "GOLD_MULT")
+            newStats.goldMultiplier += val / 100;
+          if (effectType === "ADD_XP" || effectType === "XP_MULT")
+            newStats.xpMultiplier += val / 100;
+
+          return {
+            ...prev,
+            wallet: {
+              ...prev.wallet,
+              ascensionPoints: prev.wallet.ascensionPoints - cost,
+            },
+            ascensionShop: {
+              ...prev.ascensionShop,
+              [itemId]: currentLevel + 1,
+            },
+            stats: newStats,
+          };
+        });
+      } else {
+        alert("氣運點數不足！");
+      }
+    }
+  };
+
+  const handleEquip = (itemId: string, slot: EquipmentSlot) => {
+    setPlayer((prev) => ({
+      ...prev,
+      equipment: {
+        ...prev.equipment,
+        equipped: {
+          ...prev.equipment.equipped,
+          [slot]: itemId,
+        },
+      },
+    }));
+  };
+
+  const handleUnequip = (slot: EquipmentSlot) => {
+    setPlayer((prev) => {
+      const newEquipped = { ...prev.equipment.equipped };
+      delete newEquipped[slot];
+      return {
+        ...prev,
+        equipment: {
+          ...prev.equipment,
+          equipped: newEquipped,
+        },
+      };
+    });
   };
 
   const handleUsePotion = (type: "RAGE") => {
@@ -853,6 +1075,119 @@ export default function ClickAscensionGame() {
     }
   };
 
+  const handleAscension = () => {
+    const baseAmount = 10;
+    const multiplier = 1.2;
+    const deduct = 0;
+    const exponent = Math.max(0, stage.maxStageReached - deduct);
+    const points = Math.floor(baseAmount * Math.pow(multiplier, exponent));
+
+    if (points <= 0) return;
+
+    setPlayer((prev) => ({
+      ...prev,
+      wallet: {
+        ...prev.wallet,
+        gold: 0,
+        ascensionPoints: (prev.wallet.ascensionPoints || 0) + points,
+      },
+      // Reset Gold Shop
+      goldShop: {
+        weaponLevel: 0,
+        mercenaryLevel: 0,
+        partnerLevel: 0,
+        archerLevel: 0,
+        knightLevel: 0,
+        amuletLevel: 0,
+      },
+      stats: {
+        ...prev.stats,
+        // 1. Reset everything to hardcoded base
+        baseDamage: 1 + prev.clickShop.clickPowerLevel * 5,
+        autoAttackDamage: 0 + prev.levelShop.autoClickLevel * 5,
+        criticalChance: 0.05 + prev.levelShop.luckLevel * 0.01,
+        criticalDamage: 1.5 + prev.clickShop.critDamageLevel * 0.1,
+        goldMultiplier:
+          1.0 +
+          prev.clickShop.goldBonusLevel * 0.1 +
+          prev.levelShop.greedLevel * 0.05,
+        xpMultiplier: 1.0 + prev.levelShop.wisdomLevel * 0.05,
+        bossDamageMultiplier: 1.0 + prev.levelShop.bossSlayerLevel * 0.1,
+        cpMultiplier: 1.0,
+      },
+    }));
+
+    // 2. Dynamic Bonus Application (After Re-calculating hardcoded bases)
+    // We need current player to calculate this. We'll iterate all permanent shops.
+    setPlayer((p) => {
+      const stats = { ...p.stats };
+      const shops = ["clickShop", "levelShop", "ascensionShop"] as const;
+
+      shops.forEach((shopKey) => {
+        Object.entries(p[shopKey]).forEach(([id, level]) => {
+          const config = gameConfig?.upgrades?.find((u: any) => u.ID === id);
+          if (config && level > 0) {
+            const effectType = config.Effect_Type;
+            const totalVal = Number(config.Effect_Val || 0) * level;
+
+            if (effectType === "ADD_DAMAGE" || effectType === "CLICK_DMG")
+              stats.baseDamage += totalVal;
+            if (effectType === "ADD_CRIT" || effectType === "CRIT_RATE")
+              stats.criticalChance += totalVal / 100;
+            if (effectType === "ADD_CRIT_DMG" || effectType === "CRIT_DMG")
+              stats.criticalDamage += totalVal / 100;
+            if (effectType === "ADD_GOLD" || effectType === "GOLD_MULT")
+              stats.goldMultiplier += totalVal / 100;
+            if (effectType === "ADD_XP" || effectType === "XP_MULT")
+              stats.xpMultiplier += totalVal / 100;
+            if (effectType === "ADD_AUTO" || effectType === "AUTO_DMG")
+              stats.autoAttackDamage += totalVal;
+            if (effectType === "ADD_BOSS_DMG" || effectType === "BOSS_DMG")
+              stats.bossDamageMultiplier += totalVal / 100;
+          }
+        });
+      });
+      return { ...p, stats };
+    });
+
+    setStage((prev) => ({
+      ...prev,
+      currentStageId: 1,
+      monstersKilledInStage: 0,
+      isBossActive: false,
+      // Keep maxStageReached? Or reset it? Usually "Rebirth" resets max stage tracking to 1 for the new run.
+      // But we need to record "Highest Ever"?
+      // Let's reset current progress max.
+      maxStageReached: 1,
+    }));
+
+    setMonster(null);
+    alert(`⚡ 渡劫成功！獲得 ${points} 點飛昇點數！`);
+    setActiveView("BATTLE"); // Switch back to battle
+  };
+
+  const potentialPoints = React.useMemo(() => {
+    const baseAmount = 10;
+    const multiplier = 1.2;
+    const deduct = 0;
+    const exponent = Math.max(0, stage.maxStageReached - deduct);
+    return Math.floor(baseAmount * Math.pow(multiplier, exponent));
+  }, [stage.maxStageReached]);
+
+  const handleAscensionClick = () => {
+    if (potentialPoints <= 0) {
+      alert("尚未達到飛升條件！");
+      return;
+    }
+    if (
+      window.confirm(
+        `確定要渡劫飛升嗎？\n\n將重置關卡與金幣，並獲得 ${potentialPoints.toLocaleString()} 點飛升點數！`
+      )
+    ) {
+      handleAscension();
+    }
+  };
+
   // --------------------------------------------------------------------------
   // Render
   // --------------------------------------------------------------------------
@@ -865,28 +1200,49 @@ export default function ClickAscensionGame() {
         combatPower={combatPower}
         stageId={stage.currentStageId}
         onAvatarClick={() => setActiveModal("PROFILE")}
+        onAscension={handleAscensionClick}
+        potentialPoints={potentialPoints}
       />
 
-      {/* Battle Area - Full screen clickable */}
-      <MonsterBattle
-        monster={monster}
-        stageId={stage.currentStageId}
-        onMonsterClick={handleMonsterClick}
-        baseDamage={player.stats.baseDamage}
-        criticalChance={player.stats.criticalChance}
-        criticalDamage={player.stats.criticalDamage}
-        monstersKilled={stage.monstersKilledInStage}
-        monstersRequired={stage.monstersRequiredForBoss}
-        isBossActive={stage.isBossActive}
-        mercenaryLevel={player.goldShop.mercenaryLevel}
-        partnerLevel={player.goldShop.partnerLevel}
-        potionCount={player.inventory.ragePotionCount}
-        activeBuffs={player.activeBuffs}
-        onUsePotion={() => handleUsePotion("RAGE")}
-      />
+      {/* Main Content Area */}
+      {activeView === "BATTLE" ? (
+        <MonsterBattle
+          monster={monster}
+          stageId={stage.currentStageId}
+          onMonsterClick={handleMonsterClick}
+          baseDamage={effectiveStats.baseDamage}
+          criticalChance={effectiveStats.criticalChance}
+          criticalDamage={effectiveStats.criticalDamage}
+          monstersKilled={stage.monstersKilledInStage}
+          monstersRequired={stage.monstersRequiredForBoss}
+          isBossActive={stage.isBossActive}
+          mercenaryLevel={player.goldShop.mercenaryLevel}
+          partnerLevel={player.goldShop.partnerLevel}
+          archerLevel={player.goldShop.archerLevel}
+          knightLevel={player.goldShop.knightLevel}
+          potionCount={player.inventory.ragePotionCount}
+          activeBuffs={player.activeBuffs}
+          onUsePotion={() => handleUsePotion("RAGE")}
+          lastAutoAttack={lastAutoAttack}
+        />
+      ) : (
+        <CharacterView
+          player={player}
+          effectiveStats={effectiveStats}
+          totalDps={totalDps}
+          userId={userId}
+          gameConfig={gameConfig}
+          onEquip={handleEquip}
+          onUnequip={handleUnequip}
+        />
+      )}
 
       {/* Footer Navigation */}
-      <FooterNav onOpenModal={setActiveModal} />
+      <FooterNav
+        activeView={activeView}
+        onSwitchView={setActiveView}
+        onOpenModal={setActiveModal}
+      />
 
       {/* Profile Modal */}
       <Modal
@@ -896,25 +1252,13 @@ export default function ClickAscensionGame() {
       >
         <ProfilePage
           player={player}
+          effectiveStats={effectiveStats}
           combatPower={combatPower}
           userId={userId}
           onLogin={handleLogin}
           onLogout={handleLogout}
           onManualSave={handleManualSave}
           gameConfig={gameConfig}
-        />
-      </Modal>
-
-      {/* Upgrade Modal (Legacy) */}
-      <Modal
-        isOpen={activeModal === "UPGRADES"}
-        onClose={() => setActiveModal(null)}
-        title="升級強化"
-      >
-        <UpgradePage
-          player={player}
-          upgradeLevels={upgradeLevels}
-          onPurchaseUpgrade={handlePurchaseUpgrade}
         />
       </Modal>
 
@@ -927,16 +1271,18 @@ export default function ClickAscensionGame() {
           <div
             className="ca-shop-currency-bar"
             style={{
+              display: "flex",
+              flexWrap: "wrap",
               border: "none",
               background: "transparent",
-              padding: 0,
-              marginLeft: "12px",
+              padding: "0 8px",
               gap: "12px",
             }}
           >
             <div
               className="ca-currency ca-currency-gold"
               style={{ fontSize: "0.8rem" }}
+              title="金幣"
             >
               <span>💰</span>
               <span>{Math.floor(player.wallet.gold).toLocaleString()}</span>
@@ -944,6 +1290,7 @@ export default function ClickAscensionGame() {
             <div
               className="ca-currency ca-currency-diamond"
               style={{ fontSize: "0.8rem" }}
+              title="鑽石"
             >
               <span>💎</span>
               <span>{player.wallet.diamonds.toLocaleString()}</span>
@@ -954,6 +1301,7 @@ export default function ClickAscensionGame() {
                 fontSize: "0.8rem",
                 color: "var(--ca-accent-cyan, #22d3ee)",
               }}
+              title="點擊點數"
             >
               <span>⚡</span>
               <span>
@@ -963,9 +1311,18 @@ export default function ClickAscensionGame() {
             <div
               className="ca-currency"
               style={{ fontSize: "0.8rem", color: "#4ade80" }}
+              title="等級積分"
             >
               <span>🆙</span>
               <span>{player.wallet.levelPoints.toLocaleString()}</span>
+            </div>
+            <div
+              className="ca-currency"
+              style={{ fontSize: "0.8rem", color: "#d8b4fe" }}
+              title="飛昇點數"
+            >
+              <span>🕊️</span>
+              <span>{player.wallet.ascensionPoints.toLocaleString()}</span>
             </div>
           </div>
         }
@@ -976,6 +1333,8 @@ export default function ClickAscensionGame() {
           gameConfig={gameConfig}
         />
       </Modal>
+
+      {/* Inventory removed from modal, now inline in CharacterView */}
     </div>
   );
 }

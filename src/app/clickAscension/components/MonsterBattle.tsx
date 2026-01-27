@@ -18,9 +18,22 @@ interface MonsterBattleProps {
   isBossActive: boolean;
   mercenaryLevel?: number;
   partnerLevel?: number;
+  archerLevel?: number;
+  knightLevel?: number;
   potionCount?: number;
   activeBuffs?: any;
   onUsePotion?: () => void;
+  lastAutoAttack?: {
+    time: number;
+    damage: number;
+    breakdown?: {
+      mercenary: number;
+      partner: number;
+      archer: number;
+      knight: number;
+      player: number;
+    };
+  } | null;
 }
 
 export default function MonsterBattle({
@@ -35,14 +48,29 @@ export default function MonsterBattle({
   isBossActive,
   mercenaryLevel = 0,
   partnerLevel = 0,
+  archerLevel = 0,
+  knightLevel = 0,
   potionCount = 0,
   activeBuffs,
   onUsePotion,
+  lastAutoAttack,
 }: MonsterBattleProps) {
   const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
   const [isShaking, setIsShaking] = useState(false);
   const [isHitFlash, setIsHitFlash] = useState(false);
+
+  // Animation states for allies
+  const [isMercAttacking, setIsMercAttacking] = useState(false);
+  const [isPartnerAttacking, setIsPartnerAttacking] = useState(false);
+  const [isArcherAttacking, setIsArcherAttacking] = useState(false);
+  const [isKnightAttacking, setIsKnightAttacking] = useState(false);
+
   const containerRef = useRef<HTMLDivElement>(null);
+  const mercRef = useRef<HTMLDivElement>(null);
+  const partnerRef = useRef<HTMLDivElement>(null);
+  const archerRef = useRef<HTMLDivElement>(null);
+  const knightRef = useRef<HTMLDivElement>(null);
+  const lastAttackTimeRef = useRef<number>(0);
 
   // Check if Rage Potion is active
   const isRageActive =
@@ -65,6 +93,85 @@ export default function MonsterBattle({
       setFloatingTexts((prev) => prev.filter((ft) => ft.id !== id));
     }, 1000);
   };
+
+  // Handle Auto Attack Visuals
+  React.useEffect(() => {
+    if (!lastAutoAttack || lastAutoAttack.time === lastAttackTimeRef.current)
+      return;
+    lastAttackTimeRef.current = lastAutoAttack.time;
+
+    // 1. Effects on Monster
+    setIsHitFlash(true);
+    setTimeout(() => setIsHitFlash(false), 150);
+
+    const rect = containerRef.current?.getBoundingClientRect();
+
+    if (lastAutoAttack.breakdown && rect) {
+      const { mercenary, partner, archer, knight, player } =
+        lastAutoAttack.breakdown;
+
+      // Mercenary Damage
+      if (mercenary > 0 && mercRef.current) {
+        const mercRect = mercRef.current.getBoundingClientRect();
+        const x = mercRect.left - rect.left + mercRect.width / 2;
+        const y = mercRect.top - rect.top; // Above unit
+        addFloatingText(`⚔️ ${mercenary.toLocaleString()}`, x, y - 20, "AUTO");
+
+        setIsMercAttacking(true);
+        setTimeout(() => setIsMercAttacking(false), 300);
+      }
+
+      // Partner Damage
+      if (partner > 0 && partnerRef.current) {
+        const partnerRect = partnerRef.current.getBoundingClientRect();
+        const x = partnerRect.left - rect.left + partnerRect.width / 2;
+        const y = partnerRect.top - rect.top; // Above unit
+        addFloatingText(`🧚 ${partner.toLocaleString()}`, x, y - 20, "AUTO");
+
+        setIsPartnerAttacking(true);
+        setTimeout(() => setIsPartnerAttacking(false), 400);
+      }
+
+      // Archer Damage
+      if (archer > 0 && archerRef.current) {
+        const archerRect = archerRef.current.getBoundingClientRect();
+        const x = archerRect.left - rect.left + archerRect.width / 2;
+        const y = archerRect.top - rect.top; // Above unit
+        addFloatingText(`🏹 ${archer.toLocaleString()}`, x, y - 20, "AUTO");
+
+        setIsArcherAttacking(true);
+        setTimeout(() => setIsArcherAttacking(false), 300);
+      }
+
+      // Knight Damage
+      if (knight > 0 && knightRef.current) {
+        const knightRect = knightRef.current.getBoundingClientRect();
+        const x = knightRect.left - rect.left + knightRect.width / 2;
+        const y = knightRect.top - rect.top; // Above unit
+        addFloatingText(`🛡️ ${knight.toLocaleString()}`, x, y - 20, "AUTO");
+
+        setIsKnightAttacking(true);
+        setTimeout(() => setIsKnightAttacking(false), 300);
+      }
+
+      // Player/Base Damage (Center)
+      if (player > 0) {
+        const x = rect.width / 2 + (Math.random() * 40 - 20);
+        const y = rect.height / 2 + (Math.random() * 40 - 20) - 50;
+        addFloatingText(player.toLocaleString(), x, y, "AUTO");
+      }
+    } else if (rect) {
+      // Fallback
+      const x = rect.width / 2 + (Math.random() * 40 - 20);
+      const y = rect.height / 2 + (Math.random() * 40 - 20) - 50;
+      addFloatingText(lastAutoAttack.damage.toLocaleString(), x, y, "AUTO");
+
+      if (mercenaryLevel > 0) {
+        setIsMercAttacking(true);
+        setTimeout(() => setIsMercAttacking(false), 300);
+      }
+    }
+  }, [lastAutoAttack, mercenaryLevel, partnerLevel, archerLevel, knightLevel]);
 
   const handleClick = (e: React.MouseEvent | React.TouchEvent) => {
     if (!monster || monster.currentHp <= 0) return;
@@ -204,6 +311,8 @@ export default function MonsterBattle({
 
       {/* --- ALLIES (Mercenary / Partner) --- */}
       <div
+        ref={mercRef}
+        className={isMercAttacking ? "ca-attack-lunge" : ""}
         style={{
           position: "absolute",
           bottom: "20px",
@@ -225,6 +334,8 @@ export default function MonsterBattle({
       </div>
 
       <div
+        ref={partnerRef}
+        className={isPartnerAttacking ? "ca-attack-magic" : ""}
         style={{
           position: "absolute",
           bottom: "20px",
@@ -254,8 +365,9 @@ export default function MonsterBattle({
           }}
           style={{
             position: "absolute",
-            top: "60px",
-            right: "20px",
+            bottom: "20px",
+            left: "50%",
+            transform: "translateX(-50%)",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
@@ -290,6 +402,59 @@ export default function MonsterBattle({
           </div>
         </div>
       )}
+
+      {/* --- ARCHER (Top Left) --- */}
+      <div
+        ref={archerRef}
+        className={isArcherAttacking ? "ca-attack-lunge" : ""}
+        style={{
+          position: "absolute",
+          top: "80px",
+          left: "20px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "4px",
+          alignItems: "center",
+          zIndex: 5,
+        }}
+      >
+        {archerLevel > 0 && (
+          <>
+            <div style={{ fontSize: "2rem" }}>🏹</div>
+            <div style={{ fontSize: "0.7rem", color: "#a5b4fc" }}>
+              Lv.{archerLevel}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* --- KNIGHT (Top Right, below potion?) --- */}
+      {/* Potion is at top:60, right:20. Let's put Knight at top: 140 or side? 
+          Potion is right: 20. Knight at right: 20, top: 140? 
+      */}
+      <div
+        ref={knightRef}
+        className={isKnightAttacking ? "ca-attack-lunge" : ""}
+        style={{
+          position: "absolute",
+          top: "140px",
+          right: "20px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "4px",
+          alignItems: "center",
+          zIndex: 5,
+        }}
+      >
+        {knightLevel > 0 && (
+          <>
+            <div style={{ fontSize: "2rem" }}>🛡️</div>
+            <div style={{ fontSize: "0.7rem", color: "#fca5a5" }}>
+              Lv.{knightLevel}
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Floating Texts - Absolute positioned */}
       <div className="absolute inset-0 pointer-events-none overflow-visible">

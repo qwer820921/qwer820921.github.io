@@ -10,6 +10,8 @@ interface HeaderProps {
   combatPower: number;
   stageId: number;
   onAvatarClick: () => void;
+  onAscension: () => void;
+  potentialPoints: number;
 }
 
 export default function Header({
@@ -17,6 +19,8 @@ export default function Header({
   combatPower,
   stageId,
   onAvatarClick,
+  onAscension,
+  potentialPoints,
 }: HeaderProps) {
   const { system, wallet } = player;
   const xpPercentage = (system.currentXp / system.requiredXp) * 100;
@@ -68,10 +72,41 @@ export default function Header({
             </div>
           </div>
 
-          {/* Combat Power */}
-          <div className="ca-combat-power">
-            <span className="ca-cp-label">戰力</span>
-            <span className="ca-cp-value">{combatPower.toLocaleString()}</span>
+          {/* Combat Power & Ascension Row */}
+          <div
+            className="ca-combat-power"
+            style={{ justifyContent: "space-between", width: "100%" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <span className="ca-cp-label">戰力</span>
+              <span className="ca-cp-value">
+                {combatPower.toLocaleString()}
+              </span>
+            </div>
+
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onAscension();
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                background: "linear-gradient(135deg, #a855f7 0%, #d946ef 100%)",
+                color: "white",
+                padding: "4px 10px",
+                fontSize: "0.65rem",
+                fontWeight: "bold",
+                borderRadius: "6px",
+                border: "1px solid rgba(255,255,255,0.2)",
+                cursor: "pointer",
+                boxShadow: "0 0 10px rgba(168, 85, 247, 0.3)",
+                flexShrink: 0,
+              }}
+            >
+              ⚡ 渡劫飛升 (+{potentialPoints.toLocaleString()})
+            </button>
           </div>
         </div>
       </div>
@@ -87,6 +122,10 @@ export default function Header({
           <div className="ca-currency ca-currency-cp text-xs">
             <span>⚡</span>
             <span>{Math.floor(wallet.clickPoints).toLocaleString()}</span>
+          </div>
+          <div className="ca-currency text-xs" style={{ color: "#10b981" }}>
+            <span>🆙</span>
+            <span>{Math.floor(wallet.levelPoints).toLocaleString()}</span>
           </div>
         </div>
       </div>

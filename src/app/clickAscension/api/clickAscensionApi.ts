@@ -2,7 +2,7 @@ import axios from "axios";
 
 // Google Apps Script Web App URL for Click Ascension
 export const BASE_URL =
-  "https://script.google.com/macros/s/AKfycbytd_hvb2K_jpkXM9ZoY5Feyi2ddZYI112UG0cUZpZrTcjZ5IZnsZCwAhU3xSSUYJxj/exec";
+  "https://script.google.com/macros/s/AKfycbxegFPp4kJZXDxUNqQopqiWVa2JLLM__rJbm700mUQsovg2nkE6wSJd2lFQyJQ4dg10/exec";
 
 export interface ApiResponse<T> {
   success?: boolean;
@@ -89,11 +89,15 @@ export const savePlayerProgress = async (
  * 定義靜態遊戲資料的介面
  * 對應 Google Sheet 中的 Settings, Monsters, Upgrades 分頁
  */
-export interface GameStaticData {
-  settings: Record<string, unknown>;
-  monsters: Record<string, unknown>[];
-  upgrades: Record<string, unknown>[];
-}
+import { GameConfig } from "../types";
+
+// ... existing code ...
+
+/**
+ * 定義靜態遊戲資料的介面
+ * 對應 Google Sheet 中的 Settings, Monsters, Upgrades 分頁
+ */
+export type GameStaticData = GameConfig;
 
 /**
  * 獲取所有遊戲設定資料 (從 Google Sheet)

@@ -1,15 +1,16 @@
-export type CurrencyType = "GOLD" | "CLICK_POINT" | "DIAMOND"; // 貨幣類型：金幣、點擊點數、鑽石
+export type CurrencyType = "GOLD" | "CLICK_POINT" | "DIAMOND" | "AP" | "LP"; // 貨幣類型：金幣、點擊點數、鑽石、飛昇點數(AP)、等級點數(LP)
 
 export interface Wallet {
   gold: number; // 金幣數量
   clickPoints: number; // 點擊點數
   diamonds: number; // 鑽石數量
   levelPoints: number; // 等級積分
+  ascensionPoints: number; // 飛昇點數 (轉生點數)
 }
 
 /**
- * Global Statistics for the Profile Modal
  * 個人資料頁面的全局統計數據
+ * 用於記錄玩家的生涯累積數據
  */
 export interface PlayerStatistics {
   totalClicks: number; // 總點擊次數
@@ -24,13 +25,13 @@ export interface PlayerStatistics {
 export interface PlayerSystem {
   level: number; // 當前等級
   currentXp: number; // 當前經驗值
-  requiredXp: number; // 升級所需經驗值 (Derived or static lookup)
+  requiredXp: number; // 升級所需經驗值 (衍生計算或查表)
 }
 
 export interface PlayerAttributes {
   // Base Stats // 基礎屬性
   baseDamage: number; // 基礎傷害
-  autoAttackDamage: number; // 自動攻擊傷害 (For future partners/auto)
+  autoAttackDamage: number; // 自動攻擊傷害 (預留給未來夥伴/自動功能)
 
   // Multipliers // 倍率/加成
   criticalChance: number; // 爆擊機率 (0.05 = 5%)
@@ -46,26 +47,18 @@ export interface PlayerState {
   wallet: Wallet; // 錢包狀態
   stats: PlayerAttributes; // 戰鬥屬性
   records: PlayerStatistics; // 統計記錄
-  clickShop: {
-    // 點擊商店 (修仙) 等級
-    clickPowerLevel: number;
-    critDamageLevel: number;
-    goldBonusLevel: number;
-  };
-  levelShop: {
-    // 等級商店 (天賦) 等級
-    wisdomLevel: number; // 悟性 (XP)
-    greedLevel: number; // 貪婪 (Gold)
-    autoClickLevel: number; // 自動聚氣 (Auto Dmg)
-    bossSlayerLevel: number; // BOSS 殺手
-    luckLevel: number; // 幸運 (Crit Chance)
-  };
+  clickShop: Record<string, number>; // 點擊商店項目 ID -> 等級
+  levelShop: Record<string, number>; // 等級商店項目 ID -> 等級
   goldShop: {
     // 金幣商店等級
     weaponLevel: number; // 鍛造武器
     mercenaryLevel: number; // 傭兵
     partnerLevel: number; // 夥伴
+    archerLevel: number; // 精靈弓手 (New)
+    knightLevel: number; // 騎士團長 (New)
+    amuletLevel: number; // 貪婪護符 (New)
   };
+  ascensionShop: AscensionShop;
   inventory: {
     // 道具欄
     ragePotionCount: number; // 狂暴藥水數量
@@ -73,9 +66,17 @@ export interface PlayerState {
   activeBuffs: {
     // 啟用中的 Buff (結束時間戳)
     ragePotionExpiresAt: number;
+    // 裝備等級已移除，移動到頂層 equipment 物件
+  };
+  // 新增：裝備系統狀態
+  equipment: {
+    inventory: Record<string, number>; // 擁有的裝備 ID -> 等級 (若為 0 或 undefined 代表未擁有)
+    equipped: Partial<Record<EquipmentSlot, string>>; // 部位 -> 裝備 ID
   };
   lastDailyRewardClaimTime?: number; // 上次領取每日獎勵的時間 (timestamp)
 }
+// 備註：理想情況下 equipmentLevels 應該在頂層或獨立物件中，但原本依照使用者需求放在 PlayerState。
+// 現在我們將其放在獨立的 'equipment' 屬性中，而不是放在 'activeBuffs' 內，這樣更乾淨。
 
 // ============================================================================
 // Stage & Combat // 關卡與戰鬥
@@ -88,6 +89,10 @@ export interface StageState {
   maxStageReached: number; // 最高到達關卡
   monstersKilledInStage: number; // 當前關卡已擊殺怪物數
   monstersRequiredForBoss: number; // 召喚 BOSS 所需擊殺數 (e.g. 10)
+}
+
+export interface AscensionShop {
+  [key: string]: number; // 動態儲存各個飛昇項目的等級，例如 "ascension_shop_luck": 5
 }
 
 export interface Monster {
@@ -156,4 +161,55 @@ export interface GameState {
   player: PlayerState; // 玩家狀態
   stage: StageState; // 關卡狀態
   currentMonster: Monster | null; // 當前怪物
+}
+
+// ============================================================================
+// Equipment System (New) // 裝備系統
+// ============================================================================
+
+export enum EquipmentSlot {
+  MAIN_HAND = "MAIN_HAND", // 武器
+  HEAD = "HEAD", // 頭盔
+  BODY = "BODY", // 護甲
+  HANDS = "HANDS", // 手套
+  LEGS = "LEGS", // 腿甲
+  RELIC = "RELIC", // 法寶
+}
+
+// 裝備系統的 DB Schema 對應
+export interface EquipmentItemConfig {
+  ID: string; // 例如 "eq_main_hand_01"
+  Name: string; // 裝備名稱
+  Slot: EquipmentSlot; // 部位
+  Desc_Template: string; // 描述 (例如 "點擊傷害 +{val}")
+  Effect_Type: string; // "CLICK_DMG", "CRIT_RATE" 等
+  Base_Val: number; // 基礎數值
+  Level_Mult: number; // 數值成長倍率 (或累加值，由邏輯定義)
+  Cost_Base: number; // 初始價格
+  Cost_Mult: number; // 價格成長倍率
+  Currency: CurrencyType; // 購買貨幣
+  Rarity: string; // 稀有度 (例如 "Common", "Epic")
+  Gacha_Weight: number; // 扭蛋權重 (例如 100 為普通, 10 為稀有)
+  Max_Level: number; // 等級上限
+}
+
+// 商店與升級項目的 DB Schema 對應
+export interface UpgradeConfig {
+  ID: string; // 例如 "click_shop_damage"
+  Name: string; // 名稱
+  Shop_Type: string; // "CLICK", "GOLD", "LEVEL", "ASCENSION"
+  Cost_Base: number;
+  Cost_Mult: number;
+  Effect_Type: string;
+  Effect_Val: string | number;
+  Max_Level: number;
+  Currency: CurrencyType;
+  Desc_Template: string;
+}
+
+export interface GameConfig {
+  settings: Record<string, unknown>; // From 'Settings' sheet
+  monsters: Record<string, unknown>[]; // From 'Monsters' sheet
+  upgrades: UpgradeConfig[]; // From 'Upgrades' sheet
+  equipments: EquipmentItemConfig[]; // From 'Equipments' sheet
 }

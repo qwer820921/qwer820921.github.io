@@ -403,6 +403,27 @@
   font-family: "JetBrains Mono", monospace;
   font-weight: 600;
   font-size: 0.9rem;
+  position: relative;
+  cursor: help;
+}
+
+.ca-currency:hover::after {
+  content: attr(title);
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ca-bg-card-hover);
+  color: var(--ca-text-primary);
+  padding: 4px 8px;
+  border-radius: var(--ca-radius-sm);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  z-index: 100;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: var(--ca-shadow-sm);
+  pointer-events: none;
+  margin-top: 4px;
 }
 
 .ca-currency-gold {
@@ -599,6 +620,7 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  white-space: nowrap;
 }
 
 .ca-modal-close {
@@ -1227,6 +1249,17 @@
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+.ca-shop-item-card:hover {
+  background: var(--ca-bg-card-hover);
+  border-color: var(--ca-primary-light);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+.ca-shop-item-card:active {
+  transform: translateY(-1px) scale(0.98);
+}
+
 .ca-upgrade-btn {
   display: flex;
   flex-direction: column;
@@ -1239,12 +1272,24 @@
   border: none;
   cursor: pointer;
   min-width: 80px;
+  transition: all 0.2s ease;
+}
+
+.ca-upgrade-btn:not(:disabled):hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.4);
+  filter: brightness(1.1);
+}
+
+.ca-upgrade-btn:not(:disabled):active {
+  transform: translateY(0) scale(0.98);
 }
 
 .ca-upgrade-btn:disabled {
   background: #334155;
   color: #64748b;
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* Realm Display */

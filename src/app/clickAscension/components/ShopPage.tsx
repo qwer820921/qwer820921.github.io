@@ -5,7 +5,7 @@ import React, { useState } from "react";
 import { PlayerState } from "../types";
 import "../styles/clickAscension.css";
 
-type ShopTab = "DAILY" | "GOLD" | "LEVEL" | "CLICK" | "ASCENSION";
+type ShopTab = "DAILY" | "GOLD" | "LEVEL" | "CLICK" | "ASCENSION" | "EQUIPMENT";
 
 import { GameStaticData } from "../api/clickAscensionApi";
 
@@ -31,27 +31,35 @@ export default function ShopPage({
   gameConfig,
 }: ShopPageProps) {
   const [activeTab, setActiveTab] = useState<ShopTab>("DAILY");
+  const [goldSubTab, setGoldSubTab] = useState<"UPGRADE" | "RECRUIT">(
+    "UPGRADE"
+  );
+  const [isProbModalOpen, setIsProbModalOpen] = useState(false);
   const realm = getRealmInfo(player.system.level);
+
+  console.log(
+    "[ShopPage] Rendering. ActiveTab:",
+    activeTab,
+    "isProbModalOpen:",
+    isProbModalOpen
+  );
 
   // Helper to get current level of an upgrade from PlayerState
   const getUpgradeLevel = (id: string): number => {
     // Gold Shop
-    if (id === "gold_shop_weapon") return player.goldShop.weaponLevel;
-    if (id === "gold_shop_mercenary") return player.goldShop.mercenaryLevel;
-    if (id === "gold_shop_partner") return player.goldShop.partnerLevel;
-    if (id === "gold_potion_rage") return player.inventory.ragePotionCount;
+    if (id === "gold_shop_weapon") return player.goldShop.weaponLevel || 0;
+    if (id === "gold_shop_mercenary")
+      return player.goldShop.mercenaryLevel || 0;
+    if (id === "gold_shop_partner") return player.goldShop.partnerLevel || 0;
+    if (id === "gold_shop_archer") return player.goldShop.archerLevel || 0;
+    if (id === "gold_shop_knight") return player.goldShop.knightLevel || 0;
+    if (id === "gold_shop_amulet") return player.goldShop.amuletLevel || 0;
+    if (id === "gold_potion_rage") return player.inventory.ragePotionCount || 0;
 
-    // Level Shop
-    if (id === "level_shop_wisdom") return player.levelShop.wisdomLevel;
-    if (id === "level_shop_greed") return player.levelShop.greedLevel;
-    if (id === "level_shop_auto") return player.levelShop.autoClickLevel;
-    if (id === "level_shop_slayer") return player.levelShop.bossSlayerLevel;
-    if (id === "level_shop_luck") return player.levelShop.luckLevel;
-
-    // Click Shop
-    if (id === "click_shop_damage") return player.clickShop.clickPowerLevel;
-    if (id === "click_shop_crit") return player.clickShop.critDamageLevel;
-    if (id === "click_shop_gold") return player.clickShop.goldBonusLevel;
+    // Dynamic Lookup
+    if (id.startsWith("level_shop_")) return player.levelShop[id] || 0;
+    if (id.startsWith("click_shop_")) return player.clickShop[id] || 0;
+    if (id.startsWith("ascension_shop_")) return player.ascensionShop[id] || 0;
 
     return 0; // Default
   };
@@ -80,6 +88,7 @@ export default function ShopPage({
     if (currency === "LP") return "🆙";
     if (currency === "CP") return "⚡";
     if (currency === "DIAMOND") return "💎";
+    if (currency === "AP") return "⚡";
     return currency;
   };
 
@@ -89,16 +98,17 @@ export default function ShopPage({
     if (currency === "LP") return player.wallet.levelPoints;
     if (currency === "CP") return player.wallet.clickPoints;
     if (currency === "DIAMOND") return player.wallet.diamonds;
+    if (currency === "AP") return player.wallet.ascensionPoints;
     return 0;
   };
 
-  const renderDynamicUpgrades = (shopType: string) => {
-    if (!gameConfig || !gameConfig.upgrades) return null;
-
-    const items = gameConfig.upgrades.filter(
-      (u) => (u as any).Shop_Type === shopType
-    );
-    if (items.length === 0) return null;
+  const renderUpgradeList = (items: any[]) => {
+    if (items.length === 0)
+      return (
+        <div style={{ textAlign: "center", padding: "20px", color: "gray" }}>
+          無項目
+        </div>
+      );
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -136,6 +146,14 @@ export default function ShopPage({
         })}
       </div>
     );
+  };
+
+  const renderDynamicUpgrades = (shopType: string) => {
+    if (!gameConfig || !gameConfig.upgrades) return null;
+    const items = gameConfig.upgrades.filter(
+      (u: any) => u.Shop_Type === shopType
+    );
+    return renderUpgradeList(items);
   };
 
   // ... (Daily Reward Logic remains same)
@@ -204,6 +222,13 @@ export default function ShopPage({
         >
           <div className="icon">🕊️</div>
           <div className="label">飛昇商店</div>
+        </button>
+        <button
+          onClick={() => setActiveTab("EQUIPMENT")}
+          className={`ca-shop-tab-btn equipment ${activeTab === "EQUIPMENT" ? "active" : ""}`}
+        >
+          <div className="icon">⚔️</div>
+          <div className="label">裝備扭蛋</div>
         </button>
       </div>
 
@@ -320,44 +345,66 @@ export default function ShopPage({
               </div>
             </div>
 
-            {/* Dynamic Upgrades OR Fallback */}
+            {/* Sub Tabs for Gold Shop */}
+            <div
+              className="ca-shop-subtabs"
+              style={{ display: "flex", gap: "10px", marginBottom: "8px" }}
+            >
+              <button
+                className={`ca-btn ${goldSubTab === "UPGRADE" ? "ca-btn-primary" : ""}`}
+                style={{
+                  flex: 1,
+                  padding: "8px",
+                  fontSize: "0.9rem",
+                  background:
+                    goldSubTab === "UPGRADE" ? "" : "rgba(255,255,255,0.1)",
+                }}
+                onClick={() => setGoldSubTab("UPGRADE")}
+              >
+                🛠️ 金幣強化
+              </button>
+              <button
+                className={`ca-btn ${goldSubTab === "RECRUIT" ? "ca-btn-primary" : ""}`}
+                style={{
+                  flex: 1,
+                  padding: "8px",
+                  fontSize: "0.9rem",
+                  background:
+                    goldSubTab === "RECRUIT" ? "" : "rgba(255,255,255,0.1)",
+                }}
+                onClick={() => setGoldSubTab("RECRUIT")}
+              >
+                🚩 招兵買馬
+              </button>
+            </div>
+
+            {/* Dynamic Upgrades with Filter */}
             {gameConfig?.upgrades ? (
-              renderDynamicUpgrades("GOLD")
+              (() => {
+                const allGoldItems = gameConfig.upgrades.filter(
+                  (u: any) => u.Shop_Type === "GOLD"
+                );
+                const filteredItems = allGoldItems.filter((u: any) => {
+                  if (goldSubTab === "RECRUIT") {
+                    return u.Effect_Type === "ADD_AUTO_DMG";
+                  } else {
+                    // UPGRADE: Everything NOT ADD_AUTO_DMG
+                    return u.Effect_Type !== "ADD_AUTO_DMG";
+                  }
+                });
+                return renderUpgradeList(filteredItems);
+              })()
             ) : (
               <div
                 style={{ display: "flex", flexDirection: "column", gap: "8px" }}
               >
-                {/* Fallback to original static content if needed, but since we pushed config, we prefer empty or loading if config is missing? 
-                        Let's keep original static as fallback below for safety if getGameConfigs fails.
-                    */}
                 <div style={{ color: "gray", textAlign: "center" }}>
-                  Loading Config... (Fallback Mode)
+                  Loading Config...
                 </div>
-                {/* ... (Original static items could go here) ... */}
               </div>
             )}
 
-            {/* Original Static Items below as fallback? 
-                 Actually, better to REPLCACE the static block with determining logic. 
-                 If gameConfig exists, use it. If not, show fallback logic.
-             */}
-
-            {!gameConfig?.upgrades && (
-              <div
-                style={{ display: "flex", flexDirection: "column", gap: "8px" }}
-              >
-                <UpgradeRow
-                  name="鍛造武器 (Fallback)"
-                  desc="基礎攻擊力 +1"
-                  level={player.goldShop.weaponLevel}
-                  cost={10}
-                  currencyLabel="💰"
-                  canAfford={false}
-                  onClick={() => {}}
-                />
-              </div>
-            )}
-
+            {/* Diamond Packs - Show only in Upgrade tab? Or always? User didn't specify. Assuming always at bottom. */}
             <div
               style={{
                 borderTop: "1px solid rgba(255,255,255,0.1)",
@@ -372,7 +419,6 @@ export default function ShopPage({
               使用 💎 購買金幣補給
             </p>
             <div className="ca-shop-item-grid">
-              {/* Static Diamond Items for now */}
               <ShopItemCard
                 name="金幣小包"
                 desc="獲得 1,000 金幣"
@@ -466,26 +512,157 @@ export default function ShopPage({
         {/* === ASCENSION SHOP TAB === */}
         {activeTab === "ASCENSION" && (
           <div
+            style={{ display: "flex", flexDirection: "column", gap: "16px" }}
+          >
+            <div
+              className="ca-realm-card"
+              style={{
+                background: "linear-gradient(135deg, #7c3aed 0%, #c084fc 100%)",
+              }}
+            >
+              <div className="ca-realm-title">飛昇商店 (Permanent)</div>
+              <div className="ca-realm-name" style={{ color: "#fff" }}>
+                永恆加成
+              </div>
+              <div
+                style={{
+                  fontSize: "0.8rem",
+                  color: "rgba(255,255,255,0.7)",
+                  marginTop: "4px",
+                }}
+              >
+                飛昇後不會重置的永久強化
+              </div>
+            </div>
+
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "12px" }}
+            >
+              {renderDynamicUpgrades("ASCENSION")}
+            </div>
+          </div>
+        )}
+
+        {/* === EQUIPMENT GACHA SHOP TAB === */}
+        {activeTab === "EQUIPMENT" && (
+          <div
             style={{
               display: "flex",
               flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "40px 0",
-              opacity: 0.5,
               gap: "16px",
+              alignItems: "center",
             }}
           >
-            <div style={{ fontSize: "4rem", filter: "grayscale(1)" }}>🕊️</div>
-            <div style={{ fontSize: "1.2rem", fontWeight: "bold" }}>
-              飛昇商店
+            <div
+              className="ca-realm-card"
+              style={{
+                background: "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)",
+                position: "relative",
+              }}
+            >
+              <div className="ca-realm-title">裝備扭蛋 (Gacha)</div>
+              <div
+                className="ca-realm-name"
+                style={{ color: "#fff", fontSize: "1.2rem" }}
+              >
+                試試你的手氣！
+              </div>
+              <button
+                onClick={() => {
+                  console.log("[ShopPage] Click Probability Button");
+                  setIsProbModalOpen(true);
+                }}
+                style={{
+                  position: "absolute",
+                  top: "12px",
+                  right: "12px",
+                  background: "rgba(0,0,0,0.3)",
+                  border: "1px solid rgba(255,255,255,0.3)",
+                  color: "white",
+                  fontSize: "0.7rem",
+                  padding: "4px 8px",
+                  borderRadius: "12px",
+                  cursor: "pointer",
+                }}
+              >
+                裝備機率一覽
+              </button>
             </div>
-            <div style={{ fontSize: "0.9rem", color: "var(--ca-text-muted)" }}>
-              敬請期待
+
+            <div className="ca-shop-item-grid" style={{ width: "100%" }}>
+              <div
+                className="ca-glass-static"
+                style={{
+                  gridColumn: "1 / -1",
+                  padding: "24px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "16px",
+                  textAlign: "center",
+                }}
+              >
+                <div
+                  style={{ fontSize: "4rem", animation: "bounce 2s infinite" }}
+                >
+                  🎁
+                </div>
+                <div>
+                  <div
+                    style={{
+                      fontSize: "1.2rem",
+                      fontWeight: "bold",
+                      color: "#fff",
+                    }}
+                  >
+                    基礎裝備箱
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "0.8rem",
+                      color: "var(--ca-text-muted)",
+                    }}
+                  >
+                    隨機獲得一件裝備 (全屬性)
+                  </div>
+                </div>
+
+                <button
+                  className="ca-btn ca-btn-primary"
+                  style={{
+                    padding: "12px 32px",
+                    fontSize: "1.1rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                  onClick={() => onPurchase("gacha_equipment_basic")}
+                >
+                  <span>抽取一次</span>
+                  <span
+                    style={{
+                      background: "rgba(0,0,0,0.2)",
+                      padding: "2px 8px",
+                      borderRadius: "12px",
+                      fontSize: "0.9rem",
+                    }}
+                  >
+                    💰 1,000
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* Probability Modal Overlay */}
+      {isProbModalOpen && (
+        <ProbabilityModal
+          gameConfig={gameConfig}
+          onClose={() => setIsProbModalOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -508,7 +685,7 @@ function ShopItemCard({
 }) {
   return (
     <div
-      className="ca-glass-static"
+      className="ca-glass-static ca-shop-item-card"
       style={{
         padding: "12px",
         display: "flex",
@@ -516,7 +693,7 @@ function ShopItemCard({
         alignItems: "center",
         textAlign: "center",
         cursor: "pointer",
-        transition: "transform 0.1s",
+        transition: "all 0.2s ease",
       }}
       onClick={() => canAfford && onClick()}
     >
@@ -598,4 +775,405 @@ function UpgradeRow({
       </button>
     </div>
   );
+}
+
+// Internal Component for Probability Modal
+function parseDescription(template: string, config: any, level: number = 1) {
+  const val = (config.Base_Val || 0) + (level - 1) * (config.Level_Mult || 0);
+  return template.replace("{val}", val.toLocaleString());
+}
+
+function ProbabilityModal({
+  gameConfig,
+  onClose,
+}: {
+  gameConfig: GameStaticData | null | undefined;
+  onClose: () => void;
+}) {
+  const [selectedItem, setSelectedItem] = React.useState<any>(null);
+  const hasData =
+    gameConfig && gameConfig.equipments && gameConfig.equipments.length > 0;
+  const equipments = hasData ? gameConfig!.equipments : [];
+
+  // Calculate total weight
+  const totalWeight = equipments.reduce(
+    (sum, eq) => sum + (Number(eq.Gacha_Weight) || 0),
+    0
+  );
+
+  // Group by weight
+  const groups: Record<number, typeof equipments> = {};
+  if (totalWeight > 0) {
+    equipments.forEach((eq) => {
+      const weight = Number(eq.Gacha_Weight) || 0;
+      if (!groups[weight]) groups[weight] = [];
+      groups[weight].push(eq);
+    });
+  }
+
+  // Helper for rarity colors
+  const getRarityColor = (rarity: string) => {
+    switch (rarity?.toLowerCase()) {
+      case "common":
+        return "#94a3b8"; // gray
+      case "uncommon":
+        return "#22c55e"; // green
+      case "rare":
+        return "#3b82f6"; // blue
+      case "epic":
+        return "#a855f7"; // purple
+      case "legendary":
+        return "#ef4444"; // red
+      case "mythic":
+        return "#f59e0b"; // orange
+      default:
+        return "#fff";
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "rgba(0,0,0,0.8)",
+        zIndex: 9999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "20px",
+      }}
+    >
+      <div
+        className="ca-card"
+        style={{
+          width: "100%",
+          maxWidth: "500px",
+          maxHeight: "85vh",
+          display: "flex",
+          flexDirection: "column",
+          background: "#1e293b",
+          border: "1px solid #334155",
+          borderRadius: "16px",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            padding: "16px",
+            borderBottom: "1px solid rgba(255,255,255,0.1)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div
+            style={{ fontWeight: "bold", fontSize: "1.1rem", color: "white" }}
+          >
+            裝備機率一覽
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: "none",
+              border: "none",
+              color: "gray",
+              fontSize: "1.5rem",
+              cursor: "pointer",
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={{ padding: "16px", overflowY: "auto", flex: 1 }}>
+          {!hasData ? (
+            <div
+              style={{
+                textAlign: "center",
+                color: "var(--ca-text-muted)",
+                padding: "20px",
+              }}
+            >
+              暫無裝備資料
+              <br />
+              <span style={{ fontSize: "0.8rem" }}>
+                請檢查 Google Sheet 設定或重新載入
+              </span>
+            </div>
+          ) : (
+            Object.entries(groups)
+              .sort((a, b) => Number(b[0]) - Number(a[0])) // Sort by weight desc
+              .map(([weight, items]) => {
+                const prob = ((Number(weight) / totalWeight) * 100).toFixed(2);
+                return (
+                  <div key={weight} style={{ marginBottom: "20px" }}>
+                    <div
+                      style={{
+                        background: "rgba(255,255,255,0.05)",
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        marginBottom: "12px",
+                        fontSize: "0.9rem",
+                        color: "#93c5fd",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      機率: {prob}% (權重: {weight}, 共 {items.length} 種)
+                    </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "repeat(auto-fill, minmax(64px, 1fr))",
+                        gap: "12px",
+                      }}
+                    >
+                      {items.map((item) => {
+                        const rarityColor = getRarityColor(item.Rarity);
+                        return (
+                          <div
+                            key={item.ID}
+                            onClick={() => setSelectedItem(item)}
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              gap: "4px",
+                              cursor: "pointer",
+                              transition: "transform 0.1s",
+                            }}
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.transform = "scale(1.05)")
+                            }
+                            onMouseLeave={(e) =>
+                              (e.currentTarget.style.transform = "scale(1)")
+                            }
+                          >
+                            <div
+                              style={{
+                                width: "56px",
+                                height: "56px",
+                                background: "rgba(0,0,0,0.3)",
+                                borderRadius: "8px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "1.8rem",
+                                border: `1px solid ${rarityColor}44`,
+                                boxShadow: `inset 0 0 10px ${rarityColor}22`,
+                              }}
+                            >
+                              {getIconFromSlot(item.Slot)}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: "0.65rem",
+                                color: rarityColor,
+                                textAlign: "center",
+                                lineHeight: "1.2",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                width: "100%",
+                                fontWeight:
+                                  item.Rarity?.toLowerCase() === "common"
+                                    ? "normal"
+                                    : "bold",
+                              }}
+                            >
+                              {item.Name}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })
+          )}
+        </div>
+      </div>
+
+      {selectedItem && (
+        <EquipmentDetailModal
+          item={selectedItem}
+          onClose={() => setSelectedItem(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Detailed view for an equipment item in the shop
+ */
+function EquipmentDetailModal({
+  item,
+  onClose,
+}: {
+  item: any;
+  onClose: () => void;
+}) {
+  const getRarityColor = (rarity: string) => {
+    switch (rarity?.toLowerCase()) {
+      case "common":
+        return "#94a3b8";
+      case "uncommon":
+        return "#22c55e";
+      case "rare":
+        return "#3b82f6";
+      case "epic":
+        return "#a855f7";
+      case "legendary":
+        return "#ef4444";
+      case "mythic":
+        return "#f59e0b";
+      default:
+        return "#fff";
+    }
+  };
+
+  const rarityColor = getRarityColor(item.Rarity);
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "rgba(0,0,0,0.85)",
+        zIndex: 10001,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "20px",
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="ca-card"
+        style={{
+          width: "100%",
+          maxWidth: "320px",
+          background: "#1e293b",
+          border: `1px solid ${rarityColor}66`,
+          borderRadius: "16px",
+          padding: "24px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "16px",
+          boxShadow: `0 0 30px ${rarityColor}22`,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "8px",
+          }}
+        >
+          <div
+            style={{
+              width: "80px",
+              height: "80px",
+              background: "rgba(0,0,0,0.3)",
+              borderRadius: "16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "3rem",
+              border: `1px solid ${rarityColor}44`,
+            }}
+          >
+            {getIconFromSlot(item.Slot)}
+          </div>
+          <div
+            style={{
+              fontSize: "1.2rem",
+              fontWeight: "bold",
+              color: rarityColor,
+            }}
+          >
+            {item.Name}
+          </div>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <span
+              style={{
+                fontSize: "0.8rem",
+                color: rarityColor,
+                fontWeight: "bold",
+              }}
+            >
+              {item.Rarity}
+            </span>
+            <span style={{ color: "rgba(255,255,255,0.2)" }}>|</span>
+            <span style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
+              {item.Slot}
+            </span>
+          </div>
+        </div>
+
+        <div
+          style={{
+            background: "rgba(0,0,0,0.2)",
+            padding: "12px",
+            borderRadius: "8px",
+            fontSize: "0.9rem",
+            color: "#cbd5e1",
+          }}
+        >
+          <div
+            style={{
+              color: "#94a3b8",
+              marginBottom: "4px",
+              fontSize: "0.8rem",
+            }}
+          >
+            裝備初始屬性:
+          </div>
+          <div>{parseDescription(item.Desc_Template, item, 1)}</div>
+        </div>
+
+        <button
+          className="ca-btn"
+          onClick={onClose}
+          style={{
+            width: "100%",
+            background: "rgba(255,255,255,0.05)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            color: "#fff",
+          }}
+        >
+          返回
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function getIconFromSlot(s: string) {
+  switch (s) {
+    case "MAIN_HAND":
+      return "⚔️";
+    case "HEAD":
+      return "🪖";
+    case "BODY":
+      return "👕";
+    case "HANDS":
+      return "🧤";
+    case "LEGS":
+      return "👢";
+    case "RELIC":
+      return "🔮";
+    default:
+      return "📦";
+  }
 }

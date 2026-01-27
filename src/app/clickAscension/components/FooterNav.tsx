@@ -1,33 +1,47 @@
 import React from "react";
 
-export type ModalType = "PROFILE" | "UPGRADES" | "SHOP" | null;
+export type ModalType = "PROFILE" | "UPGRADES" | "SHOP" | "INVENTORY" | null;
+export type ViewType = "BATTLE" | "CHARACTER";
 
 interface FooterNavProps {
+  activeView: ViewType;
+  onSwitchView: (view: ViewType) => void;
   onOpenModal: (modal: ModalType) => void;
 }
 
-export default function FooterNav({ onOpenModal }: FooterNavProps) {
+export default function FooterNav({
+  activeView,
+  onSwitchView,
+  onOpenModal,
+}: FooterNavProps) {
   return (
     <footer className="ca-footer">
       <nav className="ca-footer-nav">
-        <button className="ca-tab-btn" onClick={() => onOpenModal(null)}>
-          <span className="icon">⚔️</span>
-          <span className="label">戰鬥</span>
+        <button
+          className={`ca-tab-btn ${activeView === "CHARACTER" ? "active" : ""}`}
+          onClick={() => {
+            onSwitchView("CHARACTER");
+            onOpenModal(null); // Close any open modals
+          }}
+        >
+          <span className="icon">👤</span>
+          <span className="label">角色</span>
         </button>
 
-        <button className="ca-tab-btn" onClick={() => onOpenModal("UPGRADES")}>
-          <span className="icon">⚡</span>
-          <span className="label">強化</span>
+        <button
+          className={`ca-tab-btn ${activeView === "BATTLE" ? "active" : ""}`}
+          onClick={() => {
+            onSwitchView("BATTLE");
+            onOpenModal(null); // Close any open modals
+          }}
+        >
+          <span className="icon">⚔️</span>
+          <span className="label">戰鬥</span>
         </button>
 
         <button className="ca-tab-btn" onClick={() => onOpenModal("SHOP")}>
           <span className="icon">🛒</span>
           <span className="label">商店</span>
-        </button>
-
-        <button className="ca-tab-btn" onClick={() => onOpenModal("PROFILE")}>
-          <span className="icon">👤</span>
-          <span className="label">角色</span>
         </button>
       </nav>
     </footer>
