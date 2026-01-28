@@ -1007,37 +1007,62 @@
   gap: 12px;
 }
 
+/* --- Profile Stat Grid Items --- */
 .ca-stat-item {
-  display: flex;
+  position: relative;
+  display: flex !important; /* Force flex row */
+  flex-direction: row !important;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: var(--ca-bg-card);
-  border-radius: var(--ca-radius-md);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  justify-content: flex-start;
+  gap: 12px; /* Clean gap between icon and text */
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+  overflow: hidden;
+  min-height: 60px; /* Ensure consistent height */
 }
 
-.ca-stat-icon {
-  font-size: 1.5rem;
-  width: 32px;
-  text-align: center;
+/* Icon well-contained */
+.ca-stat-item .ca-stat-icon {
+  position: static !important; /* Reset any absolute */
+  font-size: 1.6rem;
+  width: 36px;
+  height: 36px;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  line-height: 1 !important; /* Standardize line height */
+  margin: 0 !important;
+  align-self: center !important; /* Ensure strict center */
 }
 
-.ca-stat-content {
+/* Text Container */
+.ca-stat-item .ca-stat-content {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  flex: 1; /* Take remaining space */
+  min-width: 0; /* Allow text truncate if needed */
+  z-index: 1;
 }
 
-.ca-stat-label {
+.ca-stat-item .ca-stat-label {
   font-size: 0.75rem;
   color: var(--ca-text-secondary);
-  font-weight: 600;
+  margin-bottom: 2px;
+  white-space: nowrap;
 }
 
-.ca-stat-value {
-  font-size: 0.95rem;
+.ca-stat-item .ca-stat-value {
+  font-size: 1.1rem;
   font-weight: 700;
-  color: var(--ca-text-primary);
+  color: #fff;
+  line-height: 1.2;
 }
 
 .ca-records-list {
@@ -1322,4 +1347,105 @@
 .ca-realm-level {
   font-size: 0.8rem;
   color: var(--ca-text-muted);
+}
+
+/* --- Stat Cards (Grid) --- */
+.ca-stat-card {
+  background: rgba(30, 41, 59, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.ca-stat-card:hover {
+  background: rgba(30, 41, 59, 0.6);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.ca-stat-label {
+  font-size: 0.65rem;
+  color: var(--ca-text-secondary);
+  margin-bottom: 2px;
+  white-space: nowrap;
+}
+
+.ca-stat-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ca-text-primary);
+  line-height: 1.2;
+}
+
+.ca-stat-bonus {
+  font-size: 0.6rem;
+  color: var(--ca-accent-green);
+  font-weight: 700;
+  margin-top: 1px;
+}
+
+/* --- Stat Pills (Horizontal) --- */
+.ca-stat-pill {
+  position: relative;
+  background: rgba(4, 5, 8, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 50px;
+  padding: 3px 6px 3px 22px; /* Left padding space for icon */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease;
+  min-height: 28px; /* Further reduced height */
+  margin-left: 6px; /* Offset for the hanging icon */
+}
+
+.ca-stat-pill:hover {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+  z-index: 5;
+}
+
+.ca-stat-icon {
+  position: absolute;
+  left: -8px; /* Hangs off the left edge */
+  font-size: 1.1rem; /* Slightly larger icon */
+  width: 24px;
+  text-align: center;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  z-index: 2;
+}
+
+/* Override existing .ca-stat-value for pill context if needed, but it might just cascade */
+.ca-stat-pill .ca-stat-value {
+  font-size: 0.8rem; /* Smaller value */
+  font-weight: 800;
+  color: #fff;
+  font-family: "JetBrains Mono", monospace;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  flex: 0 1 auto;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.ca-stat-pill .ca-stat-bonus {
+  font-size: 0.6rem;
+  color: var(--ca-accent-green);
+  font-weight: 700;
+  opacity: 0.9;
+  margin-top: 0;
+  white-space: nowrap;
+  line-height: 1;
 }

@@ -40,6 +40,11 @@ export interface PlayerAttributes {
   cpMultiplier: number; // 點擊點數倍率 (Click Point multiplier)
   xpMultiplier: number; // 經驗值倍率
   bossDamageMultiplier: number; // 對 BOSS 傷害倍率
+
+  // New Ascension Stats
+  autoClickPerSec: number; // 每秒模擬點擊次數
+  monsterKillReduction: number; // 進入下關所需擊殺數減少量
+  rareMonsterChance: number; // 稀有怪出現機率 (0.1 = 10%)
 }
 
 export interface PlayerState {
@@ -136,9 +141,16 @@ export enum UpgradeCategory {
 
 export enum UpgradeEffectType {
   ADD_DAMAGE = "ADD_DAMAGE", // 增加點擊傷害
-  ADD_AUTO = "ADD_AUTO", // 增加自動攻擊傷害
+  ADD_AUTO = "ADD_AUTO", // 增加自動攻擊傷害,
+  ADD_AUTO_DMG = "ADD_AUTO_DMG", // Same as ADD_AUTO, alias
   ADD_CRIT = "ADD_CRIT", // 增加爆擊機率/傷害
-  ADD_GOLD = "ADD_GOLD", // 增加金幣獲取
+  ADD_GOLD = "ADD_GOLD", // 增加金幣獲取(Flat or Mult?) - Existing logic likely treats as flat or general category
+  // New Types
+  ADD_XP_MULT = "ADD_XP_MULT", // 經驗值倍率
+  ADD_GOLD_MULT = "ADD_GOLD_MULT", // 金幣獲取倍率
+  REDUCE_GOAL_V = "REDUCE_GOAL_V", // 減少關卡目標 (隻)
+  RARE_CHANCE_P = "RARE_CHANCE_P", // 稀有怪機率 (%)
+  AUTO_CLICK_V = "AUTO_CLICK_V", // 自動點擊 (次/秒)
 }
 
 export interface UpgradeItem {

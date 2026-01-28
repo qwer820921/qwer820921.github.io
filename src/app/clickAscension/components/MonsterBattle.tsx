@@ -34,6 +34,11 @@ interface MonsterBattleProps {
       player: number;
     };
   } | null;
+  lastAutoClickEvent?: {
+    id: string;
+    damage: number;
+    isCrit: boolean;
+  } | null;
 }
 
 export default function MonsterBattle({
@@ -54,6 +59,7 @@ export default function MonsterBattle({
   activeBuffs,
   onUsePotion,
   lastAutoAttack,
+  lastAutoClickEvent,
 }: MonsterBattleProps) {
   const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
   const [isShaking, setIsShaking] = useState(false);
@@ -71,6 +77,7 @@ export default function MonsterBattle({
   const archerRef = useRef<HTMLDivElement>(null);
   const knightRef = useRef<HTMLDivElement>(null);
   const lastAttackTimeRef = useRef<number>(0);
+  const lastAutoClickIdRef = useRef<string>(""); // Track ID to prevent dupes
 
   // Check if Rage Potion is active
   const isRageActive =
@@ -93,6 +100,30 @@ export default function MonsterBattle({
       setFloatingTexts((prev) => prev.filter((ft) => ft.id !== id));
     }, 1000);
   };
+
+  // Handle Auto Click Visuals (Fast Clicks)
+  React.useEffect(() => {
+    if (
+      !lastAutoClickEvent ||
+      lastAutoClickEvent.id === lastAutoClickIdRef.current
+    )
+      return;
+    lastAutoClickIdRef.current = lastAutoClickEvent.id;
+
+    // Visual Effect
+    setIsHitFlash(true);
+    setTimeout(() => setIsHitFlash(false), 50); // Fast flash
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect) {
+      // Random position near center implies "Auto Click"
+      const x = rect.width / 2 + (Math.random() * 60 - 30);
+      const y = rect.height / 2 + (Math.random() * 60 - 30);
+
+      const type = lastAutoClickEvent.isCrit ? "CRIT" : "CLICK";
+      addFloatingText(lastAutoClickEvent.damage.toLocaleString(), x, y, type);
+    }
+  }, [lastAutoClickEvent]);
 
   // Handle Auto Attack Visuals
   React.useEffect(() => {

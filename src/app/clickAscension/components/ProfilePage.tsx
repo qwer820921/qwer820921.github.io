@@ -12,7 +12,7 @@ interface ProfilePageProps {
   userId: string | null;
   onLogin: (newId: string) => void;
   onLogout: () => void;
-  onManualSave: () => void;
+  onManualSave: () => Promise<void>;
   gameConfig?: GameStaticData | null;
 }
 
@@ -29,6 +29,17 @@ export default function ProfilePage({
   const { system, wallet, records } = player;
 
   const [inputId, setInputId] = React.useState("");
+  const [isSaving, setIsSaving] = React.useState(false);
+
+  const handleSaveClick = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      await onManualSave();
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const formatNumber = (num: number) => {
     return Math.floor(num || 0).toLocaleString();
@@ -138,14 +149,16 @@ export default function ProfilePage({
                   <span>勇者 {userId}</span>
                   <div style={{ display: "flex", gap: "8px" }}>
                     <button
-                      onClick={onManualSave}
+                      onClick={handleSaveClick}
                       className="ca-profile-action-btn"
                       style={{
                         background: "rgba(16, 185, 129, 0.2)",
                         color: "#6ee7b7",
+                        cursor: isSaving ? "wait" : "pointer",
+                        opacity: isSaving ? 0.7 : 1,
                       }}
                     >
-                      上傳
+                      {isSaving ? "上傳中" : "上傳"}
                     </button>
                     <button
                       onClick={onLogout}
@@ -244,7 +257,7 @@ export default function ProfilePage({
             icon="⚔️"
           />
           <StatItem
-            label="自動秒傷 (DPS)"
+            label="夥伴秒傷 (Ally DPS)"
             value={formatNumber(effectiveStats.autoAttackDamage)}
             icon="🤖"
           />
@@ -277,6 +290,22 @@ export default function ProfilePage({
             label="點擊點數倍率"
             value={`${effectiveStats.cpMultiplier.toFixed(2)}x`}
             icon="✨"
+          />
+          {/* New Stats */}
+          <StatItem
+            label="自動點擊 (每秒)"
+            value={`${effectiveStats.autoClickPerSec.toFixed(1)} 次`}
+            icon="⚡"
+          />
+          <StatItem
+            label="關卡目標減少"
+            value={`-${formatNumber(effectiveStats.monsterKillReduction)} 隻`}
+            icon="📉"
+          />
+          <StatItem
+            label="稀有怪出現機率"
+            value={formatPercent(effectiveStats.rareMonsterChance)}
+            icon="🌟"
           />
         </div>
       </div>

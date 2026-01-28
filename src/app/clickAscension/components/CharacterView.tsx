@@ -31,6 +31,25 @@ function parseDescription(
   return template.replace("{val}", val.toLocaleString());
 }
 
+function getRarityColor(rarity: string) {
+  switch (rarity?.toLowerCase()) {
+    case "common":
+      return "#94a3b8";
+    case "uncommon":
+      return "#22c55e";
+    case "rare":
+      return "#3b82f6";
+    case "epic":
+      return "#a855f7";
+    case "legendary":
+      return "#ef4444";
+    case "mythic":
+      return "#f59e0b";
+    default:
+      return "#94a3b8";
+  }
+}
+
 function ItemDetailModal({
   item,
   onClose,
@@ -45,26 +64,6 @@ function ItemDetailModal({
   isEquipped: boolean;
 }) {
   const { config, level } = item;
-
-  const getRarityColor = (rarity: string) => {
-    switch (rarity?.toLowerCase()) {
-      case "common":
-        return "#94a3b8";
-      case "uncommon":
-        return "#22c55e";
-      case "rare":
-        return "#3b82f6";
-      case "epic":
-        return "#a855f7";
-      case "legendary":
-        return "#ef4444";
-      case "mythic":
-        return "#f59e0b";
-      default:
-        return "#fff";
-    }
-  };
-
   const rarityColor = getRarityColor(config.Rarity);
 
   return (
@@ -275,171 +274,143 @@ export default function CharacterView({
         flexDirection: "column",
         width: "100%",
         height: "100%",
-        padding: "16px",
+        padding: "12px", // Reduced padding
         overflow: "hidden",
       }}
     >
       <div
         style={{
-          flex: "1 1 50%",
+          flex: "0 0 auto", // Don't enforce 50%, just take what's needed
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "flex-start",
-          minHeight: "350px",
           position: "relative",
-          paddingTop: "10px",
+          paddingBottom: "12px",
         }}
       >
-        {/* --- Stats Summary Area (Integrated Above) --- */}
+        {/* --- Stats Summary Grid (Pill Style) --- */}
         <div
           style={{
             width: "100%",
-            maxWidth: "450px",
-            display: "flex",
-            justifyContent: "center",
-            gap: "8px",
-            marginBottom: "12px",
+            maxWidth: "500px",
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: "4px",
+            marginBottom: "8px", // Reduced margin
             zIndex: 10,
+            padding: "0 4px",
           }}
         >
-          {/* Click Dmg */}
-          <div
-            className="ca-glass"
-            style={{
-              flex: 1,
-              padding: "10px 6px",
-              borderRadius: "16px",
-              background: "rgba(30, 41, 59, 0.4)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
-            }}
-          >
-            <span
-              style={{
-                fontSize: "0.65rem",
-                color: "#94a3b8",
-                marginBottom: "4px",
-              }}
-            >
-              ⚔️ 點擊傷害
-            </span>
-            <span
-              style={{ fontSize: "1.1rem", fontWeight: "bold", color: "#fff" }}
-            >
+          {/* 1. Click Damage */}
+          <div className="ca-stat-pill">
+            <span className="ca-stat-icon">⚔️</span>
+            <span className="ca-stat-value">
               {Math.floor(effectiveStats.baseDamage).toLocaleString()}
             </span>
             {effectiveStats.baseDamage > player.stats.baseDamage && (
-              <span
-                style={{
-                  fontSize: "0.6rem",
-                  color: "#4ade80",
-                  fontWeight: "bold",
-                }}
-              >
-                +
+              <span className="ca-stat-bonus">
+                (+
                 {(
                   effectiveStats.baseDamage - player.stats.baseDamage
                 ).toLocaleString()}
+                )
               </span>
             )}
           </div>
 
-          {/* DPS */}
-          <div
-            className="ca-glass"
-            style={{
-              flex: 1,
-              padding: "10px 6px",
-              borderRadius: "16px",
-              background: "rgba(30, 41, 59, 0.4)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
-            }}
-          >
-            <span
-              style={{
-                fontSize: "0.65rem",
-                color: "#94a3b8",
-                marginBottom: "4px",
-              }}
-            >
-              🤖 秒傷 (DPS)
+          {/* 2. Critical Chance */}
+          <div className="ca-stat-pill">
+            <span className="ca-stat-icon">🎯</span>
+            <span className="ca-stat-value">
+              {(effectiveStats.criticalChance * 100).toFixed(1)}%
             </span>
-            <span
-              style={{ fontSize: "1.1rem", fontWeight: "bold", color: "#fff" }}
-            >
+            {effectiveStats.criticalChance > player.stats.criticalChance && (
+              <span className="ca-stat-bonus">
+                (+
+                {(
+                  (effectiveStats.criticalChance -
+                    player.stats.criticalChance) *
+                  100
+                ).toFixed(1)}
+                %)
+              </span>
+            )}
+          </div>
+
+          {/* 3. Auto Attack (DPS) */}
+          <div className="ca-stat-pill">
+            <span className="ca-stat-icon">🤖</span>
+            <span className="ca-stat-value">
               {Math.floor(totalDps).toLocaleString()}
             </span>
             {effectiveStats.autoAttackDamage >
               player.stats.autoAttackDamage && (
-              <span
-                style={{
-                  fontSize: "0.6rem",
-                  color: "#4ade80",
-                  fontWeight: "bold",
-                }}
-              >
-                +
+              <span className="ca-stat-bonus">
+                (+
                 {(
                   effectiveStats.autoAttackDamage -
                   player.stats.autoAttackDamage
                 ).toLocaleString()}
+                )
               </span>
             )}
           </div>
 
-          {/* Boss Dmg */}
-          <div
-            className="ca-glass"
-            style={{
-              flex: 1,
-              padding: "10px 6px",
-              borderRadius: "16px",
-              background: "rgba(30, 41, 59, 0.4)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
-            }}
-          >
-            <span
-              style={{
-                fontSize: "0.65rem",
-                color: "#fca5a5",
-                marginBottom: "4px",
-              }}
-            >
-              👹 BOSS 傷害
+          {/* 4. Critical Damage */}
+          <div className="ca-stat-pill">
+            <span className="ca-stat-icon">💥</span>
+            <span className="ca-stat-value">
+              {(effectiveStats.criticalDamage * 100).toFixed(0)}%
             </span>
-            <span
-              style={{ fontSize: "1.1rem", fontWeight: "bold", color: "#fff" }}
-            >
-              {(effectiveStats.bossDamageMultiplier || 1.0).toFixed(2)}x
+            {effectiveStats.criticalDamage > player.stats.criticalDamage && (
+              <span className="ca-stat-bonus">
+                (+
+                {(
+                  (effectiveStats.criticalDamage -
+                    player.stats.criticalDamage) *
+                  100
+                ).toFixed(0)}
+                %)
+              </span>
+            )}
+          </div>
+
+          {/* 5. Gold Gain */}
+          <div className="ca-stat-pill">
+            <span className="ca-stat-icon">💰</span>
+            <span className="ca-stat-value">
+              {(effectiveStats.goldMultiplier * 100).toFixed(0)}%
+            </span>
+            {effectiveStats.goldMultiplier > player.stats.goldMultiplier && (
+              <span className="ca-stat-bonus">
+                (+
+                {(
+                  (effectiveStats.goldMultiplier -
+                    player.stats.goldMultiplier) *
+                  100
+                ).toFixed(0)}
+                %)
+              </span>
+            )}
+          </div>
+
+          {/* 6. Boss Damage */}
+          <div className="ca-stat-pill">
+            <span className="ca-stat-icon">👹</span>
+            <span className="ca-stat-value">
+              {(effectiveStats.bossDamageMultiplier * 100).toFixed(0)}%
             </span>
             {effectiveStats.bossDamageMultiplier >
               player.stats.bossDamageMultiplier && (
-              <span
-                style={{
-                  fontSize: "0.6rem",
-                  color: "#4ade80",
-                  fontWeight: "bold",
-                }}
-              >
-                +
+              <span className="ca-stat-bonus">
+                (+
                 {(
                   (effectiveStats.bossDamageMultiplier -
                     player.stats.bossDamageMultiplier) *
                   100
                 ).toFixed(0)}
-                %
+                %)
               </span>
             )}
           </div>
@@ -453,11 +424,11 @@ export default function CharacterView({
             justifyContent: "space-between",
             alignItems: "center",
             zIndex: 2,
-            padding: "0 10px",
+            padding: "0 4px",
           }}
         >
           <div
-            style={{ display: "flex", flexDirection: "column", gap: "12px" }}
+            style={{ display: "flex", flexDirection: "column", gap: "8px" }} // Reduced gap
           >
             <EquipmentSlotItem
               slot={EquipmentSlot.MAIN_HAND}
@@ -523,16 +494,16 @@ export default function CharacterView({
               src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${userId || "Guest"}`}
               alt="Character"
               style={{
-                width: "140px",
-                height: "140px",
+                width: "110px", // Reduced size
+                height: "110px",
                 filter: "drop-shadow(0 10px 20px rgba(0,0,0,0.5))",
               }}
             />
             <div
               className="ca-glass"
               style={{
-                marginTop: "8px",
-                padding: "4px 12px",
+                marginTop: "4px",
+                padding: "2px 10px",
                 borderRadius: "20px",
                 display: "flex",
                 alignItems: "center",
@@ -540,11 +511,13 @@ export default function CharacterView({
                 background: "rgba(15, 23, 42, 0.6)",
               }}
             >
-              <span style={{ fontSize: "1rem" }}>Lv.{player.system.level}</span>
+              <span style={{ fontSize: "0.9rem" }}>
+                Lv.{player.system.level}
+              </span>
               <span
                 style={{
                   width: "1px",
-                  height: "12px",
+                  height: "10px",
                   background: "rgba(255,255,255,0.2)",
                 }}
               />
@@ -552,7 +525,7 @@ export default function CharacterView({
                 style={{
                   color: "var(--ca-accent-gold)",
                   fontWeight: "bold",
-                  fontSize: "0.9rem",
+                  fontSize: "0.8rem",
                 }}
               >
                 {userId || "Guest"}
@@ -560,9 +533,7 @@ export default function CharacterView({
             </div>
           </div>
 
-          <div
-            style={{ display: "flex", flexDirection: "column", gap: "12px" }}
-          >
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             <EquipmentSlotItem
               slot={EquipmentSlot.HANDS}
               player={player}
@@ -617,11 +588,11 @@ export default function CharacterView({
         <div
           style={{
             position: "absolute",
-            top: "50%",
+            top: "55%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: "250px",
-            height: "250px",
+            width: "220px",
+            height: "220px",
             background:
               "radial-gradient(circle, rgba(99,102,241,0.1) 0%, transparent 70%)",
             pointerEvents: "none",
@@ -632,36 +603,45 @@ export default function CharacterView({
 
       <div
         style={{
-          flex: "1 1 50%",
+          flex: "1 1 0px", // Allow it to take remaining space, starting from 0 to force shrink if needed
           width: "100%",
           background: "rgba(15, 23, 42, 0.4)",
           borderTop: "1px solid rgba(255,255,255,0.1)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
+          minHeight: "0", // Important for flex text-overflow
         }}
       >
         <div
           style={{
-            padding: "12px 16px",
+            padding: "8px 12px",
             background: "rgba(0,0,0,0.2)",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
+            flexShrink: 0,
           }}
         >
-          <span style={{ fontWeight: "bold", color: "#e2e8f0" }}>
+          <span
+            style={{ fontWeight: "bold", color: "#e2e8f0", fontSize: "0.9rem" }}
+          >
             🎒 裝備倉庫 ({inventoryItems.length})
           </span>
-          <span style={{ fontSize: "0.7rem", color: "var(--ca-text-muted)" }}>
+          <span style={{ fontSize: "0.65rem", color: "var(--ca-text-muted)" }}>
             點擊裝備以穿戴
           </span>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", padding: "12px" }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: "8px" }}>
           {inventoryItems.length === 0 ? (
             <div
-              style={{ textAlign: "center", color: "gray", padding: "40px 0" }}
+              style={{
+                textAlign: "center",
+                color: "gray",
+                padding: "20px 0",
+                fontSize: "0.8rem",
+              }}
             >
               倉庫空空如也...
             </div>
@@ -669,37 +649,40 @@ export default function CharacterView({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(64px, 1fr))",
-                gap: "12px",
+                gridTemplateColumns: "repeat(auto-fill, minmax(56px, 1fr))", // Reduced min-width
+                gap: "8px",
               }}
             >
               {inventoryItems.map((item) => {
                 const isEquipped = Object.values(
                   player.equipment?.equipped || {}
                 ).includes(item.id);
+                const rarityColor = getRarityColor(item.config.Rarity);
+
                 return (
                   <div
                     key={item.id}
                     onClick={() => setSelectedItem(item)}
                     className="ca-inventory-item"
                     style={{
-                      width: "64px",
-                      height: "64px",
+                      width: "56px", // Reduced size
+                      height: "56px",
                       background: "rgba(30, 41, 59, 0.6)",
-                      border: isEquipped
-                        ? "2px solid var(--ca-accent-gold)"
-                        : "1px solid rgba(255,255,255,0.1)",
+                      border: `2px solid ${rarityColor}`,
                       borderRadius: "10px",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       position: "relative",
                       cursor: "pointer",
-                      opacity: isEquipped ? 0.6 : 1,
+                      opacity: isEquipped ? 1 : 0.8,
+                      boxShadow: isEquipped
+                        ? "0 0 10px #22c55e, inset 0 0 5px #22c55e"
+                        : "none", // Green glow if equipped
                     }}
                     title={`${item.config.Name} (Lv.${item.level}) - ${item.config.Slot}`}
                   >
-                    <span style={{ fontSize: "1.8rem" }}>
+                    <span style={{ fontSize: "1.5rem" }}>
                       {getIconFromSlot(item.config.Slot)}
                     </span>
                     <div
@@ -709,8 +692,8 @@ export default function CharacterView({
                         right: "-4px",
                         background: "#4f46e5",
                         color: "white",
-                        fontSize: "0.6rem",
-                        padding: "1px 4px",
+                        fontSize: "0.55rem",
+                        padding: "1px 3px",
                         borderRadius: "4px",
                         fontWeight: "bold",
                       }}
@@ -723,12 +706,13 @@ export default function CharacterView({
                           position: "absolute",
                           top: "-2px",
                           left: "-2px",
-                          background: "var(--ca-accent-gold)",
-                          color: "black",
-                          fontSize: "0.5rem",
+                          background: "#22c55e", // Green for 'E'
+                          color: "white",
+                          fontSize: "0.55rem",
                           padding: "1px 3px",
                           borderRadius: "3px",
                           fontWeight: "bold",
+                          textShadow: "0 1px 2px rgba(0,0,0,0.5)",
                         }}
                       >
                         E
@@ -792,27 +776,33 @@ function EquipmentSlotItem({
     ? gameConfig?.equipments?.find((e) => String(e.ID) === String(equippedId))
     : null;
   const level = equippedId ? player.equipment?.inventory?.[equippedId] || 1 : 0;
+  const rarityColor = itemConfig
+    ? getRarityColor(itemConfig.Rarity)
+    : "rgba(255,255,255,0.1)";
 
   return (
     <div
       className="ca-equipment-slot"
       style={{
-        width: "64px",
-        height: "64px",
+        width: "54px", // Reduced from 64px
+        height: "54px",
         background: "rgba(15, 23, 42, 0.6)",
-        border: "1px solid rgba(255,255,255,0.1)",
-        borderRadius: "12px",
+        border: itemConfig
+          ? `2px solid ${rarityColor}`
+          : "1px dashed rgba(255,255,255,0.1)",
+        borderRadius: "10px",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         position: "relative",
         cursor: "pointer",
         transition: "all 0.2s",
+        boxShadow: itemConfig ? `0 0 15px ${rarityColor}44` : "none",
       }}
       onClick={() => equippedId && onClick?.(equippedId)}
       title={itemConfig ? `${itemConfig.Name} (Lv.${level})` : "Empty Slot"}
     >
-      <div style={{ fontSize: "2rem", opacity: itemConfig ? 1 : 0.3 }}>
+      <div style={{ fontSize: "1.6rem", opacity: itemConfig ? 1 : 0.3 }}>
         {getIconFromSlot(slot)}
       </div>
 
@@ -820,13 +810,13 @@ function EquipmentSlotItem({
         <div
           style={{
             position: "absolute",
-            bottom: "-6px",
-            right: "-6px",
+            bottom: "-4px",
+            right: "-4px",
             background: "#4f46e5",
             color: "white",
-            fontSize: "0.6rem",
-            padding: "2px 6px",
-            borderRadius: "10px",
+            fontSize: "0.55rem",
+            padding: "1px 3px",
+            borderRadius: "6px",
             fontWeight: "bold",
             border: "1px solid rgba(255,255,255,0.2)",
           }}

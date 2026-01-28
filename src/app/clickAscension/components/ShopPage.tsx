@@ -12,22 +12,24 @@ import { GameStaticData } from "../api/clickAscensionApi";
 interface ShopPageProps {
   player: PlayerState;
   onPurchase: (itemId: string) => void;
+  onResetLevelPoints?: () => void;
   gameConfig?: GameStaticData | null;
 }
 
-// Realm Helper
-const getRealmInfo = (level: number) => {
-  if (level <= 20) return { name: "練氣期", color: "#a7f3d0" };
-  if (level <= 40) return { name: "築基期", color: "#6ee7b7" };
-  if (level <= 60) return { name: "金丹期", color: "#fbbf24" };
-  if (level <= 80) return { name: "元嬰期", color: "#f472b6" };
-  if (level <= 100) return { name: "化神期", color: "#818cf8" };
+// Realm Helper - Based on Total Click Shop Upgrades (Cultivation Depth)
+const getRealmInfo = (totalLevels: number) => {
+  if (totalLevels <= 50) return { name: "練氣期", color: "#a7f3d0" };
+  if (totalLevels <= 150) return { name: "築基期", color: "#6ee7b7" };
+  if (totalLevels <= 300) return { name: "金丹期", color: "#fbbf24" };
+  if (totalLevels <= 500) return { name: "元嬰期", color: "#f472b6" };
+  if (totalLevels <= 800) return { name: "化神期", color: "#818cf8" };
   return { name: "渡劫飛昇", color: "#c084fc" };
 };
 
 export default function ShopPage({
   player,
   onPurchase,
+  onResetLevelPoints,
   gameConfig,
 }: ShopPageProps) {
   const [activeTab, setActiveTab] = useState<ShopTab>("DAILY");
@@ -35,7 +37,25 @@ export default function ShopPage({
     "UPGRADE"
   );
   const [isProbModalOpen, setIsProbModalOpen] = useState(false);
-  const realm = getRealmInfo(player.system.level);
+
+  // Calculate Total Click Shop Levels (Cultivation)
+  // Fix: Only sum levels for items that actually exist in the current Game Configuration.
+  // This prevents stale keys from old saves from inflating the count.
+  const totalClickLevels = React.useMemo(() => {
+    if (!gameConfig?.upgrades) return 0;
+
+    // Get valid IDs from config
+    const validClickUpgradeIds = gameConfig.upgrades
+      .filter((u: any) => u.Shop_Type === "CLICK")
+      .map((u: any) => u.ID);
+
+    // Sum levels only for these valid IDs
+    return validClickUpgradeIds.reduce((total, id) => {
+      return total + (player.clickShop[id] || 0);
+    }, 0);
+  }, [player.clickShop, gameConfig]);
+
+  const realm = getRealmInfo(totalClickLevels);
 
   console.log(
     "[ShopPage] Rendering. ActiveTab:",
@@ -59,7 +79,8 @@ export default function ShopPage({
     // Dynamic Lookup
     if (id.startsWith("level_shop_")) return player.levelShop[id] || 0;
     if (id.startsWith("click_shop_")) return player.clickShop[id] || 0;
-    if (id.startsWith("ascension_shop_")) return player.ascensionShop[id] || 0;
+    if (id.startsWith("ascension_shop_") || id.startsWith("asc_"))
+      return player.ascensionShop[id] || 0;
 
     return 0; // Default
   };
@@ -460,6 +481,25 @@ export default function ShopPage({
               <div className="ca-realm-level" style={{ color: "#d1fae5" }}>
                 升級可獲得點數
               </div>
+              {onResetLevelPoints && (
+                <button
+                  onClick={onResetLevelPoints}
+                  style={{
+                    position: "absolute",
+                    top: "12px",
+                    right: "12px",
+                    background: "rgba(0,0,0,0.3)",
+                    border: "1px solid rgba(255,255,255,0.3)",
+                    color: "white",
+                    fontSize: "0.7rem",
+                    padding: "4px 8px",
+                    borderRadius: "12px",
+                    cursor: "pointer",
+                  }}
+                >
+                  🔄 重製點數
+                </button>
+              )}
             </div>
 
             <p
@@ -488,7 +528,9 @@ export default function ShopPage({
               <div className="ca-realm-name" style={{ color: realm.color }}>
                 {realm.name}
               </div>
-              <div className="ca-realm-level">等級 {player.system.level}</div>
+              <div className="ca-realm-level">
+                修練總層數 {totalClickLevels}
+              </div>
             </div>
             <p
               className="ca-text-muted"
