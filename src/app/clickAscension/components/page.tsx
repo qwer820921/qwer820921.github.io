@@ -8,6 +8,8 @@ import {
   Monster,
   EquipmentSlot,
   GameConfig,
+  MonsterTemplate,
+  MonsterRarity,
 } from "../types";
 import Header from "./Header";
 import MonsterBattle from "./MonsterBattle";
@@ -16,7 +18,6 @@ import Modal from "./Modal";
 import ShopPage from "./ShopPage";
 import ProfilePage from "./ProfilePage";
 import CharacterView from "./CharacterView";
-import { getRandomMonster } from "../utils/MonsterData";
 import { clickAscensionApi } from "../api/clickAscensionApi";
 import "../styles/clickAscension.css";
 
@@ -32,6 +33,7 @@ const INITIAL_PLAYER: PlayerState = {
     diamonds: 10,
     levelPoints: 0,
     ascensionPoints: 0,
+    equipmentShards: 0,
   },
   stats: {
     baseDamage: 1,
@@ -79,6 +81,8 @@ const INITIAL_PLAYER: PlayerState = {
   lastDailyRewardClaimTime: 0,
 };
 
+const MONSTERS_PER_STAGE = 10;
+
 const INITIAL_STAGE: StageState = {
   currentStageId: 1,
   isBossActive: false,
@@ -86,6 +90,8 @@ const INITIAL_STAGE: StageState = {
   maxStageReached: 1,
   monstersKilledInStage: 0,
   monstersRequiredForBoss: 10,
+  bossTimeLeft: null,
+  bossTimeLimit: 60,
 };
 
 // ============================================================================
@@ -120,6 +126,13 @@ export default function ClickAscensionGame() {
     damage: number;
     isCrit: boolean;
   } | null>(null);
+
+  const [popup, setPopup] = useState<{ title: string; message: string } | null>(
+    null
+  );
+
+  const showPopup = (message: string, title: string = "系統提示") =>
+    setPopup({ title, message });
 
   // Initial Spawn Wait Flag? No, useEffect handles it below.
 
@@ -250,6 +263,7 @@ export default function ClickAscensionGame() {
         system: { ...base.system, ...(saved.system || {}) },
         wallet: { ...base.wallet, ...(saved.wallet || {}) },
         stats: { ...base.stats, ...(saved.stats || {}) },
+        records: { ...base.records, ...(saved.records || {}) },
         clickShop: { ...base.clickShop, ...(saved.clickShop || {}) },
         levelShop: { ...base.levelShop, ...(saved.levelShop || {}) },
         goldShop: { ...base.goldShop, ...(saved.goldShop || {}) },
@@ -336,22 +350,31 @@ export default function ClickAscensionGame() {
     );
 
     // Auto-Challenge Boss Logic
-    // If not explicitly fighting boss, but auto-challenge is on and we met criteria
     if (
       !isBoss &&
       stage.autoChallengeBoss &&
       stage.monstersKilledInStage >= requiredKills
     ) {
       isBoss = true;
-      // Note: We don't setStage here to avoid infinite loop or render issues during render phase?
-      // Better to just spawn a boss monster. The state 'isBossActive' tracks if we are in "Boss Mode" (failed = retreat).
-      // But if we just passively spawn a boss, does it count?
-      // The previous logic likely setStage to true.
-      // For now, let's keep it simple: If criteria met, next monster IS boss.
+      // Sync stage state to boss mode
+      setStage((prev) => ({
+        ...prev,
+        isBossActive: true,
+        bossTimeLeft: prev.bossTimeLimit,
+      }));
+    } else if (isBoss) {
+      // If we ARE in boss mode but timer isn't set, set it
+      if (stage.bossTimeLeft === null) {
+        setStage((prev) => ({ ...prev, bossTimeLeft: prev.bossTimeLimit }));
+      }
     }
 
     // 2. Get Template
-    const template = getRandomMonster(stage.currentStageId, isBoss);
+    const template = getRandomMonsterFromConfig(
+      stage.currentStageId,
+      isBoss,
+      gameConfig
+    );
 
     // 3. Calculate Stats
     // Scaling: Base * (1.18 ^ (Level-1)) + (Level * 10)
@@ -379,6 +402,7 @@ export default function ClickAscensionGame() {
       rewardGold: Math.max(1, Math.floor(baseGold)),
       rewardXp: Math.max(1, Math.floor(baseXp)),
       emoji: template.emoji,
+      note: template.note, // Pass the note to the monster instance
     };
 
     setMonster(newMonster);
@@ -411,6 +435,50 @@ export default function ClickAscensionGame() {
     playerRef.current = player;
     stageRef.current = stage;
   }, [player, stage]);
+
+  // Boss Battle Timer
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (stage.isBossActive && monster && monster.isBoss) {
+      if (stage.bossTimeLeft === null) {
+        // Should have been set in spawnMonster or handleChallengeBoss,
+        // but as a safety measure:
+        setStage((prev) => ({ ...prev, bossTimeLeft: prev.bossTimeLimit }));
+      } else if (
+        stage.bossTimeLeft !== undefined &&
+        stage.bossTimeLeft !== null &&
+        stage.bossTimeLeft > 0
+      ) {
+        timer = setInterval(() => {
+          setStage((prev) => ({
+            ...prev,
+            bossTimeLeft:
+              prev.bossTimeLeft !== undefined &&
+              prev.bossTimeLeft !== null &&
+              prev.bossTimeLeft > 0
+                ? prev.bossTimeLeft - 1
+                : 0,
+          }));
+        }, 1000);
+      } else if (stage.bossTimeLeft === 0) {
+        // Boss Time Out - Failure!
+        setStage((prev) => ({
+          ...prev,
+          isBossActive: false,
+          autoChallengeBoss: false,
+          bossTimeLeft: null,
+        }));
+        setMonster(null); // Force respawn as minion
+        showPopup(
+          "挑戰失敗！Boss 挑戰時間超時，已回到關卡掛機模式並關閉自動挑戰。",
+          "挑戰失敗"
+        );
+      }
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [stage.isBossActive, stage.bossTimeLeft, monster]);
 
   // Auto-Save Loop (30s)
   useEffect(() => {
@@ -507,12 +575,12 @@ export default function ClickAscensionGame() {
     try {
       // alert("☁️ 上傳中..."); // Removed to avoid blocking
       await clickAscensionApi.savePlayerProgress(userId, saveData);
-      alert("✅ 上傳成功 (Cloud Save)");
+      showPopup("✅ 上傳成功 (Cloud Save)");
       // Backup local
       localStorage.setItem(`ca_save_${userId}`, JSON.stringify(saveData));
     } catch (e) {
       console.error("Save failed", e);
-      alert("❌ 上傳失敗，已存至本機備份。");
+      showPopup("❌ 上傳失敗，已存至本機備份。");
       localStorage.setItem(`ca_save_${userId}`, JSON.stringify(saveData));
     }
   }; // We can't directly call handleMonsterClick because it might expect event or be tied to click stats
@@ -651,16 +719,14 @@ export default function ClickAscensionGame() {
       // handleMonsterClick updates 'setMonster' functional state so it's safer.
       // But for cleaner code, we'll replicate the logic:
 
+      // Pre-calculate final damage using closure 'monster' (safe for static props like isBoss)
+      let finalDmg = dmg;
+      if (monster.isBoss) {
+        finalDmg = Math.ceil(dmg * (effectiveStats.bossDamageMultiplier || 1));
+      }
+
       setMonster((prev) => {
         if (!prev || prev.currentHp <= 0) return prev;
-
-        let finalDmg = dmg;
-        if (prev.isBoss) {
-          finalDmg = Math.ceil(
-            dmg * (effectiveStats.bossDamageMultiplier || 1)
-          );
-        }
-
         const newHp = prev.currentHp - finalDmg;
 
         if (newHp <= 0) {
@@ -682,7 +748,7 @@ export default function ClickAscensionGame() {
           records: {
             ...prev.records,
             totalClicks: prev.records.totalClicks + 1, // Count as click
-            totalDamageDealt: prev.records.totalDamageDealt + dmg, // Rough estimate (doesn't include boss mult here but ok for now)
+            totalDamageDealt: prev.records.totalDamageDealt + finalDmg,
           },
         };
       });
@@ -690,7 +756,7 @@ export default function ClickAscensionGame() {
       // 4. Trigger Visual Event for MonsterBattle
       setLastAutoClickEvent({
         id: crypto.randomUUID(),
-        damage: dmg, // Base damage for display
+        damage: finalDmg, // Visuals should show final damage (including Boss Mult)
         isCrit: isCrit,
       });
     }, intervalMs);
@@ -708,22 +774,105 @@ export default function ClickAscensionGame() {
   ]);
 
   // --------------------------------------------------------------------------
+  // Helpers
+  // --------------------------------------------------------------------------
+
+  // Helper to select a monster based on config
+  const getRandomMonsterFromConfig = useCallback(
+    (
+      stageLevel: number,
+      isBoss: boolean,
+      config: GameConfig | null
+    ): MonsterTemplate => {
+      // Default fallback
+      const fallback: MonsterTemplate = {
+        name: "未知怪物",
+        emoji: "❓",
+        rarity: MonsterRarity.COMMON,
+        hpMultiplier: 1,
+        goldMultiplier: 1,
+        xpMultiplier: 1,
+      };
+
+      if (!config || !config.monsters || config.monsters.length === 0) {
+        // Fallback to legacy logic if no config? Or just return fallback.
+        // Let's import the legacy logic as fallback if you wish, BUT user said "Should NOT use COMMON_MONSTERS".
+        // So we rely on config. If no config, we might have issues (initially null).
+        // Better to keep a minimal hardcoded fallback or wait for config load.
+        // Actually, let's look at `MonsterData.ts` to see if we can use it as fallback.
+        // User explicitly said "DO NOT USE COMMON_MONSTERS".
+        return fallback;
+      }
+
+      // Filter suitable monsters
+      const validMonsters = config.monsters.filter((m) => {
+        // Check Stage Range
+        const min = Number(m.Stage_Min) || 1;
+        const max = Number(m.Stage_Max) || 9999;
+        if (stageLevel < min || stageLevel > max) return false;
+
+        // Check Rarity/Type
+        // If isBoss is true, we look for BOSS type.
+        // If isBoss is false, we look for COMMON or RARE?
+        const r = (m.Rarity || "COMMON").toUpperCase();
+        if (isBoss) {
+          return r === "BOSS";
+        } else {
+          return r !== "BOSS"; // Common or Rare
+        }
+      });
+
+      if (validMonsters.length === 0) return fallback;
+
+      // Weighted Random Selection
+      const totalWeight = validMonsters.reduce(
+        (sum, m) => sum + (Number(m.Weight) || 0),
+        0
+      );
+
+      let random = Math.random() * totalWeight;
+      for (const m of validMonsters) {
+        const w = Number(m.Weight) || 0;
+        if (random < w) {
+          // Debug log to check property names, especially Note
+          console.log("Selected Monster Config:", m);
+          return {
+            name: m.Name,
+            emoji: m.Emoji,
+            rarity: (m.Rarity as MonsterRarity) || MonsterRarity.COMMON,
+            hpMultiplier: Number(m.HP_Mult) || 1,
+            goldMultiplier: Number(m.Gold_Mult) || 1,
+            xpMultiplier: Number(m.XP_Mult) || 1,
+            dropDiamonds: Number(m.Drop_Diamonds) || 0,
+            note: m.Notes,
+          };
+        }
+        random -= w;
+      }
+
+      return fallback;
+    },
+    []
+  );
+
+  // --------------------------------------------------------------------------
   // Handlers
   // --------------------------------------------------------------------------
 
   const handleMonsterClick = (damage: number, _isCrit: boolean) => {
     if (!monster || monster.currentHp <= 0) return;
 
-    // Apply Boss Multiplier
-    let finalDamage = damage;
-    if (monster.isBoss) {
-      finalDamage = Math.ceil(damage * effectiveStats.bossDamageMultiplier);
-    }
+    // Boss Multiplier is now applied in MonsterBattle component before calling this
+    const finalDamage = damage;
 
-    const newHp = monster.currentHp - finalDamage;
-    setMonster((prev) =>
-      prev ? { ...prev, currentHp: Math.max(0, newHp) } : null
-    );
+    setMonster((prev) => {
+      if (!prev || prev.currentHp <= 0) return prev;
+      const newHp = Math.max(0, prev.currentHp - finalDamage);
+      if (newHp <= 0) {
+        setTimeout(() => handleMonsterDeath(prev), 0);
+      }
+      return { ...prev, currentHp: newHp };
+    });
 
     // Update Stats
     setPlayer((prev) => ({
@@ -738,11 +887,6 @@ export default function ClickAscensionGame() {
         clickPoints: prev.wallet.clickPoints + 1 * effectiveStats.cpMultiplier,
       },
     }));
-
-    // Check Death
-    if (newHp <= 0) {
-      handleMonsterDeath(monster); // Pass monster to avoid stale state closure if needed
-    }
   };
 
   const handleMonsterDeath = (dyingMonster: Monster) => {
@@ -792,6 +936,9 @@ export default function ClickAscensionGame() {
           bossesKilled: dyingMonster.isBoss
             ? prev.records.bossesKilled + 1
             : prev.records.bossesKilled,
+          maxStageReached: dyingMonster.isBoss
+            ? Math.max(prev.records.maxStageReached, dyingMonster.level + 1)
+            : prev.records.maxStageReached,
         },
       };
     });
@@ -802,13 +949,14 @@ export default function ClickAscensionGame() {
       if (dyingMonster.isBoss) {
         return {
           ...prev,
-          currentStageId: prev.currentStageId + 1,
+          currentStageId: dyingMonster.level + 1,
           maxStageReached: Math.max(
             prev.maxStageReached,
-            prev.currentStageId + 1
+            dyingMonster.level + 1
           ),
           isBossActive: false, // Reset boss status (back to farming next stage)
           monstersKilledInStage: 0, // Reset kill count
+          bossTimeLeft: null,
         };
       }
 
@@ -845,11 +993,35 @@ export default function ClickAscensionGame() {
       if (!config) return;
 
       const currentLevel = player.clickShop[itemId] || 0;
-      const cost = Math.floor(
-        config.Cost_Base * Math.pow(config.Cost_Mult, currentLevel)
-      );
+      const maxLevel = Number(config.Max_Level || 0);
 
-      if (player.wallet.clickPoints >= cost) {
+      // Max Level Check
+      if (maxLevel > 0 && currentLevel >= maxLevel) {
+        showPopup("已達最大等級！");
+        return;
+      }
+
+      // Cost Calculation (Sync with ShopPage.tsx)
+      const base = Number(config.Cost_Base || 0);
+      const mult = Number(config.Cost_Mult || 0);
+      let cost = 0;
+
+      if (mult === 1 || mult === 1.0) {
+        cost = Math.floor(base + currentLevel);
+      } else {
+        cost = Math.floor(base * Math.pow(mult, currentLevel));
+      }
+
+      const currency = config.Currency || "CP";
+      const getWalletVal = (w: any, c: string) => {
+        if (c === "GOLD") return w.gold;
+        if (c === "LP") return w.levelPoints;
+        if (c === "DIAMOND") return w.diamonds;
+        if (c === "AP") return w.ascensionPoints;
+        return w.clickPoints;
+      };
+
+      if (getWalletVal(player.wallet, currency) >= cost) {
         setPlayer((prev) => {
           const newStats = { ...prev.stats };
           const effectType = config.Effect_Type;
@@ -867,18 +1039,22 @@ export default function ClickAscensionGame() {
           if (effectType === "RARE_CHANCE_P")
             newStats.rareMonsterChance += val / 100;
 
+          const newWallet = { ...prev.wallet };
+          if (currency === "GOLD") newWallet.gold -= cost;
+          else if (currency === "LP") newWallet.levelPoints -= cost;
+          else if (currency === "DIAMOND") newWallet.diamonds -= cost;
+          else if (currency === "AP") newWallet.ascensionPoints -= cost;
+          else newWallet.clickPoints -= cost; // Default CP
+
           return {
             ...prev,
-            wallet: {
-              ...prev.wallet,
-              clickPoints: prev.wallet.clickPoints - cost,
-            },
+            wallet: newWallet,
             clickShop: { ...prev.clickShop, [itemId]: currentLevel + 1 },
             stats: newStats,
           };
         });
       } else {
-        alert("點擊點數不足！");
+        showPopup(`${currency} 不足！`);
       }
       return;
     }
@@ -889,13 +1065,35 @@ export default function ClickAscensionGame() {
       if (!config) return;
 
       const currentLevel = player.levelShop[itemId] || 0;
-      const cost = Math.floor(
-        config.Cost_Base * Math.pow(config.Cost_Mult, currentLevel)
-      );
-      // Special check for Level Shop cost logic if it's not exponential?
-      // User sheet usually defines it. We use the Sheet's formula.
+      const maxLevel = Number(config.Max_Level || 0);
 
-      if (player.wallet.levelPoints >= cost) {
+      // Max Level Check
+      if (maxLevel > 0 && currentLevel >= maxLevel) {
+        showPopup("已達最大等級！");
+        return;
+      }
+
+      // Cost Calculation (Sync with ShopPage.tsx)
+      const base = Number(config.Cost_Base || 0);
+      const mult = Number(config.Cost_Mult || 0);
+      let cost = 0;
+
+      if (mult === 1 || mult === 1.0) {
+        cost = Math.floor(base + currentLevel);
+      } else {
+        cost = Math.floor(base * Math.pow(mult, currentLevel));
+      }
+
+      const currency = config.Currency || "LP";
+      const getWalletVal = (w: any, c: string) => {
+        if (c === "GOLD") return w.gold;
+        if (c === "CP") return w.clickPoints;
+        if (c === "DIAMOND") return w.diamonds;
+        if (c === "AP") return w.ascensionPoints;
+        return w.levelPoints;
+      };
+
+      if (getWalletVal(player.wallet, currency) >= cost) {
         setPlayer((prev) => {
           const newStats = { ...prev.stats };
           const effectType = config.Effect_Type;
@@ -917,18 +1115,22 @@ export default function ClickAscensionGame() {
           if (effectType === "RARE_CHANCE_P")
             newStats.rareMonsterChance += val / 100;
 
+          const newWallet = { ...prev.wallet };
+          if (currency === "GOLD") newWallet.gold -= cost;
+          else if (currency === "CP") newWallet.clickPoints -= cost;
+          else if (currency === "DIAMOND") newWallet.diamonds -= cost;
+          else if (currency === "AP") newWallet.ascensionPoints -= cost;
+          else newWallet.levelPoints -= cost; // Default LP
+
           return {
             ...prev,
-            wallet: {
-              ...prev.wallet,
-              levelPoints: prev.wallet.levelPoints - cost,
-            },
+            wallet: newWallet,
             levelShop: { ...prev.levelShop, [itemId]: currentLevel + 1 },
             stats: newStats,
           };
         });
       } else {
-        alert("等級積分不足！");
+        showPopup(`${currency} 不足！`);
       }
       return;
     }
@@ -1101,69 +1303,164 @@ export default function ClickAscensionGame() {
       }
     }
 
-    // --- EQUIPMENT GACHA SHOP (New) ---
-    if (itemId === "gacha_equipment_basic") {
-      const cost = 1000; // Basic Gacha Cost
-      if (player.wallet.gold >= cost) {
-        const pool = gameConfig?.equipments || [];
-        if (pool.length > 0) {
-          // Weighted Random selection
-          const totalWeight = pool.reduce(
-            (sum: number, eq: any) => sum + (Number(eq.Gacha_Weight) || 0),
-            0
-          );
-          let random = Math.random() * totalWeight;
-          let selectedItem = pool[0];
+    // --- EQUIPMENT GACHA (Basic / Advanced / Premium) ---
+    if (itemId.startsWith("gacha_equipment_")) {
+      let drawCount = 1;
+      if (itemId.endsWith("_10")) drawCount = 10;
+      if (itemId.endsWith("_100")) drawCount = 100;
 
-          for (const item of pool) {
-            const weight = Number(item.Gacha_Weight) || 0;
-            if (random < weight) {
-              selectedItem = item;
-              break;
+      let boxType = "basic";
+      if (itemId.includes("advanced")) boxType = "advanced";
+      if (itemId.includes("premium")) boxType = "premium";
+
+      let costPerDraw = 1000;
+      if (boxType === "advanced") costPerDraw = 10000;
+      if (boxType === "premium") costPerDraw = 100000;
+
+      const totalCost = costPerDraw * drawCount;
+
+      if (player.wallet.gold >= totalCost) {
+        const allEquipments = gameConfig?.equipments || [];
+        if (allEquipments.length > 0) {
+          const validEquipments = allEquipments.filter((e) => {
+            const r = (e.Rarity || "COMMON").toUpperCase();
+            if (boxType === "basic") {
+              // Basic: Up to Epic (Exclude L, M)
+              return r !== "LEGENDARY" && r !== "MYTHIC";
             }
-            random -= weight;
+            if (boxType === "advanced") {
+              // Advanced: Up to Legendary (Exclude M)
+              return r !== "MYTHIC";
+            }
+            if (boxType === "premium") {
+              // Premium: Up to Mythic (Includes all)
+              return true;
+            }
+            return true;
+          });
+
+          if (validEquipments.length === 0) {
+            showPopup("此箱子目前沒有可抽取的裝備設定。");
+            return;
           }
 
-          // Add to inventory (Increase Level)
-          setPlayer((prev) => {
-            const currentLevel =
-              prev.equipment?.inventory?.[selectedItem.ID] || 0;
-            const maxLevel = selectedItem.Max_Level || 99;
+          // Calculate total weight (assuming static for all draws)
+          const totalWeight = validEquipments.reduce(
+            (sum, item) => sum + (Number(item.Gacha_Weight) || 0),
+            0
+          );
 
-            if (currentLevel >= maxLevel) {
-              const refund = Math.floor(cost * 0.5);
-              alert(
-                `${selectedItem.Name} 已達最高等級 (Lv.${maxLevel})！\n轉化為補償金幣：${refund}`
-              );
-              return {
-                ...prev,
-                wallet: {
-                  ...prev.wallet,
-                  gold: prev.wallet.gold - cost + refund,
-                },
-              };
+          const newInventory = { ...player.equipment.inventory };
+          const wonItems: any[] = [];
+          const convertedItems: any[] = []; // Track items converted to shards
+          let gainedShards = 0;
+
+          for (let i = 0; i < drawCount; i++) {
+            let random = Math.random() * totalWeight;
+            let selectedItem = validEquipments[0];
+
+            for (const item of validEquipments) {
+              const w = Number(item.Gacha_Weight) || 0;
+              if (random < w) {
+                selectedItem = item;
+                break;
+              }
+              random -= w;
             }
 
-            return {
-              ...prev,
-              wallet: { ...prev.wallet, gold: prev.wallet.gold - cost },
-              equipment: {
-                ...prev.equipment,
-                inventory: {
-                  ...prev.equipment.inventory,
-                  [selectedItem.ID]: currentLevel + 1,
-                },
-              },
-            };
-          });
-          alert(
-            `獲得裝備：${selectedItem.Name} (Rarity: ${selectedItem.Rarity})`
-          );
+            wonItems.push(selectedItem);
+
+            // Logic: Check Max Level
+            const currentLevel = newInventory[selectedItem.ID] || 0;
+            const maxLevel = Number(selectedItem.Max_Level) || 10; // Default max level 10 if not set
+
+            if (currentLevel >= maxLevel) {
+              // Convert to Shard based on Rarity
+              const rarity = (selectedItem.Rarity || "COMMON").toUpperCase();
+              let shardAmount = 1;
+              switch (rarity) {
+                case "COMMON":
+                  shardAmount = 1;
+                  break;
+                case "UNCOMMON":
+                  shardAmount = 3;
+                  break;
+                case "RARE":
+                  shardAmount = 10;
+                  break;
+                case "EPIC":
+                  shardAmount = 50;
+                  break;
+                case "LEGENDARY":
+                  shardAmount = 200;
+                  break;
+                case "MYTHIC":
+                  shardAmount = 1000;
+                  break;
+                default:
+                  shardAmount = 1;
+              }
+
+              gainedShards += shardAmount;
+              convertedItems.push({ item: selectedItem, shards: shardAmount });
+            } else {
+              // Upgrade
+              newInventory[selectedItem.ID] = currentLevel + 1;
+            }
+          }
+
+          setPlayer((prev) => ({
+            ...prev,
+            wallet: {
+              ...prev.wallet,
+              gold: prev.wallet.gold - totalCost,
+              equipmentShards:
+                (prev.wallet.equipmentShards || 0) + gainedShards,
+            },
+            equipment: {
+              ...prev.equipment,
+              inventory: newInventory,
+            },
+          }));
+
+          if (drawCount === 1) {
+            if (convertedItems.length > 0) {
+              const info = convertedItems[0];
+              showPopup(
+                `獲得裝備：${info.item.Name} (已滿級)\n自動轉換為：🧩 裝備碎片 x${info.shards}`,
+                "獲得裝備"
+              );
+            } else {
+              showPopup(
+                `獲得裝備：${wonItems[0].Name} (Rarity: ${wonItems[0].Rarity})`,
+                "獲得裝備"
+              );
+            }
+          } else {
+            // Summary for multi-draw
+            const summary: Record<string, number> = {};
+            wonItems.forEach((item) => {
+              summary[item.Name] = (summary[item.Name] || 0) + 1;
+            });
+
+            let summaryStr = Object.entries(summary)
+              .map(([name, count]) => `${name} x${count}`)
+              .join("\n");
+
+            if (gainedShards > 0) {
+              summaryStr += `\n\n🧩 獲得碎片: ${gainedShards} (滿級轉化)`;
+            }
+
+            showPopup(
+              `獲得 ${drawCount} 件裝備${boxType === "premium" ? "(頂級)" : boxType === "advanced" ? "(高級)" : ""}：\n${summaryStr}`,
+              "獲得裝備"
+            );
+          }
         } else {
-          alert("暫無裝備可抽取");
+          showPopup("暫無裝備可抽取");
         }
       } else {
-        alert("金幣不足！");
+        showPopup("金幣不足！");
       }
     }
 
@@ -1174,11 +1471,35 @@ export default function ClickAscensionGame() {
       if (!config) return;
 
       const currentLevel = player.ascensionShop[itemId] || 0;
-      const cost = Math.floor(
-        config.Cost_Base * Math.pow(config.Cost_Mult, currentLevel)
-      );
+      const maxLevel = Number(config.Max_Level || 0);
 
-      if (player.wallet.ascensionPoints >= cost) {
+      // Max Level Check
+      if (maxLevel > 0 && currentLevel >= maxLevel) {
+        showPopup("已達最大等級！");
+        return;
+      }
+
+      // Cost Calculation
+      const base = Number(config.Cost_Base || 0);
+      const mult = Number(config.Cost_Mult || 0);
+      let cost = 0;
+
+      if (mult === 1 || mult === 1.0) {
+        cost = Math.floor(base + currentLevel);
+      } else {
+        cost = Math.floor(base * Math.pow(mult, currentLevel));
+      }
+
+      const currency = config.Currency || "AP";
+      const getWalletVal = (w: any, c: string) => {
+        if (c === "GOLD") return w.gold;
+        if (c === "CP") return w.clickPoints;
+        if (c === "LP") return w.levelPoints;
+        if (c === "DIAMOND") return w.diamonds;
+        return w.ascensionPoints;
+      };
+
+      if (getWalletVal(player.wallet, currency) >= cost) {
         setPlayer((prev) => {
           const newStats = { ...prev.stats };
           const effectType = config.Effect_Type;
@@ -1200,12 +1521,16 @@ export default function ClickAscensionGame() {
             newStats.rareMonsterChance += val / 100;
           if (effectType === "AUTO_CLICK_V") newStats.autoClickPerSec += val;
 
+          const newWallet = { ...prev.wallet };
+          if (currency === "GOLD") newWallet.gold -= cost;
+          else if (currency === "CP") newWallet.clickPoints -= cost;
+          else if (currency === "LP") newWallet.levelPoints -= cost;
+          else if (currency === "DIAMOND") newWallet.diamonds -= cost;
+          else newWallet.ascensionPoints -= cost; // Default AP
+
           return {
             ...prev,
-            wallet: {
-              ...prev.wallet,
-              ascensionPoints: prev.wallet.ascensionPoints - cost,
-            },
+            wallet: newWallet,
             ascensionShop: {
               ...prev.ascensionShop,
               [itemId]: currentLevel + 1,
@@ -1214,7 +1539,7 @@ export default function ClickAscensionGame() {
           };
         });
       } else {
-        alert("氣運點數不足！");
+        showPopup(`${currency} 不足！`);
       }
     }
   };
@@ -1328,6 +1653,7 @@ export default function ClickAscensionGame() {
           gold: 0,
           levelPoints: 0, // Reset Level Points (等級點數重製)
           ascensionPoints: (prev.wallet.ascensionPoints || 0) + points,
+          equipmentShards: prev.wallet.equipmentShards || 0, // Keep shards
         },
         // Reset Gold Shop (Temporary upgrades)
         goldShop: {
@@ -1359,8 +1685,9 @@ export default function ClickAscensionGame() {
     }));
 
     setMonster(null);
-    alert(
-      `⚡ 渡劫成功！獲得 ${points.toLocaleString()} 點飛昇點數！\n等級與等級點數已重製，裝備與點擊加成已保留。`
+    showPopup(
+      `⚡ 渡劫成功！獲得 ${points.toLocaleString()} 點飛昇點數！\n等級與等級點數已重製，裝備與點擊加成已保留。`,
+      "渡劫成功"
     );
     setActiveView("BATTLE");
   };
@@ -1400,7 +1727,7 @@ export default function ClickAscensionGame() {
       return nextPlayer;
     });
 
-    alert("✅ 等級積分已重製！");
+    showPopup("✅ 等級積分已重製！");
   };
 
   const potentialPoints = React.useMemo(() => {
@@ -1413,7 +1740,7 @@ export default function ClickAscensionGame() {
 
   const handleAscensionClick = () => {
     if (potentialPoints <= 0) {
-      alert("尚未達到飛升條件！");
+      showPopup("尚未達到飛升條件！");
       return;
     }
     if (
@@ -1423,6 +1750,15 @@ export default function ClickAscensionGame() {
     ) {
       handleAscension();
     }
+  };
+
+  const handleChallengeBoss = () => {
+    setStage((prev) => ({
+      ...prev,
+      isBossActive: true,
+      bossTimeLeft: prev.bossTimeLimit || 60,
+    }));
+    setMonster(null); // Force spawn boss
   };
 
   // --------------------------------------------------------------------------
@@ -1450,6 +1786,7 @@ export default function ClickAscensionGame() {
           baseDamage={effectiveStats.baseDamage}
           criticalChance={effectiveStats.criticalChance}
           criticalDamage={effectiveStats.criticalDamage}
+          bossDamageMultiplier={effectiveStats.bossDamageMultiplier || 1}
           monstersKilled={stage.monstersKilledInStage}
           monstersRequired={Math.max(
             1,
@@ -1466,12 +1803,14 @@ export default function ClickAscensionGame() {
           onUsePotion={() => handleUsePotion("RAGE")}
           lastAutoAttack={lastAutoAttack}
           lastAutoClickEvent={lastAutoClickEvent}
+          bossTimeLeft={stage.bossTimeLeft}
+          bossTimeLimit={stage.bossTimeLimit}
+          onChallengeBoss={handleChallengeBoss}
         />
       ) : (
         <CharacterView
           player={player}
           effectiveStats={effectiveStats}
-          totalDps={totalDps}
           userId={userId}
           gameConfig={gameConfig}
           onEquip={handleEquip}
@@ -1566,6 +1905,16 @@ export default function ClickAscensionGame() {
               <span>🕊️</span>
               <span>{player.wallet.ascensionPoints.toLocaleString()}</span>
             </div>
+            <div
+              className="ca-currency"
+              style={{ fontSize: "0.8rem", color: "#fca5a5" }}
+              title="裝備碎片"
+            >
+              <span>🧩</span>
+              <span>
+                {(player.wallet.equipmentShards || 0).toLocaleString()}
+              </span>
+            </div>
           </div>
         }
       >
@@ -1575,6 +1924,34 @@ export default function ClickAscensionGame() {
           onResetLevelPoints={handleResetLevelPoints}
           gameConfig={gameConfig}
         />
+      </Modal>
+
+      {/* Popup Alert Replacement */}
+      <Modal
+        isOpen={!!popup}
+        onClose={() => setPopup(null)}
+        title={popup?.title || "系統提示"}
+      >
+        <div
+          style={{
+            textAlign: "center",
+            padding: "20px",
+            fontSize: "1.1rem",
+            color: "#e2e8f0",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {popup?.message}
+          <div style={{ marginTop: "24px" }}>
+            <button
+              className="ca-btn ca-btn-primary"
+              style={{ padding: "8px 32px" }}
+              onClick={() => setPopup(null)}
+            >
+              確定
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Inventory removed from modal, now inline in CharacterView */}

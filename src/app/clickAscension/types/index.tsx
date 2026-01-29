@@ -1,4 +1,10 @@
-export type CurrencyType = "GOLD" | "CLICK_POINT" | "DIAMOND" | "AP" | "LP"; // 貨幣類型：金幣、點擊點數、鑽石、飛昇點數(AP)、等級點數(LP)
+export type CurrencyType =
+  | "GOLD"
+  | "CP"
+  | "DIAMOND"
+  | "AP"
+  | "LP"
+  | "EQUIPMENT_SHARD"; // 貨幣類型：金幣、點擊點數、鑽石、飛昇點數、等級點數、裝備碎片
 
 export interface Wallet {
   gold: number; // 金幣數量
@@ -6,6 +12,7 @@ export interface Wallet {
   diamonds: number; // 鑽石數量
   levelPoints: number; // 等級積分
   ascensionPoints: number; // 飛昇點數 (轉生點數)
+  equipmentShards: number; // 裝備碎片 (New)
 }
 
 /**
@@ -94,10 +101,29 @@ export interface StageState {
   maxStageReached: number; // 最高到達關卡
   monstersKilledInStage: number; // 當前關卡已擊殺怪物數
   monstersRequiredForBoss: number; // 召喚 BOSS 所需擊殺數 (e.g. 10)
+  bossTimeLeft?: number | null; // Boss 戰剩餘時間
+  bossTimeLimit?: number; // Boss 戰總時長 (預設 60)
 }
 
 export interface AscensionShop {
   [key: string]: number; // 動態儲存各個飛昇項目的等級，例如 "ascension_shop_luck": 5
+}
+
+export enum MonsterRarity {
+  COMMON = "COMMON",
+  RARE = "RARE",
+  BOSS = "BOSS",
+}
+
+export interface MonsterTemplate {
+  name: string;
+  emoji: string;
+  rarity: MonsterRarity;
+  hpMultiplier: number;
+  goldMultiplier: number;
+  xpMultiplier: number;
+  dropDiamonds?: number;
+  note?: string;
 }
 
 export interface Monster {
@@ -112,6 +138,9 @@ export interface Monster {
   // Visuals // 視覺效果
   assetUrl?: string; // 資源 URL (用於不同外觀)
   emoji?: string; // 用於顯示的 emoji
+  rarity?: string; // Monster rarity
+  dropDiamonds?: number; // Diamond drop amount
+  note?: string; // 怪物備註 (例如: "新手村")
 }
 
 // ============================================================================
@@ -219,9 +248,25 @@ export interface UpgradeConfig {
   Desc_Template: string;
 }
 
+// Monster config from Google Sheet
+export interface MonsterConfig {
+  ID: string;
+  Name: string;
+  Emoji: string;
+  Rarity: string; // "COMMON", "RARE", "BOSS"
+  Stage_Min: number;
+  Stage_Max: number;
+  HP_Mult: number;
+  Gold_Mult: number;
+  XP_Mult: number;
+  Weight: number;
+  Notes?: string;
+  Drop_Diamonds?: number; // Optional
+}
+
 export interface GameConfig {
   settings: Record<string, unknown>; // From 'Settings' sheet
-  monsters: Record<string, unknown>[]; // From 'Monsters' sheet
+  monsters: MonsterConfig[]; // From 'Monsters' sheet
   upgrades: UpgradeConfig[]; // From 'Upgrades' sheet
   equipments: EquipmentItemConfig[]; // From 'Equipments' sheet
 }

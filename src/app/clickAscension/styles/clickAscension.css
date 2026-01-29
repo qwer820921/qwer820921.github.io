@@ -263,6 +263,32 @@
   }
 }
 
+@keyframes ca-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ca-float-glow {
+  0%,
+  100% {
+    transform: translateX(-50%) translateY(0);
+    box-shadow:
+      0 0 10px rgba(251, 191, 36, 0.4),
+      inset 0 0 5px rgba(251, 191, 36, 0.1);
+  }
+  50% {
+    transform: translateX(-50%) translateY(-5px);
+    box-shadow:
+      0 0 20px rgba(251, 191, 36, 0.7),
+      inset 0 0 10px rgba(251, 191, 36, 0.3);
+  }
+}
+
 /* --- Animation Classes --- */
 .ca-shake {
   animation: ca-shake 0.3s ease-in-out;
@@ -315,6 +341,33 @@
 
 .ca-fade-in {
   animation: ca-fade-in 0.2s ease-out;
+}
+
+.ca-fade-in {
+  animation: ca-fade-in 0.2s ease-out;
+}
+
+.ca-note-badge {
+  position: absolute;
+  top: 8%; /* Higher up as requested */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #fcd34d; /* Amber-300 */
+  background: rgba(15, 23, 42, 0.8); /* Darker backdrop */
+  border: 1px solid rgba(251, 191, 36, 0.8); /* More visible border */
+  padding: 6px 16px;
+  border-radius: 9999px;
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  animation: ca-float-glow 3s infinite ease-in-out;
+  text-shadow: 0 0 5px rgba(251, 191, 36, 0.5);
+  white-space: nowrap;
 }
 
 /* --- HP Bar --- */

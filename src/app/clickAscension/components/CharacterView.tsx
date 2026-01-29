@@ -12,7 +12,6 @@ import "../styles/clickAscension.css";
 interface CharacterViewProps {
   player: PlayerState;
   effectiveStats: PlayerAttributes;
-  totalDps: number; // Add totalDps
   userId: string | null;
   gameConfig: GameConfig | null;
   onEquip?: (itemId: string, slot: EquipmentSlot) => void;
@@ -27,7 +26,9 @@ function parseDescription(
   config: EquipmentItemConfig,
   level: number
 ) {
-  const val = (config.Base_Val || 0) + (level - 1) * (config.Level_Mult || 0);
+  const val =
+    (Number(config.Base_Val) || 0) +
+    (level - 1) * (Number(config.Level_Mult) || 0);
   return template.replace("{val}", val.toLocaleString());
 }
 
@@ -48,6 +49,46 @@ function getRarityColor(rarity: string) {
     default:
       return "#94a3b8";
   }
+}
+
+function getEstimatedCP(config: EquipmentItemConfig, level: number) {
+  const val =
+    (Number(config.Base_Val) || 0) +
+    (level - 1) * (Number(config.Level_Mult) || 0);
+  const t = String(config.Effect_Type || "")
+    .toUpperCase()
+    .trim();
+
+  // Base Dmg * 10
+  if (
+    [
+      "ADD_BASE_DMG",
+      "CLICK_DMG",
+      "ADD_DAMAGE",
+      "CLICK_DAMAGE",
+      "ADD_CLICK_DMG",
+    ].includes(t)
+  )
+    return Math.floor(val * 10);
+  // Auto Dmg * 20
+  if (["ADD_AUTO_DMG", "AUTO_DMG", "AUTO_DAMAGE", "ADD_AUTO"].includes(t))
+    return Math.floor(val * 20);
+  // Crit% * 10 (1% = 10 CP)
+  if (
+    [
+      "ADD_CRIT_CHANCE",
+      "CRIT_RATE",
+      "ADD_CRIT_RATE",
+      "LUCK",
+      "ADD_CRIT",
+    ].includes(t)
+  )
+    return Math.floor(val * 10);
+  // CritDmg% * 5 (1% = 5 CP)
+  if (["ADD_CRIT_DMG", "CRIT_DMG", "CRIT_DAMAGE", "ADD_CRIT_DMG"].includes(t))
+    return Math.floor(val * 5);
+
+  return 0;
 }
 
 function ItemDetailModal({
@@ -176,6 +217,29 @@ function ItemDetailModal({
             )}
           </div>
           <div>{parseDescription(config.Desc_Template, config, level)}</div>
+          <div
+            style={{
+              marginTop: "8px",
+              paddingTop: "8px",
+              borderTop: "1px solid rgba(255,255,255,0.1)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <span style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
+              戰力加成 (Est. CP)
+            </span>
+            <span
+              style={{
+                fontSize: "0.9rem",
+                color: "#fbbf24",
+                fontWeight: "bold",
+              }}
+            >
+              +{getEstimatedCP(config, level).toLocaleString()}
+            </span>
+          </div>
         </div>
 
         <div
@@ -239,7 +303,6 @@ function ItemDetailModal({
 export default function CharacterView({
   player,
   effectiveStats,
-  totalDps,
   userId,
   gameConfig,
   onEquip,
@@ -338,20 +401,18 @@ export default function CharacterView({
             )}
           </div>
 
-          {/* 3. Auto Attack (DPS) */}
+          {/* 3. Auto Click (CPS) */}
           <div className="ca-stat-pill">
             <span className="ca-stat-icon">🤖</span>
             <span className="ca-stat-value">
-              {Math.floor(totalDps).toLocaleString()}
+              {Number(effectiveStats.autoClickPerSec || 0).toFixed(1)}/s
             </span>
-            {effectiveStats.autoAttackDamage >
-              player.stats.autoAttackDamage && (
+            {effectiveStats.autoClickPerSec > player.stats.autoClickPerSec && (
               <span className="ca-stat-bonus">
                 (+
                 {(
-                  effectiveStats.autoAttackDamage -
-                  player.stats.autoAttackDamage
-                ).toLocaleString()}
+                  effectiveStats.autoClickPerSec - player.stats.autoClickPerSec
+                ).toFixed(1)}
                 )
               </span>
             )}

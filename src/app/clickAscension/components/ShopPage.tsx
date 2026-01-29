@@ -36,7 +36,7 @@ export default function ShopPage({
   const [goldSubTab, setGoldSubTab] = useState<"UPGRADE" | "RECRUIT">(
     "UPGRADE"
   );
-  const [isProbModalOpen, setIsProbModalOpen] = useState(false);
+  const [activeProbBox, setActiveProbBox] = useState<string | null>(null);
 
   // Calculate Total Click Shop Levels (Cultivation)
   // Fix: Only sum levels for items that actually exist in the current Game Configuration.
@@ -61,7 +61,7 @@ export default function ShopPage({
     "[ShopPage] Rendering. ActiveTab:",
     activeTab,
     "isProbModalOpen:",
-    isProbModalOpen
+    activeProbBox
   );
 
   // Helper to get current level of an upgrade from PlayerState
@@ -109,7 +109,7 @@ export default function ShopPage({
     if (currency === "LP") return "🆙";
     if (currency === "CP") return "⚡";
     if (currency === "DIAMOND") return "💎";
-    if (currency === "AP") return "⚡";
+    if (currency === "AP") return "🕊️";
     return currency;
   };
 
@@ -144,7 +144,9 @@ export default function ShopPage({
           );
           const currencyLabel = getCurrencyLabel(it.Currency);
           const playerCurrency = getPlayerCurrency(it.Currency);
-          const canAfford = playerCurrency >= cost;
+          const maxLevel = Number(it.Max_Level || 0);
+          const isMaxed = maxLevel > 0 && level >= maxLevel;
+          const canAfford = !isMaxed && playerCurrency >= cost;
 
           // Format Description - Replace {val} with Effect_Val
           let desc = it.Desc_Template || it.Name;
@@ -161,6 +163,7 @@ export default function ShopPage({
               cost={cost}
               currencyLabel={currencyLabel}
               canAfford={canAfford}
+              isMaxed={isMaxed}
               onClick={() => onPurchase(it.ID)}
             />
           );
@@ -609,29 +612,10 @@ export default function ShopPage({
               >
                 試試你的手氣！
               </div>
-              <button
-                onClick={() => {
-                  console.log("[ShopPage] Click Probability Button");
-                  setIsProbModalOpen(true);
-                }}
-                style={{
-                  position: "absolute",
-                  top: "12px",
-                  right: "12px",
-                  background: "rgba(0,0,0,0.3)",
-                  border: "1px solid rgba(255,255,255,0.3)",
-                  color: "white",
-                  fontSize: "0.7rem",
-                  padding: "4px 8px",
-                  borderRadius: "12px",
-                  cursor: "pointer",
-                }}
-              >
-                裝備機率一覽
-              </button>
             </div>
 
             <div className="ca-shop-item-grid" style={{ width: "100%" }}>
+              {/* --- Basic Box --- */}
               <div
                 className="ca-glass-static"
                 style={{
@@ -642,13 +626,29 @@ export default function ShopPage({
                   alignItems: "center",
                   gap: "16px",
                   textAlign: "center",
+                  position: "relative",
+                  border: "1px solid #94a3b8",
                 }}
               >
-                <div
-                  style={{ fontSize: "4rem", animation: "bounce 2s infinite" }}
+                <button
+                  onClick={() => setActiveProbBox("basic")}
+                  style={{
+                    position: "absolute",
+                    top: "12px",
+                    right: "12px",
+                    background: "rgba(0,0,0,0.3)",
+                    border: "1px solid rgba(255,255,255,0.3)",
+                    color: "white",
+                    fontSize: "0.7rem",
+                    padding: "4px 8px",
+                    borderRadius: "12px",
+                    cursor: "pointer",
+                    zIndex: 10,
+                  }}
                 >
-                  🎁
-                </div>
+                  裝備機率一覽
+                </button>
+                <div style={{ fontSize: "4rem" }}>📦</div>
                 <div>
                   <div
                     style={{
@@ -665,33 +665,214 @@ export default function ShopPage({
                       color: "var(--ca-text-muted)",
                     }}
                   >
-                    隨機獲得一件裝備 (全屬性)
+                    隨機獲得裝備 (最高至 Epic)
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+                    含: Common, Uncommon, Rare, Epic
                   </div>
                 </div>
 
-                <button
-                  className="ca-btn ca-btn-primary"
+                <div
                   style={{
-                    padding: "12px 32px",
-                    fontSize: "1.1rem",
                     display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
+                    gap: "10px",
+                    width: "100%",
+                    justifyContent: "center",
+                    flexWrap: "wrap",
                   }}
-                  onClick={() => onPurchase("gacha_equipment_basic")}
                 >
-                  <span>抽取一次</span>
-                  <span
+                  <GachaButton
+                    label="1 抽"
+                    cost="1,000"
+                    onClick={() => onPurchase("gacha_equipment_basic")}
+                  />
+                  <GachaButton
+                    label="10 抽"
+                    cost="10,000"
+                    onClick={() => onPurchase("gacha_equipment_basic_10")}
+                  />
+                  <GachaButton
+                    label="100 抽"
+                    cost="100,000"
+                    onClick={() => onPurchase("gacha_equipment_basic_100")}
+                  />
+                </div>
+              </div>
+
+              {/* --- Advanced Box --- */}
+              <div
+                className="ca-glass-static"
+                style={{
+                  gridColumn: "1 / -1",
+                  padding: "24px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "16px",
+                  textAlign: "center",
+                  position: "relative",
+                  border: "1px solid #eab308", // Yellow/Gold
+                  background: "rgba(234, 179, 8, 0.05)",
+                }}
+              >
+                <button
+                  onClick={() => setActiveProbBox("advanced")}
+                  style={{
+                    position: "absolute",
+                    top: "12px",
+                    right: "12px",
+                    background: "rgba(0,0,0,0.3)",
+                    border: "1px solid rgba(255,255,255,0.3)",
+                    color: "white",
+                    fontSize: "0.7rem",
+                    padding: "4px 8px",
+                    borderRadius: "12px",
+                    cursor: "pointer",
+                    zIndex: 10,
+                  }}
+                >
+                  裝備機率一覽
+                </button>
+                <div style={{ fontSize: "4rem" }}>🎁</div>
+                <div>
+                  <div
                     style={{
-                      background: "rgba(0,0,0,0.2)",
-                      padding: "2px 8px",
-                      borderRadius: "12px",
-                      fontSize: "0.9rem",
+                      fontSize: "1.2rem",
+                      fontWeight: "bold",
+                      color: "#facc15",
                     }}
                   >
-                    💰 1,000
-                  </span>
+                    高級裝備箱
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "0.8rem",
+                      color: "var(--ca-text-muted)",
+                    }}
+                  >
+                    更高機率獲得稀有裝備 (最高至 Legendary)
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "#fef08a" }}>
+                    含: Common ~ Legendary
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "10px",
+                    width: "100%",
+                    justifyContent: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <GachaButton
+                    label="1 抽"
+                    cost="10,000"
+                    color="#facc15"
+                    onClick={() => onPurchase("gacha_equipment_advanced")}
+                  />
+                  <GachaButton
+                    label="10 抽"
+                    cost="100,000"
+                    color="#facc15"
+                    onClick={() => onPurchase("gacha_equipment_advanced_10")}
+                  />
+                  <GachaButton
+                    label="100 抽"
+                    cost="1,000,000"
+                    color="#facc15"
+                    onClick={() => onPurchase("gacha_equipment_advanced_100")}
+                  />
+                </div>
+              </div>
+
+              {/* --- Premium Box --- */}
+              <div
+                className="ca-glass-static"
+                style={{
+                  gridColumn: "1 / -1",
+                  padding: "24px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "16px",
+                  textAlign: "center",
+                  position: "relative",
+                  border: "1px solid #a855f7", // Purple/Mythic
+                  background: "rgba(168, 85, 247, 0.05)",
+                }}
+              >
+                <button
+                  onClick={() => setActiveProbBox("premium")}
+                  style={{
+                    position: "absolute",
+                    top: "12px",
+                    right: "12px",
+                    background: "rgba(0,0,0,0.3)",
+                    border: "1px solid rgba(255,255,255,0.3)",
+                    color: "white",
+                    fontSize: "0.7rem",
+                    padding: "4px 8px",
+                    borderRadius: "12px",
+                    cursor: "pointer",
+                    zIndex: 10,
+                  }}
+                >
+                  裝備機率一覽
                 </button>
+                <div style={{ fontSize: "4rem" }}>💎</div>
+                <div>
+                  <div
+                    style={{
+                      fontSize: "1.2rem",
+                      fontWeight: "bold",
+                      color: "#d8b4fe",
+                    }}
+                  >
+                    頂級裝備箱
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "0.8rem",
+                      color: "var(--ca-text-muted)",
+                    }}
+                  >
+                    最高機率獲得稀有裝備 (最高至 Mythic)
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "#e9d5ff" }}>
+                    含: Common ~ Mythic (包含所有稀有度)
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "10px",
+                    width: "100%",
+                    justifyContent: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <GachaButton
+                    label="1 抽"
+                    cost="100,000"
+                    color="#d8b4fe"
+                    onClick={() => onPurchase("gacha_equipment_premium")}
+                  />
+                  <GachaButton
+                    label="10 抽"
+                    cost="1,000,000"
+                    color="#d8b4fe"
+                    onClick={() => onPurchase("gacha_equipment_premium_10")}
+                  />
+                  <GachaButton
+                    label="100 抽"
+                    cost="10,000,000"
+                    color="#d8b4fe"
+                    onClick={() => onPurchase("gacha_equipment_premium_100")}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -699,10 +880,11 @@ export default function ShopPage({
       </div>
 
       {/* Probability Modal Overlay */}
-      {isProbModalOpen && (
+      {activeProbBox && (
         <ProbabilityModal
           gameConfig={gameConfig}
-          onClose={() => setIsProbModalOpen(false)}
+          onClose={() => setActiveProbBox(null)}
+          boxType={activeProbBox}
         />
       )}
     </div>
@@ -773,6 +955,7 @@ function UpgradeRow({
   canAfford,
   onClick,
   currencyLabel = "⚡",
+  isMaxed,
 }: {
   name: string;
   desc: string;
@@ -781,6 +964,7 @@ function UpgradeRow({
   canAfford: boolean;
   onClick: () => void;
   currencyLabel?: string;
+  isMaxed?: boolean;
 }) {
   return (
     <div className="ca-upgrade-row">
@@ -806,14 +990,22 @@ function UpgradeRow({
         <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>{desc}</div>
       </div>
       <button
-        onClick={() => canAfford && onClick()}
-        disabled={!canAfford}
+        onClick={() => !isMaxed && canAfford && onClick()}
+        disabled={isMaxed || !canAfford}
         className="ca-upgrade-btn"
+        style={{
+          opacity: isMaxed || !canAfford ? 0.5 : 1,
+          cursor: isMaxed || !canAfford ? "not-allowed" : "pointer",
+        }}
       >
-        <span style={{ fontSize: "0.7rem", fontWeight: "bold" }}>升級</span>
-        <span style={{ fontSize: "0.7rem" }}>
-          {currencyLabel} {cost.toLocaleString()}
+        <span style={{ fontSize: "0.7rem", fontWeight: "bold" }}>
+          {isMaxed ? "已滿級" : "升級"}
         </span>
+        {!isMaxed && (
+          <span style={{ fontSize: "0.7rem" }}>
+            {currencyLabel} {cost.toLocaleString()}
+          </span>
+        )}
       </button>
     </div>
   );
@@ -821,21 +1013,48 @@ function UpgradeRow({
 
 // Internal Component for Probability Modal
 function parseDescription(template: string, config: any, level: number = 1) {
-  const val = (config.Base_Val || 0) + (level - 1) * (config.Level_Mult || 0);
+  const val =
+    (Number(config.Base_Val) || 0) +
+    (level - 1) * (Number(config.Level_Mult) || 0);
   return template.replace("{val}", val.toLocaleString());
 }
 
 function ProbabilityModal({
   gameConfig,
   onClose,
+  boxType,
 }: {
   gameConfig: GameStaticData | null | undefined;
   onClose: () => void;
+  boxType: string | null;
 }) {
   const [selectedItem, setSelectedItem] = React.useState<any>(null);
   const hasData =
     gameConfig && gameConfig.equipments && gameConfig.equipments.length > 0;
-  const equipments = hasData ? gameConfig!.equipments : [];
+
+  // Filter equipments based on boxType
+  const equipments = React.useMemo(() => {
+    if (!hasData) return [];
+    const all = gameConfig!.equipments;
+
+    return all.filter((e) => {
+      const r = (e.Rarity || "COMMON").toUpperCase();
+      if (boxType === "basic" || boxType === "gacha_equipment_basic") {
+        // Basic: Up to Epic
+        return r !== "LEGENDARY" && r !== "MYTHIC";
+      }
+      if (boxType === "advanced" || boxType === "gacha_equipment_advanced") {
+        // Advanced: Up to Legendary
+        return r !== "MYTHIC";
+      }
+      if (boxType === "premium" || boxType === "gacha_equipment_premium") {
+        // Premium: Up to Mythic
+        return true;
+      }
+      // Premium (or default) includes all
+      return true;
+    });
+  }, [hasData, gameConfig, boxType]);
 
   // Calculate total weight
   const totalWeight = equipments.reduce(
@@ -888,6 +1107,7 @@ function ProbabilityModal({
         justifyContent: "center",
         padding: "20px",
       }}
+      onClick={onClose}
     >
       <div
         className="ca-card"
@@ -902,6 +1122,7 @@ function ProbabilityModal({
           borderRadius: "16px",
           overflow: "hidden",
         }}
+        onClick={(e) => e.stopPropagation()}
       >
         <div
           style={{
@@ -915,6 +1136,11 @@ function ProbabilityModal({
           <div
             style={{ fontWeight: "bold", fontSize: "1.1rem", color: "white" }}
           >
+            {boxType === "basic"
+              ? "基礎"
+              : boxType === "advanced"
+                ? "高級"
+                : "頂級"}
             裝備機率一覽
           </div>
           <button
@@ -1053,6 +1279,46 @@ function ProbabilityModal({
 /**
  * Detailed view for an equipment item in the shop
  */
+function getEstimatedCP(config: any, level: number) {
+  const val =
+    (Number(config.Base_Val) || 0) +
+    (level - 1) * (Number(config.Level_Mult) || 0);
+  const t = String(config.Effect_Type || "")
+    .toUpperCase()
+    .trim();
+
+  // Base Dmg * 10
+  if (
+    [
+      "ADD_BASE_DMG",
+      "CLICK_DMG",
+      "ADD_DAMAGE",
+      "CLICK_DAMAGE",
+      "ADD_CLICK_DMG",
+    ].includes(t)
+  )
+    return Math.floor(val * 10);
+  // Auto Dmg * 20
+  if (["ADD_AUTO_DMG", "AUTO_DMG", "AUTO_DAMAGE", "ADD_AUTO"].includes(t))
+    return Math.floor(val * 20);
+  // Crit% * 10 (1% = 10 CP)
+  if (
+    [
+      "ADD_CRIT_CHANCE",
+      "CRIT_RATE",
+      "ADD_CRIT_RATE",
+      "LUCK",
+      "ADD_CRIT",
+    ].includes(t)
+  )
+    return Math.floor(val * 10);
+  // CritDmg% * 5 (1% = 5 CP)
+  if (["ADD_CRIT_DMG", "CRIT_DMG", "CRIT_DAMAGE", "ADD_CRIT_DMG"].includes(t))
+    return Math.floor(val * 5);
+
+  return 0;
+}
+
 function EquipmentDetailModal({
   item,
   onClose,
@@ -1182,6 +1448,29 @@ function EquipmentDetailModal({
             裝備初始屬性:
           </div>
           <div>{parseDescription(item.Desc_Template, item, 1)}</div>
+          <div
+            style={{
+              marginTop: "8px",
+              paddingTop: "8px",
+              borderTop: "1px solid rgba(255,255,255,0.1)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <span style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
+              單件提升戰力 (Est. CP)
+            </span>
+            <span
+              style={{
+                fontSize: "0.9rem",
+                color: "#fbbf24",
+                fontWeight: "bold",
+              }}
+            >
+              +{getEstimatedCP(item, 1).toLocaleString()}
+            </span>
+          </div>
         </div>
 
         <button
@@ -1218,4 +1507,47 @@ function getIconFromSlot(s: string) {
     default:
       return "📦";
   }
+}
+
+function GachaButton({
+  label,
+  cost,
+  onClick,
+  color = "#22d3ee",
+}: {
+  label: string;
+  cost: string;
+  onClick: () => void;
+  color?: string;
+}) {
+  return (
+    <button
+      className="ca-btn ca-btn-primary"
+      style={{
+        padding: "12px 16px",
+        fontSize: "1rem",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: "4px",
+        flex: 1,
+        borderColor: color,
+        background: `linear-gradient(to bottom, rgba(0,0,0,0) 0%, ${color}22 100%)`,
+      }}
+      onClick={onClick}
+    >
+      <span>{label}</span>
+      <span
+        style={{
+          background: "rgba(0,0,0,0.2)",
+          padding: "2px 8px",
+          borderRadius: "12px",
+          fontSize: "0.8rem",
+          color: color,
+        }}
+      >
+        💰 {cost}
+      </span>
+    </button>
+  );
 }

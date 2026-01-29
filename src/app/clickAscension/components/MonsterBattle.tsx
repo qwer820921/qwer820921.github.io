@@ -16,6 +16,7 @@ interface MonsterBattleProps {
   monstersKilled: number;
   monstersRequired: number;
   isBossActive: boolean;
+  bossDamageMultiplier: number;
   mercenaryLevel?: number;
   partnerLevel?: number;
   archerLevel?: number;
@@ -39,6 +40,9 @@ interface MonsterBattleProps {
     damage: number;
     isCrit: boolean;
   } | null;
+  bossTimeLeft?: number | null;
+  bossTimeLimit?: number;
+  onChallengeBoss?: () => void;
 }
 
 export default function MonsterBattle({
@@ -51,6 +55,7 @@ export default function MonsterBattle({
   monstersKilled,
   monstersRequired,
   isBossActive,
+  bossDamageMultiplier = 1,
   mercenaryLevel = 0,
   partnerLevel = 0,
   archerLevel = 0,
@@ -60,6 +65,9 @@ export default function MonsterBattle({
   onUsePotion,
   lastAutoAttack,
   lastAutoClickEvent,
+  bossTimeLeft,
+  bossTimeLimit = 60,
+  onChallengeBoss,
 }: MonsterBattleProps) {
   const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
   const [isShaking, setIsShaking] = useState(false);
@@ -219,6 +227,7 @@ export default function MonsterBattle({
 
     let clickDmg = baseDamage;
     if (isRageActive) clickDmg *= 2;
+    if (monster.isBoss) clickDmg *= bossDamageMultiplier;
 
     const isCrit = Math.random() < criticalChance;
     const damage = Math.ceil(clickDmg * (isCrit ? criticalDamage : 1));
@@ -283,37 +292,123 @@ export default function MonsterBattle({
             <div className="ca-stage-display">第 {stageId} 關</div>
 
             {/* Kill Progress */}
-            {!isBossActive && (
-              <div
-                style={{
-                  fontSize: "0.8rem",
-                  color: "var(--ca-text-muted)",
-                  marginTop: "4px",
-                  marginBottom: "16px",
-                  background: "rgba(0,0,0,0.3)",
-                  padding: "2px 8px",
-                  borderRadius: "12px",
-                }}
-              >
-                {monstersKilled} / {monstersRequired} 💀
-              </div>
-            )}
+            {!isBossActive &&
+              (monstersKilled >= monstersRequired ? (
+                <button
+                  className="ca-btn ca-btn-primary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onChallengeBoss?.();
+                  }}
+                  style={{
+                    marginBottom: "16px",
+                    padding: "8px 20px",
+                    fontSize: "1rem",
+                    background: "linear-gradient(to right, #ef4444, #b91c1c)",
+                    boxShadow: "0 0 15px rgba(239, 68, 68, 0.4)",
+                    border: "none",
+                  }}
+                >
+                  ⚔️ 挑戰 BOSS
+                </button>
+              ) : (
+                <div
+                  style={{
+                    fontSize: "0.8rem",
+                    color: "var(--ca-text-muted)",
+                    marginTop: "4px",
+                    marginBottom: "16px",
+                    background: "rgba(0,0,0,0.3)",
+                    padding: "2px 8px",
+                    borderRadius: "12px",
+                  }}
+                >
+                  {monstersKilled} / {monstersRequired} 💀
+                </div>
+              ))}
 
             {isBossActive && (
               <div
                 style={{
-                  fontSize: "0.8rem",
-                  color: "#ef4444",
-                  marginTop: "4px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "6px",
                   marginBottom: "16px",
-                  fontWeight: "bold",
-                  background: "rgba(239, 68, 68, 0.1)",
-                  padding: "2px 8px",
-                  borderRadius: "12px",
-                  border: "1px solid rgba(239, 68, 68, 0.3)",
+                  width: "100%",
                 }}
               >
-                ⚠️ BOSS 挑戰中 ⚠️
+                <div
+                  style={{
+                    fontSize: "0.85rem",
+                    color: "#ef4444",
+                    fontWeight: "bold",
+                    background: "rgba(239, 68, 68, 0.15)",
+                    padding: "4px 12px",
+                    borderRadius: "12px",
+                    border: "1px solid rgba(239, 68, 68, 0.4)",
+                    letterSpacing: "1px",
+                  }}
+                >
+                  👹 BOSS 戰進行中
+                </div>
+
+                {bossTimeLeft !== undefined && bossTimeLeft !== null && (
+                  <div style={{ width: "100%", maxWidth: "200px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        gap: "8px",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "1.4rem",
+                          fontWeight: "900",
+                          color: bossTimeLeft <= 10 ? "#ff4d4d" : "#fbbf24",
+                          textShadow: "0 0 10px rgba(0,0,0,0.8)",
+                          fontFamily: "monospace",
+                        }}
+                      >
+                        ⏱️ {bossTimeLeft}s
+                      </span>
+                    </div>
+                    {/* Time Progress Bar */}
+                    <div
+                      style={{
+                        width: "100%",
+                        height: "6px",
+                        background: "rgba(255,255,255,0.1)",
+                        borderRadius: "3px",
+                        overflow: "hidden",
+                        border: "1px solid rgba(255,255,255,0.05)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${(bossTimeLeft / bossTimeLimit) * 100}%`,
+                          background:
+                            bossTimeLeft <= 10
+                              ? "linear-gradient(90deg, #ef4444, #b91c1c)"
+                              : "linear-gradient(90deg, #fbbf24, #d97706)",
+                          transition: "width 1s linear, background 0.3s",
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Note Display - Absolute Positioned to ensure visibility */}
+            {monster.note && (
+              <div className="ca-note-badge">
+                <span>📍</span>
+                <span>{monster.note}</span>
               </div>
             )}
 
