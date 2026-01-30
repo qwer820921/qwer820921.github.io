@@ -14,6 +14,8 @@ interface ShopPageProps {
   onPurchase: (itemId: string) => void;
   onResetLevelPoints?: () => void;
   gameConfig?: GameStaticData | null;
+  autoGachaBox?: string | null;
+  onToggleAutoGacha?: (box: string | null) => void;
 }
 
 // Realm Helper - Based on Total Click Shop Upgrades (Cultivation Depth)
@@ -31,6 +33,8 @@ export default function ShopPage({
   onPurchase,
   onResetLevelPoints,
   gameConfig,
+  autoGachaBox,
+  onToggleAutoGacha,
 }: ShopPageProps) {
   const [activeTab, setActiveTab] = useState<ShopTab>("DAILY");
   const [goldSubTab, setGoldSubTab] = useState<"UPGRADE" | "RECRUIT">(
@@ -73,6 +77,10 @@ export default function ShopPage({
     if (id === "gold_shop_partner") return player.goldShop.partnerLevel || 0;
     if (id === "gold_shop_archer") return player.goldShop.archerLevel || 0;
     if (id === "gold_shop_knight") return player.goldShop.knightLevel || 0;
+    if (id === "gold_shop_warlord") return player.goldShop.warlordLevel || 0;
+    if (id === "gold_shop_oracle") return player.goldShop.oracleLevel || 0;
+    if (id === "gold_shop_void") return player.goldShop.voidLevel || 0;
+    if (id === "gold_shop_titan") return player.goldShop.titanLevel || 0;
     if (id === "gold_shop_amulet") return player.goldShop.amuletLevel || 0;
     if (id === "gold_potion_rage") return player.inventory.ragePotionCount || 0;
 
@@ -696,6 +704,42 @@ export default function ShopPage({
                     cost="100,000"
                     onClick={() => onPurchase("gacha_equipment_basic_100")}
                   />
+                  <GachaButton
+                    label="1000 抽"
+                    cost="1,000,000"
+                    onClick={() => onPurchase("gacha_equipment_basic_1000")}
+                  />
+                  <div
+                    onClick={() =>
+                      onToggleAutoGacha?.(
+                        autoGachaBox === "basic" ? null : "basic"
+                      )
+                    }
+                    style={{
+                      padding: "12px 16px",
+                      borderRadius: "8px",
+                      background:
+                        autoGachaBox === "basic"
+                          ? "#10b981"
+                          : "rgba(255,255,255,0.1)",
+                      color: autoGachaBox === "basic" ? "#fff" : "#94a3b8",
+                      cursor: "pointer",
+                      fontSize: "0.9rem",
+                      fontWeight: "bold",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                      border: `1px solid ${autoGachaBox === "basic" ? "#4ade80" : "rgba(255,255,255,0.2)"}`,
+                      transition: "all 0.3s",
+                      flex: "1 1 100%",
+                    }}
+                  >
+                    <span>
+                      {autoGachaBox === "basic" ? "⏹️ 停止" : "🤖 自動"}
+                    </span>
+                    <span>1000連抽</span>
+                  </div>
                 </div>
               </div>
 
@@ -784,6 +828,43 @@ export default function ShopPage({
                     color="#facc15"
                     onClick={() => onPurchase("gacha_equipment_advanced_100")}
                   />
+                  <GachaButton
+                    label="1000 抽"
+                    cost="10,000,000"
+                    color="#facc15"
+                    onClick={() => onPurchase("gacha_equipment_advanced_1000")}
+                  />
+                  <div
+                    onClick={() =>
+                      onToggleAutoGacha?.(
+                        autoGachaBox === "advanced" ? null : "advanced"
+                      )
+                    }
+                    style={{
+                      padding: "12px 16px",
+                      borderRadius: "8px",
+                      background:
+                        autoGachaBox === "advanced"
+                          ? "#f59e0b"
+                          : "rgba(255,255,255,0.1)",
+                      color: autoGachaBox === "advanced" ? "#fff" : "#94a3b8",
+                      cursor: "pointer",
+                      fontSize: "0.9rem",
+                      fontWeight: "bold",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                      border: `1px solid ${autoGachaBox === "advanced" ? "#fbbf24" : "rgba(255,255,255,0.2)"}`,
+                      transition: "all 0.3s",
+                      flex: "1 1 100%",
+                    }}
+                  >
+                    <span>
+                      {autoGachaBox === "advanced" ? "⏹️ 停止" : "🤖 自動"}
+                    </span>
+                    <span>1000連抽</span>
+                  </div>
                 </div>
               </div>
 
@@ -872,6 +953,43 @@ export default function ShopPage({
                     color="#d8b4fe"
                     onClick={() => onPurchase("gacha_equipment_premium_100")}
                   />
+                  <GachaButton
+                    label="1000 抽"
+                    cost="100,000,000"
+                    color="#d8b4fe"
+                    onClick={() => onPurchase("gacha_equipment_premium_1000")}
+                  />
+                  <div
+                    onClick={() =>
+                      onToggleAutoGacha?.(
+                        autoGachaBox === "premium" ? null : "premium"
+                      )
+                    }
+                    style={{
+                      padding: "12px 16px",
+                      borderRadius: "8px",
+                      background:
+                        autoGachaBox === "premium"
+                          ? "#ec4899"
+                          : "rgba(255,255,255,0.1)",
+                      color: autoGachaBox === "premium" ? "#fff" : "#94a3b8",
+                      cursor: "pointer",
+                      fontSize: "0.9rem",
+                      fontWeight: "bold",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                      border: `1px solid ${autoGachaBox === "premium" ? "#f472b6" : "rgba(255,255,255,0.2)"}`,
+                      transition: "all 0.3s",
+                      flex: "1 1 100%",
+                    }}
+                  >
+                    <span>
+                      {autoGachaBox === "premium" ? "⏹️ 停止" : "🤖 自動"}
+                    </span>
+                    <span>1000連抽</span>
+                  </div>
                 </div>
               </div>
             </div>

@@ -65,6 +65,10 @@ const INITIAL_PLAYER: PlayerState = {
     partnerLevel: 0,
     archerLevel: 0,
     knightLevel: 0,
+    warlordLevel: 0,
+    oracleLevel: 0,
+    voidLevel: 0,
+    titanLevel: 0,
     amuletLevel: 0,
   },
   ascensionShop: {},
@@ -87,6 +91,7 @@ const INITIAL_STAGE: StageState = {
   currentStageId: 1,
   isBossActive: false,
   autoChallengeBoss: true,
+  autoUsePotion: false,
   maxStageReached: 1,
   monstersKilledInStage: 0,
   monstersRequiredForBoss: 10,
@@ -116,6 +121,10 @@ export default function ClickAscensionGame() {
       partner: number;
       archer: number;
       knight: number;
+      warlord: number;
+      oracle: number;
+      void: number;
+      titan: number;
       player: number;
     };
   } | null>(null);
@@ -127,21 +136,36 @@ export default function ClickAscensionGame() {
     isCrit: boolean;
   } | null>(null);
 
-  const [popup, setPopup] = useState<{ title: string; message: string } | null>(
-    null
-  );
+  const [popup, setPopup] = useState<{
+    title: string;
+    message: string;
+    isAutoGacha?: boolean;
+    gachaResults?: {
+      summary: Record<string, number>;
+      gainedShards: number;
+      boxType: string;
+      drawCount: number;
+    } | null;
+  } | null>(null);
 
-  const showPopup = (message: string, title: string = "系統提示") =>
-    setPopup({ title, message });
+  const [autoGachaBox, setAutoGachaBox] = useState<string | null>(null);
+
+  const showPopup = (
+    message: string,
+    title: string = "系統提示",
+    isAutoGacha: boolean = false,
+    gachaResults: any = null
+  ) => setPopup({ title, message, isAutoGacha, gachaResults });
 
   // Initial Spawn Wait Flag? No, useEffect handles it below.
 
   // Derived Stats (Base + Equipment + Shop etc.)
   const effectiveStats = React.useMemo(() => {
     // Start with base stats from state, ensuring defaults
+    // NOTE: autoAttackDamage starts at 0 because only partners/allies provide it
     const stats = {
       baseDamage: player.stats.baseDamage || 1,
-      autoAttackDamage: player.stats.autoAttackDamage || 0,
+      autoAttackDamage: 0, // Always 0 - only partners provide auto attack damage
       criticalChance: player.stats.criticalChance || 0.05,
       criticalDamage: player.stats.criticalDamage || 1.5,
       goldMultiplier: player.stats.goldMultiplier || 1.0,
@@ -246,11 +270,54 @@ export default function ClickAscensionGame() {
       }
     });
 
+    // Add Gold Shop bonuses (partners/units) - Use gameConfig if available
+    const goldShopItems = [
+      { id: "gold_shop_weapon", levelKey: "weaponLevel" },
+      { id: "gold_shop_mercenary", levelKey: "mercenaryLevel" },
+      { id: "gold_shop_partner", levelKey: "partnerLevel" },
+      { id: "gold_shop_archer", levelKey: "archerLevel" },
+      { id: "gold_shop_knight", levelKey: "knightLevel" },
+      { id: "gold_shop_warlord", levelKey: "warlordLevel" },
+      { id: "gold_shop_oracle", levelKey: "oracleLevel" },
+      { id: "gold_shop_void", levelKey: "voidLevel" },
+      { id: "gold_shop_titan", levelKey: "titanLevel" },
+      { id: "gold_shop_amulet", levelKey: "amuletLevel" },
+    ];
+
+    goldShopItems.forEach(({ id, levelKey }) => {
+      const level = (player.goldShop as any)[levelKey] || 0;
+      if (level <= 0) return;
+
+      const config = gameConfig?.upgrades?.find((u: any) => u.ID === id);
+      if (config) {
+        // Use config values - DB is the only source of truth
+        const effectType = String(config.Effect_Type || "")
+          .toUpperCase()
+          .trim();
+        const val = Number(config.Effect_Val || 0) * level;
+
+        if (effectType === "ADD_DAMAGE" || effectType === "CLICK_DMG")
+          stats.baseDamage += val;
+        if (
+          effectType === "ADD_AUTO_DMG" ||
+          effectType === "AUTO_DMG" ||
+          effectType === "ADD_AUTO"
+        )
+          stats.autoAttackDamage += val;
+        if (effectType === "ADD_GOLD_MULT" || effectType === "GOLD_MULT")
+          stats.goldMultiplier += val / 100;
+        if (effectType === "ADD_CRIT_DMG" || effectType === "CRIT_DMG")
+          stats.criticalDamage += val / 100;
+      }
+      // No fallback - if config not found, the item has no effect
+    });
+
     return stats;
   }, [
     player.stats,
     player.equipment.equipped,
     player.equipment.inventory,
+    player.goldShop,
     gameConfig,
   ]);
 
@@ -394,6 +461,7 @@ export default function ClickAscensionGame() {
 
     const newMonster: Monster = {
       id: crypto.randomUUID(),
+      configId: template.configId,
       name: `${template.name} Lv.${stage.currentStageId}`,
       level: stage.currentStageId,
       maxHp: finalHp,
@@ -440,24 +508,17 @@ export default function ClickAscensionGame() {
   useEffect(() => {
     let timer: NodeJS.Timeout;
     if (stage.isBossActive && monster && monster.isBoss) {
-      if (stage.bossTimeLeft === null) {
-        // Should have been set in spawnMonster or handleChallengeBoss,
-        // but as a safety measure:
-        setStage((prev) => ({ ...prev, bossTimeLeft: prev.bossTimeLimit }));
-      } else if (
-        stage.bossTimeLeft !== undefined &&
-        stage.bossTimeLeft !== null &&
-        stage.bossTimeLeft > 0
-      ) {
+      if (stage.bossTimeLeft === null || stage.bossTimeLeft === undefined) {
+        setStage((prev) => ({
+          ...prev,
+          bossTimeLeft: prev.bossTimeLimit || 60,
+        }));
+      } else if (stage.bossTimeLeft > 0) {
         timer = setInterval(() => {
           setStage((prev) => ({
             ...prev,
             bossTimeLeft:
-              prev.bossTimeLeft !== undefined &&
-              prev.bossTimeLeft !== null &&
-              prev.bossTimeLeft > 0
-                ? prev.bossTimeLeft - 1
-                : 0,
+              (prev.bossTimeLeft ?? 0) > 0 ? (prev.bossTimeLeft ?? 0) - 1 : 0,
           }));
         }, 1000);
       } else if (stage.bossTimeLeft === 0) {
@@ -478,7 +539,7 @@ export default function ClickAscensionGame() {
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [stage.isBossActive, stage.bossTimeLeft, monster]);
+  }, [stage.isBossActive, stage.bossTimeLeft, monster?.id, monster?.isBoss]);
 
   // Auto-Save Loop (30s)
   useEffect(() => {
@@ -505,6 +566,50 @@ export default function ClickAscensionGame() {
 
     return () => clearInterval(interval);
   }, [userId]); // Only reset if userId changes
+
+  // Auto-Use Potion Logic
+  useEffect(() => {
+    if (!stage.autoUsePotion || player.inventory.ragePotionCount <= 0) return;
+
+    const checkInterval = setInterval(() => {
+      const now = Date.now();
+      const expiresAt = player.activeBuffs.ragePotionExpiresAt || 0;
+
+      // If expired (or about to expire in less than 500ms) and we have potions
+      if (now >= expiresAt && player.inventory.ragePotionCount > 0) {
+        handleUsePotion("RAGE");
+      }
+    }, 1000);
+
+    return () => clearInterval(checkInterval);
+  }, [
+    stage.autoUsePotion,
+    player.inventory.ragePotionCount,
+    player.activeBuffs.ragePotionExpiresAt,
+  ]);
+
+  // Auto-Gacha Loop
+  useEffect(() => {
+    if (!autoGachaBox) return;
+
+    const interval = setInterval(() => {
+      const boxCosts: Record<string, number> = {
+        basic: 1000 * 1000,
+        advanced: 10000 * 1000,
+        premium: 100000 * 1000,
+      };
+
+      if (player.wallet.gold < boxCosts[autoGachaBox]) {
+        setAutoGachaBox(null);
+        showPopup("金幣不足，已停止自動連續抽卡。");
+        return;
+      }
+
+      handleShopPurchase(`gacha_equipment_${autoGachaBox}_1000`);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [autoGachaBox, player.wallet.gold]);
 
   const handleLogin = async (id: string) => {
     if (!id) return;
@@ -639,12 +744,35 @@ export default function ClickAscensionGame() {
       });
 
       // 5. Trigger Visuals
-      // Recalculate component parts for display only
-      const mercDmg = (player.goldShop.mercenaryLevel || 0) * 2;
-      const partnerDmg = (player.goldShop.partnerLevel || 0) * 5;
-      const archerDmg = (player.goldShop.archerLevel || 0) * 20;
-      const knightDmg = (player.goldShop.knightLevel || 0) * 100;
-      const alliesTotal = mercDmg + partnerDmg + archerDmg + knightDmg;
+      // Recalculate component parts for display only - Use gameConfig only (no fallback)
+      const getUnitDamage = (id: string, levelKey: string) => {
+        const level = (player.goldShop as any)[levelKey] || 0;
+        if (level <= 0) return 0;
+        const config = gameConfig?.upgrades?.find((u: any) => u.ID === id);
+        if (config) {
+          return Number(config.Effect_Val || 0) * level;
+        }
+        return 0; // No fallback - DB is the only source of truth
+      };
+
+      const mercDmg = getUnitDamage("gold_shop_mercenary", "mercenaryLevel");
+      const partnerDmg = getUnitDamage("gold_shop_partner", "partnerLevel");
+      const archerDmg = getUnitDamage("gold_shop_archer", "archerLevel");
+      const knightDmg = getUnitDamage("gold_shop_knight", "knightLevel");
+      const warlordDmg = getUnitDamage("gold_shop_warlord", "warlordLevel");
+      const oracleDmg = getUnitDamage("gold_shop_oracle", "oracleLevel");
+      const voidDmg = getUnitDamage("gold_shop_void", "voidLevel");
+      const titanDmg = getUnitDamage("gold_shop_titan", "titanLevel");
+
+      const alliesTotal =
+        mercDmg +
+        partnerDmg +
+        archerDmg +
+        knightDmg +
+        warlordDmg +
+        oracleDmg +
+        voidDmg +
+        titanDmg;
       const playerDmg = Math.max(
         0,
         effectiveStats.autoAttackDamage - alliesTotal
@@ -658,6 +786,10 @@ export default function ClickAscensionGame() {
           partner: Math.ceil(partnerDmg * bossMult),
           archer: Math.ceil(archerDmg * bossMult),
           knight: Math.ceil(knightDmg * bossMult),
+          warlord: Math.ceil(warlordDmg * bossMult),
+          oracle: Math.ceil(oracleDmg * bossMult),
+          void: Math.ceil(voidDmg * bossMult),
+          titan: Math.ceil(titanDmg * bossMult),
           player: Math.ceil(playerDmg * bossMult),
         },
       });
@@ -673,6 +805,11 @@ export default function ClickAscensionGame() {
     player.goldShop.partnerLevel,
     player.goldShop.archerLevel,
     player.goldShop.knightLevel,
+    player.goldShop.warlordLevel,
+    player.goldShop.oracleLevel,
+    player.goldShop.voidLevel,
+    player.goldShop.titanLevel,
+    gameConfig,
   ]);
 
   // NEW: Auto-Click Loop (Simulates Clicks)
@@ -786,6 +923,7 @@ export default function ClickAscensionGame() {
     ): MonsterTemplate => {
       // Default fallback
       const fallback: MonsterTemplate = {
+        configId: "fallback",
         name: "未知怪物",
         emoji: "❓",
         rarity: MonsterRarity.COMMON,
@@ -837,6 +975,7 @@ export default function ClickAscensionGame() {
           // Debug log to check property names, especially Note
           console.log("Selected Monster Config:", m);
           return {
+            configId: m.ID,
             name: m.Name,
             emoji: m.Emoji,
             rarity: (m.Rarity as MonsterRarity) || MonsterRarity.COMMON,
@@ -1169,138 +1308,82 @@ export default function ClickAscensionGame() {
       }
     }
 
-    // --- GOLD SPENDING SHOP (New) ---
+    // --- GOLD SPENDING SHOP (Dynamic from Config) ---
     if (itemId.startsWith("gold_shop_") || itemId.startsWith("gold_potion_")) {
       const { goldShop } = player;
-      let cost = 0;
 
-      switch (itemId) {
-        // 1. Weapon Upgrade (+1 Base Dmg)
-        case "gold_shop_weapon":
-          cost = Math.floor(10 * Math.pow(1.2, goldShop.weaponLevel));
-          if (player.wallet.gold >= cost) {
-            setPlayer((prev) => ({
+      // Try to find config from gameConfig first
+      const config = gameConfig?.upgrades?.find((u: any) => u.ID === itemId);
+
+      if (config) {
+        // Use config-based calculation
+        const levelKey = itemId.replace("gold_shop_", "") + "Level";
+        const currentLevel = (goldShop as any)[levelKey] || 0;
+        const maxLevel = Number(config.Max_Level || 0);
+
+        if (maxLevel > 0 && currentLevel >= maxLevel) {
+          showPopup("已達最大等級！");
+          return;
+        }
+
+        const base = Number(config.Cost_Base || 0);
+        const mult = Number(config.Cost_Mult || 1);
+        let cost = 0;
+
+        if (config.Effect_Type === "ADD_INVENTORY") {
+          cost = base; // Fixed cost for consumables
+        } else if (mult === 1 || mult === 1.0) {
+          cost = Math.floor(base + currentLevel);
+        } else {
+          cost = Math.floor(base * Math.pow(mult, currentLevel));
+        }
+
+        if (player.wallet.gold >= cost) {
+          setPlayer((prev) => {
+            const newStats = { ...prev.stats };
+            const effectType = config.Effect_Type;
+            const val = Number(config.Effect_Val || 0);
+
+            // Apply effects
+            if (effectType === "ADD_DAMAGE") newStats.baseDamage += val;
+            if (effectType === "ADD_AUTO_DMG") newStats.autoAttackDamage += val;
+            if (effectType === "ADD_GOLD_MULT")
+              newStats.goldMultiplier += val / 100;
+            if (effectType === "ADD_INVENTORY") {
+              // Handled below for inventory items
+            }
+
+            const newGoldShop = { ...prev.goldShop };
+            (newGoldShop as any)[levelKey] =
+              ((prev.goldShop as any)[levelKey] || 0) + 1;
+
+            const newInventory = { ...prev.inventory };
+            if (effectType === "ADD_INVENTORY") {
+              if (itemId === "gold_potion_rage") {
+                newInventory.ragePotionCount =
+                  (newInventory.ragePotionCount || 0) + 1;
+              }
+            }
+
+            return {
               ...prev,
               wallet: { ...prev.wallet, gold: prev.wallet.gold - cost },
-              goldShop: {
-                ...prev.goldShop,
-                weaponLevel: prev.goldShop.weaponLevel + 1,
-              },
-              stats: { ...prev.stats, baseDamage: prev.stats.baseDamage + 1 },
-            }));
-          }
-          break;
-
-        // 2. Mercenary (+2 Auto)
-        case "gold_shop_mercenary":
-          cost = Math.floor(100 * Math.pow(1.3, goldShop.mercenaryLevel));
-          if (player.wallet.gold >= cost) {
-            setPlayer((prev) => ({
-              ...prev,
-              wallet: { ...prev.wallet, gold: prev.wallet.gold - cost },
-              goldShop: {
-                ...prev.goldShop,
-                mercenaryLevel: prev.goldShop.mercenaryLevel + 1,
-              },
-              stats: {
-                ...prev.stats,
-                autoAttackDamage: prev.stats.autoAttackDamage + 2,
-              },
-            }));
-          }
-          break;
-
-        // 3. Partner (+5 Auto)
-        case "gold_shop_partner":
-          cost = Math.floor(500 * Math.pow(1.3, goldShop.partnerLevel));
-          if (player.wallet.gold >= cost) {
-            setPlayer((prev) => ({
-              ...prev,
-              wallet: { ...prev.wallet, gold: prev.wallet.gold - cost },
-              goldShop: {
-                ...prev.goldShop,
-                partnerLevel: prev.goldShop.partnerLevel + 1,
-              },
-              stats: {
-                ...prev.stats,
-                autoAttackDamage: prev.stats.autoAttackDamage + 5,
-              },
-            }));
-          }
-          break;
-
-        // 4. Archer (+20 Auto) - Cost: 2000 * 1.4^L
-        case "gold_shop_archer":
-          cost = Math.floor(2000 * Math.pow(1.4, goldShop.archerLevel || 0));
-          if (player.wallet.gold >= cost) {
-            setPlayer((prev) => ({
-              ...prev,
-              wallet: { ...prev.wallet, gold: prev.wallet.gold - cost },
-              goldShop: {
-                ...prev.goldShop,
-                archerLevel: (prev.goldShop.archerLevel || 0) + 1,
-              },
-              stats: {
-                ...prev.stats,
-                autoAttackDamage: prev.stats.autoAttackDamage + 20,
-              },
-            }));
-          }
-          break;
-
-        // 5. Knight (+100 Auto) - Cost: 10000 * 1.5^L
-        case "gold_shop_knight":
-          cost = Math.floor(10000 * Math.pow(1.5, goldShop.knightLevel || 0));
-          if (player.wallet.gold >= cost) {
-            setPlayer((prev) => ({
-              ...prev,
-              wallet: { ...prev.wallet, gold: prev.wallet.gold - cost },
-              goldShop: {
-                ...prev.goldShop,
-                knightLevel: (prev.goldShop.knightLevel || 0) + 1,
-              },
-              stats: {
-                ...prev.stats,
-                autoAttackDamage: prev.stats.autoAttackDamage + 100,
-              },
-            }));
-          }
-          break;
-
-        // 6. Amulet (+5% Gold) - Cost: 5000 * 1.5^L
-        case "gold_shop_amulet":
-          cost = Math.floor(5000 * Math.pow(1.5, goldShop.amuletLevel || 0));
-          if (player.wallet.gold >= cost) {
-            setPlayer((prev) => ({
-              ...prev,
-              wallet: { ...prev.wallet, gold: prev.wallet.gold - cost },
-              goldShop: {
-                ...prev.goldShop,
-                amuletLevel: (prev.goldShop.amuletLevel || 0) + 1,
-              },
-              stats: {
-                ...prev.stats,
-                goldMultiplier: prev.stats.goldMultiplier + 0.05,
-              },
-            }));
-          }
-          break;
-
-        // 7. Rage Potion
-        case "gold_potion_rage":
-          cost = 500;
-          if (player.wallet.gold >= cost) {
-            setPlayer((prev) => ({
-              ...prev,
-              wallet: { ...prev.wallet, gold: prev.wallet.gold - cost },
-              inventory: {
-                ...prev.inventory,
-                ragePotionCount: prev.inventory.ragePotionCount + 1,
-              },
-            }));
-          }
-          break;
+              goldShop: newGoldShop,
+              stats: newStats,
+              inventory: newInventory,
+            };
+          });
+        } else {
+          showPopup("金幣不足！");
+        }
+        return;
       }
+
+      // If we reach here, the item was not found in gameConfig
+      // This should not happen if the shop UI only shows items from gameConfig
+      console.warn(
+        `[handleShopPurchase] Gold shop item not found in config: ${itemId}`
+      );
     }
 
     // --- EQUIPMENT GACHA (Basic / Advanced / Premium) ---
@@ -1308,6 +1391,7 @@ export default function ClickAscensionGame() {
       let drawCount = 1;
       if (itemId.endsWith("_10")) drawCount = 10;
       if (itemId.endsWith("_100")) drawCount = 100;
+      if (itemId.endsWith("_1000")) drawCount = 1000;
 
       let boxType = "basic";
       if (itemId.includes("advanced")) boxType = "advanced";
@@ -1437,7 +1521,6 @@ export default function ClickAscensionGame() {
               );
             }
           } else {
-            // Summary for multi-draw
             const summary: Record<string, number> = {};
             wonItems.forEach((item) => {
               summary[item.Name] = (summary[item.Name] || 0) + 1;
@@ -1453,7 +1536,14 @@ export default function ClickAscensionGame() {
 
             showPopup(
               `獲得 ${drawCount} 件裝備${boxType === "premium" ? "(頂級)" : boxType === "advanced" ? "(高級)" : ""}：\n${summaryStr}`,
-              "獲得裝備"
+              "獲得裝備",
+              !!autoGachaBox,
+              {
+                summary,
+                gainedShards,
+                boxType,
+                drawCount,
+              }
             );
           }
         } else {
@@ -1461,6 +1551,7 @@ export default function ClickAscensionGame() {
         }
       } else {
         showPopup("金幣不足！");
+        if (autoGachaBox) setAutoGachaBox(null);
       }
     }
 
@@ -1590,14 +1681,45 @@ export default function ClickAscensionGame() {
   const recalculateStats = (p: PlayerState) => {
     const stats = { ...INITIAL_PLAYER.stats };
 
-    // 1. Add Gold Shop bonuses (temporary)
-    stats.baseDamage += (p.goldShop.weaponLevel || 0) * 1;
-    stats.autoAttackDamage +=
-      (p.goldShop.mercenaryLevel || 0) * 2 +
-      (p.goldShop.partnerLevel || 0) * 5 +
-      (p.goldShop.archerLevel || 0) * 20 +
-      (p.goldShop.knightLevel || 0) * 100;
-    stats.goldMultiplier += (p.goldShop.amuletLevel || 0) * 0.05;
+    // 1. Add Gold Shop bonuses (temporary) - Use gameConfig if available
+    const goldShopItems = [
+      { id: "gold_shop_weapon", levelKey: "weaponLevel" },
+      { id: "gold_shop_mercenary", levelKey: "mercenaryLevel" },
+      { id: "gold_shop_partner", levelKey: "partnerLevel" },
+      { id: "gold_shop_archer", levelKey: "archerLevel" },
+      { id: "gold_shop_knight", levelKey: "knightLevel" },
+      { id: "gold_shop_warlord", levelKey: "warlordLevel" },
+      { id: "gold_shop_oracle", levelKey: "oracleLevel" },
+      { id: "gold_shop_void", levelKey: "voidLevel" },
+      { id: "gold_shop_titan", levelKey: "titanLevel" },
+      { id: "gold_shop_amulet", levelKey: "amuletLevel" },
+    ];
+
+    goldShopItems.forEach(({ id, levelKey }) => {
+      const level = (p.goldShop as any)[levelKey] || 0;
+      if (level <= 0) return;
+
+      const config = gameConfig?.upgrades?.find((u: any) => u.ID === id);
+      if (config) {
+        // Use config values - DB is the only source of truth
+        const effectType = config.Effect_Type;
+        const val = Number(config.Effect_Val || 0) * level;
+
+        if (effectType === "ADD_DAMAGE" || effectType === "CLICK_DMG")
+          stats.baseDamage += val;
+        if (
+          effectType === "ADD_AUTO_DMG" ||
+          effectType === "AUTO_DMG" ||
+          effectType === "ADD_AUTO"
+        )
+          stats.autoAttackDamage += val;
+        if (effectType === "ADD_GOLD_MULT" || effectType === "GOLD_MULT")
+          stats.goldMultiplier += val / 100;
+        if (effectType === "ADD_CRIT_DMG" || effectType === "CRIT_DMG")
+          stats.criticalDamage += val / 100;
+      }
+      // No fallback - if config not found, the item has no effect
+    });
 
     // 2. Add Permanent Shop bonuses (Click, Level, Ascension)
     const shops = ["clickShop", "levelShop", "ascensionShop"] as const;
@@ -1662,6 +1784,10 @@ export default function ClickAscensionGame() {
           partnerLevel: 0,
           archerLevel: 0,
           knightLevel: 0,
+          warlordLevel: 0,
+          oracleLevel: 0,
+          voidLevel: 0,
+          titanLevel: 0,
           amuletLevel: 0,
         },
         levelShop: {}, // Reset level shop upgrades (等級商店重製)
@@ -1682,6 +1808,7 @@ export default function ClickAscensionGame() {
       monstersKilledInStage: 0,
       isBossActive: false,
       maxStageReached: 1,
+      bossTimeLeft: null,
     }));
 
     setMonster(null);
@@ -1798,6 +1925,10 @@ export default function ClickAscensionGame() {
           partnerLevel={player.goldShop.partnerLevel}
           archerLevel={player.goldShop.archerLevel}
           knightLevel={player.goldShop.knightLevel}
+          warlordLevel={player.goldShop.warlordLevel}
+          oracleLevel={player.goldShop.oracleLevel}
+          voidLevel={player.goldShop.voidLevel}
+          titanLevel={player.goldShop.titanLevel}
           potionCount={player.inventory.ragePotionCount}
           activeBuffs={player.activeBuffs}
           onUsePotion={() => handleUsePotion("RAGE")}
@@ -1806,6 +1937,13 @@ export default function ClickAscensionGame() {
           bossTimeLeft={stage.bossTimeLeft}
           bossTimeLimit={stage.bossTimeLimit}
           onChallengeBoss={handleChallengeBoss}
+          autoUsePotion={stage.autoUsePotion}
+          onToggleAutoPotion={() =>
+            setStage((prev) => ({
+              ...prev,
+              autoUsePotion: !prev.autoUsePotion,
+            }))
+          }
         />
       ) : (
         <CharacterView
@@ -1923,6 +2061,8 @@ export default function ClickAscensionGame() {
           onPurchase={handleShopPurchase}
           onResetLevelPoints={handleResetLevelPoints}
           gameConfig={gameConfig}
+          autoGachaBox={autoGachaBox}
+          onToggleAutoGacha={(box) => setAutoGachaBox(box)}
         />
       </Modal>
 
@@ -1934,18 +2074,131 @@ export default function ClickAscensionGame() {
       >
         <div
           style={{
-            textAlign: "center",
+            textAlign: popup?.gachaResults ? "left" : "center",
             padding: "20px",
-            fontSize: "1.1rem",
+            fontSize: "1rem",
             color: "#e2e8f0",
-            whiteSpace: "pre-wrap",
+            maxHeight: "60vh",
+            overflowY: "auto",
           }}
         >
-          {popup?.message}
-          <div style={{ marginTop: "24px" }}>
+          {!popup?.gachaResults ? (
+            <div style={{ whiteSpace: "pre-wrap" }}>{popup?.message}</div>
+          ) : (
+            <div>
+              <div
+                style={{
+                  fontSize: "1.2rem",
+                  fontWeight: "bold",
+                  color: "#fbbf24",
+                  marginBottom: "16px",
+                  textAlign: "center",
+                }}
+              >
+                🎊 連抽結果摘要 ({popup.gachaResults.drawCount} 抽)
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+                  gap: "10px",
+                  marginBottom: "20px",
+                }}
+              >
+                {Object.entries(popup.gachaResults.summary).map(
+                  ([name, count]) => (
+                    <div
+                      key={name}
+                      style={{
+                        background: "rgba(255,255,255,0.05)",
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <span style={{ fontSize: "0.9rem" }}>{name}</span>
+                      <span
+                        style={{
+                          color: "#10b981",
+                          fontWeight: "bold",
+                          fontSize: "0.8rem",
+                        }}
+                      >
+                        x{count}
+                      </span>
+                    </div>
+                  )
+                )}
+              </div>
+
+              {popup.gachaResults.gainedShards > 0 && (
+                <div
+                  style={{
+                    background: "rgba(16, 185, 129, 0.1)",
+                    padding: "12px",
+                    borderRadius: "8px",
+                    border: "1px solid rgba(16, 185, 129, 0.3)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "10px",
+                    fontWeight: "bold",
+                  }}
+                >
+                  <span style={{ fontSize: "1.2rem" }}>🧩</span>
+                  <span style={{ color: "#34d399" }}>
+                    轉化獲得碎片: {popup.gachaResults.gainedShards}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div
+            style={{
+              marginTop: "24px",
+              display: "flex",
+              justifyContent: "center",
+              gap: "12px",
+              position: "sticky",
+              bottom: 0,
+              background: "var(--ca-bg-modal, #1e293b)",
+              paddingTop: "12px",
+            }}
+          >
+            {popup?.isAutoGacha && (
+              <button
+                className="ca-btn"
+                style={{
+                  padding: "10px 24px",
+                  background: "linear-gradient(to bottom, #ef4444, #b91c1c)",
+                  color: "white",
+                  border: "none",
+                  fontWeight: "bold",
+                  boxShadow: "0 0 15px rgba(239, 68, 68, 0.4)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                }}
+                onClick={() => {
+                  setAutoGachaBox(null);
+                  setPopup(null);
+                }}
+              >
+                <span>⏹️</span> 停止自動抽取
+              </button>
+            )}
             <button
               className="ca-btn ca-btn-primary"
-              style={{ padding: "8px 32px" }}
+              style={{
+                padding: "10px 32px",
+                minWidth: "120px",
+                fontWeight: "bold",
+              }}
               onClick={() => setPopup(null)}
             >
               確定

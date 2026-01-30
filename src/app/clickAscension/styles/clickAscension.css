@@ -163,7 +163,7 @@
 
 @keyframes ca-float-damage {
   0% {
-    transform: translateY(0) scale(1);
+    transform: translate(-50%, 0) scale(1);
     opacity: 1;
   }
 
@@ -172,14 +172,14 @@
   }
 
   100% {
-    transform: translateY(-60px) scale(1.3);
+    transform: translate(-50%, -60px) scale(1.3);
     opacity: 0;
   }
 }
 
 @keyframes ca-float-damage-crit {
   0% {
-    transform: translateY(0) scale(1.2);
+    transform: translate(-50%, 0) scale(1.2);
     opacity: 1;
     text-shadow: 0 0 10px var(--ca-accent-gold);
   }
@@ -190,7 +190,7 @@
   }
 
   100% {
-    transform: translateY(-80px) scale(1.8);
+    transform: translate(-50%, -80px) scale(1.8);
     opacity: 0;
     text-shadow: 0 0 30px var(--ca-accent-gold);
   }
@@ -221,11 +221,11 @@
 @keyframes ca-bounce-slow {
   0%,
   100% {
-    transform: translateY(0);
+    transform: translate(-50%, -50%) translateY(0);
   }
 
   50% {
-    transform: translateY(-10px);
+    transform: translate(-50%, -50%) translateY(-20px);
   }
 }
 
@@ -276,17 +276,73 @@
 @keyframes ca-float-glow {
   0%,
   100% {
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
     box-shadow:
       0 0 10px rgba(251, 191, 36, 0.4),
       inset 0 0 5px rgba(251, 191, 36, 0.1);
   }
   50% {
-    transform: translateX(-50%) translateY(-5px);
+    transform: translateY(-5px);
     box-shadow:
       0 0 20px rgba(251, 191, 36, 0.7),
       inset 0 0 10px rgba(251, 191, 36, 0.3);
   }
+}
+
+/* Attack Animations */
+@keyframes ca-attack-lunge-left {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(30px);
+  }
+}
+
+@keyframes ca-attack-lunge-right {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-30px);
+  }
+}
+
+@keyframes ca-attack-magic-left {
+  0%,
+  100% {
+    transform: scale(1) translateX(0);
+  }
+  50% {
+    transform: scale(1.2) translateX(15px);
+    filter: brightness(1.5);
+  }
+}
+
+@keyframes ca-attack-magic-right {
+  0%,
+  100% {
+    transform: scale(1) translateX(0);
+  }
+  50% {
+    transform: scale(1.2) translateX(-15px);
+    filter: brightness(1.5);
+  }
+}
+
+.ca-attack-lunge-left {
+  animation: ca-attack-lunge-left 0.3s ease-out;
+}
+.ca-attack-lunge-right {
+  animation: ca-attack-lunge-right 0.3s ease-out;
+}
+.ca-attack-magic-left {
+  animation: ca-attack-magic-left 0.4s ease-out;
+}
+.ca-attack-magic-right {
+  animation: ca-attack-magic-right 0.4s ease-out;
 }
 
 /* --- Animation Classes --- */
@@ -438,14 +494,33 @@
 }
 
 .ca-monster-sprite {
-  font-size: 5rem;
-  transition: transform 0.1s ease;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* Center is handled by the animation now */
+  width: 100%;
+  height: 100%;
+  max-width: 800px; /* Prevent over-stretching on wide screens */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
+  z-index: 0;
+  opacity: 0.85;
+}
+
+.ca-monster-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 30px rgba(0, 0, 0, 0.6));
 }
 
 .ca-monster-sprite.boss {
-  font-size: 6.5rem;
-  filter: drop-shadow(0 0 25px var(--ca-boss-glow));
+  width: 100%;
+  height: 95%;
+  opacity: 1;
+  filter: drop-shadow(0 0 50px var(--ca-boss-glow));
 }
 
 /* --- Currency Display --- */

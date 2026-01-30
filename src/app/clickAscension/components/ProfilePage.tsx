@@ -45,6 +45,22 @@ export default function ProfilePage({
     return Math.floor(num || 0).toLocaleString();
   };
 
+  // Format large numbers with 億 (100 million) unit
+  const formatLargeNumber = (num: number) => {
+    const n = Math.floor(num || 0);
+    if (n >= 100000000) {
+      // 億 = 100,000,000
+      const yi = n / 100000000;
+      return `${yi.toFixed(2)}億`;
+    }
+    if (n >= 10000) {
+      // 萬 = 10,000
+      const wan = n / 10000;
+      return `${wan.toFixed(1)}萬`;
+    }
+    return n.toLocaleString();
+  };
+
   const formatPercent = (num: number) => {
     return `${(num * 100).toFixed(1)}%`;
   };
@@ -258,7 +274,7 @@ export default function ProfilePage({
           />
           <StatItem
             label="夥伴秒傷 (Ally DPS)"
-            value={formatNumber(effectiveStats.autoAttackDamage)}
+            value={formatLargeNumber(effectiveStats.autoAttackDamage)}
             icon="🤖"
           />
           <StatItem

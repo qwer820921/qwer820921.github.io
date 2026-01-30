@@ -68,6 +68,10 @@ export interface PlayerState {
     partnerLevel: number; // 夥伴
     archerLevel: number; // 精靈弓手 (New)
     knightLevel: number; // 騎士團長 (New)
+    warlordLevel: number; // 荒野戰狂 (New)
+    oracleLevel: number; // 神聖先知 (New)
+    voidLevel: number; // 虛空領主 (New)
+    titanLevel: number; // 遠古泰坦 (New)
     amuletLevel: number; // 貪婪護符 (New)
   };
   ascensionShop: AscensionShop;
@@ -98,6 +102,7 @@ export interface StageState {
   currentStageId: number; // 當前關卡 ID
   isBossActive: boolean; // 是否正在挑戰 BOSS
   autoChallengeBoss: boolean; // 自動挑戰 BOSS 開關
+  autoUsePotion: boolean; // 自動使用藥水開關
   maxStageReached: number; // 最高到達關卡
   monstersKilledInStage: number; // 當前關卡已擊殺怪物數
   monstersRequiredForBoss: number; // 召喚 BOSS 所需擊殺數 (e.g. 10)
@@ -116,6 +121,7 @@ export enum MonsterRarity {
 }
 
 export interface MonsterTemplate {
+  configId: string;
   name: string;
   emoji: string;
   rarity: MonsterRarity;
@@ -128,6 +134,7 @@ export interface MonsterTemplate {
 
 export interface Monster {
   id: string; // 唯一實例 ID
+  configId: string; // 模板 ID (用於圖片查找)
   name: string; // 怪物名稱
   level: number; // 怪物等級
   currentHp: number; // 當前生命值
