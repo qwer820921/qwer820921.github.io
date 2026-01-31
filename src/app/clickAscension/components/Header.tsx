@@ -5,6 +5,16 @@ import React from "react";
 import { PlayerState } from "../types";
 import "../styles/clickAscension.css";
 
+// 格式化數字（超過億顯示 XX.XX億，超過萬顯示 XX.XX萬）
+const formatNumber = (num: number): string => {
+  if (num >= 100000000) {
+    return (num / 100000000).toFixed(2) + "億";
+  } else if (num >= 10000) {
+    return (num / 10000).toFixed(2) + "萬";
+  }
+  return num.toLocaleString();
+};
+
 interface HeaderProps {
   player: PlayerState;
   combatPower: number;
@@ -79,9 +89,7 @@ export default function Header({
           >
             <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
               <span className="ca-cp-label">戰力</span>
-              <span className="ca-cp-value">
-                {combatPower.toLocaleString()}
-              </span>
+              <span className="ca-cp-value">{formatNumber(combatPower)}</span>
             </div>
 
             <button
@@ -105,7 +113,7 @@ export default function Header({
                 flexShrink: 0,
               }}
             >
-              ⚡ 渡劫飛升 (+{potentialPoints.toLocaleString()})
+              ⚡ 渡劫飛升 (+{formatNumber(potentialPoints)})
             </button>
           </div>
         </div>
@@ -117,15 +125,15 @@ export default function Header({
         <div className="ca-currency-stack">
           <div className="ca-currency ca-currency-gold text-xs">
             <span>💰</span>
-            <span>{Math.floor(wallet.gold).toLocaleString()}</span>
+            <span>{formatNumber(Math.floor(wallet.gold))}</span>
           </div>
           <div className="ca-currency ca-currency-cp text-xs">
             <span>⚡</span>
-            <span>{Math.floor(wallet.clickPoints).toLocaleString()}</span>
+            <span>{formatNumber(Math.floor(wallet.clickPoints))}</span>
           </div>
           <div className="ca-currency text-xs" style={{ color: "#10b981" }}>
             <span>🆙</span>
-            <span>{Math.floor(wallet.levelPoints).toLocaleString()}</span>
+            <span>{formatNumber(Math.floor(wallet.levelPoints))}</span>
           </div>
         </div>
       </div>

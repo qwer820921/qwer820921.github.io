@@ -59,18 +59,7 @@ const INITIAL_PLAYER: PlayerState = {
   },
   clickShop: {},
   levelShop: {},
-  goldShop: {
-    weaponLevel: 0,
-    mercenaryLevel: 0,
-    partnerLevel: 0,
-    archerLevel: 0,
-    knightLevel: 0,
-    warlordLevel: 0,
-    oracleLevel: 0,
-    voidLevel: 0,
-    titanLevel: 0,
-    amuletLevel: 0,
-  },
+  goldShop: {}, // 動態夥伴等級，會自動根據 API 返回的項目儲存
   ascensionShop: {},
   inventory: {
     ragePotionCount: 0,
@@ -116,17 +105,7 @@ export default function ClickAscensionGame() {
   const [lastAutoAttack, setLastAutoAttack] = useState<{
     time: number;
     damage: number;
-    breakdown?: {
-      mercenary: number;
-      partner: number;
-      archer: number;
-      knight: number;
-      warlord: number;
-      oracle: number;
-      void: number;
-      titan: number;
-      player: number;
-    };
+    breakdown?: Record<string, number>; // 動態夥伴傷害分解，key 為夥伴 ID 或 "player"
   } | null>(null);
 
   // Auto-Click Visual Event (distinct from Auto-Attack DPS)
@@ -270,46 +249,37 @@ export default function ClickAscensionGame() {
       }
     });
 
-    // Add Gold Shop bonuses (partners/units) - Use gameConfig if available
-    const goldShopItems = [
-      { id: "gold_shop_weapon", levelKey: "weaponLevel" },
-      { id: "gold_shop_mercenary", levelKey: "mercenaryLevel" },
-      { id: "gold_shop_partner", levelKey: "partnerLevel" },
-      { id: "gold_shop_archer", levelKey: "archerLevel" },
-      { id: "gold_shop_knight", levelKey: "knightLevel" },
-      { id: "gold_shop_warlord", levelKey: "warlordLevel" },
-      { id: "gold_shop_oracle", levelKey: "oracleLevel" },
-      { id: "gold_shop_void", levelKey: "voidLevel" },
-      { id: "gold_shop_titan", levelKey: "titanLevel" },
-      { id: "gold_shop_amulet", levelKey: "amuletLevel" },
-    ];
+    // Add Gold Shop bonuses (partners/units) - 動態從 gameConfig 讀取
+    // 遍歷所有 GOLD 類型的升級項目
+    const goldShopConfigs =
+      gameConfig?.upgrades?.filter((u: any) => u.Shop_Type === "GOLD") || [];
 
-    goldShopItems.forEach(({ id, levelKey }) => {
-      const level = (player.goldShop as any)[levelKey] || 0;
+    goldShopConfigs.forEach((config: any) => {
+      const id = config.ID;
+      const level = player.goldShop[id] || 0;
       if (level <= 0) return;
 
-      const config = gameConfig?.upgrades?.find((u: any) => u.ID === id);
-      if (config) {
-        // Use config values - DB is the only source of truth
-        const effectType = String(config.Effect_Type || "")
-          .toUpperCase()
-          .trim();
-        const val = Number(config.Effect_Val || 0) * level;
+      // Use config values - DB is the only source of truth
+      const effectType = String(config.Effect_Type || "")
+        .toUpperCase()
+        .trim();
+      // 每25級傷害翻倍（等級25=x2, 50=x4, 75=x8...）
+      const levelMultiplier = Math.pow(2, Math.floor(level / 25));
+      const baseVal = Number(config.Effect_Val || 0) * level;
+      const val = baseVal * levelMultiplier;
 
-        if (effectType === "ADD_DAMAGE" || effectType === "CLICK_DMG")
-          stats.baseDamage += val;
-        if (
-          effectType === "ADD_AUTO_DMG" ||
-          effectType === "AUTO_DMG" ||
-          effectType === "ADD_AUTO"
-        )
-          stats.autoAttackDamage += val;
-        if (effectType === "ADD_GOLD_MULT" || effectType === "GOLD_MULT")
-          stats.goldMultiplier += val / 100;
-        if (effectType === "ADD_CRIT_DMG" || effectType === "CRIT_DMG")
-          stats.criticalDamage += val / 100;
-      }
-      // No fallback - if config not found, the item has no effect
+      if (effectType === "ADD_DAMAGE" || effectType === "CLICK_DMG")
+        stats.baseDamage += val;
+      if (
+        effectType === "ADD_AUTO_DMG" ||
+        effectType === "AUTO_DMG" ||
+        effectType === "ADD_AUTO"
+      )
+        stats.autoAttackDamage += val;
+      if (effectType === "ADD_GOLD_MULT" || effectType === "GOLD_MULT")
+        stats.goldMultiplier += val / 100;
+      if (effectType === "ADD_CRIT_DMG" || effectType === "CRIT_DMG")
+        stats.criticalDamage += val / 100;
     });
 
     return stats;
@@ -417,9 +387,14 @@ export default function ClickAscensionGame() {
     );
 
     // Auto-Challenge Boss Logic
+    // Logic: Auto-challenge if enabled OR if we've already beaten this stage level before (farming low levels)
+    // "自動打boss 除非沒有打過 才會出現 挑戰boss的按鈕" = If cleared, auto. If new, depends on auto setting.
+    const isStageCleared = stage.currentStageId < stage.maxStageReached;
+    const shouldAutoChallenge = stage.autoChallengeBoss || isStageCleared;
+
     if (
       !isBoss &&
-      stage.autoChallengeBoss &&
+      shouldAutoChallenge &&
       stage.monstersKilledInStage >= requiredKills
     ) {
       isBoss = true;
@@ -744,54 +719,37 @@ export default function ClickAscensionGame() {
       });
 
       // 5. Trigger Visuals
-      // Recalculate component parts for display only - Use gameConfig only (no fallback)
-      const getUnitDamage = (id: string, levelKey: string) => {
-        const level = (player.goldShop as any)[levelKey] || 0;
-        if (level <= 0) return 0;
-        const config = gameConfig?.upgrades?.find((u: any) => u.ID === id);
-        if (config) {
-          return Number(config.Effect_Val || 0) * level;
-        }
-        return 0; // No fallback - DB is the only source of truth
-      };
+      // 動態計算各夥伴傷害 - 從 gameConfig 讀取
+      const breakdown: Record<string, number> = {};
+      let alliesTotal = 0;
 
-      const mercDmg = getUnitDamage("gold_shop_mercenary", "mercenaryLevel");
-      const partnerDmg = getUnitDamage("gold_shop_partner", "partnerLevel");
-      const archerDmg = getUnitDamage("gold_shop_archer", "archerLevel");
-      const knightDmg = getUnitDamage("gold_shop_knight", "knightLevel");
-      const warlordDmg = getUnitDamage("gold_shop_warlord", "warlordLevel");
-      const oracleDmg = getUnitDamage("gold_shop_oracle", "oracleLevel");
-      const voidDmg = getUnitDamage("gold_shop_void", "voidLevel");
-      const titanDmg = getUnitDamage("gold_shop_titan", "titanLevel");
+      const autoPartners =
+        gameConfig?.upgrades?.filter(
+          (u: any) => u.Shop_Type === "GOLD" && u.Effect_Type === "ADD_AUTO_DMG"
+        ) || [];
 
-      const alliesTotal =
-        mercDmg +
-        partnerDmg +
-        archerDmg +
-        knightDmg +
-        warlordDmg +
-        oracleDmg +
-        voidDmg +
-        titanDmg;
+      autoPartners.forEach((config: any) => {
+        const id = config.ID;
+        const level = player.goldShop[id] || 0;
+        if (level <= 0) return;
+
+        // 每25級傷害翻倍（等級25=x2, 50=x4, 75=x8...）
+        const levelMultiplier = Math.pow(2, Math.floor(level / 25));
+        const dmg = Number(config.Effect_Val || 0) * level * levelMultiplier;
+        breakdown[id] = Math.ceil(dmg * bossMult);
+        alliesTotal += dmg;
+      });
+
       const playerDmg = Math.max(
         0,
         effectiveStats.autoAttackDamage - alliesTotal
       );
+      breakdown["player"] = Math.ceil(playerDmg * bossMult);
 
       setLastAutoAttack({
         time: Date.now(),
         damage: finalTotalDmg,
-        breakdown: {
-          mercenary: Math.ceil(mercDmg * bossMult),
-          partner: Math.ceil(partnerDmg * bossMult),
-          archer: Math.ceil(archerDmg * bossMult),
-          knight: Math.ceil(knightDmg * bossMult),
-          warlord: Math.ceil(warlordDmg * bossMult),
-          oracle: Math.ceil(oracleDmg * bossMult),
-          void: Math.ceil(voidDmg * bossMult),
-          titan: Math.ceil(titanDmg * bossMult),
-          player: Math.ceil(playerDmg * bossMult),
-        },
+        breakdown,
       });
     }, 1000);
 
@@ -801,14 +759,7 @@ export default function ClickAscensionGame() {
     effectiveStats.autoAttackDamage,
     effectiveStats.bossDamageMultiplier,
     effectiveStats.cpMultiplier,
-    player.goldShop.mercenaryLevel,
-    player.goldShop.partnerLevel,
-    player.goldShop.archerLevel,
-    player.goldShop.knightLevel,
-    player.goldShop.warlordLevel,
-    player.goldShop.oracleLevel,
-    player.goldShop.voidLevel,
-    player.goldShop.titanLevel,
+    player.goldShop,
     gameConfig,
   ]);
 
@@ -1316,9 +1267,8 @@ export default function ClickAscensionGame() {
       const config = gameConfig?.upgrades?.find((u: any) => u.ID === itemId);
 
       if (config) {
-        // Use config-based calculation
-        const levelKey = itemId.replace("gold_shop_", "") + "Level";
-        const currentLevel = (goldShop as any)[levelKey] || 0;
+        // 直接使用 itemId 作為 goldShop 的 key（動態格式）
+        const currentLevel = goldShop[itemId] || 0;
         const maxLevel = Number(config.Max_Level || 0);
 
         if (maxLevel > 0 && currentLevel >= maxLevel) {
@@ -1353,9 +1303,9 @@ export default function ClickAscensionGame() {
               // Handled below for inventory items
             }
 
+            // 直接使用 itemId 作為 key
             const newGoldShop = { ...prev.goldShop };
-            (newGoldShop as any)[levelKey] =
-              ((prev.goldShop as any)[levelKey] || 0) + 1;
+            newGoldShop[itemId] = (prev.goldShop[itemId] || 0) + 1;
 
             const newInventory = { ...prev.inventory };
             if (effectType === "ADD_INVENTORY") {
@@ -1883,6 +1833,7 @@ export default function ClickAscensionGame() {
     setStage((prev) => ({
       ...prev,
       isBossActive: true,
+      autoChallengeBoss: true, // Resume auto-challenge on manual trigger
       bossTimeLeft: prev.bossTimeLimit || 60,
     }));
     setMonster(null); // Force spawn boss
@@ -1921,14 +1872,8 @@ export default function ClickAscensionGame() {
               (effectiveStats.monsterKillReduction || 0)
           )}
           isBossActive={stage.isBossActive}
-          mercenaryLevel={player.goldShop.mercenaryLevel}
-          partnerLevel={player.goldShop.partnerLevel}
-          archerLevel={player.goldShop.archerLevel}
-          knightLevel={player.goldShop.knightLevel}
-          warlordLevel={player.goldShop.warlordLevel}
-          oracleLevel={player.goldShop.oracleLevel}
-          voidLevel={player.goldShop.voidLevel}
-          titanLevel={player.goldShop.titanLevel}
+          goldShop={player.goldShop}
+          gameConfig={gameConfig}
           potionCount={player.inventory.ragePotionCount}
           activeBuffs={player.activeBuffs}
           onUsePotion={() => handleUsePotion("RAGE")}

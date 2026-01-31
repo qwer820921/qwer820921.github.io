@@ -61,19 +61,9 @@ export interface PlayerState {
   records: PlayerStatistics; // 統計記錄
   clickShop: Record<string, number>; // 點擊商店項目 ID -> 等級
   levelShop: Record<string, number>; // 等級商店項目 ID -> 等級
-  goldShop: {
-    // 金幣商店等級
-    weaponLevel: number; // 鍛造武器
-    mercenaryLevel: number; // 傭兵
-    partnerLevel: number; // 夥伴
-    archerLevel: number; // 精靈弓手 (New)
-    knightLevel: number; // 騎士團長 (New)
-    warlordLevel: number; // 荒野戰狂 (New)
-    oracleLevel: number; // 神聖先知 (New)
-    voidLevel: number; // 虛空領主 (New)
-    titanLevel: number; // 遠古泰坦 (New)
-    amuletLevel: number; // 貪婪護符 (New)
-  };
+  goldShop: Record<string, number>; // 動態夥伴等級，key 為 升級項目 ID (例如 "gold_shop_mercenary")，value 為等級
+  // 舊欄位已改為動態格式，例如：
+  // { "gold_shop_weapon": 5, "gold_shop_mercenary": 10, ... }
   ascensionShop: AscensionShop;
   inventory: {
     // 道具欄
@@ -253,6 +243,7 @@ export interface UpgradeConfig {
   Max_Level: number;
   Currency: CurrencyType;
   Desc_Template: string;
+  Emoji?: string; // 夥伴圖示（可選，用於在戰鬥畫面顯示）
 }
 
 // Monster config from Google Sheet

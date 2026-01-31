@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-expressions */
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import { Monster, FloatingText, DamageType } from "../types";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { Monster, FloatingText, DamageType, GameConfig } from "../types";
 import HpBar from "./HpBar";
 import "../styles/clickAscension.css";
 
@@ -36,6 +36,20 @@ const MonsterSprite = ({ monster }: { monster: Monster }) => {
   return <>{monster.emoji || (monster.isBoss ? "🐲" : "👾")}</>;
 };
 
+// 預定義的夥伴 emoji 映射表（模組級常數）
+const PARTNER_EMOJIS: Record<string, string> = {
+  gold_shop_mercenary: "⚔️",
+  gold_shop_partner: "🧚",
+  gold_shop_archer: "🏹",
+  gold_shop_knight: "🛡️",
+  gold_shop_warlord: "🔱",
+  gold_shop_oracle: "🔮",
+  gold_shop_void: "🌌",
+  gold_shop_titan: "⛰️",
+  gold_shop_dragon: "🐉",
+  gold_shop_creation: "✨",
+};
+
 interface MonsterBattleProps {
   monster: Monster | null;
   stageId: number;
@@ -47,31 +61,15 @@ interface MonsterBattleProps {
   monstersRequired: number;
   isBossActive: boolean;
   bossDamageMultiplier: number;
-  mercenaryLevel?: number;
-  partnerLevel?: number;
-  archerLevel?: number;
-  knightLevel?: number;
-  warlordLevel?: number;
-  oracleLevel?: number;
-  voidLevel?: number;
-  titanLevel?: number;
+  goldShop?: Record<string, number>; // 動態夥伴等級
+  gameConfig?: GameConfig | null; // 遊戲設定（用於獲取夥伴名稱）
   potionCount?: number;
   activeBuffs?: any;
   onUsePotion?: () => void;
   lastAutoAttack?: {
     time: number;
     damage: number;
-    breakdown?: {
-      mercenary: number;
-      partner: number;
-      archer: number;
-      knight: number;
-      warlord: number;
-      oracle: number;
-      void: number;
-      titan: number;
-      player: number;
-    };
+    breakdown?: Record<string, number>; // 動態夥伴傷害分解
   } | null;
   lastAutoClickEvent?: {
     id: string;
@@ -96,14 +94,8 @@ export default function MonsterBattle({
   monstersRequired,
   isBossActive,
   bossDamageMultiplier = 1,
-  mercenaryLevel = 0,
-  partnerLevel = 0,
-  archerLevel = 0,
-  knightLevel = 0,
-  warlordLevel = 0,
-  oracleLevel = 0,
-  voidLevel = 0,
-  titanLevel = 0,
+  goldShop = {},
+  gameConfig,
   potionCount = 0,
   activeBuffs,
   onUsePotion,
@@ -115,29 +107,46 @@ export default function MonsterBattle({
   autoUsePotion = false,
   onToggleAutoPotion,
 }: MonsterBattleProps) {
+  // 動態獲取所有擁有的夥伴
+  const ownedPartners = Object.entries(goldShop)
+    .filter(([id, level]) => id.startsWith("gold_shop_") && level > 0)
+    .map(([id, level]) => ({ id, level }));
+
+  // 獲取夥伴顯示（優先級：DB Emoji > 前端 PARTNER_EMOJIS > 中文名稱前兩字 > ID）
+  // 獲取夥伴顯示（優先級：DB Emoji > 前端 PARTNER_EMOJIS > 中文名稱前兩字 > ID）
+  const getPartnerDisplay = useCallback(
+    (partnerId: string) => {
+      // 1. 優先讀取 DB 中設定的 Emoji 欄位
+      const config = gameConfig?.upgrades?.find((u: any) => u.ID === partnerId);
+      if (config?.Emoji) {
+        return config.Emoji;
+      }
+      // 2. 檢查前端定義的 PARTNER_EMOJIS（作為 fallback）
+      if (PARTNER_EMOJIS[partnerId]) {
+        return PARTNER_EMOJIS[partnerId];
+      }
+      // 3. 使用中文名稱的前兩個字
+      if (config?.Name) {
+        return config.Name.substring(0, 2);
+      }
+      // 4. 使用 ID 的最後部分
+      return partnerId.replace("gold_shop_", "").substring(0, 2);
+    },
+    [gameConfig]
+  );
+
   const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
   const [isShaking, setIsShaking] = useState(false);
   const [isHitFlash, setIsHitFlash] = useState(false);
 
-  // Animation states for allies
-  const [isMercAttacking, setIsMercAttacking] = useState(false);
-  const [isPartnerAttacking, setIsPartnerAttacking] = useState(false);
-  const [isArcherAttacking, setIsArcherAttacking] = useState(false);
-  const [isKnightAttacking, setIsKnightAttacking] = useState(false);
-  const [isWarlordAttacking, setIsWarlordAttacking] = useState(false);
-  const [isOracleAttacking, setIsOracleAttacking] = useState(false);
-  const [isVoidAttacking, setIsVoidAttacking] = useState(false);
-  const [isTitanAttacking, setIsTitanAttacking] = useState(false);
+  // 動態攻擊動畫狀態 (key = partner id)
+  const [attackingPartners, setAttackingPartners] = useState<
+    Record<string, boolean>
+  >({});
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const mercRef = useRef<HTMLDivElement>(null);
-  const partnerRef = useRef<HTMLDivElement>(null);
-  const archerRef = useRef<HTMLDivElement>(null);
-  const knightRef = useRef<HTMLDivElement>(null);
-  const warlordRef = useRef<HTMLDivElement>(null);
-  const oracleRef = useRef<HTMLDivElement>(null);
-  const voidRef = useRef<HTMLDivElement>(null);
-  const titanRef = useRef<HTMLDivElement>(null);
+  // 動態 refs 用於計算傷害顯示位置
+  const partnerRefsMap = useRef<Record<string, HTMLDivElement | null>>({});
   const lastAttackTimeRef = useRef<number>(0);
   const lastAutoClickIdRef = useRef<string>(""); // Track ID to prevent dupes
 
@@ -206,117 +215,45 @@ export default function MonsterBattle({
     const rect = containerRef.current?.getBoundingClientRect();
 
     if (lastAutoAttack.breakdown && rect) {
-      const {
-        mercenary,
-        partner,
-        archer,
-        knight,
-        warlord,
-        oracle,
-        void: voidDmg,
-        titan,
-        // player - not used, only partners have auto attack damage
-      } = lastAutoAttack.breakdown;
+      const breakdown = lastAutoAttack.breakdown;
 
-      // Mercenary Damage
-      if (mercenary > 0 && mercRef.current) {
-        const mercRect = mercRef.current.getBoundingClientRect();
-        const x = mercRect.left - rect.left + mercRect.width / 2;
-        const y = mercRect.top - rect.top; // Above unit
-        addFloatingText(`⚔️ ${mercenary.toLocaleString()}`, x, y - 20, "AUTO");
+      // 遍歷所有 breakdown 中的夥伴傷害
+      Object.entries(breakdown).forEach(([partnerId, dmg]) => {
+        if (partnerId === "player" || dmg <= 0) return; // 跳過玩家和無傷害的項目
 
-        setIsMercAttacking(true);
-        setTimeout(() => setIsMercAttacking(false), 300);
-      }
+        const display = getPartnerDisplay(partnerId);
+        const partnerEl = partnerRefsMap.current[partnerId];
 
-      // Partner Damage
-      if (partner > 0 && partnerRef.current) {
-        const partnerRect = partnerRef.current.getBoundingClientRect();
-        const x = partnerRect.left - rect.left + partnerRect.width / 2;
-        const y = partnerRect.top - rect.top; // Above unit
-        addFloatingText(`🧚 ${partner.toLocaleString()}`, x, y - 20, "AUTO");
+        if (partnerEl) {
+          // 有對應的 ref：使用對應的位置顯示傷害
+          const unitRect = partnerEl.getBoundingClientRect();
+          const x = unitRect.left - rect.left + unitRect.width / 2;
+          const y = unitRect.top - rect.top;
+          addFloatingText(
+            `${display} ${dmg.toLocaleString()}`,
+            x,
+            y - 20,
+            "AUTO"
+          );
 
-        setIsPartnerAttacking(true);
-        setTimeout(() => setIsPartnerAttacking(false), 400);
-      }
-
-      // Archer Damage
-      if (archer > 0 && archerRef.current) {
-        const archerRect = archerRef.current.getBoundingClientRect();
-        const x = archerRect.left - rect.left + archerRect.width / 2;
-        const y = archerRect.top - rect.top; // Above unit
-        addFloatingText(`🏹 ${archer.toLocaleString()}`, x, y - 20, "AUTO");
-
-        setIsArcherAttacking(true);
-        setTimeout(() => setIsArcherAttacking(false), 300);
-      }
-
-      // Knight Damage
-      if (knight > 0 && knightRef.current) {
-        const knightRect = knightRef.current.getBoundingClientRect();
-        const x = knightRect.left - rect.left + knightRect.width / 2;
-        const y = knightRect.top - rect.top; // Above unit
-        addFloatingText(`🛡️ ${knight.toLocaleString()}`, x, y - 20, "AUTO");
-
-        setIsKnightAttacking(true);
-        setTimeout(() => setIsKnightAttacking(false), 300);
-      }
-
-      // Warlord Damage
-      if (warlord > 0 && warlordRef.current) {
-        const unitRect = warlordRef.current.getBoundingClientRect();
-        const x = unitRect.left - rect.left + unitRect.width / 2;
-        const y = unitRect.top - rect.top;
-        addFloatingText(`🔱 ${warlord.toLocaleString()}`, x, y - 20, "AUTO");
-        setIsWarlordAttacking(true);
-        setTimeout(() => setIsWarlordAttacking(false), 300);
-      }
-
-      // Oracle Damage
-      if (oracle > 0 && oracleRef.current) {
-        const unitRect = oracleRef.current.getBoundingClientRect();
-        const x = unitRect.left - rect.left + unitRect.width / 2;
-        const y = unitRect.top - rect.top;
-        addFloatingText(`🔮 ${oracle.toLocaleString()}`, x, y - 20, "AUTO");
-        setIsOracleAttacking(true);
-        setTimeout(() => setIsOracleAttacking(false), 300);
-      }
-
-      // Void Damage
-      if (voidDmg > 0 && voidRef.current) {
-        const unitRect = voidRef.current.getBoundingClientRect();
-        const x = unitRect.left - rect.left + unitRect.width / 2;
-        const y = unitRect.top - rect.top;
-        addFloatingText(`🌌 ${voidDmg.toLocaleString()}`, x, y - 20, "AUTO");
-        setIsVoidAttacking(true);
-        setTimeout(() => setIsVoidAttacking(false), 300);
-      }
-
-      // Titan Damage
-      if (titan > 0 && titanRef.current) {
-        const unitRect = titanRef.current.getBoundingClientRect();
-        const x = unitRect.left - rect.left + unitRect.width / 2;
-        const y = unitRect.top - rect.top;
-        addFloatingText(`⛰️ ${titan.toLocaleString()}`, x, y - 20, "AUTO");
-        setIsTitanAttacking(true);
-        setTimeout(() => setIsTitanAttacking(false), 300);
-      }
+          // 觸發攻擊動畫
+          setAttackingPartners((prev) => ({ ...prev, [partnerId]: true }));
+          setTimeout(() => {
+            setAttackingPartners((prev) => ({ ...prev, [partnerId]: false }));
+          }, 300);
+        } else {
+          // 沒有對應的 ref：在畫面中央隨機位置顯示傷害
+          const x = rect.width / 2 + (Math.random() * 80 - 40);
+          const y = rect.height * 0.3 + (Math.random() * 40 - 20);
+          addFloatingText(`${display} ${dmg.toLocaleString()}`, x, y, "AUTO");
+        }
+      });
 
       // NOTE: No "player" auto attack damage display
       // Player only has auto-click (which shows as regular click damage)
       // All auto attack damage comes from partners/allies only
     }
-  }, [
-    lastAutoAttack,
-    mercenaryLevel,
-    partnerLevel,
-    archerLevel,
-    knightLevel,
-    warlordLevel,
-    oracleLevel,
-    voidLevel,
-    titanLevel,
-  ]);
+  }, [lastAutoAttack, goldShop, gameConfig, getPartnerDisplay]);
 
   const handleClick = (e: React.MouseEvent | React.TouchEvent) => {
     if (!monster || monster.currentHp <= 0) return;
@@ -583,61 +520,107 @@ export default function MonsterBattle({
         )}
       </div>
 
-      {/* --- ALLIES (Mercenary / Partner) --- */}
-      <div
-        ref={mercRef}
-        className={isMercAttacking ? "ca-attack-lunge-left" : ""}
-        style={{
-          position: "absolute",
-          bottom: "20px",
-          left: "30px", // Shifting slightly in
-          display: "flex",
-          flexDirection: "column",
-          gap: "4px",
-          alignItems: "center",
-        }}
-      >
-        {mercenaryLevel > 0 && (
-          <>
-            <div style={{ fontSize: "2rem" }}>⚔️</div>
-            <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
-              Lv.{mercenaryLevel}
-            </div>
-          </>
-        )}
-      </div>
+      {/* --- 動態夥伴區域 (所有夥伴都動態生成) --- */}
+      {ownedPartners.length > 0 &&
+        (() => {
+          // 分成左右兩側
+          const leftPartners = ownedPartners.filter((_, i) => i % 2 === 0);
+          const rightPartners = ownedPartners.filter((_, i) => i % 2 === 1);
 
-      <div
-        ref={partnerRef}
-        className={isPartnerAttacking ? "ca-attack-magic-right" : ""}
-        style={{
-          position: "absolute",
-          bottom: "20px",
-          right: "30px", // Shifting slightly in
-          display: "flex",
-          flexDirection: "column",
-          gap: "4px",
-          alignItems: "center",
-        }}
-      >
-        {partnerLevel > 0 && (
-          <>
-            <div style={{ fontSize: "2rem" }}>🧚</div>
-            <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
-              Lv.{partnerLevel}
-            </div>
-          </>
-        )}
-      </div>
+          // 起始位置和間距
+          const baseTop = 80;
+          const spacing = 70;
+
+          // 根據索引判斷動畫類型
+          const getAnimClass = (
+            index: number,
+            isLeft: boolean,
+            isAttacking: boolean
+          ) => {
+            if (!isAttacking) return "";
+            // 奇偶交替不同動畫效果
+            if (index % 2 === 0) {
+              return isLeft ? "ca-attack-lunge-left" : "ca-attack-lunge-right";
+            } else {
+              return isLeft ? "ca-attack-magic-left" : "ca-attack-magic-right";
+            }
+          };
+
+          return (
+            <>
+              {/* 左側夥伴 */}
+              {leftPartners.map(({ id, level }, index) => (
+                <div
+                  key={id}
+                  ref={(el) => {
+                    partnerRefsMap.current[id] = el;
+                  }}
+                  className={getAnimClass(
+                    index,
+                    true,
+                    attackingPartners[id] || false
+                  )}
+                  style={{
+                    position: "absolute",
+                    top: `${baseTop + index * spacing}px`,
+                    left: "30px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "4px",
+                    alignItems: "center",
+                    zIndex: 5,
+                  }}
+                >
+                  <div style={{ fontSize: "1.8rem" }}>
+                    {getPartnerDisplay(id)}
+                  </div>
+                  <div style={{ fontSize: "0.65rem", color: "#a78bfa" }}>
+                    Lv.{level}
+                  </div>
+                </div>
+              ))}
+              {/* 右側夥伴 */}
+              {rightPartners.map(({ id, level }, index) => (
+                <div
+                  key={id}
+                  ref={(el) => {
+                    partnerRefsMap.current[id] = el;
+                  }}
+                  className={getAnimClass(
+                    index,
+                    false,
+                    attackingPartners[id] || false
+                  )}
+                  style={{
+                    position: "absolute",
+                    top: `${baseTop + index * spacing}px`,
+                    right: "30px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "4px",
+                    alignItems: "center",
+                    zIndex: 5,
+                  }}
+                >
+                  <div style={{ fontSize: "1.8rem" }}>
+                    {getPartnerDisplay(id)}
+                  </div>
+                  <div style={{ fontSize: "0.65rem", color: "#a78bfa" }}>
+                    Lv.{level}
+                  </div>
+                </div>
+              ))}
+            </>
+          );
+        })()}
 
       {/* --- POTION UI --- */}
       {potionCount > 0 && (
         <div
           style={{
             position: "absolute",
-            bottom: "20px",
-            left: "50%",
-            transform: "translateX(-50%)",
+            bottom: "80px",
+            right: "20px", // 放在右下角，避免遮擋夥伴
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
@@ -648,23 +631,32 @@ export default function MonsterBattle({
           <div
             onClick={(e) => {
               e.stopPropagation();
+              // Check active buff
+              const isRageActive =
+                activeBuffs?.ragePotionExpiresAt &&
+                activeBuffs.ragePotionExpiresAt > Date.now();
               if (!isRageActive) onUsePotion && onUsePotion();
             }}
             style={{
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              cursor: isRageActive ? "default" : "pointer",
-              opacity: isRageActive ? 0.5 : 1,
+              cursor: "pointer",
             }}
           >
             <div
               style={{
                 fontSize: "2rem",
-                filter: isRageActive
-                  ? "grayscale(1)"
-                  : "drop-shadow(0 0 5px #ef4444)",
-                transform: isRageActive ? "scale(0.9)" : "scale(1)",
+                filter:
+                  activeBuffs?.ragePotionExpiresAt &&
+                  activeBuffs.ragePotionExpiresAt > Date.now()
+                    ? "grayscale(1)"
+                    : "drop-shadow(0 0 5px #ef4444)",
+                transform:
+                  activeBuffs?.ragePotionExpiresAt &&
+                  activeBuffs.ragePotionExpiresAt > Date.now()
+                    ? "scale(0.9)"
+                    : "scale(1)",
                 transition: "all 0.3s",
               }}
             >
@@ -724,161 +716,11 @@ export default function MonsterBattle({
                 whiteSpace: "nowrap",
               }}
             >
-              {autoUsePotion ? "AUTO ON" : "AUTO OFF"}
+              AUTO
             </span>
           </div>
         </div>
       )}
-
-      {/* --- ARCHER (Top Left) --- */}
-      <div
-        ref={archerRef}
-        className={isArcherAttacking ? "ca-attack-lunge-left" : ""}
-        style={{
-          position: "absolute",
-          top: "80px",
-          left: "30px", // Shifting slightly in
-          display: "flex",
-          flexDirection: "column",
-          gap: "4px",
-          alignItems: "center",
-          zIndex: 5,
-        }}
-      >
-        {archerLevel > 0 && (
-          <>
-            <div style={{ fontSize: "2rem" }}>🏹</div>
-            <div style={{ fontSize: "0.7rem", color: "#a5b4fc" }}>
-              Lv.{archerLevel}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* --- KNIGHT (Top Right) --- */}
-      <div
-        ref={knightRef}
-        className={isKnightAttacking ? "ca-attack-lunge-right" : ""}
-        style={{
-          position: "absolute",
-          top: "80px",
-          right: "30px", // Shifting slightly in
-          display: "flex",
-          flexDirection: "column",
-          gap: "4px",
-          alignItems: "center",
-          zIndex: 5,
-        }}
-      >
-        {knightLevel > 0 && (
-          <>
-            <div style={{ fontSize: "2rem" }}>🛡️</div>
-            <div style={{ fontSize: "0.7rem", color: "#fca5a5" }}>
-              Lv.{knightLevel}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* --- WARLORD (Mid Left) --- */}
-      <div
-        ref={warlordRef}
-        className={isWarlordAttacking ? "ca-attack-lunge-left" : ""}
-        style={{
-          position: "absolute",
-          top: "160px",
-          left: "30px", // Shifting slightly in
-          display: "flex",
-          flexDirection: "column",
-          gap: "4px",
-          alignItems: "center",
-          zIndex: 5,
-        }}
-      >
-        {warlordLevel > 0 && (
-          <>
-            <div style={{ fontSize: "2rem" }}>🔱</div>
-            <div style={{ fontSize: "0.7rem", color: "#fb923c" }}>
-              Lv.{warlordLevel}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* --- ORACLE (Mid Right) --- */}
-      <div
-        ref={oracleRef}
-        className={isOracleAttacking ? "ca-attack-magic-right" : ""}
-        style={{
-          position: "absolute",
-          top: "160px",
-          right: "30px", // Shifting slightly in
-          display: "flex",
-          flexDirection: "column",
-          gap: "4px",
-          alignItems: "center",
-          zIndex: 5,
-        }}
-      >
-        {oracleLevel > 0 && (
-          <>
-            <div style={{ fontSize: "2rem" }}>🔮</div>
-            <div style={{ fontSize: "0.7rem", color: "#c084fc" }}>
-              Lv.{oracleLevel}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* --- VOID LORD (Lower Mid Left) --- */}
-      <div
-        ref={voidRef}
-        className={isVoidAttacking ? "ca-attack-magic-left" : ""}
-        style={{
-          position: "absolute",
-          top: "240px",
-          left: "30px", // Shifting slightly in
-          display: "flex",
-          flexDirection: "column",
-          gap: "4px",
-          alignItems: "center",
-          zIndex: 5,
-        }}
-      >
-        {voidLevel > 0 && (
-          <>
-            <div style={{ fontSize: "2rem" }}>🌌</div>
-            <div style={{ fontSize: "0.7rem", color: "#818cf8" }}>
-              Lv.{voidLevel}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* --- ANCIENT TITAN (Lower Mid Right) --- */}
-      <div
-        ref={titanRef}
-        className={isTitanAttacking ? "ca-attack-lunge-right" : ""}
-        style={{
-          position: "absolute",
-          top: "240px",
-          right: "30px", // Shifting slightly in
-          display: "flex",
-          flexDirection: "column",
-          gap: "4px",
-          alignItems: "center",
-          zIndex: 5,
-        }}
-      >
-        {titanLevel > 0 && (
-          <>
-            <div style={{ fontSize: "2rem" }}>👺</div>
-            <div style={{ fontSize: "0.7rem", color: "#71717a" }}>
-              Lv.{titanLevel}
-            </div>
-          </>
-        )}
-      </div>
 
       {/* Floating Texts - Absolute positioned */}
       <div

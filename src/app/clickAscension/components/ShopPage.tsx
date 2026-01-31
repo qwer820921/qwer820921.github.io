@@ -28,6 +28,18 @@ const getRealmInfo = (totalLevels: number) => {
   return { name: "渡劫飛昇", color: "#c084fc" };
 };
 
+// 格式化數字（超過億顯示 XX.XX億，超過萬顯示 XX.XX萬）
+const formatNumber = (num: number): string => {
+  if (num >= 100000000) {
+    // 億
+    return (num / 100000000).toFixed(2) + "億";
+  } else if (num >= 10000) {
+    // 萬
+    return (num / 10000).toFixed(2) + "萬";
+  }
+  return num.toLocaleString();
+};
+
 export default function ShopPage({
   player,
   onPurchase,
@@ -70,21 +82,11 @@ export default function ShopPage({
 
   // Helper to get current level of an upgrade from PlayerState
   const getUpgradeLevel = (id: string): number => {
-    // Gold Shop
-    if (id === "gold_shop_weapon") return player.goldShop.weaponLevel || 0;
-    if (id === "gold_shop_mercenary")
-      return player.goldShop.mercenaryLevel || 0;
-    if (id === "gold_shop_partner") return player.goldShop.partnerLevel || 0;
-    if (id === "gold_shop_archer") return player.goldShop.archerLevel || 0;
-    if (id === "gold_shop_knight") return player.goldShop.knightLevel || 0;
-    if (id === "gold_shop_warlord") return player.goldShop.warlordLevel || 0;
-    if (id === "gold_shop_oracle") return player.goldShop.oracleLevel || 0;
-    if (id === "gold_shop_void") return player.goldShop.voidLevel || 0;
-    if (id === "gold_shop_titan") return player.goldShop.titanLevel || 0;
-    if (id === "gold_shop_amulet") return player.goldShop.amuletLevel || 0;
+    // Special case for consumable items
     if (id === "gold_potion_rage") return player.inventory.ragePotionCount || 0;
 
-    // Dynamic Lookup
+    // Dynamic Lookup based on ID prefix
+    if (id.startsWith("gold_shop_")) return player.goldShop[id] || 0;
     if (id.startsWith("level_shop_")) return player.levelShop[id] || 0;
     if (id.startsWith("click_shop_")) return player.clickShop[id] || 0;
     if (id.startsWith("ascension_shop_") || id.startsWith("asc_"))
@@ -131,7 +133,7 @@ export default function ShopPage({
     return 0;
   };
 
-  const renderUpgradeList = (items: any[]) => {
+  const renderUpgradeList = (items: any[], shopType?: string) => {
     if (items.length === 0)
       return (
         <div style={{ textAlign: "center", padding: "20px", color: "gray" }}>
@@ -156,6 +158,29 @@ export default function ShopPage({
           const isMaxed = maxLevel > 0 && level >= maxLevel;
           const canAfford = !isMaxed && playerCurrency >= cost;
 
+          // 計算升25級的總費用（只對 GOLD 商店有效）
+          let cost25 = 0;
+          let canAfford25 = false;
+          const isGoldShop = shopType === "GOLD" || it.Shop_Type === "GOLD";
+
+          if (isGoldShop && !isMaxed) {
+            // 計算連續升25級所需的總費用
+            const levelsToUpgrade =
+              maxLevel > 0 ? Math.min(25, maxLevel - level) : 25;
+
+            if (levelsToUpgrade > 0) {
+              for (let i = 0; i < levelsToUpgrade; i++) {
+                cost25 += calculateCost(
+                  it.Cost_Base,
+                  it.Cost_Mult,
+                  level + i,
+                  it.Effect_Type
+                );
+              }
+              canAfford25 = playerCurrency >= cost25 && levelsToUpgrade === 25;
+            }
+          }
+
           // Format Description - Replace {val} with Effect_Val
           let desc = it.Desc_Template || it.Name;
           if (desc.includes("{val}")) {
@@ -173,6 +198,16 @@ export default function ShopPage({
               canAfford={canAfford}
               isMaxed={isMaxed}
               onClick={() => onPurchase(it.ID)}
+              // 升25級相關 props
+              showBulkUpgrade={isGoldShop}
+              cost25={cost25}
+              canAfford25={canAfford25}
+              onBulkUpgrade={() => {
+                // 連續購買25次
+                for (let i = 0; i < 25; i++) {
+                  onPurchase(it.ID);
+                }
+              }}
             />
           );
         })}
@@ -185,7 +220,7 @@ export default function ShopPage({
     const items = gameConfig.upgrades.filter(
       (u: any) => u.Shop_Type === shopType
     );
-    return renderUpgradeList(items);
+    return renderUpgradeList(items, shopType);
   };
 
   // ... (Daily Reward Logic remains same)
@@ -1074,6 +1109,10 @@ function UpgradeRow({
   onClick,
   currencyLabel = "⚡",
   isMaxed,
+  showBulkUpgrade,
+  cost25,
+  canAfford25,
+  onBulkUpgrade,
 }: {
   name: string;
   desc: string;
@@ -1083,10 +1122,22 @@ function UpgradeRow({
   onClick: () => void;
   currencyLabel?: string;
   isMaxed?: boolean;
+  showBulkUpgrade?: boolean;
+  cost25?: number;
+  canAfford25?: boolean;
+  onBulkUpgrade?: () => void;
 }) {
   return (
     <div className="ca-upgrade-row">
-      <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "2px",
+          flex: 1,
+          minWidth: 0,
+        }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <span
             style={{ fontWeight: "bold", fontSize: "0.9rem", color: "#fff" }}
@@ -1107,24 +1158,54 @@ function UpgradeRow({
         </div>
         <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>{desc}</div>
       </div>
-      <button
-        onClick={() => !isMaxed && canAfford && onClick()}
-        disabled={isMaxed || !canAfford}
-        className="ca-upgrade-btn"
-        style={{
-          opacity: isMaxed || !canAfford ? 0.5 : 1,
-          cursor: isMaxed || !canAfford ? "not-allowed" : "pointer",
-        }}
-      >
-        <span style={{ fontSize: "0.7rem", fontWeight: "bold" }}>
-          {isMaxed ? "已滿級" : "升級"}
-        </span>
-        {!isMaxed && (
-          <span style={{ fontSize: "0.7rem" }}>
-            {currencyLabel} {cost.toLocaleString()}
+      <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+        {/* 升級按鈕 */}
+        <button
+          onClick={() => !isMaxed && canAfford && onClick()}
+          disabled={isMaxed || !canAfford}
+          className="ca-upgrade-btn"
+          style={{
+            opacity: isMaxed || !canAfford ? 0.5 : 1,
+            cursor: isMaxed || !canAfford ? "not-allowed" : "pointer",
+            minWidth: showBulkUpgrade ? "70px" : "90px",
+            padding: "6px 8px",
+          }}
+        >
+          <span style={{ fontSize: "0.65rem", fontWeight: "bold" }}>
+            {isMaxed ? "已滿級" : "升級"}
           </span>
+          {!isMaxed && (
+            <span style={{ fontSize: "0.6rem" }}>
+              {currencyLabel} {formatNumber(cost)}
+            </span>
+          )}
+        </button>
+
+        {/* 升25級按鈕 - 只在 GOLD 商店顯示 */}
+        {showBulkUpgrade && !isMaxed && (
+          <button
+            onClick={() => canAfford25 && onBulkUpgrade && onBulkUpgrade()}
+            disabled={!canAfford25}
+            className="ca-upgrade-btn"
+            style={{
+              opacity: !canAfford25 ? 0.5 : 1,
+              cursor: !canAfford25 ? "not-allowed" : "pointer",
+              minWidth: "85px",
+              padding: "6px 8px",
+              background: canAfford25
+                ? "linear-gradient(135deg, #f59e0b, #d97706)"
+                : "rgba(255,255,255,0.1)",
+            }}
+          >
+            <span style={{ fontSize: "0.65rem", fontWeight: "bold" }}>
+              +25級
+            </span>
+            <span style={{ fontSize: "0.55rem" }}>
+              {currencyLabel} {formatNumber(cost25 || 0)}
+            </span>
+          </button>
         )}
-      </button>
+      </div>
     </div>
   );
 }

@@ -41,25 +41,19 @@ export default function ProfilePage({
     }
   };
 
+  // 格式化數字（超過億顯示 XX.XX億，超過萬顯示 XX.XX萬）
   const formatNumber = (num: number) => {
-    return Math.floor(num || 0).toLocaleString();
-  };
-
-  // Format large numbers with 億 (100 million) unit
-  const formatLargeNumber = (num: number) => {
     const n = Math.floor(num || 0);
     if (n >= 100000000) {
-      // 億 = 100,000,000
-      const yi = n / 100000000;
-      return `${yi.toFixed(2)}億`;
-    }
-    if (n >= 10000) {
-      // 萬 = 10,000
-      const wan = n / 10000;
-      return `${wan.toFixed(1)}萬`;
+      return (n / 100000000).toFixed(2) + "億";
+    } else if (n >= 10000) {
+      return (n / 10000).toFixed(2) + "萬";
     }
     return n.toLocaleString();
   };
+
+  // 別名，保持向後兼容
+  const formatLargeNumber = formatNumber;
 
   const formatPercent = (num: number) => {
     return `${(num * 100).toFixed(1)}%`;
