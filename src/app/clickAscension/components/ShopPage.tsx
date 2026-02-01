@@ -3,6 +3,7 @@
 
 import React, { useState } from "react";
 import { PlayerState } from "../types";
+import { formatBigNumber } from "../utils/formatNumber";
 import "../styles/clickAscension.css";
 
 type ShopTab = "DAILY" | "GOLD" | "LEVEL" | "CLICK" | "ASCENSION" | "EQUIPMENT";
@@ -28,17 +29,8 @@ const getRealmInfo = (totalLevels: number) => {
   return { name: "渡劫飛昇", color: "#c084fc" };
 };
 
-// 格式化數字（超過億顯示 XX.XX億，超過萬顯示 XX.XX萬）
-const formatNumber = (num: number): string => {
-  if (num >= 100000000) {
-    // 億
-    return (num / 100000000).toFixed(2) + "億";
-  } else if (num >= 10000) {
-    // 萬
-    return (num / 10000).toFixed(2) + "萬";
-  }
-  return num.toLocaleString();
-};
+// 使用新的字母單位系統格式化數字
+const formatNumber = (num: number): string => formatBigNumber(num, 2, 1000);
 
 export default function ShopPage({
   player,
@@ -405,7 +397,7 @@ export default function ShopPage({
                 className="ca-realm-name"
                 style={{ color: "#fff", fontSize: "1.5rem" }}
               >
-                {Math.floor(player.wallet.gold).toLocaleString()}
+                {formatNumber(Math.floor(player.wallet.gold))}
               </div>
               <div className="ca-realm-level" style={{ color: "#fde68a" }}>
                 擊殺怪物獲得
@@ -1215,7 +1207,7 @@ function parseDescription(template: string, config: any, level: number = 1) {
   const val =
     (Number(config.Base_Val) || 0) +
     (level - 1) * (Number(config.Level_Mult) || 0);
-  return template.replace("{val}", val.toLocaleString());
+  return template.replace("{val}", formatNumber(val));
 }
 
 function ProbabilityModal({
@@ -1667,7 +1659,7 @@ function EquipmentDetailModal({
                 fontWeight: "bold",
               }}
             >
-              +{getEstimatedCP(item, 1).toLocaleString()}
+              +{formatNumber(getEstimatedCP(item, 1))}
             </span>
           </div>
         </div>

@@ -7,6 +7,7 @@ import {
   PlayerAttributes,
   EquipmentItemConfig,
 } from "../types";
+import { formatBigNumber } from "../utils/formatNumber";
 import "../styles/clickAscension.css";
 
 interface CharacterViewProps {
@@ -29,7 +30,7 @@ function parseDescription(
   const val =
     (Number(config.Base_Val) || 0) +
     (level - 1) * (Number(config.Level_Mult) || 0);
-  return template.replace("{val}", val.toLocaleString());
+  return template.replace("{val}", formatBigNumber(val, 2, 1000));
 }
 
 function getRarityColor(rarity: string) {
@@ -237,7 +238,7 @@ function ItemDetailModal({
                 fontWeight: "bold",
               }}
             >
-              +{getEstimatedCP(config, level).toLocaleString()}
+              +{formatBigNumber(getEstimatedCP(config, level), 2, 1000)}
             </span>
           </div>
         </div>
@@ -328,6 +329,70 @@ export default function CharacterView({
         !!item.config
     );
 
+  // 計算「只有裝備」帶來的加成
+  const equipmentBonuses = React.useMemo(() => {
+    const bonuses = {
+      baseDamage: 0,
+      criticalChance: 0,
+      criticalDamage: 0,
+      goldMultiplier: 0,
+      xpMultiplier: 0,
+      autoAttackDamage: 0,
+    };
+
+    if (!gameConfig?.equipments) return bonuses;
+
+    Object.values(player.equipment?.equipped || {}).forEach((equippedId) => {
+      if (!equippedId) return;
+      const config = gameConfig.equipments.find(
+        (e: EquipmentItemConfig) => String(e.ID) === String(equippedId)
+      );
+      if (!config) return;
+
+      const level = Number(player.equipment?.inventory?.[equippedId] || 1);
+      const baseVal = Number(config.Base_Val || 0);
+      const multVal = Number(config.Level_Mult || 0);
+      const val = baseVal + (level - 1) * multVal;
+
+      const effectType = String(config.Effect_Type || "")
+        .toUpperCase()
+        .trim();
+
+      switch (effectType) {
+        case "ADD_BASE_DMG":
+        case "CLICK_DMG":
+        case "CLICK_DAMAGE":
+        case "ADD_DAMAGE":
+        case "ADD_CLICK_DMG":
+          bonuses.baseDamage += val;
+          break;
+        case "ADD_AUTO_DMG":
+        case "AUTO_DMG":
+        case "AUTO_DAMAGE":
+          bonuses.autoAttackDamage += val;
+          break;
+        case "ADD_CRIT_CHANCE":
+        case "CRIT_RATE":
+          bonuses.criticalChance += val / 100;
+          break;
+        case "ADD_CRIT_DMG":
+        case "CRIT_DMG":
+          bonuses.criticalDamage += val / 100;
+          break;
+        case "ADD_GOLD_MULT":
+        case "GOLD_MULT":
+          bonuses.goldMultiplier += val / 100;
+          break;
+        case "ADD_XP_MULT":
+        case "XP_MULT":
+          bonuses.xpMultiplier += val / 100;
+          break;
+      }
+    });
+
+    return bonuses;
+  }, [player.equipment, gameConfig]);
+
   return (
     <div
       className="ca-character-view"
@@ -369,15 +434,12 @@ export default function CharacterView({
           <div className="ca-stat-pill">
             <span className="ca-stat-icon">⚔️</span>
             <span className="ca-stat-value">
-              {Math.floor(effectiveStats.baseDamage).toLocaleString()}
+              {formatBigNumber(Math.floor(effectiveStats.baseDamage), 2, 1000)}
             </span>
-            {effectiveStats.baseDamage > player.stats.baseDamage && (
+            {equipmentBonuses.baseDamage > 0 && (
               <span className="ca-stat-bonus">
                 (+
-                {(
-                  effectiveStats.baseDamage - player.stats.baseDamage
-                ).toLocaleString()}
-                )
+                {formatBigNumber(equipmentBonuses.baseDamage, 2, 1000)})
               </span>
             )}
           </div>
@@ -388,14 +450,10 @@ export default function CharacterView({
             <span className="ca-stat-value">
               {(effectiveStats.criticalChance * 100).toFixed(1)}%
             </span>
-            {effectiveStats.criticalChance > player.stats.criticalChance && (
+            {equipmentBonuses.criticalChance > 0 && (
               <span className="ca-stat-bonus">
                 (+
-                {(
-                  (effectiveStats.criticalChance -
-                    player.stats.criticalChance) *
-                  100
-                ).toFixed(1)}
+                {(equipmentBonuses.criticalChance * 100).toFixed(1)}
                 %)
               </span>
             )}
@@ -424,14 +482,10 @@ export default function CharacterView({
             <span className="ca-stat-value">
               {(effectiveStats.criticalDamage * 100).toFixed(0)}%
             </span>
-            {effectiveStats.criticalDamage > player.stats.criticalDamage && (
+            {equipmentBonuses.criticalDamage > 0 && (
               <span className="ca-stat-bonus">
                 (+
-                {(
-                  (effectiveStats.criticalDamage -
-                    player.stats.criticalDamage) *
-                  100
-                ).toFixed(0)}
+                {(equipmentBonuses.criticalDamage * 100).toFixed(0)}
                 %)
               </span>
             )}
@@ -443,14 +497,10 @@ export default function CharacterView({
             <span className="ca-stat-value">
               {(effectiveStats.goldMultiplier * 100).toFixed(0)}%
             </span>
-            {effectiveStats.goldMultiplier > player.stats.goldMultiplier && (
+            {equipmentBonuses.goldMultiplier > 0 && (
               <span className="ca-stat-bonus">
                 (+
-                {(
-                  (effectiveStats.goldMultiplier -
-                    player.stats.goldMultiplier) *
-                  100
-                ).toFixed(0)}
+                {(equipmentBonuses.goldMultiplier * 100).toFixed(0)}
                 %)
               </span>
             )}
@@ -479,17 +529,26 @@ export default function CharacterView({
 
         <div
           style={{
-            display: "flex",
+            display: "grid",
+            gridTemplateColumns: "60px 1fr 60px",
             width: "100%",
             maxWidth: "500px",
-            justifyContent: "space-between",
             alignItems: "center",
             zIndex: 2,
             padding: "0 4px",
+            minHeight: "200px",
+            margin: "0 auto",
           }}
         >
+          {/* Left Equipment Column */}
           <div
-            style={{ display: "flex", flexDirection: "column", gap: "8px" }} // Reduced gap
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
             <EquipmentSlotItem
               slot={EquipmentSlot.MAIN_HAND}
@@ -541,21 +600,23 @@ export default function CharacterView({
             />
           </div>
 
+          {/* Center Character */}
           <div
-            className="ca-character-figure ca-bounce-slow"
+            className="ca-character-figure"
             style={{
               position: "relative",
               zIndex: 1,
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
+              justifyContent: "center",
             }}
           >
             <img
               src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${userId || "Guest"}`}
               alt="Character"
               style={{
-                width: "110px", // Reduced size
+                width: "110px",
                 height: "110px",
                 filter: "drop-shadow(0 10px 20px rgba(0,0,0,0.5))",
               }}
@@ -594,7 +655,16 @@ export default function CharacterView({
             </div>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {/* Right Equipment Column */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
             <EquipmentSlotItem
               slot={EquipmentSlot.HANDS}
               player={player}

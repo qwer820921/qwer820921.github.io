@@ -3,22 +3,17 @@
 
 import React from "react";
 import { PlayerState } from "../types";
+import { formatBigNumber } from "../utils/formatNumber";
 import "../styles/clickAscension.css";
 
-// 格式化數字（超過億顯示 XX.XX億，超過萬顯示 XX.XX萬）
-const formatNumber = (num: number): string => {
-  if (num >= 100000000) {
-    return (num / 100000000).toFixed(2) + "億";
-  } else if (num >= 10000) {
-    return (num / 10000).toFixed(2) + "萬";
-  }
-  return num.toLocaleString();
-};
+// 使用新的字母單位系統格式化數字
+const formatNumber = (num: number): string => formatBigNumber(num, 2, 1000);
 
 interface HeaderProps {
   player: PlayerState;
   combatPower: number;
   stageId: number;
+  userId: string | null;
   onAvatarClick: () => void;
   onAscension: () => void;
   potentialPoints: number;
@@ -28,6 +23,7 @@ export default function Header({
   player,
   combatPower,
   stageId,
+  userId,
   onAvatarClick,
   onAscension,
   potentialPoints,
@@ -64,7 +60,7 @@ export default function Header({
           {/* Level & Name Row */}
           <div className="ca-profile-top">
             <span className="ca-level-text">Lv.{system.level}</span>
-            <span className="ca-player-name">冒險者</span>
+            <span className="ca-player-name">{userId || "冒險者"}</span>
           </div>
 
           {/* EXP Bar */}
@@ -77,8 +73,7 @@ export default function Header({
               />
             </div>
             <div className="ca-exp-text">
-              {system.currentXp.toLocaleString()}/
-              {system.requiredXp.toLocaleString()}
+              {formatNumber(system.currentXp)}/{formatNumber(system.requiredXp)}
             </div>
           </div>
 

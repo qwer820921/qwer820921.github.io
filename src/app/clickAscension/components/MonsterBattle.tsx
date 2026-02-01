@@ -3,6 +3,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Monster, FloatingText, DamageType, GameConfig } from "../types";
+import { formatBigNumber } from "../utils/formatNumber";
 import HpBar from "./HpBar";
 import "../styles/clickAscension.css";
 
@@ -107,12 +108,19 @@ export default function MonsterBattle({
   autoUsePotion = false,
   onToggleAutoPotion,
 }: MonsterBattleProps) {
-  // 動態獲取所有擁有的夥伴
+  // 動態獲取所有擁有的夥伴（只顯示 ADD_AUTO_DMG 類型的單位）
   const ownedPartners = Object.entries(goldShop)
-    .filter(([id, level]) => id.startsWith("gold_shop_") && level > 0)
+    .filter(([id, level]) => {
+      if (!id.startsWith("gold_shop_") || level <= 0) return false;
+      // 檢查 Effect_Type 是否為 ADD_AUTO_DMG
+      const config = gameConfig?.upgrades?.find((u: any) => u.ID === id);
+      const effectType = String(config?.Effect_Type || "")
+        .toUpperCase()
+        .trim();
+      return effectType === "ADD_AUTO_DMG";
+    })
     .map(([id, level]) => ({ id, level }));
 
-  // 獲取夥伴顯示（優先級：DB Emoji > 前端 PARTNER_EMOJIS > 中文名稱前兩字 > ID）
   // 獲取夥伴顯示（優先級：DB Emoji > 前端 PARTNER_EMOJIS > 中文名稱前兩字 > ID）
   const getPartnerDisplay = useCallback(
     (partnerId: string) => {
@@ -198,7 +206,12 @@ export default function MonsterBattle({
       const y = rect.height / 2 + (Math.random() * 60 - 30);
 
       const type = lastAutoClickEvent.isCrit ? "CRIT" : "CLICK";
-      addFloatingText(lastAutoClickEvent.damage.toLocaleString(), x, y, type);
+      addFloatingText(
+        formatBigNumber(lastAutoClickEvent.damage, 1, 1000),
+        x,
+        y,
+        type
+      );
     }
   }, [lastAutoClickEvent]);
 
@@ -230,7 +243,7 @@ export default function MonsterBattle({
           const x = unitRect.left - rect.left + unitRect.width / 2;
           const y = unitRect.top - rect.top;
           addFloatingText(
-            `${display} ${dmg.toLocaleString()}`,
+            `${display} ${formatBigNumber(dmg, 1, 1000)}`,
             x,
             y - 20,
             "AUTO"
@@ -245,7 +258,12 @@ export default function MonsterBattle({
           // 沒有對應的 ref：在畫面中央隨機位置顯示傷害
           const x = rect.width / 2 + (Math.random() * 80 - 40);
           const y = rect.height * 0.3 + (Math.random() * 40 - 20);
-          addFloatingText(`${display} ${dmg.toLocaleString()}`, x, y, "AUTO");
+          addFloatingText(
+            `${display} ${formatBigNumber(dmg, 1, 1000)}`,
+            x,
+            y,
+            "AUTO"
+          );
         }
       });
 
@@ -292,7 +310,12 @@ export default function MonsterBattle({
     const y = clientY - rect.top + (Math.random() * 60 - 30);
 
     // Add floating text
-    addFloatingText(damage.toLocaleString(), x, y, isCrit ? "CRIT" : "CLICK");
+    addFloatingText(
+      formatBigNumber(damage, 1, 1000),
+      x,
+      y,
+      isCrit ? "CRIT" : "CLICK"
+    );
 
     // Trigger effects
     setIsShaking(true);
@@ -619,12 +642,13 @@ export default function MonsterBattle({
         <div
           style={{
             position: "absolute",
-            bottom: "80px",
-            right: "20px", // 放在右下角，避免遮擋夥伴
+            bottom: "20px",
+            left: "50%",
+            transform: "translateX(-50%)",
             display: "flex",
-            flexDirection: "column",
+            flexDirection: "row",
             alignItems: "center",
-            gap: "8px",
+            gap: "16px",
             zIndex: 20,
           }}
         >
@@ -642,6 +666,7 @@ export default function MonsterBattle({
               flexDirection: "column",
               alignItems: "center",
               cursor: "pointer",
+              gap: "2px",
             }}
           >
             <div
@@ -664,60 +689,60 @@ export default function MonsterBattle({
             </div>
             <div
               style={{
-                fontSize: "0.7rem",
+                fontSize: "0.65rem",
                 color: "#fff",
                 fontWeight: "bold",
                 background: "#ef4444",
-                borderRadius: "10px",
-                padding: "2px 6px",
-                marginTop: "-10px",
+                borderRadius: "8px",
+                padding: "1px 5px",
+                marginTop: "-8px",
               }}
             >
               x{potionCount}
             </div>
-          </div>
 
-          {/* Auto Potion Toggle */}
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleAutoPotion && onToggleAutoPotion();
-            }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              background: autoUsePotion
-                ? "rgba(34, 197, 94, 0.2)"
-                : "rgba(255, 255, 255, 0.1)",
-              padding: "4px 10px",
-              borderRadius: "20px",
-              border: `1px solid ${autoUsePotion ? "rgba(34, 197, 94, 0.4)" : "rgba(255, 255, 255, 0.2)"}`,
-              cursor: "pointer",
-              pointerEvents: "auto",
-              transition: "all 0.3s",
-            }}
-          >
+            {/* Auto Potion Toggle - 在藥水正下方 */}
             <div
-              style={{
-                width: "10px",
-                height: "10px",
-                borderRadius: "50%",
-                background: autoUsePotion ? "#22c55e" : "#94a3b8",
-                boxShadow: autoUsePotion ? "0 0 8px #22c55e" : "none",
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleAutoPotion && onToggleAutoPotion();
               }}
-            />
-            <span
               style={{
-                fontSize: "0.6rem",
-                color: autoUsePotion ? "#4ade80" : "#94a3b8",
-                fontWeight: "bold",
-                letterSpacing: "0.5px",
-                whiteSpace: "nowrap",
+                display: "flex",
+                alignItems: "center",
+                gap: "3px",
+                background: autoUsePotion
+                  ? "rgba(34, 197, 94, 0.3)"
+                  : "rgba(255, 255, 255, 0.1)",
+                padding: "2px 6px",
+                borderRadius: "10px",
+                border: `1px solid ${autoUsePotion ? "rgba(34, 197, 94, 0.5)" : "rgba(255, 255, 255, 0.2)"}`,
+                cursor: "pointer",
+                pointerEvents: "auto",
+                transition: "all 0.3s",
+                marginTop: "2px",
               }}
             >
-              AUTO
-            </span>
+              <div
+                style={{
+                  width: "6px",
+                  height: "6px",
+                  borderRadius: "50%",
+                  background: autoUsePotion ? "#22c55e" : "#94a3b8",
+                  boxShadow: autoUsePotion ? "0 0 4px #22c55e" : "none",
+                }}
+              />
+              <span
+                style={{
+                  fontSize: "0.5rem",
+                  color: autoUsePotion ? "#4ade80" : "#94a3b8",
+                  fontWeight: "bold",
+                  letterSpacing: "0.3px",
+                }}
+              >
+                AUTO
+              </span>
+            </div>
           </div>
         </div>
       )}

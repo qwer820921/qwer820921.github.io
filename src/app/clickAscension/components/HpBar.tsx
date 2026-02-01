@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { formatBigNumber } from "../utils/formatNumber";
 import "../styles/clickAscension.css";
 
 interface HpBarProps {
@@ -27,11 +28,6 @@ export default function HpBar({
       <div className="flex justify-between text-[11px] font-bold">
         <span className="text-slate-300 me-2">{name}</span>
       </div>
-      {/* <div className="flex justify-between text-[11px] font-bold">
-        <span className={`${isBoss ? 'text-red-400' : 'text-blue-400'}`}>
-          {Math.ceil(percentage)}%
-        </span>
-      </div> */}
 
       {/* HP Bar */}
       <div className="ca-hp-bar">
@@ -43,8 +39,8 @@ export default function HpBar({
 
       {/* HP Numbers */}
       <div className="text-center text-[10px] text-slate-500 font-mono">
-        {Math.ceil(safeCurrentHp).toLocaleString()} /{" "}
-        {Math.ceil(safeMaxHp).toLocaleString()}
+        {formatBigNumber(Math.ceil(safeCurrentHp), 2, 1000)} /{" "}
+        {formatBigNumber(Math.ceil(safeMaxHp), 2, 1000)}
       </div>
     </div>
   );

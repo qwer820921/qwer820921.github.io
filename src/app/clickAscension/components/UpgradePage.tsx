@@ -2,6 +2,7 @@
 
 import React from "react";
 import { PlayerState, UpgradeEffectType } from "../types";
+import { formatBigNumber } from "../utils/formatNumber";
 import "../styles/clickAscension.css";
 
 // 預設升級項目
@@ -100,7 +101,7 @@ export default function UpgradePage({
                 <span className="text-slate-400">MAX</span>
               ) : (
                 <span className="ca-upgrade-cost">
-                  💰 {cost.toLocaleString()}
+                  💰 {formatBigNumber(cost, 2, 1000)}
                 </span>
               )}
             </button>

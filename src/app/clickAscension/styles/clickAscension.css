@@ -391,6 +391,21 @@
   animation: ca-bounce-slow 2s ease-in-out infinite;
 }
 
+/* Character figure bounce without offset transform */
+@keyframes ca-character-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.ca-character-figure {
+  animation: ca-character-bounce 2s ease-in-out infinite;
+}
+
 .ca-slide-up {
   animation: ca-slide-up 0.3s ease-out;
 }

@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 import React from "react";
 import { PlayerState, PlayerAttributes } from "../types";
+import { formatBigNumber } from "../utils/formatNumber";
 import "../styles/clickAscension.css";
 
 import { GameStaticData } from "../api/clickAscensionApi";
@@ -41,16 +42,9 @@ export default function ProfilePage({
     }
   };
 
-  // 格式化數字（超過億顯示 XX.XX億，超過萬顯示 XX.XX萬）
-  const formatNumber = (num: number) => {
-    const n = Math.floor(num || 0);
-    if (n >= 100000000) {
-      return (n / 100000000).toFixed(2) + "億";
-    } else if (n >= 10000) {
-      return (n / 10000).toFixed(2) + "萬";
-    }
-    return n.toLocaleString();
-  };
+  // 使用新的字母單位系統格式化數字
+  const formatNumber = (num: number) =>
+    formatBigNumber(Math.floor(num || 0), 2, 1000);
 
   // 別名，保持向後兼容
   const formatLargeNumber = formatNumber;

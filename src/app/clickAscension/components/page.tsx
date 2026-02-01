@@ -11,6 +11,10 @@ import {
   MonsterTemplate,
   MonsterRarity,
 } from "../types";
+import {
+  formatBigNumber,
+  initNumberFormatFromConfig,
+} from "../utils/formatNumber";
 import Header from "./Header";
 import MonsterBattle from "./MonsterBattle";
 import FooterNav, { ModalType, ViewType } from "./FooterNav";
@@ -268,7 +272,11 @@ export default function ClickAscensionGame() {
       const baseVal = Number(config.Effect_Val || 0) * level;
       const val = baseVal * levelMultiplier;
 
-      if (effectType === "ADD_DAMAGE" || effectType === "CLICK_DMG")
+      if (
+        effectType === "ADD_DAMAGE" ||
+        effectType === "CLICK_DMG" ||
+        effectType === "ADD_BASE_DMG"
+      )
         stats.baseDamage += val;
       if (
         effectType === "ADD_AUTO_DMG" ||
@@ -276,10 +284,119 @@ export default function ClickAscensionGame() {
         effectType === "ADD_AUTO"
       )
         stats.autoAttackDamage += val;
-      if (effectType === "ADD_GOLD_MULT" || effectType === "GOLD_MULT")
+      if (
+        effectType === "ADD_GOLD_MULT" ||
+        effectType === "GOLD_MULT" ||
+        effectType === "ADD_GOLD"
+      )
         stats.goldMultiplier += val / 100;
+      if (
+        effectType === "ADD_CRIT_DMG" ||
+        effectType === "CRIT_DMG" ||
+        effectType === "ADD_CRIT_DAMAGE"
+      )
+        stats.criticalDamage += val / 100;
+    });
+
+    // Add Level Shop bonuses - 動態從 gameConfig 讀取
+    const levelShopConfigs =
+      gameConfig?.upgrades?.filter((u: any) => u.Shop_Type === "LEVEL") || [];
+
+    levelShopConfigs.forEach((config: any) => {
+      const id = config.ID;
+      const level = player.levelShop[id] || 0;
+      if (level <= 0) return;
+
+      const effectType = String(config.Effect_Type || "")
+        .toUpperCase()
+        .trim();
+      const val = Number(config.Effect_Val || 0) * level;
+
+      if (effectType === "ADD_XP_MULT" || effectType === "XP_MULT")
+        stats.xpMultiplier += val / 100;
+      if (
+        effectType === "ADD_GOLD_MULT" ||
+        effectType === "GOLD_MULT" ||
+        effectType === "ADD_GOLD"
+      )
+        stats.goldMultiplier += val / 100;
+      if (effectType === "ADD_BASE_DMG" || effectType === "ADD_DAMAGE")
+        stats.baseDamage += val;
+      if (effectType === "ADD_CRIT_CHANCE" || effectType === "CRIT_RATE")
+        stats.criticalChance += val / 100;
       if (effectType === "ADD_CRIT_DMG" || effectType === "CRIT_DMG")
         stats.criticalDamage += val / 100;
+    });
+
+    // Add Click Shop bonuses - 動態從 gameConfig 讀取
+    const clickShopConfigs =
+      gameConfig?.upgrades?.filter((u: any) => u.Shop_Type === "CLICK") || [];
+
+    clickShopConfigs.forEach((config: any) => {
+      const id = config.ID;
+      const level = player.clickShop[id] || 0;
+      if (level <= 0) return;
+
+      const effectType = String(config.Effect_Type || "")
+        .toUpperCase()
+        .trim();
+      const val = Number(config.Effect_Val || 0) * level;
+
+      if (
+        effectType === "ADD_BASE_DMG" ||
+        effectType === "ADD_DAMAGE" ||
+        effectType === "CLICK_DMG"
+      )
+        stats.baseDamage += val;
+      if (
+        effectType === "ADD_CRIT_DMG" ||
+        effectType === "CRIT_DMG" ||
+        effectType === "ADD_CRIT_DAMAGE"
+      )
+        stats.criticalDamage += val / 100;
+      if (effectType === "ADD_GOLD_MULT" || effectType === "GOLD_MULT")
+        stats.goldMultiplier += val / 100;
+      if (effectType === "ADD_XP_MULT" || effectType === "XP_MULT")
+        stats.xpMultiplier += val / 100;
+    });
+
+    // Add Ascension Shop bonuses - 動態從 gameConfig 讀取
+    const ascensionShopConfigs =
+      gameConfig?.upgrades?.filter((u: any) => u.Shop_Type === "ASCENSION") ||
+      [];
+
+    ascensionShopConfigs.forEach((config: any) => {
+      const id = config.ID;
+      const level = player.ascensionShop[id] || 0;
+      if (level <= 0) return;
+
+      const effectType = String(config.Effect_Type || "")
+        .toUpperCase()
+        .trim();
+      const val = Number(config.Effect_Val || 0) * level;
+
+      if (effectType === "ADD_XP_MULT" || effectType === "XP_MULT")
+        stats.xpMultiplier += val / 100;
+      if (
+        effectType === "ADD_GOLD_MULT" ||
+        effectType === "GOLD_MULT" ||
+        effectType === "ADD_GOLD"
+      )
+        stats.goldMultiplier += val / 100;
+      if (
+        effectType === "ADD_ATK_P" ||
+        effectType === "ATK_MULT" ||
+        effectType === "ADD_DAMAGE_MULT"
+      ) {
+        // 攻擊力百分比加成（例如 10% -> 基礎傷害 * 1.1）
+        stats.baseDamage += stats.baseDamage * (val / 100);
+      }
+      if (effectType === "RARE_CHANCE_P" || effectType === "RARE_SPAWN_CHANCE")
+        stats.rareMonsterChance += val / 100;
+      if (effectType === "REDUCE_GOAL_V" || effectType === "REDUCE_STAGE_GOAL")
+        stats.monsterKillReduction += val;
+      if (effectType === "AUTO_CLICK_V" || effectType === "AUTO_CLICK_CPS")
+        stats.autoClickPerSec += val;
     });
 
     return stats;
@@ -288,6 +405,9 @@ export default function ClickAscensionGame() {
     player.equipment.equipped,
     player.equipment.inventory,
     player.goldShop,
+    player.levelShop,
+    player.clickShop,
+    player.ascensionShop,
     gameConfig,
   ]);
 
@@ -361,6 +481,9 @@ export default function ClickAscensionGame() {
       if (config) {
         console.log("[Config] Loaded:", config);
         setGameConfig(config);
+
+        // 初始化數值單位格式
+        initNumberFormatFromConfig(config.settings);
       }
     };
     loadConfig();
@@ -1850,6 +1973,7 @@ export default function ClickAscensionGame() {
         player={player}
         combatPower={combatPower}
         stageId={stage.currentStageId}
+        userId={userId}
         onAvatarClick={() => setActiveModal("PROFILE")}
         onAscension={handleAscensionClick}
         potentialPoints={potentialPoints}
@@ -1949,7 +2073,9 @@ export default function ClickAscensionGame() {
               title="金幣"
             >
               <span>💰</span>
-              <span>{Math.floor(player.wallet.gold).toLocaleString()}</span>
+              <span>
+                {formatBigNumber(Math.floor(player.wallet.gold), 2, 1000)}
+              </span>
             </div>
             <div
               className="ca-currency ca-currency-diamond"
@@ -1957,7 +2083,7 @@ export default function ClickAscensionGame() {
               title="鑽石"
             >
               <span>💎</span>
-              <span>{player.wallet.diamonds.toLocaleString()}</span>
+              <span>{formatBigNumber(player.wallet.diamonds, 2, 1000)}</span>
             </div>
             <div
               className="ca-currency"
@@ -1969,7 +2095,11 @@ export default function ClickAscensionGame() {
             >
               <span>⚡</span>
               <span>
-                {Math.floor(player.wallet.clickPoints).toLocaleString()}
+                {formatBigNumber(
+                  Math.floor(player.wallet.clickPoints),
+                  2,
+                  1000
+                )}
               </span>
             </div>
             <div
@@ -1978,7 +2108,7 @@ export default function ClickAscensionGame() {
               title="等級積分"
             >
               <span>🆙</span>
-              <span>{player.wallet.levelPoints.toLocaleString()}</span>
+              <span>{formatBigNumber(player.wallet.levelPoints, 2, 1000)}</span>
             </div>
             <div
               className="ca-currency"
@@ -1986,7 +2116,9 @@ export default function ClickAscensionGame() {
               title="飛昇點數"
             >
               <span>🕊️</span>
-              <span>{player.wallet.ascensionPoints.toLocaleString()}</span>
+              <span>
+                {formatBigNumber(player.wallet.ascensionPoints, 2, 1000)}
+              </span>
             </div>
             <div
               className="ca-currency"
@@ -1995,7 +2127,7 @@ export default function ClickAscensionGame() {
             >
               <span>🧩</span>
               <span>
-                {(player.wallet.equipmentShards || 0).toLocaleString()}
+                {formatBigNumber(player.wallet.equipmentShards || 0, 2, 1000)}
               </span>
             </div>
           </div>
