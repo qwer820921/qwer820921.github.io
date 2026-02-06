@@ -833,6 +833,26 @@ export default function ShopPage({
                     color="#4ade80"
                     onClick={() => onPurchase(`gacha_basic_${gachaSuffix}_10`)}
                   />
+                  <GachaButton
+                    label="100 抽"
+                    cost={formatNumber(gachaCosts.basic * 100)}
+                    currencyLabel={gachaSymbol}
+                    color="#4ade80"
+                    onClick={() => onPurchase(`gacha_basic_${gachaSuffix}_100`)}
+                  />
+                </div>
+                <div style={{ marginTop: "10px", width: "100%" }}>
+                  <AutoGachaButton
+                    isActive={autoGachaBox === `basic_${gachaSuffix}`}
+                    onToggle={() =>
+                      onToggleAutoGacha &&
+                      onToggleAutoGacha(
+                        autoGachaBox === `basic_${gachaSuffix}`
+                          ? null
+                          : `basic_${gachaSuffix}`
+                      )
+                    }
+                  />
                 </div>
               </div>
 
@@ -917,6 +937,26 @@ export default function ShopPage({
                     color="#facc15"
                     onClick={() => onPurchase(`gacha_adv_${gachaSuffix}_10`)}
                   />
+                  <GachaButton
+                    label="100 抽"
+                    cost={formatNumber(gachaCosts.adv * 100)}
+                    currencyLabel={gachaSymbol}
+                    color="#facc15"
+                    onClick={() => onPurchase(`gacha_adv_${gachaSuffix}_100`)}
+                  />
+                </div>
+                <div style={{ marginTop: "10px", width: "100%" }}>
+                  <AutoGachaButton
+                    isActive={autoGachaBox === `adv_${gachaSuffix}`}
+                    onToggle={() =>
+                      onToggleAutoGacha &&
+                      onToggleAutoGacha(
+                        autoGachaBox === `adv_${gachaSuffix}`
+                          ? null
+                          : `adv_${gachaSuffix}`
+                      )
+                    }
+                  />
                 </div>
               </div>
 
@@ -1000,6 +1040,26 @@ export default function ShopPage({
                     currencyLabel={gachaSymbol}
                     color="#d8b4fe"
                     onClick={() => onPurchase(`gacha_prem_${gachaSuffix}_10`)}
+                  />
+                  <GachaButton
+                    label="100 抽"
+                    cost={formatNumber(gachaCosts.prem * 100)}
+                    currencyLabel={gachaSymbol}
+                    color="#d8b4fe"
+                    onClick={() => onPurchase(`gacha_prem_${gachaSuffix}_100`)}
+                  />
+                </div>
+                <div style={{ marginTop: "10px", width: "100%" }}>
+                  <AutoGachaButton
+                    isActive={autoGachaBox === `prem_${gachaSuffix}`}
+                    onToggle={() =>
+                      onToggleAutoGacha &&
+                      onToggleAutoGacha(
+                        autoGachaBox === `prem_${gachaSuffix}`
+                          ? null
+                          : `prem_${gachaSuffix}`
+                      )
+                    }
                   />
                 </div>
               </div>
@@ -1742,6 +1802,40 @@ function GachaButton({
       >
         {currencyLabel} {cost}
       </span>
+    </button>
+  );
+}
+
+function AutoGachaButton({
+  isActive,
+  onToggle,
+}: {
+  isActive: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      className={`ca-btn ${isActive ? "" : "ca-btn-primary"}`}
+      style={{
+        padding: "8px 16px",
+        fontSize: "0.9rem",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "8px",
+        width: "100%",
+        background: isActive
+          ? "linear-gradient(to bottom, #ef4444, #991b1b)"
+          : "rgba(255, 255, 255, 0.1)",
+        color: isActive ? "#fff" : "#cbd5e1",
+        border: isActive
+          ? "1px solid #f87171"
+          : "1px solid rgba(255, 255, 255, 0.2)",
+      }}
+    >
+      <span>{isActive ? "⏹️" : "🔄"}</span>
+      <span>{isActive ? "停止自動抽取" : "自動抽取 (固定100連)"}</span>
     </button>
   );
 }

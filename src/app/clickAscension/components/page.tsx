@@ -13,6 +13,7 @@ import {
   UpgradeEffectType,
   UpgradeShopType,
   CurrencyType,
+  HitMode,
 } from "../types";
 import {
   formatBigNumber,
@@ -659,23 +660,57 @@ export default function ClickAscensionGame() {
     if (!autoGachaBox) return;
 
     const interval = setInterval(() => {
-      const boxCosts: Record<string, number> = {
-        basic: 1000 * 1000,
-        advanced: 10000 * 1000,
-        premium: 100000 * 1000,
+      // Parse autoGachaBox: e.g. "basic_ap", "adv_diamond", "prem_ap"
+      const parts = autoGachaBox.split("_");
+      if (parts.length < 2) return;
+
+      const boxShort = parts[0]; // basic, adv, prem
+      const currencyShort = parts[1]; // ap, diamond
+
+      const isDiamond =
+        currencyShort === "diamond" || currencyShort === "dia";
+      const currencyType = isDiamond ? CurrencyType.DIAMOND : CurrencyType.AP;
+
+      // Calculate Cost (100 draws)
+      const s = (gameConfig?.settings as any) || {};
+      const boxKey = boxShort.toUpperCase(); // BASIC, ADV, PREM
+      const currencyKey = isDiamond ? "DIAMOND" : "AP";
+
+      // Default Base Costs
+      const baseMap: any = {
+        BASIC: isDiamond ? 2 : 20,
+        ADV: isDiamond ? 20 : 200,
+        PREM: isDiamond ? 100 : 1000,
       };
 
-      if (player.wallet.gold < boxCosts[autoGachaBox]) {
+      const configKey = `GACHA_COST_${boxKey}_${currencyKey}`;
+      const unitCost = Number(s[configKey]) || baseMap[boxKey] || 999999;
+      const totalCost = unitCost * 100;
+
+      // Check Funds
+      const currentFunds = isDiamond
+        ? player.wallet.diamonds
+        : player.wallet.ascensionPoints;
+
+      if (currentFunds < totalCost) {
         setAutoGachaBox(null);
-        showPopup("金幣不足，已停止自動連續抽卡。");
+        showPopup(
+          `${isDiamond ? "💎 鑽石" : "🕊️ 飛昇點數"} 不足，已停止自動連續抽卡。`
+        );
         return;
       }
 
-      handleShopPurchase(`gacha_equipment_${autoGachaBox}_1000`);
-    }, 1000);
+      // Execute Purchase (100 draws)
+      handleShopPurchase(`gacha_${boxShort}_${currencyShort}_100`);
+    }, 1000); // 1 second interval
 
     return () => clearInterval(interval);
-  }, [autoGachaBox, player.wallet.gold]);
+  }, [
+    autoGachaBox,
+    player.wallet.diamonds,
+    player.wallet.ascensionPoints,
+    gameConfig,
+  ]);
 
   const handleLogin = async (id: string) => {
     if (!id) return;
@@ -860,53 +895,69 @@ export default function ClickAscensionGame() {
     gameConfig,
   ]);
 
-  // NEW: Auto-Click Loop (Simulates Clicks)
+  // NEW: Auto-Click Loop (Optimized or Legacy)
   useEffect(() => {
     // Determine Frequency (Clicks per second)
     const clicksPerSec = effectiveStats.autoClickPerSec || 0;
 
     if (clicksPerSec <= 0 || !monster || monster.currentHp <= 0) return;
 
-    // Calculate interval (ms)
-    // Limit max to 20/sec (50ms) to avoid lag, or just run at rate.
-    // If rate > 20, maybe we should bunch them? For now, standard interval.
-    // Minimum 50ms interval to be safe.
-    const intervalMs = Math.max(50, 1000 / clicksPerSec);
+    // Check Hit Mode: 'OPTIMIZED' (1s) vs 'LEGACY' (Real-time)
+    const settings = (gameConfig?.settings as any) || {};
+    const hitMode = (settings.HIT_MODE as HitMode) || HitMode.OPTIMIZED;
+
+    // Interval Calculation
+    // Optimized: Always 1000ms (1s)
+    // Legacy: 1000 / clicksPerSec (min 50ms)
+    // Note: If clicksPerSec < 1 (e.g. 0.5), Optimized 1s means 0.5 clicks?
+    // We should ensure clicksToSimulate >= 1.
+    // If < 1, legacy works better (2s interval). Optimized assumes high frequency.
+    // Let's fallback to legacy if rate < 1.
+    const effectiveIsOptimized = hitMode === HitMode.OPTIMIZED && clicksPerSec >= 1;
+
+    const intervalMs = effectiveIsOptimized
+      ? 1000
+      : Math.max(50, 1000 / clicksPerSec);
 
     const interval = setInterval(() => {
-      // 1. Calculate Damage (Replicating User Click Logic)
-      const isCrit = Math.random() < effectiveStats.criticalChance;
-      let dmg = isCrit
-        ? Math.floor(effectiveStats.baseDamage * effectiveStats.criticalDamage)
-        : effectiveStats.baseDamage;
+      // Determine how many clicks to simulate in this tick
+      // If optimized, we simulate 1s worth of clicks (clicksPerSec).
+      // If legacy, we simulate 1 click.
+      const clicksToSimulate = effectiveIsOptimized ? Math.floor(clicksPerSec) : 1;
 
-      // 2. Apply Damage (Updates Monster & Player)
-      // We call handleMonsterClick but we need to supply the damage directly?
-      // No, wait. handleMonsterClick in this file TAKES 'damage' as arg1.
-      // But handleMonsterClick also applies Boss Multiplier internally?
-      // Let's check handleMonsterClick definition:
-      // "const handleMonsterClick = (damage: number, _isCrit: boolean) => { ... if (isBoss) final = damage * bossMult; ... }"
-      // So we should NOT pre-multiply by bossMult here.
+      let totalDmg = 0;
+      let totalCpGain = 0;
+      const burstHits: { damage: number; isCrit: boolean }[] = [];
 
-      // HOWEVER, handleMonsterClick expects "Damage dealt".
-      // User click logic in MonsterBattle likely sends Base * Crit.
-      // So sending 'dmg' here is correct.
+      // Simulation Loop
+      for (let i = 0; i < clicksToSimulate; i++) {
+        const isCrit = Math.random() < effectiveStats.criticalChance;
+        let dmg = isCrit
+          ? Math.floor(
+              effectiveStats.baseDamage * effectiveStats.criticalDamage
+            )
+          : effectiveStats.baseDamage;
 
-      // We can't call handleMonsterClick directly if it's not stable or updated with closure?
-      // handleMonsterClick IS defined in component scope, so it should be fine inside this useEffect
-      // BUT useEffect dependencies must include it?
-      // handleMonsterClick updates 'setMonster' functional state so it's safer.
-      // But for cleaner code, we'll replicate the logic:
+        let finalDmg = dmg;
+        if (monster.isBoss) {
+          finalDmg = Math.ceil(
+            dmg * (effectiveStats.bossDamageMultiplier || 1)
+          );
+        }
 
-      // Pre-calculate final damage using closure 'monster' (safe for static props like isBoss)
-      let finalDmg = dmg;
-      if (monster.isBoss) {
-        finalDmg = Math.ceil(dmg * (effectiveStats.bossDamageMultiplier || 1));
+        totalDmg += finalDmg;
+        totalCpGain += 1 * effectiveStats.cpMultiplier;
+
+        // Store individual hits for visuals
+        burstHits.push({ damage: finalDmg, isCrit });
       }
 
+      if (totalDmg <= 0) return;
+
+      // 2. Apply Damage (Updates Monster & Player)
       setMonster((prev) => {
         if (!prev || prev.currentHp <= 0) return prev;
-        const newHp = prev.currentHp - finalDmg;
+        const newHp = prev.currentHp - totalDmg;
 
         if (newHp <= 0) {
           setTimeout(() => handleMonsterDeath(prev as Monster), 0);
@@ -917,27 +968,42 @@ export default function ClickAscensionGame() {
 
       // 3. Update Player (Click Points / Records)
       setPlayer((prev) => {
-        const cpGain = 1 * effectiveStats.cpMultiplier;
         return {
           ...prev,
           wallet: {
             ...prev.wallet,
-            clickPoints: prev.wallet.clickPoints + cpGain,
+            clickPoints: prev.wallet.clickPoints + totalCpGain,
           },
           records: {
             ...prev.records,
-            totalClicks: prev.records.totalClicks + 1, // Count as click
-            totalDamageDealt: prev.records.totalDamageDealt + finalDmg,
+            totalClicks: prev.records.totalClicks + clicksToSimulate,
+            totalDamageDealt: prev.records.totalDamageDealt + totalDmg,
           },
         };
       });
 
-      // 4. Trigger Visual Event for MonsterBattle
-      setLastAutoClickEvent({
-        id: crypto.randomUUID(),
-        damage: finalDmg, // Visuals should show final damage (including Boss Mult)
-        isCrit: isCrit,
-      });
+      // 4. Trigger Visual Event
+      if (effectiveIsOptimized) {
+        // Optimized: Send burst info
+        setLastAutoClickEvent({
+          id: crypto.randomUUID(),
+          damage: totalDmg,
+          isCrit: false,
+          // @ts-ignore: Passing extra data for optimized renderer
+          burstHits: burstHits,
+        });
+      } else {
+        // Legacy: Single hit
+        const hit =
+          burstHits.length > 0
+            ? burstHits[0]
+            : { damage: 0, isCrit: false };
+        setLastAutoClickEvent({
+          id: crypto.randomUUID(),
+          damage: hit.damage,
+          isCrit: hit.isCrit,
+        });
+      }
     }, intervalMs);
 
     return () => clearInterval(interval);
@@ -948,9 +1014,11 @@ export default function ClickAscensionGame() {
     effectiveStats.criticalDamage,
     effectiveStats.bossDamageMultiplier,
     effectiveStats.cpMultiplier,
-    monster?.id, // Reset if monster changes
-    // handleMonsterDeath is stable? We use closure..
+    monster?.id,
+    gameConfig, // Dependency for settings
   ]);
+
+
 
   // --------------------------------------------------------------------------
   // Helpers

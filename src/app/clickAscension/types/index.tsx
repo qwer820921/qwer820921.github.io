@@ -7,6 +7,11 @@ export enum CurrencyType {
   EQUIPMENT_SHARD = "EQUIPMENT_SHARD", // 裝備碎片
 }
 
+export enum HitMode {
+  OPTIMIZED = "OPTIMIZED", // 合併運算優化模式 (1秒更新)
+  LEGACY = "LEGACY", // 舊版高頻模式 (0.1秒更新)
+}
+
 export interface Wallet {
   gold: number; // 金幣數量
   clickPoints: number; // 點擊點數
@@ -277,7 +282,7 @@ export interface MonsterConfig {
 }
 
 export interface GameConfig {
-  settings: Record<string, unknown>; // From 'Settings' sheet
+  settings: Record<string, unknown>; // From 'Settings' sheet. Includes HIT_MODE (OPTIMIZED | LEGACY)
   monsters: MonsterConfig[]; // From 'Monsters' sheet
   upgrades: UpgradeConfig[]; // From 'Upgrades' sheet
   equipments: EquipmentItemConfig[]; // From 'Equipments' sheet

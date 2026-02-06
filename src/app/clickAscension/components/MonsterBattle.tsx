@@ -76,6 +76,7 @@ interface MonsterBattleProps {
     id: string;
     damage: number;
     isCrit: boolean;
+    burstHits?: { damage: number; isCrit: boolean }[];
   } | null;
   bossTimeLeft?: number | null;
   bossTimeLimit?: number;
@@ -201,7 +202,25 @@ export default function MonsterBattle({
 
     const rect = containerRef.current?.getBoundingClientRect();
     if (rect) {
-      // Random position near center implies "Auto Click"
+      // Check for Burst Hits (Optimized Mode)
+      // "burstHits" allows us to render multiple distinct damage numbers from a single state update
+      // effectively decoupling visual frequency from logic frequency.
+      if (
+        lastAutoClickEvent.burstHits &&
+        lastAutoClickEvent.burstHits.length > 0
+      ) {
+        lastAutoClickEvent.burstHits.forEach((hit) => {
+          const x = rect.width / 2 + (Math.random() * 80 - 40);
+          const y = rect.height / 2 + (Math.random() * 80 - 40);
+          const type = hit.isCrit ? "CRIT" : "CLICK";
+
+          // Instant burst (no stagger) - Relies on React batching functional updates correctly
+          addFloatingText(formatBigNumber(hit.damage, 1, 1000), x, y, type);
+        });
+        return;
+      }
+
+      // Legacy fallback (Single hit event)
       const x = rect.width / 2 + (Math.random() * 60 - 30);
       const y = rect.height / 2 + (Math.random() * 60 - 30);
 
