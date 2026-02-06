@@ -932,7 +932,7 @@ export default function ClickAscensionGame() {
       // Simulation Loop
       for (let i = 0; i < clicksToSimulate; i++) {
         const isCrit = Math.random() < effectiveStats.criticalChance;
-        let dmg = isCrit
+        const dmg = isCrit
           ? Math.floor(
               effectiveStats.baseDamage * effectiveStats.criticalDamage
             )
@@ -989,7 +989,7 @@ export default function ClickAscensionGame() {
           id: crypto.randomUUID(),
           damage: totalDmg,
           isCrit: false,
-          // @ts-ignore: Passing extra data for optimized renderer
+          // @ts-expect-error: Passing extra data for optimized renderer
           burstHits: burstHits,
         });
       } else {
