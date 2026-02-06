@@ -303,7 +303,7 @@ export default function ProfilePage({
           />
           <StatItem
             label="關卡目標減少"
-            value={`-${formatNumber(effectiveStats.monsterKillReduction)} 隻`}
+            value={`-${formatNumber(Math.floor(effectiveStats.monsterKillReduction))} 隻`}
             icon="📉"
           />
           <StatItem

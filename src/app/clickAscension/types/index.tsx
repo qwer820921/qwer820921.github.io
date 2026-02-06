@@ -1,10 +1,11 @@
-export type CurrencyType =
-  | "GOLD"
-  | "CP"
-  | "DIAMOND"
-  | "AP"
-  | "LP"
-  | "EQUIPMENT_SHARD"; // 貨幣類型：金幣、點擊點數、鑽石、飛昇點數、等級點數、裝備碎片
+export enum CurrencyType {
+  GOLD = "GOLD", // 金幣
+  CP = "CP", // 點擊點數 (Click Points)
+  DIAMOND = "DIAMOND", // 鑽石
+  AP = "AP", // 飛昇點數 (Ascension Points)
+  LP = "LP", // 等級點數 (Level Points)
+  EQUIPMENT_SHARD = "EQUIPMENT_SHARD", // 裝備碎片
+}
 
 export interface Wallet {
   gold: number; // 金幣數量
@@ -46,12 +47,15 @@ export interface PlayerAttributes {
   goldMultiplier: number; // 金幣獲取倍率
   cpMultiplier: number; // 點擊點數倍率 (Click Point multiplier)
   xpMultiplier: number; // 經驗值倍率
+  apMultiplier: number; // 飛昇點數倍率
   bossDamageMultiplier: number; // 對 BOSS 傷害倍率
 
   // New Ascension Stats
   autoClickPerSec: number; // 每秒模擬點擊次數
   monsterKillReduction: number; // 進入下關所需擊殺數減少量
   rareMonsterChance: number; // 稀有怪出現機率 (0.1 = 10%)
+  equipDamageMultiplier: number; // 裝備百分比傷害加成 (例如 0.5 = +50%)
+  atkPercentBonus: number; // 攻擊力百分比加成累計 (同詞條相加)
 }
 
 export interface PlayerState {
@@ -159,24 +163,34 @@ export interface FloatingText {
 // Shop & Upgrades // 商店與升級
 // ============================================================================
 
-export enum UpgradeCategory {
-  CLICK_UPGRADE = "CLICK_UPGRADE", // 點擊升級
-  AUTO_UPGRADE = "AUTO_UPGRADE", // 自動升級
-  FEATURE = "FEATURE", // 功能升級
+export enum UpgradeShopType {
+  GOLD = "GOLD", // 金幣商店
+  LEVEL = "LEVEL", // 等級商店
+  CLICK = "CLICK", // 點擊商店
+  ASCENSION = "ASCENSION", // 飛昇商店
 }
 
 export enum UpgradeEffectType {
-  ADD_DAMAGE = "ADD_DAMAGE", // 增加點擊傷害
-  ADD_AUTO = "ADD_AUTO", // 增加自動攻擊傷害,
-  ADD_AUTO_DMG = "ADD_AUTO_DMG", // Same as ADD_AUTO, alias
-  ADD_CRIT = "ADD_CRIT", // 增加爆擊機率/傷害
-  ADD_GOLD = "ADD_GOLD", // 增加金幣獲取(Flat or Mult?) - Existing logic likely treats as flat or general category
-  // New Types
+  // 傷害相關
+  ADD_BASE_DMG = "ADD_BASE_DMG", // 基礎傷害
+  ADD_AUTO_DMG = "ADD_AUTO_DMG", // 自動攻擊傷害
+  ADD_BOSS_DMG = "ADD_BOSS_DMG", // BOSS 傷害加成
+  ADD_CRIT_CHANCE = "ADD_CRIT_CHANCE", // 爆擊機率
+  ADD_CRIT_DMG = "ADD_CRIT_DMG", // 爆擊傷害
+  EQUIP_DMG_MULT = "EQUIP_DMG_MULT", // 裝備百分比傷害加成
+
+  // 資源相關
+  ADD_GOLD = "ADD_GOLD", // 金幣獲取
+  ADD_GOLD_MULT = "ADD_GOLD_MULT", // 金幣倍率
   ADD_XP_MULT = "ADD_XP_MULT", // 經驗值倍率
-  ADD_GOLD_MULT = "ADD_GOLD_MULT", // 金幣獲取倍率
-  REDUCE_GOAL_V = "REDUCE_GOAL_V", // 減少關卡目標 (隻)
-  RARE_CHANCE_P = "RARE_CHANCE_P", // 稀有怪機率 (%)
-  AUTO_CLICK_V = "AUTO_CLICK_V", // 自動點擊 (次/秒)
+  ADD_AP_MULT = "ADD_AP_MULT", // 飛昇點數倍率
+  ADD_INVENTORY = "ADD_INVENTORY", // 道具數量
+
+  // 飛昇 / 特殊
+  ADD_ATK_P = "ADD_ATK_P", // 攻擊力百分比加成
+  AUTO_CLICK_V = "AUTO_CLICK_V", // 自動點擊次數
+  RARE_CHANCE_P = "RARE_CHANCE_P", // 稀有怪機率
+  REDUCE_GOAL_V = "REDUCE_GOAL_V", // 減少關卡目標
 }
 
 export interface UpgradeItem {

@@ -6,6 +6,7 @@ import {
   EquipmentSlot,
   PlayerAttributes,
   EquipmentItemConfig,
+  UpgradeEffectType,
 } from "../types";
 import { formatBigNumber } from "../utils/formatNumber";
 import "../styles/clickAscension.css";
@@ -61,33 +62,13 @@ function getEstimatedCP(config: EquipmentItemConfig, level: number) {
     .trim();
 
   // Base Dmg * 10
-  if (
-    [
-      "ADD_BASE_DMG",
-      "CLICK_DMG",
-      "ADD_DAMAGE",
-      "CLICK_DAMAGE",
-      "ADD_CLICK_DMG",
-    ].includes(t)
-  )
-    return Math.floor(val * 10);
+  if (t === UpgradeEffectType.ADD_BASE_DMG) return Math.floor(val * 10);
   // Auto Dmg * 20
-  if (["ADD_AUTO_DMG", "AUTO_DMG", "AUTO_DAMAGE", "ADD_AUTO"].includes(t))
-    return Math.floor(val * 20);
+  if (t === UpgradeEffectType.ADD_AUTO_DMG) return Math.floor(val * 20);
   // Crit% * 10 (1% = 10 CP)
-  if (
-    [
-      "ADD_CRIT_CHANCE",
-      "CRIT_RATE",
-      "ADD_CRIT_RATE",
-      "LUCK",
-      "ADD_CRIT",
-    ].includes(t)
-  )
-    return Math.floor(val * 10);
+  if (t === UpgradeEffectType.ADD_CRIT_CHANCE) return Math.floor(val * 10);
   // CritDmg% * 5 (1% = 5 CP)
-  if (["ADD_CRIT_DMG", "CRIT_DMG", "CRIT_DAMAGE", "ADD_CRIT_DMG"].includes(t))
-    return Math.floor(val * 5);
+  if (t === UpgradeEffectType.ADD_CRIT_DMG) return Math.floor(val * 5);
 
   return 0;
 }
@@ -359,32 +340,23 @@ export default function CharacterView({
         .trim();
 
       switch (effectType) {
-        case "ADD_BASE_DMG":
-        case "CLICK_DMG":
-        case "CLICK_DAMAGE":
-        case "ADD_DAMAGE":
-        case "ADD_CLICK_DMG":
+        case UpgradeEffectType.ADD_BASE_DMG:
           bonuses.baseDamage += val;
           break;
-        case "ADD_AUTO_DMG":
-        case "AUTO_DMG":
-        case "AUTO_DAMAGE":
+        case UpgradeEffectType.ADD_AUTO_DMG:
           bonuses.autoAttackDamage += val;
           break;
-        case "ADD_CRIT_CHANCE":
-        case "CRIT_RATE":
+        case UpgradeEffectType.ADD_CRIT_CHANCE:
           bonuses.criticalChance += val / 100;
           break;
-        case "ADD_CRIT_DMG":
-        case "CRIT_DMG":
+        case UpgradeEffectType.ADD_CRIT_DMG:
           bonuses.criticalDamage += val / 100;
           break;
-        case "ADD_GOLD_MULT":
-        case "GOLD_MULT":
+        case UpgradeEffectType.ADD_GOLD:
+        case UpgradeEffectType.ADD_GOLD_MULT:
           bonuses.goldMultiplier += val / 100;
           break;
-        case "ADD_XP_MULT":
-        case "XP_MULT":
+        case UpgradeEffectType.ADD_XP_MULT:
           bonuses.xpMultiplier += val / 100;
           break;
       }

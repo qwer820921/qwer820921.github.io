@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { PlayerState } from "../types";
+import { PlayerState, UpgradeShopType, UpgradeEffectType, CurrencyType } from "../types";
 import { formatBigNumber } from "../utils/formatNumber";
 import "../styles/clickAscension.css";
 
@@ -13,6 +13,7 @@ import { GameStaticData } from "../api/clickAscensionApi";
 interface ShopPageProps {
   player: PlayerState;
   onPurchase: (itemId: string) => void;
+  onBulkPurchase?: (itemId: string, quantity: number) => void;
   onResetLevelPoints?: () => void;
   gameConfig?: GameStaticData | null;
   autoGachaBox?: string | null;
@@ -35,6 +36,7 @@ const formatNumber = (num: number): string => formatBigNumber(num, 2, 1000);
 export default function ShopPage({
   player,
   onPurchase,
+  onBulkPurchase,
   onResetLevelPoints,
   gameConfig,
   autoGachaBox,
@@ -45,6 +47,7 @@ export default function ShopPage({
     "UPGRADE"
   );
   const [activeProbBox, setActiveProbBox] = useState<string | null>(null);
+  const [gachaCurrency, setGachaCurrency] = useState<"AP" | "DIAMOND">("DIAMOND");
 
   // Calculate Total Click Shop Levels (Cultivation)
   // Fix: Only sum levels for items that actually exist in the current Game Configuration.
@@ -54,7 +57,7 @@ export default function ShopPage({
 
     // Get valid IDs from config
     const validClickUpgradeIds = gameConfig.upgrades
-      .filter((u: any) => u.Shop_Type === "CLICK")
+      .filter((u: any) => u.Shop_Type === UpgradeShopType.CLICK)
       .map((u: any) => u.ID);
 
     // Sum levels only for these valid IDs
@@ -62,15 +65,22 @@ export default function ShopPage({
       return total + (player.clickShop[id] || 0);
     }, 0);
   }, [player.clickShop, gameConfig]);
+  
+  // Calculate Gacha Costs dynamically
+  const gachaCosts = React.useMemo(() => {
+    const s = gameConfig?.settings || {};
+    const isDia = gachaCurrency === "DIAMOND";
+    return {
+        basic: isDia ? (Number(s.GACHA_COST_BASIC_DIAMOND) || 2) : (Number(s.GACHA_COST_BASIC_AP) || 20),
+        adv: isDia ? (Number(s.GACHA_COST_ADV_DIAMOND) || 20) : (Number(s.GACHA_COST_ADV_AP) || 200),
+        prem: isDia ? (Number(s.GACHA_COST_PREM_DIAMOND) || 100) : (Number(s.GACHA_COST_PREM_AP) || 1000),
+    };
+  }, [gameConfig?.settings, gachaCurrency]);
+
+  const gachaSuffix = gachaCurrency === "DIAMOND" ? "diamond" : "ap";
+  const gachaSymbol = gachaCurrency === "DIAMOND" ? "💎" : "🕊️";
 
   const realm = getRealmInfo(totalClickLevels);
-
-  console.log(
-    "[ShopPage] Rendering. ActiveTab:",
-    activeTab,
-    "isProbModalOpen:",
-    activeProbBox
-  );
 
   // Helper to get current level of an upgrade from PlayerState
   const getUpgradeLevel = (id: string): number => {
@@ -95,7 +105,7 @@ export default function ShopPage({
     type: string
   ) => {
     // Special case for Potion/Consumable (fixed cost)
-    if (type === "ADD_INVENTORY") return base;
+    if (type === UpgradeEffectType.ADD_INVENTORY) return base;
 
     // If mult === 1, use LINEAR formula: Base + Level
     // Otherwise use EXPONENTIAL: Base * (Mult ^ Level)
@@ -107,21 +117,21 @@ export default function ShopPage({
 
   // Helper to get currency label emoji
   const getCurrencyLabel = (currency: string) => {
-    if (currency === "GOLD") return "💰";
-    if (currency === "LP") return "🆙";
-    if (currency === "CP") return "⚡";
-    if (currency === "DIAMOND") return "💎";
-    if (currency === "AP") return "🕊️";
+    if (currency === CurrencyType.GOLD) return "💰";
+    if (currency === CurrencyType.LP) return "🆙";
+    if (currency === CurrencyType.CP) return "⚡";
+    if (currency === CurrencyType.DIAMOND) return "💎";
+    if (currency === CurrencyType.AP) return "🕊️";
     return currency;
   };
 
   // Helper to get player currency amount
   const getPlayerCurrency = (currency: string) => {
-    if (currency === "GOLD") return player.wallet.gold;
-    if (currency === "LP") return player.wallet.levelPoints;
-    if (currency === "CP") return player.wallet.clickPoints;
-    if (currency === "DIAMOND") return player.wallet.diamonds;
-    if (currency === "AP") return player.wallet.ascensionPoints;
+    if (currency === CurrencyType.GOLD) return player.wallet.gold;
+    if (currency === CurrencyType.LP) return player.wallet.levelPoints;
+    if (currency === CurrencyType.CP) return player.wallet.clickPoints;
+    if (currency === CurrencyType.DIAMOND) return player.wallet.diamonds;
+    if (currency === CurrencyType.AP) return player.wallet.ascensionPoints;
     return 0;
   };
 
@@ -153,7 +163,7 @@ export default function ShopPage({
           // 計算升25級的總費用（只對 GOLD 商店有效）
           let cost25 = 0;
           let canAfford25 = false;
-          const isGoldShop = shopType === "GOLD" || it.Shop_Type === "GOLD";
+          const isGoldShop = shopType === UpgradeShopType.GOLD || it.Shop_Type === UpgradeShopType.GOLD;
 
           if (isGoldShop && !isMaxed) {
             // 計算連續升25級所需的總費用
@@ -170,6 +180,33 @@ export default function ShopPage({
                 );
               }
               canAfford25 = playerCurrency >= cost25 && levelsToUpgrade === 25;
+            }
+          }
+
+          // 計算里程碑倍率提示
+          const milestoneLevel = Number(it.Milestone_Level || 0);
+          const milestoneMult = Number(it.Milestone_Mult || 1);
+          let nextMilestone1 = 0; // 升1級後的倍率加成 (0 = 無)
+          let nextMilestone25 = 0; // 升25級範圍內的倍率加成 (0 = 無)
+
+          if (milestoneLevel > 0 && milestoneMult > 1) {
+            // 檢查升 1 級是否達到里程碑
+            const nextLevel = level + 1;
+            if (nextLevel > 0 && nextLevel % milestoneLevel === 0) {
+              nextMilestone1 = milestoneMult;
+            }
+
+            // 檢查升 25 級範圍內是否包含任何里程碑
+            if (isGoldShop) {
+              const endLevel = level + 25;
+              // 找出範圍內的里程碑數量
+              const milestonesInRange = Math.floor(endLevel / milestoneLevel) - Math.floor(level / milestoneLevel);
+              if (milestonesInRange > 0) {
+                // 計算新的總倍率（相比當前）
+                const currentMultiplier = Math.pow(milestoneMult, Math.floor(level / milestoneLevel));
+                const newMultiplier = Math.pow(milestoneMult, Math.floor(endLevel / milestoneLevel));
+                nextMilestone25 = newMultiplier / currentMultiplier;
+              }
             }
           }
 
@@ -195,11 +232,19 @@ export default function ShopPage({
               cost25={cost25}
               canAfford25={canAfford25}
               onBulkUpgrade={() => {
-                // 連續購買25次
-                for (let i = 0; i < 25; i++) {
-                  onPurchase(it.ID);
+                // 使用批量購買函數，一次處理 25 級
+                if (onBulkPurchase) {
+                  onBulkPurchase(it.ID, 25);
+                } else {
+                  // fallback: 連續購買 (可能有狀態問題)
+                  for (let i = 0; i < 25; i++) {
+                    onPurchase(it.ID);
+                  }
                 }
               }}
+              // 里程碑提示
+              nextMilestone1={nextMilestone1}
+              nextMilestone25={nextMilestone25}
             />
           );
         })}
@@ -353,29 +398,36 @@ export default function ShopPage({
                 </div>
                 <div
                   style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: "4px",
                     fontWeight: "bold",
-                    fontSize: "1.2rem",
+                    fontSize: "1.1rem",
                     color: "#fde047",
+                    marginTop: "8px",
                   }}
                 >
-                  10 💎 + 500 💰
+                  <div>{Number((gameConfig?.settings as any)?.DAILY_REWARD_GEM) || 0} 💎 鑽石</div>
+                  <div>{formatNumber(Number((gameConfig?.settings as any)?.DAILY_REWARD_GOLD) || 0)} 💰 金幣</div>
+                  <div>{formatNumber(Number((gameConfig?.settings as any)?.DAILY_REWARD_AP) || 0)} 🕊️ 飛昇點數</div>
                 </div>
               </div>
               <button
-                className={`ca-btn ${isDailyAvailable ? "ca-btn-primary" : ""}`}
+                className={`ca-btn ${isDailyAvailable && gameConfig?.settings ? "ca-btn-primary" : ""}`}
                 style={{
                   marginTop: "16px",
                   width: "100%",
                   padding: "12px",
-                  opacity: isDailyAvailable ? 1 : 0.5,
-                  cursor: isDailyAvailable ? "pointer" : "not-allowed",
-                  background: isDailyAvailable ? "" : "#334155",
-                  color: isDailyAvailable ? "" : "#64748b",
+                  opacity: isDailyAvailable && gameConfig?.settings ? 1 : 0.5,
+                  cursor: isDailyAvailable && gameConfig?.settings ? "pointer" : "not-allowed",
+                  background: isDailyAvailable && gameConfig?.settings ? "" : "#334155",
+                  color: isDailyAvailable && gameConfig?.settings ? "" : "#64748b",
                 }}
-                disabled={!isDailyAvailable}
+                disabled={!isDailyAvailable || !gameConfig?.settings}
                 onClick={() => onPurchase("daily_checkin")}
               >
-                {isDailyAvailable ? "領取獎勵" : "明日再來"}
+                {!gameConfig?.settings ? "讀取中..." : isDailyAvailable ? "領取獎勵" : "明日再來"}
               </button>
             </div>
           </div>
@@ -441,14 +493,14 @@ export default function ShopPage({
             {gameConfig?.upgrades ? (
               (() => {
                 const allGoldItems = gameConfig.upgrades.filter(
-                  (u: any) => u.Shop_Type === "GOLD"
+                  (u: any) => u.Shop_Type === UpgradeShopType.GOLD
                 );
                 const filteredItems = allGoldItems.filter((u: any) => {
                   if (goldSubTab === "RECRUIT") {
-                    return u.Effect_Type === "ADD_AUTO_DMG";
+                    return u.Effect_Type === UpgradeEffectType.ADD_AUTO_DMG;
                   } else {
                     // UPGRADE: Everything NOT ADD_AUTO_DMG
-                    return u.Effect_Type !== "ADD_AUTO_DMG";
+                    return u.Effect_Type !== UpgradeEffectType.ADD_AUTO_DMG;
                   }
                 });
                 return renderUpgradeList(filteredItems);
@@ -647,6 +699,57 @@ export default function ShopPage({
               >
                 試試你的手氣！
               </div>
+            
+            {/* Gacha Currency Toggle Tabs */}
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                background: "rgba(0,0,0,0.3)",
+                padding: "4px",
+                borderRadius: "8px",
+                marginBottom: "8px",
+              }}
+            >
+              <button
+                onClick={() => setGachaCurrency("DIAMOND")}
+                style={{
+                  flex: 1,
+                  padding: "8px 16px",
+                  borderRadius: "6px",
+                  background:
+                    gachaCurrency === "DIAMOND"
+                      ? "linear-gradient(135deg, #3b82f6, #2563eb)" // Blue
+                      : "transparent",
+                  color: gachaCurrency === "DIAMOND" ? "#fff" : "#94a3b8",
+                  border: "none",
+                  cursor: "pointer",
+                  fontWeight: "bold",
+                  transition: "all 0.2s",
+                }}
+              >
+                💎 鑽石抽取
+              </button>
+              <button
+                onClick={() => setGachaCurrency("AP")}
+                style={{
+                  flex: 1,
+                  padding: "8px 16px",
+                  borderRadius: "6px",
+                  background:
+                    gachaCurrency === "AP"
+                      ? "linear-gradient(135deg, #f59e0b, #d97706)" // Amber
+                      : "transparent",
+                  color: gachaCurrency === "AP" ? "#fff" : "#94a3b8",
+                  border: "none",
+                  cursor: "pointer",
+                  fontWeight: "bold",
+                  transition: "all 0.2s",
+                }}
+              >
+                🕊️ 飛昇點數抽取
+              </button>
+            </div>
             </div>
 
             <div className="ca-shop-item-grid" style={{ width: "100%" }}>
@@ -718,55 +821,18 @@ export default function ShopPage({
                 >
                   <GachaButton
                     label="1 抽"
-                    cost="1,000"
-                    onClick={() => onPurchase("gacha_equipment_basic")}
+                    cost={formatNumber(gachaCosts.basic)}
+                    currencyLabel={gachaSymbol}
+                    color="#4ade80"
+                    onClick={() => onPurchase(`gacha_basic_${gachaSuffix}_1`)}
                   />
                   <GachaButton
                     label="10 抽"
-                    cost="10,000"
-                    onClick={() => onPurchase("gacha_equipment_basic_10")}
+                    cost={formatNumber(gachaCosts.basic * 10)}
+                    currencyLabel={gachaSymbol}
+                    color="#4ade80"
+                    onClick={() => onPurchase(`gacha_basic_${gachaSuffix}_10`)}
                   />
-                  <GachaButton
-                    label="100 抽"
-                    cost="100,000"
-                    onClick={() => onPurchase("gacha_equipment_basic_100")}
-                  />
-                  <GachaButton
-                    label="1000 抽"
-                    cost="1,000,000"
-                    onClick={() => onPurchase("gacha_equipment_basic_1000")}
-                  />
-                  <div
-                    onClick={() =>
-                      onToggleAutoGacha?.(
-                        autoGachaBox === "basic" ? null : "basic"
-                      )
-                    }
-                    style={{
-                      padding: "12px 16px",
-                      borderRadius: "8px",
-                      background:
-                        autoGachaBox === "basic"
-                          ? "#10b981"
-                          : "rgba(255,255,255,0.1)",
-                      color: autoGachaBox === "basic" ? "#fff" : "#94a3b8",
-                      cursor: "pointer",
-                      fontSize: "0.9rem",
-                      fontWeight: "bold",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "8px",
-                      border: `1px solid ${autoGachaBox === "basic" ? "#4ade80" : "rgba(255,255,255,0.2)"}`,
-                      transition: "all 0.3s",
-                      flex: "1 1 100%",
-                    }}
-                  >
-                    <span>
-                      {autoGachaBox === "basic" ? "⏹️ 停止" : "🤖 自動"}
-                    </span>
-                    <span>1000連抽</span>
-                  </div>
                 </div>
               </div>
 
@@ -839,59 +905,18 @@ export default function ShopPage({
                 >
                   <GachaButton
                     label="1 抽"
-                    cost="10,000"
+                    cost={formatNumber(gachaCosts.adv)}
+                    currencyLabel={gachaSymbol}
                     color="#facc15"
-                    onClick={() => onPurchase("gacha_equipment_advanced")}
+                    onClick={() => onPurchase(`gacha_adv_${gachaSuffix}_1`)}
                   />
                   <GachaButton
                     label="10 抽"
-                    cost="100,000"
+                    cost={formatNumber(gachaCosts.adv * 10)}
+                    currencyLabel={gachaSymbol}
                     color="#facc15"
-                    onClick={() => onPurchase("gacha_equipment_advanced_10")}
+                    onClick={() => onPurchase(`gacha_adv_${gachaSuffix}_10`)}
                   />
-                  <GachaButton
-                    label="100 抽"
-                    cost="1,000,000"
-                    color="#facc15"
-                    onClick={() => onPurchase("gacha_equipment_advanced_100")}
-                  />
-                  <GachaButton
-                    label="1000 抽"
-                    cost="10,000,000"
-                    color="#facc15"
-                    onClick={() => onPurchase("gacha_equipment_advanced_1000")}
-                  />
-                  <div
-                    onClick={() =>
-                      onToggleAutoGacha?.(
-                        autoGachaBox === "advanced" ? null : "advanced"
-                      )
-                    }
-                    style={{
-                      padding: "12px 16px",
-                      borderRadius: "8px",
-                      background:
-                        autoGachaBox === "advanced"
-                          ? "#f59e0b"
-                          : "rgba(255,255,255,0.1)",
-                      color: autoGachaBox === "advanced" ? "#fff" : "#94a3b8",
-                      cursor: "pointer",
-                      fontSize: "0.9rem",
-                      fontWeight: "bold",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "8px",
-                      border: `1px solid ${autoGachaBox === "advanced" ? "#fbbf24" : "rgba(255,255,255,0.2)"}`,
-                      transition: "all 0.3s",
-                      flex: "1 1 100%",
-                    }}
-                  >
-                    <span>
-                      {autoGachaBox === "advanced" ? "⏹️ 停止" : "🤖 自動"}
-                    </span>
-                    <span>1000連抽</span>
-                  </div>
                 </div>
               </div>
 
@@ -938,7 +963,7 @@ export default function ShopPage({
                       color: "#d8b4fe",
                     }}
                   >
-                    頂級裝備箱
+                    豪華裝備箱
                   </div>
                   <div
                     style={{
@@ -964,59 +989,18 @@ export default function ShopPage({
                 >
                   <GachaButton
                     label="1 抽"
-                    cost="100,000"
+                    cost={formatNumber(gachaCosts.prem)}
+                    currencyLabel={gachaSymbol}
                     color="#d8b4fe"
-                    onClick={() => onPurchase("gacha_equipment_premium")}
+                    onClick={() => onPurchase(`gacha_prem_${gachaSuffix}_1`)}
                   />
                   <GachaButton
                     label="10 抽"
-                    cost="1,000,000"
+                    cost={formatNumber(gachaCosts.prem * 10)}
+                    currencyLabel={gachaSymbol}
                     color="#d8b4fe"
-                    onClick={() => onPurchase("gacha_equipment_premium_10")}
+                    onClick={() => onPurchase(`gacha_prem_${gachaSuffix}_10`)}
                   />
-                  <GachaButton
-                    label="100 抽"
-                    cost="10,000,000"
-                    color="#d8b4fe"
-                    onClick={() => onPurchase("gacha_equipment_premium_100")}
-                  />
-                  <GachaButton
-                    label="1000 抽"
-                    cost="100,000,000"
-                    color="#d8b4fe"
-                    onClick={() => onPurchase("gacha_equipment_premium_1000")}
-                  />
-                  <div
-                    onClick={() =>
-                      onToggleAutoGacha?.(
-                        autoGachaBox === "premium" ? null : "premium"
-                      )
-                    }
-                    style={{
-                      padding: "12px 16px",
-                      borderRadius: "8px",
-                      background:
-                        autoGachaBox === "premium"
-                          ? "#ec4899"
-                          : "rgba(255,255,255,0.1)",
-                      color: autoGachaBox === "premium" ? "#fff" : "#94a3b8",
-                      cursor: "pointer",
-                      fontSize: "0.9rem",
-                      fontWeight: "bold",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "8px",
-                      border: `1px solid ${autoGachaBox === "premium" ? "#f472b6" : "rgba(255,255,255,0.2)"}`,
-                      transition: "all 0.3s",
-                      flex: "1 1 100%",
-                    }}
-                  >
-                    <span>
-                      {autoGachaBox === "premium" ? "⏹️ 停止" : "🤖 自動"}
-                    </span>
-                    <span>1000連抽</span>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1105,6 +1089,8 @@ function UpgradeRow({
   cost25,
   canAfford25,
   onBulkUpgrade,
+  nextMilestone1,
+  nextMilestone25,
 }: {
   name: string;
   desc: string;
@@ -1118,6 +1104,8 @@ function UpgradeRow({
   cost25?: number;
   canAfford25?: boolean;
   onBulkUpgrade?: () => void;
+  nextMilestone1?: number;
+  nextMilestone25?: number;
 }) {
   return (
     <div className="ca-upgrade-row">
@@ -1161,14 +1149,22 @@ function UpgradeRow({
             cursor: isMaxed || !canAfford ? "not-allowed" : "pointer",
             minWidth: showBulkUpgrade ? "70px" : "90px",
             padding: "6px 8px",
+            background: nextMilestone1 && nextMilestone1 > 1
+              ? "linear-gradient(135deg, #ec4899, #be185d)"
+              : undefined,
           }}
         >
           <span style={{ fontSize: "0.65rem", fontWeight: "bold" }}>
-            {isMaxed ? "已滿級" : "升級"}
+            {isMaxed ? "已滿級" : nextMilestone1 && nextMilestone1 > 1 ? `🔥 升級` : "升級"}
           </span>
           {!isMaxed && (
             <span style={{ fontSize: "0.6rem" }}>
               {currencyLabel} {formatNumber(cost)}
+            </span>
+          )}
+          {(nextMilestone1 || 0) > 1 && !isMaxed && (
+            <span style={{ fontSize: "0.5rem", color: "#fbbf24" }}>
+              x{nextMilestone1} 倍率
             </span>
           )}
         </button>
@@ -1184,17 +1180,24 @@ function UpgradeRow({
               cursor: !canAfford25 ? "not-allowed" : "pointer",
               minWidth: "85px",
               padding: "6px 8px",
-              background: canAfford25
-                ? "linear-gradient(135deg, #f59e0b, #d97706)"
-                : "rgba(255,255,255,0.1)",
+              background: nextMilestone25 && nextMilestone25 > 1
+                ? "linear-gradient(135deg, #ec4899, #be185d)"
+                : canAfford25
+                  ? "linear-gradient(135deg, #f59e0b, #d97706)"
+                  : "rgba(255,255,255,0.1)",
             }}
           >
             <span style={{ fontSize: "0.65rem", fontWeight: "bold" }}>
-              +25級
+              {nextMilestone25 && nextMilestone25 > 1 ? "🔥 +25級" : "+25級"}
             </span>
             <span style={{ fontSize: "0.55rem" }}>
               {currencyLabel} {formatNumber(cost25 || 0)}
             </span>
+            {(nextMilestone25 || 0) > 1 && (
+              <span style={{ fontSize: "0.5rem", color: "#fbbf24" }}>
+                x{(nextMilestone25 || 0).toFixed(1)} 倍率
+              </span>
+            )}
           </button>
         )}
       </div>
@@ -1331,7 +1334,7 @@ function ProbabilityModal({
               ? "基礎"
               : boxType === "advanced"
                 ? "高級"
-                : "頂級"}
+                : "豪華"}
             裝備機率一覽
           </div>
           <button
@@ -1474,38 +1477,36 @@ function getEstimatedCP(config: any, level: number) {
   const val =
     (Number(config.Base_Val) || 0) +
     (level - 1) * (Number(config.Level_Mult) || 0);
-  const t = String(config.Effect_Type || "")
-    .toUpperCase()
-    .trim();
+  const effectType = String(config.Effect_Type || "").trim();
 
   // Base Dmg * 10
-  if (
-    [
-      "ADD_BASE_DMG",
-      "CLICK_DMG",
-      "ADD_DAMAGE",
-      "CLICK_DAMAGE",
-      "ADD_CLICK_DMG",
-    ].includes(t)
-  )
+  if (effectType === UpgradeEffectType.ADD_BASE_DMG) {
     return Math.floor(val * 10);
+  }
   // Auto Dmg * 20
-  if (["ADD_AUTO_DMG", "AUTO_DMG", "AUTO_DAMAGE", "ADD_AUTO"].includes(t))
+  if (effectType === UpgradeEffectType.ADD_AUTO_DMG) {
     return Math.floor(val * 20);
+  }
   // Crit% * 10 (1% = 10 CP)
-  if (
-    [
-      "ADD_CRIT_CHANCE",
-      "CRIT_RATE",
-      "ADD_CRIT_RATE",
-      "LUCK",
-      "ADD_CRIT",
-    ].includes(t)
-  )
+  if (effectType === UpgradeEffectType.ADD_CRIT_CHANCE) {
     return Math.floor(val * 10);
+  }
   // CritDmg% * 5 (1% = 5 CP)
-  if (["ADD_CRIT_DMG", "CRIT_DMG", "CRIT_DAMAGE", "ADD_CRIT_DMG"].includes(t))
+  if (effectType === UpgradeEffectType.ADD_CRIT_DMG) {
     return Math.floor(val * 5);
+  }
+  // Gold/XP multipliers * 2
+  if (
+    effectType === UpgradeEffectType.ADD_GOLD ||
+    effectType === UpgradeEffectType.ADD_GOLD_MULT ||
+    effectType === UpgradeEffectType.ADD_XP_MULT
+  ) {
+    return Math.floor(val * 2);
+  }
+  // Boss Dmg * 8
+  if (effectType === UpgradeEffectType.ADD_BOSS_DMG) {
+    return Math.floor(val * 8);
+  }
 
   return 0;
 }
@@ -1705,11 +1706,13 @@ function GachaButton({
   cost,
   onClick,
   color = "#22d3ee",
+  currencyLabel = "💰",
 }: {
   label: string;
   cost: string;
   onClick: () => void;
   color?: string;
+  currencyLabel?: string;
 }) {
   return (
     <button
@@ -1737,7 +1740,7 @@ function GachaButton({
           color: color,
         }}
       >
-        💰 {cost}
+        {currencyLabel} {cost}
       </span>
     </button>
   );

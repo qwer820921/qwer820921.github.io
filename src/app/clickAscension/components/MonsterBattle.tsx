@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Monster, FloatingText, DamageType, GameConfig } from "../types";
+import { Monster, FloatingText, DamageType, GameConfig, UpgradeEffectType } from "../types";
 import { formatBigNumber } from "../utils/formatNumber";
 import HpBar from "./HpBar";
 import "../styles/clickAscension.css";
@@ -117,7 +117,7 @@ export default function MonsterBattle({
       const effectType = String(config?.Effect_Type || "")
         .toUpperCase()
         .trim();
-      return effectType === "ADD_AUTO_DMG";
+      return effectType === UpgradeEffectType.ADD_AUTO_DMG;
     })
     .map(([id, level]) => ({ id, level }));
 
@@ -287,11 +287,13 @@ export default function MonsterBattle({
     // Let's multiply here for now, assuming parent trusts the damage value.
 
     let clickDmg = baseDamage;
-    if (isRageActive) clickDmg *= 2;
+    console.log("[Debug] Click:", { baseDamage, isRageActive, isBoss: monster.isBoss, bossMult: bossDamageMultiplier });
+
     if (monster.isBoss) clickDmg *= bossDamageMultiplier;
 
     const isCrit = Math.random() < criticalChance;
     const damage = Math.ceil(clickDmg * (isCrit ? criticalDamage : 1));
+    console.log("[Debug] Damage Calc:", { clickDmg, isCrit, criticalDamage, finalDamage: damage });
 
     // Get click/touch position relative to container
     const rect = containerRef.current?.getBoundingClientRect();

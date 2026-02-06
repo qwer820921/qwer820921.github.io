@@ -10,11 +10,22 @@ import {
   GameConfig,
   MonsterTemplate,
   MonsterRarity,
+  UpgradeEffectType,
+  UpgradeShopType,
+  CurrencyType,
 } from "../types";
 import {
   formatBigNumber,
   initNumberFormatFromConfig,
 } from "../utils/formatNumber";
+import { applyEffect } from "../utils/effectMapper";
+import {
+  hasSufficientFunds,
+  deductCurrency,
+  addCurrency,
+  resetWallet,
+} from "../utils/walletManager";
+import { calculateUpgradeCost } from "../utils/costCalculator";
 import Header from "./Header";
 import MonsterBattle from "./MonsterBattle";
 import FooterNav, { ModalType, ViewType } from "./FooterNav";
@@ -47,10 +58,13 @@ const INITIAL_PLAYER: PlayerState = {
     goldMultiplier: 1.0,
     cpMultiplier: 1.0,
     xpMultiplier: 1.0,
+    apMultiplier: 1.0,
     bossDamageMultiplier: 1.0,
     autoClickPerSec: 1, // Start with 1 auto click
     monsterKillReduction: 0,
     rareMonsterChance: 0,
+    equipDamageMultiplier: 0,
+    atkPercentBonus: 0,
   },
   records: {
     totalClicks: 0,
@@ -154,10 +168,13 @@ export default function ClickAscensionGame() {
       goldMultiplier: player.stats.goldMultiplier || 1.0,
       cpMultiplier: player.stats.cpMultiplier || 1.0,
       xpMultiplier: player.stats.xpMultiplier || 1.0,
+      apMultiplier: player.stats.apMultiplier || 1.0,
       bossDamageMultiplier: player.stats.bossDamageMultiplier || 1.0,
       autoClickPerSec: player.stats.autoClickPerSec || 1,
       monsterKillReduction: player.stats.monsterKillReduction || 0,
       rareMonsterChance: player.stats.rareMonsterChance || 0,
+      equipDamageMultiplier: player.stats.equipDamageMultiplier || 0,
+      atkPercentBonus: player.stats.atkPercentBonus || 0,
     };
 
     if (!gameConfig?.equipments) return stats;
@@ -179,225 +196,153 @@ export default function ClickAscensionGame() {
           .toUpperCase()
           .trim();
 
-        // Map effect types to stat fields (Handles multiple variations + User's specific sheet names)
+        // Map effect types to stat fields (使用 enum 對應)
         switch (effectType) {
-          case "ADD_BASE_DMG":
-          case "CLICK_DMG":
-          case "CLICK_DAMAGE":
-          case "ADD_DAMAGE":
-          case "ADD_CLICK_DMG":
+          case UpgradeEffectType.ADD_BASE_DMG:
             stats.baseDamage += val;
             break;
-          case "ADD_AUTO_DMG":
-          case "AUTO_DMG":
-          case "AUTO_DAMAGE":
-          case "ADD_AUTO":
+          case UpgradeEffectType.ADD_AUTO_DMG:
             stats.autoAttackDamage += val;
             break;
-          case "ADD_CRIT_CHANCE":
-          case "CRIT_RATE":
-          case "ADD_CRIT_RATE":
-          case "LUCK":
+          case UpgradeEffectType.ADD_CRIT_CHANCE:
             stats.criticalChance += val / 100; // 5 -> +5%
             break;
-          case "ADD_CRIT_DMG":
-          case "CRIT_DMG":
-          case "CRIT_DAMAGE":
-          case "ADD_CRIT_DMG":
+          case UpgradeEffectType.ADD_CRIT_DMG:
             stats.criticalDamage += val / 100; // 10 -> +10%
             break;
-          case "ADD_GOLD_MULT":
-          case "GOLD_MULT":
-          case "ADD_GOLD":
-          case "GOLD_BONUS":
+          case UpgradeEffectType.ADD_GOLD:
+          case UpgradeEffectType.ADD_GOLD_MULT:
             stats.goldMultiplier += val / 100; // 10 -> +10%
             break;
-          case "ADD_XP_MULT":
-          case "XP_MULT":
-          case "ADD_XP":
-          case "XP_BONUS":
+          case UpgradeEffectType.ADD_XP_MULT:
             stats.xpMultiplier += val / 100; // 5 -> +5%
             break;
-          case "ADD_BOSS_DMG":
-          case "BOSS_DMG":
-          case "BOSS_DAMAGE":
-            stats.bossDamageMultiplier += val / 100; // 10 -> +10% (1.16 + 0.10 = 1.26)
+          case UpgradeEffectType.ADD_BOSS_DMG:
+            stats.bossDamageMultiplier += val / 100; // 10 -> +10%
             break;
-          case "CP_MULT":
-          case "CP_BONUS":
-          case "ADD_CP_MULT":
-            stats.cpMultiplier += val / 100; // 10 -> +10%
-            break;
-
-          // New Ascension / Special Stats
-          case "REDUCE_GOAL_V":
-          case "REDUCE_STAGE_GOAL":
+          case UpgradeEffectType.REDUCE_GOAL_V:
             stats.monsterKillReduction += val;
             break;
-          case "RARE_CHANCE_P":
-          case "RARE_SPAWN_CHANCE":
-          case "RARE_CHANCE":
+          case UpgradeEffectType.RARE_CHANCE_P:
             stats.rareMonsterChance += val / 100; // 10 -> +10%
             break;
-          case "AUTO_CLICK_V":
-          case "AUTO_CLICK_CPS":
+          case UpgradeEffectType.AUTO_CLICK_V:
             stats.autoClickPerSec += val;
             break;
-          case "ADD_XP_MULT": // Explicit handling if not caught above (though XP_MULT was there, ADD_XP_MULT is new enum specific)
-            stats.xpMultiplier += val / 100;
-            break;
-          case "ADD_GOLD_MULT":
-            stats.goldMultiplier += val / 100;
+          case UpgradeEffectType.EQUIP_DMG_MULT:
+            stats.equipDamageMultiplier += val; // val 本身就是百分比數值 (如 100 代表 100%)
             break;
         }
       }
     });
 
-    // Add Gold Shop bonuses (partners/units) - 動態從 gameConfig 讀取
-    // 遍歷所有 GOLD 類型的升級項目
-    const goldShopConfigs =
-      gameConfig?.upgrades?.filter((u: any) => u.Shop_Type === "GOLD") || [];
+    // Add damage bonuses with milestone multiplier - 動態從 gameConfig 讀取
+    // 只篩選有里程碑傷害設定的 ADD_BASE_DMG 和 ADD_AUTO_DMG 類型（不限商店）
+    const damageUpgradeConfigs =
+      gameConfig?.upgrades?.filter(
+        (u: any) =>
+          u.Effect_Type === UpgradeEffectType.ADD_BASE_DMG ||
+          u.Effect_Type === UpgradeEffectType.ADD_AUTO_DMG
+      ) || [];
 
-    goldShopConfigs.forEach((config: any) => {
+    damageUpgradeConfigs.forEach((config: any) => {
       const id = config.ID;
-      const level = player.goldShop[id] || 0;
+      const shopType = String(config.Shop_Type || "").toUpperCase();
+      // 根據 Shop_Type 動態讀取對應商店的等級
+      const shopMap: Record<string, Record<string, number>> = {
+        GOLD: player.goldShop,
+        LEVEL: player.levelShop,
+        CLICK: player.clickShop,
+        ASCENSION: player.ascensionShop,
+      };
+      const level = shopMap[shopType]?.[id] || 0;
       if (level <= 0) return;
 
       // Use config values - DB is the only source of truth
-      const effectType = String(config.Effect_Type || "")
-        .toUpperCase()
-        .trim();
-      // 每25級傷害翻倍（等級25=x2, 50=x4, 75=x8...）
-      const levelMultiplier = Math.pow(2, Math.floor(level / 25));
+      const effectType = config.Effect_Type;
+      // 里程碑傷害加成（從 DB 讀取 Milestone_Level 和 Milestone_Mult）
+      const milestoneLevel = Number(config.Milestone_Level || 0);
+      const milestoneMult = Number(config.Milestone_Mult || 1);
+      const levelMultiplier = milestoneLevel > 0
+        ? Math.pow(milestoneMult, Math.floor(level / milestoneLevel))
+        : 1;
       const baseVal = Number(config.Effect_Val || 0) * level;
       const val = baseVal * levelMultiplier;
 
-      if (
-        effectType === "ADD_DAMAGE" ||
-        effectType === "CLICK_DMG" ||
-        effectType === "ADD_BASE_DMG"
-      )
-        stats.baseDamage += val;
-      if (
-        effectType === "ADD_AUTO_DMG" ||
-        effectType === "AUTO_DMG" ||
-        effectType === "ADD_AUTO"
-      )
-        stats.autoAttackDamage += val;
-      if (
-        effectType === "ADD_GOLD_MULT" ||
-        effectType === "GOLD_MULT" ||
-        effectType === "ADD_GOLD"
-      )
-        stats.goldMultiplier += val / 100;
-      if (
-        effectType === "ADD_CRIT_DMG" ||
-        effectType === "CRIT_DMG" ||
-        effectType === "ADD_CRIT_DAMAGE"
-      )
-        stats.criticalDamage += val / 100;
+      // 根據 Effect_Type 加成對應屬性
+      if (effectType === UpgradeEffectType.ADD_BASE_DMG) stats.baseDamage += val;
+      if (effectType === UpgradeEffectType.ADD_AUTO_DMG) stats.autoAttackDamage += val;
     });
 
     // Add Level Shop bonuses - 動態從 gameConfig 讀取
     const levelShopConfigs =
-      gameConfig?.upgrades?.filter((u: any) => u.Shop_Type === "LEVEL") || [];
+      gameConfig?.upgrades?.filter((u: any) => u.Shop_Type === UpgradeShopType.LEVEL) || [];
 
     levelShopConfigs.forEach((config: any) => {
       const id = config.ID;
       const level = player.levelShop[id] || 0;
       if (level <= 0) return;
 
-      const effectType = String(config.Effect_Type || "")
-        .toUpperCase()
-        .trim();
+      const effectType = config.Effect_Type;
       const val = Number(config.Effect_Val || 0) * level;
 
-      if (effectType === "ADD_XP_MULT" || effectType === "XP_MULT")
+      if (effectType === UpgradeEffectType.ADD_XP_MULT)
         stats.xpMultiplier += val / 100;
-      if (
-        effectType === "ADD_GOLD_MULT" ||
-        effectType === "GOLD_MULT" ||
-        effectType === "ADD_GOLD"
-      )
+      if (effectType === UpgradeEffectType.ADD_GOLD_MULT || effectType === UpgradeEffectType.ADD_GOLD)
         stats.goldMultiplier += val / 100;
-      if (effectType === "ADD_BASE_DMG" || effectType === "ADD_DAMAGE")
+      if (effectType === UpgradeEffectType.ADD_BASE_DMG)
         stats.baseDamage += val;
-      if (effectType === "ADD_CRIT_CHANCE" || effectType === "CRIT_RATE")
+      if (effectType === UpgradeEffectType.ADD_CRIT_CHANCE)
         stats.criticalChance += val / 100;
-      if (effectType === "ADD_CRIT_DMG" || effectType === "CRIT_DMG")
+      if (effectType === UpgradeEffectType.ADD_CRIT_DMG)
         stats.criticalDamage += val / 100;
+      if (effectType === UpgradeEffectType.ADD_BOSS_DMG)
+        stats.bossDamageMultiplier += val / 100;
+      if (effectType === UpgradeEffectType.AUTO_CLICK_V)
+        stats.autoClickPerSec += val;
     });
 
     // Add Click Shop bonuses - 動態從 gameConfig 讀取
     const clickShopConfigs =
-      gameConfig?.upgrades?.filter((u: any) => u.Shop_Type === "CLICK") || [];
+      gameConfig?.upgrades?.filter((u: any) => u.Shop_Type === UpgradeShopType.CLICK) || [];
 
     clickShopConfigs.forEach((config: any) => {
       const id = config.ID;
       const level = player.clickShop[id] || 0;
       if (level <= 0) return;
 
-      const effectType = String(config.Effect_Type || "")
-        .toUpperCase()
-        .trim();
+      const effectType = config.Effect_Type;
       const val = Number(config.Effect_Val || 0) * level;
 
-      if (
-        effectType === "ADD_BASE_DMG" ||
-        effectType === "ADD_DAMAGE" ||
-        effectType === "CLICK_DMG"
-      )
+      if (effectType === UpgradeEffectType.ADD_BASE_DMG)
         stats.baseDamage += val;
-      if (
-        effectType === "ADD_CRIT_DMG" ||
-        effectType === "CRIT_DMG" ||
-        effectType === "ADD_CRIT_DAMAGE"
-      )
+      if (effectType === UpgradeEffectType.ADD_CRIT_DMG)
         stats.criticalDamage += val / 100;
-      if (effectType === "ADD_GOLD_MULT" || effectType === "GOLD_MULT")
+      if (effectType === UpgradeEffectType.ADD_GOLD_MULT || effectType === UpgradeEffectType.ADD_GOLD)
         stats.goldMultiplier += val / 100;
-      if (effectType === "ADD_XP_MULT" || effectType === "XP_MULT")
+      if (effectType === UpgradeEffectType.ADD_XP_MULT)
         stats.xpMultiplier += val / 100;
     });
 
     // Add Ascension Shop bonuses - 動態從 gameConfig 讀取
     const ascensionShopConfigs =
-      gameConfig?.upgrades?.filter((u: any) => u.Shop_Type === "ASCENSION") ||
+      gameConfig?.upgrades?.filter((u: any) => u.Shop_Type === UpgradeShopType.ASCENSION) ||
       [];
 
-    ascensionShopConfigs.forEach((config: any) => {
-      const id = config.ID;
-      const level = player.ascensionShop[id] || 0;
-      if (level <= 0) return;
 
-      const effectType = String(config.Effect_Type || "")
-        .toUpperCase()
-        .trim();
-      const val = Number(config.Effect_Val || 0) * level;
 
-      if (effectType === "ADD_XP_MULT" || effectType === "XP_MULT")
-        stats.xpMultiplier += val / 100;
-      if (
-        effectType === "ADD_GOLD_MULT" ||
-        effectType === "GOLD_MULT" ||
-        effectType === "ADD_GOLD"
-      )
-        stats.goldMultiplier += val / 100;
-      if (
-        effectType === "ADD_ATK_P" ||
-        effectType === "ATK_MULT" ||
-        effectType === "ADD_DAMAGE_MULT"
-      ) {
-        // 攻擊力百分比加成（例如 10% -> 基礎傷害 * 1.1）
-        stats.baseDamage += stats.baseDamage * (val / 100);
-      }
-      if (effectType === "RARE_CHANCE_P" || effectType === "RARE_SPAWN_CHANCE")
-        stats.rareMonsterChance += val / 100;
-      if (effectType === "REDUCE_GOAL_V" || effectType === "REDUCE_STAGE_GOAL")
-        stats.monsterKillReduction += val;
-      if (effectType === "AUTO_CLICK_V" || effectType === "AUTO_CLICK_CPS")
-        stats.autoClickPerSec += val;
-    });
+    // 最後應用裝備百分比傷害加成 (獨立乘區)
+    if (stats.equipDamageMultiplier > 0) {
+      stats.baseDamage = Math.floor(
+        stats.baseDamage * (1 + stats.equipDamageMultiplier / 100)
+      );
+    }
+
+    // Apply Active Buffs (Potions)
+    if (player.activeBuffs && player.activeBuffs.ragePotionExpiresAt > Date.now()) {
+      // 狂暴藥水: 雙倍傷害
+      stats.baseDamage *= 2;
+    }
 
     return stats;
   }, [
@@ -409,6 +354,7 @@ export default function ClickAscensionGame() {
     player.clickShop,
     player.ascensionShop,
     gameConfig,
+    player.activeBuffs.ragePotionExpiresAt,
   ]);
 
   // Helper for deep merging player state (handles nested objects like stats, wallet, system)
@@ -464,7 +410,6 @@ export default function ClickAscensionGame() {
   // Recalculate stats when GameConfig loads (ensures migrations/fixes apply)
   useEffect(() => {
     if (gameConfig) {
-      console.log("[Recalc] GameConfig loaded, refreshing stats...");
       setPlayer((prev) => ({
         ...prev,
         stats: recalculateStats(prev),
@@ -506,7 +451,7 @@ export default function ClickAscensionGame() {
     // Actually if they have Reduction 10 on 10 stage, maybe instant boss? User asked for "Denominator 10-1", so implies >0.
     const requiredKills = Math.max(
       1,
-      stage.monstersRequiredForBoss - (effectiveStats.monsterKillReduction || 0)
+      stage.monstersRequiredForBoss - Math.floor(effectiveStats.monsterKillReduction || 0)
     );
 
     // Auto-Challenge Boss Logic
@@ -554,8 +499,13 @@ export default function ClickAscensionGame() {
 
     // 4. Rewards Base (modified by player stats on kill)
     // Storing base reward potential in monster object
-    const baseGold = finalHp * 0.15 * template.goldMultiplier;
-    const baseXp = finalHp * 0.08 * template.xpMultiplier;
+    // 從 DB settings 讀取掉落率（可動態調整）
+    const settings = gameConfig?.settings as Record<string, any> || {};
+    const goldDropRate = Number(settings.GOLD_DROP_RATE ?? 0.15);
+    const xpDropRate = Number(settings.XP_DROP_RATE ?? 0.08);
+    
+    const baseGold = finalHp * goldDropRate * template.goldMultiplier;
+    const baseXp = finalHp * xpDropRate * template.xpMultiplier;
 
     const newMonster: Monster = {
       id: crypto.randomUUID(),
@@ -685,6 +635,24 @@ export default function ClickAscensionGame() {
     player.inventory.ragePotionCount,
     player.activeBuffs.ragePotionExpiresAt,
   ]);
+
+  // Buff Expiration Logic
+  useEffect(() => {
+    if (player.activeBuffs.ragePotionExpiresAt > 0) {
+      const interval = setInterval(() => {
+        if (Date.now() > player.activeBuffs.ragePotionExpiresAt) {
+          setPlayer((prev) => ({
+            ...prev,
+            activeBuffs: {
+              ...prev.activeBuffs,
+              ragePotionExpiresAt: 0,
+            },
+          }));
+        }
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [player.activeBuffs.ragePotionExpiresAt]);
 
   // Auto-Gacha Loop
   useEffect(() => {
@@ -848,7 +816,9 @@ export default function ClickAscensionGame() {
 
       const autoPartners =
         gameConfig?.upgrades?.filter(
-          (u: any) => u.Shop_Type === "GOLD" && u.Effect_Type === "ADD_AUTO_DMG"
+          (u: any) =>
+            u.Shop_Type === UpgradeShopType.GOLD &&
+            u.Effect_Type === UpgradeEffectType.ADD_AUTO_DMG
         ) || [];
 
       autoPartners.forEach((config: any) => {
@@ -856,8 +826,12 @@ export default function ClickAscensionGame() {
         const level = player.goldShop[id] || 0;
         if (level <= 0) return;
 
-        // 每25級傷害翻倍（等級25=x2, 50=x4, 75=x8...）
-        const levelMultiplier = Math.pow(2, Math.floor(level / 25));
+        // 里程碑傷害加成（從 DB 讀取 Milestone_Level 和 Milestone_Mult）
+        const milestoneLevel = Number(config.Milestone_Level || 0);
+        const milestoneMult = Number(config.Milestone_Mult || 1);
+        const levelMultiplier = milestoneLevel > 0
+          ? Math.pow(milestoneMult, Math.floor(level / milestoneLevel))
+          : 1;
         const dmg = Number(config.Effect_Val || 0) * level * levelMultiplier;
         breakdown[id] = Math.ceil(dmg * bossMult);
         alliesTotal += dmg;
@@ -902,15 +876,9 @@ export default function ClickAscensionGame() {
     const interval = setInterval(() => {
       // 1. Calculate Damage (Replicating User Click Logic)
       const isCrit = Math.random() < effectiveStats.criticalChance;
-      // Check Rage Potion via Ref to avoid resetting interval on every player update
-      const isRageActive =
-        (playerRef.current?.activeBuffs?.ragePotionExpiresAt || 0) > Date.now();
-
       let dmg = isCrit
         ? Math.floor(effectiveStats.baseDamage * effectiveStats.criticalDamage)
         : effectiveStats.baseDamage;
-
-      if (isRageActive) dmg *= 2;
 
       // 2. Apply Damage (Updates Monster & Player)
       // We call handleMonsterClick but we need to supply the damage directly?
@@ -1123,24 +1091,26 @@ export default function ClickAscensionGame() {
     // Handle Rewards & Level Up
     setPlayer((prev) => {
       let { level, currentXp, requiredXp } = prev.system;
-      let { levelPoints } = prev.wallet;
+      let levelPointsGained = 0;
       currentXp += xpGain;
 
       // Level Up Logic
       while (currentXp >= requiredXp) {
         currentXp -= requiredXp;
         level += 1;
-        levelPoints += 5;
+        levelPointsGained += 5;
         requiredXp = Math.floor(requiredXp * 1.2);
+      }
+
+      // 使用 addCurrency 處理金幣和等級積分
+      let newWallet = addCurrency(prev.wallet, CurrencyType.GOLD, goldGain);
+      if (levelPointsGained > 0) {
+        newWallet = addCurrency(newWallet, CurrencyType.LP, levelPointsGained);
       }
 
       return {
         ...prev,
-        wallet: {
-          ...prev.wallet,
-          gold: prev.wallet.gold + goldGain,
-          levelPoints,
-        },
+        wallet: newWallet,
         system: { ...prev.system, level, currentXp, requiredXp },
         records: {
           ...prev.records,
@@ -1187,15 +1157,22 @@ export default function ClickAscensionGame() {
   const handleShopPurchase = (itemId: string) => {
     // Daily Check-in Logic
     if (itemId === "daily_checkin") {
+      const settings = (gameConfig?.settings as any) || {};
+      const gemReward = Number(settings.DAILY_REWARD_GEM) || 1000;
+      const goldReward = Number(settings.DAILY_REWARD_GOLD) || 50000;
+      const apReward = Number(settings.DAILY_REWARD_AP) || 0;
+
       setPlayer((prev) => ({
         ...prev,
         wallet: {
           ...prev.wallet,
-          diamonds: prev.wallet.diamonds + 10,
-          gold: prev.wallet.gold + 500,
+          diamonds: prev.wallet.diamonds + gemReward,
+          gold: prev.wallet.gold + goldReward,
+          ascensionPoints: (prev.wallet.ascensionPoints || 0) + apReward,
         },
         lastDailyRewardClaimTime: Date.now(),
       }));
+      showPopup(`簽到成功！獲得 ${gemReward} 💎 + ${formatBigNumber(goldReward, 0)} 💰 + ${apReward} 🕊️`);
       return;
     }
 
@@ -1214,57 +1191,36 @@ export default function ClickAscensionGame() {
         return;
       }
 
-      // Cost Calculation (Sync with ShopPage.tsx)
-      const base = Number(config.Cost_Base || 0);
-      const mult = Number(config.Cost_Mult || 0);
-      let cost = 0;
+      // 使用 costCalculator 計算成本
+      const cost = calculateUpgradeCost(
+        Number(config.Cost_Base || 0),
+        Number(config.Cost_Mult || 0),
+        currentLevel,
+        config.Effect_Type
+      );
 
-      if (mult === 1 || mult === 1.0) {
-        cost = Math.floor(base + currentLevel);
-      } else {
-        cost = Math.floor(base * Math.pow(mult, currentLevel));
-      }
+      const currency = config.Currency || CurrencyType.CP;
 
-      const currency = config.Currency || "CP";
-      const getWalletVal = (w: any, c: string) => {
-        if (c === "GOLD") return w.gold;
-        if (c === "LP") return w.levelPoints;
-        if (c === "DIAMOND") return w.diamonds;
-        if (c === "AP") return w.ascensionPoints;
-        return w.clickPoints;
-      };
-
-      if (getWalletVal(player.wallet, currency) >= cost) {
+      // 使用 walletManager 檢查餘額
+      if (hasSufficientFunds(player.wallet, currency, cost)) {
         setPlayer((prev) => {
-          const newStats = { ...prev.stats };
-          const effectType = config.Effect_Type;
-          const val = Number(config.Effect_Val || 0);
-
-          if (effectType === "ADD_DAMAGE" || effectType === "CLICK_DMG")
-            newStats.baseDamage += val;
-          if (effectType === "ADD_CRIT_DMG" || effectType === "CRIT_DMG")
-            newStats.criticalDamage += val / 100;
-          if (effectType === "ADD_GOLD" || effectType === "GOLD_MULT")
-            newStats.goldMultiplier += val / 100;
-          if (effectType === "AUTO_CLICK_V") newStats.autoClickPerSec += val;
-          if (effectType === "REDUCE_GOAL_V")
-            newStats.monsterKillReduction += val;
-          if (effectType === "RARE_CHANCE_P")
-            newStats.rareMonsterChance += val / 100;
-
-          const newWallet = { ...prev.wallet };
-          if (currency === "GOLD") newWallet.gold -= cost;
-          else if (currency === "LP") newWallet.levelPoints -= cost;
-          else if (currency === "DIAMOND") newWallet.diamonds -= cost;
-          else if (currency === "AP") newWallet.ascensionPoints -= cost;
-          else newWallet.clickPoints -= cost; // Default CP
-
-          return {
+          // 使用 walletManager 扣除貨幣
+          const newWallet = deductCurrency(prev.wallet, currency, cost);
+          
+          // 更新商店等級
+          const newClickShop = { ...prev.clickShop, [itemId]: currentLevel + 1 };
+          
+          // 建立新的 player 狀態
+          const nextPlayer = {
             ...prev,
             wallet: newWallet,
-            clickShop: { ...prev.clickShop, [itemId]: currentLevel + 1 },
-            stats: newStats,
+            clickShop: newClickShop,
           };
+          
+          // 使用 recalculateStats 重新計算所有數值
+          nextPlayer.stats = recalculateStats(nextPlayer);
+          
+          return nextPlayer;
         });
       } else {
         showPopup(`${currency} 不足！`);
@@ -1286,61 +1242,36 @@ export default function ClickAscensionGame() {
         return;
       }
 
-      // Cost Calculation (Sync with ShopPage.tsx)
-      const base = Number(config.Cost_Base || 0);
-      const mult = Number(config.Cost_Mult || 0);
-      let cost = 0;
+      // 使用 costCalculator 計算成本
+      const cost = calculateUpgradeCost(
+        Number(config.Cost_Base || 0),
+        Number(config.Cost_Mult || 0),
+        currentLevel,
+        config.Effect_Type
+      );
 
-      if (mult === 1 || mult === 1.0) {
-        cost = Math.floor(base + currentLevel);
-      } else {
-        cost = Math.floor(base * Math.pow(mult, currentLevel));
-      }
+      const currency = config.Currency || CurrencyType.LP;
 
-      const currency = config.Currency || "LP";
-      const getWalletVal = (w: any, c: string) => {
-        if (c === "GOLD") return w.gold;
-        if (c === "CP") return w.clickPoints;
-        if (c === "DIAMOND") return w.diamonds;
-        if (c === "AP") return w.ascensionPoints;
-        return w.levelPoints;
-      };
-
-      if (getWalletVal(player.wallet, currency) >= cost) {
+      // 使用 walletManager 檢查餘額
+      if (hasSufficientFunds(player.wallet, currency, cost)) {
         setPlayer((prev) => {
-          const newStats = { ...prev.stats };
-          const effectType = config.Effect_Type;
-          const val = Number(config.Effect_Val || 0);
-
-          if (effectType === "ADD_XP" || effectType === "XP_MULT")
-            newStats.xpMultiplier += val / 100;
-          if (effectType === "ADD_GOLD" || effectType === "GOLD_MULT")
-            newStats.goldMultiplier += val / 100;
-          if (effectType === "ADD_AUTO" || effectType === "AUTO_DMG")
-            newStats.autoAttackDamage += val;
-          if (effectType === "ADD_BOSS_DMG" || effectType === "BOSS_DMG")
-            newStats.bossDamageMultiplier += val / 100;
-          if (effectType === "ADD_CRIT" || effectType === "CRIT_RATE")
-            newStats.criticalChance += val / 100;
-          if (effectType === "AUTO_CLICK_V") newStats.autoClickPerSec += val;
-          if (effectType === "REDUCE_GOAL_V")
-            newStats.monsterKillReduction += val;
-          if (effectType === "RARE_CHANCE_P")
-            newStats.rareMonsterChance += val / 100;
-
-          const newWallet = { ...prev.wallet };
-          if (currency === "GOLD") newWallet.gold -= cost;
-          else if (currency === "CP") newWallet.clickPoints -= cost;
-          else if (currency === "DIAMOND") newWallet.diamonds -= cost;
-          else if (currency === "AP") newWallet.ascensionPoints -= cost;
-          else newWallet.levelPoints -= cost; // Default LP
-
-          return {
+          // 使用 walletManager 扣除貨幣
+          const newWallet = deductCurrency(prev.wallet, currency, cost);
+          
+          // 更新商店等級
+          const newLevelShop = { ...prev.levelShop, [itemId]: currentLevel + 1 };
+          
+          // 建立新的 player 狀態
+          const nextPlayer = {
             ...prev,
             wallet: newWallet,
-            levelShop: { ...prev.levelShop, [itemId]: currentLevel + 1 },
-            stats: newStats,
+            levelShop: newLevelShop,
           };
+          
+          // 使用 recalculateStats 重新計算所有數值
+          nextPlayer.stats = recalculateStats(nextPlayer);
+          
+          return nextPlayer;
         });
       } else {
         showPopup(`${currency} 不足！`);
@@ -1355,30 +1286,27 @@ export default function ClickAscensionGame() {
         cost: 10,
         reward: 1000,
         type: "GOLD",
-        currency: "DIAMOND",
+        currency: CurrencyType.DIAMOND,
       },
       {
         id: "gold_pack_2",
         cost: 80,
         reward: 10000,
         type: "GOLD",
-        currency: "DIAMOND",
+        currency: CurrencyType.DIAMOND,
       },
     ].find((i) => i.id === itemId);
 
     if (shopItem) {
-      if (
-        shopItem.currency === "DIAMOND" &&
-        player.wallet.diamonds >= shopItem.cost
-      ) {
-        setPlayer((prev) => ({
-          ...prev,
-          wallet: {
-            ...prev.wallet,
-            diamonds: prev.wallet.diamonds - shopItem.cost,
-            gold: prev.wallet.gold + shopItem.reward,
-          },
-        }));
+      // 使用 walletManager 檢查餘額和處理交易
+      if (hasSufficientFunds(player.wallet, shopItem.currency, shopItem.cost)) {
+        setPlayer((prev) => {
+          let newWallet = deductCurrency(prev.wallet, shopItem.currency, shopItem.cost);
+          newWallet = { ...newWallet, gold: newWallet.gold + shopItem.reward };
+          return { ...prev, wallet: newWallet };
+        });
+      } else {
+        showPopup("鑽石不足！");
       }
     }
 
@@ -1399,52 +1327,44 @@ export default function ClickAscensionGame() {
           return;
         }
 
-        const base = Number(config.Cost_Base || 0);
-        const mult = Number(config.Cost_Mult || 1);
-        let cost = 0;
+        // 使用 costCalculator 計算成本
+        const cost = calculateUpgradeCost(
+          Number(config.Cost_Base || 0),
+          Number(config.Cost_Mult || 1),
+          currentLevel,
+          config.Effect_Type
+        );
 
-        if (config.Effect_Type === "ADD_INVENTORY") {
-          cost = base; // Fixed cost for consumables
-        } else if (mult === 1 || mult === 1.0) {
-          cost = Math.floor(base + currentLevel);
-        } else {
-          cost = Math.floor(base * Math.pow(mult, currentLevel));
-        }
-
-        if (player.wallet.gold >= cost) {
+        // 使用 walletManager 檢查餘額
+        if (hasSufficientFunds(player.wallet, CurrencyType.GOLD, cost)) {
           setPlayer((prev) => {
-            const newStats = { ...prev.stats };
-            const effectType = config.Effect_Type;
-            const val = Number(config.Effect_Val || 0);
-
-            // Apply effects
-            if (effectType === "ADD_DAMAGE") newStats.baseDamage += val;
-            if (effectType === "ADD_AUTO_DMG") newStats.autoAttackDamage += val;
-            if (effectType === "ADD_GOLD_MULT")
-              newStats.goldMultiplier += val / 100;
-            if (effectType === "ADD_INVENTORY") {
-              // Handled below for inventory items
-            }
-
-            // 直接使用 itemId 作為 key
+            // 使用 walletManager 扣除貨幣
+            const newWallet = deductCurrency(prev.wallet, CurrencyType.GOLD, cost);
+            
+            // 更新商店等級
             const newGoldShop = { ...prev.goldShop };
             newGoldShop[itemId] = (prev.goldShop[itemId] || 0) + 1;
 
+            // 處理消耗品
             const newInventory = { ...prev.inventory };
-            if (effectType === "ADD_INVENTORY") {
+            if (config.Effect_Type === UpgradeEffectType.ADD_INVENTORY) {
               if (itemId === "gold_potion_rage") {
-                newInventory.ragePotionCount =
-                  (newInventory.ragePotionCount || 0) + 1;
+                newInventory.ragePotionCount = (newInventory.ragePotionCount || 0) + 1;
               }
             }
 
-            return {
+            // 建立新的 player 狀態
+            const nextPlayer = {
               ...prev,
-              wallet: { ...prev.wallet, gold: prev.wallet.gold - cost },
+              wallet: newWallet,
               goldShop: newGoldShop,
-              stats: newStats,
               inventory: newInventory,
             };
+            
+            // 使用 recalculateStats 重新計算所有數值
+            nextPlayer.stats = recalculateStats(nextPlayer);
+            
+            return nextPlayer;
           });
         } else {
           showPopup("金幣不足！");
@@ -1453,30 +1373,43 @@ export default function ClickAscensionGame() {
       }
 
       // If we reach here, the item was not found in gameConfig
-      // This should not happen if the shop UI only shows items from gameConfig
-      console.warn(
-        `[handleShopPurchase] Gold shop item not found in config: ${itemId}`
-      );
+      console.warn(`[handleShopPurchase] Gold shop item not found in config: ${itemId}`);
     }
 
     // --- EQUIPMENT GACHA (Basic / Advanced / Premium) ---
-    if (itemId.startsWith("gacha_equipment_")) {
-      let drawCount = 1;
-      if (itemId.endsWith("_10")) drawCount = 10;
-      if (itemId.endsWith("_100")) drawCount = 100;
-      if (itemId.endsWith("_1000")) drawCount = 1000;
+    // --- EQUIPMENT GACHA (Old & New Support) ---
+    if (itemId.startsWith("gacha_")) {
+       // Legacy check
+       if (itemId.includes("equipment")) return;
 
-      let boxType = "basic";
-      if (itemId.includes("advanced")) boxType = "advanced";
-      if (itemId.includes("premium")) boxType = "premium";
+       const parts = itemId.split("_");
+       // gacha_basic_ap_10
+       if (parts.length < 4) return;
 
-      let costPerDraw = 1000;
-      if (boxType === "advanced") costPerDraw = 10000;
-      if (boxType === "premium") costPerDraw = 100000;
+       const boxShort = parts[1];
+       const currencyShort = parts[2];
+       const drawCount = Number(parts[3]) || 1;
 
-      const totalCost = costPerDraw * drawCount;
+       let boxType = "basic";
+       if (boxShort === "adv") boxType = "advanced";
+       if (boxShort === "prem") boxType = "premium";
 
-      if (player.wallet.gold >= totalCost) {
+       let currencyType = CurrencyType.AP;
+       if (currencyShort === "diamond" || currencyShort === "dia") currencyType = CurrencyType.DIAMOND;
+
+       // Calculate Cost
+       const s = (gameConfig?.settings as any) || {};
+       const key = `GACHA_COST_${boxShort.toUpperCase()}_${currencyType === CurrencyType.DIAMOND ? "DIAMOND" : "AP"}`;
+       
+       const base = boxShort === "basic" ? (currencyType === CurrencyType.DIAMOND ? 2 : 20) :
+                    boxShort === "adv" ? (currencyType === CurrencyType.DIAMOND ? 20 : 200) :
+                    (currencyType === CurrencyType.DIAMOND ? 100 : 1000);
+       
+       const unitCost = Number(s[key]) || base;
+       const totalCost = unitCost * drawCount;
+
+      // 使用 walletManager 檢查餘額
+      if (hasSufficientFunds(player.wallet, currencyType, totalCost)) {
         const allEquipments = gameConfig?.equipments || [];
         if (allEquipments.length > 0) {
           const validEquipments = allEquipments.filter((e) => {
@@ -1566,19 +1499,24 @@ export default function ClickAscensionGame() {
             }
           }
 
-          setPlayer((prev) => ({
-            ...prev,
-            wallet: {
-              ...prev.wallet,
-              gold: prev.wallet.gold - totalCost,
-              equipmentShards:
-                (prev.wallet.equipmentShards || 0) + gainedShards,
-            },
-            equipment: {
-              ...prev.equipment,
-              inventory: newInventory,
-            },
-          }));
+          setPlayer((prev) => {
+            // 使用 walletManager 扣除貨幣
+            let newWallet = deductCurrency(prev.wallet, currencyType, totalCost);
+            // 增加碎片
+            newWallet = {
+              ...newWallet,
+              equipmentShards: (newWallet.equipmentShards || 0) + gainedShards,
+            };
+            
+            return {
+              ...prev,
+              wallet: newWallet,
+              equipment: {
+                ...prev.equipment,
+                inventory: newInventory,
+              },
+            };
+          });
 
           if (drawCount === 1) {
             if (convertedItems.length > 0) {
@@ -1623,7 +1561,7 @@ export default function ClickAscensionGame() {
           showPopup("暫無裝備可抽取");
         }
       } else {
-        showPopup("金幣不足！");
+        showPopup(`${currencyType === CurrencyType.DIAMOND ? "鑽石" : "飛昇點數 (AP)"}不足！`);
         if (autoGachaBox) setAutoGachaBox(null);
       }
     }
@@ -1643,69 +1581,119 @@ export default function ClickAscensionGame() {
         return;
       }
 
-      // Cost Calculation
-      const base = Number(config.Cost_Base || 0);
-      const mult = Number(config.Cost_Mult || 0);
-      let cost = 0;
+      // 使用 costCalculator 計算成本
+      const cost = calculateUpgradeCost(
+        Number(config.Cost_Base || 0),
+        Number(config.Cost_Mult || 0),
+        currentLevel,
+        config.Effect_Type
+      );
 
-      if (mult === 1 || mult === 1.0) {
-        cost = Math.floor(base + currentLevel);
-      } else {
-        cost = Math.floor(base * Math.pow(mult, currentLevel));
-      }
+      const currency = config.Currency || CurrencyType.AP;
 
-      const currency = config.Currency || "AP";
-      const getWalletVal = (w: any, c: string) => {
-        if (c === "GOLD") return w.gold;
-        if (c === "CP") return w.clickPoints;
-        if (c === "LP") return w.levelPoints;
-        if (c === "DIAMOND") return w.diamonds;
-        return w.ascensionPoints;
-      };
-
-      if (getWalletVal(player.wallet, currency) >= cost) {
+      // 使用 walletManager 檢查餘額
+      if (hasSufficientFunds(player.wallet, currency, cost)) {
         setPlayer((prev) => {
-          const newStats = { ...prev.stats };
-          const effectType = config.Effect_Type;
-          const val = Number(config.Effect_Val || 0);
-
-          if (effectType === "ADD_CRIT" || effectType === "CRIT_RATE")
-            newStats.criticalChance += val / 100;
-          if (effectType === "ADD_DAMAGE" || effectType === "CLICK_DMG")
-            newStats.baseDamage += val;
-          if (effectType === "ADD_GOLD" || effectType === "GOLD_MULT")
-            newStats.goldMultiplier += val / 100;
-          if (effectType === "ADD_XP" || effectType === "XP_MULT")
-            newStats.xpMultiplier += val / 100;
-
-          // New Stats
-          if (effectType === "REDUCE_GOAL_V")
-            newStats.monsterKillReduction += val;
-          if (effectType === "RARE_CHANCE_P")
-            newStats.rareMonsterChance += val / 100;
-          if (effectType === "AUTO_CLICK_V") newStats.autoClickPerSec += val;
-
-          const newWallet = { ...prev.wallet };
-          if (currency === "GOLD") newWallet.gold -= cost;
-          else if (currency === "CP") newWallet.clickPoints -= cost;
-          else if (currency === "LP") newWallet.levelPoints -= cost;
-          else if (currency === "DIAMOND") newWallet.diamonds -= cost;
-          else newWallet.ascensionPoints -= cost; // Default AP
-
-          return {
+          // 使用 walletManager 扣除貨幣
+          const newWallet = deductCurrency(prev.wallet, currency, cost);
+          
+          // 更新商店等級
+          const newAscensionShop = {
+            ...prev.ascensionShop,
+            [itemId]: currentLevel + 1,
+          };
+          
+          // 建立新的 player 狀態
+          const nextPlayer = {
             ...prev,
             wallet: newWallet,
-            ascensionShop: {
-              ...prev.ascensionShop,
-              [itemId]: currentLevel + 1,
-            },
-            stats: newStats,
+            ascensionShop: newAscensionShop,
           };
+          
+          // 使用 recalculateStats 重新計算所有數值
+          nextPlayer.stats = recalculateStats(nextPlayer);
+          
+          return nextPlayer;
         });
       } else {
         showPopup(`${currency} 不足！`);
       }
     }
+  };
+
+  // 批量購買函數 (用於+25級等批量購買)
+  const handleBulkShopPurchase = (itemId: string, quantity: number) => {
+    if (!gameConfig?.upgrades) return;
+
+    // 目前只支援 Gold Shop 的批量購買
+    if (!itemId.startsWith("gold_shop_") && !itemId.startsWith("gold_potion_")) return;
+
+    const config = gameConfig.upgrades.find((u: any) => u.ID === itemId);
+    if (!config) return;
+
+    const isInventoryItem = config.Effect_Type === UpgradeEffectType.ADD_INVENTORY;
+    const currentLevel = isInventoryItem ? 0 : (player.goldShop[itemId] || 0);
+    const maxLevel = Number(config.Max_Level || 0);
+
+    // 計算實際可升級的次數 (庫存道具無上限)
+    const actualQuantity = isInventoryItem
+      ? quantity
+      : maxLevel > 0
+        ? Math.min(quantity, maxLevel - currentLevel)
+        : quantity;
+
+    if (actualQuantity <= 0) {
+      showPopup("已達最大等級！");
+      return;
+    }
+
+    // 計算總費用
+    let totalCost = 0;
+    for (let i = 0; i < actualQuantity; i++) {
+      totalCost += calculateUpgradeCost(
+        Number(config.Cost_Base || 0),
+        Number(config.Cost_Mult || 1),
+        isInventoryItem ? 0 : currentLevel + i, // 庫存道具每次相同價格
+        config.Effect_Type
+      );
+    }
+
+    // 檢查餘額
+    if (!hasSufficientFunds(player.wallet, CurrencyType.GOLD, totalCost)) {
+      showPopup("金幣不足！");
+      return;
+    }
+
+    // 一次性更新狀態
+    setPlayer((prev) => {
+      const newWallet = deductCurrency(prev.wallet, CurrencyType.GOLD, totalCost);
+
+      if (isInventoryItem) {
+        // 處理庫存道具
+        const newInventory = { ...prev.inventory };
+        if (itemId === "gold_potion_rage") {
+          newInventory.ragePotionCount = (newInventory.ragePotionCount || 0) + actualQuantity;
+        }
+        return {
+          ...prev,
+          wallet: newWallet,
+          inventory: newInventory,
+        };
+      }
+
+      // 處理一般升級
+      const newGoldShop = { ...prev.goldShop };
+      newGoldShop[itemId] = (prev.goldShop[itemId] || 0) + actualQuantity;
+
+      const nextPlayer = {
+        ...prev,
+        wallet: newWallet,
+        goldShop: newGoldShop,
+      };
+
+      nextPlayer.stats = recalculateStats(nextPlayer);
+      return nextPlayer;
+    });
   };
 
   const handleEquip = (itemId: string, slot: EquipmentSlot) => {
@@ -1752,7 +1740,8 @@ export default function ClickAscensionGame() {
   };
 
   const recalculateStats = (p: PlayerState) => {
-    const stats = { ...INITIAL_PLAYER.stats };
+    // 從初始值開始計算
+    let stats = { ...INITIAL_PLAYER.stats };
 
     // 1. Add Gold Shop bonuses (temporary) - Use gameConfig if available
     const goldShopItems = [
@@ -1774,24 +1763,11 @@ export default function ClickAscensionGame() {
 
       const config = gameConfig?.upgrades?.find((u: any) => u.ID === id);
       if (config) {
-        // Use config values - DB is the only source of truth
         const effectType = config.Effect_Type;
-        const val = Number(config.Effect_Val || 0) * level;
-
-        if (effectType === "ADD_DAMAGE" || effectType === "CLICK_DMG")
-          stats.baseDamage += val;
-        if (
-          effectType === "ADD_AUTO_DMG" ||
-          effectType === "AUTO_DMG" ||
-          effectType === "ADD_AUTO"
-        )
-          stats.autoAttackDamage += val;
-        if (effectType === "ADD_GOLD_MULT" || effectType === "GOLD_MULT")
-          stats.goldMultiplier += val / 100;
-        if (effectType === "ADD_CRIT_DMG" || effectType === "CRIT_DMG")
-          stats.criticalDamage += val / 100;
+        const totalVal = Number(config.Effect_Val || 0) * level;
+        // 使用 applyEffect 統一處理
+        stats = applyEffect(stats, effectType, totalVal);
       }
-      // No fallback - if config not found, the item has no effect
     });
 
     // 2. Add Permanent Shop bonuses (Click, Level, Ascension)
@@ -1802,31 +1778,27 @@ export default function ClickAscensionGame() {
         if (config && level > 0) {
           const effectType = config.Effect_Type;
           const totalVal = Number(config.Effect_Val || 0) * level;
-
-          if (effectType === "ADD_DAMAGE" || effectType === "CLICK_DMG")
-            stats.baseDamage += totalVal;
-          if (effectType === "ADD_CRIT" || effectType === "CRIT_RATE")
-            stats.criticalChance += totalVal / 100;
-          if (effectType === "ADD_CRIT_DMG" || effectType === "CRIT_DMG")
-            stats.criticalDamage += totalVal / 100;
-          if (effectType === "ADD_GOLD" || effectType === "GOLD_MULT")
-            stats.goldMultiplier += totalVal / 100;
-          if (effectType === "ADD_XP" || effectType === "XP_MULT")
-            stats.xpMultiplier += totalVal / 100;
-          if (effectType === "ADD_AUTO" || effectType === "AUTO_DMG")
-            stats.autoAttackDamage += totalVal;
-          if (effectType === "ADD_BOSS_DMG" || effectType === "BOSS_DMG")
-            stats.bossDamageMultiplier += totalVal / 100;
-
-          // New Ascension Stats
-          if (effectType === "REDUCE_GOAL_V")
-            stats.monsterKillReduction += totalVal;
-          if (effectType === "RARE_CHANCE_P")
-            stats.rareMonsterChance += totalVal / 100;
-          if (effectType === "AUTO_CLICK_V") stats.autoClickPerSec += totalVal;
+          // 使用 applyEffect 統一處理
+          stats = applyEffect(stats, effectType, totalVal);
         }
       });
     });
+
+    // 3. TODO: Add Equipment bonuses (未來擴充)
+    // Object.entries(p.equipment).forEach(([slot, itemId]) => {
+    //   if (!itemId) return;
+    //   const config = gameConfig?.equipments?.find((e: any) => e.ID === itemId);
+    //   if (config) {
+    //     const level = p.equipmentLevels?.[itemId] || 1;
+    //     const val = calculateEffectValue(config.Base_Val, config.Level_Mult, level);
+    //     stats = applyEffect(stats, config.Effect_Type, val);
+    //   }
+    // });
+
+    // Post-Process: Apply Global Multiplier (ATK %)
+    if (stats.atkPercentBonus > 0) {
+      stats.baseDamage = Math.floor(stats.baseDamage * (1 + stats.atkPercentBonus / 100));
+    }
 
     return stats;
   };
@@ -1836,6 +1808,16 @@ export default function ClickAscensionGame() {
     if (points <= 0) return;
 
     setPlayer((prev) => {
+      // 使用 resetWallet 重置錢包 (保留 AP, CP, DIAMOND, EQUIPMENT_SHARD)
+      let newWallet = resetWallet(prev.wallet, [
+        CurrencyType.AP,
+        CurrencyType.CP,
+        CurrencyType.DIAMOND,
+        CurrencyType.EQUIPMENT_SHARD,
+      ]);
+      // 增加飛昇點數
+      newWallet = addCurrency(newWallet, CurrencyType.AP, points);
+
       const nextPlayer: PlayerState = {
         ...prev,
         system: {
@@ -1843,13 +1825,7 @@ export default function ClickAscensionGame() {
           currentXp: 0,
           requiredXp: 100,
         },
-        wallet: {
-          ...prev.wallet,
-          gold: 0,
-          levelPoints: 0, // Reset Level Points (等級點數重製)
-          ascensionPoints: (prev.wallet.ascensionPoints || 0) + points,
-          equipmentShards: prev.wallet.equipmentShards || 0, // Keep shards
-        },
+        wallet: newWallet,
         // Reset Gold Shop (Temporary upgrades)
         goldShop: {
           weaponLevel: 0,
@@ -1902,24 +1878,30 @@ export default function ClickAscensionGame() {
 
     setPlayer((prev) => {
       let refundedPoints = 0;
+      
+      // 計算要返還的點數
       Object.entries(prev.levelShop).forEach(([id, level]) => {
         const config = gameConfig?.upgrades?.find((u: any) => u.ID === id);
         if (config) {
+          // 使用 calculateUpgradeCost 計算每級花費
           for (let i = 0; i < level; i++) {
-            const cost = Math.floor(
-              config.Cost_Base * Math.pow(config.Cost_Mult, i)
+            const cost = calculateUpgradeCost(
+              Number(config.Cost_Base || 0),
+              Number(config.Cost_Mult || 1),
+              i,
+              config.Effect_Type
             );
             refundedPoints += cost;
           }
         }
       });
 
+      // 使用 addCurrency 增加返還的點數
+      const newWallet = addCurrency(prev.wallet, CurrencyType.LP, refundedPoints);
+
       const nextPlayer: PlayerState = {
         ...prev,
-        wallet: {
-          ...prev.wallet,
-          levelPoints: prev.wallet.levelPoints + refundedPoints,
-        },
+        wallet: newWallet,
         levelShop: {},
       };
 
@@ -1931,12 +1913,46 @@ export default function ClickAscensionGame() {
   };
 
   const potentialPoints = React.useMemo(() => {
-    const baseAmount = 10;
-    const multiplier = 1.2;
-    const deduct = 0;
-    const exponent = Math.max(0, stage.maxStageReached - deduct);
-    return Math.floor(baseAmount * Math.pow(multiplier, exponent));
-  }, [stage.maxStageReached]);
+    // 從 DB settings 讀取飛昇公式參數
+    const settings = gameConfig?.settings as Record<string, any> || {};
+    const formulaType = String(settings.ASCENSION_FORMULA ?? "SOFT_EXP");
+    const baseAmount = Number(settings.ASCENSION_BASE ?? 10);
+    const multiplier = Number(settings.ASCENSION_MULT ?? 1.5);
+    const minStage = Number(settings.ASCENSION_MIN_STAGE ?? 1);
+    
+    // Player Bonus
+    const apMult = player.stats.apMultiplier || 1.0;
+
+    const stageVal = Math.max(1, stage.maxStageReached);
+    
+    // 檢查是否達到最低飛昇關卡要求
+    if (stageVal < minStage) return 0;
+    
+    let points = 0;
+
+    switch (formulaType) {
+      case "LINEAR":
+        // 線性: base + stage × mult
+        points = baseAmount + stageVal * multiplier;
+        break;
+      case "SQRT":
+        // 平方根: base × √stage
+        points = baseAmount * Math.sqrt(stageVal);
+        break;
+      case "LOG":
+        // 對數: base × log₁₀(stage + 1) × mult
+        points = baseAmount * Math.log10(stageVal + 1) * multiplier;
+        break;
+      case "SOFT_EXP":
+      default:
+        // 緩指數: base × mult^√stage (預設)
+        points = baseAmount * Math.pow(multiplier, Math.sqrt(stageVal));
+        break;
+    }
+
+    // Apply AP Multiplier
+    return Math.floor(points * apMult);
+  }, [stage.maxStageReached, gameConfig?.settings, player.stats.apMultiplier]);
 
   const handleAscensionClick = () => {
     if (potentialPoints <= 0) {
@@ -1993,7 +2009,7 @@ export default function ClickAscensionGame() {
           monstersRequired={Math.max(
             1,
             stage.monstersRequiredForBoss -
-              (effectiveStats.monsterKillReduction || 0)
+              Math.floor(effectiveStats.monsterKillReduction || 0)
           )}
           isBossActive={stage.isBossActive}
           goldShop={player.goldShop}
@@ -2136,6 +2152,7 @@ export default function ClickAscensionGame() {
         <ShopPage
           player={player}
           onPurchase={handleShopPurchase}
+          onBulkPurchase={handleBulkShopPurchase}
           onResetLevelPoints={handleResetLevelPoints}
           gameConfig={gameConfig}
           autoGachaBox={autoGachaBox}
