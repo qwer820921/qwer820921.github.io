@@ -640,8 +640,8 @@ export default function CharacterView({
 
       // Handle both "Effect_Type" and "Effect_Type " (with trailing space)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawEffectType =
-        config.Effect_Type || (config as any)["Effect_Type "];
+      const legacyConfig = config as any;
+      const rawEffectType = config.Effect_Type || legacyConfig["Effect_Type "];
       const effectType = String(rawEffectType || "")
         .toUpperCase()
         .trim();
