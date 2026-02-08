@@ -286,6 +286,21 @@ export default function ProfilePage({
             icon="📖"
           />
           <StatItem
+            label="飛昇點數倍率"
+            value={`${effectiveStats.apMultiplier.toFixed(2)}x`}
+            icon="🕊️"
+          />
+          <StatItem
+            label="攻擊力加成"
+            value={`+${effectiveStats.atkPercentBonus}%`}
+            icon="⚔️"
+          />
+          <StatItem
+            label="裝備攻擊力"
+            value={`+${effectiveStats.equipDamageMultiplier}%`}
+            icon="🛡️"
+          />
+          <StatItem
             label="BOSS 傷害加成"
             value={`${effectiveStats.bossDamageMultiplier.toFixed(2)}x`}
             icon="👹"
@@ -310,6 +325,26 @@ export default function ProfilePage({
             label="稀有怪出現機率"
             value={formatPercent(effectiveStats.rareMonsterChance)}
             icon="🌟"
+          />
+          <StatItem
+            label="飾品攻擊力"
+            value={`+${effectiveStats.accDamageMultiplier}%`}
+            icon="💍"
+          />
+          <StatItem
+            label="小怪血量減少"
+            value={`-${(effectiveStats.monsterHpReduction * 100).toFixed(1)}%`}
+            icon="🗡️"
+          />
+          <StatItem
+            label="BOSS 血量減少"
+            value={`-${(effectiveStats.bossHpReduction * 100).toFixed(1)}%`}
+            icon="☠️"
+          />
+          <StatItem
+            label="鑽石掉落倍率"
+            value={`${effectiveStats.diamondMultiplier.toFixed(2)}x`}
+            icon="💎"
           />
         </div>
       </div>

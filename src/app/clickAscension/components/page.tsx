@@ -7,6 +7,7 @@ import {
   StageState,
   Monster,
   EquipmentSlot,
+  AccessorySlot,
   GameConfig,
   MonsterTemplate,
   MonsterRarity,
@@ -34,6 +35,7 @@ import Modal from "./Modal";
 import ShopPage from "./ShopPage";
 import ProfilePage from "./ProfilePage";
 import CharacterView from "./CharacterView";
+import CraftView from "./CraftView";
 import { clickAscensionApi } from "../api/clickAscensionApi";
 import "../styles/clickAscension.css";
 
@@ -66,6 +68,11 @@ const INITIAL_PLAYER: PlayerState = {
     rareMonsterChance: 0,
     equipDamageMultiplier: 0,
     atkPercentBonus: 0,
+    // Accessory Stats
+    monsterHpReduction: 0,
+    bossHpReduction: 0,
+    accDamageMultiplier: 0,
+    diamondMultiplier: 1.0,
   },
   records: {
     totalClicks: 0,
@@ -87,6 +94,10 @@ const INITIAL_PLAYER: PlayerState = {
     ragePotionExpiresAt: 0,
   },
   equipment: {
+    inventory: {},
+    equipped: {},
+  },
+  accessories: {
     inventory: {},
     equipped: {},
   },
@@ -161,7 +172,7 @@ export default function ClickAscensionGame() {
   const effectiveStats = React.useMemo(() => {
     // Start with base stats from state, ensuring defaults
     // NOTE: autoAttackDamage starts at 0 because only partners/allies provide it
-    const stats = {
+    let stats = {
       baseDamage: player.stats.baseDamage || 1,
       autoAttackDamage: 0, // Always 0 - only partners provide auto attack damage
       criticalChance: player.stats.criticalChance || 0.05,
@@ -176,6 +187,11 @@ export default function ClickAscensionGame() {
       rareMonsterChance: player.stats.rareMonsterChance || 0,
       equipDamageMultiplier: player.stats.equipDamageMultiplier || 0,
       atkPercentBonus: player.stats.atkPercentBonus || 0,
+      // Accessory Stats
+      monsterHpReduction: player.stats.monsterHpReduction || 0,
+      bossHpReduction: player.stats.bossHpReduction || 0,
+      accDamageMultiplier: player.stats.accDamageMultiplier || 0,
+      diamondMultiplier: player.stats.diamondMultiplier || 1.0,
     };
 
     if (!gameConfig?.equipments) return stats;
@@ -193,47 +209,15 @@ export default function ClickAscensionGame() {
         const multVal = Number(config.Level_Mult || 0);
         const val = baseVal + (level - 1) * multVal;
 
-        const effectType = String(config.Effect_Type || "")
+        // Handle both "Effect_Type" and "Effect_Type " (with trailing space)
+        const rawEffectType =
+          config.Effect_Type || (config as any)["Effect_Type "];
+        const effectType = String(rawEffectType || "")
           .toUpperCase()
           .trim();
 
-        // Map effect types to stat fields (使用 enum 對應)
-        switch (effectType) {
-          case UpgradeEffectType.ADD_BASE_DMG:
-            stats.baseDamage += val;
-            break;
-          case UpgradeEffectType.ADD_AUTO_DMG:
-            stats.autoAttackDamage += val;
-            break;
-          case UpgradeEffectType.ADD_CRIT_CHANCE:
-            stats.criticalChance += val / 100; // 5 -> +5%
-            break;
-          case UpgradeEffectType.ADD_CRIT_DMG:
-            stats.criticalDamage += val / 100; // 10 -> +10%
-            break;
-          case UpgradeEffectType.ADD_GOLD:
-          case UpgradeEffectType.ADD_GOLD_MULT:
-            stats.goldMultiplier += val / 100; // 10 -> +10%
-            break;
-          case UpgradeEffectType.ADD_XP_MULT:
-            stats.xpMultiplier += val / 100; // 5 -> +5%
-            break;
-          case UpgradeEffectType.ADD_BOSS_DMG:
-            stats.bossDamageMultiplier += val / 100; // 10 -> +10%
-            break;
-          case UpgradeEffectType.REDUCE_GOAL_V:
-            stats.monsterKillReduction += val;
-            break;
-          case UpgradeEffectType.RARE_CHANCE_P:
-            stats.rareMonsterChance += val / 100; // 10 -> +10%
-            break;
-          case UpgradeEffectType.AUTO_CLICK_V:
-            stats.autoClickPerSec += val;
-            break;
-          case UpgradeEffectType.EQUIP_DMG_MULT:
-            stats.equipDamageMultiplier += val; // val 本身就是百分比數值 (如 100 代表 100%)
-            break;
-        }
+        // Use unified effect mapper
+        stats = applyEffect(stats, effectType, val);
       }
     });
 
@@ -264,20 +248,22 @@ export default function ClickAscensionGame() {
       // 里程碑傷害加成（從 DB 讀取 Milestone_Level 和 Milestone_Mult）
       const milestoneLevel = Number(config.Milestone_Level || 0);
       const milestoneMult = Number(config.Milestone_Mult || 1);
-      const levelMultiplier = milestoneLevel > 0
-        ? Math.pow(milestoneMult, Math.floor(level / milestoneLevel))
-        : 1;
+      const levelMultiplier =
+        milestoneLevel > 0
+          ? Math.pow(milestoneMult, Math.floor(level / milestoneLevel))
+          : 1;
       const baseVal = Number(config.Effect_Val || 0) * level;
       const val = baseVal * levelMultiplier;
 
-      // 根據 Effect_Type 加成對應屬性
-      if (effectType === UpgradeEffectType.ADD_BASE_DMG) stats.baseDamage += val;
-      if (effectType === UpgradeEffectType.ADD_AUTO_DMG) stats.autoAttackDamage += val;
+      // Use unified effect mapper
+      stats = applyEffect(stats, effectType, val);
     });
 
     // Add Level Shop bonuses - 動態從 gameConfig 讀取
     const levelShopConfigs =
-      gameConfig?.upgrades?.filter((u: any) => u.Shop_Type === UpgradeShopType.LEVEL) || [];
+      gameConfig?.upgrades?.filter(
+        (u: any) => u.Shop_Type === UpgradeShopType.LEVEL
+      ) || [];
 
     levelShopConfigs.forEach((config: any) => {
       const id = config.ID;
@@ -287,25 +273,15 @@ export default function ClickAscensionGame() {
       const effectType = config.Effect_Type;
       const val = Number(config.Effect_Val || 0) * level;
 
-      if (effectType === UpgradeEffectType.ADD_XP_MULT)
-        stats.xpMultiplier += val / 100;
-      if (effectType === UpgradeEffectType.ADD_GOLD_MULT || effectType === UpgradeEffectType.ADD_GOLD)
-        stats.goldMultiplier += val / 100;
-      if (effectType === UpgradeEffectType.ADD_BASE_DMG)
-        stats.baseDamage += val;
-      if (effectType === UpgradeEffectType.ADD_CRIT_CHANCE)
-        stats.criticalChance += val / 100;
-      if (effectType === UpgradeEffectType.ADD_CRIT_DMG)
-        stats.criticalDamage += val / 100;
-      if (effectType === UpgradeEffectType.ADD_BOSS_DMG)
-        stats.bossDamageMultiplier += val / 100;
-      if (effectType === UpgradeEffectType.AUTO_CLICK_V)
-        stats.autoClickPerSec += val;
+      // Use unified effect mapper
+      stats = applyEffect(stats, effectType, val);
     });
 
     // Add Click Shop bonuses - 動態從 gameConfig 讀取
     const clickShopConfigs =
-      gameConfig?.upgrades?.filter((u: any) => u.Shop_Type === UpgradeShopType.CLICK) || [];
+      gameConfig?.upgrades?.filter(
+        (u: any) => u.Shop_Type === UpgradeShopType.CLICK
+      ) || [];
 
     clickShopConfigs.forEach((config: any) => {
       const id = config.ID;
@@ -315,22 +291,27 @@ export default function ClickAscensionGame() {
       const effectType = config.Effect_Type;
       const val = Number(config.Effect_Val || 0) * level;
 
-      if (effectType === UpgradeEffectType.ADD_BASE_DMG)
-        stats.baseDamage += val;
-      if (effectType === UpgradeEffectType.ADD_CRIT_DMG)
-        stats.criticalDamage += val / 100;
-      if (effectType === UpgradeEffectType.ADD_GOLD_MULT || effectType === UpgradeEffectType.ADD_GOLD)
-        stats.goldMultiplier += val / 100;
-      if (effectType === UpgradeEffectType.ADD_XP_MULT)
-        stats.xpMultiplier += val / 100;
+      // Use unified effect mapper
+      stats = applyEffect(stats, effectType, val);
     });
 
     // Add Ascension Shop bonuses - 動態從 gameConfig 讀取
     const ascensionShopConfigs =
-      gameConfig?.upgrades?.filter((u: any) => u.Shop_Type === UpgradeShopType.ASCENSION) ||
-      [];
+      gameConfig?.upgrades?.filter(
+        (u: any) => u.Shop_Type === UpgradeShopType.ASCENSION
+      ) || [];
 
+    ascensionShopConfigs.forEach((config: any) => {
+      const id = config.ID;
+      const level = player.ascensionShop[id] || 0;
+      if (level <= 0) return;
 
+      const effectType = config.Effect_Type;
+      const val = Number(config.Effect_Val || 0) * level;
+
+      // 使用統一的 applyEffect 處理所有效果類型
+      stats = applyEffect(stats, effectType, val);
+    });
 
     // 最後應用裝備百分比傷害加成 (獨立乘區)
     if (stats.equipDamageMultiplier > 0) {
@@ -339,10 +320,50 @@ export default function ClickAscensionGame() {
       );
     }
 
+    // Add Accessory Bonuses (飾品系統)
+    if (gameConfig?.accessories) {
+      Object.values(player.accessories.equipped).forEach((equippedId) => {
+        if (!equippedId) return;
+        const config = gameConfig.accessories.find(
+          (a: any) => String(a.ID) === String(equippedId)
+        );
+        if (config) {
+          const level = Number(player.accessories.inventory[equippedId] || 1);
+          const baseVal = Number(config.Base_Val || 0);
+          const multVal = Number(config.Level_Mult || 0);
+          const val = baseVal + (level - 1) * multVal;
+
+          const effectType = String(config.Effect_Type || "")
+            .toUpperCase()
+            .trim();
+
+          // Use unified effect mapper
+          stats = applyEffect(stats, effectType, val);
+        }
+      });
+    }
+
+    // 應用飾品攻擊力加成 (獨立乘區)
+    if (stats.accDamageMultiplier > 0) {
+      stats.baseDamage = Math.floor(
+        stats.baseDamage * (1 + stats.accDamageMultiplier / 100)
+      );
+    }
+
     // Apply Active Buffs (Potions)
-    if (player.activeBuffs && player.activeBuffs.ragePotionExpiresAt > Date.now()) {
+    if (
+      player.activeBuffs &&
+      player.activeBuffs.ragePotionExpiresAt > Date.now()
+    ) {
       // 狂暴藥水: 雙倍傷害
       stats.baseDamage *= 2;
+    }
+
+    // Apply Global Multiplier (ATK %) - Accumulate all sources
+    if (stats.atkPercentBonus > 0) {
+      stats.baseDamage = Math.floor(
+        stats.baseDamage * (1 + stats.atkPercentBonus / 100)
+      );
     }
 
     return stats;
@@ -350,6 +371,8 @@ export default function ClickAscensionGame() {
     player.stats,
     player.equipment.equipped,
     player.equipment.inventory,
+    player.accessories.equipped,
+    player.accessories.inventory,
     player.goldShop,
     player.levelShop,
     player.clickShop,
@@ -389,6 +412,18 @@ export default function ClickAscensionGame() {
             ...(saved.equipment?.equipped || {}),
           },
         },
+        accessories: {
+          ...base.accessories,
+          ...(saved.accessories || {}),
+          inventory: {
+            ...(base.accessories?.inventory || {}),
+            ...(saved.accessories?.inventory || {}),
+          },
+          equipped: {
+            ...(base.accessories?.equipped || {}),
+            ...(saved.accessories?.equipped || {}),
+          },
+        },
       };
     },
     []
@@ -422,10 +457,8 @@ export default function ClickAscensionGame() {
   useEffect(() => {
     // 1. Load Configs
     const loadConfig = async () => {
-      console.log("[Config] Loading...");
       const config = await clickAscensionApi.getGameConfigs();
       if (config) {
-        console.log("[Config] Loaded:", config);
         setGameConfig(config);
 
         // 初始化數值單位格式
@@ -452,7 +485,8 @@ export default function ClickAscensionGame() {
     // Actually if they have Reduction 10 on 10 stage, maybe instant boss? User asked for "Denominator 10-1", so implies >0.
     const requiredKills = Math.max(
       1,
-      stage.monstersRequiredForBoss - Math.floor(effectiveStats.monsterKillReduction || 0)
+      stage.monstersRequiredForBoss -
+        Math.floor(effectiveStats.monsterKillReduction || 0)
     );
 
     // Auto-Challenge Boss Logic
@@ -496,15 +530,22 @@ export default function ClickAscensionGame() {
 
     // Apply Template Multipliers
     const finalHpRaw = baseHpCalc * template.hpMultiplier;
-    const finalHp = Math.ceil(finalHpRaw);
+
+    // Apply HP Reduction from Accessories (飾品血量減少效果)
+    const hpReductionPercent = isBoss
+      ? effectiveStats.bossHpReduction || 0
+      : effectiveStats.monsterHpReduction || 0;
+    // 確保血量最少為原始的 10%
+    const hpMultiplier = Math.max(0.1, 1 - hpReductionPercent);
+    const finalHp = Math.ceil(finalHpRaw * hpMultiplier);
 
     // 4. Rewards Base (modified by player stats on kill)
     // Storing base reward potential in monster object
     // 從 DB settings 讀取掉落率（可動態調整）
-    const settings = gameConfig?.settings as Record<string, any> || {};
+    const settings = (gameConfig?.settings as Record<string, any>) || {};
     const goldDropRate = Number(settings.GOLD_DROP_RATE ?? 0.15);
     const xpDropRate = Number(settings.XP_DROP_RATE ?? 0.08);
-    
+
     const baseGold = finalHp * goldDropRate * template.goldMultiplier;
     const baseXp = finalHp * xpDropRate * template.xpMultiplier;
 
@@ -523,7 +564,12 @@ export default function ClickAscensionGame() {
     };
 
     setMonster(newMonster);
-  }, [stage, effectiveStats.monsterKillReduction]);
+  }, [
+    stage,
+    effectiveStats.monsterKillReduction,
+    effectiveStats.monsterHpReduction,
+    effectiveStats.bossHpReduction,
+  ]);
 
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -667,8 +713,7 @@ export default function ClickAscensionGame() {
       const boxShort = parts[0]; // basic, adv, prem
       const currencyShort = parts[1]; // ap, diamond
 
-      const isDiamond =
-        currencyShort === "diamond" || currencyShort === "dia";
+      const isDiamond = currencyShort === "diamond" || currencyShort === "dia";
       const currencyType = isDiamond ? CurrencyType.DIAMOND : CurrencyType.AP;
 
       // Calculate Cost (100 draws)
@@ -719,27 +764,20 @@ export default function ClickAscensionGame() {
 
     // 1. Try Cloud Load
     try {
-      console.log(`[Login] Fetching cloud save for ${id}...`);
       const cloudData = await clickAscensionApi.loadPlayerSave(id);
 
       if (cloudData) {
-        console.log(`[Login] Cloud save found!`);
         if (cloudData.player)
           setPlayer((prev) => deepMergePlayer(prev, cloudData.player));
         if (cloudData.stage)
           setStage((prev) => ({ ...prev, ...(cloudData.stage as any) }));
         return; // Success
-      } else {
-        console.log(`[Login] Cloud save not found or new user.`);
       }
-    } catch (_e) {
-      console.error("[Login] Cloud load error:", _e);
-    }
+    } catch (_e) {}
 
     // 2. Fallback to Local Save
     const localStr = localStorage.getItem(`ca_save_${id}`);
     if (localStr) {
-      console.log(`[Login] Found local backup.`);
       try {
         const localData = JSON.parse(localStr);
         setPlayer((prev) => ({ ...prev, ...localData.player }));
@@ -864,9 +902,10 @@ export default function ClickAscensionGame() {
         // 里程碑傷害加成（從 DB 讀取 Milestone_Level 和 Milestone_Mult）
         const milestoneLevel = Number(config.Milestone_Level || 0);
         const milestoneMult = Number(config.Milestone_Mult || 1);
-        const levelMultiplier = milestoneLevel > 0
-          ? Math.pow(milestoneMult, Math.floor(level / milestoneLevel))
-          : 1;
+        const levelMultiplier =
+          milestoneLevel > 0
+            ? Math.pow(milestoneMult, Math.floor(level / milestoneLevel))
+            : 1;
         const dmg = Number(config.Effect_Val || 0) * level * levelMultiplier;
         breakdown[id] = Math.ceil(dmg * bossMult);
         alliesTotal += dmg;
@@ -913,7 +952,8 @@ export default function ClickAscensionGame() {
     // We should ensure clicksToSimulate >= 1.
     // If < 1, legacy works better (2s interval). Optimized assumes high frequency.
     // Let's fallback to legacy if rate < 1.
-    const effectiveIsOptimized = hitMode === HitMode.OPTIMIZED && clicksPerSec >= 1;
+    const effectiveIsOptimized =
+      hitMode === HitMode.OPTIMIZED && clicksPerSec >= 1;
 
     const intervalMs = effectiveIsOptimized
       ? 1000
@@ -923,7 +963,9 @@ export default function ClickAscensionGame() {
       // Determine how many clicks to simulate in this tick
       // If optimized, we simulate 1s worth of clicks (clicksPerSec).
       // If legacy, we simulate 1 click.
-      const clicksToSimulate = effectiveIsOptimized ? Math.floor(clicksPerSec) : 1;
+      const clicksToSimulate = effectiveIsOptimized
+        ? Math.floor(clicksPerSec)
+        : 1;
 
       let totalDmg = 0;
       let totalCpGain = 0;
@@ -995,9 +1037,7 @@ export default function ClickAscensionGame() {
       } else {
         // Legacy: Single hit
         const hit =
-          burstHits.length > 0
-            ? burstHits[0]
-            : { damage: 0, isCrit: false };
+          burstHits.length > 0 ? burstHits[0] : { damage: 0, isCrit: false };
         setLastAutoClickEvent({
           id: crypto.randomUUID(),
           damage: hit.damage,
@@ -1017,8 +1057,6 @@ export default function ClickAscensionGame() {
     monster?.id,
     gameConfig, // Dependency for settings
   ]);
-
-
 
   // --------------------------------------------------------------------------
   // Helpers
@@ -1082,8 +1120,6 @@ export default function ClickAscensionGame() {
       for (const m of validMonsters) {
         const w = Number(m.Weight) || 0;
         if (random < w) {
-          // Debug log to check property names, especially Note
-          console.log("Selected Monster Config:", m);
           return {
             configId: m.ID,
             name: m.Name,
@@ -1240,7 +1276,9 @@ export default function ClickAscensionGame() {
         },
         lastDailyRewardClaimTime: Date.now(),
       }));
-      showPopup(`簽到成功！獲得 ${gemReward} 💎 + ${formatBigNumber(goldReward, 0)} 💰 + ${apReward} 🕊️`);
+      showPopup(
+        `簽到成功！獲得 ${gemReward} 💎 + ${formatBigNumber(goldReward, 0)} 💰 + ${apReward} 🕊️`
+      );
       return;
     }
 
@@ -1274,20 +1312,23 @@ export default function ClickAscensionGame() {
         setPlayer((prev) => {
           // 使用 walletManager 扣除貨幣
           const newWallet = deductCurrency(prev.wallet, currency, cost);
-          
+
           // 更新商店等級
-          const newClickShop = { ...prev.clickShop, [itemId]: currentLevel + 1 };
-          
+          const newClickShop = {
+            ...prev.clickShop,
+            [itemId]: currentLevel + 1,
+          };
+
           // 建立新的 player 狀態
           const nextPlayer = {
             ...prev,
             wallet: newWallet,
             clickShop: newClickShop,
           };
-          
+
           // 使用 recalculateStats 重新計算所有數值
           nextPlayer.stats = recalculateStats(nextPlayer);
-          
+
           return nextPlayer;
         });
       } else {
@@ -1325,20 +1366,23 @@ export default function ClickAscensionGame() {
         setPlayer((prev) => {
           // 使用 walletManager 扣除貨幣
           const newWallet = deductCurrency(prev.wallet, currency, cost);
-          
+
           // 更新商店等級
-          const newLevelShop = { ...prev.levelShop, [itemId]: currentLevel + 1 };
-          
+          const newLevelShop = {
+            ...prev.levelShop,
+            [itemId]: currentLevel + 1,
+          };
+
           // 建立新的 player 狀態
           const nextPlayer = {
             ...prev,
             wallet: newWallet,
             levelShop: newLevelShop,
           };
-          
+
           // 使用 recalculateStats 重新計算所有數值
           nextPlayer.stats = recalculateStats(nextPlayer);
-          
+
           return nextPlayer;
         });
       } else {
@@ -1369,7 +1413,11 @@ export default function ClickAscensionGame() {
       // 使用 walletManager 檢查餘額和處理交易
       if (hasSufficientFunds(player.wallet, shopItem.currency, shopItem.cost)) {
         setPlayer((prev) => {
-          let newWallet = deductCurrency(prev.wallet, shopItem.currency, shopItem.cost);
+          let newWallet = deductCurrency(
+            prev.wallet,
+            shopItem.currency,
+            shopItem.cost
+          );
           newWallet = { ...newWallet, gold: newWallet.gold + shopItem.reward };
           return { ...prev, wallet: newWallet };
         });
@@ -1407,8 +1455,12 @@ export default function ClickAscensionGame() {
         if (hasSufficientFunds(player.wallet, CurrencyType.GOLD, cost)) {
           setPlayer((prev) => {
             // 使用 walletManager 扣除貨幣
-            const newWallet = deductCurrency(prev.wallet, CurrencyType.GOLD, cost);
-            
+            const newWallet = deductCurrency(
+              prev.wallet,
+              CurrencyType.GOLD,
+              cost
+            );
+
             // 更新商店等級
             const newGoldShop = { ...prev.goldShop };
             newGoldShop[itemId] = (prev.goldShop[itemId] || 0) + 1;
@@ -1417,7 +1469,8 @@ export default function ClickAscensionGame() {
             const newInventory = { ...prev.inventory };
             if (config.Effect_Type === UpgradeEffectType.ADD_INVENTORY) {
               if (itemId === "gold_potion_rage") {
-                newInventory.ragePotionCount = (newInventory.ragePotionCount || 0) + 1;
+                newInventory.ragePotionCount =
+                  (newInventory.ragePotionCount || 0) + 1;
               }
             }
 
@@ -1428,10 +1481,10 @@ export default function ClickAscensionGame() {
               goldShop: newGoldShop,
               inventory: newInventory,
             };
-            
+
             // 使用 recalculateStats 重新計算所有數值
             nextPlayer.stats = recalculateStats(nextPlayer);
-            
+
             return nextPlayer;
           });
         } else {
@@ -1441,40 +1494,52 @@ export default function ClickAscensionGame() {
       }
 
       // If we reach here, the item was not found in gameConfig
-      console.warn(`[handleShopPurchase] Gold shop item not found in config: ${itemId}`);
+      console.warn(
+        `[handleShopPurchase] Gold shop item not found in config: ${itemId}`
+      );
     }
 
     // --- EQUIPMENT GACHA (Basic / Advanced / Premium) ---
     // --- EQUIPMENT GACHA (Old & New Support) ---
     if (itemId.startsWith("gacha_")) {
-       // Legacy check
-       if (itemId.includes("equipment")) return;
+      // Legacy check
+      if (itemId.includes("equipment")) return;
 
-       const parts = itemId.split("_");
-       // gacha_basic_ap_10
-       if (parts.length < 4) return;
+      const parts = itemId.split("_");
+      // gacha_basic_ap_10
+      if (parts.length < 4) return;
 
-       const boxShort = parts[1];
-       const currencyShort = parts[2];
-       const drawCount = Number(parts[3]) || 1;
+      const boxShort = parts[1];
+      const currencyShort = parts[2];
+      const drawCount = Number(parts[3]) || 1;
 
-       let boxType = "basic";
-       if (boxShort === "adv") boxType = "advanced";
-       if (boxShort === "prem") boxType = "premium";
+      let boxType = "basic";
+      if (boxShort === "adv") boxType = "advanced";
+      if (boxShort === "prem") boxType = "premium";
 
-       let currencyType = CurrencyType.AP;
-       if (currencyShort === "diamond" || currencyShort === "dia") currencyType = CurrencyType.DIAMOND;
+      let currencyType = CurrencyType.AP;
+      if (currencyShort === "diamond" || currencyShort === "dia")
+        currencyType = CurrencyType.DIAMOND;
 
-       // Calculate Cost
-       const s = (gameConfig?.settings as any) || {};
-       const key = `GACHA_COST_${boxShort.toUpperCase()}_${currencyType === CurrencyType.DIAMOND ? "DIAMOND" : "AP"}`;
-       
-       const base = boxShort === "basic" ? (currencyType === CurrencyType.DIAMOND ? 2 : 20) :
-                    boxShort === "adv" ? (currencyType === CurrencyType.DIAMOND ? 20 : 200) :
-                    (currencyType === CurrencyType.DIAMOND ? 100 : 1000);
-       
-       const unitCost = Number(s[key]) || base;
-       const totalCost = unitCost * drawCount;
+      // Calculate Cost
+      const s = (gameConfig?.settings as any) || {};
+      const key = `GACHA_COST_${boxShort.toUpperCase()}_${currencyType === CurrencyType.DIAMOND ? "DIAMOND" : "AP"}`;
+
+      const base =
+        boxShort === "basic"
+          ? currencyType === CurrencyType.DIAMOND
+            ? 2
+            : 20
+          : boxShort === "adv"
+            ? currencyType === CurrencyType.DIAMOND
+              ? 20
+              : 200
+            : currencyType === CurrencyType.DIAMOND
+              ? 100
+              : 1000;
+
+      const unitCost = Number(s[key]) || base;
+      const totalCost = unitCost * drawCount;
 
       // 使用 walletManager 檢查餘額
       if (hasSufficientFunds(player.wallet, currencyType, totalCost)) {
@@ -1569,13 +1634,17 @@ export default function ClickAscensionGame() {
 
           setPlayer((prev) => {
             // 使用 walletManager 扣除貨幣
-            let newWallet = deductCurrency(prev.wallet, currencyType, totalCost);
+            let newWallet = deductCurrency(
+              prev.wallet,
+              currencyType,
+              totalCost
+            );
             // 增加碎片
             newWallet = {
               ...newWallet,
               equipmentShards: (newWallet.equipmentShards || 0) + gainedShards,
             };
-            
+
             return {
               ...prev,
               wallet: newWallet,
@@ -1629,7 +1698,9 @@ export default function ClickAscensionGame() {
           showPopup("暫無裝備可抽取");
         }
       } else {
-        showPopup(`${currencyType === CurrencyType.DIAMOND ? "鑽石" : "飛昇點數 (AP)"}不足！`);
+        showPopup(
+          `${currencyType === CurrencyType.DIAMOND ? "鑽石" : "飛昇點數 (AP)"}不足！`
+        );
         if (autoGachaBox) setAutoGachaBox(null);
       }
     }
@@ -1664,23 +1735,23 @@ export default function ClickAscensionGame() {
         setPlayer((prev) => {
           // 使用 walletManager 扣除貨幣
           const newWallet = deductCurrency(prev.wallet, currency, cost);
-          
+
           // 更新商店等級
           const newAscensionShop = {
             ...prev.ascensionShop,
             [itemId]: currentLevel + 1,
           };
-          
+
           // 建立新的 player 狀態
           const nextPlayer = {
             ...prev,
             wallet: newWallet,
             ascensionShop: newAscensionShop,
           };
-          
+
           // 使用 recalculateStats 重新計算所有數值
           nextPlayer.stats = recalculateStats(nextPlayer);
-          
+
           return nextPlayer;
         });
       } else {
@@ -1694,13 +1765,15 @@ export default function ClickAscensionGame() {
     if (!gameConfig?.upgrades) return;
 
     // 目前只支援 Gold Shop 的批量購買
-    if (!itemId.startsWith("gold_shop_") && !itemId.startsWith("gold_potion_")) return;
+    if (!itemId.startsWith("gold_shop_") && !itemId.startsWith("gold_potion_"))
+      return;
 
     const config = gameConfig.upgrades.find((u: any) => u.ID === itemId);
     if (!config) return;
 
-    const isInventoryItem = config.Effect_Type === UpgradeEffectType.ADD_INVENTORY;
-    const currentLevel = isInventoryItem ? 0 : (player.goldShop[itemId] || 0);
+    const isInventoryItem =
+      config.Effect_Type === UpgradeEffectType.ADD_INVENTORY;
+    const currentLevel = isInventoryItem ? 0 : player.goldShop[itemId] || 0;
     const maxLevel = Number(config.Max_Level || 0);
 
     // 計算實際可升級的次數 (庫存道具無上限)
@@ -1734,13 +1807,18 @@ export default function ClickAscensionGame() {
 
     // 一次性更新狀態
     setPlayer((prev) => {
-      const newWallet = deductCurrency(prev.wallet, CurrencyType.GOLD, totalCost);
+      const newWallet = deductCurrency(
+        prev.wallet,
+        CurrencyType.GOLD,
+        totalCost
+      );
 
       if (isInventoryItem) {
         // 處理庫存道具
         const newInventory = { ...prev.inventory };
         if (itemId === "gold_potion_rage") {
-          newInventory.ragePotionCount = (newInventory.ragePotionCount || 0) + actualQuantity;
+          newInventory.ragePotionCount =
+            (newInventory.ragePotionCount || 0) + actualQuantity;
         }
         return {
           ...prev,
@@ -1791,6 +1869,122 @@ export default function ClickAscensionGame() {
     });
   };
 
+  // 飾品系統 Handlers
+  const handleCraftAccessory = (accessoryId: string) => {
+    const config = gameConfig?.accessories?.find(
+      (a: any) => String(a.ID) === String(accessoryId)
+    );
+    if (!config) return;
+
+    const craftCost = Number(config.Craft_Cost) || 100;
+    if (
+      !hasSufficientFunds(
+        player.wallet,
+        CurrencyType.EQUIPMENT_SHARD,
+        craftCost
+      )
+    ) {
+      showPopup("裝備碎片不足！", "打造失敗");
+      return;
+    }
+
+    setPlayer((prev) => {
+      const newWallet = deductCurrency(
+        prev.wallet,
+        CurrencyType.EQUIPMENT_SHARD,
+        craftCost
+      );
+      return {
+        ...prev,
+        wallet: newWallet,
+        accessories: {
+          ...prev.accessories,
+          inventory: {
+            ...prev.accessories.inventory,
+            [accessoryId]: 1, // 打造後等級為 1
+          },
+        },
+      };
+    });
+    showPopup(`成功打造 ${config.Name}！`, "🔨 打造成功");
+  };
+
+  const handleUpgradeAccessory = (accessoryId: string) => {
+    const config = gameConfig?.accessories?.find(
+      (a: any) => String(a.ID) === String(accessoryId)
+    );
+    if (!config) return;
+
+    const currentLevel = player.accessories.inventory[accessoryId] || 0;
+    if (currentLevel <= 0) return; // 未擁有
+    if (currentLevel >= (config.Max_Level || 99)) {
+      showPopup("已達最大等級！", "升級失敗");
+      return;
+    }
+
+    const baseCost = Number(config.Upgrade_Cost_Base) || 100;
+    const mult = Number(config.Upgrade_Cost_Mult) || 1.15;
+    const upgradeCost = Math.floor(baseCost * Math.pow(mult, currentLevel - 1));
+
+    if (
+      !hasSufficientFunds(
+        player.wallet,
+        CurrencyType.EQUIPMENT_SHARD,
+        upgradeCost
+      )
+    ) {
+      showPopup("裝備碎片不足！", "升級失敗");
+      return;
+    }
+
+    setPlayer((prev) => {
+      const newWallet = deductCurrency(
+        prev.wallet,
+        CurrencyType.EQUIPMENT_SHARD,
+        upgradeCost
+      );
+      const newLevel = (prev.accessories.inventory[accessoryId] || 1) + 1;
+      return {
+        ...prev,
+        wallet: newWallet,
+        accessories: {
+          ...prev.accessories,
+          inventory: {
+            ...prev.accessories.inventory,
+            [accessoryId]: newLevel,
+          },
+        },
+      };
+    });
+  };
+
+  const handleEquipAccessory = (accessoryId: string, slot: AccessorySlot) => {
+    setPlayer((prev) => ({
+      ...prev,
+      accessories: {
+        ...prev.accessories,
+        equipped: {
+          ...prev.accessories.equipped,
+          [slot]: accessoryId,
+        },
+      },
+    }));
+  };
+
+  const handleUnequipAccessory = (slot: AccessorySlot) => {
+    setPlayer((prev) => {
+      const newEquipped = { ...prev.accessories.equipped };
+      delete newEquipped[slot];
+      return {
+        ...prev,
+        accessories: {
+          ...prev.accessories,
+          equipped: newEquipped,
+        },
+      };
+    });
+  };
+
   const handleUsePotion = (type: "RAGE") => {
     if (type === "RAGE" && player.inventory.ragePotionCount > 0) {
       setPlayer((prev) => ({
@@ -1808,67 +2002,9 @@ export default function ClickAscensionGame() {
   };
 
   const recalculateStats = (p: PlayerState) => {
-    // 從初始值開始計算
-    let stats = { ...INITIAL_PLAYER.stats };
-
-    // 1. Add Gold Shop bonuses (temporary) - Use gameConfig if available
-    const goldShopItems = [
-      { id: "gold_shop_weapon", levelKey: "weaponLevel" },
-      { id: "gold_shop_mercenary", levelKey: "mercenaryLevel" },
-      { id: "gold_shop_partner", levelKey: "partnerLevel" },
-      { id: "gold_shop_archer", levelKey: "archerLevel" },
-      { id: "gold_shop_knight", levelKey: "knightLevel" },
-      { id: "gold_shop_warlord", levelKey: "warlordLevel" },
-      { id: "gold_shop_oracle", levelKey: "oracleLevel" },
-      { id: "gold_shop_void", levelKey: "voidLevel" },
-      { id: "gold_shop_titan", levelKey: "titanLevel" },
-      { id: "gold_shop_amulet", levelKey: "amuletLevel" },
-    ];
-
-    goldShopItems.forEach(({ id, levelKey }) => {
-      const level = (p.goldShop as any)[levelKey] || 0;
-      if (level <= 0) return;
-
-      const config = gameConfig?.upgrades?.find((u: any) => u.ID === id);
-      if (config) {
-        const effectType = config.Effect_Type;
-        const totalVal = Number(config.Effect_Val || 0) * level;
-        // 使用 applyEffect 統一處理
-        stats = applyEffect(stats, effectType, totalVal);
-      }
-    });
-
-    // 2. Add Permanent Shop bonuses (Click, Level, Ascension)
-    const shops = ["clickShop", "levelShop", "ascensionShop"] as const;
-    shops.forEach((shopKey) => {
-      Object.entries(p[shopKey]).forEach(([id, level]) => {
-        const config = gameConfig?.upgrades?.find((u: any) => u.ID === id);
-        if (config && level > 0) {
-          const effectType = config.Effect_Type;
-          const totalVal = Number(config.Effect_Val || 0) * level;
-          // 使用 applyEffect 統一處理
-          stats = applyEffect(stats, effectType, totalVal);
-        }
-      });
-    });
-
-    // 3. TODO: Add Equipment bonuses (未來擴充)
-    // Object.entries(p.equipment).forEach(([slot, itemId]) => {
-    //   if (!itemId) return;
-    //   const config = gameConfig?.equipments?.find((e: any) => e.ID === itemId);
-    //   if (config) {
-    //     const level = p.equipmentLevels?.[itemId] || 1;
-    //     const val = calculateEffectValue(config.Base_Val, config.Level_Mult, level);
-    //     stats = applyEffect(stats, config.Effect_Type, val);
-    //   }
-    // });
-
-    // Post-Process: Apply Global Multiplier (ATK %)
-    if (stats.atkPercentBonus > 0) {
-      stats.baseDamage = Math.floor(stats.baseDamage * (1 + stats.atkPercentBonus / 100));
-    }
-
-    return stats;
+    // 始終返回初始狀態，因為 effectiveStats 會動態計算所有加成。
+    // 這避免了將商店加成寫入 player.stats 後，effectiveStats 又再次疊加的雙重計算問題。
+    return { ...INITIAL_PLAYER.stats };
   };
 
   const handleAscension = () => {
@@ -1946,7 +2082,7 @@ export default function ClickAscensionGame() {
 
     setPlayer((prev) => {
       let refundedPoints = 0;
-      
+
       // 計算要返還的點數
       Object.entries(prev.levelShop).forEach(([id, level]) => {
         const config = gameConfig?.upgrades?.find((u: any) => u.ID === id);
@@ -1965,7 +2101,11 @@ export default function ClickAscensionGame() {
       });
 
       // 使用 addCurrency 增加返還的點數
-      const newWallet = addCurrency(prev.wallet, CurrencyType.LP, refundedPoints);
+      const newWallet = addCurrency(
+        prev.wallet,
+        CurrencyType.LP,
+        refundedPoints
+      );
 
       const nextPlayer: PlayerState = {
         ...prev,
@@ -1982,20 +2122,20 @@ export default function ClickAscensionGame() {
 
   const potentialPoints = React.useMemo(() => {
     // 從 DB settings 讀取飛昇公式參數
-    const settings = gameConfig?.settings as Record<string, any> || {};
+    const settings = (gameConfig?.settings as Record<string, any>) || {};
     const formulaType = String(settings.ASCENSION_FORMULA ?? "SOFT_EXP");
     const baseAmount = Number(settings.ASCENSION_BASE ?? 10);
     const multiplier = Number(settings.ASCENSION_MULT ?? 1.5);
     const minStage = Number(settings.ASCENSION_MIN_STAGE ?? 1);
-    
+
     // Player Bonus
     const apMult = player.stats.apMultiplier || 1.0;
 
     const stageVal = Math.max(1, stage.maxStageReached);
-    
+
     // 檢查是否達到最低飛昇關卡要求
     if (stageVal < minStage) return 0;
-    
+
     let points = 0;
 
     switch (formulaType) {
@@ -2098,7 +2238,7 @@ export default function ClickAscensionGame() {
             }))
           }
         />
-      ) : (
+      ) : activeView === "CHARACTER" ? (
         <CharacterView
           player={player}
           effectiveStats={effectiveStats}
@@ -2106,6 +2246,18 @@ export default function ClickAscensionGame() {
           gameConfig={gameConfig}
           onEquip={handleEquip}
           onUnequip={handleUnequip}
+          onEquipAccessory={handleEquipAccessory}
+          onUnequipAccessory={handleUnequipAccessory}
+        />
+      ) : (
+        <CraftView
+          player={player}
+          // effectiveStats={effectiveStats}
+          gameConfig={gameConfig}
+          onCraft={handleCraftAccessory}
+          onUpgrade={handleUpgradeAccessory}
+          onEquip={handleEquipAccessory}
+          onUnequip={handleUnequipAccessory}
         />
       )}
 

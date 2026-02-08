@@ -1,7 +1,7 @@
 import React from "react";
 
 export type ModalType = "PROFILE" | "UPGRADES" | "SHOP" | "INVENTORY" | null;
-export type ViewType = "BATTLE" | "CHARACTER";
+export type ViewType = "BATTLE" | "CHARACTER" | "CRAFT";
 
 interface FooterNavProps {
   activeView: ViewType;
@@ -37,6 +37,17 @@ export default function FooterNav({
         >
           <span className="icon">⚔️</span>
           <span className="label">戰鬥</span>
+        </button>
+
+        <button
+          className={`ca-tab-btn ${activeView === "CRAFT" ? "active" : ""}`}
+          onClick={() => {
+            onSwitchView("CRAFT");
+            onOpenModal(null); // Close any open modals
+          }}
+        >
+          <span className="icon">🔨</span>
+          <span className="label">打造</span>
         </button>
 
         <button className="ca-tab-btn" onClick={() => onOpenModal("SHOP")}>

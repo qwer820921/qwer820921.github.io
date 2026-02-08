@@ -61,6 +61,12 @@ export interface PlayerAttributes {
   rareMonsterChance: number; // 稀有怪出現機率 (0.1 = 10%)
   equipDamageMultiplier: number; // 裝備百分比傷害加成 (例如 0.5 = +50%)
   atkPercentBonus: number; // 攻擊力百分比加成累計 (同詞條相加)
+
+  // Accessory Stats (飾品系統)
+  monsterHpReduction: number; // 小怪血量減少 % (0.1 = 10%)
+  bossHpReduction: number; // BOSS 血量減少 % (0.1 = 10%)
+  accDamageMultiplier: number; // 飾品攻擊力百分比
+  diamondMultiplier: number; // 鑽石掉落倍率 (1.0 = 100%)
 }
 
 export interface PlayerState {
@@ -87,6 +93,11 @@ export interface PlayerState {
   equipment: {
     inventory: Record<string, number>; // 擁有的裝備 ID -> 等級 (若為 0 或 undefined 代表未擁有)
     equipped: Partial<Record<EquipmentSlot, string>>; // 部位 -> 裝備 ID
+  };
+  // 新增：飾品系統狀態 (打造系統)
+  accessories: {
+    inventory: Record<string, number>; // 擁有的飾品 ID -> 等級 (若為 0 或 undefined 代表未擁有)
+    equipped: Partial<Record<AccessorySlot, string>>; // 部位 -> 飾品 ID
   };
   lastDailyRewardClaimTime?: number; // 上次領取每日獎勵的時間 (timestamp)
 }
@@ -196,6 +207,12 @@ export enum UpgradeEffectType {
   AUTO_CLICK_V = "AUTO_CLICK_V", // 自動點擊次數
   RARE_CHANCE_P = "RARE_CHANCE_P", // 稀有怪機率
   REDUCE_GOAL_V = "REDUCE_GOAL_V", // 減少關卡目標
+
+  // 飾品系統 (Accessories)
+  REDUCE_MONSTER_HP = "REDUCE_MONSTER_HP", // 減少小怪血量 %
+  REDUCE_BOSS_HP = "REDUCE_BOSS_HP", // 減少 BOSS 血量 %
+  ACC_DMG_MULT = "ACC_DMG_MULT", // 飾品攻擊力百分比
+  ADD_DIAMOND_MULT = "ADD_DIAMOND_MULT", // 鑽石掉落倍率
 }
 
 export interface UpgradeItem {
@@ -233,6 +250,16 @@ export enum EquipmentSlot {
   RELIC = "RELIC", // 法寶
 }
 
+// 飾品系統的部位 (打造系統專用)
+export enum AccessorySlot {
+  CRAFT_WING = "CRAFT_WING", // 飛羽 - 飛昇點數
+  CRAFT_TOME = "CRAFT_TOME", // 心法 - 經驗值
+  CRAFT_TALISMAN = "CRAFT_TALISMAN", // 破魔符 - 小怪血量
+  CRAFT_DECREE = "CRAFT_DECREE", // 誅仙令 - BOSS血量
+  CRAFT_JADE = "CRAFT_JADE", // 玉佩 - 飾品攻擊力
+  CRAFT_TREASURE = "CRAFT_TREASURE", // 聚寶盆 - 鑽石掉落
+}
+
 // 裝備系統的 DB Schema 對應
 export interface EquipmentItemConfig {
   ID: string; // 例如 "eq_main_hand_01"
@@ -248,6 +275,24 @@ export interface EquipmentItemConfig {
   Rarity: string; // 稀有度 (例如 "Common", "Epic")
   Gacha_Weight: number; // 扭蛋權重 (例如 100 為普通, 10 為稀有)
   Max_Level: number; // 等級上限
+  Emoji?: string; // 圖示
+}
+
+// 飾品系統的 DB Schema 對應 (打造系統專用)
+export interface AccessoryItemConfig {
+  ID: string; // 例如 "acc_wing_common"
+  Name: string; // 飾品名稱
+  Slot: AccessorySlot; // 部位
+  Effect_Type: string; // 效果類型
+  Base_Val: number; // 基礎數值
+  Level_Mult: number; // 每級成長
+  Craft_Cost: number; // 打造費用 (裝備碎片)
+  Upgrade_Cost_Base: number; // 升級基礎費用
+  Upgrade_Cost_Mult: number; // 升級費用倍率
+  Rarity: string; // 稀有度
+  Max_Level: number; // 最大等級
+  Desc_Template: string; // 描述模板
+  Emoji: string; // 圖示
 }
 
 // 商店與升級項目的 DB Schema 對應
@@ -286,4 +331,5 @@ export interface GameConfig {
   monsters: MonsterConfig[]; // From 'Monsters' sheet
   upgrades: UpgradeConfig[]; // From 'Upgrades' sheet
   equipments: EquipmentItemConfig[]; // From 'Equipments' sheet
+  accessories: AccessoryItemConfig[]; // From 'Accessories' sheet (打造飾品)
 }

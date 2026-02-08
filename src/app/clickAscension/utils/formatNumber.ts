@@ -18,7 +18,6 @@ let globalFormatMode: NumberFormatMode = "LETTER";
  */
 export function setNumberFormatMode(mode: NumberFormatMode): void {
   globalFormatMode = mode;
-  console.log(`[NumberFormat] 數值單位已切換為: ${mode}`);
 }
 
 /**
@@ -93,7 +92,7 @@ function formatWithLetterUnit(
 ): string {
   // 小於閾值：直接顯示（加千分位）
   if (num < threshold) {
-    return Math.floor(num).toLocaleString();
+    return num.toLocaleString(undefined, { maximumFractionDigits: decimals });
   }
 
   // 計算單位索引（每個單位是 10³）
@@ -140,7 +139,7 @@ function formatWithScientific(
 ): string {
   // 小於閾值：直接顯示（加千分位）
   if (num < threshold) {
-    return Math.floor(num).toLocaleString();
+    return num.toLocaleString(undefined, { maximumFractionDigits: decimals });
   }
 
   // 使用科學記號
@@ -204,7 +203,7 @@ function formatWithChinese(
     }
   }
 
-  return Math.floor(num).toLocaleString();
+  return num.toLocaleString(undefined, { maximumFractionDigits: decimals });
 }
 
 // ============================================================================

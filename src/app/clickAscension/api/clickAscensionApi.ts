@@ -2,7 +2,7 @@ import axios from "axios";
 
 // Google Apps Script Web App URL for Click Ascension
 export const BASE_URL =
-  "https://script.google.com/macros/s/AKfycbxegFPp4kJZXDxUNqQopqiWVa2JLLM__rJbm700mUQsovg2nkE6wSJd2lFQyJQ4dg10/exec";
+  "https://script.google.com/macros/s/AKfycbzUJXbSofe8NnFrNlKaDMDnOWkIzjeo3c3KHY8KJDm6Jd3P6XDDxzirkRjdhjC05KDj/exec";
 
 export interface ApiResponse<T> {
   success?: boolean;
@@ -112,7 +112,8 @@ export const getGameConfigs = async (): Promise<GameStaticData | null> => {
       response.data &&
       (response.data.settings ||
         response.data.monsters ||
-        response.data.upgrades)
+        response.data.upgrades ||
+        response.data.accessories)
     ) {
       return response.data as GameStaticData;
     }

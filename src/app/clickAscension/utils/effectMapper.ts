@@ -91,6 +91,27 @@ export const applyEffect = (
       // 消耗品，不影響 stats，由其他邏輯處理
       break;
 
+    // 飾品系統 (Accessories)
+    case UpgradeEffectType.REDUCE_MONSTER_HP:
+      // 減少小怪血量 % (例如 10 代表 10%，轉換為 0.1)
+      newStats.monsterHpReduction += value / 100;
+      break;
+
+    case UpgradeEffectType.REDUCE_BOSS_HP:
+      // 減少 BOSS 血量 % (例如 10 代表 10%，轉換為 0.1)
+      newStats.bossHpReduction += value / 100;
+      break;
+
+    case UpgradeEffectType.ACC_DMG_MULT:
+      // 飾品攻擊力 % (例如 10 代表 10%，保持 10，計算時再除以 100)
+      newStats.accDamageMultiplier += value;
+      break;
+
+    case UpgradeEffectType.ADD_DIAMOND_MULT:
+      // 鑽石掉落倍率 % (例如 10 代表 10%，轉換為 0.1)
+      newStats.diamondMultiplier += value / 100;
+      break;
+
     default:
       console.warn(`[EffectMapper] Unknown effect type: ${effectType}`);
       break;
@@ -110,7 +131,8 @@ export const applyEffects = (
   effects: Array<{ type: UpgradeEffectType | string; value: number }>
 ): PlayerAttributes => {
   return effects.reduce(
-    (currentStats, effect) => applyEffect(currentStats, effect.type, effect.value),
+    (currentStats, effect) =>
+      applyEffect(currentStats, effect.type, effect.value),
     { ...stats }
   );
 };
@@ -118,7 +140,9 @@ export const applyEffects = (
 /**
  * 取得效果類型的顯示名稱
  */
-export const getEffectTypeName = (effectType: UpgradeEffectType | string): string => {
+export const getEffectTypeName = (
+  effectType: UpgradeEffectType | string
+): string => {
   const names: Record<string, string> = {
     [UpgradeEffectType.ADD_BASE_DMG]: "基礎傷害",
     [UpgradeEffectType.ADD_AUTO_DMG]: "自動攻擊",
@@ -135,6 +159,11 @@ export const getEffectTypeName = (effectType: UpgradeEffectType | string): strin
     [UpgradeEffectType.AUTO_CLICK_V]: "自動點擊",
     [UpgradeEffectType.RARE_CHANCE_P]: "稀有怪機率",
     [UpgradeEffectType.REDUCE_GOAL_V]: "關卡目標減少",
+    // 飾品系統
+    [UpgradeEffectType.REDUCE_MONSTER_HP]: "小怪血量減少",
+    [UpgradeEffectType.REDUCE_BOSS_HP]: "BOSS血量減少",
+    [UpgradeEffectType.ACC_DMG_MULT]: "飾品攻擊力",
+    [UpgradeEffectType.ADD_DIAMOND_MULT]: "鑽石掉落",
   };
   return names[effectType] || effectType;
 };
@@ -142,7 +171,9 @@ export const getEffectTypeName = (effectType: UpgradeEffectType | string): strin
 /**
  * 檢查效果類型是否為百分比類型
  */
-export const isPercentageEffect = (effectType: UpgradeEffectType | string): boolean => {
+export const isPercentageEffect = (
+  effectType: UpgradeEffectType | string
+): boolean => {
   const percentageTypes = [
     UpgradeEffectType.ADD_BOSS_DMG,
     UpgradeEffectType.ADD_CRIT_CHANCE,
@@ -154,6 +185,11 @@ export const isPercentageEffect = (effectType: UpgradeEffectType | string): bool
     UpgradeEffectType.ADD_AP_MULT,
     UpgradeEffectType.ADD_ATK_P,
     UpgradeEffectType.RARE_CHANCE_P,
+    // 飾品系統
+    UpgradeEffectType.REDUCE_MONSTER_HP,
+    UpgradeEffectType.REDUCE_BOSS_HP,
+    UpgradeEffectType.ACC_DMG_MULT,
+    UpgradeEffectType.ADD_DIAMOND_MULT,
   ];
   return percentageTypes.includes(effectType as UpgradeEffectType);
 };

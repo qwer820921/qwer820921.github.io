@@ -118,15 +118,22 @@ export default function Header({
       <div className="ca-header-right">
         {/* Currency Stack */}
         <div className="ca-currency-stack">
-          <div className="ca-currency ca-currency-gold text-xs">
+          <div className="ca-currency ca-currency-gold text-xs" title={"金幣"}>
             <span>💰</span>
             <span>{formatNumber(Math.floor(wallet.gold))}</span>
           </div>
-          <div className="ca-currency ca-currency-cp text-xs">
+          <div
+            className="ca-currency ca-currency-cp text-xs"
+            title={"點擊點數"}
+          >
             <span>⚡</span>
             <span>{formatNumber(Math.floor(wallet.clickPoints))}</span>
           </div>
-          <div className="ca-currency text-xs" style={{ color: "#10b981" }}>
+          <div
+            className="ca-currency text-xs"
+            style={{ color: "#10b981" }}
+            title={"等級積分"}
+          >
             <span>🆙</span>
             <span>{formatNumber(Math.floor(wallet.levelPoints))}</span>
           </div>
