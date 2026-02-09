@@ -1,8 +1,11 @@
 import axios from "axios";
 import { LotteryPeriod } from "../types";
 
-// 透過 Next.js API Route 代理請求，避免 CORS 問題
-const XML_URL = "/api/invoice";
+// 直接呼叫財政部 API（靜態導出不支援 API routes）
+// 如果遇到 CORS 問題，可以使用 CORS proxy
+const DIRECT_XML_URL = "https://invoice.etax.nat.gov.tw/invoice.xml";
+const CORS_PROXY = "https://corsproxy.io/?";
+const XML_URL = CORS_PROXY + encodeURIComponent(DIRECT_XML_URL);
 
 /**
  * XML 解析後的原始資料結構
@@ -40,12 +43,8 @@ const parseInvoiceXml = (xmlText: string): XmlPeriodData[] => {
       // 使用正則表達式解析各獎項
       const superPrizeMatch = description.match(/特別獎[：:]\s*(\d{8})/);
       const spcPrizeMatch = description.match(/特獎[：:]\s*(\d{8})/);
-      const firstPrizeMatch = description.match(
-        /頭獎[：:]\s*([\d、,\s]+)/
-      );
-      const sixthPrizeMatch = description.match(
-        /增開六獎[：:]\s*([\d、,\s]+)/
-      );
+      const firstPrizeMatch = description.match(/頭獎[：:]\s*([\d、,\s]+)/);
+      const sixthPrizeMatch = description.match(/增開六獎[：:]\s*([\d、,\s]+)/);
 
       // 解析頭獎號碼（可能有多組）
       const firstPrizeNo: string[] = [];
@@ -71,7 +70,10 @@ const parseInvoiceXml = (xmlText: string): XmlPeriodData[] => {
         });
       }
 
-      if (title && (superPrizeMatch || spcPrizeMatch || firstPrizeNo.length > 0)) {
+      if (
+        title &&
+        (superPrizeMatch || spcPrizeMatch || firstPrizeNo.length > 0)
+      ) {
         results.push({
           title,
           superPrizeNo: superPrizeMatch ? superPrizeMatch[1] : "",
