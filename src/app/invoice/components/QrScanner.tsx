@@ -41,18 +41,21 @@ const QrScanner: React.FC = () => {
   };
 
   // 1. 載入中獎號碼資料
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const periods = await getAllWinningLists();
+      setAllPeriods(periods);
+    } catch (err) {
+      console.error("Failed to load lottery data:", err);
+      setError("無法載入中獎號碼資料");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const periods = await getAllWinningLists();
-        setAllPeriods(periods);
-      } catch (err) {
-        console.error("Failed to load lottery data:", err);
-        setError("無法載入中獎號碼資料");
-      } finally {
-        setLoading(false);
-      }
-    };
     loadData();
   }, []);
 
@@ -244,7 +247,15 @@ const QrScanner: React.FC = () => {
 
       {/* 一般錯誤 (非權限相關) */}
       {!loading && error && hasCameraPermission !== false && (
-        <div className="text-center text-danger mb-3">{error}</div>
+        <div className="text-center p-4">
+          <div className="text-danger mb-3" style={{ fontSize: "3rem" }}>
+            ⚠️
+          </div>
+          <p className="text-danger mb-4">{error}</p>
+          <button className="btn btn-warning px-4 py-2" onClick={loadData}>
+            🔄 重新載入
+          </button>
+        </div>
       )}
 
       {!loading && !error && hasCameraPermission !== false && (

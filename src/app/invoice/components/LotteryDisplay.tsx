@@ -15,24 +15,24 @@ const LotteryDisplay: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   // 初始載入所有期別
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const periods = await getAllWinningLists();
-        setAllPeriods(periods);
-        if (periods.length > 0) {
-          setSelectedIndex(0);
-        }
-      } catch (err) {
-        setError("無法載入中獎號碼，請稍後再試");
-        console.error(err);
-      } finally {
-        setLoading(false);
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const periods = await getAllWinningLists();
+      setAllPeriods(periods);
+      if (periods.length > 0) {
+        setSelectedIndex(0);
       }
-    };
+    } catch (err) {
+      setError("無法載入中獎號碼，請稍後再試");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     loadData();
   }, []);
 
@@ -59,7 +59,13 @@ const LotteryDisplay: React.FC = () => {
     return (
       <div className={styles.glassCard}>
         <div className="text-center py-5">
-          <p className="text-danger">{error}</p>
+          <div className="text-danger mb-3" style={{ fontSize: "3rem" }}>
+            ⚠️
+          </div>
+          <p className="text-danger mb-4">{error}</p>
+          <button className="btn btn-warning px-4 py-2" onClick={loadData}>
+            🔄 重新載入
+          </button>
         </div>
       </div>
     );
@@ -91,9 +97,7 @@ const LotteryDisplay: React.FC = () => {
               <div className={styles.prizeIconSpecial}>🏆</div>
               <div className={styles.prizeTitle}>
                 <div className={styles.prizeName}>特別獎</div>
-                <div className={styles.prizeAmount}>
-                  8位數號碼完全相同
-                </div>
+                <div className={styles.prizeAmount}>8位數號碼完全相同</div>
               </div>
               <div className={styles.prizeBadge}>
                 ${formatAmount(PRIZE_TABLE.specialPrize.amount)}
@@ -112,18 +116,14 @@ const LotteryDisplay: React.FC = () => {
               <div className={styles.prizeIconGrand}>💎</div>
               <div className={styles.prizeTitle}>
                 <div className={styles.prizeName}>特獎</div>
-                <div className={styles.prizeAmount}>
-                  8位數號碼完全相同
-                </div>
+                <div className={styles.prizeAmount}>8位數號碼完全相同</div>
               </div>
               <div className={styles.prizeBadge}>
                 ${formatAmount(PRIZE_TABLE.grandPrize.amount)}
               </div>
             </div>
             <div className={styles.numberDisplay}>
-              <div className={styles.numberCard}>
-                {lotteryData.grandPrize}
-              </div>
+              <div className={styles.numberCard}>{lotteryData.grandPrize}</div>
             </div>
           </div>
 
@@ -154,9 +154,7 @@ const LotteryDisplay: React.FC = () => {
                 <div className={styles.prizeIconSixth}>🎯</div>
                 <div className={styles.prizeTitle}>
                   <div className={styles.prizeName}>增開六獎</div>
-                  <div className={styles.prizeAmount}>
-                    末3碼相同
-                  </div>
+                  <div className={styles.prizeAmount}>末3碼相同</div>
                 </div>
                 <div className={styles.prizeBadge}>
                   ${formatAmount(PRIZE_TABLE.sixth.amount)}

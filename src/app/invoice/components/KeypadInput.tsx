@@ -18,23 +18,28 @@ const KeypadInput: React.FC = () => {
     possible: boolean;
     matches: string[];
   } | null>(null);
-  const [displayState, setDisplayState] = useState<
-    "normal" | "win" | "lose"
-  >("normal");
+  const [displayState, setDisplayState] = useState<"normal" | "win" | "lose">(
+    "normal"
+  );
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // 載入所有期別中獎號碼
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const periods = await getAllWinningLists();
+      setAllPeriods(periods);
+    } catch (err) {
+      console.error("Failed to load lottery data:", err);
+      setError("無法載入中獎號碼");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const periods = await getAllWinningLists();
-        setAllPeriods(periods);
-      } catch (err) {
-        console.error("Failed to load lottery data:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
     loadData();
   }, []);
 
@@ -98,6 +103,16 @@ const KeypadInput: React.FC = () => {
   return (
     <div className={styles.glassCard}>
       <div className={styles.keypadContainer}>
+        {/* 錯誤提示 */}
+        {error && (
+          <div className="alert alert-danger d-flex align-items-center justify-content-between mb-3">
+            <span>⚠️ {error}</span>
+            <button className="btn btn-sm btn-warning" onClick={loadData}>
+              🔄 重試
+            </button>
+          </div>
+        )}
+
         {/* 期別選擇器 */}
         <div className={styles.periodSelector}>
           <label className={styles.periodLabel}>對獎期別</label>
@@ -110,7 +125,7 @@ const KeypadInput: React.FC = () => {
               setCheckResult(null);
               setDisplayState("normal");
             }}
-            disabled={loading}
+            disabled={loading || allPeriods.length === 0}
           >
             {allPeriods.map((period, idx) => (
               <option key={idx} value={idx}>
@@ -166,9 +181,7 @@ const KeypadInput: React.FC = () => {
               <button
                 key={key}
                 className={
-                  key === "C"
-                    ? styles.keypadButtonClear
-                    : styles.keypadButton
+                  key === "C" ? styles.keypadButtonClear : styles.keypadButton
                 }
                 onClick={() => handleKeyPress(key)}
               >
