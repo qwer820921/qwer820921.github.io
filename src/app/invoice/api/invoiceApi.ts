@@ -1,11 +1,8 @@
 import axios from "axios";
 import { LotteryPeriod } from "../types";
 
-// 直接呼叫財政部 API（靜態導出不支援 API routes）
-// 如果遇到 CORS 問題，可以使用 CORS proxy
-const DIRECT_XML_URL = "https://invoice.etax.nat.gov.tw/invoice.xml";
-const CORS_PROXY = "https://corsproxy.io/?";
-const XML_URL = CORS_PROXY + encodeURIComponent(DIRECT_XML_URL);
+const GOOGLE_APPS_SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbzJZxtDu-naXqPcQ2eluHGWOCWzVYriLKc6vUqM7iZ3VzoC1ytJDO2zKaRS5kC2RPlKWA/exec";
 
 /**
  * XML 解析後的原始資料結構
@@ -131,17 +128,18 @@ const convertToLotteryPeriod = (xmlData: XmlPeriodData): LotteryPeriod => {
 };
 
 /**
- * 從財政部 XML 來源取得中獎號碼
+ * 從 Google Apps Script 取得中獎號碼
  * @returns {Promise<LotteryPeriod[]>} 中獎號碼資料陣列
  * @throws {Error} 如果請求失敗
  */
 export const fetchWinningListFromXml = async (): Promise<LotteryPeriod[]> => {
   try {
-    const response = await axios.get(XML_URL, {
+    const response = await axios.get(GOOGLE_APPS_SCRIPT_URL, {
       responseType: "text",
       headers: {
         Accept: "application/xml, text/xml, */*",
       },
+      timeout: 10000, // 10 秒超時
     });
 
     const xmlData = parseInvoiceXml(response.data);
@@ -152,26 +150,14 @@ export const fetchWinningListFromXml = async (): Promise<LotteryPeriod[]> => {
 
     return xmlData.map(convertToLotteryPeriod);
   } catch (error) {
-    console.error("Error fetching winning list from XML:", error);
-    throw error;
+    console.error(
+      "Error fetching winning list from Google Apps Script:",
+      error
+    );
+    throw new Error(
+      `無法取得發票資料，請確認 Google Apps Script 是否正確設定。錯誤: ${error}`
+    );
   }
-};
-
-/**
- * 智慧取得中獎號碼
- * @param {number} index - 期別索引，0 為最新一期
- * @returns {Promise<LotteryPeriod>} 中獎號碼資料
- * @throws {Error} 如果 API 無法取得
- */
-export const getWinningList = async (
-  index: number = 0
-): Promise<LotteryPeriod> => {
-  const periods = await fetchWinningListFromXml();
-  if (periods.length > index) {
-    return periods[index];
-  }
-  // 如果索引超出範圍，返回最新一期
-  return periods[0];
 };
 
 /**
