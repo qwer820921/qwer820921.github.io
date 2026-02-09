@@ -57,7 +57,6 @@ const QrScanner: React.FC = () => {
   }, []);
 
   // 2. 初始化並啟動掃描器
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     let isMounted = true; 
     let html5QrCode: Html5Qrcode | null = null;
@@ -115,7 +114,7 @@ const QrScanner: React.FC = () => {
               if (!isMounted) return;
               handleScanSuccess(decodedText);
             },
-            (errorMessage) => {
+            (_errorMessage) => {
               // 掃描失敗忽略
             }
           );

@@ -7,7 +7,7 @@ let audioContext: AudioContext | null = null;
 
 const getAudioContext = () => {
   if (!audioContext) {
-    // @ts-ignore - 兼容舊版瀏覽器
+    // @ts-expect-error - 兼容舊版瀏覽器
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (AudioContextClass) {
       audioContext = new AudioContextClass();
