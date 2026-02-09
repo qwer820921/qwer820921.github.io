@@ -4,7 +4,6 @@ import "bootstrap/dist/css/bootstrap.min.css"; // Bootstrap 样式
 import type { Metadata } from "next";
 import Script from "next/script";
 import ClientRoot from "./ClientRoot";
-import { Toaster } from "react-hot-toast";
 import ChatWidget from "@/components/common/chatWidget";
 
 // 將 metadata 移動到一個單獨的 server 組件中
@@ -82,15 +81,6 @@ export default function RootLayout({
         <ClientRoot>{children}</ClientRoot>
         {/* 全站浮動聊天組件 */}
         <ChatWidget />
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            style: { fontSize: 18, padding: "8px 16px" },
-            success: { style: { background: "#28a745", color: "#fff" } },
-            error: { style: { background: "#dc3545", color: "#fff" } },
-            loading: { style: { background: "#007bff", color: "#fff" } },
-          }}
-        />
       </body>
     </html>
   );

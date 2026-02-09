@@ -13,6 +13,11 @@ const routes: RouteGroup[] = [
   {
     type: "工具",
     routeConfig: [
+      {
+        path: ROUTES.INVOICE,
+        name: "發票對獎",
+        showInNavbar: true,
+      },
       { path: ROUTES.ANIMATOR, name: "微動畫", showInNavbar: true },
       { path: ROUTES.EATWHAT, name: "吃甚麼", showInNavbar: true },
       {

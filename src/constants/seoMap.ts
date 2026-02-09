@@ -81,4 +81,11 @@ export const seoMap: {
     keywords:
       "Click Ascension, 點擊飛昇, 點擊遊戲, 點擊進化, 萬事屋, 飛昇, 點擊冒險, Clicker Game, Incremental",
   },
+  [ROUTES.INVOICE]: {
+    title: "子yee 萬事屋 | 統一發票對獎 - 快速查詢中獎號碼",
+    description:
+      "統一發票對獎工具，即時查詢最新中獎號碼，快速輸入末三碼對獎，支援多期歷史號碼查詢。",
+    keywords:
+      "統一發票, 發票對獎, 中獎號碼, 發票查詢, 統一發票中獎, 對獎工具, 子yee 萬事屋",
+  },
 };

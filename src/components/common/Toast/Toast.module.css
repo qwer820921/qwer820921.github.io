@@ -1,0 +1,134 @@
+/* Toast 通知樣式 */
+
+.container {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 400px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  backdrop-filter: blur(20px);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.1);
+  animation: slideIn 0.3s ease-out;
+  pointer-events: auto;
+  min-width: 280px;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.message {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  padding: 4px;
+  font-size: 12px;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+
+.closeButton:hover {
+  opacity: 1;
+}
+
+/* 類型樣式 */
+.success {
+  background: linear-gradient(135deg, rgba(39, 174, 96, 0.9), rgba(46, 204, 113, 0.9));
+  color: #fff;
+}
+
+.success .icon {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.error {
+  background: linear-gradient(135deg, rgba(231, 76, 60, 0.9), rgba(192, 57, 43, 0.9));
+  color: #fff;
+}
+
+.error .icon {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.warning {
+  background: linear-gradient(135deg, rgba(241, 196, 15, 0.9), rgba(243, 156, 18, 0.9));
+  color: #1a1a2e;
+}
+
+.warning .icon {
+  background: rgba(0, 0, 0, 0.1);
+  color: #1a1a2e;
+}
+
+.info {
+  background: linear-gradient(135deg, rgba(52, 152, 219, 0.9), rgba(41, 128, 185, 0.9));
+  color: #fff;
+}
+
+.info .icon {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+/* 響應式 */
+@media (max-width: 576px) {
+  .container {
+    top: 70px;
+    right: 10px;
+    left: 10px;
+    max-width: none;
+  }
+
+  .toast {
+    min-width: auto;
+    padding: 12px 14px;
+  }
+
+  .message {
+    font-size: 13px;
+  }
+}

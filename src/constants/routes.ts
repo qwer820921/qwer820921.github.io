@@ -14,4 +14,5 @@ export const ROUTES = {
   INSTA_STORY_EDITOR: "/instaStoryEditor", // 限時動態編輯器
   NO_WASH_GAMES: "/noWashGames", // 免洗遊戲
   CLICK_ASCENSION: "/clickAscension", //點擊飛昇
+  INVOICE: "/invoice", // 統一發票對獎
 };
