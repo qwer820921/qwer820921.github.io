@@ -15,4 +15,5 @@ export const ROUTES = {
   NO_WASH_GAMES: "/noWashGames", // 免洗遊戲
   CLICK_ASCENSION: "/clickAscension", //點擊飛昇
   INVOICE: "/invoice", // 統一發票對獎
+  TOWER_DEFENSE: "/towerDefense", // 塔防守衛戰
 };

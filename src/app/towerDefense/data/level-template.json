@@ -1,0 +1,42 @@
+{
+  "id": 6,
+  "name": "關卡名稱",
+  "description": "關卡描述文字",
+  "difficulty": "easy",
+  "initialGold": 500,
+  "initialLives": 20,
+  "waves": [
+    {
+      "waveNumber": 1,
+      "enemies": [
+        {
+          "type": "slime",
+          "count": 10,
+          "interval": 1000
+        }
+      ],
+      "delay": 5000
+    },
+    {
+      "waveNumber": 2,
+      "enemies": [
+        {
+          "type": "slime",
+          "count": 15,
+          "interval": 800
+        },
+        {
+          "type": "goblin",
+          "count": 5,
+          "interval": 1500,
+          "delay": 5000
+        }
+      ],
+      "delay": 8000
+    }
+  ],
+  "rewards": {
+    "gold": 200,
+    "stars": 3
+  }
+}

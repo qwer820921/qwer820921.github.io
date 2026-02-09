@@ -1,0 +1,278 @@
+{
+  "levels": [
+    {
+      "id": 1,
+      "name": "新手村",
+      "description": "歡迎來到塔防世界！學習基礎防禦技巧",
+      "difficulty": "easy",
+      "initialGold": 500,
+      "initialLives": 20,
+      "waves": [
+        {
+          "waveNumber": 1,
+          "enemies": [
+            {
+              "type": "slime",
+              "count": 10,
+              "interval": 1000
+            }
+          ],
+          "delay": 5000
+        },
+        {
+          "waveNumber": 2,
+          "enemies": [
+            {
+              "type": "slime",
+              "count": 15,
+              "interval": 800
+            }
+          ],
+          "delay": 8000
+        },
+        {
+          "waveNumber": 3,
+          "enemies": [
+            {
+              "type": "slime",
+              "count": 10,
+              "interval": 1000
+            },
+            {
+              "type": "goblin",
+              "count": 5,
+              "interval": 1500,
+              "delay": 5000
+            }
+          ],
+          "delay": 10000
+        }
+      ],
+      "rewards": {
+        "gold": 200,
+        "stars": 3
+      }
+    },
+    {
+      "id": 2,
+      "name": "森林邊境",
+      "description": "哥布林大軍來襲！加強你的防禦",
+      "difficulty": "easy",
+      "initialGold": 600,
+      "initialLives": 20,
+      "waves": [
+        {
+          "waveNumber": 1,
+          "enemies": [
+            {
+              "type": "goblin",
+              "count": 12,
+              "interval": 1000
+            }
+          ],
+          "delay": 8000
+        },
+        {
+          "waveNumber": 2,
+          "enemies": [
+            {
+              "type": "slime",
+              "count": 15,
+              "interval": 600
+            },
+            {
+              "type": "goblin",
+              "count": 8,
+              "interval": 1200,
+              "delay": 4000
+            }
+          ],
+          "delay": 10000
+        },
+        {
+          "waveNumber": 3,
+          "enemies": [
+            {
+              "type": "goblin",
+              "count": 15,
+              "interval": 800
+            },
+            {
+              "type": "orc",
+              "count": 3,
+              "interval": 2000,
+              "delay": 6000
+            }
+          ],
+          "delay": 12000
+        }
+      ],
+      "rewards": {
+        "gold": 300,
+        "stars": 3
+      }
+    },
+    {
+      "id": 3,
+      "name": "獸人高地",
+      "description": "強大的獸人戰士出現了！",
+      "difficulty": "medium",
+      "initialGold": 700,
+      "initialLives": 15,
+      "waves": [
+        {
+          "waveNumber": 1,
+          "enemies": [
+            {
+              "type": "orc",
+              "count": 8,
+              "interval": 1500
+            }
+          ],
+          "delay": 10000
+        },
+        {
+          "waveNumber": 2,
+          "enemies": [
+            {
+              "type": "goblin",
+              "count": 15,
+              "interval": 800
+            },
+            {
+              "type": "orc",
+              "count": 5,
+              "interval": 1800,
+              "delay": 5000
+            }
+          ],
+          "delay": 12000
+        },
+        {
+          "waveNumber": 3,
+          "enemies": [
+            {
+              "type": "slime",
+              "count": 20,
+              "interval": 500
+            },
+            {
+              "type": "goblin",
+              "count": 10,
+              "interval": 1000,
+              "delay": 3000
+            },
+            {
+              "type": "orc",
+              "count": 6,
+              "interval": 1500,
+              "delay": 8000
+            }
+          ],
+          "delay": 15000
+        }
+      ],
+      "rewards": {
+        "gold": 400,
+        "stars": 3
+      }
+    },
+    {
+      "id": 4,
+      "name": "龍之巢穴",
+      "description": "飛龍降臨！這將是一場艱難的戰鬥",
+      "difficulty": "medium",
+      "initialGold": 800,
+      "initialLives": 15,
+      "waves": [
+        {
+          "waveNumber": 1,
+          "enemies": [
+            {
+              "type": "orc",
+              "count": 10,
+              "interval": 1200
+            },
+            {
+              "type": "dragon",
+              "count": 2,
+              "interval": 5000,
+              "delay": 8000
+            }
+          ],
+          "delay": 15000
+        },
+        {
+          "waveNumber": 2,
+          "enemies": [
+            {
+              "type": "goblin",
+              "count": 20,
+              "interval": 700
+            },
+            {
+              "type": "orc",
+              "count": 8,
+              "interval": 1500,
+              "delay": 5000
+            },
+            {
+              "type": "dragon",
+              "count": 3,
+              "interval": 4000,
+              "delay": 12000
+            }
+          ],
+          "delay": 18000
+        }
+      ],
+      "rewards": {
+        "gold": 500,
+        "stars": 3
+      }
+    },
+    {
+      "id": 5,
+      "name": "終極挑戰",
+      "description": "最終決戰！守住最後的防線！",
+      "difficulty": "hard",
+      "initialGold": 1000,
+      "initialLives": 10,
+      "waves": [
+        {
+          "waveNumber": 1,
+          "enemies": [
+            {
+              "type": "slime",
+              "count": 15,
+              "interval": 600
+            },
+            {
+              "type": "goblin",
+              "count": 12,
+              "interval": 900,
+              "delay": 4000
+            },
+            {
+              "type": "orc",
+              "count": 8,
+              "interval": 1500,
+              "delay": 10000
+            },
+            {
+              "type": "dragon",
+              "count": 5,
+              "interval": 3000,
+              "delay": 15000
+            }
+          ],
+          "delay": 20000
+        }
+      ],
+      "rewards": {
+        "gold": 1000,
+        "stars": 3
+      }
+    }
+  ]
+}

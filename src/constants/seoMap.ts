@@ -88,4 +88,11 @@ export const seoMap: {
     keywords:
       "統一發票, 發票對獎, 中獎號碼, 發票查詢, 統一發票中獎, 對獎工具, 子yee 萬事屋",
   },
+  [ROUTES.TOWER_DEFENSE]: {
+    title: "子yee 萬事屋 | 塔防守衛戰 - 策略塔防遊戲",
+    description:
+      "體驗經典塔防遊戲樂趣！建造防禦塔、升級武器、抵禦敵人入侵。多種塔類型、豐富關卡，考驗你的策略與反應！",
+    keywords:
+      "塔防遊戲, 策略遊戲, 防禦遊戲, Tower Defense, 線上遊戲, 休閒遊戲, 子yee 萬事屋",
+  },
 };

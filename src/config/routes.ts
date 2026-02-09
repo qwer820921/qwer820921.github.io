@@ -56,6 +56,7 @@ const routes: RouteGroup[] = [
     routeConfig: [
       { path: ROUTES.NO_WASH_GAMES, name: "免洗遊戲", showInNavbar: true },
       { path: ROUTES.CLICK_ASCENSION, name: "點擊飛昇", showInNavbar: true },
+      { path: ROUTES.TOWER_DEFENSE, name: "塔防守衛戰", showInNavbar: true },
     ],
   },
   {

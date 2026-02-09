@@ -26,7 +26,7 @@ const WebVitalsClient = dynamic(
 );
 
 // 不顯示 Footer 的頁面路徑
-const HIDE_FOOTER_PAGES = ["/clickAscension"];
+const HIDE_FOOTER_PAGES = ["/clickAscension", "/towerDefense"];
 
 export default function ClientLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
