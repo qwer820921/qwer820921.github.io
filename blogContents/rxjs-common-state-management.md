@@ -1,6 +1,6 @@
 ---
 title: "【前端組件化】封裝通用的 RxJS 狀態管理組件"
-date: "2026-02-11"
+date: "2026-02-03"
 description: "針對 Angular 開發者，說明如何將重複的資料請求（如 API Loading/Error/Data）封裝成一個通用的 Base Component，展示 RxJS 非同步處理與程式碼重構的深度實踐。"
 category: "Frontend"
 tags: ["Angular", "RxJS", "TypeScript", "Architecture"]
@@ -15,6 +15,7 @@ tags: ["Angular", "RxJS", "TypeScript", "Architecture"]
 開發者經常需要在多個組件中重複編寫處理 `loading`、`error` 與 `data` 的邏輯。這不僅導致程式碼冗餘，也使得 UI 狀態的維護變得破碎且難以追蹤。
 
 透過封裝通用的 `BaseStateComponent`，我們旨在解決以下問題：
+
 1.  **減少樣板程式碼 (Boilerplate)**：不再需要在每個組件手動宣告狀態變數。
 2.  **統一狀態流**：確保所有非同步操作都遵循相同的狀態轉換生命週期。
 3.  **自動化資源清理**：利用基底類別統一處理訂閱取消，避免記憶體洩漏。
@@ -26,11 +27,13 @@ tags: ["Angular", "RxJS", "TypeScript", "Architecture"]
 此設計採用 **Reactive State Management** 模式，將組件視為一個狀態機。
 
 #### 1. 邏輯說明與資料流
--   **State 封裝**：定義 `AsyncState<T>` 介面，統一封裝資料、載入中與錯誤資訊。
--   **狀態傳播**：使用 `BehaviorSubject` 作為狀態源，並透過 `Observable` 暴露給 UI 層。
--   **單向資料流**：組件觸發 Action -> Base 處理 Logic -> 更新 State -> UI 透過 `AsyncPipe` 自動響應。
+
+- **State 封裝**：定義 `AsyncState<T>` 介面，統一封裝資料、載入中與錯誤資訊。
+- **狀態傳播**：使用 `BehaviorSubject` 作為狀態源，並透過 `Observable` 暴露給 UI 層。
+- **單向資料流**：組件觸發 Action -> Base 處理 Logic -> 更新 State -> UI 透過 `AsyncPipe` 自動響應。
 
 #### 2. 狀態模型定義
+
 ```typescript
 export interface AsyncState<T> {
   data: T | null;
@@ -44,9 +47,10 @@ export interface AsyncState<T> {
 ### Prerequisites
 
 在使用此模式前，請確保您的環境具備以下依賴：
--   **Angular**: v16.0.0+ (支援 Standalone Component)
--   **RxJS**: v7.4.0+
--   **TypeScript**: v4.9+
+
+- **Angular**: v16.0.0+ (支援 Standalone Component)
+- **RxJS**: v7.4.0+
+- **TypeScript**: v4.9+
 
 ---
 
@@ -55,12 +59,13 @@ export interface AsyncState<T> {
 以下是通用 `BaseStateComponent` 的核心實作與應用範例。
 
 #### 1. Base State Component (核心封裝)
-```typescript
-import { Component, OnDestroy } from '@angular/core';
-import { BehaviorSubject, Observable, Subscription, of } from 'rxjs';
-import { catchError, finalize, tap } from 'rxjs/operators';
 
-@Component({ template: '' })
+```typescript
+import { Component, OnDestroy } from "@angular/core";
+import { BehaviorSubject, Observable, Subscription, of } from "rxjs";
+import { catchError, finalize, tap } from "rxjs/operators";
+
+@Component({ template: "" })
 export abstract class BaseStateComponent<T> implements OnDestroy {
   // 內部狀態管理
   private readonly _state = new BehaviorSubject<AsyncState<T>>({
@@ -71,7 +76,7 @@ export abstract class BaseStateComponent<T> implements OnDestroy {
 
   // 公開給 Template 訂閱的 Observable
   readonly state$: Observable<AsyncState<T>> = this._state.asObservable();
-  
+
   protected subscriptions = new Subscription();
 
   /**
@@ -80,18 +85,20 @@ export abstract class BaseStateComponent<T> implements OnDestroy {
   protected executeAsyncOperation(operation$: Observable<T>): void {
     this._state.next({ ...this._state.value, loading: true, error: null });
 
-    const sub = operation$.pipe(
-      tap(data => this._state.next({ data, loading: false, error: null })),
-      catchError(error => {
-        this._state.next({ ...this._state.value, loading: false, error });
-        return of(null);
-      }),
-      finalize(() => {
-        if (this._state.value.loading) {
-          this._state.next({ ...this._state.value, loading: false });
-        }
-      })
-    ).subscribe();
+    const sub = operation$
+      .pipe(
+        tap((data) => this._state.next({ data, loading: false, error: null })),
+        catchError((error) => {
+          this._state.next({ ...this._state.value, loading: false, error });
+          return of(null);
+        }),
+        finalize(() => {
+          if (this._state.value.loading) {
+            this._state.next({ ...this._state.value, loading: false });
+          }
+        })
+      )
+      .subscribe();
 
     this.subscriptions.add(sub);
   }
@@ -103,9 +110,10 @@ export abstract class BaseStateComponent<T> implements OnDestroy {
 ```
 
 #### 2. Sub Component Application (子組件應用)
+
 ```typescript
 @Component({
-  selector: 'app-user-list',
+  selector: "app-user-list",
   standalone: true,
   template: `
     <div *ngIf="state$ | async as state">
@@ -115,10 +123,15 @@ export abstract class BaseStateComponent<T> implements OnDestroy {
       </ul>
       <p *ngIf="state.error" class="error">{{ state.error.message }}</p>
     </div>
-  `
+  `,
 })
-export class UserListComponent extends BaseStateComponent<User[]> implements OnInit {
-  constructor(private userService: UserService) { super(); }
+export class UserListComponent
+  extends BaseStateComponent<User[]>
+  implements OnInit
+{
+  constructor(private userService: UserService) {
+    super();
+  }
 
   ngOnInit() {
     this.executeAsyncOperation(this.userService.getUsers());
@@ -130,13 +143,13 @@ export class UserListComponent extends BaseStateComponent<User[]> implements OnI
 
 ### Parameters / API Reference
 
-| 參數 / 屬性 | 類型 | 描述 |
-| :--- | :--- | :--- |
-| `state$` | `Observable<AsyncState<T>>` | **Output**: 提供給 UI 訂閱的唯讀狀態流。 |
+| 參數 / 屬性             | 類型                          | 描述                                                     |
+| :---------------------- | :---------------------------- | :------------------------------------------------------- |
+| `state$`                | `Observable<AsyncState<T>>`   | **Output**: 提供給 UI 訂閱的唯讀狀態流。                 |
 | `executeAsyncOperation` | `(op: Observable<T>) => void` | **Method**: 接收一個非同步 Observable 並開始追蹤其狀態。 |
-| `data` | `T \| null` | **State Field**: 成功取得的資料內容。 |
-| `loading` | `boolean` | **State Field**: 目前是否處於請求進行中狀態。 |
-| `error` | `any \| null` | **State Field**: 請求失敗時回傳的錯誤物件。 |
+| `data`                  | `T \| null`                   | **State Field**: 成功取得的資料內容。                    |
+| `loading`               | `boolean`                     | **State Field**: 目前是否處於請求進行中狀態。            |
+| `error`                 | `any \| null`                 | **State Field**: 請求失敗時回傳的錯誤物件。              |
 
 ---
 

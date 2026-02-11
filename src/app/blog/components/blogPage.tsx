@@ -40,7 +40,14 @@ export default function BlogPage({ posts }: BlogPageProps) {
                     {post.tags.map((tag) => (
                       <span
                         key={tag}
-                        className="badge bg-light text-secondary fw-normal"
+                        className="badge rounded-pill"
+                        style={{
+                          backgroundColor: "#e7f3ff",
+                          color: "#0066cc",
+                          fontWeight: "500",
+                          fontSize: "0.75rem",
+                          padding: "0.35rem 0.65rem",
+                        }}
                       >
                         #{tag}
                       </span>
