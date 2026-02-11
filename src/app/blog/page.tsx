@@ -1,9 +1,9 @@
 import { getSortedPostsData } from "@/app/blog/services/blogService";
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
-import HomePageContent from "./HomePageContent";
+import BlogPage from "./components/blogPage";
 
-const seo = seoMap[ROUTES.HOME];
+const seo = seoMap[ROUTES.BLOG];
 
 export const metadata = {
   title: seo.title,
@@ -12,10 +12,10 @@ export const metadata = {
   openGraph: {
     title: seo.title,
     description: seo.description,
-    url: `https://qwer820921.github.io${ROUTES.HOME}`,
+    url: `https://qwer820921.github.io${ROUTES.BLOG}`,
     images: [
       {
-        url: "https://qwer820921.github.io/images/img11.jpg",
+        url: "https://qwer820921.github.io/images/img16.jpg",
         width: 1200,
         height: 630,
         alt: seo.title,
@@ -26,14 +26,12 @@ export const metadata = {
   twitter: {
     title: seo.title,
     description: seo.description,
-    images: ["https://qwer820921.github.io/images/img11.jpg"],
+    images: ["https://qwer820921.github.io/images/img16.jpg"],
   },
 };
 
-export default function HomePage() {
-  // 在 Server Component 中獲取數據
-  const allPosts = getSortedPostsData();
-  const latestPosts = allPosts.slice(0, 3);
+export default function BlogIndex() {
+  const allPostsData = getSortedPostsData();
 
-  return <HomePageContent latestPosts={latestPosts} />;
+  return <BlogPage posts={allPostsData} />;
 }

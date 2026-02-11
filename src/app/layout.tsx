@@ -1,4 +1,3 @@
-// app/layout.tsx
 import "./globals.css";
 import "bootstrap/dist/css/bootstrap.min.css"; // Bootstrap 样式
 import type { Metadata } from "next";

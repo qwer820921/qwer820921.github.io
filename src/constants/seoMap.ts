@@ -95,4 +95,11 @@ export const seoMap: {
     keywords:
       "塔防遊戲, 策略遊戲, 防禦遊戲, Tower Defense, 線上遊戲, 休閒遊戲, 子yee 萬事屋",
   },
+  [ROUTES.BLOG]: {
+    title: "子yee 萬事屋 | 部落格 - 技術心得與生活隨筆",
+    description:
+      "分享前端開發技術、Next.js 實戰經驗、以及生活點滴的部落格。在這裡你可以找到關於 Web 開發、軟體工程與個人成長的文章。",
+    keywords:
+      "部落格, 技術文章, 前端開發, Next.js, React, 生活隨筆, 子yee 萬事屋",
+  },
 };

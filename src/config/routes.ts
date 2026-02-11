@@ -8,6 +8,7 @@ const routes: RouteGroup[] = [
     routeConfig: [
       { path: ROUTES.HOME, name: "首頁", showInNavbar: false },
       { path: ROUTES.ABOUT, name: "關於我們", showInNavbar: true },
+      { path: ROUTES.BLOG, name: "部落格", showInNavbar: true },
     ],
   },
   {
