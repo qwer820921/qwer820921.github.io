@@ -17,8 +17,8 @@ tags:
 
 # 【自動化測試】使用 Playwright + AI Agent 實現「自癒 (Self-Healing)」的 E2E 測試
 
-**作者：** Manus AI
-**日期：** 2026年2月11日
+**作者：** Yee
+**日期：** 2026年2月12日
 
 ---
 

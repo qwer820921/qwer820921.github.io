@@ -18,8 +18,8 @@ tags:
 
 # 【架構設計】Semantic Kernel 實戰：混合使用 Native Function 與 Semantic Function
 
-**作者：** Manus AI
-**日期：** 2026年2月11日
+**作者：** Yee
+**日期：** 2026年2月6日
 
 ---
 

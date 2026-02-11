@@ -17,8 +17,8 @@ tags:
 
 # 【提示工程終結者】從 Prompt Engineering 轉向 DSPy (Declarative Self-improving Python)
 
-**作者：** Manus AI
-**日期：** 2026年2月11日
+**作者：** Yee
+**日期：** 2026年2月12日
 
 ---
 

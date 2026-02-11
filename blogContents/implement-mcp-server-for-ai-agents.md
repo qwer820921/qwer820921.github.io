@@ -19,8 +19,8 @@ tags:
 
 # 【Agentic AI】實作 Model Context Protocol (MCP) 標準的 AI 代理
 
-**作者：** Manus AI
-**日期：** 2026年2月11日
+**作者：** Yee
+**日期：** 2026年2月10日
 
 ---
 

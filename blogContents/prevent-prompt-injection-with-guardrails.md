@@ -17,8 +17,8 @@ tags:
 
 # 【AI 安全】防範 Prompt Injection：在 LLM 應用中實作 Guardrails (護欄機制)
 
-**作者：** Manus AI
-**日期：** 2026年2月11日
+**作者：** Yee
+**日期：** 2026年2月4日
 
 ---
 

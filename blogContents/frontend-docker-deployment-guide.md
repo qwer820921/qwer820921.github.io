@@ -8,8 +8,8 @@ tags: ["Docker", "Frontend", "Nginx", "Deployment", "Containerization", "CI/CD"]
 
 # 【系統部署】前端應用程式的 Docker 容器化與本地部署指南
 
-**作者：** Manus AI
-**日期：** 2026年2月11日
+**作者：** Yee
+**日期：** 2026年2月7日
 
 ---
 

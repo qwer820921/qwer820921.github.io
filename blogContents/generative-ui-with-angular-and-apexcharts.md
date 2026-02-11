@@ -19,7 +19,7 @@ tags:
 
 # 【新一代互動領域】Generative UI：讓 AI 直接「畫」出 Angular 組件
 
-**作者：** Manus AI
+**作者：** Yee
 **日期：** 2026年2月11日
 
 ---

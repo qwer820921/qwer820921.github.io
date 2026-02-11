@@ -19,7 +19,7 @@ tags:
 
 # 【安全機制】為 AI Skill 添加「人類授權層 (Human-in-the-loop)」與權限控制
 
-**作者：** Manus AI
+**作者：** Yee
 **日期：** 2026年2月11日
 
 ---

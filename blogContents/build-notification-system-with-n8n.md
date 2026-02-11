@@ -8,8 +8,8 @@ tags: ["n8n", "Automation", "GitHub", "LINE", "Discord", "Webhook", "CI/CD"]
 
 # 【開發自動化】使用 n8n 打造跨平台通知系統：GitHub 提交自動同步至 LINE 與 Discord
 
-**作者：** Manus AI
-**日期：** 2026年2月11日
+**作者：** Yee
+**日期：** 2026年2月9日
 
 ---
 

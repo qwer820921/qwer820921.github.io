@@ -8,8 +8,8 @@ tags: ["LLM", "AI", "Documentation", "Workflow", "Automation"]
 
 # 【AI 整合】利用 LLM 自動生成技術文件的工作流 (Workflow)
 
-**作者：** Manus AI
-**日期：** 2026年2月11日
+**作者：** Yee
+**日期：** 2026年2月5日
 
 ---
 
