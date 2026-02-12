@@ -1,6 +1,7 @@
 ---
 title: "【新一代互動領域】Generative UI：讓 AI 直接「畫」出 Angular 組件"
 date: "2026-02-11"
+author: "子yee"
 description: "深入探討 Generative UI (GenUI) 如何將 AI 的文字輸出轉化為可互動的 Angular 組件，結合 ApexCharts 實現動態數據視覺化，將 Chatbot 升級為功能性 GUI。"
 category: "UI/UX & AI"
 tags:
@@ -15,13 +16,6 @@ tags:
     "AI",
     "UX",
   ]
----
-
-# 【新一代互動領域】Generative UI：讓 AI 直接「畫」出 Angular 組件
-
-**作者：** Yee
-**日期：** 2026年2月11日
-
 ---
 
 ## 1. Overview

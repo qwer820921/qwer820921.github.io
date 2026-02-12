@@ -4,6 +4,7 @@ export interface BlogPost {
   date: string;
   category?: string;
   tags?: string[];
+  author?: string; // Author name
   description?: string;
   content: string; // Markdown raw content
 }

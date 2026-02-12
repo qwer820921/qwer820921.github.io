@@ -1,6 +1,7 @@
 ---
 title: "【安全機制】為 AI Skill 添加「人類授權層 (Human-in-the-loop)」與權限控制"
 date: "2026-02-11"
+author: "子yee"
 description: "深入探討如何在 Agentic AI 系統中實作 Human-in-the-loop (HITL) 機制，透過 Middleware 攔截、異步審批工作流與權限控制，確保 AI Skill 執行的安全性與合規性。"
 category: "AI Security"
 tags:
@@ -15,13 +16,6 @@ tags:
     "LLM",
     "Agentic AI",
   ]
----
-
-# 【安全機制】為 AI Skill 添加「人類授權層 (Human-in-the-loop)」與權限控制
-
-**作者：** Yee
-**日期：** 2026年2月11日
-
 ---
 
 ## 1. Overview

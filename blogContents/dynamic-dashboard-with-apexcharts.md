@@ -1,17 +1,11 @@
 ---
 title: "【UI/UX 技術實作】使用 ApexCharts 打造動態數據儀表板"
 date: "2026-02-08"
+author: "子yee"
 description: "一份詳盡的指南，教您如何利用 ApexCharts 在前端應用中構建互動式、響應式且高效能的動態數據儀表板，提升使用者體驗。"
 category: "UI/UX"
 tags:
   ["ApexCharts", "Dashboard", "UI/UX", "Data Visualization", "React", "Next.js"]
----
-
-# 【UI/UX 技術實作】使用 ApexCharts 打造動態數據儀表板
-
-**作者：** Yee
-**日期：** 2026年2月8日
-
 ---
 
 ## 1. Overview

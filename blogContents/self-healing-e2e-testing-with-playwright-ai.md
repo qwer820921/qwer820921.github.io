@@ -1,6 +1,7 @@
 ---
 title: "【自動化測試】使用 Playwright + AI Agent 實現「自癒 (Self-Healing)」的 E2E 測試"
 date: "2026-02-12"
+author: "子yee"
 description: "深入探討如何結合 Playwright 與 AI Agent，實現 E2E 測試腳本的自動修復，大幅降低因 UI 變動導致的測試維護成本。"
 category: "Automated Testing"
 tags:
@@ -13,13 +14,6 @@ tags:
     "Test Automation",
     "LLM",
   ]
----
-
-# 【自動化測試】使用 Playwright + AI Agent 實現「自癒 (Self-Healing)」的 E2E 測試
-
-**作者：** Yee
-**日期：** 2026年2月12日
-
 ---
 
 ## 1. Overview

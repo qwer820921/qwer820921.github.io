@@ -1,6 +1,7 @@
 ---
 title: "【架構設計】Semantic Kernel 實戰：混合使用 Native Function 與 Semantic Function"
 date: "2026-02-06"
+author: "子yee"
 description: "深入探討 Microsoft Semantic Kernel 框架，教學如何在 .NET 9 環境下，將 C# 原生程式碼 (Native Function) 與 LLM 語意邏輯 (Semantic Function) 巧妙結合，實現強大的 AI 應用。"
 category: "AI Architecture"
 tags:
@@ -14,13 +15,6 @@ tags:
     "C#",
     "Architecture Design",
   ]
----
-
-# 【架構設計】Semantic Kernel 實戰：混合使用 Native Function 與 Semantic Function
-
-**作者：** Yee
-**日期：** 2026年2月6日
-
 ---
 
 ## 1. Overview

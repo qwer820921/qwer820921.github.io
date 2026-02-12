@@ -1,16 +1,10 @@
 ---
 title: "【系統部署】前端應用程式的 Docker 容器化與本地部署指南"
 date: "2026-02-07"
+author: "子yee"
 description: "一份詳盡的前端應用程式 Docker 容器化指南，涵蓋多階段構建、Nginx 優化配置及本地部署工作流，確保開發與生產環境一致性。"
 category: "Deployment"
 tags: ["Docker", "Frontend", "Nginx", "Deployment", "Containerization", "CI/CD"]
----
-
-# 【系統部署】前端應用程式的 Docker 容器化與本地部署指南
-
-**作者：** Yee
-**日期：** 2026年2月7日
-
 ---
 
 ## 1. Overview

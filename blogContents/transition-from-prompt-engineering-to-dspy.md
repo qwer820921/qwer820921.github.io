@@ -1,6 +1,7 @@
 ---
 title: "【提示工程終結者】從 Prompt Engineering 轉向 DSPy (Declarative Self-improving Python)"
 date: "2026-02-12"
+author: "子yee"
 description: "深入解析 DSPy 框架如何透過宣告式程式設計與自動優化機制，徹底改變 LLM 應用開發範式，告別手寫 Prompt 的脆弱性。"
 category: "AI Development"
 tags:
@@ -13,13 +14,6 @@ tags:
     "Teleprompter",
     "AI System Design",
   ]
----
-
-# 【提示工程終結者】從 Prompt Engineering 轉向 DSPy (Declarative Self-improving Python)
-
-**作者：** Yee
-**日期：** 2026年2月12日
-
 ---
 
 ## 1. Overview

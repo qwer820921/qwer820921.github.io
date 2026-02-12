@@ -1,16 +1,10 @@
 ---
 title: "【AI 整合】利用 LLM 自動生成技術文件的工作流 (Workflow)"
 date: "2026-02-05"
+author: "子yee"
 description: "探索如何利用大型語言模型 (LLM) 自動化技術文件生成，從程式碼分析到發布的完整工作流，提升開發效率與文件品質。"
 category: "AI Integration"
 tags: ["LLM", "AI", "Documentation", "Workflow", "Automation"]
----
-
-# 【AI 整合】利用 LLM 自動生成技術文件的工作流 (Workflow)
-
-**作者：** Yee
-**日期：** 2026年2月5日
-
 ---
 
 ## 1. Overview

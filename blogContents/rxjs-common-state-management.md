@@ -1,12 +1,11 @@
 ---
 title: "【前端組件化】封裝通用的 RxJS 狀態管理組件"
 date: "2026-02-03"
+author: "子yee"
 description: "針對 Angular 開發者，說明如何將重複的資料請求（如 API Loading/Error/Data）封裝成一個通用的 Base Component，展示 RxJS 非同步處理與程式碼重構的深度實踐。"
 category: "Frontend"
 tags: ["Angular", "RxJS", "TypeScript", "Architecture"]
 ---
-
-# 封裝通用的 RxJS 狀態管理組件
 
 在現代前端開發中，處理非同步資料請求（Async Operations）是組件開發最核心的任務之一。本文件將展示如何利用 **RxJS** 的響應式程式設計特性，結合 Angular 的組件繼承機制，封裝出一個通用的狀態管理基礎組件（Base Component）。
 

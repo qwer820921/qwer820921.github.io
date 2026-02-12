@@ -1,6 +1,7 @@
 ---
 title: "【AI 進階應用】建構基於 NotebookLM 的個人技術知識庫 (RAG)"
 date: "2026-02-12"
+author: "子yee"
 description: "深入探討如何利用 Google NotebookLM 及其 RAG 機制，高效建立個人技術知識庫，優化學習與開發流程。"
 category: "AI Application"
 tags:
@@ -12,13 +13,6 @@ tags:
     "Technical Documentation",
     "Personal Productivity",
   ]
----
-
-# 【AI 進階應用】建構基於 NotebookLM 的個人技術知識庫 (RAG)
-
-**作者：** Yee
-**日期：** 2026年2月12日
-
 ---
 
 ## 1. Overview

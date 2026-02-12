@@ -1,6 +1,7 @@
 ---
 title: "【專案架構】從零構建一套符合能源管理 (ISO 50001) 的前端檢核系統"
 date: "2026-02-10"
+author: "子yee"
 description: "深入探討如何設計與實現一個符合 ISO 50001 能源管理標準的前端檢核系統，涵蓋 EnPI 視覺化、數位稽核與資料追溯。"
 category: "Project Architecture"
 tags:
@@ -12,13 +13,6 @@ tags:
     "EnPI",
     "Audit System",
   ]
----
-
-# 【專案架構】從零構建一套符合能源管理 (ISO 50001) 的前端檢核系統
-
-**作者：** Yee
-**日期：** 2026年2月10日
-
 ---
 
 ## 1. Overview

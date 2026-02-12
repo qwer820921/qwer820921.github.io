@@ -1,6 +1,7 @@
 ---
 title: "【Agentic AI】實作 Model Context Protocol (MCP) 標準的 AI 代理"
 date: "2026-02-10"
+author: "子yee"
 description: "深入教學如何建構符合 Model Context Protocol (MCP) 標準的 AI 代理伺服器，實現 AI 安全存取本地 SQL Server 資料庫，提升開發效率與資料隱私。"
 category: "AI Application"
 tags:
@@ -15,13 +16,6 @@ tags:
     "RAG",
     "Security",
   ]
----
-
-# 【Agentic AI】實作 Model Context Protocol (MCP) 標準的 AI 代理
-
-**作者：** Yee
-**日期：** 2026年2月10日
-
 ---
 
 ## 1. Overview

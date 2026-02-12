@@ -1,6 +1,7 @@
 ---
 title: "【數據工程領域】合成數據 (Synthetic Data) 的生成與驗證"
 date: "2026-02-02"
+author: "子yee"
 description: "深入探討如何利用 AI 生成擬真但不涉及隱私的合成數據，模擬多樣化的玩家行為，解決開發初期數據冷啟動問題，並規避 GDPR 等個資風險。"
 category: "Data Engineering"
 tags:
@@ -14,13 +15,6 @@ tags:
     "Cold Start",
     "Data Validation",
   ]
----
-
-# 【數據工程領域】合成數據 (Synthetic Data) 的生成與驗證
-
-**作者：** Yee
-**日期：** 2026年2月2日
-
 ---
 
 ## 1. Overview

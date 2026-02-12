@@ -1,6 +1,7 @@
 ---
 title: "【AI 安全】防範 Prompt Injection：在 LLM 應用中實作 Guardrails (護欄機制)"
 date: "2026-02-04"
+author: "子yee"
 description: "深入探討 Prompt Injection 攻擊模式，並教學如何在 LLM 應用中實作 Guardrails (護欄機制)，建立輸入/輸出過濾層，保護後台數據與 AI 行為。"
 category: "AI Security"
 tags:
@@ -13,13 +14,6 @@ tags:
     "LangChain Security",
     "Cybersecurity",
   ]
----
-
-# 【AI 安全】防範 Prompt Injection：在 LLM 應用中實作 Guardrails (護欄機制)
-
-**作者：** Yee
-**日期：** 2026年2月4日
-
 ---
 
 ## 1. Overview

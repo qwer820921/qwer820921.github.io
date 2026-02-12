@@ -1,6 +1,7 @@
 ---
 title: "【AI 評測領域】LLM-as-a-Judge：如何用 AI 來面試 AI？"
 date: "2026-02-06"
+author: "子yee"
 description: "深入探討 LLM-as-a-Judge 評測框架，教學如何利用高階 LLM 作為考官，自動評估其他 LLM 的輸出品質，實現 AI 應用從原型到產品的關鍵飛躍。"
 category: "AI Evaluation"
 tags:
@@ -15,13 +16,6 @@ tags:
     "G-Eval",
     "AI Testing",
   ]
----
-
-# 【AI 評測領域】LLM-as-a-Judge：如何用 AI 來面試 AI？
-
-**作者：** Yee
-**日期：** 2026年2月6日
-
 ---
 
 ## 1. Overview

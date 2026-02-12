@@ -1,16 +1,10 @@
 ---
 title: "【開發自動化】使用 n8n 打造跨平台通知系統：GitHub 提交自動同步至 LINE 與 Discord"
 date: "2026-02-09"
+author: "子yee"
 description: "一份詳盡的指南，教您如何利用 n8n 構建一個自動化工作流，將 GitHub 提交即時同步至 LINE 與 Discord，提升團隊協作效率。"
 category: "Automation"
 tags: ["n8n", "Automation", "GitHub", "LINE", "Discord", "Webhook", "CI/CD"]
----
-
-# 【開發自動化】使用 n8n 打造跨平台通知系統：GitHub 提交自動同步至 LINE 與 Discord
-
-**作者：** Yee
-**日期：** 2026年2月9日
-
 ---
 
 ## 1. Overview
