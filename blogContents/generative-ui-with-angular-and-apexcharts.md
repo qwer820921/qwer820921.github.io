@@ -532,13 +532,13 @@ export class ChatComponent implements OnInit {
 ### 5.6 根組件 (`src/app/app.component.ts`)
 
 ```typescript
-import { Component } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { RouterOutlet } from '@angular/router';
-import { ChatComponent } from './chat/chat.component';
+import { Component } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { RouterOutlet } from "@angular/router";
+import { ChatComponent } from "./chat/chat.component";
 
 @Component({
-  selector: 'app-root',
+  selector: "app-root",
   standalone: true,
   imports: [CommonModule, RouterOutlet, ChatComponent],
   template: `
@@ -547,14 +547,21 @@ import { ChatComponent } from './chat/chat.component';
       <app-chat></app-chat>
     </div>
   `,
-  styles: [`
-    .main-container { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
-    h1 { color: #333; }
-  `]
-`]
+  styles: [
+    `
+      .main-container {
+        font-family: Arial, sans-serif;
+        text-align: center;
+        padding: 20px;
+      }
+      h1 {
+        color: #333;
+      }
+    `,
+  ],
 })
 export class AppComponent {
-  title = 'generative-ui-demo';
+  title = "generative-ui-demo";
 }
 ```
 
@@ -580,10 +587,11 @@ ng serve --open
 
 ### 6.2 `ChartConfig` (圖表配置)
 
-| 欄位名稱 | 類型 | 描述 |
-| :------------ | :-------- | :------------------------------------------------------------------- |\n| `chartType` | `string` | 圖表類型（例如 `"line"`, `"candlestick"`）。 |
-| `series` | `any[]` | ApexCharts 的數據系列配置。 |
-| `options` | `any` | ApexCharts 的圖表選項配置。 |
+| 欄位名稱    | 類型     | 描述                                         |
+| :---------- | :------- | :------------------------------------------- |
+| `chartType` | `string` | 圖表類型（例如 `"line"`, `"candlestick"`）。 |
+| `series`    | `any[]`  | ApexCharts 的數據系列配置。                  |
+| `options`   | `any`    | ApexCharts 的圖表選項配置。                  |
 
 ### 6.3 `ActionButtonConfig` (互動按鈕配置)
 
@@ -595,10 +603,10 @@ ng serve --open
 
 ### 6.4 `DynamicUiService` 介面
 
-| 方法名稱                 | 參數                                                               | 返回值             | 描述                                     |
-| :----------------------- | :----------------------------------------------------------------- | :----------------- | :--------------------------------------- | --------------------------------------------------------- |
-| `registerComponent`      | `type: string, component: Type<any>`                               | `void`             | 註冊可動態渲染的組件及其對應的類型字串。 |
-| `renderDynamicComponent` | `viewContainerRef: ViewContainerRef, uiConfig: GenerativeUIConfig` | `ComponentRef<any> | null`                                    | 根據 `uiConfig` 動態渲染組件到指定的 `ViewContainerRef`。 |
+| 方法名稱                 | 參數                                                               | 返回值                      | 描述                                                      |
+| :----------------------- | :----------------------------------------------------------------- | :-------------------------- | :-------------------------------------------------------- |
+| `registerComponent`      | `type: string, component: Type<any>`                               | `void`                      | 註冊可動態渲染的組件及其對應的類型字串。                  |
+| `renderDynamicComponent` | `viewContainerRef: ViewContainerRef, uiConfig: GenerativeUIConfig` | `ComponentRef<any> \| null` | 根據 `uiConfig` 動態渲染組件到指定的 `ViewContainerRef`。 |
 
 ## 7. Notes & Best Practices
 

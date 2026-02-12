@@ -306,8 +306,9 @@ export const fetchEnergyData = async (params: {
 
 ### 5.3 `EnergyDashboard` Component Props
 
-| 屬性 | 類型 | 描述 |
-| :---------- | :--------- | :--------------------------------------- |\n| `facilityId` | `string` | 要顯示能源數據的設施或廠區 ID。 |
+| 屬性         | 類型     | 描述                            |
+| :----------- | :------- | :------------------------------ |
+| `facilityId` | `string` | 要顯示能源數據的設施或廠區 ID。 |
 
 ## 6. Notes & Best Practices
 

@@ -258,13 +258,14 @@ if __name__ == "__main__":
 
 ### 5.3 審批請求數據結構 (儲存在 `pending_approvals` 中)
 
-| 欄位名稱 | 類型 | 描述 |
-| :-------------- | :-------- | :------------------------------------------------------------------- |\n| `approval_id` | `str` | 唯一的審批請求 ID。 |
-| `skill_name` | `str` | 請求執行的技能名稱。 |
-| `params` | `Dict` | 技能執行所需的參數。 |
-| `agent_name` | `str` | 發出請求的 AI Agent 名稱。 |
-| `status` | `str` | 審批狀態 (`PENDING`, `APPROVED`, `REJECTED`, `EXPIRED`)。 |
-| `timestamp` | `float` | 請求發出的時間戳。 |
+| 欄位名稱      | 類型    | 描述                                                      |
+| :------------ | :------ | :-------------------------------------------------------- |
+| `approval_id` | `str`   | 唯一的審批請求 ID。                                       |
+| `skill_name`  | `str`   | 請求執行的技能名稱。                                      |
+| `params`      | `Dict`  | 技能執行所需的參數。                                      |
+| `agent_name`  | `str`   | 發出請求的 AI Agent 名稱。                                |
+| `status`      | `str`   | 審批狀態 (`PENDING`, `APPROVED`, `REJECTED`, `EXPIRED`)。 |
+| `timestamp`   | `float` | 請求發出的時間戳。                                        |
 
 ### 5.4 外部通知服務介面 (概念性)
 
