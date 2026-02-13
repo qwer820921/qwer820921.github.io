@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import routeGroups from "@/config/routes";
@@ -46,11 +47,22 @@ const Navbar: React.FC = () => {
 
   return (
     <>
-      <nav className="navbar navbar-expand-lg navbar-pastel-blue shadow-sm fixed-top">
+      <nav className="navbar navbar-expand-lg navbar-pastel-blue shadow-sm fixed-top py-1">
         <div className="container">
           {/* ---- Brand ---- */}
-          <Link className="navbar-brand text-dark" href="/">
-            子yee 萬事屋
+          <Link className="navbar-brand" href="/">
+            <Image
+              src="/images/transparent_yee_man_shi_wu-removebg-preview.png"
+              alt="子yee 萬事屋"
+              width={100}
+              height={40}
+              priority
+              style={{
+                width: "auto",
+                height: "40px",
+                objectFit: "contain",
+              }}
+            />
           </Link>
 
           {/* ---- Mobile toggler ---- */}

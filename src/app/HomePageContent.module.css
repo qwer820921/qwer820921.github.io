@@ -1,64 +1,183 @@
-/* 主容器淡入動畫 */
+/* 主容器 */
 .homeContainer {
   animation: fadeIn 0.4s ease-out;
+  min-height: 100vh;
+  /* 移除背景色，讓底層的背景圖顯示 */
+}
+
+/* 內容區域 */
+.contentArea {
+  border-radius: 24px 24px 0 0;
+  padding: 2rem 0;
+  margin-top: -2rem;
+  position: relative;
+}
+
+/* Hero Banner */
+.heroBanner {
+  position: relative;
+  padding: 60px 0 50px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  overflow: hidden;
+  margin-bottom: 3rem;
+}
+
+.heroBackground {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0.1;
+  background-image:
+    radial-gradient(circle at 20% 50%, #fff 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, #fff 0%, transparent 50%);
+}
+
+.heroContent {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  animation: slideUp 0.8s ease-out;
+}
+
+.heroIcon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  display: inline-block;
+  animation: float 3s ease-in-out infinite;
+}
+
+.heroTitle {
+  font-size: clamp(2rem, 6vw, 3rem);
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.5px;
+}
+
+.heroSubtitle {
+  font-size: 1.1rem;
+  opacity: 0.95;
+  font-weight: 400;
+}
+
+/* 內容區塊 */
+.contentSection {
+  margin-bottom: 3.5rem;
+}
+
+/* 區塊標題 */
+.sectionTitle {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid rgba(102, 126, 234, 0.2);
+}
+
+.sectionIcon {
+  font-size: 1.5rem;
 }
 
 /* 文章卡片 */
 .postCard {
   transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
   cursor: pointer;
   border: none;
-  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  animation: fadeInUp 0.6s ease-out backwards;
+}
+
+.postCard:nth-child(1) {
+  animation-delay: 0.1s;
+}
+
+.postCard:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.postCard:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.postCard:nth-child(4) {
+  animation-delay: 0.4s;
 }
 
 .postCard:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+  transform: translateY(-8px);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.25);
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.postCard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
 }
 
 .postCardBody {
   display: flex;
   flex-direction: column;
-  padding: 1rem 1.5rem;
+  padding: 1.5rem;
+  position: relative;
 }
 
 @media (min-width: 768px) {
   .postCardBody {
-    padding: 1.5rem 2rem;
+    padding: 2rem;
   }
 }
 
 .postDate {
-  color: #6c757d;
+  color: #667eea;
   font-size: 0.85rem;
-  margin-bottom: 0.25rem;
-}
-
-@media (min-width: 768px) {
-  .postDate {
-    margin-bottom: 0.5rem;
-  }
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  display: inline-block;
+  background: rgba(102, 126, 234, 0.1);
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  width: fit-content;
 }
 
 .postTitle {
   line-height: 1.4;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
+  color: #1a1a1a;
+  transition: color 0.2s ease;
 }
 
-@media (min-width: 768px) {
-  .postTitle {
-    margin-bottom: 0.75rem;
-  }
+.postCard:hover .postTitle {
+  color: #667eea;
 }
 
 .postDescription {
-  font-size: 0.9rem;
-  line-height: 1.6;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: #666;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  line-clamp: 2;
   overflow: hidden;
   flex-grow: 1;
   margin-bottom: 0;
@@ -67,17 +186,12 @@
 .postFooter {
   background-color: transparent;
   border: none;
-  padding-top: 0;
-  padding-bottom: 0.5rem;
-  padding-left: 1rem;
-  padding-right: 1rem;
+  padding: 0 1.5rem 1.5rem;
 }
 
 @media (min-width: 768px) {
   .postFooter {
-    padding-bottom: 0.75rem;
-    padding-left: 1.5rem;
-    padding-right: 1.5rem;
+    padding: 0 2rem 2rem;
   }
 }
 
@@ -88,53 +202,126 @@
 }
 
 .tag {
-  background-color: #e7f3ff;
-  color: #0066cc;
-  font-weight: 500;
+  background: linear-gradient(
+    135deg,
+    rgba(102, 126, 234, 0.1) 0%,
+    rgba(118, 75, 162, 0.1) 100%
+  );
+  color: #667eea;
+  font-weight: 600;
   font-size: 0.75rem;
-  padding: 0.35rem 0.65rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  transition: all 0.2s ease;
+}
+
+.tag:hover {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  transform: translateY(-2px);
 }
 
 /* 查看更多卡片 */
 .moreCard {
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
   border-style: dashed;
-  background-color: #f8f9fa;
+  border-width: 2px;
+  border-color: rgba(102, 126, 234, 0.5);
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 16px;
+  animation: fadeInUp 0.6s ease-out 0.4s backwards;
+  position: relative;
+  overflow: hidden;
+}
+
+.moreCard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  transition: left 0.5s ease;
+}
+
+.moreCard:hover::before {
+  left: 100%;
 }
 
 .moreCard:hover {
-  background-color: #f8f9fa;
-  transform: translateY(-4px);
+  background: rgba(255, 255, 255, 0.8);
+  transform: translateY(-8px);
+  border-color: #764ba2;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.25);
 }
 
 .moreCardContent {
   text-align: center;
-  padding: 0 1rem;
+  padding: 0 1.5rem;
 }
 
 .moreCardText {
-  color: var(--bs-primary);
-  font-weight: bold;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: 700;
   font-size: 1.1rem;
 }
 
-/* 區塊標題 */
-.sectionTitle {
-  border-left: 4px solid var(--bs-primary);
-  padding-left: 0.75rem;
+/* 工具箱卡片 */
+.toolsGrid {
+  animation: fadeInUp 0.6s ease-out 0.2s backwards;
 }
 
-/* 工具箱卡片 */
 .toolBox {
   cursor: pointer;
   margin: 0 auto;
   transition:
     transform 0.3s ease,
     box-shadow 0.3s ease;
+  border-radius: 16px;
+  overflow: hidden;
+  position: relative;
+}
+
+.toolBox::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(102, 126, 234, 0.1) 0%,
+    rgba(118, 75, 162, 0.1) 100%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
 
 .toolBox:hover {
-  transform: translateY(-4px);
+  transform: translateY(-6px) scale(1.02);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.25);
+}
+
+.toolBox:hover::after {
+  opacity: 1;
+}
+
+.toolLink {
+  position: relative;
+  z-index: 1;
 }
 
 /* 動畫定義 */
@@ -144,5 +331,64 @@
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+/* 響應式設計 */
+@media (max-width: 768px) {
+  .heroBanner {
+    padding: 40px 0 35px;
+  }
+
+  .heroTitle {
+    font-size: 1.75rem;
+  }
+
+  .heroSubtitle {
+    font-size: 1rem;
+  }
+
+  .sectionTitle {
+    font-size: 1.5rem;
+  }
+
+  .postCardBody {
+    padding: 1.25rem;
+  }
+
+  .postFooter {
+    padding: 0 1.25rem 1.25rem;
   }
 }

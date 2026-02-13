@@ -34,15 +34,9 @@ footer {
 }
 
 .navbar-pastel-blue {
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.3)),
-    /* 半透明白色罩層，柔化圖片 */ url("/images/sky-clouds.png") no-repeat
-      center center;
-  /* 藍天白雲圖片 */
-  background-size: cover;
-  /* 讓圖片覆蓋整個區域 */
-  background-position: center;
-  background-repeat: no-repeat;
+  background: linear-gradient(135deg, #e0e7ff 0%, #ede9fe 100%);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid rgba(139, 92, 246, 0.1);
 }
 
 .box {
