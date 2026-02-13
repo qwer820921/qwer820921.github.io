@@ -1,0 +1,148 @@
+/* 主容器淡入動畫 */
+.homeContainer {
+  animation: fadeIn 0.4s ease-out;
+}
+
+/* 文章卡片 */
+.postCard {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.postCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.postCardBody {
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .postCardBody {
+    padding: 1.5rem 2rem;
+  }
+}
+
+.postDate {
+  color: #6c757d;
+  font-size: 0.85rem;
+  margin-bottom: 0.25rem;
+}
+
+@media (min-width: 768px) {
+  .postDate {
+    margin-bottom: 0.5rem;
+  }
+}
+
+.postTitle {
+  line-height: 1.4;
+  margin-bottom: 0.5rem;
+}
+
+@media (min-width: 768px) {
+  .postTitle {
+    margin-bottom: 0.75rem;
+  }
+}
+
+.postDescription {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex-grow: 1;
+  margin-bottom: 0;
+}
+
+.postFooter {
+  background-color: transparent;
+  border: none;
+  padding-top: 0;
+  padding-bottom: 0.5rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 768px) {
+  .postFooter {
+    padding-bottom: 0.75rem;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
+.tagContainer {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.tag {
+  background-color: #e7f3ff;
+  color: #0066cc;
+  font-weight: 500;
+  font-size: 0.75rem;
+  padding: 0.35rem 0.65rem;
+}
+
+/* 查看更多卡片 */
+.moreCard {
+  transition: all 0.2s ease;
+  border-style: dashed;
+  background-color: #f8f9fa;
+}
+
+.moreCard:hover {
+  background-color: #f8f9fa;
+  transform: translateY(-4px);
+}
+
+.moreCardContent {
+  text-align: center;
+  padding: 0 1rem;
+}
+
+.moreCardText {
+  color: var(--bs-primary);
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+/* 區塊標題 */
+.sectionTitle {
+  border-left: 4px solid var(--bs-primary);
+  padding-left: 0.75rem;
+}
+
+/* 工具箱卡片 */
+.toolBox {
+  cursor: pointer;
+  margin: 0 auto;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+.toolBox:hover {
+  transform: translateY(-4px);
+}
+
+/* 動畫定義 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

@@ -1,7 +1,10 @@
 .aboutPageModern {
   background: #fafafa;
   min-height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  animation: fadeIn 0.4s ease-out;
 }
 
 /* Loading */
@@ -30,8 +33,9 @@
   right: 0;
   bottom: 0;
   opacity: 0.1;
-  background-image: radial-gradient(circle at 20% 50%, #fff 0%, transparent 50%),
-                    radial-gradient(circle at 80% 80%, #fff 0%, transparent 50%);
+  background-image:
+    radial-gradient(circle at 20% 50%, #fff 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, #fff 0%, transparent 50%);
 }
 
 .heroContent {
@@ -267,7 +271,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(102, 126, 234, 0.8);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: flex-end;
   padding: 20px;
@@ -476,6 +480,15 @@
 }
 
 /* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @keyframes slideUp {
   from {
     opacity: 0;
@@ -499,7 +512,8 @@
 }
 
 @keyframes float {
-  0%, 100% {
+  0%,
+  100% {
     transform: translateY(0px);
   }
   50% {
@@ -558,7 +572,9 @@
 
 /* Hover Lift (for current simple version) */
 .hoverLift {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .hoverLift:hover {

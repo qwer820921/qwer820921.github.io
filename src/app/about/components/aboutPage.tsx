@@ -1,27 +1,10 @@
 "use client";
-import React, { useState, useEffect } from "react";
-import { Container, Spinner } from "react-bootstrap";
+import React, { useState } from "react";
+import { Container } from "react-bootstrap";
 import styles from "../styles/aboutPage.module.css";
 
 const AboutPage: React.FC = () => {
-  const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("story");
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 600);
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (isLoading) {
-    return (
-      <div className={styles.loadingContainer}>
-        <Spinner animation="grow" variant="primary" />
-        <p className="mt-3">正在開啟萬事屋...</p>
-      </div>
-    );
-  }
 
   return (
     <div className={styles.aboutPageModern}>
@@ -80,28 +63,36 @@ const AboutPage: React.FC = () => {
               </div>
               <div className={styles.cardContent}>
                 <p className={styles.introText}>
-                  2024 年，一群對數位創新充滿熱忱的專業人士聚在一起，決定創辦「子yee 萬事屋」。
+                  2024
+                  年，一群對數位創新充滿熱忱的專業人士聚在一起，決定創辦「子yee
+                  萬事屋」。
                 </p>
                 <div className={styles.storyTimeline}>
                   <div className={styles.timelineItem}>
                     <div className={styles.timelineMarker}></div>
                     <div className={styles.timelineContent}>
                       <h4>初心</h4>
-                      <p>我們觀察到市場上許多企業在數位轉型時，往往面臨創意與技術脫節的困境。</p>
+                      <p>
+                        我們觀察到市場上許多企業在數位轉型時，往往面臨創意與技術脫節的困境。
+                      </p>
                     </div>
                   </div>
                   <div className={styles.timelineItem}>
                     <div className={styles.timelineMarker}></div>
                     <div className={styles.timelineContent}>
                       <h4>實踐</h4>
-                      <p>因此，我們建立了一個跨領域的協作平台，從小型設計工作室逐步成長。</p>
+                      <p>
+                        因此，我們建立了一個跨領域的協作平台，從小型設計工作室逐步成長。
+                      </p>
                     </div>
                   </div>
                   <div className={styles.timelineItem}>
                     <div className={styles.timelineMarker}></div>
                     <div className={styles.timelineContent}>
                       <h4>現在</h4>
-                      <p>如今，我們已成為全方位的數位解決方案專家，與無數企業共同成長。</p>
+                      <p>
+                        如今，我們已成為全方位的數位解決方案專家，與無數企業共同成長。
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -199,7 +190,9 @@ const AboutPage: React.FC = () => {
         {activeTab === "mission" && (
           <section className={`${styles.contentSection} ${styles.fadeIn}`}>
             <div className={styles.missionGrid}>
-              <div className={`${styles.missionCard} ${styles.missionCardPrimary}`}>
+              <div
+                className={`${styles.missionCard} ${styles.missionCardPrimary}`}
+              >
                 <div className={styles.missionIcon}>🎯</div>
                 <h3>我們的使命</h3>
                 <p>
@@ -207,7 +200,9 @@ const AboutPage: React.FC = () => {
                   我們相信技術應該服務於人，讓生活與商業變得更簡單、更美好。
                 </p>
               </div>
-              <div className={`${styles.missionCard} ${styles.missionCardSecondary}`}>
+              <div
+                className={`${styles.missionCard} ${styles.missionCardSecondary}`}
+              >
                 <div className={styles.missionIcon}>🚀</div>
                 <h3>我們的願景</h3>
                 <p>
