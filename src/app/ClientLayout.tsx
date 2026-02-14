@@ -27,6 +27,9 @@ const WebVitalsClient = dynamic(
 // 不顯示 Footer 的頁面路徑
 const HIDE_FOOTER_PAGES = ["/clickAscension", "/towerDefense"];
 
+// 不顯示 Navbar 的頁面路徑
+const HIDE_NAVBAR_PAGES = ["/clickAscension"];
+
 export default function ClientLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
@@ -35,16 +38,21 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
     pathname?.startsWith(path)
   );
 
+  // 檢查當前路徑是否需要隱藏 Navbar
+  const shouldHideNavbar = HIDE_NAVBAR_PAGES.some((path) =>
+    pathname?.startsWith(path)
+  );
+
   return (
     <AuthProvider>
       {/* 結構化資料 */}
       <BreadcrumbJsonLd />
 
-      {/* Navbar - 始終顯示 */}
-      <Navbar />
+      {/* Navbar - 特定頁面不顯示 */}
+      {!shouldHideNavbar && <Navbar />}
 
       {/* 主內容區塊 */}
-      <main className={shouldHideFooter ? "" : "container-fluid mt-5 p-0"}>
+      <main className={shouldHideFooter ? "" : "container-fluid p-0"}>
         {children}
       </main>
 

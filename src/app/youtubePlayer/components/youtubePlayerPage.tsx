@@ -324,7 +324,7 @@ export default function YouTubePlayerPage() {
         selectedIndex={index}
         onSelectTrack={setIndex}
       />
-      <main className="container py-4">
+      <main className="container pb-4" style={{ paddingTop: "70px" }}>
         <div className="d-flex justify-content-between align-items-center mb-2">
           <h1 className="h5 fw-bold mb-0">YouTube Player</h1>
           <button

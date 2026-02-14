@@ -443,7 +443,9 @@ export default function TowerDefenseGame() {
                     }}
                   >
                     💰 拆除塔 (+
-                    {Math.floor(TOWER_CONFIGS[selectedTower.type].cost * 0.5)}{" "}
+                    {Math.floor(
+                      TOWER_CONFIGS[selectedTower.type].cost * 0.5
+                    )}{" "}
                     金幣)
                   </button>
                 </div>

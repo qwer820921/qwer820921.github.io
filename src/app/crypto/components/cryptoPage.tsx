@@ -109,7 +109,7 @@ const CryptoPage: React.FC = () => {
   };
 
   return (
-    <div className="container py-4">
+    <div className="container" style={{ paddingTop: "70px" }}>
       <LoadingOverlay isLoading={isLoading} />
       <h1 className="mb-4 text-center">加密貨幣資訊</h1>
 

@@ -168,7 +168,7 @@ const StockInfoPage: React.FC = () => {
   const isDesktop = windowWidth >= 992; // 判斷是否為桌面版
 
   return (
-    <div className="container py-4 h-100">
+    <div className="container" style={{ paddingTop: "70px" }}>
       <>
         <div
           style={{

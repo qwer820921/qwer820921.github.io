@@ -45,6 +45,85 @@ export default function YtMusicPage() {
   const [currentTrack, setCurrentTrack] = useState<YtMusicTrack | null>(null); // "播放中的曲目"
   const [loadingTracks, setLoadingTracks] = useState<Set<string>>(new Set()); // 追蹤正在加載的曲目 ID
 
+  // --- 浮動按鈕拖曳邏輯 ---
+  const [btnPositions, setBtnPositions] = useState({
+    memory: { x: 16, y: -1000 }, // 初始左下 (待 useEffect 計算)
+    playlist: { x: 16, y: 120 }, // 初始左上
+  });
+  const isDraggingRef = useRef(false);
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const dragTargetRef = useRef<"memory" | "playlist" | null>(null);
+
+  useEffect(() => {
+    // 修正按鈕的初始位置
+    setBtnPositions({
+      playlist: { x: 16, y: 120 }, // 左上
+      memory: { x: 16, y: window.innerHeight - 32 - 60 }, // 左下
+    });
+  }, []);
+
+  const handleBtnDragStart = (
+    e: React.MouseEvent | React.TouchEvent,
+    target: "memory" | "playlist"
+  ) => {
+    isDraggingRef.current = false;
+    dragTargetRef.current = target;
+
+    const clientX =
+      "touches" in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY =
+      "touches" in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+
+    const currentPos = btnPositions[target];
+
+    dragOffsetRef.current = {
+      x: clientX - currentPos.x,
+      y: clientY - currentPos.y,
+    };
+
+    const handleMove = (ev: MouseEvent | TouchEvent) => {
+      if (!dragTargetRef.current) return;
+      isDraggingRef.current = true;
+      if (ev.cancelable) ev.preventDefault();
+
+      const cx =
+        "touches" in ev
+          ? (ev as TouchEvent).touches[0].clientX
+          : (ev as MouseEvent).clientX;
+      const cy =
+        "touches" in ev
+          ? (ev as TouchEvent).touches[0].clientY
+          : (ev as MouseEvent).clientY;
+
+      let newX = cx - dragOffsetRef.current.x;
+      let newY = cy - dragOffsetRef.current.y;
+
+      // 邊界檢查
+      const maxX = window.innerWidth - 60;
+      const maxY = window.innerHeight - 60;
+      newX = Math.max(0, Math.min(newX, maxX));
+      newY = Math.max(0, Math.min(newY, maxY));
+
+      setBtnPositions((prev) => ({
+        ...prev,
+        [dragTargetRef.current!]: { x: newX, y: newY },
+      }));
+    };
+
+    const handleUp = () => {
+      dragTargetRef.current = null;
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+      document.removeEventListener("touchmove", handleMove);
+      document.removeEventListener("touchend", handleUp);
+    };
+
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+    document.addEventListener("touchmove", handleMove, { passive: false });
+    document.addEventListener("touchend", handleUp);
+  };
+
   const { userId } = useAuth(); // 從認證上下文中獲取用戶 ID
 
   // const [isLogIn, setIsLogIn] = useState<boolean>(false);
@@ -602,7 +681,7 @@ export default function YtMusicPage() {
 
   // 渲染播放器 UI
   return (
-    <main style={{ padding: 32 }}>
+    <main style={{ padding: "90px 32px 32px 32px" }}>
       {currentTrack ? (
         <>
           <div className="player-card">
@@ -778,12 +857,12 @@ export default function YtMusicPage() {
         <div>載入中...</div>
       )}
 
-      {/* 釋放記憶體按鈕 */}
+      {/* 釋放記憶體按鈕 (左下) */}
       <button
         style={{
           position: "fixed",
-          bottom: 32,
-          left: 32, // 原本是 right: 32，改成 left
+          left: `${btnPositions.memory.x}px`,
+          top: `${btnPositions.memory.y}px`,
           zIndex: 999,
           borderRadius: "50%",
           width: 60,
@@ -793,23 +872,29 @@ export default function YtMusicPage() {
           color: "#fff",
           border: "none",
           boxShadow: "0 2px 8px rgba(0,0,0,.2)",
-          display: "flex",
+          display: btnPositions.memory.y < 0 ? "none" : "flex",
           alignItems: "center",
           justifyContent: "center",
           padding: 0,
+          cursor: "grab",
+          touchAction: "none",
         }}
-        onClick={releaseMemory}
+        onMouseDown={(e) => handleBtnDragStart(e, "memory")}
+        onTouchStart={(e) => handleBtnDragStart(e, "memory")}
+        onClick={() => {
+          if (!isDraggingRef.current) releaseMemory();
+        }}
         title="釋放音檔記憶體"
       >
         🧹
       </button>
 
-      {/* 管理播放列表按鈕 */}
+      {/* 管理播放列表按鈕 (左上) */}
       <button
         style={{
           position: "fixed",
-          bottom: 32,
-          right: 32,
+          left: `${btnPositions.playlist.x}px`,
+          top: `${btnPositions.playlist.y}px`,
           zIndex: 999,
           borderRadius: "50%",
           width: 60,
@@ -823,8 +908,14 @@ export default function YtMusicPage() {
           alignItems: "center",
           justifyContent: "center",
           padding: 0,
+          cursor: "grab",
+          touchAction: "none",
         }}
-        onClick={() => setShowModal(true)}
+        onMouseDown={(e) => handleBtnDragStart(e, "playlist")}
+        onTouchStart={(e) => handleBtnDragStart(e, "playlist")}
+        onClick={() => {
+          if (!isDraggingRef.current) setShowModal(true);
+        }}
         title="管理播放清單與查詢"
       >
         <MusicNoteBeamed size={32} />

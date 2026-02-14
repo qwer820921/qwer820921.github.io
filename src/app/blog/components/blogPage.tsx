@@ -12,7 +12,7 @@ interface BlogPageProps {
 
 export default function BlogPage({ posts }: BlogPageProps) {
   return (
-    <Container className="py-5">
+    <Container style={{ paddingTop: "70px", paddingBottom: "70px" }}>
       <h1 className={styles.pageTitle}>
         <span className={styles.titleIcon}>📝</span>
         文章列表

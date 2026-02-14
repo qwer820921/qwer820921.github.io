@@ -44,7 +44,10 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="container mt-5" style={{ maxWidth: "400px" }}>
+    <div
+      className="container"
+      style={{ maxWidth: "400px", paddingTop: "120px" }}
+    >
       <h2 className="mb-4 text-center">登入</h2>
       <form onSubmit={handleLogin}>
         <div className="mb-3">

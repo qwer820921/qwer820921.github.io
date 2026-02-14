@@ -417,6 +417,7 @@ export default function NoWashGamesPage() {
         backgroundColor: "#f1f5f9",
         position: "relative",
         overflow: "hidden",
+        paddingTop: "70px",
       }}
     >
       {popups.map((p) => (

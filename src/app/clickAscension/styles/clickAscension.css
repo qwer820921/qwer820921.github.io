@@ -66,13 +66,14 @@
     BlinkMacSystemFont,
     sans-serif;
   background: linear-gradient(180deg, var(--ca-bg-dark) 0%, #1e1b4b 100%);
-  height: calc(100vh - 56px);
-  /* Subtract navbar height */
-  height: calc(100dvh - 56px);
-  margin-top: 22px;
-  /* Push below fixed navbar */
-  max-height: calc(100vh - 56px);
-  max-height: calc(100dvh - 56px);
+  height: 100dvh;
+  width: 100vw;
+  margin: 0;
+  padding: 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10;
   overflow: hidden;
   color: var(--ca-text-primary);
   display: flex;

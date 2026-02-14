@@ -94,6 +94,70 @@ export default function VideoEditor() {
   const [showObjectsModal, setShowObjectsModal] = useState(false);
   const processingToastId = useRef<string | undefined>(undefined); //使用 useRef 儲存 toast.loading 的 ID，以便後續移除
 
+  // --- 浮動按鈕拖曳邏輯 ---
+  const [floatingBtnPos, setFloatingBtnPos] = useState({ x: -1000, y: -1000 }); // 初始位置先藏起來
+  const isDraggingRef = useRef(false);
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    // 初始位置：右上角
+    setFloatingBtnPos({
+      x: window.innerWidth - 32 - 60, // 右邊距 32px
+      y: 125, // 避開 navbar
+    });
+  }, []);
+
+  const handleFloatingBtnDown = (e: React.MouseEvent | React.TouchEvent) => {
+    isDraggingRef.current = false;
+    const clientX =
+      "touches" in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY =
+      "touches" in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+
+    dragOffsetRef.current = {
+      x: clientX - floatingBtnPos.x,
+      y: clientY - floatingBtnPos.y,
+    };
+
+    const handleMove = (ev: MouseEvent | TouchEvent) => {
+      isDraggingRef.current = true;
+      // 只有在拖曳時才阻止預設行為，避免點擊時無法觸發
+      if (ev.cancelable) ev.preventDefault();
+
+      const cx =
+        "touches" in ev
+          ? (ev as TouchEvent).touches[0].clientX
+          : (ev as MouseEvent).clientX;
+      const cy =
+        "touches" in ev
+          ? (ev as TouchEvent).touches[0].clientY
+          : (ev as MouseEvent).clientY;
+
+      let newX = cx - dragOffsetRef.current.x;
+      let newY = cy - dragOffsetRef.current.y;
+
+      // 邊界檢查
+      const maxX = window.innerWidth - 60; // 60 是按鈕寬度
+      const maxY = window.innerHeight - 60;
+      newX = Math.max(0, Math.min(newX, maxX));
+      newY = Math.max(0, Math.min(newY, maxY));
+
+      setFloatingBtnPos({ x: newX, y: newY });
+    };
+
+    const handleUp = () => {
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+      document.removeEventListener("touchmove", handleMove);
+      document.removeEventListener("touchend", handleUp);
+    };
+
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+    document.addEventListener("touchmove", handleMove, { passive: false });
+    document.addEventListener("touchend", handleUp);
+  };
+
   /**
    * 初始化畫布
    */
@@ -675,8 +739,11 @@ export default function VideoEditor() {
   };
 
   return (
-    <div>
-      <div className="row justify-content-center">
+    <div className="container-fluid">
+      <div
+        className="row justify-content-center"
+        style={{ paddingTop: "70px" }}
+      >
         <div className="col-12 col-lg-10">
           <div className="card mb-4">
             <div className="card-body">
@@ -833,66 +900,6 @@ export default function VideoEditor() {
             </div>
           </div>
         </div>
-        {/* <div className="col-md-12 col-lg-12">
-                    {canvasObjects.length > 0 && (
-                        <div className="mt-4">
-                            <h5 className="mb-3">物件列表</h5>
-                            <div className="d-flex flex-wrap gap-3">
-                                {canvasObjects.map((obj) => {
-                                    let icon;
-                                    let label;
-
-                                    // 使用 switch 判斷物件類型
-                                    switch (obj.type) {
-                                        case 'image':
-                                            icon = <Upload size={24} className="mb-2" />;
-                                            label = '圖片';
-                                            break;
-                                        case 'video':
-                                            icon = <Trash size={24} className="mb-2" />;
-                                            label = '影片';
-                                            break;
-                                        case 'text':
-                                            icon = <Type size={24} className="mb-2" />;
-                                            label = obj.textContent;
-                                            break;
-                                        default:
-                                            icon = null;
-                                            label = '未知';
-                                    }
-
-                                    return (
-                                        <div
-                                            key={obj.id}
-                                            className="position-relative"
-                                            style={{ width: '100px', cursor: 'pointer' }}
-                                            onClick={() => handleObjectClick(obj)}
-                                        >
-                                            <div className="card h-100">
-                                                <div className="card-body p-2 text-center">
-                                                    {icon}
-                                                    <div className="small text-truncate">
-                                                        {label}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <button
-                                                className="position-absolute top-0 end-0 btn btn-sm btn-outline-danger p-0"
-                                                style={{ width: '24px', height: '24px' }}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleRemoveObject(obj.id);
-                                                }}
-                                            >
-                                                <XLg size={12} />
-                                            </button>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-                </div> */}
         <input
           type="file"
           ref={fileInputRef}
@@ -900,7 +907,6 @@ export default function VideoEditor() {
           accept="image/*,video/*"
           className="d-none"
         />
-        <div className="col-md-12 text-start">{printValue(canvasObjects)}</div>
       </div>
 
       {/* 下載 Modal */}
@@ -1010,8 +1016,8 @@ export default function VideoEditor() {
       <button
         style={{
           position: "fixed",
-          bottom: "32px",
-          right: "32px",
+          left: `${floatingBtnPos.x}px`,
+          top: `${floatingBtnPos.y}px`,
           zIndex: 999,
           borderRadius: "50%",
           width: "60px",
@@ -1021,13 +1027,20 @@ export default function VideoEditor() {
           color: "#fff",
           border: "none",
           boxShadow: "0 2px 8px rgba(0,0,0,.2)",
-          display: "flex",
+          display: floatingBtnPos.x === -1000 ? "none" : "flex", // 初始定位前隱藏
           alignItems: "center",
           justifyContent: "center",
           padding: 0,
-          cursor: "pointer",
+          cursor: "grab",
+          touchAction: "none", // 防止觸控時捲動頁面
         }}
-        onClick={() => setShowObjectsModal(true)}
+        onMouseDown={handleFloatingBtnDown}
+        onTouchStart={handleFloatingBtnDown}
+        onClick={() => {
+          if (!isDraggingRef.current) {
+            setShowObjectsModal(true);
+          }
+        }}
         title="物件列表"
       >
         <Kanban />

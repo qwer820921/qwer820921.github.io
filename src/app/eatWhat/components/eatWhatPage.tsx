@@ -291,7 +291,7 @@ const EatWhatPage: React.FC = () => {
 
   // ====== 畫面渲染 ======
   return (
-    <div className="container-fluid p-0">
+    <div className="container-fluid" style={{ paddingTop: "70px" }}>
       <>
         <div
           style={{

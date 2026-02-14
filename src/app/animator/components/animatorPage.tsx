@@ -323,7 +323,7 @@ const AnimatorPage: React.FC = () => {
 
   return (
     <>
-      <div className="container-fluid p-3">
+      <div className="container-fluid" style={{ paddingTop: "70px" }}>
         <>
           <div
             style={{

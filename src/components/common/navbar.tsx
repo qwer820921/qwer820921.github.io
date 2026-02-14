@@ -37,18 +37,45 @@ const Navbar: React.FC = () => {
 
   useEffect(() => {
     const navbar = document.querySelector(".navbar.fixed-top");
-    if (navbar) {
+    if (!navbar) return;
+
+    const updateHeight = () => {
       const height = navbar.getBoundingClientRect().height;
       setNavHeight(height);
-    }
+      // 設置 CSS 變量到 root，供其他組件使用
+      document.documentElement.style.setProperty(
+        "--navbar-height",
+        `${height}px`
+      );
+    };
 
-    // 如果 navbar 高度會變，建議監聽 resize 或 mutation observer
+    // 使用 ResizeObserver 監聽元素本身的大小變化（包含圖片載入撐開的情況）
+    const observer = new ResizeObserver(() => {
+      updateHeight();
+    });
+
+    observer.observe(navbar);
+
+    // 初始化執行一次
+    updateHeight();
+
+    return () => observer.disconnect();
   }, []);
 
   return (
     <>
-      <nav className="navbar navbar-expand-lg navbar-pastel-blue shadow-sm fixed-top py-1">
-        <div className="container">
+      <nav
+        className="navbar navbar-expand-lg navbar-pastel-blue fixed-top py-0"
+        style={{
+          margin: "6px 8px 0 8px", // 上、右、下、左留白
+          borderRadius: "16px", // 圓角效果
+          width: "calc(100% - 16px)", // 扣除左右 margin
+          backgroundColor: "#fff", // 實色白色背景
+          border: "1px solid rgba(0, 0, 0, 0.08)", // 淺色邊框
+          boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)", // 增強陰影
+        }}
+      >
+        <div className="container" style={{ padding: "0 16px" }}>
           {/* ---- Brand ---- */}
           <Link className="navbar-brand" href="/">
             <Image
@@ -160,10 +187,13 @@ const Navbar: React.FC = () => {
       <div
         className="fixed-top"
         style={{
-          top: navHeight, // 動態貼在 navbar 底部
+          top: navHeight + 6, // 動態貼在 navbar 底部 (高度 + top margin)
           height: "4px",
           zIndex: 1050,
-          width: "100%",
+          width: "calc(100% - 32px)", // 配合 navbar 寬度視覺
+          left: "16px",
+          borderRadius: "0 0 4px 4px", // 下方圓角
+          overflow: "hidden",
         }}
       >
         <RouteProgressBar />

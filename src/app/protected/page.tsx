@@ -10,7 +10,7 @@ const ProtectedPage: React.FC = () => {
   return (
     <div
       className="d-flex justify-content-center align-items-center"
-      style={{ height: "400px" }}
+      style={{ height: "400px", paddingTop: "70px" }}
     >
       <div className="text-center">
         <h1>受保護頁面</h1>

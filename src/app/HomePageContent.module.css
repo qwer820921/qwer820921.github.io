@@ -369,7 +369,7 @@
 /* 響應式設計 */
 @media (max-width: 768px) {
   .heroBanner {
-    padding: 40px 0 35px;
+    padding: 70px 0 70px;
   }
 
   .heroTitle {

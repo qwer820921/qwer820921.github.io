@@ -186,7 +186,7 @@ const SoundCloudPlayerPage: React.FC = () => {
   );
 
   return (
-    <main style={{ padding: 32 }}>
+    <main style={{ padding: 32, paddingTop: "120px" }}>
       {/* 播放區塊 */}
       {currentTrack ? (
         <>
