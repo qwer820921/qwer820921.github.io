@@ -1,0 +1,1141 @@
+/* src/app/novels/novels.module.css */
+
+.pageContainer {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 70px 1rem 80px; /* 上70 左右1rem 下80(預留 BottomTabs) */
+}
+
+.pageHeader {
+  margin-bottom: 30px;
+  text-align: center;
+}
+
+.novelGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+/* 卡片樣式 */
+.card {
+  display: flex;
+  flex-direction: column;
+  background-color: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+}
+
+.coverWrapper {
+  position: relative;
+  width: 100%;
+  background-color: #e2e8f0;
+}
+
+.coverImage {
+  width: 100%;
+  display: block;
+}
+
+.noCover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #64748b;
+}
+
+.statusBadge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background-color: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.cardContent {
+  padding: 15px;
+}
+
+.bookTitle {
+  font-size: 1.25rem;
+  margin: 0 0 5px 0;
+  font-weight: bold;
+}
+
+.authorName {
+  font-size: 0.9rem;
+  color: #64748b;
+  margin: 0 0 10px 0;
+}
+
+.tagsContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 15px;
+}
+
+.tag {
+  background-color: #f1f5f9;
+  color: #3b82f6;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 0.75rem;
+}
+
+.metaData {
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.metaData p {
+  margin: 4px 0;
+}
+
+/* 狀態樣式 */
+.loadingState, .errorState, .emptyState {
+  text-align: center;
+  padding: 50px;
+  color: #64748b;
+}
+
+.retryBtn {
+  margin-top: 15px;
+  padding: 8px 16px;
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* ==========================================
+   詳情頁 (NovelDetailPage) 專屬樣式
+   ========================================== */
+
+.backNav {
+  margin-bottom: 20px;
+}
+.backNav a {
+  color: #3b82f6;
+  text-decoration: none;
+  font-weight: bold;
+}
+.backNav a:hover {
+  text-decoration: underline;
+}
+
+.detailHeader {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 30px;
+  background: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.detailCover {
+  flex-shrink: 0;
+  width: 150px;
+  height: 200px;
+  background: #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.detailCover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.detailInfo {
+  min-width: 0;
+}
+
+.detailInfo h1 {
+  margin: 0 0 10px 0;
+  font-size: 1.8rem;
+  word-break: break-word;
+}
+
+/* 手機版：詳情頁重新排版 */
+@media (max-width: 480px) {
+  .detailHeader {
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
+  }
+
+  .detailCover {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 3 / 4;
+    border-radius: 10px;
+  }
+
+  .detailCover img {
+    border-radius: 10px;
+  }
+
+  .detailInfo {
+    width: 100%;
+  }
+
+  .detailInfo h1 {
+    font-size: 1.3rem;
+    margin-bottom: 6px;
+  }
+}
+
+/* 收藏按鈕 */
+.favoriteBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 8px 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #3b82f6;
+  background-color: transparent;
+  border: 2px solid #3b82f6;
+  border-radius: 99px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.favoriteBtn:hover {
+  background-color: #eff6ff;
+  transform: scale(1.05);
+}
+
+.favorited {
+  color: #fff;
+  background: linear-gradient(135deg, #f59e0b, #f97316);
+  border-color: transparent;
+}
+
+.favorited:hover {
+  background: linear-gradient(135deg, #d97706, #ea580c);
+  transform: scale(1.05);
+}
+
+.summarySection {
+  background: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 30px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  line-height: 1.8;
+}
+
+.summarySection h2, .chaptersSection h2 {
+  margin-top: 0;
+  font-size: 1.25rem;
+  border-bottom: 2px solid #f1f5f9;
+  padding-bottom: 10px;
+  margin-bottom: 15px;
+}
+
+.chaptersSection {
+  background: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.chaptersHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.chapterCount {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.chapterList {
+  display: flex;
+  flex-direction: column;
+}
+
+.chapterItem {
+  display: flex;
+  justify-content: space-between;
+  padding: 15px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  text-decoration: none;
+  color: #333333;
+  transition: background-color 0.2s;
+}
+
+.chapterItem:hover {
+  background-color: #f8fafc;
+  color: #3b82f6;
+}
+
+.chapterTitle {
+  font-weight: 500;
+}
+
+.chapterDate {
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+/* ==========================================
+   底部導航列 (BottomTabs) 樣式
+   ========================================== */
+
+.bottomTabs {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  height: 60px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid #e2e8f0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  z-index: 100;
+}
+
+.tabItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  flex: 1;
+  height: 100%;
+  text-decoration: none;
+  color: #94a3b8;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.tabItem:hover {
+  color: #64748b;
+}
+
+.tabIcon {
+  font-size: 1.25rem;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+.tabLabel {
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.tabActive {
+  color: #3b82f6;
+}
+
+.tabActive .tabIcon {
+  transform: scale(1.15);
+}
+
+/* ==========================================
+   設定頁 (SettingsPage) 專屬樣式
+   ========================================== */
+
+.settingsSection {
+  background: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.settingsSectionTitle {
+  margin: 0 0 16px 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  border-bottom: 2px solid #f1f5f9;
+  padding-bottom: 10px;
+}
+
+/* --- 主題選擇器 --- */
+.themeSelector {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+}
+
+.themeOption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 12px;
+  transition: background-color 0.2s ease;
+}
+
+.themeOption:hover {
+  background-color: #f8fafc;
+}
+
+.themeCircle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  font-size: 1rem;
+  font-weight: 700;
+  border: 3px solid #e2e8f0;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.themeOptionActive .themeCircle {
+  border-color: #3b82f6;
+  transform: scale(1.1);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.themeLabel {
+  font-size: 0.8rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.themeOptionActive .themeLabel {
+  color: #3b82f6;
+  font-weight: 700;
+}
+
+/* --- 設定行（通用） --- */
+.settingsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.settingsRow:last-child {
+  border-bottom: none;
+}
+
+.settingsRowLabel {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+/* --- 字體選擇 --- */
+.fontFamilySelector {
+  display: flex;
+  gap: 8px;
+}
+
+.fontFamilyOption {
+  padding: 6px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #475569;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.fontFamilyOption:hover {
+  border-color: #94a3b8;
+}
+
+.fontFamilyActive {
+  border-color: #3b82f6;
+  background-color: #eff6ff;
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+/* --- 字級控制 --- */
+.fontSizeControl {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fontSizeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.fontSizeBtn:hover:not(:disabled) {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background-color: #eff6ff;
+}
+
+.fontSizeBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.fontSizeValue {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #334155;
+  min-width: 48px;
+  text-align: center;
+}
+
+/* --- 行距選擇 --- */
+.lineHeightSelector {
+  display: flex;
+  gap: 8px;
+}
+
+.lineHeightOption {
+  padding: 6px 14px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #475569;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.lineHeightOption:hover {
+  border-color: #94a3b8;
+}
+
+.lineHeightActive {
+  border-color: #3b82f6;
+  background-color: #eff6ff;
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+/* --- 即時預覽 --- */
+.previewBox {
+  padding: 24px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  transition: all 0.3s ease;
+  text-indent: 2em;
+}
+
+/* --- 操作按鈕 --- */
+.settingsActions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.resetBtn {
+  padding: 10px 24px;
+  border: 2px solid #e2e8f0;
+  border-radius: 99px;
+  background: #fff;
+  color: #64748b;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.resetBtn:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background-color: #eff6ff;
+}
+
+/* ==========================================
+   閱讀器 (ReaderPage) 專屬樣式
+   ========================================== */
+
+.readerContainer {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 60px 1.2rem 40px;
+  min-height: 100vh;
+}
+
+/* 頂部導覽列 */
+.readerHeader {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 10px 1.2rem;
+  background-color: inherit;
+  backdrop-filter: blur(8px);
+}
+
+.readerBackLink {
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: inherit;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+}
+
+.readerBackLink:hover {
+  opacity: 1;
+}
+
+.readerHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 章節標題 */
+.readerTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 16px 0 8px;
+  line-height: 1.4;
+}
+
+.readerMeta {
+  font-size: 0.8rem;
+  opacity: 0.5;
+  margin: 0 0 24px;
+}
+
+/* 內文 */
+.readerContent {
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: justify;
+}
+
+/* 作者的話 */
+.authorNoteBox {
+  margin-top: 32px;
+  padding: 16px;
+  border-left: 3px solid currentColor;
+  opacity: 0.7;
+  font-size: 0.9em;
+}
+
+.authorNoteBox p {
+  margin: 8px 0 0;
+}
+
+/* 底部翻頁 */
+.readerFooterNav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.navBtn {
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  background: transparent;
+  color: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.navBtn:hover {
+  background-color: rgba(128, 128, 128, 0.1);
+}
+
+.navBtnDisabled {
+  padding: 10px 20px;
+  font-size: 0.9rem;
+  opacity: 0.3;
+}
+
+.navBtnGhost {
+  padding: 10px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: inherit;
+  opacity: 0.5;
+  transition: opacity 0.2s ease;
+}
+
+.navBtnGhost:hover {
+  opacity: 1;
+}
+
+/* 閱讀器 Loading / Error 狀態 */
+.readerLoading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-size: 1rem;
+  color: #64748b;
+}
+
+.readerError {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  text-align: center;
+  padding: 20px;
+  color: #64748b;
+}
+
+.readerError h2 {
+  font-size: 1.3rem;
+  margin-bottom: 8px;
+}
+
+.readerNavButtons {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+/* ==========================================
+   目錄彈窗 (TOC Drawer)
+   ========================================== */
+
+.tocDrawer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 999;
+  background-color: #ffffff;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.12);
+  padding: 8px 0 calc(12px + env(safe-area-inset-bottom));
+  transform: translateY(100%);
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+  max-height: 50vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.tocDrawerOpen {
+  transform: translateY(0);
+}
+
+.tocHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.tocHeader h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+  color: #1e293b;
+}
+
+.tocCount {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.tocList {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tocItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  text-decoration: none;
+  color: #334155;
+  font-size: 0.9rem;
+  border-bottom: 1px solid #f8fafc;
+  transition: background-color 0.15s ease;
+}
+
+.tocItem:hover {
+  background-color: #f1f5f9;
+}
+
+.tocItemActive {
+  color: #3b82f6;
+  font-weight: 700;
+  background-color: #eff6ff;
+}
+
+.tocItemDate {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+/* 深色主題適配 */
+@media (prefers-color-scheme: dark) {
+  .tocDrawer {
+    background-color: #1e293b;
+  }
+
+  .tocHeader {
+    border-bottom-color: #334155;
+  }
+
+  .tocHeader h3 {
+    color: #e2e8f0;
+  }
+
+  .tocItem {
+    color: #cbd5e1;
+    border-bottom-color: #2d3a4a;
+  }
+
+  .tocItem:hover {
+    background-color: #334155;
+  }
+
+  .tocItemActive {
+    color: #60a5fa;
+    background-color: #1e3a5f;
+  }
+}
+
+/* --- 閱讀器 Aa 按鈕 (改為 button) --- */
+.readerSettingsBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  transition: opacity 0.2s ease, background-color 0.2s ease;
+}
+
+.readerSettingsBtn:hover {
+  opacity: 1;
+  background-color: rgba(128, 128, 128, 0.15);
+}
+
+/* ============================== */
+/* ReaderMenu - 底部彈窗式設定選單 */
+/* ============================== */
+
+/* 背景遮罩 */
+.menuOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 998;
+  background-color: rgba(0, 0, 0, 0);
+  pointer-events: none;
+  transition: background-color 0.3s ease;
+}
+
+.menuOverlayVisible {
+  background-color: rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+}
+
+/* 彈窗本體 */
+.readerMenu {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 999;
+  background-color: #ffffff;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.12);
+  padding: 8px 20px calc(20px + env(safe-area-inset-bottom));
+  transform: translateY(100%);
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+}
+
+.readerMenuOpen {
+  transform: translateY(0);
+}
+
+/* 頂部拖曳提示條 */
+.menuHandle {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 12px;
+  cursor: pointer;
+}
+
+.menuHandleBar {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background-color: #d1d5db;
+}
+
+/* 各設定區塊 */
+.menuSection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.menuSection:last-child {
+  border-bottom: none;
+}
+
+.menuSectionLabel {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #64748b;
+  min-width: 40px;
+  flex-shrink: 0;
+}
+
+/* --- 主題按鈕列 --- */
+.menuThemeRow {
+  display: flex;
+  gap: 10px;
+}
+
+.menuThemeBtn {
+  width: 56px;
+  height: 32px;
+  border-radius: 8px;
+  border: 2px solid #e2e8f0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.menuThemeBtnActive {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+}
+
+/* --- 字級控制 --- */
+.menuFontSizeRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.menuStepBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.menuStepBtn:hover:not(:disabled) {
+  background-color: #e2e8f0;
+}
+
+.menuStepBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.menuFontSizeValue {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+  min-width: 42px;
+  text-align: center;
+}
+
+/* --- 字體選擇 --- */
+.menuFontFamilyRow {
+  display: flex;
+  gap: 8px;
+}
+
+.menuFontFamilyBtn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.menuFontFamilyBtn:hover {
+  background-color: #e2e8f0;
+}
+
+.menuFontFamilyBtnActive {
+  border-color: #3b82f6;
+  background-color: #eff6ff;
+  color: #2563eb;
+  font-weight: 600;
+}
+
+/* --- 行距選擇 --- */
+.menuLineHeightRow {
+  display: flex;
+  gap: 8px;
+}
+
+.menuLineHeightBtn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.menuLineHeightBtn:hover {
+  background-color: #e2e8f0;
+}
+
+.menuLineHeightBtnActive {
+  border-color: #3b82f6;
+  background-color: #eff6ff;
+  color: #2563eb;
+  font-weight: 600;
+}
+
+/* --- 深色主題適配 --- */
+@media (prefers-color-scheme: dark) {
+  .readerMenu {
+    background-color: #1e293b;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .menuHandleBar {
+    background-color: #475569;
+  }
+
+  .menuSection {
+    border-bottom-color: #334155;
+  }
+
+  .menuSectionLabel {
+    color: #94a3b8;
+  }
+
+  .menuThemeBtn {
+    border-color: #475569;
+  }
+
+  .menuStepBtn {
+    border-color: #475569;
+    background-color: #334155;
+    color: #e2e8f0;
+  }
+
+  .menuStepBtn:hover:not(:disabled) {
+    background-color: #475569;
+  }
+
+  .menuFontSizeValue {
+    color: #e2e8f0;
+  }
+
+  .menuFontFamilyBtn {
+    border-color: #475569;
+    background-color: #334155;
+    color: #cbd5e1;
+  }
+
+  .menuFontFamilyBtn:hover {
+    background-color: #475569;
+  }
+
+  .menuFontFamilyBtnActive {
+    border-color: #60a5fa;
+    background-color: #1e3a5f;
+    color: #93c5fd;
+  }
+
+  .menuLineHeightBtn {
+    border-color: #475569;
+    background-color: #334155;
+    color: #cbd5e1;
+  }
+
+  .menuLineHeightBtn:hover {
+    background-color: #475569;
+  }
+
+  .menuLineHeightBtnActive {
+    border-color: #60a5fa;
+    background-color: #1e3a5f;
+    color: #93c5fd;
+  }
+}

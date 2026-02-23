@@ -102,4 +102,11 @@ export const seoMap: {
     keywords:
       "部落格, 技術文章, 前端開發, Next.js, React, 生活隨筆, 子yee 萬事屋",
   },
+  [ROUTES.NOVELS]: {
+    title: "子yee 萬事屋 | 萬事屋藏書閣",
+    description:
+      "萬事屋藏書閣提供海量小說免費線上閱讀，支援繁體中文，涵蓋玄幻、武俠、都市、言情等多種題材。",
+    keywords:
+      "萬事屋藏書閣, 線上小說, 免費閱讀, 小說網, 玄幻小說, 武俠小說, 都市小說, 言情小說, 繁體中文",
+  },
 };

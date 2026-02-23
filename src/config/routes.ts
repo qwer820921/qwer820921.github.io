@@ -9,6 +9,7 @@ const routes: RouteGroup[] = [
       { path: ROUTES.HOME, name: "首頁", showInNavbar: false },
       { path: ROUTES.ABOUT, name: "關於我們", showInNavbar: true },
       { path: ROUTES.BLOG, name: "部落格", showInNavbar: true },
+      { path: ROUTES.NOVELS, name: "萬事屋藏書閣", showInNavbar: true },
     ],
   },
   {

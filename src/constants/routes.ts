@@ -17,4 +17,5 @@ export const ROUTES = {
   INVOICE: "/invoice", // 統一發票對獎
   TOWER_DEFENSE: "/towerDefense", // 塔防守衛戰
   BLOG: "/blog", // 部落格
+  NOVELS: "/novels", // 萬事屋藏書閣
 };
