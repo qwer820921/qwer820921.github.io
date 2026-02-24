@@ -277,6 +277,8 @@
 .chapterItem {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
   padding: 15px 10px;
   border-bottom: 1px solid #f1f5f9;
   text-decoration: none;
@@ -291,11 +293,14 @@
 
 .chapterTitle {
   font-weight: 500;
+  word-break: break-all;
 }
 
 .chapterDate {
   color: #94a3b8;
   font-size: 0.85rem;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* ==========================================
