@@ -346,4 +346,6 @@ const TTSPlayer = forwardRef<TTSPlayerRef, TTSPlayerProps>(({
   );
 });
 
+TTSPlayer.displayName = "TTSPlayer";
+
 export default TTSPlayer;
