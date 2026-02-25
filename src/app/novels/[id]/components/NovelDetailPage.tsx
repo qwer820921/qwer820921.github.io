@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { getLibraryData, getChaptersData } from "../../api/novelApi";
+import { useNovelStore } from "../../store/novelStore";
 import { getStorage, setStorage, fixDriveCoverUrl } from "../../utils";
 import { Novel, ChapterSummary } from "../../types";
 import BottomTabs from "../../components/BottomTabs";
@@ -13,51 +13,25 @@ interface Props {
 }
 
 export default function NovelDetailPage({ bookId }: Props) {
-  const [novel, setNovel] = useState<Novel | null>(null);
-  const [chapters, setChapters] = useState<ChapterSummary[]>([]);
+  const {
+    novels, novelsLoading, novelsError,
+    chaptersMap, chaptersLoading, chaptersError,
+    fetchLibrary, fetchChapters, getNovelById,
+  } = useNovelStore();
+
   const [isFavorite, setIsFavorite] = useState<boolean>(false);
   const [imgError, setImgError] = useState(false);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+
+  const novel = getNovelById(bookId);
+  const chapters = chaptersMap[bookId]?.data ?? [];
+  const isLoading = (novelsLoading && !novel) || (chaptersLoading[bookId] && chapters.length === 0);
+  const error = novelsError || chaptersError[bookId] || (!novelsLoading && !novel ? "找不到這本書的資料" : null);
 
   // 載入書本資料 & 章節目錄
   useEffect(() => {
-    const fetchDetailData = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-
-        // 平行發送兩個請求：抓書本清單(找特定書) & 抓該書目錄
-        const [libraryRes, chaptersRes] = await Promise.all([
-          getLibraryData(),
-          getChaptersData(bookId),
-        ]);
-
-        // 1. 處理書本基本資料
-        if (libraryRes.success && libraryRes.data) {
-          const targetNovel = libraryRes.data.find((n) => n.id === bookId);
-          if (targetNovel) {
-            setNovel(targetNovel);
-          } else {
-            throw new Error("找不到這本書的資料");
-          }
-        }
-
-        // 2. 處理章節目錄
-        if (chaptersRes.success && chaptersRes.data) {
-          setChapters(chaptersRes.data);
-        }
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "載入作品詳情時發生錯誤";
-        setError(message);
-        console.error(err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchDetailData();
-  }, [bookId]);
+    fetchLibrary();
+    fetchChapters(bookId);
+  }, [bookId, fetchLibrary, fetchChapters]);
 
   // 初始化收藏狀態
   useEffect(() => {
@@ -153,7 +127,7 @@ export default function NovelDetailPage({ bookId }: Props) {
             chapters.map((chapter) => (
               <Link
                 key={chapter.chapter_index}
-                href={`/novels/reader/${bookId}/${chapter.chapter_index}`}
+                href={`/novels/reader/${bookId}#${chapter.chapter_index}`}
                 className={styles.chapterItem}
               >
                 <span className={styles.chapterTitle}>第 {chapter.chapter_index} 章　{chapter.chapter_title}</span>

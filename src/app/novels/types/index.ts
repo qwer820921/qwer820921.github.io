@@ -46,8 +46,8 @@ export interface ChapterContent extends ChapterSummary {
 // 5. 閱讀器外觀設定 (存於 LocalStorage)
 // ==========================================
 export interface ReaderSettings {
-  theme: 'light' | 'sepia' | 'dark'; // 明亮 / 護眼(羊皮紙) / 深色
-  fontSize: number;                  // 例如: 16, 18, 20
-  fontFamily: 'sans-serif' | 'serif';// 黑體 / 明體
-  lineHeight: number;                // 例如: 1.5, 1.8
+  theme: 'light' | 'sepia' | 'dark';
+  fontSize: number;
+  fontFamily: 'sans-serif' | 'serif';
+  lineHeight: number;
 }

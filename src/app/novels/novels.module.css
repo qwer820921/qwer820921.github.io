@@ -614,6 +614,18 @@
   backdrop-filter: blur(8px);
 }
 
+.readerHeaderTitle {
+  flex: 1;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 8px;
+}
+
 .readerBackLink {
   font-size: 0.9rem;
   font-weight: 600;
@@ -1143,4 +1155,263 @@
     background-color: #1e3a5f;
     color: #93c5fd;
   }
+}
+
+/* ==========================================
+   章節分隔線（連續閱讀模式）
+   ========================================== */
+
+.chapterDivider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 48px 0 32px;
+  position: relative;
+}
+
+.chapterDivider::before,
+.chapterDivider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.15;
+}
+
+.chapterDivider span {
+  padding: 0 16px;
+  font-size: 0.85rem;
+  opacity: 0.4;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+/* ==========================================
+   翻頁動畫（左右翻頁模式）
+   ========================================== */
+
+.slide-left {
+  animation: slideInFromRight 0.3s ease-out;
+}
+
+.slide-right {
+  animation: slideInFromLeft 0.3s ease-out;
+}
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInFromLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* disabled 按鈕狀態 */
+.navBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 目錄彈窗中的按鈕重置 */
+.tocItem {
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* 底部哨兵元素（自動載入觸發區） */
+.chapterSentinel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+  font-size: 0.9rem;
+  opacity: 0.5;
+}
+
+/* 已讀完所有章節的提示 */
+.readerEndMessage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 48px 0 40px;
+  opacity: 0.5;
+  font-size: 0.9rem;
+}
+
+/* ==========================================
+   TTS 語音朗讀面板與樣式
+   ========================================== */
+
+/* 正在朗讀的區塊高亮 */
+.ttsHighlight {
+  background-color: rgba(59, 130, 246, 0.2);
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+/* Header 喇叭按鈕播放中動畫 */
+.ttsBtnPlaying {
+  color: #3b82f6;
+  animation: pulseColor 2s infinite;
+}
+
+@keyframes pulseColor {
+  0% { color: inherit; opacity: 1; }
+  50% { color: #3b82f6; opacity: 0.6; }
+  100% { color: inherit; opacity: 1; }
+}
+
+/* 底部彈出面板 */
+.ttsDrawer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: var(--card-bg, #ffffff);
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  padding: 12px 24px 20px;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1000;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.ttsDrawerOpen {
+  transform: translateY(0);
+}
+
+.ttsControls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  margin-top: 8px;
+  margin-bottom: 12px;
+}
+
+.ttsIconBtn {
+  background: none;
+  border: none;
+  font-size: 2rem;
+  color: #d1d5db; /* 淺灰色，對齊截圖 */
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s, transform 0.2s;
+}
+
+.ttsIconBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ttsIconBtn:not(:disabled):hover {
+  color: #9ca3af;
+  transform: scale(1.05);
+}
+
+.ttsPlayBtn {
+  font-size: 3rem;
+  color: #3b82f6; /* 明亮的藍色 */
+}
+
+.ttsPlayBtn:not(:disabled):hover {
+  color: #2563eb;
+  transform: scale(1.05); /* 移除之前的誇張放大，改為穩定的微小放大 */
+}
+
+.ttsRateBtnPill {
+  background: none;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 9999px;
+  padding: 6px 16px;
+  font-size: 0.9rem;
+  color: #9ca3af;
+  cursor: pointer;
+  margin-left: 12px;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.ttsRateBtnPill:hover {
+  border-color: #cbd5e1;
+  color: #64748b;
+  background-color: #f8fafc;
+}
+
+.ttsProgress {
+  text-align: center;
+  font-size: 0.95rem;
+  color: #e5e7eb; /* 如果是在白底上，可能要稍微深一點，截圖看起來很淡 */
+  opacity: 0.8;
+  margin: 4px 0 12px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+/* 針對有時候淺色佈景的微調 */
+:global(.theme-light) .ttsProgress {
+  color: #d1d5db;
+}
+
+.ttsVoiceSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.ttsVoiceLabel {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.ttsVoiceSelect {
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid #f1f5f9;
+  background-color: #ffffff;
+  color: #9ca3af;
+  font-size: 0.9rem;
+  font-family: inherit;
+  outline: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  cursor: pointer;
+  appearance: none; /* 隱藏預設箭頭，讓畫面更乾淨 */
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%239ca3af%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px top 50%;
+  background-size: 10px auto;
+}
+
+.ttsVoiceSelect:hover,
+.ttsVoiceSelect:focus {
+  border-color: #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
 }

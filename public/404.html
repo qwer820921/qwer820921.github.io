@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>頁面載入中... | 萬事屋藏書閣</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: #f5f0e8;
+      color: #666;
+    }
+    .loader {
+      text-align: center;
+    }
+    .loader p {
+      font-size: 16px;
+      margin-top: 16px;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      margin: 0 auto;
+      border: 3px solid #e0d6c8;
+      border-top-color: #8b7355;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .not-found {
+      text-align: center;
+      margin-top: 40vh;
+    }
+    .not-found h1 {
+      font-size: 48px;
+      color: #333;
+      margin: 0;
+    }
+    .not-found p {
+      font-size: 16px;
+      color: #666;
+      margin-top: 8px;
+    }
+    .not-found a {
+      color: #8b7355;
+      margin-top: 16px;
+      display: inline-block;
+    }
+  </style>
+  <script>
+    (function () {
+      var path = window.location.pathname;
+
+      // 舊路由：/novels/reader/{bookId}/{chapterIndex} → 轉到新路由
+      var oldReaderMatch = path.match(/^\/novels\/reader\/([^/]+)\/(\d+)\/?$/);
+      if (oldReaderMatch) {
+        var bookId = oldReaderMatch[1];
+        var chapterIndex = oldReaderMatch[2];
+        window.location.replace('/novels/reader/' + bookId + '#' + chapterIndex);
+        return;
+      }
+
+      // 新路由：/novels/reader/{bookId}（新增書籍但尚未部署時）
+      var newReaderMatch = path.match(/^\/novels\/reader\/([^/]+)\/?$/);
+      if (newReaderMatch) {
+        // 暫存到 sessionStorage，redirect 到任一已存在的 reader 頁面
+        sessionStorage.setItem('spa-redirect-reader', JSON.stringify({
+          bookId: newReaderMatch[1],
+          originalPath: path + window.location.hash
+        }));
+        // redirect 到首頁（保底一定存在）
+        window.location.replace('/novels');
+        return;
+      }
+    })();
+  </script>
+</head>
+<body>
+  <div class="loader" id="loader">
+    <div class="spinner"></div>
+    <p>靈力運轉中，正在載入章節...</p>
+  </div>
+
+  <div class="not-found" id="not-found" style="display:none;">
+    <h1>404</h1>
+    <p>找不到此頁面</p>
+    <a href="/">返回首頁</a>
+  </div>
+
+  <script>
+    (function () {
+      var path = window.location.pathname;
+      var isReader = /^\/novels\/reader\//.test(path);
+      if (!isReader) {
+        document.getElementById('loader').style.display = 'none';
+        document.getElementById('not-found').style.display = 'block';
+      }
+    })();
+  </script>
+
+  <noscript>
+    <p style="text-align:center;">請啟用 JavaScript 以繼續瀏覽。</p>
+  </noscript>
+</body>
+</html>
