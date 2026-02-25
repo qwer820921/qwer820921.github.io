@@ -1286,14 +1286,14 @@
   bottom: 0;
   left: 0;
   right: 0;
-  background-color: var(--card-bg, #ffffff);
-  border-top-left-radius: 20px;
-  border-top-right-radius: 20px;
-  padding: 12px 24px 20px;
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
-  transform: translateY(100%);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 1000;
+  background-color: #ffffff;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.12);
+  padding: 8px 20px calc(20px + env(safe-area-inset-bottom));
+  transform: translateY(100%);
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
   max-width: 720px;
   margin: 0 auto;
 }
@@ -1414,4 +1414,34 @@
 .ttsVoiceSelect:focus {
   border-color: #e2e8f0;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+/* 深色主題適配 (TTS Player) */
+@media (prefers-color-scheme: dark) {
+  .ttsDrawer {
+    background-color: #1e293b;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
+  }
+  
+  .ttsVoiceSelect {
+    background-color: #0f172a;
+    border-color: #334155;
+    color: #cbd5e1;
+  }
+
+  .ttsVoiceSelect:hover,
+  .ttsVoiceSelect:focus {
+    border-color: #475569;
+  }
+  
+  .ttsRateBtnPill {
+    border-color: #475569;
+    color: #cbd5e1;
+  }
+  
+  .ttsRateBtnPill:hover {
+    border-color: #64748b;
+    color: #f1f5f9;
+    background-color: #334155;
+  }
 }

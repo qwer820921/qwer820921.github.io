@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
+import { PlayFill, PauseFill, MegaphoneFill } from "react-bootstrap-icons";
 import { useNovelStore } from "../../../store/novelStore";
 import { getStorage } from "../../../utils";
 import { ChapterContent, ReaderSettings } from "../../../types";
 import ReaderMenu from "../../../components/ReaderMenu";
-import TTSPlayer from "../../../components/TTSPlayer";
+import TTSPlayer, { TTSPlayerRef } from "../../../components/TTSPlayer";
 import styles from "../../../novels.module.css";
 import { DEFAULT_READER_SETTINGS, THEME_COLORS } from "@/app/novels/constants/themeConfig";
 
@@ -38,6 +39,7 @@ export default function ReaderPage({ bookId }: Props) {
   const chapterRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadingRef = useRef(false); // 防止重複觸發
+  const ttsPlayerRef = useRef<TTSPlayerRef>(null);
 
   const currentTheme = THEME_COLORS[settings.theme];
 
@@ -294,12 +296,23 @@ export default function ReaderPage({ bookId }: Props) {
         </Link>
         <span className={styles.readerHeaderTitle}>{visibleChapterTitle}</span>
         <div className={styles.readerHeaderRight}>
+          {/* 如果正在聽書 (即使暫停) 顯示一個快速控制按鈕 */}
+          {activeTTSIndex !== null && (
+            <button 
+              className={styles.readerSettingsBtn} 
+              onClick={() => ttsPlayerRef.current?.togglePlay()} 
+              aria-label={isTTSPlaying ? "暫停朗讀" : "繼續朗讀"}
+            >
+              {isTTSPlaying ? <PauseFill size={22} color="#ef4444" /> : <PlayFill size={22} color="#3b82f6" />}
+            </button>
+          )}
+
           <button 
             className={`${styles.readerSettingsBtn} ${isTTSPlaying ? styles.ttsBtnPlaying : ""}`} 
             onClick={() => setIsTTSOpen(true)} 
-            aria-label="語音朗讀"
+            aria-label="語音設定"
           >
-            🔊
+            <MegaphoneFill size={18} />
           </button>
           <button className={styles.readerSettingsBtn} onClick={() => setIsTocOpen(true)} aria-label="開啟目錄">
             ☰
@@ -438,6 +451,7 @@ export default function ReaderPage({ bookId }: Props) {
 
       {/* TTS 語音朗讀彈窗 */}
       <TTSPlayer
+        ref={ttsPlayerRef}
         isOpen={isTTSOpen}
         onClose={() => setIsTTSOpen(false)}
         paragraphs={ttsParagraphs}

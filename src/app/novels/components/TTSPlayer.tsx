@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
 import { SkipBackwardFill, PlayFill, PauseFill, SkipForwardFill } from "react-bootstrap-icons";
 import styles from "../novels.module.css";
+
+export interface TTSPlayerRef {
+  togglePlay: () => void;
+}
 
 interface TTSPlayerProps {
   isOpen: boolean;
@@ -15,13 +19,13 @@ interface TTSPlayerProps {
   onPlayingChange: (isPlaying: boolean) => void;
 }
 
-export default function TTSPlayer({
+const TTSPlayer = forwardRef<TTSPlayerRef, TTSPlayerProps>(({
   isOpen,
   onClose,
   paragraphs,
   onParagraphChange,
   onPlayingChange,
-}: TTSPlayerProps) {
+}: TTSPlayerProps, ref) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [rate, setRate] = useState(1.0);
@@ -256,6 +260,11 @@ export default function TTSPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rate, isPlaying, currentIndex, paragraphs, selectedVoiceURI, voices]);
 
+  // 把 togglePlay 暴露給外部，方便在 Header 快速操作
+  useImperativeHandle(ref, () => ({
+    togglePlay
+  }), [togglePlay]);
+
   return (
     <>
       {/* 背景遮罩 */}
@@ -335,4 +344,6 @@ export default function TTSPlayer({
       </div>
     </>
   );
-}
+});
+
+export default TTSPlayer;
