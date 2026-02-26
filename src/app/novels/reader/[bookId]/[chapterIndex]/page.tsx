@@ -10,7 +10,7 @@ export async function generateStaticParams() {
     const allParams: { bookId: string; chapterIndex: string }[] = [];
 
     for (const novel of libraryRes.data) {
-      const chaptersRes = await getChaptersData(novel.id);
+      const chaptersRes = await getChaptersData(String(novel.id));
       if (chaptersRes.success && chaptersRes.data) {
         for (const chapter of chaptersRes.data) {
           allParams.push({

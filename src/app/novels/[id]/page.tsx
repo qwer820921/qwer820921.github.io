@@ -24,7 +24,7 @@ export async function generateMetadata({ params }: PageProps) {
     const { id } = await params;
     // 💡 因為我們在 api 層有設定 Next.js 快取，這裡呼叫不會造成 GAS 負擔
     const res = await getLibraryData();
-    const novel = res.data?.find((n) => n.id === id);
+    const novel = res.data?.find((n) => String(n.id) === id);
 
     if (!novel) {
       return { title: "找不到該書籍 | 萬事屋藏書閣" };

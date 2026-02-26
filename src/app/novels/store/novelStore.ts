@@ -180,6 +180,6 @@ export const useNovelStore = create<NovelStore>((set, get) => ({
 
   // ── 從快取中找特定書籍 ──
   getNovelById: (bookId) => {
-    return get().novels.find((n) => n.id === bookId);
+    return get().novels.find((n) => String(n.id) === bookId);
   },
 }));
