@@ -8,7 +8,7 @@ export async function generateStaticParams() {
     if (!libraryRes.success || !libraryRes.data) return [];
 
     return libraryRes.data.map((novel) => ({
-      bookId: novel.id,
+      bookId: String(novel.id),
     }));
   } catch (error) {
     console.error("generateStaticParams failed:", error);

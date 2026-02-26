@@ -14,7 +14,7 @@ export async function generateStaticParams() {
       if (chaptersRes.success && chaptersRes.data) {
         for (const chapter of chaptersRes.data) {
           allParams.push({
-            bookId: novel.id,
+            bookId: String(novel.id),
             chapterIndex: String(chapter.chapter_index),
           });
         }

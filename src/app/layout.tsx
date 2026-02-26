@@ -1,9 +1,16 @@
 import "./globals.css";
 import "bootstrap/dist/css/bootstrap.min.css"; // Bootstrap 样式
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import ClientRoot from "./ClientRoot";
 import ChatWidget from "@/components/common/chatWidget";
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+  ],
+};
 
 // 將 metadata 移動到一個單獨的 server 組件中
 export const metadata: Metadata = {
@@ -16,10 +23,6 @@ export const metadata: Metadata = {
     "子yee 萬事屋是一個提供台股即時查詢、自選股管理、生活小工具與技術解決方案的多功能平台，讓您在投資與生活中更高效。",
   keywords:
     "子yee 萬事屋, 台股查詢, 自選股, 技術小工具, 股票資訊平台, 技術顧問, 自動化工具",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#000000" },
-  ],
   verification: {
     google: "adHIcDQiasHY4YzPlrpmSSPKl7Oj1WxrPJ_4GV4PQcM",
   },

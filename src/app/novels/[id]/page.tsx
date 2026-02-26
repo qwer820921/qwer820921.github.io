@@ -6,7 +6,7 @@ export async function generateStaticParams() {
   try {
     const res = await getLibraryData();
     if (res.success && res.data) {
-      return res.data.map((novel) => ({ id: novel.id }));
+      return res.data.map((novel) => ({ id: String(novel.id) }));
     }
   } catch (error) {
     console.error("generateStaticParams failed:", error);
