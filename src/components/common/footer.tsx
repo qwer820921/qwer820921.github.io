@@ -4,14 +4,15 @@ const Footer: React.FC = () => {
   return (
     <footer className="bg-dark text-white py-4">
       <div className="container text-center">
-        <p>
-          子yee 萬事屋是一個提供
-          <strong>台股即時查詢、自選股功能、技術小工具</strong>的平台。
+        <p className="mb-3">
+          <strong>子yee 萬事屋</strong> — 什麼委託都接，什麼技術都練
         </p>
-        <p>&copy; 2025 子yee 萬事屋 - 保留所有權利</p>
-        <p>
-          聯繫我們（暫無開放） |{" "}
-          <a href="/protected" className="text-white">
+        <p className="mb-3" style={{ opacity: 0.75, fontSize: "0.9rem" }}>
+          台股分析 · 技術筆記 · 小工具鍛造 · 遊戲開發
+        </p>
+        <p style={{ opacity: 0.6, fontSize: "0.85rem" }}>
+          &copy; 2024 – {new Date().getFullYear()} 子yee 萬事屋 |{" "}
+          <a href="/protected" className="text-white text-decoration-underline">
             隱私政策
           </a>
         </p>

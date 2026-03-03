@@ -4,6 +4,9 @@ import contentStyles from "../blogContent.module.css";
 import cardStyles from "./blogPost.module.css";
 import { Metadata } from "next";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import BackToListButton from "../components/BackToListButton";
 
 export async function generateMetadata({
@@ -86,7 +89,8 @@ export default async function Post({
                   source={postData.content}
                   options={{
                     mdxOptions: {
-                      remarkPlugins: [remarkGfm],
+                      remarkPlugins: [remarkGfm, remarkMath],
+                      rehypePlugins: [rehypeKatex],
                     },
                   }}
                 />
