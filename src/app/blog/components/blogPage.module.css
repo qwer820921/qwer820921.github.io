@@ -1,14 +1,22 @@
+/* Header row：標題 + 放大鏡 */
+.pageTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid rgba(102, 126, 234, 0.2);
+}
+
 /* 頁面標題 */
 .pageTitle {
   font-size: 1.75rem;
   font-weight: 700;
   color: #1a1a1a;
-  margin-bottom: 2rem;
+  margin-bottom: 0;
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 2px solid rgba(102, 126, 234, 0.2);
 }
 
 .titleIcon {
@@ -184,4 +192,274 @@
 
 .postCard:nth-child(9) {
   animation-delay: 0.9s;
+}
+
+/* =============================================
+   搜尋面板相關樣式
+   ============================================= */
+
+/* 放大鏡錨點容器（相對定位，讓面板可以 absolute 對齊） */
+.searchAnchor {
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* 放大鏡按鈕 */
+.searchIconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    transform 0.15s ease;
+  color: #667eea;
+}
+
+.searchIconBtn:hover {
+  background: rgba(102, 126, 234, 0.12);
+  transform: scale(1.1);
+}
+
+.searchIconBtnActive {
+  background: rgba(102, 126, 234, 0.15);
+}
+
+/* 透明遮罩：點擊外部關閉面板 */
+.panelBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+/* 浮動搜尋面板 */
+.searchPanel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 100;
+  width: 300px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 16px;
+  box-shadow:
+    0 8px 32px rgba(102, 126, 234, 0.18),
+    0 2px 8px rgba(0, 0, 0, 0.08);
+  padding: 1rem;
+  /* 預設隱藏 */
+  opacity: 0;
+  transform: translateY(-8px) scale(0.97);
+  pointer-events: none;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.searchPanelOpen {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+/* 小三角箭頭（指向放大鏡） */
+.panelArrow {
+  position: absolute;
+  top: -7px;
+  right: 0.65rem;
+  width: 14px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.95);
+  border-top: 1px solid rgba(102, 126, 234, 0.2);
+  border-left: 1px solid rgba(102, 126, 234, 0.2);
+  transform: rotate(45deg);
+  border-radius: 2px 0 0 0;
+}
+
+/* 搜尋輸入列 */
+.panelSearchRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(102, 126, 234, 0.06);
+  border: 1px solid rgba(102, 126, 234, 0.15);
+  border-radius: 10px;
+  padding: 0.4rem 0.75rem;
+  transition: border-color 0.2s ease;
+}
+
+.panelSearchRow:focus-within {
+  border-color: rgba(102, 126, 234, 0.5);
+  background: rgba(102, 126, 234, 0.08);
+}
+
+.panelSearchIcon {
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.panelInput {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 0.9rem;
+  color: #1a1a1a;
+  min-width: 0;
+}
+
+.panelInput::placeholder {
+  color: #aaa;
+}
+
+.panelClearBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #999;
+  font-size: 0.75rem;
+  padding: 0;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.panelClearBtn:hover {
+  color: #667eea;
+}
+
+/* 分隔線 */
+.panelDivider {
+  height: 1px;
+  background: rgba(102, 126, 234, 0.12);
+  margin: 0.75rem 0;
+}
+
+/* 標籤篩選區 */
+.panelTagSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.panelTagHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panelTagLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.panelClearTagsBtn {
+  background: none;
+  border: none;
+  font-size: 0.75rem;
+  color: #667eea;
+  cursor: pointer;
+  padding: 0;
+  transition: opacity 0.15s ease;
+}
+
+.panelClearTagsBtn:hover {
+  opacity: 0.7;
+}
+
+.panelTagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.panelTag {
+  background: rgba(102, 126, 234, 0.08);
+  color: #667eea;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.65rem;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.panelTag:hover {
+  background: rgba(102, 126, 234, 0.15);
+  transform: translateY(-1px);
+}
+
+.panelTagActive {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-color: transparent;
+}
+
+.panelTagActive:hover {
+  background: linear-gradient(135deg, #5a73d7 0%, #6a4292 100%);
+}
+
+/* 結果計數 */
+.panelResultCount {
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  color: #888;
+  text-align: right;
+  border-top: 1px solid rgba(102, 126, 234, 0.1);
+  padding-top: 0.6rem;
+}
+
+.panelResultCount strong {
+  color: #667eea;
+}
+
+/* 空結果狀態 */
+.noResultWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+  animation: fadeInUp 0.5s ease-out;
+}
+
+.noResultIcon {
+  font-size: 3.5rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.noResultTitle {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #444;
+  margin-bottom: 0.5rem;
+}
+
+.noResultHint {
+  font-size: 0.95rem;
+  color: #667eea;
+  margin-bottom: 0.25rem;
+}
+
+.noResultSub {
+  font-size: 0.875rem;
+  color: #aaa;
+  margin-top: 0.5rem;
 }

@@ -26,7 +26,7 @@ export function getSortedPostsData(): Omit<BlogPost, "content">[] {
     // Combine the data with the id
     return {
       slug,
-      ...(matterResult.data as { date: string; title: string }),
+      ...(matterResult.data as Omit<BlogPost, "slug" | "content">),
     };
   });
 

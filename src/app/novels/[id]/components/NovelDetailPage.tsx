@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useNovelStore } from "../../store/novelStore";
+import { useReadingStore } from "../../store/readingStore";
 import { getStorage, setStorage, fixDriveCoverUrl } from "../../utils";
 import { Novel, ChapterSummary } from "../../types";
 import BottomTabs from "../../components/BottomTabs";
@@ -19,10 +20,18 @@ export default function NovelDetailPage({ bookId }: Props) {
     fetchLibrary, fetchChapters, getNovelById,
   } = useNovelStore();
 
+  const { getProgress } = useReadingStore();
+
   const [isFavorite, setIsFavorite] = useState<boolean>(false);
   const [imgError, setImgError] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const novel = getNovelById(bookId);
+  const bookProgress = isClient ? getProgress(bookId) : null;
   const chapters = chaptersMap[bookId]?.data ?? [];
   const isLoading = (novelsLoading && !novel) || (chaptersLoading[bookId] && chapters.length === 0);
   const error = novelsError || chaptersError[bookId] || (!novelsLoading && !novel ? "找不到這本書的資料" : null);
@@ -98,6 +107,17 @@ export default function NovelDetailPage({ bookId }: Props) {
             <p>狀態：{novel.status}</p>
             <p>總字數：{novel.total_words.toLocaleString()} 字</p>
           </div>
+
+          {/* 單書專屬繼續閱讀 */}
+          {bookProgress && (
+            <Link
+              href={`/novels/reader/${bookId}/${bookProgress.chapterIndex}`}
+              className={styles.detailContinueReading}
+            >
+              上次閱讀：第 {bookProgress.chapterIndex} 章 · {bookProgress.chapterTitle} 
+              {bookProgress.scrollPercent > 0 && ` (${bookProgress.scrollPercent}%)`}
+            </Link>
+          )}
 
           {/* 收藏按鈕 */}
           <button

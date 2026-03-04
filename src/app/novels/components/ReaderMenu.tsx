@@ -1,8 +1,10 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { ReaderSettings } from "../types";
 import { setStorage } from "../utils";
 import { READER_OPTIONS, THEME_COLORS } from "../constants/themeConfig";
+import { useReadingStore } from "../store/readingStore";
 import styles from "../novels.module.css";
 
 interface ReaderMenuProps {
@@ -10,6 +12,10 @@ interface ReaderMenuProps {
   settings: ReaderSettings;
   onSettingsChange: (settings: ReaderSettings) => void;
   onClose: () => void;
+  bookId: string;
+  bookTitle: string;
+  chapterIndex: number;
+  chapterTitle: string;
 }
 
 export default function ReaderMenu({
@@ -17,12 +23,33 @@ export default function ReaderMenu({
   settings,
   onSettingsChange,
   onClose,
+  bookId,
+  bookTitle,
+  chapterIndex,
+  chapterTitle,
 }: ReaderMenuProps) {
+  const router = useRouter();
+  const { addBookmark, removeBookmark, getBookmarksByBook, hasBookmark } = useReadingStore();
+
+  const isBookmarked = hasBookmark(bookId, chapterIndex);
+  const bookmarks = getBookmarksByBook(bookId);
+
   // 更新設定：即時反映到閱讀器 + 存入 LocalStorage
   const updateSettings = (updates: Partial<ReaderSettings>) => {
     const newSettings = { ...settings, ...updates };
     onSettingsChange(newSettings);
     setStorage("SETTINGS", newSettings);
+  };
+
+  const toggleBookmark = () => {
+    if (isBookmarked) {
+      const existing = bookmarks.find(
+        (b) => b.chapterIndex === chapterIndex
+      );
+      if (existing) removeBookmark(existing.id);
+    } else {
+      addBookmark(bookId, bookTitle, chapterIndex, chapterTitle);
+    }
   };
 
   // 字級增減邏輯
@@ -138,6 +165,50 @@ export default function ReaderMenu({
               </button>
             ))}
           </div>
+        </div>
+
+        {/* ===== 書籤 ===== */}
+        <div className={styles.menuSection}>
+          <span className={styles.menuSectionLabel}>書籤</span>
+
+          {/* 加入/移除書籤 */}
+          <button
+            className={`${styles.bookmarkToggleBtn} ${isBookmarked ? styles.bookmarkToggleBtnActive : ""}`}
+            onClick={toggleBookmark}
+          >
+            {isBookmarked ? "✓ 已書籤 · 點擊移除" : "📌 加入書籤"}
+          </button>
+
+          {/* 此書的書籤列表 */}
+          {bookmarks.length > 0 && (
+            <div className={styles.bookmarkList}>
+              {bookmarks
+                .sort((a, b) => a.chapterIndex - b.chapterIndex)
+                .map((bm) => (
+                  <div
+                    key={bm.id}
+                    className={`${styles.bookmarkItem} ${bm.chapterIndex === chapterIndex ? styles.bookmarkItemCurrent : ""}`}
+                  >
+                    <button
+                      className={styles.bookmarkJumpBtn}
+                      onClick={() => {
+                        onClose();
+                        router.push(`/novels/reader/${bookId}/${bm.chapterIndex}`);
+                      }}
+                    >
+                      第 {bm.chapterIndex} 章 · {bm.chapterTitle}
+                    </button>
+                    <button
+                      className={styles.bookmarkRemoveBtn}
+                      onClick={() => removeBookmark(bm.id)}
+                      aria-label="移除書籤"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       </div>
     </>

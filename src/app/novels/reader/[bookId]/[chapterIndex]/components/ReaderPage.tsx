@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getChapterContentData } from "../../../../api/novelApi";
 import { useNovelStore } from "../../../../store/novelStore";
+import { useReadingStore } from "../../../../store/readingStore";
 import { getStorage } from "../../../../utils";
 import { ChapterContent, ReaderSettings } from "../../../../types";
 import ReaderMenu from "../../../../components/ReaderMenu";
@@ -18,7 +19,8 @@ interface Props {
 
 export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }: Props) {
   const router = useRouter();
-  const { chaptersMap, fetchChapters } = useNovelStore();
+  const { chaptersMap, fetchChapters, getNovelById } = useNovelStore();
+  const { saveProgress, addReadTime } = useReadingStore();
   const chapters = chaptersMap[bookId]?.data ?? [];
   const [chapter, setChapter] = useState<ChapterContent | null>(null);
   const [settings, setSettings] = useState<ReaderSettings>(DEFAULT_READER_SETTINGS);
@@ -28,17 +30,18 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
   const [isTocOpen, setIsTocOpen] = useState<boolean>(false);
 
   // SPA Fallback：從 sessionStorage 讀取真正的章節 index
-  // （當 404.html 暫存後 redirect 到第 1 章時，這裡會讀取並覆蓋）
   const [chapterIndex, setChapterIndex] = useState<number>(initialChapterIndex);
+
+  // 計時 ref
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const chapterRef = useRef<ChapterContent | null>(null);
 
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem('spa-redirect-chapter');
       if (!raw) return;
-
       sessionStorage.removeItem('spa-redirect-chapter');
       const data = JSON.parse(raw);
-
       if (data.bookId === bookId && data.chapterIndex !== initialChapterIndex) {
         setChapterIndex(data.chapterIndex);
         window.history.replaceState(null, '', data.originalPath);
@@ -62,11 +65,10 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
       try {
         setIsLoading(true);
         setError(null);
-        
         const response = await getChapterContentData(bookId, chapterIndex);
-        
         if (response.success && response.data) {
           setChapter(response.data);
+          chapterRef.current = response.data;
           window.scrollTo(0, 0);
         } else {
           setError("無法取得章節內容，可能是作者還沒發布喔！");
@@ -74,16 +76,83 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "章節載入失敗";
         setError(message);
-        console.error(err);
       } finally {
         setIsLoading(false);
       }
     };
-
     fetchChapter();
   }, [bookId, chapterIndex]);
 
-  // 載入章節目錄（用於目錄彈窗）— 從 store 取，有快取時瞬間載入
+  // 儲存閱讀進度（初始進入章節時）
+  // 只在「目前章節 >= 已存章節」時才覆蓋，避免其他分頁存的較新進度被蓋掉
+  useEffect(() => {
+    if (!chapter) return;
+    const novel = getNovelById(bookId);
+    const bookTitle = novel?.title || useReadingStore.getState().getProgress(bookId)?.bookTitle || bookId;
+    const existingProgress = useReadingStore.getState().getProgress(bookId);
+    // 若沒有紀錄，或者目前章節比較新或一樣，才存入
+    if (!existingProgress || chapterIndex >= existingProgress.chapterIndex) {
+      saveProgress(bookId, bookTitle, chapterIndex, chapter.chapter_title, 0);
+    }
+  }, [chapter, bookId, chapterIndex, saveProgress, getNovelById]);
+
+  // 滾動監聽：debounce 1s 更新 scrollPercent
+  useEffect(() => {
+    if (!chapter) return;
+    
+    let debounceId: ReturnType<typeof setTimeout>;
+
+    const handleScroll = () => {
+      clearTimeout(debounceId);
+      debounceId = setTimeout(() => {
+        const novel = getNovelById(bookId);
+        // 若書庫未準備好，嘗試從現有進度中取得，最後再 fallback 書號
+        const existingTitle = useReadingStore.getState().getProgress(bookId)?.bookTitle;
+        const bookTitle = novel?.title || existingTitle || bookId;
+
+        const scrolled = window.scrollY;
+        const total = document.documentElement.scrollHeight - window.innerHeight;
+        const percent = total > 0 ? Math.round((scrolled / total) * 100) : 0;
+        saveProgress(bookId, bookTitle, chapterIndex, chapter.chapter_title, percent);
+      }, 1000);
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      clearTimeout(debounceId);
+    };
+  }, [chapter, bookId, chapterIndex, saveProgress, getNovelById]);
+
+  // 計時器：累積閱讀時間 + 字數 (每 10 秒存一次，並且在離開時存檔)
+  useEffect(() => {
+    let lastSavedTime = Date.now();
+
+    timerRef.current = setInterval(() => {
+      const now = Date.now();
+      const seconds = Math.floor((now - lastSavedTime) / 1000);
+      if (seconds > 0) {
+        const wordCount = chapterRef.current?.word_count ?? 0;
+        // 計算這段時間內大致讀了多少字 (假設一分鐘讀 wordCount/10 字)
+        const wordsRead = wordCount > 0 ? Math.round((wordCount / 60) * (seconds / 10)) : 0;
+        addReadTime(seconds, wordsRead);
+        lastSavedTime = now;
+      }
+    }, 10_000); // 10秒存一次
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      const now = Date.now();
+      const seconds = Math.floor((now - lastSavedTime) / 1000);
+      if (seconds > 0) {
+        const wordCount = chapterRef.current?.word_count ?? 0;
+        const wordsRead = wordCount > 0 ? Math.round((wordCount / 60) * (seconds / 10)) : 0;
+        addReadTime(seconds, wordsRead);
+      }
+    };
+  }, [addReadTime]);
+
+  // 載入章節目錄
   useEffect(() => {
     fetchChapters(bookId);
   }, [bookId, fetchChapters]);
@@ -93,11 +162,9 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
     (e: React.MouseEvent<HTMLDivElement>) => {
       const target = e.target as HTMLElement;
       if (target.closest("a") || target.closest("button")) return;
-
       const rect = e.currentTarget.getBoundingClientRect();
       const clickY = e.clientY - rect.top;
       const sectionHeight = rect.height / 3;
-
       if (clickY > sectionHeight && clickY < sectionHeight * 2) {
         setIsMenuOpen((prev) => !prev);
       }
@@ -144,7 +211,7 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
 
   // 狀態 3: 渲染小說內容
   return (
-    <div 
+    <div
       className={styles.readerContainer}
       style={{
         backgroundColor: currentTheme.background,
@@ -219,7 +286,7 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
         </Link>
       </div>
 
-      {/* 目錄彈窗 (Bottom Drawer) */}
+      {/* 目錄彈窗 */}
       <>
         <div
           className={`${styles.menuOverlay} ${isTocOpen ? styles.menuOverlayVisible : ""}`}
@@ -249,12 +316,16 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
         </div>
       </>
 
-      {/* 閱讀設定彈窗 */}
+      {/* 閱讀設定彈窗（含書籤） */}
       <ReaderMenu
         isOpen={isMenuOpen}
         settings={settings}
         onSettingsChange={setSettings}
         onClose={() => setIsMenuOpen(false)}
+        bookId={bookId}
+        chapterIndex={chapterIndex}
+        chapterTitle={chapter.chapter_title}
+        bookTitle={getNovelById(bookId)?.title ?? bookId}
       />
     </div>
   );

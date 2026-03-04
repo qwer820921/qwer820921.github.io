@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import { PlayFill, PauseFill, MegaphoneFill } from "react-bootstrap-icons";
 import { useNovelStore } from "../../../store/novelStore";
+import { useReadingStore } from "../../../store/readingStore";
 import { getStorage } from "../../../utils";
 import { ChapterContent, ReaderSettings } from "../../../types";
 import ReaderMenu from "../../../components/ReaderMenu";
@@ -16,7 +17,8 @@ interface Props {
 }
 
 export default function ReaderPage({ bookId }: Props) {
-  const { chaptersMap, fetchChapters, fetchChapterContent } = useNovelStore();
+  const { chaptersMap, fetchChapters, fetchChapterContent, getNovelById } = useNovelStore();
+  const { saveProgress, addReadTime } = useReadingStore();
   const chapters = chaptersMap[bookId]?.data ?? [];
 
   const [loadedChapters, setLoadedChapters] = useState<ChapterContent[]>([]);
@@ -74,6 +76,13 @@ export default function ReaderPage({ bookId }: Props) {
       if (content) {
         setLoadedChapters([content]);
         setVisibleChapterTitle(content.chapter_title);
+        // 初始進入章節時存讀取進度（只在新章節 >= 舊章節時才覆蓋）
+        const existingProgress = useReadingStore.getState().getProgress(bookId);
+        const novel = getNovelById(bookId);
+        const bookTitle = novel?.title || existingProgress?.bookTitle || bookId;
+        if (!existingProgress || currentChapterIndex >= existingProgress.chapterIndex) {
+          saveProgress(bookId, bookTitle, currentChapterIndex, content.chapter_title, 0);
+        }
         // 預載下一章
         fetchChapterContent(bookId, currentChapterIndex + 1);
       } else {
@@ -86,44 +95,69 @@ export default function ReaderPage({ bookId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId, currentChapterIndex]);
 
-  // scroll 事件：追蹤目前可見的章節 → 更新標題 + URL hash
+  // scroll 事件：追蹤目前可見的章節 → 更新標題 + URL hash + 存比例
   useEffect(() => {
     let rafId: number;
+    let debounceId: ReturnType<typeof setTimeout>;
+    const headerOffset = 80;
 
     const handleScroll = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        const headerOffset = 80; // header 高度 + 一點緩衝
         let closestIdx: number | null = null;
         let closestTitle = "";
         let closestDistance = Infinity;
+        let activeEl: HTMLDivElement | null = null;
 
         chapterRefs.current.forEach((el, idx) => {
           const rect = el.getBoundingClientRect();
-          // 找出頂端最接近 header 下方的章節
           const distance = Math.abs(rect.top - headerOffset);
           if (rect.top <= headerOffset + 100 && distance < closestDistance) {
             closestDistance = distance;
             closestIdx = idx;
             closestTitle = el.getAttribute("data-chapter-title") || "";
+            activeEl = el;
           }
         });
 
-        // 如果沒有章節在 header 下方（可能在最頂端），就取第一個
+        // 如果沒有章節在 header 下方，取第一個
         if (closestIdx === null && chapterRefs.current.size > 0) {
           const firstEntry = Array.from(chapterRefs.current.entries())[0];
           if (firstEntry) {
             closestIdx = firstEntry[0];
             closestTitle = firstEntry[1].getAttribute("data-chapter-title") || "";
+            activeEl = firstEntry[1];
           }
         }
 
-        if (closestIdx !== null) {
+        if (closestIdx !== null && activeEl) {
+          // 1. 更新 URL Hash
           const currentHash = window.location.hash.replace("#", "");
           if (currentHash !== String(closestIdx)) {
             window.history.replaceState(null, "", `#${closestIdx}`);
           }
           setVisibleChapterTitle(closestTitle);
+
+          // 2. 計算比例並存檔 (Debounce 1s)
+          const el = activeEl as HTMLDivElement;
+          const rect = el.getBoundingClientRect();
+          // 計算在此章節內的捲動比例
+          // 頂端對齊時是 0%，底端對齊時是 100%
+          const scrolled = headerOffset - rect.top;
+          const totalHeight = rect.height;
+          const percent = Math.max(0, Math.min(100, Math.round((scrolled / totalHeight) * 100)));
+
+          clearTimeout(debounceId);
+          debounceId = setTimeout(() => {
+            const novel = getNovelById(bookId);
+            const existingProgress = useReadingStore.getState().getProgress(bookId);
+            const bookTitle = novel?.title || existingProgress?.bookTitle || bookId;
+            
+            // 只有當前章節 >= 存檔章節，或章節相同但比例不同時才更新
+            if (!existingProgress || closestIdx! > existingProgress.chapterIndex || (closestIdx === existingProgress.chapterIndex && percent !== existingProgress.scrollPercent)) {
+              saveProgress(bookId, bookTitle, closestIdx!, closestTitle, percent);
+            }
+          }, 1000);
         }
       });
     };
@@ -132,8 +166,9 @@ export default function ReaderPage({ bookId }: Props) {
     return () => {
       window.removeEventListener("scroll", handleScroll);
       cancelAnimationFrame(rafId);
+      clearTimeout(debounceId);
     };
-  }, [loadedChapters]);
+  }, [loadedChapters, bookId, saveProgress, getNovelById]);
 
   // 自動載入下一章：用 IntersectionObserver 觀察底部哨兵元素
   const loadNextChapter = useCallback(async () => {
@@ -447,6 +482,10 @@ export default function ReaderPage({ bookId }: Props) {
         settings={settings}
         onSettingsChange={setSettings}
         onClose={() => setIsMenuOpen(false)}
+        bookId={bookId}
+        bookTitle={getNovelById(bookId)?.title ?? bookId}
+        chapterIndex={currentChapterIndex}
+        chapterTitle={visibleChapterTitle}
       />
 
       {/* TTS 語音朗讀彈窗 */}

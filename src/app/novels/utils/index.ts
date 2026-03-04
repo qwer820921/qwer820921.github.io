@@ -6,6 +6,9 @@
 const KEYS = {
   SETTINGS: 'novel_reader_settings',
   COLLECTION: 'novel_my_collection',
+  PROGRESS: 'novel_reading_progress',
+  BOOKMARKS: 'novel_bookmarks',
+  READ_STATS: 'novel_read_stats',
 } as const;
 
 /**

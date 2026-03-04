@@ -51,3 +51,37 @@ export interface ReaderSettings {
   fontFamily: 'sans-serif' | 'serif';
   lineHeight: number;
 }
+
+// ==========================================
+// 6. 閱讀進度（以 bookId 為 key，存 LocalStorage）
+// ==========================================
+export interface ReadingProgress {
+  bookId: string;
+  bookTitle: string;
+  chapterIndex: number;
+  chapterTitle: string;
+  scrollPercent: number;    // 0~100
+  updatedAt: number;        // timestamp ms
+}
+
+// ==========================================
+// 7. 書籤
+// ==========================================
+export interface Bookmark {
+  id: string;               // Date.now().toString()
+  bookId: string;
+  bookTitle: string;
+  chapterIndex: number;
+  chapterTitle: string;
+  note?: string;
+  createdAt: number;
+}
+
+// ==========================================
+// 8. 每日閱讀統計
+// ==========================================
+export interface DailyReadStat {
+  date: string;             // 'YYYY-MM-DD'
+  totalSeconds: number;
+  totalWords: number;
+}

@@ -9,6 +9,368 @@
 .pageHeader {
   margin-bottom: 30px;
   text-align: center;
+  animation: fadeUp 0.8s ease-out forwards;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.headerTitleGradient {
+  margin: 0;
+  font-size: 2.5rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #8b5cf6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent; /* Fallback */
+  text-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+  transition: transform 0.3s ease, text-shadow 0.3s ease;
+}
+
+.headerTitleGradient:hover {
+  transform: scale(1.02);
+  text-shadow: 0 6px 16px rgba(59, 130, 246, 0.3);
+}
+
+.headerSubtitlePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 6px 16px;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 99px;
+  font-size: 0.9rem;
+  color: #475569;
+  font-weight: 500;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.headerSubtitlePill:hover {
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.pillIcon {
+  color: #8b5cf6;
+  font-size: 0.8rem;
+  opacity: 0.8;
+  animation: pulse 2s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.6; }
+}
+
+/* ==========================================
+   小說列表 Header (在 Grid 上方)
+   ========================================== */
+.sectionTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid rgba(59, 130, 246, 0.2);
+}
+
+.sectionTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sectionIcon {
+  font-size: 1.25rem;
+}
+
+/* ==========================================
+   搜尋面板相關樣式
+   ========================================== */
+
+/* 放大鏡錨點容器 */
+.searchAnchor {
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* 放大鏡按鈕 */
+.searchIconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    transform 0.15s ease;
+  color: #3b82f6;
+}
+
+.searchIconBtn:hover {
+  background: rgba(59, 130, 246, 0.12);
+  transform: scale(1.1);
+}
+
+.searchIconBtnActive {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+/* 透明遮罩 */
+.panelBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+/* 浮動搜尋面板 */
+.searchPanel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 100;
+  width: 300px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 16px;
+  box-shadow:
+    0 8px 32px rgba(59, 130, 246, 0.18),
+    0 2px 8px rgba(0, 0, 0, 0.08);
+  padding: 1rem;
+  opacity: 0;
+  transform: translateY(-8px) scale(0.97);
+  pointer-events: none;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.searchPanelOpen {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+/* 小三角箭頭 */
+.panelArrow {
+  position: absolute;
+  top: -7px;
+  right: 0.65rem;
+  width: 14px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.95);
+  border-top: 1px solid rgba(59, 130, 246, 0.2);
+  border-left: 1px solid rgba(59, 130, 246, 0.2);
+  transform: rotate(45deg);
+  border-radius: 2px 0 0 0;
+}
+
+/* 搜尋輸入列 */
+.panelSearchRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(59, 130, 246, 0.06);
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  border-radius: 10px;
+  padding: 0.4rem 0.75rem;
+  transition: border-color 0.2s ease;
+}
+
+.panelSearchRow:focus-within {
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.panelSearchIcon {
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.panelInput {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 0.9rem;
+  color: #1a1a1a;
+  min-width: 0;
+}
+
+.panelInput::placeholder {
+  color: #aaa;
+}
+
+.panelClearBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #999;
+  font-size: 0.75rem;
+  padding: 0;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.panelClearBtn:hover {
+  color: #3b82f6;
+}
+
+/* 分隔線 */
+.panelDivider {
+  height: 1px;
+  background: rgba(59, 130, 246, 0.12);
+  margin: 0.75rem 0;
+}
+
+/* 標籤篩選區 */
+.panelTagSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.panelTagHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panelTagLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.panelClearTagsBtn {
+  background: none;
+  border: none;
+  font-size: 0.75rem;
+  color: #3b82f6;
+  cursor: pointer;
+  padding: 0;
+  transition: opacity 0.15s ease;
+}
+
+.panelClearTagsBtn:hover {
+  opacity: 0.7;
+}
+
+.panelTagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.panelTag {
+  background: rgba(59, 130, 246, 0.08);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.65rem;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.panelTag:hover {
+  background: rgba(59, 130, 246, 0.15);
+  transform: translateY(-1px);
+}
+
+.panelTagActive {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border-color: transparent;
+}
+
+.panelTagActive:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+}
+
+/* 結果計數 */
+.panelResultCount {
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  color: #888;
+  text-align: right;
+  border-top: 1px solid rgba(59, 130, 246, 0.1);
+  padding-top: 0.6rem;
+}
+
+.panelResultCount strong {
+  color: #3b82f6;
+}
+
+/* 空結果狀態 */
+.noResultWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+  animation: fadeInUp 0.5s ease-out;
+}
+
+.noResultIcon {
+  font-size: 3.5rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.noResultTitle {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 0.5rem;
+}
+
+.noResultHint {
+  font-size: 0.95rem;
+  color: #3b82f6;
+  margin-bottom: 0.25rem;
+}
+
+.noResultSub {
+  font-size: 0.875rem;
+  color: #94a3b8;
+  margin-top: 0.5rem;
 }
 
 .novelGrid {
@@ -199,6 +561,31 @@
     font-size: 1.3rem;
     margin-bottom: 6px;
   }
+}
+
+/* 單書繼續閱讀連結 */
+.detailContinueReading {
+  display: block;
+  margin-top: 12px;
+  margin-bottom: 6px;
+  padding: 9px 16px;
+  border-radius: 8px;
+  background: #3b82f6;
+  color: #ffffff;
+  font-size: 0.88rem;
+  font-weight: 500;
+  text-decoration: none;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 0.2s ease, transform 0.1s ease;
+}
+.detailContinueReading:hover {
+  opacity: 0.88;
+}
+.detailContinueReading:active {
+  transform: translateY(1px);
 }
 
 /* 收藏按鈕 */
@@ -1444,4 +1831,231 @@
     color: #f1f5f9;
     background-color: #334155;
   }
+}
+
+/* ==========================================
+   書庫首頁 Header Dashboard
+   ========================================== */
+
+.headerTitleRow {
+  margin-bottom: 16px;
+}
+
+.headerSubtitle {
+  color: #64748b;
+  font-size: 0.95rem;
+  margin: 4px 0 0;
+}
+
+.headerDashboard {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 600px) {
+  .headerDashboard {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dashCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  text-decoration: none;
+  color: inherit;
+  min-width: 0;
+}
+
+.dashCardLink {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dashCardLink:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+  color: inherit;
+}
+
+.dashCardIcon {
+  font-size: 1.6rem;
+  flex-shrink: 0;
+}
+
+.dashCardBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.dashCardLabel {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.dashCardValue {
+  font-size: 0.9rem;
+  color: #1e293b;
+  line-height: 1.4;
+}
+
+.dashCardBig {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #3b82f6;
+}
+
+.dashCardUnit {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.dashCardSep {
+  color: #cbd5e1;
+}
+
+.dashCardEmpty {
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.dashCardBookTitle {
+  font-weight: 700;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashCardChapter {
+  display: block;
+  font-size: 0.8rem;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashCardArrow {
+  color: #94a3b8;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+/* ==========================================
+   書籤 (ReaderMenu 書籤區塊)
+   ========================================== */
+
+.bookmarkToggleBtn {
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1.5px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s ease;
+  margin-bottom: 12px;
+}
+
+.bookmarkToggleBtn:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background-color: #eff6ff;
+}
+
+.bookmarkToggleBtnActive {
+  background-color: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+.bookmarkToggleBtnActive:hover {
+  background-color: #fde68a;
+  border-color: #d97706;
+}
+
+.bookmarkList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.bookmarkItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
+}
+
+.bookmarkItemCurrent {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.bookmarkJumpBtn {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: none;
+  font-size: 0.85rem;
+  color: #334155;
+  cursor: pointer;
+  padding: 0;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookmarkJumpBtn:hover {
+  color: #3b82f6;
+}
+
+.bookmarkRemoveBtn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 0.2s, background 0.2s;
+}
+
+.bookmarkRemoveBtn:hover {
+  color: #ef4444;
+  background: #fee2e2;
+}
+
+/* ==========================================
+   NovelCard 閱讀進度標籤
+   ========================================== */
+
+.continueBadge {
+  display: block;
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  color: #3b82f6;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
