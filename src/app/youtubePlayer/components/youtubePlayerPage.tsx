@@ -73,6 +73,7 @@ export default function YouTubePlayerPage() {
   const [lyrics, setLyrics] = useState("載入中…");
   // 播放狀態
   const [isPlaying, setIsPlaying] = useState(false);
+  const [userInteracted, setUserInteracted] = useState(false); // 新增：追蹤使用者是否已互動
   // 快進/快退秒數
   const [seekStep, setSeekStep] = useState(5);
 
@@ -107,6 +108,18 @@ export default function YouTubePlayerPage() {
     }
   }, [autoPlayed, list, index]);
 
+  // 監聽互動狀態，一旦互動就取消播放器靜音
+  useEffect(() => {
+    if (userInteracted && ready) {
+      const p = playerRef.current?.internalPlayer;
+      if (p) {
+        p.unMute();
+        p.setVolume(volume);
+        p.playVideo();
+      }
+    }
+  }, [userInteracted, ready, volume]);
+
   /****************** Scrobble ***************/
   const scrobble = (event: "play" | "skip" | "complete", vid: string) => {
     fetch("/api/scrobble", {
@@ -123,7 +136,11 @@ export default function YouTubePlayerPage() {
     setTitle(data.title);
     setReady(true);
     setDuration(await p.getDuration());
-    // 不再自動播放第一首，避免每次切歌都跳回第一首
+    
+    // 如果使用者已經互動過，或是我們設定了靜音，就嘗試播放
+    if (userInteracted) {
+      p.playVideo();
+    }
   };
   const onStateChange: YouTubeProps["onStateChange"] = (e) => {
     if (list.length === 0) return;
@@ -200,6 +217,10 @@ export default function YouTubePlayerPage() {
   const toggle = async () => {
     const p = playerRef.current?.internalPlayer;
     if (!p) return;
+    
+    // 使用者點擊切換時，標記為已互動
+    if (!userInteracted) setUserInteracted(true);
+
     const state = await p.getPlayerState();
     if (state === 1) {
       p.pauseVideo();
@@ -343,11 +364,30 @@ export default function YouTubePlayerPage() {
             opts={{
               height: "0",
               width: "0",
-              playerVars: { controls: 0, autoplay: 1 },
+              playerVars: { 
+                controls: 0, 
+                autoplay: 1,
+                mute: 1 // 預設靜音以確保能自動播放
+              },
             }}
             onReady={onReady}
             onStateChange={onStateChange}
           />
+        )}
+
+        {!userInteracted && list.length > 0 && (
+          <div className="alert alert-info py-2 mb-2 d-flex align-items-center justify-content-between">
+            <span className="small">點擊播放以開啟聲音（瀏覽器限制）</span>
+            <button 
+              className="btn btn-sm btn-primary"
+              onClick={() => {
+                setUserInteracted(true);
+                playerRef.current?.internalPlayer.playVideo();
+              }}
+            >
+              點我開啟
+            </button>
+          </div>
         )}
 
         {/* Cover & Share */}

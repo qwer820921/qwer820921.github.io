@@ -2,7 +2,7 @@ import axios from "axios";
 import { YtMusicTrack } from "../types";
 
 export const BASE_URL =
-  "https://script.google.com/macros/s/AKfycbxcLkgz3QAxjKR7Goy2Poq3aQQ5pLs4BXRHKgIfbi1ULlxrANdIGuNszLRRNUh8TrrF/exec";
+  "https://script.google.com/macros/s/AKfycbz7coBmsnYL7r6mHJQR6g9H6jnpuTL-qwj9TtUNiBts0FsNtyDwAhWJ7jualkAiyA00/exec";
 
 /**
  * ✅ 取得某個使用者的播放清單
