@@ -15,11 +15,16 @@ const PREVIEW_TEXT =
   "道可道，非常道；名可名，非常名。無名天地之始，有名萬物之母。故常無欲以觀其妙，常有欲以觀其徼。此兩者同出而異名，同謂之玄，玄之又玄，眾妙之門。";
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<ReaderSettings>(DEFAULT_READER_SETTINGS);
+  const [settings, setSettings] = useState<ReaderSettings>(
+    DEFAULT_READER_SETTINGS
+  );
 
   // 初始化：從 LocalStorage 讀取設定
   useEffect(() => {
-    const savedSettings = getStorage<ReaderSettings>("SETTINGS", DEFAULT_READER_SETTINGS);
+    const savedSettings = getStorage<ReaderSettings>(
+      "SETTINGS",
+      DEFAULT_READER_SETTINGS
+    );
     setSettings(savedSettings);
   }, []);
 
@@ -77,7 +82,10 @@ export default function SettingsPage() {
               >
                 <span
                   className={styles.themeCircle}
-                  style={{ backgroundColor: colors.background, color: colors.text }}
+                  style={{
+                    backgroundColor: colors.background,
+                    color: colors.text,
+                  }}
                 >
                   Aa
                 </span>

@@ -59,7 +59,9 @@ export default function CollectionPage() {
 
       <div className={styles.novelGrid}>
         {collectedNovels.length > 0 ? (
-          collectedNovels.map((novel) => <NovelCard key={novel.id} novel={novel} />)
+          collectedNovels.map((novel) => (
+            <NovelCard key={novel.id} novel={novel} />
+          ))
         ) : (
           <p className={styles.emptyState}>
             書櫃空空的，快去藏書閣挑幾本喜歡的作品吧！

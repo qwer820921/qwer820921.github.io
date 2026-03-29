@@ -136,7 +136,7 @@ export default function YouTubePlayerPage() {
     setTitle(data.title);
     setReady(true);
     setDuration(await p.getDuration());
-    
+
     // 如果使用者已經互動過，或是我們設定了靜音，就嘗試播放
     if (userInteracted) {
       p.playVideo();
@@ -217,7 +217,7 @@ export default function YouTubePlayerPage() {
   const toggle = async () => {
     const p = playerRef.current?.internalPlayer;
     if (!p) return;
-    
+
     // 使用者點擊切換時，標記為已互動
     if (!userInteracted) setUserInteracted(true);
 
@@ -364,10 +364,10 @@ export default function YouTubePlayerPage() {
             opts={{
               height: "0",
               width: "0",
-              playerVars: { 
-                controls: 0, 
+              playerVars: {
+                controls: 0,
                 autoplay: 1,
-                mute: 1 // 預設靜音以確保能自動播放
+                mute: 1, // 預設靜音以確保能自動播放
               },
             }}
             onReady={onReady}
@@ -378,7 +378,7 @@ export default function YouTubePlayerPage() {
         {!userInteracted && list.length > 0 && (
           <div className="alert alert-info py-2 mb-2 d-flex align-items-center justify-content-between">
             <span className="small">點擊播放以開啟聲音（瀏覽器限制）</span>
-            <button 
+            <button
               className="btn btn-sm btn-primary"
               onClick={() => {
                 setUserInteracted(true);

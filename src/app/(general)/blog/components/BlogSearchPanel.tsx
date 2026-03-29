@@ -53,9 +53,7 @@ export default function BlogSearchPanel({
   return (
     <>
       {/* 透明遮罩：點擊外部關閉 */}
-      {isOpen && (
-        <div className={styles.panelBackdrop} onClick={onClose} />
-      )}
+      {isOpen && <div className={styles.panelBackdrop} onClick={onClose} />}
 
       {/* 浮動面板 */}
       <div
@@ -97,7 +95,10 @@ export default function BlogSearchPanel({
             <div className={styles.panelTagHeader}>
               <span className={styles.panelTagLabel}>標籤篩選</span>
               {selectedTags.length > 0 && (
-                <button className={styles.panelClearTagsBtn} onClick={onClearAll}>
+                <button
+                  className={styles.panelClearTagsBtn}
+                  onClick={onClearAll}
+                >
                   清除全部
                 </button>
               )}

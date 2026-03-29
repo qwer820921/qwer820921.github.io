@@ -3,7 +3,8 @@ import { ApiResponse, Novel, ChapterSummary, ChapterContent } from "../types";
 
 // Google Apps Script Web App URL
 // 建議未來可移至環境變數 process.env.NEXT_PUBLIC_GAS_NOVEL_API
-export const BASE_URL = "https://script.google.com/macros/s/AKfycbyXrD_ddpu_Z9w-DeUroC4mniQrwKsHdCQWbaE3o2dDlwSvHVB3fLapwepgA3dFaDfi4Q/exec";
+export const BASE_URL =
+  "https://script.google.com/macros/s/AKfycbyXrD_ddpu_Z9w-DeUroC4mniQrwKsHdCQWbaE3o2dDlwSvHVB3fLapwepgA3dFaDfi4Q/exec";
 
 /**
  * 獲取所有書籍資料（圖書館首頁用）
@@ -14,15 +15,17 @@ export const BASE_URL = "https://script.google.com/macros/s/AKfycbyXrD_ddpu_Z9w-
 export const getLibraryData = async (): Promise<ApiResponse<Novel[]>> => {
   try {
     const response = await axios.get(`${BASE_URL}?action=getLibrary`);
-    
+
     // 確認響應格式與成功狀態
     if (!response.data || typeof response.data.success !== "boolean") {
       throw new Error("Unexpected response format: Expected success boolean");
     }
     if (response.data.success && !Array.isArray(response.data.data)) {
-      throw new Error("Unexpected response format: Expected data to be an array");
+      throw new Error(
+        "Unexpected response format: Expected data to be an array"
+      );
     }
-    
+
     return response.data as ApiResponse<Novel[]>;
   } catch (error) {
     console.error("Error fetching library data:", error);
@@ -37,21 +40,27 @@ export const getLibraryData = async (): Promise<ApiResponse<Novel[]>> => {
  * @returns {Promise<ApiResponse<ChapterSummary[]>>} 包含章節目錄資料的響應物件
  * @throws {Error} 如果 bookId 無效或請求失敗
  */
-export const getChaptersData = async (bookId: string): Promise<ApiResponse<ChapterSummary[]>> => {
+export const getChaptersData = async (
+  bookId: string
+): Promise<ApiResponse<ChapterSummary[]>> => {
   try {
     // 驗證必填欄位
     if (!bookId || typeof bookId !== "string") {
       throw new Error("Book ID is required and must be a string");
     }
 
-    const response = await axios.get(`${BASE_URL}?action=getChapters&bookId=${bookId}`);
-    
+    const response = await axios.get(
+      `${BASE_URL}?action=getChapters&bookId=${bookId}`
+    );
+
     // 確認響應格式與成功狀態
     if (!response.data || typeof response.data.success !== "boolean") {
       throw new Error("Unexpected response format: Expected success boolean");
     }
     if (response.data.success && !Array.isArray(response.data.data)) {
-      throw new Error("Unexpected response format: Expected data to be an array");
+      throw new Error(
+        "Unexpected response format: Expected data to be an array"
+      );
     }
 
     return response.data as ApiResponse<ChapterSummary[]>;
@@ -90,7 +99,7 @@ export const getChapterContentData = async (
     if (!response.data || typeof response.data.success !== "boolean") {
       throw new Error("Unexpected response format: Expected success boolean");
     }
-    
+
     // 內容取得失敗時 (例如查無此章節)，拋出錯誤交由前端 UI 處理
     if (!response.data.success) {
       throw new Error(response.data.error || "Failed to fetch chapter content");
@@ -98,7 +107,10 @@ export const getChapterContentData = async (
 
     return response.data as ApiResponse<ChapterContent>;
   } catch (error) {
-    console.error(`Error fetching content for book ${bookId}, chapter ${chapterIndex}:`, error);
+    console.error(
+      `Error fetching content for book ${bookId}, chapter ${chapterIndex}:`,
+      error
+    );
     throw error;
   }
 };

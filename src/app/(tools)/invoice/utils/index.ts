@@ -2,14 +2,16 @@ import { LotteryPeriod, CheckResult } from "../types";
 
 /**
  * 解析電子發票 QR Code 內容
- * 
+ *
  * 格式範例：
  * - 舊版：AA123456781121015BBBB... (10碼號碼 + 7碼日期)
  * - 規格：發票號碼(10), 開獎日期(7), 隨機碼(4), 銷售額(8), 總額(8), 買方(8), 賣方(8), 加密(24)
- * 
+ *
  * @param decodedText 掃描得到的字串
  */
-export function parseInvoiceQRCode(decodedText: string): { number: string; period: string } | null {
+export function parseInvoiceQRCode(
+  decodedText: string
+): { number: string; period: string } | null {
   if (!decodedText || decodedText.length < 17) return null;
 
   // 取前 10 碼為發票號碼 (例如 AA12345678)
@@ -42,17 +44,20 @@ export function parseInvoiceQRCode(decodedText: string): { number: string; perio
 
 /**
  * 全面檢查發票號碼是否中獎
- * 
+ *
  * @param number 8 點發票號碼
  * @param periodData 該期開獎號碼資料
  */
-export function fullCheck(number: string, periodData: LotteryPeriod): CheckResult {
+export function fullCheck(
+  number: string,
+  periodData: LotteryPeriod
+): CheckResult {
   // 1. 檢查特別獎 (8碼)
   if (number === periodData.specialPrize) {
     return {
       isWinner: true,
       prize: { name: "特別獎", amount: 10000000, matchType: "8" },
-      matchedNumber: number
+      matchedNumber: number,
     };
   }
 
@@ -61,7 +66,7 @@ export function fullCheck(number: string, periodData: LotteryPeriod): CheckResul
     return {
       isWinner: true,
       prize: { name: "特獎", amount: 2000000, matchType: "8" },
-      matchedNumber: number
+      matchedNumber: number,
     };
   }
 
@@ -69,27 +74,51 @@ export function fullCheck(number: string, periodData: LotteryPeriod): CheckResul
   for (const winningNum of periodData.firstPrize) {
     // 8 碼全中
     if (number === winningNum) {
-      return { isWinner: true, prize: { name: "頭獎", amount: 200000, matchType: "8" }, matchedNumber: number };
+      return {
+        isWinner: true,
+        prize: { name: "頭獎", amount: 200000, matchType: "8" },
+        matchedNumber: number,
+      };
     }
     // 末 7 碼
     if (number.substring(1) === winningNum.substring(1)) {
-      return { isWinner: true, prize: { name: "二獎", amount: 40000, matchType: "7" }, matchedNumber: winningNum.substring(1) };
+      return {
+        isWinner: true,
+        prize: { name: "二獎", amount: 40000, matchType: "7" },
+        matchedNumber: winningNum.substring(1),
+      };
     }
     // 末 6 碼
     if (number.substring(2) === winningNum.substring(2)) {
-      return { isWinner: true, prize: { name: "三獎", amount: 10000, matchType: "6" }, matchedNumber: winningNum.substring(2) };
+      return {
+        isWinner: true,
+        prize: { name: "三獎", amount: 10000, matchType: "6" },
+        matchedNumber: winningNum.substring(2),
+      };
     }
     // 末 5 碼
     if (number.substring(3) === winningNum.substring(3)) {
-      return { isWinner: true, prize: { name: "四獎", amount: 4000, matchType: "5" }, matchedNumber: winningNum.substring(3) };
+      return {
+        isWinner: true,
+        prize: { name: "四獎", amount: 4000, matchType: "5" },
+        matchedNumber: winningNum.substring(3),
+      };
     }
     // 末 4 碼
     if (number.substring(4) === winningNum.substring(4)) {
-      return { isWinner: true, prize: { name: "五獎", amount: 1000, matchType: "4" }, matchedNumber: winningNum.substring(4) };
+      return {
+        isWinner: true,
+        prize: { name: "五獎", amount: 1000, matchType: "4" },
+        matchedNumber: winningNum.substring(4),
+      };
     }
     // 末 3 碼
     if (number.substring(5) === winningNum.substring(5)) {
-      return { isWinner: true, prize: { name: "六獎", amount: 200, matchType: "3" }, matchedNumber: winningNum.substring(5) };
+      return {
+        isWinner: true,
+        prize: { name: "六獎", amount: 200, matchType: "3" },
+        matchedNumber: winningNum.substring(5),
+      };
     }
   }
 
@@ -97,7 +126,11 @@ export function fullCheck(number: string, periodData: LotteryPeriod): CheckResul
   if (periodData.additionalSixth && periodData.additionalSixth.length > 0) {
     for (const addNum of periodData.additionalSixth) {
       if (number.substring(5) === addNum) {
-        return { isWinner: true, prize: { name: "增開六獎", amount: 200, matchType: "3" }, matchedNumber: addNum };
+        return {
+          isWinner: true,
+          prize: { name: "增開六獎", amount: 200, matchType: "3" },
+          matchedNumber: addNum,
+        };
       }
     }
   }
@@ -107,11 +140,14 @@ export function fullCheck(number: string, periodData: LotteryPeriod): CheckResul
 
 /**
  * 快速檢查末三碼是否可能中獎 (用於鍵盤輸入)
- * 
+ *
  * @param lastThree 輸入的 3 位數
  * @param periodData 該期開獎號碼資料
  */
-export function quickCheckLastThree(lastThree: string, periodData: LotteryPeriod): { possible: boolean; matches: string[] } {
+export function quickCheckLastThree(
+  lastThree: string,
+  periodData: LotteryPeriod
+): { possible: boolean; matches: string[] } {
   const matches: string[] = [];
 
   // 比對特別獎
@@ -127,7 +163,9 @@ export function quickCheckLastThree(lastThree: string, periodData: LotteryPeriod
   // 比對頭獎
   for (const num of periodData.firstPrize) {
     if (num.endsWith(lastThree)) {
-      matches.push(`頭獎/分獎 (末3碼相同: ${num.substring(0, 5)}...${lastThree})`);
+      matches.push(
+        `頭獎/分獎 (末3碼相同: ${num.substring(0, 5)}...${lastThree})`
+      );
     }
   }
 
@@ -142,7 +180,6 @@ export function quickCheckLastThree(lastThree: string, periodData: LotteryPeriod
 
   return {
     possible: matches.length > 0,
-    matches
+    matches,
   };
 }
-

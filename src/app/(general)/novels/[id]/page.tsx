@@ -36,7 +36,13 @@ export async function generateMetadata({ params }: PageProps) {
       openGraph: {
         title: novel.title,
         description: novel.summary,
-        images: [{ url: novel.cover_url || "https://qwer820921.github.io/images/img14.jpg" }],
+        images: [
+          {
+            url:
+              novel.cover_url ||
+              "https://qwer820921.github.io/images/img14.jpg",
+          },
+        ],
       },
     };
   } catch (error) {

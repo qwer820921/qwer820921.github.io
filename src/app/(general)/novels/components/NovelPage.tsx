@@ -28,9 +28,10 @@ export default function NovelsPage() {
   const lastRead = getLastRead();
 
   // 格式化分鐘 (不到 1 分鐘也算 1 分鐘)
-  const readMinutes = todayStats.totalSeconds > 0 
-    ? Math.max(1, Math.floor(todayStats.totalSeconds / 60)) 
-    : 0;
+  const readMinutes =
+    todayStats.totalSeconds > 0
+      ? Math.max(1, Math.floor(todayStats.totalSeconds / 60))
+      : 0;
   // 格式化字數
   const readWords =
     todayStats.totalWords >= 10000
@@ -92,7 +93,10 @@ export default function NovelsPage() {
         <div className={styles.errorState}>
           <h2>讀取失敗</h2>
           <p>{novelsError}</p>
-          <button onClick={() => fetchLibrary(true)} className={styles.retryBtn}>
+          <button
+            onClick={() => fetchLibrary(true)}
+            className={styles.retryBtn}
+          >
             重新嘗試
           </button>
         </div>
@@ -123,7 +127,9 @@ export default function NovelsPage() {
                       <span className={styles.dashCardUnit}> 字</span>
                     </>
                   ) : (
-                    <span className={styles.dashCardEmpty}>今天還沒開始閱讀</span>
+                    <span className={styles.dashCardEmpty}>
+                      今天還沒開始閱讀
+                    </span>
                   )
                 ) : (
                   <span className={styles.dashCardEmpty}>載入中...</span>
@@ -142,7 +148,9 @@ export default function NovelsPage() {
               <div className={styles.dashCardBody}>
                 <div className={styles.dashCardLabel}>繼續閱讀</div>
                 <div className={styles.dashCardValue}>
-                  <span className={styles.dashCardBookTitle}>{lastRead.bookTitle}</span>
+                  <span className={styles.dashCardBookTitle}>
+                    {lastRead.bookTitle}
+                  </span>
                   <span className={styles.dashCardChapter}>
                     　第 {lastRead.chapterIndex} 章 · {lastRead.chapterTitle}
                   </span>
@@ -160,7 +168,7 @@ export default function NovelsPage() {
           <span className={styles.sectionIcon}>📚</span>
           萬事屋藏書閣
         </h2>
-        
+
         {/* 搜尋下拉選單觸發按鈕 */}
         <div className={styles.searchAnchor}>
           <button
@@ -187,7 +195,9 @@ export default function NovelsPage() {
 
       {/* 小說列表 */}
       {novels.length === 0 ? (
-        <div className={styles.emptyState}>目前藏書閣還沒有收錄任何作品喔！</div>
+        <div className={styles.emptyState}>
+          目前藏書閣還沒有收錄任何作品喔！
+        </div>
       ) : filteredNovels.length === 0 ? (
         <NovelNoResult searchText={searchText} selectedTags={selectedTags} />
       ) : (

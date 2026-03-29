@@ -15,9 +15,15 @@ interface Props {
 
 export default function NovelDetailPage({ bookId }: Props) {
   const {
-    novels, novelsLoading, novelsError,
-    chaptersMap, chaptersLoading, chaptersError,
-    fetchLibrary, fetchChapters, getNovelById,
+    novels,
+    novelsLoading,
+    novelsError,
+    chaptersMap,
+    chaptersLoading,
+    chaptersError,
+    fetchLibrary,
+    fetchChapters,
+    getNovelById,
   } = useNovelStore();
 
   const { getProgress } = useReadingStore();
@@ -33,8 +39,13 @@ export default function NovelDetailPage({ bookId }: Props) {
   const novel = getNovelById(bookId);
   const bookProgress = isClient ? getProgress(bookId) : null;
   const chapters = chaptersMap[bookId]?.data ?? [];
-  const isLoading = (novelsLoading && !novel) || (chaptersLoading[bookId] && chapters.length === 0);
-  const error = novelsError || chaptersError[bookId] || (!novelsLoading && !novel ? "找不到這本書的資料" : null);
+  const isLoading =
+    (novelsLoading && !novel) ||
+    (chaptersLoading[bookId] && chapters.length === 0);
+  const error =
+    novelsError ||
+    chaptersError[bookId] ||
+    (!novelsLoading && !novel ? "找不到這本書的資料" : null);
 
   // 載入書本資料 & 章節目錄
   useEffect(() => {
@@ -59,18 +70,20 @@ export default function NovelDetailPage({ bookId }: Props) {
     setIsFavorite(!isFavorite);
   }, [bookId, isFavorite]);
 
-  if (isLoading) return (
-    <div className={styles.pageContainer}>
-      <div className={styles.loadingState}>正在整理書頁...</div>
-      <BottomTabs />
-    </div>
-  );
-  if (error || !novel) return (
-    <div className={styles.pageContainer}>
-      <div className={styles.errorState}>{error}</div>
-      <BottomTabs />
-    </div>
-  );
+  if (isLoading)
+    return (
+      <div className={styles.pageContainer}>
+        <div className={styles.loadingState}>正在整理書頁...</div>
+        <BottomTabs />
+      </div>
+    );
+  if (error || !novel)
+    return (
+      <div className={styles.pageContainer}>
+        <div className={styles.errorState}>{error}</div>
+        <BottomTabs />
+      </div>
+    );
 
   return (
     <div className={styles.pageContainer}>
@@ -89,10 +102,7 @@ export default function NovelDetailPage({ bookId }: Props) {
               onError={() => setImgError(true)}
             />
           ) : (
-            <img
-              src="/images/no_cover_5.png"
-              alt={novel.title}
-            />
+            <img src="/images/no_cover_5.png" alt={novel.title} />
           )}
         </div>
         <div className={styles.detailInfo}>
@@ -100,7 +110,9 @@ export default function NovelDetailPage({ bookId }: Props) {
           <p className={styles.authorName}>作者：{novel.author}</p>
           <div className={styles.tagsContainer}>
             {novel.tags.map((tag, idx) => (
-              <span key={idx} className={styles.tag}>{tag}</span>
+              <span key={idx} className={styles.tag}>
+                {tag}
+              </span>
             ))}
           </div>
           <div className={styles.metaData}>
@@ -114,8 +126,10 @@ export default function NovelDetailPage({ bookId }: Props) {
               href={`/novels/reader/${bookId}/${bookProgress.chapterIndex}`}
               className={styles.detailContinueReading}
             >
-              上次閱讀：第 {bookProgress.chapterIndex} 章 · {bookProgress.chapterTitle} 
-              {bookProgress.scrollPercent > 0 && ` (${bookProgress.scrollPercent}%)`}
+              上次閱讀：第 {bookProgress.chapterIndex} 章 ·{" "}
+              {bookProgress.chapterTitle}
+              {bookProgress.scrollPercent > 0 &&
+                ` (${bookProgress.scrollPercent}%)`}
             </Link>
           )}
 
@@ -150,12 +164,18 @@ export default function NovelDetailPage({ bookId }: Props) {
                 href={`/novels/reader/${bookId}#${chapter.chapter_index}`}
                 className={styles.chapterItem}
               >
-                <span className={styles.chapterTitle}>第 {chapter.chapter_index} 章　{chapter.chapter_title}</span>
-                <span className={styles.chapterDate}>{chapter.publish_date}</span>
+                <span className={styles.chapterTitle}>
+                  第 {chapter.chapter_index} 章　{chapter.chapter_title}
+                </span>
+                <span className={styles.chapterDate}>
+                  {chapter.publish_date}
+                </span>
               </Link>
             ))
           ) : (
-            <p className={styles.emptyState}>作者還在努力碼字中，尚未發布任何章節。</p>
+            <p className={styles.emptyState}>
+              作者還在努力碼字中，尚未發布任何章節。
+            </p>
           )}
         </div>
       </div>

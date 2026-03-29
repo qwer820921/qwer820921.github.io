@@ -29,7 +29,8 @@ export default function ReaderMenu({
   chapterTitle,
 }: ReaderMenuProps) {
   const router = useRouter();
-  const { addBookmark, removeBookmark, getBookmarksByBook, hasBookmark } = useReadingStore();
+  const { addBookmark, removeBookmark, getBookmarksByBook, hasBookmark } =
+    useReadingStore();
 
   const isBookmarked = hasBookmark(bookId, chapterIndex);
   const bookmarks = getBookmarksByBook(bookId);
@@ -43,9 +44,7 @@ export default function ReaderMenu({
 
   const toggleBookmark = () => {
     if (isBookmarked) {
-      const existing = bookmarks.find(
-        (b) => b.chapterIndex === chapterIndex
-      );
+      const existing = bookmarks.find((b) => b.chapterIndex === chapterIndex);
       if (existing) removeBookmark(existing.id);
     } else {
       addBookmark(bookId, bookTitle, chapterIndex, chapterTitle);
@@ -193,7 +192,9 @@ export default function ReaderMenu({
                       className={styles.bookmarkJumpBtn}
                       onClick={() => {
                         onClose();
-                        router.push(`/novels/reader/${bookId}/${bm.chapterIndex}`);
+                        router.push(
+                          `/novels/reader/${bookId}/${bm.chapterIndex}`
+                        );
                       }}
                     >
                       第 {bm.chapterIndex} 章 · {bm.chapterTitle}

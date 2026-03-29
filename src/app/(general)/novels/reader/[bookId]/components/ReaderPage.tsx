@@ -10,14 +10,18 @@ import { ChapterContent, ReaderSettings } from "../../../types";
 import ReaderMenu from "../../../components/ReaderMenu";
 import TTSPlayer, { TTSPlayerRef } from "../../../components/TTSPlayer";
 import styles from "../../../novels.module.css";
-import { DEFAULT_READER_SETTINGS, THEME_COLORS } from "@/app/(general)/novels/constants/themeConfig";
+import {
+  DEFAULT_READER_SETTINGS,
+  THEME_COLORS,
+} from "@/app/(general)/novels/constants/themeConfig";
 
 interface Props {
   bookId: string;
 }
 
 export default function ReaderPage({ bookId }: Props) {
-  const { chaptersMap, fetchChapters, fetchChapterContent, getNovelById } = useNovelStore();
+  const { chaptersMap, fetchChapters, fetchChapterContent, getNovelById } =
+    useNovelStore();
   const { saveProgress, addReadTime } = useReadingStore();
   const chapters = chaptersMap[bookId]?.data ?? [];
 
@@ -28,10 +32,12 @@ export default function ReaderPage({ bookId }: Props) {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [noMoreChapters, setNoMoreChapters] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [settings, setSettings] = useState<ReaderSettings>(DEFAULT_READER_SETTINGS);
+  const [settings, setSettings] = useState<ReaderSettings>(
+    DEFAULT_READER_SETTINGS
+  );
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isTocOpen, setIsTocOpen] = useState(false);
-  
+
   // TTS State
   const [isTTSOpen, setIsTTSOpen] = useState(false);
   const [isTTSPlaying, setIsTTSPlaying] = useState(false);
@@ -56,7 +62,10 @@ export default function ReaderPage({ bookId }: Props) {
 
   // 載入閱讀設定
   useEffect(() => {
-    const savedSettings = getStorage<ReaderSettings>("SETTINGS", DEFAULT_READER_SETTINGS);
+    const savedSettings = getStorage<ReaderSettings>(
+      "SETTINGS",
+      DEFAULT_READER_SETTINGS
+    );
     setSettings(savedSettings);
   }, []);
 
@@ -80,8 +89,17 @@ export default function ReaderPage({ bookId }: Props) {
         const existingProgress = useReadingStore.getState().getProgress(bookId);
         const novel = getNovelById(bookId);
         const bookTitle = novel?.title || existingProgress?.bookTitle || bookId;
-        if (!existingProgress || currentChapterIndex >= existingProgress.chapterIndex) {
-          saveProgress(bookId, bookTitle, currentChapterIndex, content.chapter_title, 0);
+        if (
+          !existingProgress ||
+          currentChapterIndex >= existingProgress.chapterIndex
+        ) {
+          saveProgress(
+            bookId,
+            bookTitle,
+            currentChapterIndex,
+            content.chapter_title,
+            0
+          );
         }
         // 預載下一章
         fetchChapterContent(bookId, currentChapterIndex + 1);
@@ -125,7 +143,8 @@ export default function ReaderPage({ bookId }: Props) {
           const firstEntry = Array.from(chapterRefs.current.entries())[0];
           if (firstEntry) {
             closestIdx = firstEntry[0];
-            closestTitle = firstEntry[1].getAttribute("data-chapter-title") || "";
+            closestTitle =
+              firstEntry[1].getAttribute("data-chapter-title") || "";
             activeEl = firstEntry[1];
           }
         }
@@ -145,17 +164,34 @@ export default function ReaderPage({ bookId }: Props) {
           // 頂端對齊時是 0%，底端對齊時是 100%
           const scrolled = headerOffset - rect.top;
           const totalHeight = rect.height;
-          const percent = Math.max(0, Math.min(100, Math.round((scrolled / totalHeight) * 100)));
+          const percent = Math.max(
+            0,
+            Math.min(100, Math.round((scrolled / totalHeight) * 100))
+          );
 
           clearTimeout(debounceId);
           debounceId = setTimeout(() => {
             const novel = getNovelById(bookId);
-            const existingProgress = useReadingStore.getState().getProgress(bookId);
-            const bookTitle = novel?.title || existingProgress?.bookTitle || bookId;
-            
+            const existingProgress = useReadingStore
+              .getState()
+              .getProgress(bookId);
+            const bookTitle =
+              novel?.title || existingProgress?.bookTitle || bookId;
+
             // 只有當前章節 >= 存檔章節，或章節相同但比例不同時才更新
-            if (!existingProgress || closestIdx! > existingProgress.chapterIndex || (closestIdx === existingProgress.chapterIndex && percent !== existingProgress.scrollPercent)) {
-              saveProgress(bookId, bookTitle, closestIdx!, closestTitle, percent);
+            if (
+              !existingProgress ||
+              closestIdx! > existingProgress.chapterIndex ||
+              (closestIdx === existingProgress.chapterIndex &&
+                percent !== existingProgress.scrollPercent)
+            ) {
+              saveProgress(
+                bookId,
+                bookTitle,
+                closestIdx!,
+                closestTitle,
+                percent
+              );
             }
           }, 1000);
         }
@@ -264,8 +300,11 @@ export default function ReaderPage({ bookId }: Props) {
 
   // 彈窗開啟時鎖定 body 滾動
   useEffect(() => {
-    document.body.style.overflow = (isMenuOpen || isTocOpen || isTTSOpen) ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
+    document.body.style.overflow =
+      isMenuOpen || isTocOpen || isTTSOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [isMenuOpen, isTocOpen, isTTSOpen]);
 
   // TTS 播放進度改變時，自動滾動到該段落
@@ -280,21 +319,26 @@ export default function ReaderPage({ bookId }: Props) {
         const absoluteY = window.scrollY + rect.top;
         window.scrollTo({
           top: absoluteY - offset,
-          behavior: "smooth"
+          behavior: "smooth",
         });
       }
     }
   }, [activeTTSIndex]);
 
   // 設定章節 ref
-  const setChapterRef = useCallback((index: number, el: HTMLDivElement | null) => {
-    if (el) chapterRefs.current.set(index, el);
-    else chapterRefs.current.delete(index);
-  }, []);
+  const setChapterRef = useCallback(
+    (index: number, el: HTMLDivElement | null) => {
+      if (el) chapterRefs.current.set(index, el);
+      else chapterRefs.current.delete(index);
+    },
+    []
+  );
 
   // ── 狀態 1: 載入中 ──
   if (isLoadingInitial) {
-    return <div className={styles.readerLoading}>靈力運轉中，正在載入章節...</div>;
+    return (
+      <div className={styles.readerLoading}>靈力運轉中，正在載入章節...</div>
+    );
   }
 
   // ── 狀態 2: 錯誤 ──
@@ -304,7 +348,10 @@ export default function ReaderPage({ bookId }: Props) {
         <h2>前方沒有路了</h2>
         <p>{error}</p>
         <div className={styles.readerNavButtons}>
-          <button onClick={() => window.location.href = `/novels/${bookId}`} className={styles.navBtn}>
+          <button
+            onClick={() => (window.location.href = `/novels/${bookId}`)}
+            className={styles.navBtn}
+          >
             返回目錄
           </button>
         </div>
@@ -333,26 +380,38 @@ export default function ReaderPage({ bookId }: Props) {
         <div className={styles.readerHeaderRight}>
           {/* 如果正在聽書 (即使暫停) 顯示一個快速控制按鈕 */}
           {activeTTSIndex !== null && (
-            <button 
-              className={styles.readerSettingsBtn} 
-              onClick={() => ttsPlayerRef.current?.togglePlay()} 
+            <button
+              className={styles.readerSettingsBtn}
+              onClick={() => ttsPlayerRef.current?.togglePlay()}
               aria-label={isTTSPlaying ? "暫停朗讀" : "繼續朗讀"}
             >
-              {isTTSPlaying ? <PauseFill size={22} color="#ef4444" /> : <PlayFill size={22} color="#3b82f6" />}
+              {isTTSPlaying ? (
+                <PauseFill size={22} color="#ef4444" />
+              ) : (
+                <PlayFill size={22} color="#3b82f6" />
+              )}
             </button>
           )}
 
-          <button 
-            className={`${styles.readerSettingsBtn} ${isTTSPlaying ? styles.ttsBtnPlaying : ""}`} 
-            onClick={() => setIsTTSOpen(true)} 
+          <button
+            className={`${styles.readerSettingsBtn} ${isTTSPlaying ? styles.ttsBtnPlaying : ""}`}
+            onClick={() => setIsTTSOpen(true)}
             aria-label="語音設定"
           >
             <MegaphoneFill size={18} />
           </button>
-          <button className={styles.readerSettingsBtn} onClick={() => setIsTocOpen(true)} aria-label="開啟目錄">
+          <button
+            className={styles.readerSettingsBtn}
+            onClick={() => setIsTocOpen(true)}
+            aria-label="開啟目錄"
+          >
             ☰
           </button>
-          <button className={styles.readerSettingsBtn} onClick={() => setIsMenuOpen(true)} aria-label="開啟閱讀設定">
+          <button
+            className={styles.readerSettingsBtn}
+            onClick={() => setIsMenuOpen(true)}
+            aria-label="開啟閱讀設定"
+          >
             Aa
           </button>
         </div>
@@ -361,7 +420,7 @@ export default function ReaderPage({ bookId }: Props) {
       {/* 多章連續渲染 (包含 TTS 高亮邏輯) */}
       {(() => {
         let globalTTSIdx = 0;
-        
+
         return loadedChapters.map((ch, idx) => {
           const titleIdx = globalTTSIdx++;
           const lines = ch.content.split("\n");
@@ -379,26 +438,34 @@ export default function ReaderPage({ bookId }: Props) {
                   <span>— 第 {ch.chapter_index} 章 —</span>
                 </div>
               )}
-              <h1 
+              <h1
                 id={`tts-node-${titleIdx}`}
                 className={`${styles.readerTitle} ${activeTTSIndex === titleIdx ? styles.ttsHighlight : ""}`}
               >
                 {ch.chapter_title}
               </h1>
               <p className={styles.readerMeta}>
-                字數：{ch.word_count.toLocaleString()} 字 | 發布於：{ch.publish_date}
+                字數：{ch.word_count.toLocaleString()} 字 | 發布於：
+                {ch.publish_date}
               </p>
               <div className={styles.readerContent}>
                 {lines.map((line, i) => {
                   if (!line.trim()) {
-                    return <span key={i}>{line}{"\n"}</span>;
+                    return (
+                      <span key={i}>
+                        {line}
+                        {"\n"}
+                      </span>
+                    );
                   }
                   const lineIdx = globalTTSIdx++;
                   return (
                     <span
                       key={i}
                       id={`tts-node-${lineIdx}`}
-                      className={activeTTSIndex === lineIdx ? styles.ttsHighlight : ""}
+                      className={
+                        activeTTSIndex === lineIdx ? styles.ttsHighlight : ""
+                      }
                     >
                       {line}
                       {"\n"}
@@ -406,18 +473,19 @@ export default function ReaderPage({ bookId }: Props) {
                   );
                 })}
               </div>
-              {ch.author_note && (() => {
-                const noteIdx = globalTTSIdx++;
-                return (
-                  <div 
-                    id={`tts-node-${noteIdx}`}
-                    className={`${styles.authorNoteBox} ${activeTTSIndex === noteIdx ? styles.ttsHighlight : ""}`}
-                  >
-                    <strong>作者有話說：</strong>
-                    <p>{ch.author_note}</p>
-                  </div>
-                );
-              })()}
+              {ch.author_note &&
+                (() => {
+                  const noteIdx = globalTTSIdx++;
+                  return (
+                    <div
+                      id={`tts-node-${noteIdx}`}
+                      className={`${styles.authorNoteBox} ${activeTTSIndex === noteIdx ? styles.ttsHighlight : ""}`}
+                    >
+                      <strong>作者有話說：</strong>
+                      <p>{ch.author_note}</p>
+                    </div>
+                  );
+                })()}
             </div>
           );
         });
@@ -449,8 +517,13 @@ export default function ReaderPage({ bookId }: Props) {
           className={`${styles.menuOverlay} ${isTocOpen ? styles.menuOverlayVisible : ""}`}
           onClick={() => setIsTocOpen(false)}
         />
-        <div className={`${styles.tocDrawer} ${isTocOpen ? styles.tocDrawerOpen : ""}`}>
-          <div className={styles.menuHandle} onClick={() => setIsTocOpen(false)}>
+        <div
+          className={`${styles.tocDrawer} ${isTocOpen ? styles.tocDrawerOpen : ""}`}
+        >
+          <div
+            className={styles.menuHandle}
+            onClick={() => setIsTocOpen(false)}
+          >
             <span className={styles.menuHandleBar} />
           </div>
           <div className={styles.tocHeader}>
@@ -462,13 +535,17 @@ export default function ReaderPage({ bookId }: Props) {
               <button
                 key={ch.chapter_index}
                 className={`${styles.tocItem} ${
-                  loadedChapters.some((lc) => lc.chapter_index === ch.chapter_index)
+                  loadedChapters.some(
+                    (lc) => lc.chapter_index === ch.chapter_index
+                  )
                     ? styles.tocItemActive
                     : ""
                 }`}
                 onClick={() => jumpToChapter(ch.chapter_index)}
               >
-                <span>第 {ch.chapter_index} 章　{ch.chapter_title}</span>
+                <span>
+                  第 {ch.chapter_index} 章　{ch.chapter_title}
+                </span>
                 <span className={styles.tocItemDate}>{ch.publish_date}</span>
               </button>
             ))}

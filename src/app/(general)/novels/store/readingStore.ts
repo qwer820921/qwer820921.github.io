@@ -6,16 +6,16 @@ import { ReadingProgress, Bookmark, DailyReadStat } from "../types";
 const todayStr = (): string => {
   const d = new Date();
   const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
 
 interface ReadingStore {
   // ── 狀態 ──
-  progressMap: Record<string, ReadingProgress>;  // key: bookId
+  progressMap: Record<string, ReadingProgress>; // key: bookId
   bookmarks: Bookmark[];
-  stats: DailyReadStat[];                        // 最近 30 天
+  stats: DailyReadStat[]; // 最近 30 天
 
   // ── 閱讀進度 ──
   saveProgress: (
@@ -26,7 +26,7 @@ interface ReadingStore {
     scrollPercent: number
   ) => void;
   getProgress: (bookId: string) => ReadingProgress | null;
-  getLastRead: () => ReadingProgress | null;   // 最近閱讀的一本書
+  getLastRead: () => ReadingProgress | null; // 最近閱讀的一本書
 
   // ── 書籤 ──
   addBookmark: (
@@ -49,8 +49,7 @@ interface ReadingStore {
 const initProgressMap = (): Record<string, ReadingProgress> =>
   getStorage<Record<string, ReadingProgress>>("PROGRESS", {});
 
-const initBookmarks = (): Bookmark[] =>
-  getStorage<Bookmark[]>("BOOKMARKS", []);
+const initBookmarks = (): Bookmark[] => getStorage<Bookmark[]>("BOOKMARKS", []);
 
 const initStats = (): DailyReadStat[] =>
   getStorage<DailyReadStat[]>("READ_STATS", []);
@@ -61,7 +60,13 @@ export const useReadingStore = create<ReadingStore>((set, get) => ({
   stats: initStats(),
 
   // ── 儲存閱讀進度 ──
-  saveProgress: (bookId, bookTitle, chapterIndex, chapterTitle, scrollPercent) => {
+  saveProgress: (
+    bookId,
+    bookTitle,
+    chapterIndex,
+    chapterTitle,
+    scrollPercent
+  ) => {
     const entry: ReadingProgress = {
       bookId,
       bookTitle,
@@ -72,7 +77,10 @@ export const useReadingStore = create<ReadingStore>((set, get) => ({
     };
     set(() => {
       // 每次存擋前先從 localStorage 讀取最新狀態，避免不同分頁的 Zustand 狀態互相覆蓋
-      const latest = getStorage<Record<string, ReadingProgress>>("PROGRESS", {});
+      const latest = getStorage<Record<string, ReadingProgress>>(
+        "PROGRESS",
+        {}
+      );
       const next = { ...latest, [bookId]: entry };
       setStorage("PROGRESS", next);
       return { progressMap: next };
@@ -138,10 +146,10 @@ export const useReadingStore = create<ReadingStore>((set, get) => ({
       if (existing) {
         nextStats = currentStats.map((st) =>
           st.date === today
-            ? { 
-                ...st, 
-                totalSeconds: (Number(st.totalSeconds) || 0) + validSeconds, 
-                totalWords: (Number(st.totalWords) || 0) + validWords 
+            ? {
+                ...st,
+                totalSeconds: (Number(st.totalSeconds) || 0) + validSeconds,
+                totalWords: (Number(st.totalWords) || 0) + validWords,
               }
             : st
         );
@@ -151,18 +159,18 @@ export const useReadingStore = create<ReadingStore>((set, get) => ({
           { date: today, totalSeconds: validSeconds, totalWords: validWords },
         ];
       }
-      
+
       // 只保留最近 30 天
       nextStats = nextStats
         .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, 30);
-        
+
       try {
         setStorage("READ_STATS", nextStats);
       } catch (e) {
         console.error("Failed to save READ_STATS", e);
       }
-      
+
       return { stats: nextStats };
     });
   },

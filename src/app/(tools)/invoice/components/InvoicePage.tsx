@@ -29,7 +29,12 @@ const InvoicePage: React.FC = () => {
           <Tab eventKey="keypad" title="⌨️ 快速對獎">
             <KeypadInput />
           </Tab>
-          <Tab eventKey="scan" title="📷 掃描對獎" mountOnEnter={true} unmountOnExit={true}>
+          <Tab
+            eventKey="scan"
+            title="📷 掃描對獎"
+            mountOnEnter={true}
+            unmountOnExit={true}
+          >
             <QrScanner />
           </Tab>
         </Tabs>

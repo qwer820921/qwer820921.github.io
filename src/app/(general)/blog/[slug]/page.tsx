@@ -1,4 +1,7 @@
-import { getAllPostSlugs, getPostData } from "@/app/(general)/blog/services/blogService";
+import {
+  getAllPostSlugs,
+  getPostData,
+} from "@/app/(general)/blog/services/blogService";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import contentStyles from "../blogContent.module.css";
 import cardStyles from "./blogPost.module.css";

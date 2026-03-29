@@ -4,11 +4,11 @@
 
 // --- LocalStorage 鍵名定義 ---
 const KEYS = {
-  SETTINGS: 'novel_reader_settings',
-  COLLECTION: 'novel_my_collection',
-  PROGRESS: 'novel_reading_progress',
-  BOOKMARKS: 'novel_bookmarks',
-  READ_STATS: 'novel_read_stats',
+  SETTINGS: "novel_reader_settings",
+  COLLECTION: "novel_my_collection",
+  PROGRESS: "novel_reading_progress",
+  BOOKMARKS: "novel_bookmarks",
+  READ_STATS: "novel_read_stats",
 } as const;
 
 /**
@@ -17,7 +17,7 @@ const KEYS = {
  * 包含 Next.js SSR 環境判斷
  */
 export const getStorage = <T>(key: keyof typeof KEYS, defaultValue: T): T => {
-  if (typeof window === 'undefined') return defaultValue;
+  if (typeof window === "undefined") return defaultValue;
   try {
     const data = localStorage.getItem(KEYS[key]);
     return data ? JSON.parse(data) : defaultValue;
@@ -31,7 +31,7 @@ export const getStorage = <T>(key: keyof typeof KEYS, defaultValue: T): T => {
  * 寫入 LocalStorage 設定
  */
 export const setStorage = <T>(key: keyof typeof KEYS, value: T): void => {
-  if (typeof window !== 'undefined') {
+  if (typeof window !== "undefined") {
     try {
       localStorage.setItem(KEYS[key], JSON.stringify(value));
     } catch (error) {

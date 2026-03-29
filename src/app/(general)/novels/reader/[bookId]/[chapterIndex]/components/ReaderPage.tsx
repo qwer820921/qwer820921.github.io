@@ -10,20 +10,28 @@ import { getStorage } from "../../../../utils";
 import { ChapterContent, ReaderSettings } from "../../../../types";
 import ReaderMenu from "../../../../components/ReaderMenu";
 import styles from "../../../../novels.module.css";
-import { DEFAULT_READER_SETTINGS, THEME_COLORS } from "@/app/(general)/novels/constants/themeConfig";
+import {
+  DEFAULT_READER_SETTINGS,
+  THEME_COLORS,
+} from "@/app/(general)/novels/constants/themeConfig";
 
 interface Props {
   bookId: string;
   chapterIndex: number;
 }
 
-export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }: Props) {
+export default function ReaderPage({
+  bookId,
+  chapterIndex: initialChapterIndex,
+}: Props) {
   const router = useRouter();
   const { chaptersMap, fetchChapters, getNovelById } = useNovelStore();
   const { saveProgress, addReadTime } = useReadingStore();
   const chapters = chaptersMap[bookId]?.data ?? [];
   const [chapter, setChapter] = useState<ChapterContent | null>(null);
-  const [settings, setSettings] = useState<ReaderSettings>(DEFAULT_READER_SETTINGS);
+  const [settings, setSettings] = useState<ReaderSettings>(
+    DEFAULT_READER_SETTINGS
+  );
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
@@ -38,13 +46,13 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
 
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem('spa-redirect-chapter');
+      const raw = sessionStorage.getItem("spa-redirect-chapter");
       if (!raw) return;
-      sessionStorage.removeItem('spa-redirect-chapter');
+      sessionStorage.removeItem("spa-redirect-chapter");
       const data = JSON.parse(raw);
       if (data.bookId === bookId && data.chapterIndex !== initialChapterIndex) {
         setChapterIndex(data.chapterIndex);
-        window.history.replaceState(null, '', data.originalPath);
+        window.history.replaceState(null, "", data.originalPath);
       }
     } catch {
       // 靜默忽略
@@ -53,7 +61,10 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
 
   // 從 LocalStorage 讀取使用者的閱讀設定
   useEffect(() => {
-    const savedSettings = getStorage<ReaderSettings>("SETTINGS", DEFAULT_READER_SETTINGS);
+    const savedSettings = getStorage<ReaderSettings>(
+      "SETTINGS",
+      DEFAULT_READER_SETTINGS
+    );
     setSettings(savedSettings);
   }, []);
 
@@ -88,7 +99,10 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
   useEffect(() => {
     if (!chapter) return;
     const novel = getNovelById(bookId);
-    const bookTitle = novel?.title || useReadingStore.getState().getProgress(bookId)?.bookTitle || bookId;
+    const bookTitle =
+      novel?.title ||
+      useReadingStore.getState().getProgress(bookId)?.bookTitle ||
+      bookId;
     const existingProgress = useReadingStore.getState().getProgress(bookId);
     // 若沒有紀錄，或者目前章節比較新或一樣，才存入
     if (!existingProgress || chapterIndex >= existingProgress.chapterIndex) {
@@ -99,7 +113,7 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
   // 滾動監聽：debounce 1s 更新 scrollPercent
   useEffect(() => {
     if (!chapter) return;
-    
+
     let debounceId: ReturnType<typeof setTimeout>;
 
     const handleScroll = () => {
@@ -107,13 +121,22 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
       debounceId = setTimeout(() => {
         const novel = getNovelById(bookId);
         // 若書庫未準備好，嘗試從現有進度中取得，最後再 fallback 書號
-        const existingTitle = useReadingStore.getState().getProgress(bookId)?.bookTitle;
+        const existingTitle = useReadingStore
+          .getState()
+          .getProgress(bookId)?.bookTitle;
         const bookTitle = novel?.title || existingTitle || bookId;
 
         const scrolled = window.scrollY;
-        const total = document.documentElement.scrollHeight - window.innerHeight;
+        const total =
+          document.documentElement.scrollHeight - window.innerHeight;
         const percent = total > 0 ? Math.round((scrolled / total) * 100) : 0;
-        saveProgress(bookId, bookTitle, chapterIndex, chapter.chapter_title, percent);
+        saveProgress(
+          bookId,
+          bookTitle,
+          chapterIndex,
+          chapter.chapter_title,
+          percent
+        );
       }, 1000);
     };
 
@@ -134,7 +157,8 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
       if (seconds > 0) {
         const wordCount = chapterRef.current?.word_count ?? 0;
         // 計算這段時間內大致讀了多少字 (假設一分鐘讀 wordCount/10 字)
-        const wordsRead = wordCount > 0 ? Math.round((wordCount / 60) * (seconds / 10)) : 0;
+        const wordsRead =
+          wordCount > 0 ? Math.round((wordCount / 60) * (seconds / 10)) : 0;
         addReadTime(seconds, wordsRead);
         lastSavedTime = now;
       }
@@ -146,7 +170,8 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
       const seconds = Math.floor((now - lastSavedTime) / 1000);
       if (seconds > 0) {
         const wordCount = chapterRef.current?.word_count ?? 0;
-        const wordsRead = wordCount > 0 ? Math.round((wordCount / 60) * (seconds / 10)) : 0;
+        const wordsRead =
+          wordCount > 0 ? Math.round((wordCount / 60) * (seconds / 10)) : 0;
         addReadTime(seconds, wordsRead);
       }
     };
@@ -186,7 +211,9 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
 
   // 狀態 1: 載入中
   if (isLoading) {
-    return <div className={styles.readerLoading}>靈力運轉中，正在載入章節...</div>;
+    return (
+      <div className={styles.readerLoading}>靈力運轉中，正在載入章節...</div>
+    );
   }
 
   // 狀態 2: 發生錯誤
@@ -196,11 +223,19 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
         <h2>前方沒有路了</h2>
         <p>{error}</p>
         <div className={styles.readerNavButtons}>
-          <button onClick={() => router.push(`/novels/${bookId}`)} className={styles.navBtn}>
+          <button
+            onClick={() => router.push(`/novels/${bookId}`)}
+            className={styles.navBtn}
+          >
             返回目錄
           </button>
           {chapterIndex > 1 && (
-            <button onClick={() => router.push(`/novels/reader/${bookId}/${chapterIndex - 1}`)} className={styles.navBtn}>
+            <button
+              onClick={() =>
+                router.push(`/novels/reader/${bookId}/${chapterIndex - 1}`)
+              }
+              className={styles.navBtn}
+            >
               回上一章
             </button>
           )}
@@ -248,13 +283,12 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
       {/* 章節標題 */}
       <h1 className={styles.readerTitle}>{chapter.chapter_title}</h1>
       <p className={styles.readerMeta}>
-        字數：{chapter.word_count.toLocaleString()} 字 | 發布於：{chapter.publish_date}
+        字數：{chapter.word_count.toLocaleString()} 字 | 發布於：
+        {chapter.publish_date}
       </p>
 
       {/* 核心內文 */}
-      <div className={styles.readerContent}>
-        {chapter.content}
-      </div>
+      <div className={styles.readerContent}>{chapter.content}</div>
 
       {/* 作者的話 */}
       {chapter.author_note && (
@@ -267,7 +301,10 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
       {/* 底部翻頁按鈕 */}
       <div className={styles.readerFooterNav}>
         {chapterIndex > 1 ? (
-          <Link href={`/novels/reader/${bookId}/${chapterIndex - 1}`} className={styles.navBtn}>
+          <Link
+            href={`/novels/reader/${bookId}/${chapterIndex - 1}`}
+            className={styles.navBtn}
+          >
             上一章
           </Link>
         ) : (
@@ -281,7 +318,10 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
           目錄
         </button>
 
-        <Link href={`/novels/reader/${bookId}/${chapterIndex + 1}`} className={styles.navBtn}>
+        <Link
+          href={`/novels/reader/${bookId}/${chapterIndex + 1}`}
+          className={styles.navBtn}
+        >
           下一章
         </Link>
       </div>
@@ -292,8 +332,13 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
           className={`${styles.menuOverlay} ${isTocOpen ? styles.menuOverlayVisible : ""}`}
           onClick={() => setIsTocOpen(false)}
         />
-        <div className={`${styles.tocDrawer} ${isTocOpen ? styles.tocDrawerOpen : ""}`}>
-          <div className={styles.menuHandle} onClick={() => setIsTocOpen(false)}>
+        <div
+          className={`${styles.tocDrawer} ${isTocOpen ? styles.tocDrawerOpen : ""}`}
+        >
+          <div
+            className={styles.menuHandle}
+            onClick={() => setIsTocOpen(false)}
+          >
             <span className={styles.menuHandleBar} />
           </div>
           <div className={styles.tocHeader}>
@@ -308,7 +353,9 @@ export default function ReaderPage({ bookId, chapterIndex: initialChapterIndex }
                 className={`${styles.tocItem} ${ch.chapter_index === chapterIndex ? styles.tocItemActive : ""}`}
                 onClick={() => setIsTocOpen(false)}
               >
-                <span>第 {ch.chapter_index} 章　{ch.chapter_title}</span>
+                <span>
+                  第 {ch.chapter_index} 章　{ch.chapter_title}
+                </span>
                 <span className={styles.tocItemDate}>{ch.publish_date}</span>
               </Link>
             ))}

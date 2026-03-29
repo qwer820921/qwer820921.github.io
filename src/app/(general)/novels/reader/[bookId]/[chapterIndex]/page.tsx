@@ -1,4 +1,8 @@
-import { getChapterContentData, getLibraryData, getChaptersData } from "../../../api/novelApi";
+import {
+  getChapterContentData,
+  getLibraryData,
+  getChaptersData,
+} from "../../../api/novelApi";
 import ReaderPage from "./components/ReaderPage";
 
 // Build 時產生所有書籍 × 所有章節的靜態頁面
@@ -39,7 +43,7 @@ export async function generateMetadata({ params }: PageProps) {
     const chapterIndexNum = parseInt(chapterIndex, 10);
     // 這裡同樣會受到 Next.js 的快取保護
     const res = await getChapterContentData(bookId, chapterIndexNum);
-    
+
     if (!res.success || !res.data) {
       return { title: "閱讀章節 | 萬事屋藏書閣" };
     }
@@ -56,10 +60,10 @@ export async function generateMetadata({ params }: PageProps) {
 export default async function Page({ params }: PageProps) {
   const { bookId, chapterIndex } = await params;
   return (
-    <ReaderPage 
-      bookId={bookId} 
+    <ReaderPage
+      bookId={bookId}
       // 確保將網址上的字串轉換為數字
-      chapterIndex={parseInt(chapterIndex, 10)} 
+      chapterIndex={parseInt(chapterIndex, 10)}
     />
   );
 }

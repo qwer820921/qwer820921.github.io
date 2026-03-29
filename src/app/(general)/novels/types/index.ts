@@ -17,8 +17,8 @@ export interface Novel {
   tags: string[];
   summary: string;
   cover_url: string;
-  status: string;           // 例如: "連載中", "已完結"
-  total_words: number;      // GAS 自動加總的總字數
+  status: string; // 例如: "連載中", "已完結"
+  total_words: number; // GAS 自動加總的總字數
   latest_chapter_index: number;
   latest_chapter_title: string;
 }
@@ -30,7 +30,7 @@ export interface ChapterSummary {
   chapter_index: number;
   chapter_title: string;
   word_count: number;
-  publish_date: string;     // 格式: YYYY-MM-DD
+  publish_date: string; // 格式: YYYY-MM-DD
 }
 
 // ==========================================
@@ -38,17 +38,17 @@ export interface ChapterSummary {
 // ==========================================
 export interface ChapterContent extends ChapterSummary {
   book_id: string;
-  content: string;          // 50萬字大挑戰的核心欄位
-  author_note: string;      // 作者的話 (可為空字串)
+  content: string; // 50萬字大挑戰的核心欄位
+  author_note: string; // 作者的話 (可為空字串)
 }
 
 // ==========================================
 // 5. 閱讀器外觀設定 (存於 LocalStorage)
 // ==========================================
 export interface ReaderSettings {
-  theme: 'light' | 'sepia' | 'dark';
+  theme: "light" | "sepia" | "dark";
   fontSize: number;
-  fontFamily: 'sans-serif' | 'serif';
+  fontFamily: "sans-serif" | "serif";
   lineHeight: number;
 }
 
@@ -60,15 +60,15 @@ export interface ReadingProgress {
   bookTitle: string;
   chapterIndex: number;
   chapterTitle: string;
-  scrollPercent: number;    // 0~100
-  updatedAt: number;        // timestamp ms
+  scrollPercent: number; // 0~100
+  updatedAt: number; // timestamp ms
 }
 
 // ==========================================
 // 7. 書籤
 // ==========================================
 export interface Bookmark {
-  id: string;               // Date.now().toString()
+  id: string; // Date.now().toString()
   bookId: string;
   bookTitle: string;
   chapterIndex: number;
@@ -81,7 +81,7 @@ export interface Bookmark {
 // 8. 每日閱讀統計
 // ==========================================
 export interface DailyReadStat {
-  date: string;             // 'YYYY-MM-DD'
+  date: string; // 'YYYY-MM-DD'
   totalSeconds: number;
   totalWords: number;
 }

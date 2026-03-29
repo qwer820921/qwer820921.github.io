@@ -1,5 +1,9 @@
 import { create } from "zustand";
-import { getLibraryData, getChaptersData, getChapterContentData } from "../api/novelApi";
+import {
+  getLibraryData,
+  getChaptersData,
+  getChapterContentData,
+} from "../api/novelApi";
 import { Novel, ChapterSummary, ChapterContent } from "../types";
 
 /** 快取過期時間（毫秒）：5 分鐘 */
@@ -27,13 +31,20 @@ interface NovelStore {
 
   // ── Actions ──
   fetchLibrary: (forceRefresh?: boolean) => Promise<Novel[]>;
-  fetchChapters: (bookId: string, forceRefresh?: boolean) => Promise<ChapterSummary[]>;
-  fetchChapterContent: (bookId: string, chapterIndex: number) => Promise<ChapterContent | null>;
+  fetchChapters: (
+    bookId: string,
+    forceRefresh?: boolean
+  ) => Promise<ChapterSummary[]>;
+  fetchChapterContent: (
+    bookId: string,
+    chapterIndex: number
+  ) => Promise<ChapterContent | null>;
   getNovelById: (bookId: string) => Novel | undefined;
 }
 
 /** 產生章節內容快取 key */
-const contentKey = (bookId: string, chapterIndex: number) => `${bookId}-${chapterIndex}`;
+const contentKey = (bookId: string, chapterIndex: number) =>
+  `${bookId}-${chapterIndex}`;
 
 export const useNovelStore = create<NovelStore>((set, get) => ({
   // ── 初始狀態 ──
@@ -63,7 +74,11 @@ export const useNovelStore = create<NovelStore>((set, get) => ({
       getLibraryData()
         .then((res) => {
           if (res.success && res.data) {
-            set({ novels: res.data, novelsFetchedAt: Date.now(), novelsError: null });
+            set({
+              novels: res.data,
+              novelsFetchedAt: Date.now(),
+              novelsError: null,
+            });
           }
         })
         .catch(() => {});
@@ -87,7 +102,8 @@ export const useNovelStore = create<NovelStore>((set, get) => ({
         return [];
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "伺服器連線異常，請稍後再試";
+      const message =
+        err instanceof Error ? err.message : "伺服器連線異常，請稍後再試";
       set({ novelsLoading: false, novelsError: message });
       return [];
     }

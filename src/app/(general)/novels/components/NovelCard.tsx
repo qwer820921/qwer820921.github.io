@@ -38,7 +38,7 @@ export default function NovelCard({ novel }: NovelCardProps) {
       <div className={styles.cardContent}>
         <h3 className={styles.bookTitle}>{novel.title}</h3>
         <p className={styles.authorName}>{novel.author}</p>
-        
+
         {/* 標籤 (Tags) 渲染 */}
         <div className={styles.tagsContainer}>
           {novel.tags.map((tag, index) => (
