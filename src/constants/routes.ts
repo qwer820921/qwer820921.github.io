@@ -19,4 +19,5 @@ export const ROUTES = {
   BLOG: "/blog", // 部落格
   NOVELS: "/novels", // 萬事屋藏書閣
   GAME2048: "/game2048", // 2048
+  WATER_COLOR_SORT: "/waterColorSort", // 水彩分類
 };
