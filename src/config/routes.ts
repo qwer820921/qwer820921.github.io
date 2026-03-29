@@ -61,6 +61,7 @@ const routes: RouteGroup[] = [
       { path: ROUTES.TOWER_DEFENSE, name: "塔防守衛戰", showInNavbar: true },
       { path: ROUTES.GAME2048, name: "2048 數位拼圖", showInNavbar: true },
       { path: ROUTES.WATER_COLOR_SORT, name: "水彩分類", showInNavbar: true },
+      { path: ROUTES.SUDOKU, name: "經典數獨", showInNavbar: true },
     ],
   },
   {

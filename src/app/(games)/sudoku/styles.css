@@ -1,0 +1,303 @@
+.sudoku-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%);
+  padding: 70px 20px 20px;
+  color: #f8fafc;
+  overflow-x: hidden;
+  font-family:
+    "Inter",
+    -apple-system,
+    sans-serif;
+}
+
+.sudoku-header {
+  width: 100%;
+  max-width: 500px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 25px;
+}
+
+.stats-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sudoku-top-btn {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: none;
+  background-color: #ffffff;
+  color: #d17fb0; /* 與水彩分類一致的粉紫色 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.sudoku-top-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.sudoku-top-btn:active {
+  transform: scale(0.95);
+}
+
+.stats-item {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 8px 16px;
+  border-radius: 20px;
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.mistakes-count {
+  color: #ef4444; /* Red for mistakes */
+  font-weight: 800;
+}
+
+/* 數獨網格 */
+.sudoku-grid {
+  width: 100%;
+  max-width: 500px;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  grid-template-rows: repeat(9, 1fr);
+  background-color: #0f172a;
+  border: 4px solid #0f172a;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+}
+
+.sudoku-cell {
+  position: relative;
+  background-color: white;
+  border: 0.5px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: #1e293b;
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+}
+
+/* 九宮格加粗邊界 */
+.sudoku-cell:nth-child(3n) {
+  border-right: 2.5px solid #64748b;
+}
+.sudoku-cell:nth-child(9n) {
+  border-right: none;
+}
+.sudoku-grid > div:nth-child(n + 19):nth-child(-n + 27),
+.sudoku-grid > div:nth-child(n + 46):nth-child(-n + 54) {
+  border-bottom: 2.5px solid #64748b;
+}
+
+/* 單格狀態樣式 */
+.sudoku-cell.selected {
+  background-color: #bae6fd;
+  z-index: 5;
+}
+.sudoku-cell.highlight-related {
+  background-color: #f1f5f9;
+}
+.sudoku-cell.highlight-same {
+  background-color: #cbd5e1;
+}
+.sudoku-cell.initial {
+  color: #020617;
+  font-weight: 800;
+}
+.sudoku-cell.incorrect {
+  color: #ef4444;
+  background-color: #fee2e2;
+}
+.sudoku-cell.user-input {
+  color: #2563eb;
+}
+
+/* 筆記模式樣式 */
+.notes-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  width: 100%;
+  height: 100%;
+  padding: 2px;
+}
+
+.note-num {
+  font-size: 0.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+}
+
+/* 控制按鈕區與數字鍵盤 */
+.controls-layout {
+  width: 100%;
+  max-width: 500px;
+  margin-top: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sudoku-controls {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.control-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  background-color: transparent;
+  border: none;
+  color: white;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: all 0.2s;
+}
+
+.control-btn:hover {
+  opacity: 1;
+  transform: translateY(-2px);
+}
+.control-btn.active {
+  color: #facc15;
+  opacity: 1;
+}
+
+.icon-circle {
+  width: 44px;
+  height: 44px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.control-btn.active .icon-circle {
+  background: #facc15;
+  color: #713f12;
+}
+
+.num-pad {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 8px;
+}
+
+.num-btn {
+  aspect-ratio: 1/1.2;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 1.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  transition: all 0.2s;
+}
+
+.num-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-3px);
+}
+.num-btn:active {
+  transform: scale(0.9);
+}
+
+/* 難度選擇器 */
+.sudoku-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.3s;
+}
+
+.sudoku-modal {
+  background: white;
+  color: #0f172a;
+  padding: 40px;
+  border-radius: 24px;
+  width: 90%;
+  max-width: 400px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  z-index: 2001;
+}
+
+.difficulty-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 25px;
+}
+
+.diff-btn {
+  padding: 15px;
+  border-radius: 12px;
+  border: none;
+  background: #f1f5f9;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.diff-btn:hover {
+  background: #e2e8f0;
+  transform: scale(1.02);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .sudoku-cell {
+    font-size: 1.2rem;
+  }
+  .num-btn {
+    font-size: 1.2rem;
+  }
+  .control-btn span {
+    font-size: 0.7rem;
+  }
+}

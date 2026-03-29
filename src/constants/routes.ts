@@ -20,4 +20,5 @@ export const ROUTES = {
   NOVELS: "/novels", // 萬事屋藏書閣
   GAME2048: "/game2048", // 2048
   WATER_COLOR_SORT: "/waterColorSort", // 水彩分類
+  SUDOKU: "/sudoku", // 數獨
 };
