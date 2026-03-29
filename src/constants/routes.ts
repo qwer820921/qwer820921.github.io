@@ -18,4 +18,5 @@ export const ROUTES = {
   TOWER_DEFENSE: "/towerDefense", // 塔防守衛戰
   BLOG: "/blog", // 部落格
   NOVELS: "/novels", // 萬事屋藏書閣
+  GAME2048: "/game2048", // 2048
 };
