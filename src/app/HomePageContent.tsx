@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Container, Row, Col } from "react-bootstrap";
 import routeGroups from "@/config/routes";
 import { ROUTES } from "@/constants/routes";
@@ -27,7 +28,7 @@ export default function HomePageContent({ latestPosts }: HomePageContentProps) {
       <section className={styles.heroBanner}>
         <div className={styles.heroBackground}></div>
         <Container className={styles.heroContent}>
-          <div className={styles.heroIcon}>✨</div>
+          <div className={styles.heroIcon}></div>
           <h1 className={styles.heroTitle}>子yee 萬事屋</h1>
           <p className={styles.heroSubtitle}>探索我們的工具與最新文章</p>
         </Container>
@@ -40,7 +41,13 @@ export default function HomePageContent({ latestPosts }: HomePageContentProps) {
           {latestPosts.length > 0 && (
             <section className={styles.contentSection}>
               <h2 className={styles.sectionTitle}>
-                <span className={styles.sectionIcon}>📝</span>
+                <Image
+                  src="/images/edit_icon.jpg"
+                  alt="最新文章"
+                  width={32}
+                  height={32}
+                  className={styles.sectionIcon}
+                />
                 最新文章
               </h2>
 
@@ -103,7 +110,13 @@ export default function HomePageContent({ latestPosts }: HomePageContentProps) {
           {groupedTools.map((group) => (
             <section key={group.type} className={styles.contentSection}>
               <h2 className={styles.sectionTitle}>
-                <span className={styles.sectionIcon}>🛠️</span>
+                <Image
+                  src="/images/tools_icon.png"
+                  alt="工具列表"
+                  width={32}
+                  height={32}
+                  className={styles.sectionIcon}
+                />
                 {group.type}
               </h2>
               <Row
