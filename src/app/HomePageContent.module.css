@@ -286,42 +286,92 @@
 .toolBox {
   cursor: pointer;
   margin: 0 auto;
-  transition:
-    transform 0.3s ease,
-    box-shadow 0.3s ease;
-  border-radius: 16px;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 30px;
   overflow: hidden;
   position: relative;
+  aspect-ratio: 9 / 12;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-.toolBox::after {
-  content: "";
+.toolBox:hover {
+  transform: translateY(-8px) scale(1.02);
+  border-color: #667eea;
+  box-shadow: 0 16px 32px rgba(102, 126, 234, 0.3);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.toolImageWrapper {
   position: absolute;
   top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.toolImage {
+  object-fit: cover;
+  object-position: center;
+  transform: scale(1.07); /* 稍微放大以蓋掉原圖自帶的邊框 */
+  transition: transform 0.8s cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+.toolBox:hover .toolImage {
+  transform: scale(1.15);
+}
+
+.toolImageHoverOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  transition: background-color 0.4s ease;
+  z-index: 1;
+}
+
+.toolBox:hover .toolImageHoverOverlay {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.toolFallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: linear-gradient(
     135deg,
     rgba(102, 126, 234, 0.1) 0%,
     rgba(118, 75, 162, 0.1) 100%
   );
-  opacity: 0;
-  transition: opacity 0.3s ease;
 }
 
-.toolBox:hover {
-  transform: translateY(-6px) scale(1.02);
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.25);
+.toolTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: white;
+  text-align: center;
+  padding: 1rem;
+  margin-bottom: 0;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  z-index: 2;
+  transition: all 0.3s ease;
 }
 
-.toolBox:hover::after {
-  opacity: 1;
+.toolBox:hover .toolTitle {
+  transform: scale(1.1);
+  text-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
 }
 
 .toolLink {
-  position: relative;
-  z-index: 1;
+  display: block;
+  z-index: 3;
 }
 
 /* 動畫定義 */

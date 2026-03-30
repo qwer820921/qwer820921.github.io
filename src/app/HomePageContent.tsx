@@ -1,5 +1,5 @@
 "use client";
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Container, Row, Col } from "react-bootstrap";
@@ -12,6 +12,43 @@ import styles from "./HomePageContent.module.css";
 interface HomePageContentProps {
   latestPosts: Omit<BlogPost, "content">[];
 }
+
+const ToolCard = ({ route }: { route: RouteConfig }) => {
+  const [hasError, setHasError] = useState(false);
+  const imagePath = `/images${route.path}.jpg`;
+
+  return (
+    <Col>
+      <div className={styles.toolBox}>
+        <Link
+          href={route.path}
+          className={`text-decoration-none text-white h-100 w-100 ${styles.toolLink}`}
+        >
+          {!hasError ? (
+            <div className={styles.toolImageWrapper}>
+              <Image
+                src={imagePath}
+                alt={route.name}
+                fill
+                className={styles.toolImage}
+                onError={() => setHasError(true)}
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                priority={
+                  route.path === ROUTES.ABOUT || route.path === ROUTES.BLOG
+                }
+              />
+              <div className={styles.toolImageHoverOverlay} />
+            </div>
+          ) : (
+            <div className={styles.toolFallback}>
+              <h3 className={styles.toolTitle}>{route.name}</h3>
+            </div>
+          )}
+        </Link>
+      </div>
+    </Col>
+  );
+};
 
 export default function HomePageContent({ latestPosts }: HomePageContentProps) {
   // 先把每組中要顯示的 route 篩出來（showInNavbar 且 path !== "/"）
@@ -127,18 +164,7 @@ export default function HomePageContent({ latestPosts }: HomePageContentProps) {
                 className={`g-4 ${styles.toolsGrid}`}
               >
                 {group.routes.map((route: RouteConfig) => (
-                  <Col key={route.path}>
-                    <div className={`box ${styles.toolBox}`}>
-                      <Link
-                        href={route.path}
-                        className={`d-flex justify-content-center align-items-center text-decoration-none text-white h-100 ${styles.toolLink}`}
-                      >
-                        <h3 className="fs-6 mb-0 text-center px-3">
-                          {route.name}
-                        </h3>
-                      </Link>
-                    </div>
-                  </Col>
+                  <ToolCard key={route.path} route={route} />
                 ))}
               </Row>
             </section>
