@@ -1,7 +1,7 @@
 import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
 import { Food, Coordinates } from "../types";
 
-let placesService: any = null; // using any since type might vary depending on setup, but it returns PlacesService instance
+let placesService: google.maps.places.PlacesService | null = null;
 let isInitialized = false;
 
 // 初始化 Google Maps Places Library
@@ -10,7 +10,9 @@ export const initGooglePlaces = async () => {
 
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
-    throw new Error("請先在 .env.local 檔案中設定 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY");
+    throw new Error(
+      "請先在 .env.local 檔案中設定 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY"
+    );
   }
 
   if (!isInitialized) {
@@ -23,7 +25,9 @@ export const initGooglePlaces = async () => {
 
   // 使用新版的 importLibrary 匯入需要的庫
   const { Map } = (await importLibrary("maps")) as google.maps.MapsLibrary;
-  const { PlacesService } = (await importLibrary("places")) as google.maps.PlacesLibrary;
+  const { PlacesService } = (await importLibrary(
+    "places"
+  )) as google.maps.PlacesLibrary;
 
   // Places API 必須綁定在一個 HTML Element 實體上
   const dummyDiv = document.createElement("div");
@@ -55,35 +59,44 @@ export const searchNearbyRestaurants = async (
       type: "restaurant",
     };
 
-    service.nearbySearch(request, (results: google.maps.places.PlaceResult[], status: google.maps.places.PlacesServiceStatus) => {
-      if (status === google.maps.places.PlacesServiceStatus.OK && results) {
-        // 將 Google Places 回傳的結果對應到我們自己的 Food 介面
-        const foods: Food[] = results.map((place, index) => {
-          let lat = 0;
-          let lng = 0;
-          
-          if (place.geometry && place.geometry.location) {
-            lat = place.geometry.location.lat();
-            lng = place.geometry.location.lng();
-          }
+    service!.nearbySearch(
+      request,
+      (
+        results: google.maps.places.PlaceResult[] | null,
+        status: google.maps.places.PlacesServiceStatus,
+        _pagination: google.maps.places.PlaceSearchPagination | null
+      ) => {
+        if (status === google.maps.places.PlacesServiceStatus.OK && results) {
+          // 將 Google Places 回傳的結果對應到我們自己的 Food 介面
+          const foods: Food[] = results.map((place, index) => {
+            let lat = 0;
+            let lng = 0;
 
-          return {
-            id: index, // 或者拿 place.place_id 也行
-            name: place.name || "未命名的店家",
-            address: place.vicinity || "暫無詳細地址",
-            coordinates: { lat, lng },
-            rating: place.rating,
-            userRatingsTotal: place.user_ratings_total,
-          };
-        });
+            if (place.geometry && place.geometry.location) {
+              lat = place.geometry.location.lat();
+              lng = place.geometry.location.lng();
+            }
 
-        resolve(foods);
-      } else if (status === google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
-        resolve([]);
-      } else {
-        console.error("Google Places API Exception:", status);
-        reject(new Error(`Google API 無法取得資料，狀態碼：${status}`));
+            return {
+              id: index, // 或者拿 place.place_id 也行
+              name: place.name || "未命名的店家",
+              address: place.vicinity || "暫無詳細地址",
+              coordinates: { lat, lng },
+              rating: place.rating,
+              userRatingsTotal: place.user_ratings_total,
+            };
+          });
+
+          resolve(foods);
+        } else if (
+          status === google.maps.places.PlacesServiceStatus.ZERO_RESULTS
+        ) {
+          resolve([]);
+        } else {
+          console.error("Google Places API Exception:", status);
+          reject(new Error(`Google API 無法取得資料，狀態碼：${status}`));
+        }
       }
-    });
+    );
   });
 };

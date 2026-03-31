@@ -14,24 +14,21 @@ const EatWhatPage: React.FC = () => {
   const [searchRadius, setSearchRadius] = useState<number>(500); // 新增半徑狀態
 
   const [isLoading, setIsLoading] = useState(false);
-  const [loadingText, setLoadingText] = useState("正在為您尋找美食...");
 
   // Tab 控制狀態
   const [activeTab, setActiveTab] = useState<"設定" | "轉盤" | "候選">("轉盤");
   const [isGeolocationDenied, setIsGeolocationDenied] = useState(false);
 
   // ====== 初始化定位與自動搜尋 ======
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    // 只有在還沒有定位時才要
-    if (!baseLatLng && !isGeolocationDenied && foods.length === 0) {
-      handleInitialLocation();
-    }
+    handleInitialLocation();
   }, []);
 
   const handleInitialLocation = () => {
     if (navigator.geolocation) {
       setIsLoading(true);
-      setLoadingText("正在取得您的位置...");
+
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           const { latitude, longitude } = position.coords;
@@ -105,7 +102,7 @@ const EatWhatPage: React.FC = () => {
     radius: number
   ) => {
     setIsLoading(true);
-    setLoadingText("正在為您尋找附近的美食...");
+
     try {
       const mockResults = await searchNearbyRestaurants(
         latLng,
@@ -141,7 +138,7 @@ const EatWhatPage: React.FC = () => {
   const handleAddressToLatLng = async () => {
     if (!baseAddress.trim()) return;
     setIsLoading(true);
-    setLoadingText("正在解析地址...");
+
     try {
       const latLng = await getLatLngFromAddress(baseAddress);
       if (latLng) {
@@ -171,7 +168,7 @@ const EatWhatPage: React.FC = () => {
         return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
       }
       return null;
-    } catch (e) {
+    } catch {
       return null;
     }
   }
