@@ -9,5 +9,6 @@ export interface RouteConfig {
 
 export interface RouteGroup {
   type: string;
+  icon?: string;
   routeConfig: RouteConfig[];
 }

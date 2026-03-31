@@ -15,7 +15,7 @@ interface HomePageContentProps {
 
 const ToolCard = ({ route }: { route: RouteConfig }) => {
   const [hasError, setHasError] = useState(false);
-  const imagePath = `/images${route.path}.jpg`;
+  const imagePath = `/images/cover${route.path}.webp`;
 
   return (
     <Col>
@@ -55,6 +55,7 @@ export default function HomePageContent({ latestPosts }: HomePageContentProps) {
   const groupedTools = (routeGroups as RouteGroup[])
     .map((group) => ({
       type: group.type,
+      icon: group.icon,
       routes: group.routeConfig.filter((r) => r.showInNavbar && r.path !== "/"),
     }))
     .filter((g) => g.routes.length > 0);
@@ -79,7 +80,7 @@ export default function HomePageContent({ latestPosts }: HomePageContentProps) {
             <section className={styles.contentSection}>
               <h2 className={styles.sectionTitle}>
                 <Image
-                  src="/images/edit_icon.jpg"
+                  src="/images/icon/edit_icon.webp"
                   alt="最新文章"
                   width={32}
                   height={32}
@@ -148,8 +149,8 @@ export default function HomePageContent({ latestPosts }: HomePageContentProps) {
             <section key={group.type} className={styles.contentSection}>
               <h2 className={styles.sectionTitle}>
                 <Image
-                  src="/images/tools_icon.png"
-                  alt="工具列表"
+                  src={group.icon || "/images/icon/tools_icon.webp"}
+                  alt={group.type}
                   width={32}
                   height={32}
                   className={styles.sectionIcon}
@@ -157,7 +158,7 @@ export default function HomePageContent({ latestPosts }: HomePageContentProps) {
                 {group.type}
               </h2>
               <Row
-                xs={1}
+                xs={2}
                 sm={2}
                 md={3}
                 lg={4}

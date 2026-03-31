@@ -4,7 +4,8 @@ export type Food = {
   address?: string; // 食物地址
   coordinates?: Coordinates; // 新增座標參數
   distance?: number | string; // 距離（可選）
-  group: string; // 所屬分組
+  rating?: number; // 評分
+  userRatingsTotal?: number; // 總評價數
 };
 
 export type Coordinates = {

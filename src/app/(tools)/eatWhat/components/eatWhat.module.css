@@ -1,0 +1,277 @@
+/* eatWhat.module.css */
+
+.container {
+  min-height: calc(100vh - 70px);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 2rem 1rem;
+}
+
+/* 玻璃擬態樣式 */
+.glassPanel {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+  padding: 1.5rem;
+}
+
+/* 主展示區 */
+.mainStage {
+  flex: 1;
+  width: 100%;
+  max-width: 800px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 10;
+  margin-bottom: 5rem; /* 給底部 floating bar 空間 */
+}
+
+/* 底部操作浮動列 */
+.floatingActionArea {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.actionBtn {
+  background: white;
+  color: #333;
+  border: none;
+  border-radius: 50px;
+  padding: 0.8rem 1.5rem;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.actionBtn:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.actionBtn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.primaryBtn {
+  background: linear-gradient(135deg, #ff6b6b, #ff8e53);
+  color: white;
+  padding: 1rem 2rem;
+  font-size: 1.1rem;
+}
+
+/* Modal 遮罩與容器 */
+.modalBackdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.modalContent {
+  background: #fff;
+  width: 90%;
+  max-width: 500px;
+  max-height: 85vh;
+  border-radius: 24px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modalHeader {
+  padding: 1.5rem;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modalBody {
+  padding: 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.closeBtn {
+  background: #f1f1f1;
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.closeBtn:hover {
+  background: #e1e1e1;
+}
+
+/* 餐廳清單卡片 */
+.restaurantCard {
+  background: #ffffff;
+  border: 1px solid #f0f0f0;
+  border-radius: 16px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+.restaurantCard:hover {
+  border-color: #ffa07a;
+  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.1);
+  transform: translateX(4px);
+}
+
+.restaurantInfo {
+  flex: 1;
+  padding-right: 1rem;
+}
+
+.restaurantName {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #2d3748;
+  margin-bottom: 0.25rem;
+}
+
+.restaurantAddress {
+  font-size: 0.85rem;
+  color: #718096;
+  margin-bottom: 0.5rem;
+}
+
+.badges {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.badgeStar {
+  background: #fff8e1;
+  color: #f59e0b;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.badgeDist {
+  background: #f1f5f9;
+  color: #475569;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.removeBtn {
+  background: transparent;
+  color: #cbd5e1;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.removeBtn:hover {
+  color: #ef4444;
+  background: #fee2e2;
+}
+
+/* 切換模式 */
+.modeSelector {
+  display: flex;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 50px;
+  padding: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  margin-bottom: 0.5rem;
+}
+
+.modeTab {
+  padding: 0.5rem 1.5rem;
+  border-radius: 50px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.modeTabActive {
+  background: white;
+  color: #ff6b6b;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* 空狀態 */
+.emptyState {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: #94a3b8;
+}
+
+.emptyIcon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}

@@ -5,6 +5,7 @@ import { ROUTES } from "../constants/routes"; // 引入常數
 const routes: RouteGroup[] = [
   {
     type: "常用",
+    icon: "/images/icon/common_icon.webp",
     routeConfig: [
       { path: ROUTES.HOME, name: "首頁", showInNavbar: false },
       { path: ROUTES.ABOUT, name: "關於我們", showInNavbar: true },
@@ -13,7 +14,20 @@ const routes: RouteGroup[] = [
     ],
   },
   {
+    type: "遊戲",
+    icon: "/images/icon/game_icon.webp",
+    routeConfig: [
+      { path: ROUTES.NO_WASH_GAMES, name: "免洗遊戲", showInNavbar: true },
+      { path: ROUTES.CLICK_ASCENSION, name: "點擊飛昇", showInNavbar: true },
+      { path: ROUTES.TOWER_DEFENSE, name: "塔防守衛戰", showInNavbar: true },
+      { path: ROUTES.GAME2048, name: "2048 數位拼圖", showInNavbar: true },
+      { path: ROUTES.WATER_COLOR_SORT, name: "水彩分類", showInNavbar: true },
+      { path: ROUTES.SUDOKU, name: "數獨", showInNavbar: true },
+    ],
+  },
+  {
     type: "工具",
+    icon: "/images/icon/tools_icon.webp",
     routeConfig: [
       {
         path: ROUTES.INVOICE,
@@ -31,6 +45,7 @@ const routes: RouteGroup[] = [
   },
   {
     type: "投資",
+    icon: "/images/icon/invest_icon.webp",
     routeConfig: [
       { path: ROUTES.STOCK_INFO, name: "台股資訊", showInNavbar: true },
       { path: ROUTES.CRYPTO, name: "加密貨幣", showInNavbar: true },
@@ -38,6 +53,7 @@ const routes: RouteGroup[] = [
   },
   {
     type: "媒體",
+    icon: "/images/icon/media_icon.webp",
     routeConfig: [
       {
         path: ROUTES.YT_MUSIC,
@@ -51,17 +67,6 @@ const routes: RouteGroup[] = [
         name: "SoundCloud 播放器",
         showInNavbar: true,
       },
-    ],
-  },
-  {
-    type: "遊戲",
-    routeConfig: [
-      { path: ROUTES.NO_WASH_GAMES, name: "免洗遊戲", showInNavbar: true },
-      { path: ROUTES.CLICK_ASCENSION, name: "點擊飛昇", showInNavbar: true },
-      { path: ROUTES.TOWER_DEFENSE, name: "塔防守衛戰", showInNavbar: true },
-      { path: ROUTES.GAME2048, name: "2048 數位拼圖", showInNavbar: true },
-      { path: ROUTES.WATER_COLOR_SORT, name: "水彩分類", showInNavbar: true },
-      { path: ROUTES.SUDOKU, name: "經典數獨", showInNavbar: true },
     ],
   },
   {
