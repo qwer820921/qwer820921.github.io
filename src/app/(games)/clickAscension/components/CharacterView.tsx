@@ -638,7 +638,6 @@ export default function CharacterView({
       const val = baseVal + (level - 1) * multVal;
 
       // Handle both "Effect_Type" and "Effect_Type " (with trailing space)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const legacyConfig = config as any;
       const rawEffectType = config.Effect_Type || legacyConfig["Effect_Type "];
       const effectType = String(rawEffectType || "")

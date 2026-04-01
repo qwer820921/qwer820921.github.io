@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from "axios";
 
 import { GetKlinesParams, KlineData, QuickQueryOption } from "../types";

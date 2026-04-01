@@ -20,7 +20,6 @@ const EatWhatPage: React.FC = () => {
   const [isGeolocationDenied, setIsGeolocationDenied] = useState(false);
 
   // ====== 初始化定位與自動搜尋 ======
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     handleInitialLocation();
   }, []);

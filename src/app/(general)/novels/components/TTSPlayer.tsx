@@ -306,8 +306,7 @@ const TTSPlayer = forwardRef<TTSPlayerRef, TTSPlayerProps>(
           speechSynthesis.speak(utterance);
         }, 50);
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rate, isPlaying, currentIndex, paragraphs, selectedVoiceURI, voices]);
+    }, [rate, isPlaying, currentIndex, paragraphs, selectedVoiceURI, voices, stopActiveUtterance, speakParagraph]);
 
     // 切換語音：設定 flag 並更新 state，讓 useEffect 在 re-render 後用更新過的 speakParagraph 重新朗讀
     const handleVoiceChange = useCallback((newVoiceURI: string) => {
@@ -323,8 +322,7 @@ const TTSPlayer = forwardRef<TTSPlayerRef, TTSPlayerProps>(
       } else {
         voiceChangeRef.current = false;
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedVoiceURI]);
+    }, [selectedVoiceURI, isPlaying, speakParagraph, currentIndex]);
 
     // 把 togglePlay 暴露給外部，方便在 Header 快速操作
     useImperativeHandle(

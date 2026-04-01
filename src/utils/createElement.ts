@@ -1,4 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+"use client";
+
 import React from "react";
 
 export const printValue = (value: any): React.ReactElement | undefined => {

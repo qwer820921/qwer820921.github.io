@@ -110,7 +110,6 @@ export default function ReaderPage({ bookId }: Props) {
     };
 
     loadInitialChapter();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId, currentChapterIndex]);
 
   // scroll 事件：追蹤目前可見的章節 → 更新標題 + URL hash + 存比例

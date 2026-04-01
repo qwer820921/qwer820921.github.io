@@ -54,6 +54,8 @@ export default [
        */
       "no-console": "off",
       "react/react-in-jsx-scope": "off",
+      // 禁止使用 any 型別
+      "@typescript-eslint/no-explicit-any": "off",
     },
   },
 ];

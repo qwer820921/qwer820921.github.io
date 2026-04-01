@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-expressions */
+/* eslint-disable @typescript-eslint/no-unused-expressions */
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";

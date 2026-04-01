@@ -27,7 +27,6 @@ const SpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
   const currentRotationRef = useRef(0);
 
   // ====== 初始畫轉盤 ======
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     drawWheel(0); // 畫初始不旋轉的轉盤
   }, [foods, size]);

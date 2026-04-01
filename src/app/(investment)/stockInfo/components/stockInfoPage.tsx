@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 "use client";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { TwseStock, StockListItem } from "../types";
@@ -10,8 +8,8 @@ import {
   removeStockCode,
 } from "../api/stockApi";
 
-import { Modal, Button, Nav } from "react-bootstrap";
-import "@/app/(investment)/stockInfo/styles/styles.css";
+import { Modal, Button } from "react-bootstrap";
+import "../styles/styles.css";
 
 // 子組件
 import AddStockForm from "./AddStockForm";
@@ -124,7 +122,7 @@ const StockInfoPage: React.FC = () => {
     try {
       const formattedCode = newStockCode.trim();
       const response = await addStockCode(formattedCode);
-      
+
       // 檢查後端回傳的業務邏輯錯誤 (例如 200 OK 但含有 error 欄位的情況)
       if (response && response.error) {
         setErrorModalMsg(response.error);
