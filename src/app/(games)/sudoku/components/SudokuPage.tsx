@@ -11,7 +11,7 @@ import {
   Trophy,
   EmojiFrown,
 } from "react-bootstrap-icons";
-import "../styles.css";
+import "../styles/styles.css";
 import { Difficulty } from "../types";
 
 const SudokuPage = () => {

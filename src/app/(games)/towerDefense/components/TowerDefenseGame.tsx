@@ -9,7 +9,7 @@ import { GRID, CANVAS } from "../config/constants";
 import { gridToWorld } from "../config/mapConfig";
 import { generateId } from "../utils/math";
 import { levelManager } from "../core/LevelManager";
-import "../styles.css";
+import "../styles/styles.css";
 
 export default function TowerDefenseGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);

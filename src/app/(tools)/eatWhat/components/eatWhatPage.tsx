@@ -4,7 +4,7 @@ import SpinnerCanvas from "./spinnerCanvas";
 import { Coordinates, Food } from "../types";
 import { searchNearbyRestaurants } from "../api/googlePlaces";
 import LoadingOverlay from "@/components/common/loadingOverlay";
-import styles from "./eatWhat.module.css";
+import styles from "../styles/eatWhat.module.css";
 
 const EatWhatPage: React.FC = () => {
   // ====== 狀態管理 ======
@@ -173,6 +173,13 @@ const EatWhatPage: React.FC = () => {
     }
   }
 
+  // ====== 跳轉 Google Maps ======
+  const openGoogleMaps = (food: Food) => {
+    const query = encodeURIComponent(`${food.name} ${food.address || ""}`);
+    const url = `https://www.google.com/maps/search/?api=1&query=${query}`;
+    window.open(url, "_blank");
+  };
+
   return (
     <div className={styles.container} style={{ paddingTop: "70px" }}>
       {/* 傳統 Loading 遮罩改用帶有狀態文字的提示 */}
@@ -325,6 +332,13 @@ const EatWhatPage: React.FC = () => {
                             ~ {food.distance} km
                           </span>
                         )}
+                        <button
+                          className={styles.mapBadge}
+                          onClick={() => openGoogleMaps(food)}
+                          title="在 Google Maps 中開啟"
+                        >
+                          去看地圖
+                        </button>
                       </div>
                     </div>
                     <button
@@ -342,6 +356,7 @@ const EatWhatPage: React.FC = () => {
         )}
       </div>
     </div>
+
   );
 };
 

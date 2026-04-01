@@ -10,7 +10,7 @@ const SpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
   // ====== 狀態管理 ======
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isSpinning, setIsSpinning] = useState(false); // 控制是否正在旋轉
-  const [selectedFood, setSelectedFood] = useState<string | null>(null); // 選中的食物
+  const [selectedFood, setSelectedFood] = useState<Food | null>(null); // 選中的食物
   const [hoverAddress, setHoverAddress] = useState<string | null>(null); // 滑鼠懸停的地址
   const [tooltipPosition, setTooltipPosition] = useState<{
     x: number;
@@ -207,7 +207,7 @@ const SpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
         const selectedIndex =
           Math.floor(shiftedAngle / anglePerSegment) % numSegments;
 
-        setSelectedFood(foods[selectedIndex].name); // 設定選中結果
+        setSelectedFood(foods[selectedIndex]); // 設定選中結果
         setIsSpinning(false);
       }
     };
@@ -297,11 +297,31 @@ const SpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
                 🎉 抽中啦！
               </h2>
               <div
-                className="alert alert-success py-3 fw-bold fs-4 mb-4"
+                className="alert alert-success py-3 fw-bold fs-4 mb-2"
                 style={{ borderRadius: "10px" }}
               >
-                {selectedFood}
+                {selectedFood.name}
               </div>
+
+              {/* 新增：去看地圖按鈕 */}
+              <button
+                className="btn btn-outline-info w-100 fw-bold mb-3"
+                style={{
+                  borderRadius: "50px",
+                  padding: "10px",
+                  border: "2px solid #0dcaf0",
+                  color: "#0dcaf0",
+                  backgroundColor: "transparent",
+                }}
+                onClick={() => {
+                  const query = encodeURIComponent(`${selectedFood.name} ${selectedFood.address || ""}`);
+                  const url = `https://www.google.com/maps/search/?api=1&query=${query}`;
+                  window.open(url, "_blank");
+                }}
+              >
+                去看地圖
+              </button>
+
               <button
                 className="btn btn-lg w-100 fw-bold text-white"
                 style={{

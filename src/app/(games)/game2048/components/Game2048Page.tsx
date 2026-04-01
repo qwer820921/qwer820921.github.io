@@ -5,7 +5,7 @@ import GridContainer from "./GridContainer";
 import { useGameStore } from "../store/useGameStore";
 import { useSwipe } from "../hooks/useSwipe";
 import { Direction } from "../types";
-import "../styles.css";
+import "../styles/styles.css";
 
 export default function Game2048Page() {
   const { grid, gameState, initGame, move, _hasHydrated } = useGameStore();

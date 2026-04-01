@@ -9,7 +9,7 @@ import {
   Arrow90degLeft,
 } from "react-bootstrap-icons";
 import Tube from "./Tube";
-import "../styles.css";
+import "../styles/styles.css";
 
 export default function WaterColorSortPage() {
   const {
