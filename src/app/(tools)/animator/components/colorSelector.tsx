@@ -15,9 +15,18 @@ const ColorSelectorChrome: React.FC<ColorSelectorProps> = ({
   };
 
   return (
-    <div className="d-flex flex-column align-items-center">
-      <h5>顏色選擇</h5>
-      <ChromePicker color={value} onChange={handleChange} />
+    <div className="d-flex flex-column align-items-center w-100 mx-auto">
+      <div
+        style={{
+          width: "100%",
+          overflowX: "auto",
+          display: "flex",
+          justifyContent: "center",
+          padding: "5px 0",
+        }}
+      >
+        <ChromePicker color={value} onChange={handleChange} />
+      </div>
     </div>
   );
 };

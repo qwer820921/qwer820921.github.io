@@ -1,0 +1,147 @@
+.glassCard {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  padding: 1.5rem;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.cardBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.timelineCard {
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  padding: 1.25rem;
+  width: 100%;
+}
+
+.timelineHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.timelineContent {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 0.5rem 0.25rem;
+  scrollbar-width: thin;
+}
+
+.frameItem {
+  flex: 0 0 auto;
+  border: 3px solid transparent;
+  padding: 2px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: white;
+}
+
+.frameItem:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 123, 255, 0.3);
+}
+
+.frameActive {
+  border-color: #007bff !important;
+  box-shadow: 0 4px 8px rgba(0, 123, 255, 0.2);
+}
+
+.canvasWrapper {
+  flex: 1; /* 讓白色區塊填滿父容器 */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1.5rem; /* 增加一點內邊距，避免太靠近邊緣 */
+  background: #fdfdfd;
+  border-radius: 8px;
+  border: 1px solid #eee;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  overflow: auto; /* 當畫布大於容器時開啟捲動 */
+  scrollbar-width: thin;
+}
+
+/* 頂部操作區的按鈕組 */
+.toolbarActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .glassCard {
+    padding: 1rem;
+  }
+  
+  .timelineCard {
+    padding: 1rem;
+  }
+
+  .timelineHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .timelineHeader .d-flex {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 5px;
+  }
+}
+
+/* 畫布響應式強化 */
+.responsiveCanvas {
+  width: 400px !important; /* 固定寬度，防止坐標偏移 */
+  height: 400px !important; /* 固定高度 */
+  display: block;
+  image-rendering: pixelated; /* 保持像素清晰 */
+  margin: 0 auto;
+  border: 1px solid #BEBEBE;
+  background-color: #fff;
+}
+
+/* 繪圖模式：禁用觸摸捲動 */
+.canvasPencil {
+  touch-action: none;
+}
+
+/* 移動模式：允許觸摸捲動 */
+.canvasHand {
+  touch-action: auto;
+}
+
+/* 色彩選擇器容器：處理極小螢幕 */
+.colorPickerWrapper {
+  width: 100%;
+  overflow-x: auto;
+  display: flex;
+  justify-content: center;
+  padding: 0.5rem 0;
+  scrollbar-width: none;
+}
+
+.colorPickerWrapper::-webkit-scrollbar {
+  display: none;
+}

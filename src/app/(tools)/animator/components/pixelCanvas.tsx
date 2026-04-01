@@ -9,6 +9,7 @@ interface PixelCanvasProps {
   handleTouchStart: (event: React.TouchEvent<HTMLCanvasElement>) => void;
   handleTouchMove: (event: React.TouchEvent<HTMLCanvasElement>) => void;
   handleTouchEnd: (event: React.TouchEvent<HTMLCanvasElement>) => void;
+  className?: string;
 }
 const PixelCanvas: React.FC<PixelCanvasProps> = ({
   canvasRef,
@@ -19,13 +20,15 @@ const PixelCanvas: React.FC<PixelCanvasProps> = ({
   handleTouchStart,
   handleTouchMove,
   handleTouchEnd,
+  className,
 }) => {
   return (
-    <div className="d-flex justify-content-center align-items-center">
+    <div className="d-flex justify-content-center align-items-center w-100">
       <canvas
         ref={canvasRef}
         width={400}
         height={400}
+        className={className}
         style={{
           border: "1px solid #BEBEBE",
           cursor: "pointer",

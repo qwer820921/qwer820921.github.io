@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
 import { CanvasList } from "../types";
+import styles from "./animator.module.css";
 
 const PreviewCanvas = ({
   canvasList,
   pixelSizeInput,
+  className,
 }: {
   canvasList: CanvasList;
   pixelSizeInput: number;
+  className?: string;
 }) => {
   // 🔢 當前播放的 frame index
   const [previewIndex, setPreviewIndex] = useState(0);
@@ -58,41 +61,25 @@ const PreviewCanvas = ({
   }, [canvasList, previewIndex, pixelSizeInput]);
 
   return (
-    <>
-      <h5>預覽</h5>
-
+    <div className="d-flex flex-column align-items-center w-100 h-100">
       {/* 畫布顯示預覽動畫 */}
-      <canvas
-        ref={canvasRef}
-        width={canvasSize}
-        height={canvasSize}
-        style={{ border: "1px solid black", backgroundColor: "#fff" }}
-      />
-      {/* <div
-        className="border border-dark"
-        style={{
-          width: "120px",
-          height: "120px",
-          display: "grid",
-          gridTemplateColumns: `repeat(${pixelSizeInput}, 1fr)`,
-          gridTemplateRows: `repeat(${pixelSizeInput}, 1fr)`,
-          gap: "1px",
-          backgroundColor: "#ffffff",
-        }}
-      >
-        {canvasList[previewIndex]?.map((color, index) => (
-          <div key={index} style={{ backgroundColor: color }} />
-        ))}
-      </div> */}
+      <div className={styles.canvasWrapper + " mb-2"}>
+        <canvas
+          ref={canvasRef}
+          width={canvasSize}
+          height={canvasSize}
+          className={className}
+        />
+      </div>
 
       {/* 播放/暫停按鈕 */}
       <button
-        className="btn btn-primary mt-2"
+        className="btn btn-primary btn-sm px-4 mb-2"
         onClick={() => setIsPlaying(!isPlaying)}
       >
         {isPlaying ? "暫停" : "播放"}
       </button>
-    </>
+    </div>
   );
 };
 
