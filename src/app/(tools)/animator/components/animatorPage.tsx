@@ -481,7 +481,7 @@ const AnimatorPage: React.FC = () => {
                   <PreviewCanvas
                     canvasList={canvasList}
                     pixelSizeInput={pixelSizeInput}
-                    className={styles.responsiveCanvas}
+                    className={styles.previewCanvas}
                   />
                 </div>
               </div>
