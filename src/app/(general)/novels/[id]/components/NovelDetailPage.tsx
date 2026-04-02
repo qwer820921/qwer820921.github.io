@@ -102,7 +102,7 @@ export default function NovelDetailPage({ bookId }: Props) {
               onError={() => setImgError(true)}
             />
           ) : (
-            <img src="/images/no_cover_5.png" alt={novel.title} />
+            <img src="/images/no_cover_5.webp" alt={novel.title} />
           )}
         </div>
         <div className={styles.detailInfo}>

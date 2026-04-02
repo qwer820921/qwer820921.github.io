@@ -27,7 +27,7 @@ export default function NovelCard({ novel }: NovelCardProps) {
           />
         ) : (
           <img
-            src="/images/no_cover_5.png"
+            src="/images/no_cover_5.webp"
             alt={novel.title}
             className={styles.coverImage}
           />

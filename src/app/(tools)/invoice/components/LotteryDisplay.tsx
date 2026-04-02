@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import styles from "../invoice.module.css";
+﻿import React, { useState, useEffect } from "react";
+import styles from "../styles/invoice.module.css";
 import { LotteryPeriod } from "../types";
 import { PRIZE_TABLE } from "../constants/lotteryData";
 import { getAllWinningLists } from "../api/invoiceApi";

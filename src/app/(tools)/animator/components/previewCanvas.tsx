@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { CanvasList } from "../types";
-import styles from "./animator.module.css";
+import styles from "../styles/animator.module.css";
 
 const PreviewCanvas = ({
   canvasList,

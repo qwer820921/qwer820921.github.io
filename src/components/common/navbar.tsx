@@ -79,7 +79,7 @@ const Navbar: React.FC = () => {
           {/* ---- Brand ---- */}
           <Link className="navbar-brand" href="/">
             <Image
-              src="/images/transparent_yee_man_shi_wu-removebg-preview.png"
+              src="/images/transparent_yee_man_shi_wu-removebg-preview.webp"
               alt="子yee 萬事屋"
               width={100}
               height={40}

@@ -7,7 +7,7 @@ import PreviewCanvas from "./previewCanvas";
 import ColorSelector from "./colorSelector";
 import PixelCanvas from "./pixelCanvas";
 import { CanvasList, PixelMap } from "../types";
-import styles from "./animator.module.css";
+import styles from "../styles/animator.module.css";
 
 const AnimatorPage: React.FC = () => {
   // 🎨 設定目前選擇的顏色，預設為黑色

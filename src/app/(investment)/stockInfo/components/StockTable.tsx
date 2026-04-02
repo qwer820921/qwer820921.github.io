@@ -1,6 +1,7 @@
 import React from "react";
 import { TwseStock } from "../types";
 import { formatPrices } from "@/utils/format";
+import styles from "../styles/stockInfo.module.css";
 
 interface StockTableProps {
   stockData: (TwseStock & { id?: number; lastUpdated?: number })[];
@@ -40,13 +41,13 @@ const StockTable: React.FC<StockTableProps> = ({
                 </td>
                 <td 
                   key={`price-${stock.lastUpdated}`}
-                  className="fw-bold flash-update"
+                  className={`fw-bold ${styles['flash-update']}`}
                 >
                   {formatPrices(stock.currentPrice?.toString()) || "-"}
                 </td>
                 <td 
                   key={`change-${stock.lastUpdated}`}
-                  className="flash-update"
+                  className={styles['flash-update']}
                 >
                   {stock.changePoints !== undefined ? (
                     <span

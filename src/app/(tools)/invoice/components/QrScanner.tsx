@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useRef } from "react";
+﻿import React, { useEffect, useState, useRef } from "react";
 import { Html5Qrcode } from "html5-qrcode";
-import styles from "../invoice.module.css";
+import styles from "../styles/invoice.module.css";
 import { LotteryPeriod, CheckResult } from "../types";
 import { getAllWinningLists } from "../api/invoiceApi";
 import { parseInvoiceQRCode, fullCheck } from "../utils";

@@ -41,7 +41,7 @@ export default function Header({
         >
           <div className="ca-avatar-ring">
             <img
-              src="/images/default-avatar.png"
+              src="/images/default-avatar.webp"
               alt="玩家頭像"
               className="ca-avatar-img"
               onError={(e) => {

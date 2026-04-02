@@ -9,7 +9,7 @@ import {
 } from "../api/stockApi";
 
 import { Modal, Button } from "react-bootstrap";
-import "../styles/styles.css";
+import "../styles/stockInfo.module.css";
 
 // 子組件
 import AddStockForm from "./AddStockForm";

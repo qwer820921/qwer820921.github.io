@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext"; // 用於獲取用戶認證資訊
 import { deleteYtMusicTrack, getUserYtMusicTracks } from "../api/ytMusicApi"; // API 函數，用於與後端交互
 import YtMusicPlaylistModal from "../components/playlistModal"; // 播放列表管理模態框組件
-import "../styles/player.css"; // 播放器樣式
+import styles from "../styles/ytMusic.module.css"; // 播放器樣式
 import { YtMusicTrack } from "../types"; // 音樂曲目資料型別
 import {
   CaretRightFill,
@@ -683,21 +683,21 @@ export default function YtMusicPage() {
     <main style={{ padding: "90px 32px 32px 32px" }}>
       {currentTrack ? (
         <>
-          <div className="player-card">
-            <div className="player-album-art">
+          <div className={styles['player-card']}>
+            <div className={styles['player-album-art']}>
               <img
                 src={thumbnailUrl}
                 alt="cover"
-                className="player-album-img"
+                className={styles['player-album-img']}
               />
             </div>
 
-            <div className="player-controls-row">
-              <div className="player-controls-left">
-                <div className="player-chevron-group">
+            <div className={styles['player-controls-row']}>
+              <div className={styles['player-controls-left']}>
+                <div className={styles['player-chevron-group']}>
                   {/* 播放模式切換按鈕 */}
                   <button
-                    className="control-button"
+                    className={styles['control-button']}
                     onClick={togglePlayMode}
                     title={
                       playMode === "sequential"
@@ -713,25 +713,25 @@ export default function YtMusicPage() {
                   >
                     <div className="d-flex align-items-center">
                       {playMode === "sequential" && (
-                        <ArrowRepeat className="control-icon" />
+                        <ArrowRepeat className={styles['control-icon']} />
                       )}
                       {playMode === "shuffle" && (
-                        <Shuffle className="control-icon" />
+                        <Shuffle className={styles['control-icon']} />
                       )}
                       {playMode === "repeat" && (
-                        <Repeat1 className="control-icon" />
+                        <Repeat1 className={styles['control-icon']} />
                       )}
                     </div>
                   </button>
 
                   {/* 快退 5 秒按鈕 */}
                   <button
-                    className="control-button"
+                    className={styles['control-button']}
                     onClick={seekBackward}
                     title="快退 5 秒"
                   >
                     <div className="d-flex align-items-center">
-                      <ChevronLeft className="control-icon" />
+                      <ChevronLeft className={styles['control-icon']} />
                       <span style={{ fontSize: "0.9rem", color: "#666" }}>
                         5s
                       </span>
@@ -740,29 +740,29 @@ export default function YtMusicPage() {
 
                   {/* 上一首按鈕 */}
                   <button
-                    className="control-button"
+                    className={styles['control-button']}
                     onClick={playPrev}
                     title="上一首"
                   >
                     <div className="d-flex align-items-center">
-                      <ChevronBarLeft className="control-icon" />
+                      <ChevronBarLeft className={styles['control-icon']} />
                     </div>
                   </button>
 
                   {/* 下一首按鈕 */}
                   <button
-                    className="control-button"
+                    className={styles['control-button']}
                     onClick={playNext}
                     title="下一首"
                   >
                     <div className="d-flex align-items-center">
-                      <ChevronBarRight className="control-icon" />
+                      <ChevronBarRight className={styles['control-icon']} />
                     </div>
                   </button>
 
                   {/* 快進 5 秒按鈕 */}
                   <button
-                    className="control-button"
+                    className={styles['control-button']}
                     onClick={seekForward}
                     title="快進 5 秒"
                   >
@@ -770,22 +770,22 @@ export default function YtMusicPage() {
                       <span style={{ fontSize: "0.9rem", color: "#666" }}>
                         5s
                       </span>
-                      <ChevronRight className="control-icon" />
+                      <ChevronRight className={styles['control-icon']} />
                     </div>
                   </button>
                 </div>
 
-                <div className="player-title-group">
-                  <div className="player-title player-title-multiline">
+                <div className={styles['player-title-group']}>
+                  <div className={`${styles['player-title']} ${styles['player-title-multiline']}`}>
                     {currentTrack.title}
                   </div>
-                  <div className="player-artist">
+                  <div className={styles['player-artist']}>
                     {currentTrack.artist || ""}
                   </div>
                 </div>
               </div>
 
-              <div className="player-controls-play">
+              <div className={styles['player-controls-play']}>
                 {/* 播放/暫停按鈕 */}
                 <button
                   style={{
@@ -829,17 +829,17 @@ export default function YtMusicPage() {
               </div>
             </div>
 
-            <div className="player-progress-row">
-              <span className="player-time">{formatTime(currentTime)}</span>
+            <div className={styles['player-progress-row']}>
+              <span className={styles['player-time']}>{formatTime(currentTime)}</span>
               <input
                 type="range"
-                className="player-progress-bar"
+                className={styles['player-progress-bar']}
                 min={0}
                 max={duration || 100}
                 value={currentTime}
                 onChange={(e) => handleSeek(Number(e.target.value))}
               />
-              <span className="player-time">{formatTime(duration)}</span>
+              <span className={styles['player-time']}>{formatTime(duration)}</span>
             </div>
           </div>
 

@@ -24,7 +24,7 @@ main {
   padding-top: 32px;
   overflow-y: auto;
   /* 當內容過多時顯示滾動條 */
-  background: url("/images/bg-1.png") center / cover no-repeat fixed;
+  background: url("/images/bg-1.webp") center / cover no-repeat fixed;
 }
 
 /* 確保頁腳跟隨內容滾動 */

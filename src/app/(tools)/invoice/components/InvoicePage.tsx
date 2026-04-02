@@ -1,8 +1,8 @@
-"use client";
+﻿"use client";
 
 import React, { useState } from "react";
 import { Tab, Tabs } from "react-bootstrap";
-import styles from "../invoice.module.css";
+import styles from "../styles/invoice.module.css";
 import LotteryDisplay from "./LotteryDisplay";
 import KeypadInput from "./KeypadInput";
 import QrScanner from "./QrScanner";

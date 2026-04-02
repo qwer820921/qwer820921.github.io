@@ -1,6 +1,6 @@
 "use client";
 import React, { memo } from "react";
-import "./styles/formButton.css";
+import styles from "./styles/formButton.module.css";
 
 type FromButtonStyle =
   | "primary"
@@ -20,12 +20,12 @@ interface FromButtonProps {
 }
 
 const formButtonStyle: Record<FromButtonStyle, string> = {
-  primary: "btn btn-primary",
-  secondary: "btn btn-secondary",
-  danger: "btn btn-danger",
-  success: "btn btn-success",
-  info: "btn btn-info",
-  warning: "btn btn-warning",
+  primary: styles.btnPrimary,
+  secondary: styles.btnSecondary,
+  danger: styles.btnDanger,
+  success: styles.btnSuccess,
+  info: styles.btnInfo,
+  warning: styles.btnWarning,
 };
 
 const FormButton: React.FC<FromButtonProps> = ({

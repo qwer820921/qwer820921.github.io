@@ -1,7 +1,7 @@
 "use client";
 import FormButton from "../buttons/formButton";
 import React from "react";
-import "./styles/modal.css";
+import styles from "./styles/modal.module.css";
 import Modal from "./modal";
 
 interface CustomModalProps {
@@ -33,9 +33,9 @@ const CustomModal: React.FC<CustomModalProps> = ({
 
   return (
     <Modal>
-      <div className={`modalContent ${hasWidth ? "w-75" : ""}`}>
+      <div className={`${styles.modalContent}${hasWidth ? " w-75" : ""}`}>
         {children}
-        <div className="modalContainer">
+        <div className={styles.modalContainer}>
           <FormButton
             text={confirmText}
             style="primary"
