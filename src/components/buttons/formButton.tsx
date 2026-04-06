@@ -20,12 +20,12 @@ interface FromButtonProps {
 }
 
 const formButtonStyle: Record<FromButtonStyle, string> = {
-  primary: styles.btnPrimary,
-  secondary: styles.btnSecondary,
-  danger: styles.btnDanger,
-  success: styles.btnSuccess,
-  info: styles.btnInfo,
-  warning: styles.btnWarning,
+  primary: styles.buttonConfirm,
+  secondary: styles.buttonDeny,
+  danger: styles.buttonDelete,
+  success: styles.buttonDownload,
+  info: styles.buttonHistory,
+  warning: styles.buttonHandover,
 };
 
 const FormButton: React.FC<FromButtonProps> = ({

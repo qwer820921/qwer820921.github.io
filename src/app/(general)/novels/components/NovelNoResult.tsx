@@ -1,5 +1,5 @@
 import React from "react";
-import styles from "../novels.module.css";
+import styles from "../styles/novels.module.css";
 
 interface NovelNoResultProps {
   searchText: string;

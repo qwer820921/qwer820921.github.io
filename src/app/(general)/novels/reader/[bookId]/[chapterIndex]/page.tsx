@@ -5,6 +5,8 @@ import {
 } from "../../../api/novelApi";
 import ReaderPage from "./components/ReaderPage";
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // Build 時產生所有書籍 × 所有章節的靜態頁面
 export async function generateStaticParams() {
   try {
@@ -23,6 +25,8 @@ export async function generateStaticParams() {
           });
         }
       }
+      // ⚠️ 增加延遲以避免 Google Sheets API 頻率限制 (429 Too Many Requests)
+      await delay(500);
     }
 
     return allParams;

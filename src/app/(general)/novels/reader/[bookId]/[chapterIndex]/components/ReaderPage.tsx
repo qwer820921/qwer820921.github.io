@@ -9,7 +9,7 @@ import { useReadingStore } from "../../../../store/readingStore";
 import { getStorage } from "../../../../utils";
 import { ChapterContent, ReaderSettings } from "../../../../types";
 import ReaderMenu from "../../../../components/ReaderMenu";
-import styles from "../../../../novels.module.css";
+import styles from "../../../../styles/novels.module.css";
 import {
   DEFAULT_READER_SETTINGS,
   THEME_COLORS,

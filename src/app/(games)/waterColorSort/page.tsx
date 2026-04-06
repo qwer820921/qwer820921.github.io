@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     title: seo.title,
     description: seo.description,
     url: `https://qwer820921.github.io${ROUTES.WATER_COLOR_SORT}`,
-    images: [{ url: "https://qwer820921.github.io/images/img14.jpg" }],
+    images: [{ url: "https://qwer820921.github.io/images/maple/img14.webp" }],
   },
 };
 

@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useRef } from "react";
-import styles from "../novels.module.css";
+import styles from "../styles/novels.module.css";
 
 interface NovelSearchPanelProps {
   isOpen: boolean;

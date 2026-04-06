@@ -3,7 +3,7 @@ import {
   getPostData,
 } from "@/app/(general)/blog/services/blogService";
 import { MDXRemote } from "next-mdx-remote/rsc";
-import contentStyles from "../blogContent.module.css";
+import contentStyles from "../styles/blogContent.module.css";
 import cardStyles from "./blogPost.module.css";
 import { Metadata } from "next";
 import remarkGfm from "remark-gfm";
@@ -30,7 +30,7 @@ export async function generateMetadata({
       type: "article",
       images: [
         {
-          url: "https://qwer820921.github.io/images/img15.jpg",
+          url: "https://qwer820921.github.io/images/maple/img15.webp",
           width: 1200,
           height: 630,
           alt: postData.title,
@@ -40,7 +40,7 @@ export async function generateMetadata({
     twitter: {
       title: postData.title,
       description: postData.description,
-      images: ["https://qwer820921.github.io/images/img15.jpg"],
+      images: ["https://qwer820921.github.io/images/maple/img15.webp"],
     },
   };
 }

@@ -364,35 +364,53 @@ export default function YtMusicPage() {
       return;
     }
 
-    // 過濾出可顯示的項目及其原始索引
+    // 1. 取得目前正在播放的「實際歌曲索引」（即 playlist 中的 index）
+    const originalTrackIndex = playIndices[currentTrackIndex];
+
+    // 2. 過濾出可顯示的項目及其原始索引
     const visibleIndices = playlist
       .map((item, index) => ({
         index,
         isVisible: item.isVisibleInExternalPlaylist,
       }))
       .filter((item) => item.isVisible)
-      .map((item) => item.index); // 最後保留的是 index 組成的陣列
+      .map((item) => item.index);
+
+    if (visibleIndices.length === 0) return;
+
+    let newPlayIndices: number[] = [];
+    let newCurrentTrackIndex = 0;
 
     switch (playMode) {
       case "shuffle":
-        setPlayIndices(
-          generateShufflePlaylist(currentTrackIndex, visibleIndices)
+        // 以目前的歌曲作為開頭，隨機打亂其他歌曲
+        newPlayIndices = generateShufflePlaylist(
+          originalTrackIndex,
+          visibleIndices
         );
+        newCurrentTrackIndex = 0; // 新的 playIndices[0] 就是剛才的歌曲
         break;
 
       case "sequential":
-        setPlayIndices(visibleIndices);
+        newPlayIndices = visibleIndices;
+        // 在新順序中尋找原本歌曲的位置
+        newCurrentTrackIndex = visibleIndices.indexOf(originalTrackIndex);
+        if (newCurrentTrackIndex === -1) newCurrentTrackIndex = 0;
         break;
 
       case "repeat":
-        setPlayIndices(Array(visibleIndices.length).fill(currentTrackIndex));
+        newPlayIndices = [originalTrackIndex];
+        newCurrentTrackIndex = 0;
         break;
 
       default:
-        // setPlayIndices([]);
-        break;
+        return;
     }
-  }, [playMode, playlist]);
+
+    // 同步更新索引與列表，避免播放中斷或錯位
+    setPlayIndices(newPlayIndices);
+    setCurrentTrackIndex(newCurrentTrackIndex);
+  }, [playMode, playlist.length]); // 僅在模式或清單長度改變時觸發
 
   // 監聽用戶首次交互（點擊或按鍵），解決瀏覽器自動播放限制
   useEffect(() => {
@@ -683,21 +701,21 @@ export default function YtMusicPage() {
     <main style={{ padding: "90px 32px 32px 32px" }}>
       {currentTrack ? (
         <>
-          <div className={styles['player-card']}>
-            <div className={styles['player-album-art']}>
+          <div className={styles["player-card"]}>
+            <div className={styles["player-album-art"]}>
               <img
                 src={thumbnailUrl}
                 alt="cover"
-                className={styles['player-album-img']}
+                className={styles["player-album-img"]}
               />
             </div>
 
-            <div className={styles['player-controls-row']}>
-              <div className={styles['player-controls-left']}>
-                <div className={styles['player-chevron-group']}>
+            <div className={styles["player-controls-row"]}>
+              <div className={styles["player-controls-left"]}>
+                <div className={styles["player-chevron-group"]}>
                   {/* 播放模式切換按鈕 */}
                   <button
-                    className={styles['control-button']}
+                    className={styles["control-button"]}
                     onClick={togglePlayMode}
                     title={
                       playMode === "sequential"
@@ -713,25 +731,25 @@ export default function YtMusicPage() {
                   >
                     <div className="d-flex align-items-center">
                       {playMode === "sequential" && (
-                        <ArrowRepeat className={styles['control-icon']} />
+                        <ArrowRepeat className={styles["control-icon"]} />
                       )}
                       {playMode === "shuffle" && (
-                        <Shuffle className={styles['control-icon']} />
+                        <Shuffle className={styles["control-icon"]} />
                       )}
                       {playMode === "repeat" && (
-                        <Repeat1 className={styles['control-icon']} />
+                        <Repeat1 className={styles["control-icon"]} />
                       )}
                     </div>
                   </button>
 
                   {/* 快退 5 秒按鈕 */}
                   <button
-                    className={styles['control-button']}
+                    className={styles["control-button"]}
                     onClick={seekBackward}
                     title="快退 5 秒"
                   >
                     <div className="d-flex align-items-center">
-                      <ChevronLeft className={styles['control-icon']} />
+                      <ChevronLeft className={styles["control-icon"]} />
                       <span style={{ fontSize: "0.9rem", color: "#666" }}>
                         5s
                       </span>
@@ -740,29 +758,29 @@ export default function YtMusicPage() {
 
                   {/* 上一首按鈕 */}
                   <button
-                    className={styles['control-button']}
+                    className={styles["control-button"]}
                     onClick={playPrev}
                     title="上一首"
                   >
                     <div className="d-flex align-items-center">
-                      <ChevronBarLeft className={styles['control-icon']} />
+                      <ChevronBarLeft className={styles["control-icon"]} />
                     </div>
                   </button>
 
                   {/* 下一首按鈕 */}
                   <button
-                    className={styles['control-button']}
+                    className={styles["control-button"]}
                     onClick={playNext}
                     title="下一首"
                   >
                     <div className="d-flex align-items-center">
-                      <ChevronBarRight className={styles['control-icon']} />
+                      <ChevronBarRight className={styles["control-icon"]} />
                     </div>
                   </button>
 
                   {/* 快進 5 秒按鈕 */}
                   <button
-                    className={styles['control-button']}
+                    className={styles["control-button"]}
                     onClick={seekForward}
                     title="快進 5 秒"
                   >
@@ -770,22 +788,24 @@ export default function YtMusicPage() {
                       <span style={{ fontSize: "0.9rem", color: "#666" }}>
                         5s
                       </span>
-                      <ChevronRight className={styles['control-icon']} />
+                      <ChevronRight className={styles["control-icon"]} />
                     </div>
                   </button>
                 </div>
 
-                <div className={styles['player-title-group']}>
-                  <div className={`${styles['player-title']} ${styles['player-title-multiline']}`}>
+                <div className={styles["player-title-group"]}>
+                  <div
+                    className={`${styles["player-title"]} ${styles["player-title-multiline"]}`}
+                  >
                     {currentTrack.title}
                   </div>
-                  <div className={styles['player-artist']}>
+                  <div className={styles["player-artist"]}>
                     {currentTrack.artist || ""}
                   </div>
                 </div>
               </div>
 
-              <div className={styles['player-controls-play']}>
+              <div className={styles["player-controls-play"]}>
                 {/* 播放/暫停按鈕 */}
                 <button
                   style={{
@@ -829,17 +849,21 @@ export default function YtMusicPage() {
               </div>
             </div>
 
-            <div className={styles['player-progress-row']}>
-              <span className={styles['player-time']}>{formatTime(currentTime)}</span>
+            <div className={styles["player-progress-row"]}>
+              <span className={styles["player-time"]}>
+                {formatTime(currentTime)}
+              </span>
               <input
                 type="range"
-                className={styles['player-progress-bar']}
+                className={styles["player-progress-bar"]}
                 min={0}
                 max={duration || 100}
                 value={currentTime}
                 onChange={(e) => handleSeek(Number(e.target.value))}
               />
-              <span className={styles['player-time']}>{formatTime(duration)}</span>
+              <span className={styles["player-time"]}>
+                {formatTime(duration)}
+              </span>
             </div>
           </div>
 

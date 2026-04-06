@@ -5,7 +5,7 @@ import { ReaderSettings } from "../types";
 import { setStorage } from "../utils";
 import { READER_OPTIONS, THEME_COLORS } from "../constants/themeConfig";
 import { useReadingStore } from "../store/readingStore";
-import styles from "../novels.module.css";
+import styles from "../styles/novels.module.css";
 
 interface ReaderMenuProps {
   isOpen: boolean;

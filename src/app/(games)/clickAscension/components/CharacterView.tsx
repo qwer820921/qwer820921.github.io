@@ -11,7 +11,7 @@ import {
 } from "../types";
 import { formatBigNumber } from "../utils/formatNumber";
 // import { applyEffect } from "../utils/effectMapper";
-import "../styles/clickAscension.css";
+import styles from "../styles/clickAscension.module.css";
 
 const DEFAULT_ACCESSORY_ICONS: Record<AccessorySlot, string> = {
   [AccessorySlot.CRAFT_WING]: "🪶",
@@ -141,7 +141,7 @@ function ItemDetailModal({
       }}
     >
       <div
-        className="ca-card"
+        className={styles["ca-card"]}
         style={{
           width: "100%",
           maxWidth: "320px",
@@ -269,7 +269,7 @@ function ItemDetailModal({
         >
           {!isEquipped ? (
             <button
-              className="ca-btn"
+              className={styles["ca-btn"]}
               onClick={() => {
                 onEquip(item.id, config.Slot);
                 onClose();
@@ -285,7 +285,7 @@ function ItemDetailModal({
             </button>
           ) : (
             <button
-              className="ca-btn"
+              className={styles["ca-btn"]}
               onClick={() => {
                 onUnequip(config.Slot);
                 onClose();
@@ -301,7 +301,7 @@ function ItemDetailModal({
             </button>
           )}
           <button
-            className="ca-btn"
+            className={styles["ca-btn"]}
             onClick={onClose}
             style={{
               flex: 1,
@@ -353,7 +353,7 @@ function AccessoryDetailModal({
       }}
     >
       <div
-        className="ca-card"
+        className={styles["ca-card"]}
         style={{
           width: "100%",
           maxWidth: "340px",
@@ -431,7 +431,7 @@ function AccessoryDetailModal({
         >
           {!isEquipped ? (
             <button
-              className="ca-btn"
+              className={styles["ca-btn"]}
               onClick={() => {
                 onEquip?.(item.id, item.config.Slot as AccessorySlot);
                 onClose();
@@ -447,7 +447,7 @@ function AccessoryDetailModal({
             </button>
           ) : (
             <button
-              className="ca-btn"
+              className={styles["ca-btn"]}
               onClick={() => {
                 onUnequip?.(item.config.Slot as AccessorySlot);
                 onClose();
@@ -463,7 +463,7 @@ function AccessoryDetailModal({
             </button>
           )}
           <button
-            className="ca-btn"
+            className={styles["ca-btn"]}
             onClick={onClose}
             style={{
               flex: 1,
@@ -684,7 +684,7 @@ export default function CharacterView({
 
   return (
     <div
-      className="ca-character-view"
+      className={styles["ca-character-view"]}
       style={{
         flex: 1,
         display: "flex",
@@ -720,26 +720,26 @@ export default function CharacterView({
           }}
         >
           {/* 1. Equipment Damage Multiplier (武器 MAIN_HAND) */}
-          <div className="ca-stat-pill">
-            <span className="ca-stat-icon">⚔️</span>
-            <span className="ca-stat-value">
+          <div className={styles["ca-stat-pill"]}>
+            <span className={styles["ca-stat-icon"]}>⚔️</span>
+            <span className={styles["ca-stat-value"]}>
               {equipmentBonuses.equipDamageMultiplier.toFixed(0)}%
             </span>
             {equipmentBonuses.equipDamageMultiplier > 0 && (
-              <span className="ca-stat-bonus">
+              <span className={styles["ca-stat-bonus"]}>
                 (+{equipmentBonuses.equipDamageMultiplier.toFixed(0)}%)
               </span>
             )}
           </div>
 
           {/* 2. Critical Chance (頭盔 HEAD) */}
-          <div className="ca-stat-pill">
-            <span className="ca-stat-icon">🎯</span>
-            <span className="ca-stat-value">
+          <div className={styles["ca-stat-pill"]}>
+            <span className={styles["ca-stat-icon"]}>🎯</span>
+            <span className={styles["ca-stat-value"]}>
               {(effectiveStats.criticalChance * 100).toFixed(1)}%
             </span>
             {equipmentBonuses.criticalChance > 0 && (
-              <span className="ca-stat-bonus">
+              <span className={styles["ca-stat-bonus"]}>
                 (+
                 {(equipmentBonuses.criticalChance * 100).toFixed(1)}
                 %)
@@ -748,13 +748,13 @@ export default function CharacterView({
           </div>
 
           {/* 3. Auto Click (護甲 BODY) */}
-          <div className="ca-stat-pill">
-            <span className="ca-stat-icon">🤖</span>
-            <span className="ca-stat-value">
+          <div className={styles["ca-stat-pill"]}>
+            <span className={styles["ca-stat-icon"]}>🤖</span>
+            <span className={styles["ca-stat-value"]}>
               {Number(effectiveStats.autoClickPerSec || 0).toFixed(1)}/s
             </span>
             {equipmentBonuses.autoClickPerSec > 0 && (
-              <span className="ca-stat-bonus">
+              <span className={styles["ca-stat-bonus"]}>
                 (+
                 {Number(equipmentBonuses.autoClickPerSec).toFixed(1)})
               </span>
@@ -762,45 +762,45 @@ export default function CharacterView({
           </div>
 
           {/* 4. Critical Damage (手套 HANDS) */}
-          <div className="ca-stat-pill">
-            <span className="ca-stat-icon">💥</span>
-            <span className="ca-stat-value">
+          <div className={styles["ca-stat-pill"]}>
+            <span className={styles["ca-stat-icon"]}>💥</span>
+            <span className={styles["ca-stat-value"]}>
               {(effectiveStats.criticalDamage * 100).toFixed(0)}%
             </span>
             {equipmentBonuses.criticalDamage > 0 && (
-              <span className="ca-stat-bonus">
+              <span className={styles["ca-stat-bonus"]}>
                 (+
-                {(equipmentBonuses.criticalDamage * 100).toFixed(0)}
+                {(effectiveStats.criticalDamage * 100).toFixed(0)}
                 %)
               </span>
             )}
           </div>
 
           {/* 5. Gold Multiplier (鞋 LEGS) */}
-          <div className="ca-stat-pill">
-            <span className="ca-stat-icon">💰</span>
-            <span className="ca-stat-value">
+          <div className={styles["ca-stat-pill"]}>
+            <span className={styles["ca-stat-icon"]}>💰</span>
+            <span className={styles["ca-stat-value"]}>
               {(effectiveStats.goldMultiplier * 100).toFixed(0)}%
             </span>
             {equipmentBonuses.goldMultiplier > 0 && (
-              <span className="ca-stat-bonus">
+              <span className={styles["ca-stat-bonus"]}>
                 (+
-                {(equipmentBonuses.goldMultiplier * 100).toFixed(0)}
+                {(effectiveStats.goldMultiplier * 100).toFixed(0)}
                 %)
               </span>
             )}
           </div>
 
           {/* 6. Boss Damage (RELIC) */}
-          <div className="ca-stat-pill">
-            <span className="ca-stat-icon">👹</span>
-            <span className="ca-stat-value">
+          <div className={styles["ca-stat-pill"]}>
+            <span className={styles["ca-stat-icon"]}>👹</span>
+            <span className={styles["ca-stat-value"]}>
               {(effectiveStats.bossDamageMultiplier * 100).toFixed(0)}%
             </span>
             {equipmentBonuses.bossDamageMultiplier > 0 && (
-              <span className="ca-stat-bonus">
+              <span className={styles["ca-stat-bonus"]}>
                 (+
-                {(equipmentBonuses.bossDamageMultiplier * 100).toFixed(0)}
+                {(effectiveStats.bossDamageMultiplier * 100).toFixed(0)}
                 %)
               </span>
             )}
@@ -943,7 +943,7 @@ export default function CharacterView({
 
           {/* Center Character */}
           <div
-            className="ca-character-figure"
+            className={styles["ca-character-figure"]}
             style={{
               position: "relative",
               zIndex: 1,
@@ -963,7 +963,7 @@ export default function CharacterView({
               }}
             />
             <div
-              className="ca-glass"
+              className={styles["ca-glass"]}
               style={{
                 marginTop: "4px",
                 padding: "2px 10px",
@@ -1231,7 +1231,7 @@ export default function CharacterView({
                     <div
                       key={item.id}
                       onClick={() => setSelectedItem(item)}
-                      className="ca-inventory-item"
+                      className={styles["ca-inventory-item"]}
                       style={{
                         width: "56px",
                         height: "56px",
@@ -1321,7 +1321,7 @@ export default function CharacterView({
                   <div
                     key={item.id}
                     onClick={() => setSelectedAccessory(item)}
-                    className="ca-inventory-item"
+                    className={styles["ca-inventory-item"]}
                     style={{
                       width: "56px",
                       height: "56px",
@@ -1452,7 +1452,7 @@ function EquipmentSlotItem({
 
   return (
     <div
-      className="ca-equipment-slot"
+      className={styles["ca-equipment-slot"]}
       style={{
         width: "54px", // Reduced from 64px
         height: "54px",
@@ -1530,7 +1530,7 @@ function AccessorySlotItem({
 
   return (
     <div
-      className="ca-accessory-slot"
+      className={styles["ca-accessory-slot"]}
       style={{
         width: "54px",
         height: "54px",

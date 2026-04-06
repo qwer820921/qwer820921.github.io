@@ -14,7 +14,9 @@ export function CreateRefManager<T extends HTMLElement>() {
     /**
      * 目前所有 Ref 的陣列參考
      */
-    refs: refs.current,
+    get refs() {
+      return refs.current;
+    },
 
     /**
      * 取得指定 index 的 Ref 元素
@@ -53,7 +55,8 @@ export function CreateRefManager<T extends HTMLElement>() {
      * @param count 新長度
      */
     reset: (count: number): void => {
-      refs.current = Array(count).fill(null);
+      refs.current.length = 0;
+      refs.current.push(...Array(count).fill(null));
     },
 
     /**

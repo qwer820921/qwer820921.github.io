@@ -14,7 +14,7 @@ import {
   PauseFill,
   SkipForwardFill,
 } from "react-bootstrap-icons";
-import styles from "../novels.module.css";
+import styles from "../styles/novels.module.css";
 
 export interface TTSPlayerRef {
   togglePlay: () => void;
@@ -306,7 +306,16 @@ const TTSPlayer = forwardRef<TTSPlayerRef, TTSPlayerProps>(
           speechSynthesis.speak(utterance);
         }, 50);
       }
-    }, [rate, isPlaying, currentIndex, paragraphs, selectedVoiceURI, voices, stopActiveUtterance, speakParagraph]);
+    }, [
+      rate,
+      isPlaying,
+      currentIndex,
+      paragraphs,
+      selectedVoiceURI,
+      voices,
+      stopActiveUtterance,
+      speakParagraph,
+    ]);
 
     // 切換語音：設定 flag 並更新 state，讓 useEffect 在 re-render 後用更新過的 speakParagraph 重新朗讀
     const handleVoiceChange = useCallback((newVoiceURI: string) => {

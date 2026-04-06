@@ -5,7 +5,7 @@ import { useNovelStore } from "../../store/novelStore";
 import { getStorage } from "../../utils";
 import NovelCard from "../../components/NovelCard";
 import BottomTabs from "../../components/BottomTabs";
-import styles from "../../novels.module.css";
+import styles from "../../styles/novels.module.css";
 
 export default function CollectionPage() {
   const { novels, novelsLoading, novelsError, fetchLibrary } = useNovelStore();

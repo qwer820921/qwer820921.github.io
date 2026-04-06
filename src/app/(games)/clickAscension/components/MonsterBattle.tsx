@@ -11,7 +11,7 @@ import {
 } from "../types";
 import { formatBigNumber } from "../utils/formatNumber";
 import HpBar from "./HpBar";
-import "../styles/clickAscension.css";
+import styles from "../styles/clickAscension.module.css";
 
 // Helper component to handle monster image with emoji fallback
 const MonsterSprite = ({ monster }: { monster: Monster }) => {
@@ -33,7 +33,7 @@ const MonsterSprite = ({ monster }: { monster: Monster }) => {
       <img
         src={imgSrc}
         alt={monster.name}
-        className="ca-monster-image"
+        className={styles["ca-monster-image"]}
         onError={() => setImgError(true)}
       />
     );
@@ -367,18 +367,21 @@ export default function MonsterBattle({
   const getDamageClass = (type: DamageType) => {
     switch (type) {
       case "CRIT":
-        return "ca-float-damage-crit";
+        return styles["ca-float-damage-crit"];
       case "AUTO":
-        return "ca-float-damage-auto";
+        return styles["ca-float-damage-auto"];
       default:
-        return "ca-float-damage";
+        return styles["ca-float-damage"];
     }
   };
 
   return (
     <div
       ref={containerRef}
-      className={`ca-battle-area ${isShaking ? "ca-shake" : ""}`}
+      className={[
+        styles["ca-battle-area"],
+        isShaking ? styles["ca-shake"] : "",
+      ].join(" ")}
       style={{
         background: isRageActive
           ? "radial-gradient(circle, rgba(220, 38, 38, 0.2) 0%, rgba(15, 23, 42, 1) 80%)"
@@ -390,7 +393,12 @@ export default function MonsterBattle({
       {/* Background Monster Sprite */}
       {monster && (
         <div
-          className={`ca-monster-sprite ${monster.isBoss ? "boss" : ""} ${isHitFlash ? "ca-hit-flash" : ""} ca-bounce-slow`}
+          className={[
+            styles["ca-monster-sprite"],
+            monster.isBoss ? styles.boss : "",
+            isHitFlash ? styles["ca-hit-flash"] : "",
+            styles["ca-bounce-slow"],
+          ].join(" ")}
         >
           <MonsterSprite monster={monster} />
         </div>
@@ -398,7 +406,7 @@ export default function MonsterBattle({
 
       {/* Center UI Overlay */}
       <div
-        className="ca-monster-container"
+        className={styles["ca-monster-container"]}
         style={{
           position: "relative",
           zIndex: 1,
@@ -506,7 +514,7 @@ export default function MonsterBattle({
             {/* Note Display - Now above Stage Badge */}
             {monster.note && (
               <div
-                className="ca-note-badge"
+                className={styles["ca-note-badge"]}
                 style={{
                   position: "relative",
                   top: "0",
@@ -521,13 +529,15 @@ export default function MonsterBattle({
             )}
 
             {/* Stage Badge */}
-            <div className="ca-stage-display">第 {stageId} 關</div>
+            <div className={styles["ca-stage-display"]}>第 {stageId} 關</div>
 
             {/* Kill Progress */}
             {!isBossActive &&
               (monstersKilled >= monstersRequired ? (
                 <button
-                  className="ca-btn ca-btn-primary"
+                  className={[styles["ca-btn"], styles["ca-btn-primary"]].join(
+                    " "
+                  )}
                   onClick={(e) => {
                     e.stopPropagation();
                     onChallengeBoss?.();
@@ -600,9 +610,13 @@ export default function MonsterBattle({
             if (!isAttacking) return "";
             // 奇偶交替不同動畫效果
             if (index % 2 === 0) {
-              return isLeft ? "ca-attack-lunge-left" : "ca-attack-lunge-right";
+              return isLeft
+                ? styles["ca-attack-lunge-left"]
+                : styles["ca-attack-lunge-right"];
             } else {
-              return isLeft ? "ca-attack-magic-left" : "ca-attack-magic-right";
+              return isLeft
+                ? styles["ca-attack-magic-left"]
+                : styles["ca-attack-magic-right"];
             }
           };
 

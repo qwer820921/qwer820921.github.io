@@ -8,7 +8,7 @@ import {
   UpgradeEffectType,
 } from "../types";
 import { formatBigNumber } from "../utils/formatNumber";
-import "../styles/clickAscension.css";
+import styles from "../styles/clickAscension.module.css";
 
 interface CraftViewProps {
   player: PlayerState;
@@ -143,7 +143,7 @@ function AccessoryDetailModal({
       }}
     >
       <div
-        className="ca-card"
+        className={styles["ca-card"]}
         style={{
           width: "100%",
           maxWidth: "340px",
@@ -329,7 +329,7 @@ function AccessoryDetailModal({
         >
           {!isOwned ? (
             <button
-              className="ca-btn"
+              className={styles["ca-btn"]}
               onClick={() => {
                 onCraft(accessory.ID);
                 onClose();
@@ -349,7 +349,7 @@ function AccessoryDetailModal({
             <>
               {!isMaxLevel && (
                 <button
-                  className="ca-btn"
+                  className={styles["ca-btn"]}
                   onClick={() => {
                     onUpgrade(accessory.ID);
                   }}
@@ -367,7 +367,7 @@ function AccessoryDetailModal({
               )}
               {!isEquipped ? (
                 <button
-                  className="ca-btn"
+                  className={styles["ca-btn"]}
                   onClick={() => {
                     onEquip(accessory.ID, accessory.Slot as AccessorySlot);
                     onClose();
@@ -383,7 +383,7 @@ function AccessoryDetailModal({
                 </button>
               ) : (
                 <button
-                  className="ca-btn"
+                  className={styles["ca-btn"]}
                   onClick={() => {
                     onUnequip(accessory.Slot as AccessorySlot);
                     onClose();
@@ -401,7 +401,7 @@ function AccessoryDetailModal({
             </>
           )}
           <button
-            className="ca-btn"
+            className={styles["ca-btn"]}
             onClick={onClose}
             style={{
               flex: 1,
@@ -515,7 +515,7 @@ export default function CraftView({
 
   return (
     <div
-      className="ca-craft-view"
+      className={styles["ca-craft-view"]}
       style={{
         flex: 1,
         display: "flex",
@@ -562,32 +562,32 @@ export default function CraftView({
           marginBottom: "12px",
         }}
       >
-        <div className="ca-stat-pill" style={{ fontSize: "0.7rem" }}>
+        <div className={styles["ca-stat-pill"]} style={{ fontSize: "0.7rem" }}>
           <span>
             🌟 飛昇點數 + {(accessoryBonuses.apMultiplier * 100).toFixed(1)}%
           </span>
         </div>
-        <div className="ca-stat-pill" style={{ fontSize: "0.7rem" }}>
+        <div className={styles["ca-stat-pill"]} style={{ fontSize: "0.7rem" }}>
           <span>
             📚 經驗 + {(accessoryBonuses.xpMultiplier * 100).toFixed(1)}%
           </span>
         </div>
-        <div className="ca-stat-pill" style={{ fontSize: "0.7rem" }}>
+        <div className={styles["ca-stat-pill"]} style={{ fontSize: "0.7rem" }}>
           <span>
             👾 怪HP - {(accessoryBonuses.monsterHpReduction * 100).toFixed(1)}%
           </span>
         </div>
-        <div className="ca-stat-pill" style={{ fontSize: "0.7rem" }}>
+        <div className={styles["ca-stat-pill"]} style={{ fontSize: "0.7rem" }}>
           <span>
             👹 BossHP - {(accessoryBonuses.bossHpReduction * 100).toFixed(1)}%
           </span>
         </div>
-        <div className="ca-stat-pill" style={{ fontSize: "0.7rem" }}>
+        <div className={styles["ca-stat-pill"]} style={{ fontSize: "0.7rem" }}>
           <span>
             ⚔️ 飾品攻擊力 + {accessoryBonuses.accDamageMultiplier.toFixed(1)}%
           </span>
         </div>
-        <div className="ca-stat-pill" style={{ fontSize: "0.7rem" }}>
+        <div className={styles["ca-stat-pill"]} style={{ fontSize: "0.7rem" }}>
           <span>
             💎 鑽石掉落 +{" "}
             {(accessoryBonuses.diamondMultiplier * 100).toFixed(1)}%

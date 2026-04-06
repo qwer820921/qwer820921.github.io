@@ -84,6 +84,15 @@ const SoundCloudPlayerPage: React.FC = () => {
     });
   }, [playlist]);
 
+  // 使用 Refs 存儲最新狀態，避免事件監聽器中的閉包髒資料
+  const playlistRef = useRef(playlist);
+  const currentIndexRef = useRef(currentIndex);
+
+  useEffect(() => {
+    playlistRef.current = playlist;
+    currentIndexRef.current = currentIndex;
+  }, [playlist, currentIndex]);
+
   const playTrack = (idx: number) => setCurrentIndex(idx);
   const currentTrack = playlist[currentIndex];
 
@@ -103,9 +112,12 @@ const SoundCloudPlayerPage: React.FC = () => {
 
     // 綁定 FINISH 事件：自動切換下一首
     widgetRef.current.bind(window.SC.Widget.Events.FINISH, () => {
-      if (playlist.length === 0) return;
-      if (currentIndex < playlist.length - 1) {
-        playTrack(currentIndex + 1); // 下一首
+      const latestPlaylist = playlistRef.current;
+      const latestIndex = currentIndexRef.current;
+
+      if (latestPlaylist.length === 0) return;
+      if (latestIndex < latestPlaylist.length - 1) {
+        playTrack(latestIndex + 1); // 下一首
       } else {
         playTrack(0); // 循環回到第一首
       }
@@ -194,10 +206,12 @@ const SoundCloudPlayerPage: React.FC = () => {
             {/* 專輯圖片上浮效果 */}
             <div className="player-album-art">
               <img
-                src={currentTrack.artworkUrl || "/images/img14.jpg"}
+                src={currentTrack.artworkUrl || "/images/maple/img14.webp"}
                 alt={currentTrack.title}
                 className="player-album-img"
-                onError={(e) => (e.currentTarget.src = "/images/img14.jpg")}
+                onError={(e) =>
+                  (e.currentTarget.src = "/images/maple/img14.webp")
+                }
               />
             </div>
             {/* 播放控制列（橫向） */}

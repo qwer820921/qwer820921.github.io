@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     title: seo.title,
     description: seo.description,
     url: `https://qwer820921.github.io${ROUTES.GAME2048}`,
-    images: [{ url: "https://qwer820921.github.io/images/img14.jpg" }],
+    images: [{ url: "https://qwer820921.github.io/images/maple/img14.webp" }],
   },
 };
 

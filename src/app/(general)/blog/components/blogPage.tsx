@@ -66,10 +66,7 @@ export default function BlogPage({ posts }: BlogPageProps) {
     <Container style={{ paddingTop: "70px", paddingBottom: "70px" }}>
       {/* Header Row：標題 + 放大鏡 */}
       <div className={styles.pageTitleRow}>
-        <h1 className={styles.pageTitle}>
-          <span className={styles.titleIcon}>📝</span>
-          文章列表
-        </h1>
+        <h1 className={styles.pageTitle}>文章列表</h1>
 
         {/* 放大鏡 + 浮動面板錨點 */}
         <div className={styles.searchAnchor}>

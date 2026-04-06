@@ -13,9 +13,6 @@ const AboutPage: React.FC = () => {
         <div className={styles.heroBackground}></div>
         <Container className={styles.heroContent}>
           <div className={styles.profileHeader}>
-            <div className={styles.profileBadge}>
-              <span className={styles.badgeIcon}>✨</span>
-            </div>
             <h1 className={styles.brandName}>子yee 萬事屋</h1>
             <p className={styles.brandTagline}>創新 • 專業 • 共創未來</p>
             <p className={styles.brandDescription}>
@@ -59,7 +56,6 @@ const AboutPage: React.FC = () => {
             <div className={styles.sectionCard}>
               <div className={styles.cardHeader}>
                 <h2>我們的故事</h2>
-                <span className={styles.sectionIcon}>📖</span>
               </div>
               <div className={styles.cardContent}>
                 <p className={styles.introText}>
@@ -109,7 +105,7 @@ const AboutPage: React.FC = () => {
               <div className={styles.teamCard}>
                 <div className={styles.teamImageWrapper}>
                   <img
-                    src="images/img06.jpg"
+                    src="images/maple/img06.webp"
                     alt="賴皮張大師"
                     className={styles.teamImage}
                   />
@@ -135,7 +131,7 @@ const AboutPage: React.FC = () => {
               <div className={styles.teamCard}>
                 <div className={styles.teamImageWrapper}>
                   <img
-                    src="images/img02.jpg"
+                    src="images/maple/img02.webp"
                     alt="yee大師"
                     className={styles.teamImage}
                   />
@@ -161,7 +157,7 @@ const AboutPage: React.FC = () => {
               <div className={styles.teamCard}>
                 <div className={styles.teamImageWrapper}>
                   <img
-                    src="images/img03.jpg"
+                    src="images/maple/img03.webp"
                     alt="連工程師"
                     className={styles.teamImage}
                   />
@@ -193,7 +189,6 @@ const AboutPage: React.FC = () => {
               <div
                 className={`${styles.missionCard} ${styles.missionCardPrimary}`}
               >
-                <div className={styles.missionIcon}>🎯</div>
                 <h3>我們的使命</h3>
                 <p>
                   幫助客戶在數位時代中脫穎而出，提供最創新且有效的數位解決方案，實現企業目標。
@@ -203,7 +198,6 @@ const AboutPage: React.FC = () => {
               <div
                 className={`${styles.missionCard} ${styles.missionCardSecondary}`}
               >
-                <div className={styles.missionIcon}>🚀</div>
                 <h3>我們的願景</h3>
                 <p>
                   致力於成為數位解決方案領域的領導者，以卓越的技術與服務引領行業發展。
@@ -216,22 +210,18 @@ const AboutPage: React.FC = () => {
               <h3 className={styles.valuesTitle}>核心價值觀</h3>
               <div className={styles.valuesGrid}>
                 <div className={styles.valueItem}>
-                  <div className={styles.valueIcon}>💡</div>
                   <h4>創新</h4>
                   <p>不斷探索新的可能性，推動行業進步</p>
                 </div>
                 <div className={styles.valueItem}>
-                  <div className={styles.valueIcon}>🤝</div>
                   <h4>協作</h4>
                   <p>與客戶與團隊緊密合作，共創價值</p>
                 </div>
                 <div className={styles.valueItem}>
-                  <div className={styles.valueIcon}>⭐</div>
                   <h4>卓越</h4>
                   <p>追求每一個細節的完美，不妥協品質</p>
                 </div>
                 <div className={styles.valueItem}>
-                  <div className={styles.valueIcon}>🔒</div>
                   <h4>誠信</h4>
                   <p>以誠信為基礎，建立長期信任關係</p>
                 </div>

@@ -11,7 +11,7 @@ import {
   Trophy,
   EmojiFrown,
 } from "react-bootstrap-icons";
-import "../styles/styles.css";
+import styles from "../styles/sudoku.module.css";
 import { Difficulty } from "../types";
 
 const SudokuPage = () => {
@@ -74,22 +74,22 @@ const SudokuPage = () => {
   if (!_hasHydrated) return null;
 
   return (
-    <div className="sudoku-container">
+    <div className={styles["sudoku-container"]}>
       {/* 遊戲頂部導航 */}
-      <div className="sudoku-header">
-        <div className="stats-row">
-          <div className="stats-item">
+      <div className={styles["sudoku-header"]}>
+        <div className={styles["stats-row"]}>
+          <div className={styles["stats-item"]}>
             <span>{formatTime(elapsedTime)}</span>
           </div>
 
-          <div className="stats-item">
-            <span className="mistakes-count">
+          <div className={styles["stats-item"]}>
+            <span className={styles["mistakes-count"]}>
               ERROR: {mistakes}/{maxMistakes}
             </span>
           </div>
 
           <button
-            className="sudoku-top-btn"
+            className={styles["sudoku-top-btn"]}
             onClick={() => initGame(difficulty)}
           >
             <ArrowCounterclockwise size={20} />
@@ -118,7 +118,7 @@ const SudokuPage = () => {
       </div>
 
       {/* 9x9 網格 */}
-      <div className="sudoku-grid">
+      <div className={styles["sudoku-grid"]}>
         {grid.map((row, rIdx) =>
           row.map((cell, cIdx) => {
             const isSelected =
@@ -134,21 +134,26 @@ const SudokuPage = () => {
             return (
               <div
                 key={`${rIdx}-${cIdx}`}
-                className={`sudoku-cell 
-                  ${isSelected ? "selected" : ""} 
-                  ${isHighlightRelated ? "highlight-related" : ""} 
-                  ${isHighlightSame ? "highlight-same" : ""}
-                  ${cell.initialValue !== null ? "initial" : "user-input"}
-                  ${!cell.isCorrect ? "incorrect" : ""}
-                `}
+                className={[
+                  styles["sudoku-cell"],
+                  isSelected ? styles.selected : "",
+                  isHighlightRelated ? styles["highlight-related"] : "",
+                  isHighlightSame ? styles["highlight-same"] : "",
+                  cell.initialValue !== null
+                    ? styles.initial
+                    : styles["user-input"],
+                  !cell.isCorrect ? styles.incorrect : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 onClick={() => selectCell(rIdx, cIdx)}
               >
                 {cell.value !== null ? (
                   cell.value
                 ) : (
-                  <div className="notes-grid">
+                  <div className={styles["notes-grid"]}>
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-                      <div key={n} className="note-num">
+                      <div key={n} className={styles["note-num"]}>
                         {cell.notes.includes(n) ? n : ""}
                       </div>
                     ))}
@@ -161,31 +166,33 @@ const SudokuPage = () => {
       </div>
 
       {/* 控制面板 */}
-      <div className="controls-layout">
-        <div className="sudoku-controls">
-          <button className="control-btn" onClick={() => {}}>
-            <div className="icon-circle">
+      <div className={styles["controls-layout"]}>
+        <div className={styles["sudoku-controls"]}>
+          <button className={styles["control-btn"]} onClick={() => {}}>
+            <div className={styles["icon-circle"]}>
               <Arrow90degLeft size={20} />
             </div>
             <span>Undo</span>
           </button>
-          <button className="control-btn" onClick={eraseCell}>
-            <div className="icon-circle">
+          <button className={styles["control-btn"]} onClick={eraseCell}>
+            <div className={styles["icon-circle"]}>
               <Eraser size={20} />
             </div>
             <span>Erase</span>
           </button>
           <button
-            className={`control-btn ${notesMode ? "active" : ""}`}
+            className={[styles["control-btn"], notesMode ? styles.active : ""]
+              .filter(Boolean)
+              .join(" ")}
             onClick={toggleNotesMode}
           >
-            <div className="icon-circle">
+            <div className={styles["icon-circle"]}>
               <Pencil size={20} />
             </div>
             <span>Notes {notesMode ? "ON" : "OFF"}</span>
           </button>
-          <button className="control-btn" onClick={useHint}>
-            <div className="icon-circle">
+          <button className={styles["control-btn"]} onClick={useHint}>
+            <div className={styles["icon-circle"]}>
               <Lightbulb size={20} />
             </div>
             <span>Hint</span>
@@ -193,9 +200,13 @@ const SudokuPage = () => {
         </div>
 
         {/* 數字鍵盤 */}
-        <div className="num-pad">
+        <div className={styles["num-pad"]}>
           {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-            <button key={n} className="num-btn" onClick={() => setCellValue(n)}>
+            <button
+              key={n}
+              className={styles["num-btn"]}
+              onClick={() => setCellValue(n)}
+            >
               {n}
             </button>
           ))}
@@ -204,33 +215,33 @@ const SudokuPage = () => {
 
       {/* 難度選擇 Modal */}
       {showDifficultySelector && (
-        <div className="sudoku-overlay">
-          <div className="sudoku-modal">
+        <div className={styles["sudoku-overlay"]}>
+          <div className={styles["sudoku-modal"]}>
             <h2 style={{ marginBottom: "10px", color: "#1e293b" }}>選擇難度</h2>
             <p style={{ opacity: 0.7, marginBottom: "20px", color: "#64748b" }}>
               挑戰您的邏輯極限
             </p>
-            <div className="difficulty-options">
+            <div className={styles["difficulty-options"]}>
               <button
-                className="diff-btn"
+                className={styles["diff-btn"]}
                 onClick={() => handleDifficultyChoice("easy")}
               >
                 簡單 (Easy)
               </button>
               <button
-                className="diff-btn"
+                className={styles["diff-btn"]}
                 onClick={() => handleDifficultyChoice("medium")}
               >
                 普通 (Medium)
               </button>
               <button
-                className="diff-btn"
+                className={styles["diff-btn"]}
                 onClick={() => handleDifficultyChoice("hard")}
               >
                 困難 (Hard)
               </button>
               <button
-                className="diff-btn"
+                className={styles["diff-btn"]}
                 onClick={() => handleDifficultyChoice("expert")}
               >
                 專家 (Expert)
@@ -243,8 +254,8 @@ const SudokuPage = () => {
       {/* 勝負結算 Modal */}
       {(gameState === "won" || gameState === "lost") &&
         !showDifficultySelector && (
-          <div className="sudoku-overlay">
-            <div className="sudoku-modal">
+          <div className={styles["sudoku-overlay"]}>
+            <div className={styles["sudoku-modal"]}>
               {gameState === "won" ? (
                 <>
                   <div
@@ -279,7 +290,7 @@ const SudokuPage = () => {
                 </>
               )}
               <button
-                className="diff-btn"
+                className={styles["diff-btn"]}
                 style={{
                   width: "100%",
                   background: "#0ea5e9",

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import styles from "../novels.module.css";
+import styles from "../styles/novels.module.css";
 
 const TABS = [
   { label: "全部", path: "/novels", icon: "📚", exact: true },

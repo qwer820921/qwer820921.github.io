@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Novel } from "../types";
 import { fixDriveCoverUrl } from "../utils";
-import styles from "../novels.module.css";
+import styles from "../styles/novels.module.css";
 
 interface NovelCardProps {
   novel: Novel;

@@ -40,7 +40,7 @@ export async function generateMetadata({ params }: PageProps) {
           {
             url:
               novel.cover_url ||
-              "https://qwer820921.github.io/images/img14.jpg",
+              "https://qwer820921.github.io/images/maple/img14.webp",
           },
         ],
       },

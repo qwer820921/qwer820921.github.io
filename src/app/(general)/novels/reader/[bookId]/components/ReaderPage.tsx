@@ -9,7 +9,7 @@ import { getStorage } from "../../../utils";
 import { ChapterContent, ReaderSettings } from "../../../types";
 import ReaderMenu from "../../../components/ReaderMenu";
 import TTSPlayer, { TTSPlayerRef } from "../../../components/TTSPlayer";
-import styles from "../../../novels.module.css";
+import styles from "../../../styles/novels.module.css";
 import {
   DEFAULT_READER_SETTINGS,
   THEME_COLORS,

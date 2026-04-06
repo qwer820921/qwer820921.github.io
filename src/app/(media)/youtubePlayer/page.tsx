@@ -15,7 +15,7 @@ export const metadata = {
     url: `https://qwer820921.github.io${ROUTES.YT_PLAYER}`,
     images: [
       {
-        url: "https://qwer820921.github.io/images/img16.jpg",
+        url: "https://qwer820921.github.io/images/maple/img16.webp",
         width: 1200,
         height: 630,
         alt: seo.title,
@@ -25,7 +25,7 @@ export const metadata = {
   twitter: {
     title: seo.title,
     description: seo.description,
-    images: ["https://qwer820921.github.io/images/img16.jpg"],
+    images: ["https://qwer820921.github.io/images/maple/img16.webp"],
   },
 };
 

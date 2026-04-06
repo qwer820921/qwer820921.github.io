@@ -2,7 +2,7 @@
 
 import React from "react";
 import { formatBigNumber } from "../utils/formatNumber";
-import "../styles/clickAscension.css";
+import styles from "../styles/clickAscension.module.css";
 
 interface HpBarProps {
   name: string;
@@ -30,9 +30,12 @@ export default function HpBar({
       </div>
 
       {/* HP Bar */}
-      <div className="ca-hp-bar">
+      <div className={styles["ca-hp-bar"]}>
         <div
-          className={`ca-hp-bar-fill ${isBoss ? "boss" : "normal"}`}
+          className={[
+            styles["ca-hp-bar-fill"],
+            isBoss ? styles.boss : styles.normal,
+          ].join(" ")}
           style={{ width: `${percentage}%` }}
         />
       </div>

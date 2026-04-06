@@ -9,7 +9,7 @@ import { GRID, CANVAS } from "../config/constants";
 import { gridToWorld } from "../config/mapConfig";
 import { generateId } from "../utils/math";
 import { levelManager } from "../core/LevelManager";
-import "../styles/styles.css";
+import styles from "../styles/towerDefense.module.css";
 
 export default function TowerDefenseGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -156,37 +156,37 @@ export default function TowerDefenseGame() {
   };
 
   return (
-    <div className="tower-defense-container">
+    <div className={styles["tower-defense-container"]}>
       {/* 頁首標題 - 僅在開始畫面顯示 */}
       {!gameStarted && (
-        <header className="tower-defense-header">
-          <h1 className="game-title">塔防守衛戰</h1>
-          <p className="game-subtitle">TOWER DEFENSE</p>
+        <header className={styles["tower-defense-header"]}>
+          <h1 className={styles["game-title"]}>塔防守衛戰</h1>
+          <p className={styles["game-subtitle"]}>TOWER DEFENSE</p>
         </header>
       )}
 
       {/* 開始畫面 */}
       {!gameStarted && (
-        <div className="start-screen">
-          <div className="start-content">
-            <div className="game-logo">
-              <span className="logo-icon">🏰</span>
+        <div className={styles["start-screen"]}>
+          <div className={styles["start-content"]}>
+            <div className={styles["game-logo"]}>
+              <span className={styles["logo-icon"]}>🏰</span>
             </div>
-            <h2 className="welcome-text">準備好防禦了嗎？</h2>
-            <p className="game-description">
+            <h2 className={styles["welcome-text"]}>準備好防禦了嗎？</h2>
+            <p className={styles["game-description"]}>
               策略佈局，升級防禦塔，抵禦一波又一波的敵人進攻！
               <br />
               展現你的智慧，守護最後的堡壘。
             </p>
 
             {/* 關卡選擇 */}
-            <div className="level-selection">
-              <label htmlFor="level-select" className="level-label">
+            <div className={styles["level-selection"]}>
+              <label htmlFor="level-select" className={styles["level-label"]}>
                 選擇關卡：
               </label>
               <select
                 id="level-select"
-                className="level-select"
+                className={styles["level-select"]}
                 value={selectedLevelId}
                 onChange={(e) => setSelectedLevelId(Number(e.target.value))}
               >
@@ -199,11 +199,11 @@ export default function TowerDefenseGame() {
 
               {/* 顯示選中關卡的詳細信息 */}
               {levelManager.getLevelById(selectedLevelId) && (
-                <div className="level-info">
-                  <p className="level-description">
+                <div className={styles["level-info"]}>
+                  <p className={styles["level-description"]}>
                     {levelManager.getLevelById(selectedLevelId)?.description}
                   </p>
-                  <div className="level-stats">
+                  <div className={styles["level-stats"]}>
                     <span>
                       💰 初始金幣:{" "}
                       {levelManager.getLevelById(selectedLevelId)?.initialGold}
@@ -221,24 +221,27 @@ export default function TowerDefenseGame() {
               )}
             </div>
 
-            <div className="features">
-              <div className="feature-item">
-                <span className="feature-icon">🏹</span>
-                <span className="feature-text">多種防禦塔</span>
+            <div className={styles.features}>
+              <div className={styles["feature-item"]}>
+                <span className={styles["feature-icon"]}>🏹</span>
+                <span className={styles["feature-text"]}>多種防禦塔</span>
               </div>
-              <div className="feature-item">
-                <span className="feature-icon">👾</span>
-                <span className="feature-text">多樣化敵人</span>
+              <div className={styles["feature-item"]}>
+                <span className={styles["feature-icon"]}>👾</span>
+                <span className={styles["feature-text"]}>多樣化敵人</span>
               </div>
-              <div className="feature-item">
-                <span className="feature-icon">⚡</span>
-                <span className="feature-text">酷炫技能</span>
+              <div className={styles["feature-item"]}>
+                <span className={styles["feature-icon"]}>⚡</span>
+                <span className={styles["feature-text"]}>酷炫技能</span>
               </div>
             </div>
 
-            <button className="start-button" onClick={handleStartGame}>
-              <span className="button-icon">🎮</span>
-              <span className="button-text">開始遊戲</span>
+            <button
+              className={styles["start-button"]}
+              onClick={handleStartGame}
+            >
+              <span className={styles["button-icon"]}>🎮</span>
+              <span className={styles["button-text"]}>開始遊戲</span>
             </button>
           </div>
         </div>
@@ -246,7 +249,7 @@ export default function TowerDefenseGame() {
 
       {/* 遊戲畫面容器 */}
       <div
-        className="game-screen"
+        className={styles["game-screen"]}
         style={{
           opacity: gameStarted ? 1 : 0,
           pointerEvents: gameStarted ? "all" : "none",
@@ -256,38 +259,43 @@ export default function TowerDefenseGame() {
         }}
       >
         {/* Top HUD: 狀態 + 控制 */}
-        <div className="hud-panel hud-top">
-          <div className="hud-stats-group">
-            <div className="hud-stat-item level-name-item" title="當前關卡">
-              <span className="hud-stat-icon">🎯</span>
-              <span className="hud-stat-value">
+        <div className={`${styles["hud-panel"]} ${styles["hud-top"]}`}>
+          <div className={styles["hud-stats-group"]}>
+            <div
+              className={`${styles["hud-stat-item"]} ${styles["level-name-item"]}`}
+              title="當前關卡"
+            >
+              <span className={styles["hud-stat-icon"]}>🎯</span>
+              <span className={styles["hud-stat-value"]}>
                 {currentLevel?.name || "未知關卡"}
               </span>
             </div>
-            <div className="hud-stat-item" title="金幣">
-              <span className="hud-stat-icon">💰</span>
-              <span className="hud-stat-value">{Math.floor(gold)}</span>
+            <div className={styles["hud-stat-item"]} title="金幣">
+              <span className={styles["hud-stat-icon"]}>💰</span>
+              <span className={styles["hud-stat-value"]}>
+                {Math.floor(gold)}
+              </span>
             </div>
-            <div className="hud-stat-item" title="生命值">
-              <span className="hud-stat-icon">❤️</span>
-              <span className="hud-stat-value">{lives}</span>
+            <div className={styles["hud-stat-item"]} title="生命值">
+              <span className={styles["hud-stat-icon"]}>❤️</span>
+              <span className={styles["hud-stat-value"]}>{lives}</span>
             </div>
-            <div className="hud-stat-item" title="波次">
-              <span className="hud-stat-icon">🌊</span>
-              <span className="hud-stat-value">
+            <div className={styles["hud-stat-item"]} title="波次">
+              <span className={styles["hud-stat-icon"]}>🌊</span>
+              <span className={styles["hud-stat-value"]}>
                 {currentWave}/{totalWaves}
               </span>
             </div>
-            <div className="hud-stat-item" title="分數">
-              <span className="hud-stat-icon">🏆</span>
-              <span className="hud-stat-value">{score}</span>
+            <div className={styles["hud-stat-item"]} title="分數">
+              <span className={styles["hud-stat-icon"]}>🏆</span>
+              <span className={styles["hud-stat-value"]}>{score}</span>
             </div>
           </div>
 
-          <div className="hud-controls-group">
+          <div className={styles["hud-controls-group"]}>
             {status === GameStatus.PLAYING && (
               <button
-                className="hud-icon-btn pause"
+                className={`${styles["hud-icon-btn"]} ${styles.pause}`}
                 onClick={pauseGame}
                 title="暫停"
               >
@@ -296,7 +304,7 @@ export default function TowerDefenseGame() {
             )}
             {status === GameStatus.PAUSED && (
               <button
-                className="hud-icon-btn resume"
+                className={`${styles["hud-icon-btn"]} ${styles.resume}`}
                 onClick={resumeGame}
                 title="繼續"
               >
@@ -304,7 +312,7 @@ export default function TowerDefenseGame() {
               </button>
             )}
             <button
-              className="hud-icon-btn restart"
+              className={`${styles["hud-icon-btn"]} ${styles.restart}`}
               onClick={handleRestart}
               title="重新開始"
             >
@@ -314,7 +322,7 @@ export default function TowerDefenseGame() {
         </div>
 
         {/* Canvas */}
-        <div className="game-canvas-wrapper">
+        <div className={styles["game-canvas-wrapper"]}>
           <canvas
             ref={canvasRef}
             id="game-canvas"
@@ -327,18 +335,20 @@ export default function TowerDefenseGame() {
         </div>
 
         {/* Bottom HUD: 塔 dock */}
-        <div className="hud-panel hud-bottom">
-          <div className="tower-dock">
+        <div className={`${styles["hud-panel"]} ${styles["hud-bottom"]}`}>
+          <div className={styles["tower-dock"]}>
             {Object.values(TOWER_CONFIGS).map((config) => (
               <button
                 key={config.type}
-                className={`tower-dock-btn ${selectedTowerType === config.type ? "selected" : ""}`}
+                className={`${styles["tower-dock-btn"]} ${
+                  selectedTowerType === config.type ? styles.selected : ""
+                }`}
                 onClick={() => selectTowerType(config.type)}
                 disabled={gold < config.cost}
                 title={`${config.name} (傷害: ${config.damage}, 射程: ${config.range})`}
               >
-                <span className="dock-icon">{config.icon}</span>
-                <span className="dock-cost">{config.cost}</span>
+                <span className={styles["dock-icon"]}>{config.icon}</span>
+                <span className={styles["dock-cost"]}>{config.cost}</span>
               </button>
             ))}
           </div>
@@ -346,22 +356,27 @@ export default function TowerDefenseGame() {
 
         {/* 遊戲結束畫面 */}
         {(status === GameStatus.WIN || status === GameStatus.LOSE) && (
-          <div className="game-over-overlay">
-            <div className="game-over-content">
-              <h2 className="game-over-title">
+          <div className={styles["game-over-overlay"]}>
+            <div className={styles["game-over-content"]}>
+              <h2 className={styles["game-over-title"]}>
                 {status === GameStatus.WIN ? "🎉 勝利!" : "💀 失敗"}
               </h2>
-              <p className="game-over-level">關卡: {currentLevel?.name}</p>
-              <p className="game-over-score">最終分數: {score}</p>
+              <p className={styles["game-over-level"]}>
+                關卡: {currentLevel?.name}
+              </p>
+              <p className={styles["game-over-score"]}>最終分數: {score}</p>
 
-              <div className="game-over-actions">
-                <button className="restart-button" onClick={handleRestart}>
+              <div className={styles["game-over-actions"]}>
+                <button
+                  className={styles["restart-button"]}
+                  onClick={handleRestart}
+                >
                   再玩一次
                 </button>
 
                 {status === GameStatus.WIN && levelManager.getNextLevel() && (
                   <button
-                    className="next-level-button"
+                    className={styles["next-level-button"]}
                     onClick={() => {
                       engineRef.current?.stop();
                       nextLevel();
@@ -377,7 +392,9 @@ export default function TowerDefenseGame() {
                 )}
 
                 {status === GameStatus.WIN && !levelManager.getNextLevel() && (
-                  <p className="congratulations">🎊 恭喜通關所有關卡！</p>
+                  <p className={styles.congratulations}>
+                    🎊 恭喜通關所有關卡！
+                  </p>
                 )}
               </div>
             </div>
@@ -386,53 +403,62 @@ export default function TowerDefenseGame() {
 
         {/* 塔資訊彈窗 */}
         {selectedTower && (
-          <div className="tower-info-overlay" onClick={() => selectTower(null)}>
+          <div
+            className={styles["tower-info-overlay"]}
+            onClick={() => selectTower(null)}
+          >
             <div
-              className="tower-info-modal"
+              className={styles["tower-info-modal"]}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="modal-header">
-                <h3 className="modal-title">
-                  <span className="modal-icon">
+              <div className={styles["modal-header"]}>
+                <h3 className={styles["modal-title"]}>
+                  <span className={styles["modal-icon"]}>
                     {TOWER_CONFIGS[selectedTower.type].icon}
                   </span>
                   {TOWER_CONFIGS[selectedTower.type].name}
                 </h3>
                 <button
-                  className="close-button"
+                  className={styles["close-button"]}
                   onClick={() => selectTower(null)}
                 >
                   ✕
                 </button>
               </div>
-              <div className="modal-body">
-                <div className="info-grid">
-                  <div className="info-card">
-                    <div className="info-icon">📊</div>
-                    <div className="info-label">等級</div>
-                    <div className="info-value">Lv.{selectedTower.level}</div>
+              <div className={styles["modal-body"]}>
+                <div className={styles["info-grid"]}>
+                  <div className={styles["info-card"]}>
+                    <div className={styles["info-icon"]}>📊</div>
+                    <div className={styles["info-label"]}>等級</div>
+                    <div className={styles["info-value"]}>
+                      Lv.{selectedTower.level}
+                    </div>
                   </div>
-                  <div className="info-card">
-                    <div className="info-icon">⚔️</div>
-                    <div className="info-label">傷害</div>
-                    <div className="info-value">{selectedTower.damage}</div>
+                  <div className={styles["info-card"]}>
+                    <div className={styles["info-icon"]}>⚔️</div>
+                    <div className={styles["info-label"]}>傷害</div>
+                    <div className={styles["info-value"]}>
+                      {selectedTower.damage}
+                    </div>
                   </div>
-                  <div className="info-card">
-                    <div className="info-icon">📏</div>
-                    <div className="info-label">射程</div>
-                    <div className="info-value">{selectedTower.range}</div>
+                  <div className={styles["info-card"]}>
+                    <div className={styles["info-icon"]}>📏</div>
+                    <div className={styles["info-label"]}>射程</div>
+                    <div className={styles["info-value"]}>
+                      {selectedTower.range}
+                    </div>
                   </div>
-                  <div className="info-card">
-                    <div className="info-icon">⚡</div>
-                    <div className="info-label">攻速</div>
-                    <div className="info-value">
+                  <div className={styles["info-card"]}>
+                    <div className={styles["info-icon"]}>⚡</div>
+                    <div className={styles["info-label"]}>攻速</div>
+                    <div className={styles["info-value"]}>
                       {(1000 / selectedTower.attackSpeed).toFixed(1)}/s
                     </div>
                   </div>
                 </div>
-                <div className="modal-actions">
+                <div className={styles["modal-actions"]}>
                   <button
-                    className="sell-button"
+                    className={styles["sell-button"]}
                     onClick={() => {
                       const sellPrice = Math.floor(
                         TOWER_CONFIGS[selectedTower.type].cost * 0.5

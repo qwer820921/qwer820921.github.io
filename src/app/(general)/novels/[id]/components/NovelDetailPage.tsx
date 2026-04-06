@@ -7,7 +7,7 @@ import { useReadingStore } from "../../store/readingStore";
 import { getStorage, setStorage, fixDriveCoverUrl } from "../../utils";
 import { Novel, ChapterSummary } from "../../types";
 import BottomTabs from "../../components/BottomTabs";
-import styles from "../../novels.module.css";
+import styles from "../../styles/novels.module.css";
 
 interface Props {
   bookId: string;

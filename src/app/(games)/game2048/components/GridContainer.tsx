@@ -4,6 +4,8 @@ import Tile from "./Tile";
 import { useGameStore } from "../store/useGameStore";
 import { Tile as TileType } from "../types";
 
+import styles from "../styles/game2048.module.css";
+
 const GridContainer: React.FC = () => {
   const { grid, gameState, resetGame } = useGameStore();
 
@@ -11,10 +13,10 @@ const GridContainer: React.FC = () => {
   const tiles = grid.flat().filter((t): t is TileType => t !== null);
 
   return (
-    <div className="grid-container">
+    <div className={styles["grid-container"]}>
       {/* 渲染 16 個底盤背景格子 */}
       {Array.from({ length: 16 }).map((_, i) => (
-        <div key={i} className="grid-cell" />
+        <div key={i} className={styles["grid-cell"]} />
       ))}
 
       {/* 渲染動態方塊 */}
@@ -24,17 +26,17 @@ const GridContainer: React.FC = () => {
 
       {/* Game Over / Win Overlay (原本誤刪，現已還原並升級) */}
       {(gameState === "over" || gameState === "won") && (
-        <div className="overlay">
-          <h2 className="overlay-title">
+        <div className={styles.overlay}>
+          <h2 className={styles["overlay-title"]}>
             {gameState === "won" ? "你贏了！" : "遊戲結束"}
           </h2>
-          <div className="overlay-buttons">
-            <button className="btn-retry" onClick={resetGame}>
+          <div className={styles["overlay-buttons"]}>
+            <button className={styles["btn-retry"]} onClick={resetGame}>
               {gameState === "won" ? "新遊戲" : "再試一次"}
             </button>
             {gameState === "won" && (
               <button
-                className="btn-retry secondary"
+                className={[styles["btn-retry"], styles.secondary].join(" ")}
                 onClick={useGameStore.getState().continueGame}
               >
                 繼續挑戰

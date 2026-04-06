@@ -1,4 +1,5 @@
 import React from "react";
+import styles from "../styles/waterColorSort.module.css";
 import { TubeState } from "../types";
 
 interface TubeProps {
@@ -18,14 +19,21 @@ const Tube: React.FC<TubeProps> = ({
 }) => {
   return (
     <div
-      className={`tube-wrapper ${isSelected ? "selected" : ""} ${isHintSource ? "hint-source" : ""} ${isHintTarget ? "hint-target" : ""}`}
+      className={[
+        styles["tube-wrapper"],
+        isSelected ? styles.selected : "",
+        isHintSource ? styles["hint-source"] : "",
+        isHintTarget ? styles["hint-target"] : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       onClick={onClick}
     >
-      <div className="tube-body">
+      <div className={styles["tube-body"]}>
         {tube.colors.map((color, idx) => (
           <div
             key={`${tube.id}-${idx}`}
-            className="liquid-segment"
+            className={styles["liquid-segment"]}
             style={{
               position: "absolute",
               bottom: `${idx * (180 / tube.capacity)}px`,

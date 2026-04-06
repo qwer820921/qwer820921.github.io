@@ -42,7 +42,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({
                 src={
                   track.artwork_url
                     ? track.artwork_url.replace("-large", "-t300x300")
-                    : "/images/img14.jpg"
+                    : "/images/maple/img14.webp"
                 }
                 alt={track.title}
                 style={{

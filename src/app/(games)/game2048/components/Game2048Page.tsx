@@ -5,7 +5,7 @@ import GridContainer from "./GridContainer";
 import { useGameStore } from "../store/useGameStore";
 import { useSwipe } from "../hooks/useSwipe";
 import { Direction } from "../types";
-import "../styles/styles.css";
+import styles from "../styles/game2048.module.css";
 
 export default function Game2048Page() {
   const { grid, gameState, initGame, move, _hasHydrated } = useGameStore();
@@ -75,34 +75,39 @@ export default function Game2048Page() {
   if (!_hasHydrated) return null; // 等待資料恢復
 
   return (
-    <div className="game2048-container" style={{ paddingTop: "70px" }}>
+    <div
+      className={styles["game2048-container"]}
+      style={{ paddingTop: "70px" }}
+    >
       {/* 遊戲抬頭與分數 */}
       <ScoreBoard />
 
       {/* 遊戲主網格 */}
-      <div className="game-wrapper">
+      <div className={styles["game-wrapper"]}>
         <GridContainer />
       </div>
 
       {/* 遊戲規則說明 */}
       <div
-        className={`rules-card ${showRules ? "open" : ""}`}
+        className={[styles["rules-card"], showRules ? styles.open : ""]
+          .filter(Boolean)
+          .join(" ")}
         onClick={() => setShowRules(!showRules)}
       >
-        <h3 className="rules-header">
+        <h3 className={styles["rules-header"]}>
           <span>💡 遊戲規則說明</span>
-          <span className="rules-arrow">▼</span>
+          <span className={styles["rules-arrow"]}>▼</span>
         </h3>
 
-        <div className="rules-content">
-          <ul className="rules-list">
+        <div className={styles["rules-content"]}>
+          <ul className={styles["rules-list"]}>
             <li>使用方向鍵或 WASD 鍵控制所有方塊移動。手機端請直接划動。</li>
             <li>相同數值的方塊相撞時會合併成其兩倍數值。</li>
             <li>每移動一次，棋盤會隨機出現一個新方塊。</li>
             <li>
               目標是拼出 <strong>2048</strong> 的方塊！
             </li>
-            <li className="rules-note">
+            <li className={styles["rules-note"]}>
               註：一排若有 3
               個相同數字，將優先合併朝向移動方向的那一側（如：[2,2,2]
               向右滑會變成 [0,2,4]）。

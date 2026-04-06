@@ -8,7 +8,7 @@ import NovelCard from "./NovelCard";
 import BottomTabs from "./BottomTabs";
 import NovelSearchPanel from "./NovelSearchPanel";
 import NovelNoResult from "./NovelNoResult";
-import styles from "../novels.module.css";
+import styles from "../styles/novels.module.css";
 
 export default function NovelsPage() {
   const { novels, novelsLoading, novelsError, fetchLibrary } = useNovelStore();
@@ -113,7 +113,6 @@ export default function NovelsPage() {
         <div className={styles.headerDashboard}>
           {/* 今日閱讀統計卡片 */}
           <div className={styles.dashCard}>
-            <div className={styles.dashCardIcon}>📖</div>
             <div className={styles.dashCardBody}>
               <div className={styles.dashCardLabel}>今日閱讀</div>
               <div className={styles.dashCardValue}>
@@ -164,10 +163,7 @@ export default function NovelsPage() {
 
       {/* 小說列表 Header */}
       <div className={styles.sectionTitleRow}>
-        <h2 className={styles.sectionTitle}>
-          <span className={styles.sectionIcon}>📚</span>
-          萬事屋藏書閣
-        </h2>
+        <h2 className={styles.sectionTitle}>萬事屋藏書閣</h2>
 
         {/* 搜尋下拉選單觸發按鈕 */}
         <div className={styles.searchAnchor}>

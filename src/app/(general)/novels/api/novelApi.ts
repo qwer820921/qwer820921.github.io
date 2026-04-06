@@ -16,6 +16,15 @@ export const getLibraryData = async (): Promise<ApiResponse<Novel[]>> => {
   try {
     const response = await axios.get(`${BASE_URL}?action=getLibrary`);
 
+    // 檢查是否回傳 JSON (防止 HTML 錯誤頁面)
+    const contentType = response.headers["content-type"] || "";
+    if (!contentType.includes("application/json")) {
+      console.error("Non-JSON response received:", response.data);
+      throw new Error(
+        "API error: Expected JSON but received HTML/Text. (Possible GAS 429/500)"
+      );
+    }
+
     // 確認響應格式與成功狀態
     if (!response.data || typeof response.data.success !== "boolean") {
       throw new Error("Unexpected response format: Expected success boolean");
@@ -52,6 +61,14 @@ export const getChaptersData = async (
     const response = await axios.get(
       `${BASE_URL}?action=getChapters&bookId=${bookId}`
     );
+
+    // 檢查是否回傳 JSON
+    const contentType = response.headers["content-type"] || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error(
+        "API error: Expected JSON but received HTML/Text. (Possible GAS 429/500)"
+      );
+    }
 
     // 確認響應格式與成功狀態
     if (!response.data || typeof response.data.success !== "boolean") {
@@ -94,6 +111,14 @@ export const getChapterContentData = async (
     const response = await axios.get(
       `${BASE_URL}?action=getChapterContent&bookId=${bookId}&chapterIndex=${chapterIndex}`
     );
+
+    // 檢查是否回傳 JSON
+    const contentType = response.headers["content-type"] || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error(
+        "API error: Expected JSON but received HTML/Text. (Possible GAS 429/500)"
+      );
+    }
 
     // 確認響應格式
     if (!response.data || typeof response.data.success !== "boolean") {

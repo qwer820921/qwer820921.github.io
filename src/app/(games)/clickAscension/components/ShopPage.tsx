@@ -8,7 +8,7 @@ import {
   CurrencyType,
 } from "../types";
 import { formatBigNumber } from "../utils/formatNumber";
-import "../styles/clickAscension.css";
+import styles from "../styles/clickAscension.module.css";
 
 type ShopTab = "DAILY" | "GOLD" | "LEVEL" | "CLICK" | "ASCENSION" | "EQUIPMENT";
 
@@ -296,16 +296,20 @@ export default function ShopPage({
   const isDailyAvailable = canClaimDaily();
 
   return (
-    <div className="ca-shop-container">
+    <div className={styles["ca-shop-container"]}>
       {/* Tab Navigation */}
-      <div className="ca-shop-tabs">
+      <div className={styles["ca-shop-tabs"]}>
         {/* Daily Shop */}
         <button
           onClick={() => setActiveTab("DAILY")}
-          className={`ca-shop-tab-btn daily ${activeTab === "DAILY" ? "active" : ""}`}
+          className={[
+            styles["ca-shop-tab-btn"],
+            styles.daily,
+            activeTab === "DAILY" ? styles.active : "",
+          ].join(" ")}
         >
-          <div className="icon">📅</div>
-          <div className="label">每日商店</div>
+          <div className={styles.icon}>📅</div>
+          <div className={styles.label}>每日商店</div>
           {isDailyAvailable && (
             <div
               style={{
@@ -323,43 +327,63 @@ export default function ShopPage({
         </button>
         <button
           onClick={() => setActiveTab("GOLD")}
-          className={`ca-shop-tab-btn gold ${activeTab === "GOLD" ? "active" : ""}`}
+          className={[
+            styles["ca-shop-tab-btn"],
+            styles.gold,
+            activeTab === "GOLD" ? styles.active : "",
+          ].join(" ")}
         >
-          <div className="icon">💰</div>
-          <div className="label">金幣商店</div>
+          <div className={styles.icon}>💰</div>
+          <div className={styles.label}>金幣商店</div>
         </button>
         <button
           onClick={() => setActiveTab("LEVEL")}
-          className={`ca-shop-tab-btn level ${activeTab === "LEVEL" ? "active" : ""}`}
+          className={[
+            styles["ca-shop-tab-btn"],
+            styles.level,
+            activeTab === "LEVEL" ? styles.active : "",
+          ].join(" ")}
         >
-          <div className="icon">🆙</div>
-          <div className="label">等級商店</div>
+          <div className={styles.icon}>🆙</div>
+          <div className={styles.label}>等級商店</div>
         </button>
         <button
           onClick={() => setActiveTab("CLICK")}
-          className={`ca-shop-tab-btn click ${activeTab === "CLICK" ? "active" : ""}`}
+          className={[
+            styles["ca-shop-tab-btn"],
+            styles.click,
+            activeTab === "CLICK" ? styles.active : "",
+          ].join(" ")}
         >
-          <div className="icon">⚡</div>
-          <div className="label">點擊商店</div>
+          <div className={styles.icon}>⚡</div>
+          <div className={styles.label}>點擊商店</div>
         </button>
         <button
           onClick={() => setActiveTab("ASCENSION")}
-          className={`ca-shop-tab-btn ascension ${activeTab === "ASCENSION" ? "active" : ""}`}
+          className={[
+            styles["ca-shop-tab-btn"],
+            styles.ascension,
+            activeTab === "ASCENSION" ? styles.active : "",
+          ].join(" ")}
         >
-          <div className="icon">🕊️</div>
-          <div className="label">飛昇商店</div>
+          <div className={styles.icon}>🕊️</div>
+          <div className={styles.label}>飛昇商店</div>
         </button>
         <button
           onClick={() => setActiveTab("EQUIPMENT")}
-          className={`ca-shop-tab-btn equipment ${activeTab === "EQUIPMENT" ? "active" : ""}`}
+          className={[
+            styles["ca-shop-tab-btn"],
+            styles.equipment,
+            activeTab === "EQUIPMENT" ? styles.active : "",
+          ].join(" ")}
         >
-          <div className="icon">⚔️</div>
-          <div className="label">裝備扭蛋</div>
+          <div className={styles.icon}>⚔️</div>
+          <div className={styles.label}>裝備扭蛋</div>
         </button>
       </div>
 
       {/* Content Area */}
-      <div className="ca-shop-content">
+      <div className={styles["ca-shop-content"]}>
         {/* === DAILY SHOP TAB === */}
         {activeTab === "DAILY" && (
           <div
@@ -453,7 +477,12 @@ export default function ShopPage({
                 </div>
               </div>
               <button
-                className={`ca-btn ${isDailyAvailable && gameConfig?.settings ? "ca-btn-primary" : ""}`}
+                className={[
+                  styles["ca-btn"],
+                  isDailyAvailable && gameConfig?.settings
+                    ? styles["ca-btn-primary"]
+                    : "",
+                ].join(" ")}
                 style={{
                   marginTop: "16px",
                   width: "100%",
@@ -487,30 +516,36 @@ export default function ShopPage({
             style={{ display: "flex", flexDirection: "column", gap: "16px" }}
           >
             <div
-              className="ca-realm-card"
+              className={styles["ca-realm-card"]}
               style={{
                 background: "linear-gradient(135deg, #fbbf24 0%, #d97706 100%)",
               }}
             >
-              <div className="ca-realm-title">金幣 (Gold)</div>
+              <div className={styles["ca-realm-title"]}>金幣 (Gold)</div>
               <div
-                className="ca-realm-name"
+                className={styles["ca-realm-name"]}
                 style={{ color: "#fff", fontSize: "1.5rem" }}
               >
                 {formatNumber(Math.floor(player.wallet.gold))}
               </div>
-              <div className="ca-realm-level" style={{ color: "#fde68a" }}>
+              <div
+                className={styles["ca-realm-level"]}
+                style={{ color: "#fde68a" }}
+              >
                 擊殺怪物獲得
               </div>
             </div>
 
             {/* Sub Tabs for Gold Shop */}
             <div
-              className="ca-shop-subtabs"
+              className={styles["ca-shop-subtabs"]}
               style={{ display: "flex", gap: "10px", marginBottom: "8px" }}
             >
               <button
-                className={`ca-btn ${goldSubTab === "UPGRADE" ? "ca-btn-primary" : ""}`}
+                className={[
+                  styles["ca-btn"],
+                  goldSubTab === "UPGRADE" ? styles["ca-btn-primary"] : "",
+                ].join(" ")}
                 style={{
                   flex: 1,
                   padding: "8px",
@@ -523,7 +558,10 @@ export default function ShopPage({
                 🛠️ 金幣強化
               </button>
               <button
-                className={`ca-btn ${goldSubTab === "RECRUIT" ? "ca-btn-primary" : ""}`}
+                className={[
+                  styles["ca-btn"],
+                  goldSubTab === "RECRUIT" ? styles["ca-btn-primary"] : "",
+                ].join(" ")}
                 style={{
                   flex: 1,
                   padding: "8px",
@@ -572,12 +610,12 @@ export default function ShopPage({
             ></div>
 
             <p
-              className="ca-text-muted"
+              className={styles["ca-text-muted"]}
               style={{ fontSize: "0.8rem", paddingLeft: "4px" }}
             >
               使用 💎 購買金幣補給
             </p>
-            <div className="ca-shop-item-grid">
+            <div className={styles["ca-shop-item-grid"]}>
               <ShopItemCard
                 name="金幣小包"
                 desc="獲得 1,000 金幣"
@@ -604,19 +642,22 @@ export default function ShopPage({
             style={{ display: "flex", flexDirection: "column", gap: "16px" }}
           >
             <div
-              className="ca-realm-card"
+              className={styles["ca-realm-card"]}
               style={{
                 background: "linear-gradient(135deg, #059669 0%, #10b981 100%)",
               }}
             >
-              <div className="ca-realm-title">等級積分 (LP)</div>
+              <div className={styles["ca-realm-title"]}>等級積分 (LP)</div>
               <div
-                className="ca-realm-name"
+                className={styles["ca-realm-name"]}
                 style={{ color: "#fff", fontSize: "1.5rem" }}
               >
                 {player.wallet.levelPoints}
               </div>
-              <div className="ca-realm-level" style={{ color: "#d1fae5" }}>
+              <div
+                className={styles["ca-realm-level"]}
+                style={{ color: "#d1fae5" }}
+              >
                 升級可獲得點數
               </div>
               {onResetLevelPoints && (
@@ -641,7 +682,7 @@ export default function ShopPage({
             </div>
 
             <p
-              className="ca-text-muted"
+              className={styles["ca-text-muted"]}
               style={{ fontSize: "0.8rem", paddingLeft: "4px" }}
             >
               消耗 <span style={{ color: "#10b981" }}>🆙 等級積分</span>{" "}
@@ -661,17 +702,20 @@ export default function ShopPage({
           <div
             style={{ display: "flex", flexDirection: "column", gap: "16px" }}
           >
-            <div className="ca-realm-card">
-              <div className="ca-realm-title">當前境界</div>
-              <div className="ca-realm-name" style={{ color: realm.color }}>
+            <div className={styles["ca-realm-card"]}>
+              <div className={styles["ca-realm-title"]}>當前境界</div>
+              <div
+                className={styles["ca-realm-name"]}
+                style={{ color: realm.color }}
+              >
                 {realm.name}
               </div>
-              <div className="ca-realm-level">
+              <div className={styles["ca-realm-level"]}>
                 修練總層數 {totalClickLevels}
               </div>
             </div>
             <p
-              className="ca-text-muted"
+              className={styles["ca-text-muted"]}
               style={{ fontSize: "0.8rem", paddingLeft: "4px" }}
             >
               消耗{" "}
@@ -695,13 +739,18 @@ export default function ShopPage({
             style={{ display: "flex", flexDirection: "column", gap: "16px" }}
           >
             <div
-              className="ca-realm-card"
+              className={styles["ca-realm-card"]}
               style={{
                 background: "linear-gradient(135deg, #7c3aed 0%, #c084fc 100%)",
               }}
             >
-              <div className="ca-realm-title">飛昇商店 (Permanent)</div>
-              <div className="ca-realm-name" style={{ color: "#fff" }}>
+              <div className={styles["ca-realm-title"]}>
+                飛昇商店 (Permanent)
+              </div>
+              <div
+                className={styles["ca-realm-name"]}
+                style={{ color: "#fff" }}
+              >
                 永恆加成
               </div>
               <div
@@ -734,15 +783,15 @@ export default function ShopPage({
             }}
           >
             <div
-              className="ca-realm-card"
+              className={styles["ca-realm-card"]}
               style={{
                 background: "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)",
                 position: "relative",
               }}
             >
-              <div className="ca-realm-title">裝備扭蛋 (Gacha)</div>
+              <div className={styles["ca-realm-title"]}>裝備扭蛋 (Gacha)</div>
               <div
-                className="ca-realm-name"
+                className={styles["ca-realm-name"]}
                 style={{ color: "#fff", fontSize: "1.2rem" }}
               >
                 試試你的手氣！
@@ -800,10 +849,13 @@ export default function ShopPage({
               </div>
             </div>
 
-            <div className="ca-shop-item-grid" style={{ width: "100%" }}>
+            <div
+              className={styles["ca-shop-item-grid"]}
+              style={{ width: "100%" }}
+            >
               {/* --- Basic Box --- */}
               <div
-                className="ca-glass-static"
+                className={styles["ca-glass-static"]}
                 style={{
                   gridColumn: "1 / -1",
                   padding: "24px",
@@ -906,7 +958,7 @@ export default function ShopPage({
 
               {/* --- Advanced Box --- */}
               <div
-                className="ca-glass-static"
+                className={styles["ca-glass-static"]}
                 style={{
                   gridColumn: "1 / -1",
                   padding: "24px",
@@ -1010,7 +1062,7 @@ export default function ShopPage({
 
               {/* --- Premium Box --- */}
               <div
-                className="ca-glass-static"
+                className={styles["ca-glass-static"]}
                 style={{
                   gridColumn: "1 / -1",
                   padding: "24px",
@@ -1146,7 +1198,9 @@ function ShopItemCard({
 }) {
   return (
     <div
-      className="ca-glass-static ca-shop-item-card"
+      className={[styles["ca-glass-static"], styles["ca-shop-item-card"]].join(
+        " "
+      )}
       style={{
         padding: "12px",
         display: "flex",
@@ -1168,7 +1222,10 @@ function ShopItemCard({
         {desc}
       </div>
       <div
-        className={`ca-btn ${canAfford ? "ca-btn-primary" : ""}`}
+        className={[
+          styles["ca-btn"],
+          canAfford ? styles["ca-btn-primary"] : "",
+        ].join(" ")}
         style={{
           fontSize: "0.75rem",
           padding: "6px",
@@ -1216,7 +1273,7 @@ function UpgradeRow({
   nextMilestone25?: number;
 }) {
   return (
-    <div className="ca-upgrade-row">
+    <div className={styles["ca-upgrade-row"]}>
       <div
         style={{
           display: "flex",
@@ -1251,7 +1308,7 @@ function UpgradeRow({
         <button
           onClick={() => !isMaxed && canAfford && onClick()}
           disabled={isMaxed || !canAfford}
-          className="ca-upgrade-btn"
+          className={styles["ca-upgrade-btn"]}
           style={{
             opacity: isMaxed || !canAfford ? 0.5 : 1,
             cursor: isMaxed || !canAfford ? "not-allowed" : "pointer",
@@ -1287,7 +1344,7 @@ function UpgradeRow({
           <button
             onClick={() => canAfford25 && onBulkUpgrade && onBulkUpgrade()}
             disabled={!canAfford25}
-            className="ca-upgrade-btn"
+            className={styles["ca-upgrade-btn"]}
             style={{
               opacity: !canAfford25 ? 0.5 : 1,
               cursor: !canAfford25 ? "not-allowed" : "pointer",
@@ -1418,7 +1475,7 @@ function ProbabilityModal({
       onClick={onClose}
     >
       <div
-        className="ca-card"
+        className={styles["ca-card"]}
         style={{
           width: "100%",
           maxWidth: "500px",
@@ -1671,7 +1728,7 @@ function EquipmentDetailModal({
       onClick={onClose}
     >
       <div
-        className="ca-card"
+        className={styles["ca-card"]}
         style={{
           width: "100%",
           maxWidth: "320px",
@@ -1780,7 +1837,7 @@ function EquipmentDetailModal({
         </div>
 
         <button
-          className="ca-btn"
+          className={styles["ca-btn"]}
           onClick={onClose}
           style={{
             width: "100%",
@@ -1830,7 +1887,7 @@ function GachaButton({
 }) {
   return (
     <button
-      className="ca-btn ca-btn-primary"
+      className={[styles["ca-btn"], styles["ca-btn-primary"]].join(" ")}
       style={{
         padding: "12px 16px",
         fontSize: "1rem",
@@ -1870,7 +1927,10 @@ function AutoGachaButton({
   return (
     <button
       onClick={onToggle}
-      className={`ca-btn ${isActive ? "" : "ca-btn-primary"}`}
+      className={[
+        styles["ca-btn"],
+        isActive ? "" : styles["ca-btn-primary"],
+      ].join(" ")}
       style={{
         padding: "8px 16px",
         fontSize: "0.9rem",

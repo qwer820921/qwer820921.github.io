@@ -1,7 +1,7 @@
 import React from "react";
 import { PlayerState, PlayerAttributes } from "../types";
 import { formatBigNumber } from "../utils/formatNumber";
-import "../styles/clickAscension.css";
+import styles from "../styles/clickAscension.module.css";
 
 import { GameStaticData } from "../api/clickAscensionApi";
 
@@ -69,20 +69,30 @@ export default function ProfilePage({
   );
 
   return (
-    <div className="ca-profile-page" style={{ paddingBottom: "20px" }}>
+    <div
+      className={styles["ca-profile-page"]}
+      style={{ paddingBottom: "20px" }}
+    >
       {/* Overview Section */}
-      <div className="ca-profile-section">
-        <div className="ca-profile-header-card ca-glass-static">
-          <div className="ca-profile-avatar-large">
+      <div className={styles["ca-profile-section"]}>
+        <div
+          className={[
+            styles["ca-profile-header-card"],
+            styles["ca-glass-static"],
+          ].join(" ")}
+        >
+          <div className={styles["ca-profile-avatar-large"]}>
             <img
               src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${userId || "Guest"}`}
               alt="Avatar"
-              className="ca-profile-avatar-img"
+              className={styles["ca-profile-avatar-img"]}
             />
-            <div className="ca-profile-level-badge">Lv.{system.level}</div>
+            <div className={styles["ca-profile-level-badge"]}>
+              Lv.{system.level}
+            </div>
           </div>
 
-          <div className="ca-profile-summary">
+          <div className={styles["ca-profile-summary"]}>
             {!userId ? (
               // --- Login Form ---
               <div
@@ -106,7 +116,7 @@ export default function ProfilePage({
                 <div style={{ display: "flex", gap: "6px", width: "100%" }}>
                   <input
                     type="text"
-                    className="ca-input"
+                    className={styles["ca-input"]}
                     style={{
                       flex: 1,
                       minWidth: 0, // Critical for preventing flex overflow
@@ -123,7 +133,10 @@ export default function ProfilePage({
                     onChange={(e) => setInputId(e.target.value)}
                   />
                   <button
-                    className="ca-btn ca-btn-primary"
+                    className={[
+                      styles["ca-btn"],
+                      styles["ca-btn-primary"],
+                    ].join(" ")}
                     style={{
                       padding: "0 16px",
                       fontSize: "0.85rem",
@@ -142,7 +155,7 @@ export default function ProfilePage({
               // --- Logged In Summary ---
               <>
                 <div
-                  className="ca-profile-name"
+                  className={styles["ca-profile-name"]}
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
@@ -153,7 +166,7 @@ export default function ProfilePage({
                   <div style={{ display: "flex", gap: "8px" }}>
                     <button
                       onClick={handleSaveClick}
-                      className="ca-profile-action-btn"
+                      className={styles["ca-profile-action-btn"]}
                       style={{
                         background: "rgba(16, 185, 129, 0.2)",
                         color: "#6ee7b7",
@@ -165,7 +178,7 @@ export default function ProfilePage({
                     </button>
                     <button
                       onClick={onLogout}
-                      className="ca-profile-action-btn"
+                      className={styles["ca-profile-action-btn"]}
                       style={{
                         background: "rgba(239, 68, 68, 0.2)",
                         color: "#fca5a5",
@@ -175,22 +188,24 @@ export default function ProfilePage({
                     </button>
                   </div>
                 </div>
-                <div className="ca-profile-cp">
-                  <span className="label">戰鬥力</span>
-                  <span className="value">{formatNumber(combatPower)}</span>
+                <div className={styles["ca-profile-cp"]}>
+                  <span className={styles.label}>戰鬥力</span>
+                  <span className={styles.value}>
+                    {formatNumber(combatPower)}
+                  </span>
                 </div>
 
-                <div className="ca-profile-exp">
-                  <div className="info">
+                <div className={styles["ca-profile-exp"]}>
+                  <div className={styles.info}>
                     <span>EXP</span>
                     <span>
                       {formatNumber(system.currentXp)} /{" "}
                       {formatNumber(system.requiredXp)}
                     </span>
                   </div>
-                  <div className="bar-bg">
+                  <div className={styles["bar-bg"]}>
                     <div
-                      className="bar-fill"
+                      className={styles["bar-fill"]}
                       style={{
                         width: `${Math.min(100, (system.currentXp / system.requiredXp) * 100)}%`,
                       }}
@@ -204,8 +219,8 @@ export default function ProfilePage({
       </div>
 
       {/* Wallet / Currencies Section */}
-      <div className="ca-profile-section">
-        <h3 className="ca-section-title">財富狀態</h3>
+      <div className={styles["ca-profile-section"]}>
+        <h3 className={styles["ca-section-title"]}>財富狀態</h3>
         <div
           style={{
             display: "grid",
@@ -251,9 +266,11 @@ export default function ProfilePage({
       </div>
 
       {/* Attributes Section (Effective Stats) */}
-      <div className="ca-profile-section">
-        <h3 className="ca-section-title">最終戰鬥屬性 (含裝備加成)</h3>
-        <div className="ca-stats-grid">
+      <div className={styles["ca-profile-section"]}>
+        <h3 className={styles["ca-section-title"]}>
+          最終戰鬥屬性 (含裝備加成)
+        </h3>
+        <div className={styles["ca-stats-grid"]}>
           <StatItem
             label="點擊基礎傷害"
             value={formatNumber(effectiveStats.baseDamage)}
@@ -349,10 +366,10 @@ export default function ProfilePage({
       </div>
 
       {/* Active Buffs Section */}
-      <div className="ca-profile-section">
-        <h3 className="ca-section-title">當前狀態 / 藥水</h3>
+      <div className={styles["ca-profile-section"]}>
+        <h3 className={styles["ca-section-title"]}>當前狀態 / 藥水</h3>
         <div
-          className="ca-glass-static"
+          className={styles["ca-glass-static"]}
           style={{
             padding: "12px",
             borderRadius: "12px",
@@ -381,7 +398,7 @@ export default function ProfilePage({
                 </div>
               </div>
               <div
-                className="ca-pulse"
+                className={styles["ca-pulse"]}
                 style={{
                   width: "10px",
                   height: "10px",
@@ -407,10 +424,13 @@ export default function ProfilePage({
       </div>
 
       {/* Statistics Section */}
-      <div className="ca-profile-section">
-        <h3 className="ca-section-title">生涯冒險記錄</h3>
+      <div className={styles["ca-profile-section"]}>
+        <h3 className={styles["ca-section-title"]}>生涯冒險記錄</h3>
         <div
-          className="ca-records-list ca-glass-static"
+          className={[
+            styles["ca-records-list"],
+            styles["ca-glass-static"],
+          ].join(" ")}
           style={{ borderRadius: "12px" }}
         >
           <RecordRow
@@ -506,11 +526,13 @@ function StatItem({
   icon: string;
 }) {
   return (
-    <div className="ca-stat-item ca-glass-static">
-      <div className="ca-stat-icon">{icon}</div>
-      <div className="ca-stat-content">
-        <div className="ca-stat-label">{label}</div>
-        <div className="ca-stat-value">{value}</div>
+    <div
+      className={[styles["ca-stat-item"], styles["ca-glass-static"]].join(" ")}
+    >
+      <div className={styles["ca-stat-icon"]}>{icon}</div>
+      <div className={styles["ca-stat-content"]}>
+        <div className={styles["ca-stat-label"]}>{label}</div>
+        <div className={styles["ca-stat-value"]}>{value}</div>
       </div>
     </div>
   );
@@ -518,9 +540,9 @@ function StatItem({
 
 function RecordRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="ca-record-row">
-      <span className="ca-record-label">{label}</span>
-      <span className="ca-record-value">{value}</span>
+    <div className={styles["ca-record-row"]}>
+      <span className={styles["ca-record-label"]}>{label}</span>
+      <span className={styles["ca-record-value"]}>{value}</span>
     </div>
   );
 }

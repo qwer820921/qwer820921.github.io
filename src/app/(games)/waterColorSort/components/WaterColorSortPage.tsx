@@ -9,7 +9,7 @@ import {
   Arrow90degLeft,
 } from "react-bootstrap-icons";
 import Tube from "./Tube";
-import "../styles/styles.css";
+import styles from "../styles/waterColorSort.module.css";
 
 export default function WaterColorSortPage() {
   const {
@@ -158,12 +158,12 @@ export default function WaterColorSortPage() {
   if (!_hasHydrated) return null;
 
   return (
-    <div className="watercolor-container">
-      <div className="game-header">
-        <h1 className="level-title">LEVEL {level}</h1>
+    <div className={styles["watercolor-container"]}>
+      <div className={styles["game-header"]}>
+        <h1 className={styles["level-title"]}>LEVEL {level}</h1>
       </div>
 
-      <div className="game-board">
+      <div className={styles["game-board"]}>
         {tubes.map((tube) => (
           <Tube
             key={tube.id}
@@ -176,9 +176,9 @@ export default function WaterColorSortPage() {
         ))}
       </div>
 
-      <div className="controls-container">
+      <div className={styles["controls-container"]}>
         <button
-          className="btn-round-icon undo"
+          className={[styles["btn-round-icon"], styles.undo].join(" ")}
           onClick={undo}
           disabled={history.length === 0}
           title="撤銷 (Undo)"
@@ -187,7 +187,7 @@ export default function WaterColorSortPage() {
         </button>
 
         <button
-          className="btn-round-icon reset"
+          className={[styles["btn-round-icon"], styles.reset].join(" ")}
           onClick={resetLevel}
           title="重新開始 (Reset)"
         >
@@ -195,7 +195,7 @@ export default function WaterColorSortPage() {
         </button>
 
         <button
-          className="btn-round-icon extra-tube"
+          className={[styles["btn-round-icon"], styles["extra-tube"]].join(" ")}
           onClick={addExtraTube}
           disabled={extraTubesEnabled}
           title={extraTubesEnabled ? "已達上限" : "新增試管 (Add Tube)"}
@@ -204,7 +204,13 @@ export default function WaterColorSortPage() {
         </button>
 
         <button
-          className={`btn-round-icon hint ${isIdle ? "active-hint" : ""}`}
+          className={[
+            styles["btn-round-icon"],
+            styles.hint,
+            isIdle ? styles["active-hint"] : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
           onClick={triggerHint}
           title="獲得提示 (Hint)"
         >
@@ -214,11 +220,11 @@ export default function WaterColorSortPage() {
 
       {/* 成功彈窗 */}
       {gameState === "won" && (
-        <div className="won-overlay">
-          <div className="won-modal">
-            <span className="won-icon">🏆</span>
-            <h2 className="won-title">完美分類！</h2>
-            <button className="btn-next" onClick={nextLevel}>
+        <div className={styles["won-overlay"]}>
+          <div className={styles["won-modal"]}>
+            <span className={styles["won-icon"]}>🏆</span>
+            <h2 className={styles["won-title"]}>完美分類！</h2>
+            <button className={styles["btn-next"]} onClick={nextLevel}>
               進入下一關
             </button>
           </div>
