@@ -78,6 +78,9 @@ export default function RootLayout({
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2709303513603814"
           crossOrigin="anonymous"
         />
+        
+        {/* 啟用 Cross-Origin Isolation (用於去背引擎) */}
+        <Script src="/coi-serviceworker.js" strategy="beforeInteractive" />
       </head>
       <body>
         <ClientRoot>{children}</ClientRoot>

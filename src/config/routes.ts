@@ -35,6 +35,7 @@ const routes: RouteGroup[] = [
         showInNavbar: true,
       },
       { path: ROUTES.ANIMATOR, name: "微動畫", showInNavbar: true },
+      { path: ROUTES.BG_REMOVER, name: "AI 圖片去背", showInNavbar: true },
       { path: ROUTES.EATWHAT, name: "吃甚麼", showInNavbar: true },
       {
         path: ROUTES.INSTA_STORY_EDITOR,

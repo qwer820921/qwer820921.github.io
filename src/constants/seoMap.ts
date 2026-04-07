@@ -21,6 +21,12 @@ export const seoMap: {
     description: "探索子yee 萬事屋的微動畫作品，展現創意技術與視覺效果。",
     keywords: "子yee 萬事屋, 微動畫, 創意技術, 視覺效果",
   },
+  [ROUTES.BG_REMOVER]: {
+    title: "子yee 萬事屋 | AI 圖片去背 - 線上 AI 自動去背工具",
+    description:
+      "使用領先的 AI 技術在瀏覽器端實現高品質圖片去背。純前端處理，您的圖片不會被上傳到任何伺服器，既安全又快速。",
+    keywords: "子yee 萬事屋, 圖片去背, AI 去背, 背景移除, 線上工具",
+  },
   [ROUTES.EATWHAT]: {
     title: "子yee 萬事屋 | 吃甚麼 - 隨機美食建議",
     description:

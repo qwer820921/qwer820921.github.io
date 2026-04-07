@@ -10,4 +10,5 @@ const nextConfig = {
   },
   assetPrefix: isProd ? "https://qwer820921.github.io/" : undefined,
 };
+
 export default nextConfig;

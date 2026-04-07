@@ -1,0 +1,144 @@
+.container {
+  padding-top: 2rem;
+  padding-bottom: 4rem;
+  max-width: 1000px;
+  margin-top: 70px;
+}
+
+.card {
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  background: #fff;
+  transition: transform 0.3s ease;
+}
+
+.uploadArea {
+  border: 2px dashed #dee2e6;
+  border-radius: 12px;
+  padding: 3rem 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #f8f9fa;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+}
+
+.uploadArea:hover {
+  border-color: #0d6efd;
+  background: #f0f7ff;
+}
+
+.uploadAreaActive {
+  border-color: #0d6efd;
+  background: #eef6ff;
+  transform: scale(1.01);
+}
+
+.uploadIcon {
+  font-size: 3rem;
+  color: #6c757d;
+  margin-bottom: 1rem;
+}
+
+.previewContainer {
+  margin-top: 2rem;
+}
+
+.previewWrapper {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  background-image:
+    linear-gradient(45deg, #f0f0f0 25%, transparent 25%),
+    linear-gradient(-45deg, #f0f0f0 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #f0f0f0 75%),
+    linear-gradient(-45deg, transparent 75%, #f0f0f0 75%);
+  background-size: 20px 20px;
+  background-position:
+    0 0,
+    0 10px,
+    10px -10px,
+    -10px 0px;
+  border: 1px solid #eee;
+}
+
+.previewImage {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.loadingOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  backdrop-filter: blur(4px);
+}
+
+.progressBarContainer {
+  width: 80%;
+  height: 8px;
+  background: #e9ecef;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 1rem;
+}
+
+.progressBar {
+  height: 100%;
+  background: linear-gradient(90deg, #0d6efd, #0dcaf0);
+  transition: width 0.3s ease;
+}
+
+.actionButtons {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  justify-content: center;
+}
+
+.comparisonView {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .comparisonView {
+    grid-template-columns: 1fr;
+  }
+}
+
+.label {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #495057;
+  display: block;
+}
+
+.statusText {
+  font-size: 0.9rem;
+  color: #6c757d;
+  margin-top: 0.5rem;
+}
+
+.featureTitle {
+  font-weight: 800;
+  background: linear-gradient(135deg, #212529 0%, #495057 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}

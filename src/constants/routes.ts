@@ -22,4 +22,5 @@ export const ROUTES = {
   WATER_COLOR_SORT: "/waterColorSort", // 水彩分類
   SUDOKU: "/sudoku", // 數獨
   IMAGE_CONVERTER: "/imageConverter", // 圖檔轉檔
+  BG_REMOVER: "/bgRemover", // AI 圖片去背
 };
