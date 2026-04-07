@@ -95,39 +95,14 @@ export default function ProfilePage({
           <div className={styles["ca-profile-summary"]}>
             {!userId ? (
               // --- Login Form ---
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "10px",
-                  width: "100%",
-                  minWidth: 0,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: "0.85rem",
-                    color: "var(--ca-text-secondary)",
-                    fontWeight: "600",
-                  }}
-                >
+              <div className={styles["ca-profile-login-form"]}>
+                <div className={styles["ca-profile-login-hint"]}>
                   輸入 ID 以讀取/建立存檔
                 </div>
-                <div style={{ display: "flex", gap: "6px", width: "100%" }}>
+                <div className={styles["ca-profile-login-row"]}>
                   <input
                     type="text"
-                    className={styles["ca-input"]}
-                    style={{
-                      flex: 1,
-                      minWidth: 0, // Critical for preventing flex overflow
-                      background: "rgba(0,0,0,0.4)",
-                      border: "1px solid rgba(255,255,255,0.15)",
-                      color: "#fff",
-                      padding: "8px 12px",
-                      borderRadius: "8px",
-                      fontSize: "0.9rem",
-                      outline: "none",
-                    }}
+                    className={styles["ca-profile-login-input"]}
                     placeholder="User ID..."
                     value={inputId}
                     onChange={(e) => setInputId(e.target.value)}
@@ -221,17 +196,7 @@ export default function ProfilePage({
       {/* Wallet / Currencies Section */}
       <div className={styles["ca-profile-section"]}>
         <h3 className={styles["ca-section-title"]}>財富狀態</h3>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "10px",
-            background: "rgba(15, 23, 42, 0.4)",
-            padding: "16px",
-            borderRadius: "12px",
-            border: "1px solid rgba(255,255,255,0.05)",
-          }}
-        >
+        <div className={styles["ca-profile-wallet-grid"]}>
           <CurrencyItem
             icon="💰"
             label="金幣"
@@ -409,14 +374,7 @@ export default function ProfilePage({
               />
             </div>
           ) : (
-            <div
-              style={{
-                color: "var(--ca-text-muted)",
-                fontSize: "0.85rem",
-                textAlign: "center",
-                padding: "10px",
-              }}
-            >
+            <div className={styles["ca-profile-empty-state"]}>
               尚無啟用的增益效果
             </div>
           )}
@@ -465,16 +423,7 @@ export default function ProfilePage({
       </div>
 
       {/* Version Footer */}
-      <div
-        style={{
-          marginTop: "24px",
-          padding: "12px",
-          textAlign: "center",
-          color: "var(--ca-text-muted)",
-          fontSize: "0.7rem",
-          opacity: 0.6,
-        }}
-      >
+      <div className={styles["ca-profile-version-footer"]}>
         <div>
           遊戲版本: {String(gameConfig?.settings?.GAME_VERSION || "1.0.0")}
         </div>
@@ -496,16 +445,10 @@ function CurrencyItem({
   color: string;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+    <div className={styles["ca-profile-currency-item"]}>
       <span style={{ fontSize: "1rem" }}>{icon}</span>
       <div style={{ display: "flex", flexDirection: "column" }}>
-        <span
-          style={{
-            fontSize: "0.6rem",
-            color: "rgba(255,255,255,0.4)",
-            textTransform: "uppercase",
-          }}
-        >
+        <span className={styles["ca-profile-currency-label"]}>
           {label}
         </span>
         <span style={{ fontSize: "0.85rem", color: color, fontWeight: "bold" }}>

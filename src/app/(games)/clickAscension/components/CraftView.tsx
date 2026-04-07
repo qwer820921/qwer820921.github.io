@@ -127,21 +127,7 @@ function AccessoryDetailModal({
   const canUpgrade = isOwned && !isMaxLevel && equipmentShards >= upgradeCost;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: "rgba(0,0,0,0.85)",
-        zIndex: 10000,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "20px",
-      }}
-    >
+    <div className={styles["ca-craft-detail-overlay"]}>
       <div
         className={styles["ca-card"]}
         style={{
@@ -516,29 +502,9 @@ export default function CraftView({
   return (
     <div
       className={styles["ca-craft-view"]}
-      style={{
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        width: "100%",
-        height: "100%",
-        padding: "12px",
-        overflow: "hidden",
-      }}
     >
       {/* 貨幣顯示 */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "12px",
-          padding: "10px 14px",
-          background: "rgba(15, 23, 42, 0.6)",
-          borderRadius: "12px",
-          border: "1px solid rgba(255,255,255,0.1)",
-        }}
-      >
+      <div className={styles["ca-craft-shard-bar"]}>
         <span style={{ color: "#94a3b8", fontSize: "0.9rem" }}>
           🧩 裝備碎片
         </span>
@@ -554,14 +520,7 @@ export default function CraftView({
       </div>
 
       {/* 飾品加成預覽 */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: "4px",
-          marginBottom: "12px",
-        }}
-      >
+      <div className={styles["ca-craft-bonus-grid"]}>
         <div className={styles["ca-stat-pill"]} style={{ fontSize: "0.7rem" }}>
           <span>
             🌟 飛昇點數 + {(accessoryBonuses.apMultiplier * 100).toFixed(1)}%
@@ -691,15 +650,7 @@ export default function CraftView({
       )}
 
       {/* 飾品列表 */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          background: "rgba(15, 23, 42, 0.4)",
-          borderRadius: "12px",
-          padding: "8px",
-        }}
-      >
+      <div className={styles["ca-craft-list-container"]}>
         {currentSlotAccessories.length === 0 ? (
           <div
             style={{

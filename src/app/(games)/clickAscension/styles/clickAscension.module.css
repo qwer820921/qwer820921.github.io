@@ -1626,3 +1626,164 @@
   background: rgba(255, 255, 255, 0.15);
   border-color: rgba(255, 255, 255, 0.3);
 }
+
+/* ============================================================================
+   Phase 2: Missing Class Definitions (CraftView)
+   ============================================================================ */
+
+.ca-craft-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.ca-card {
+  background: var(--ca-bg-card);
+  border-radius: var(--ca-radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: var(--ca-shadow-md);
+}
+
+/* ============================================================================
+   Phase 3: Specific Classes (ProfilePage)
+   ============================================================================ */
+
+.ca-profile-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ca-profile-login-hint {
+  font-size: 0.85rem;
+  color: var(--ca-text-secondary);
+  font-weight: 600;
+}
+
+.ca-profile-login-row {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.ca-profile-login-input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.ca-profile-wallet-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  background: rgba(15, 23, 42, 0.4);
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ca-profile-empty-state {
+  color: var(--ca-text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 10px;
+}
+
+.ca-profile-version-footer {
+  margin-top: 24px;
+  padding: 12px;
+  text-align: center;
+  color: var(--ca-text-muted);
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+.ca-profile-currency-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ca-profile-currency-label {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+}
+
+/* ============================================================================
+   Phase 3: Specific Classes (ClickAscensionGame Popups)
+   ============================================================================ */
+
+.ca-popup-footer {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  position: sticky;
+  bottom: 0;
+  background: var(--ca-bg-modal, #1e293b);
+  padding-top: 12px;
+}
+
+.ca-gacha-result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+/* ============================================================================
+   Phase 3: Specific Classes (CraftView)
+   ============================================================================ */
+
+.ca-craft-detail-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.ca-craft-shard-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.ca-craft-bonus-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.ca-craft-list-container {
+  flex: 1;
+  overflow-y: auto;
+  background: rgba(15, 23, 42, 0.4);
+  border-radius: 12px;
+  padding: 8px;
+}

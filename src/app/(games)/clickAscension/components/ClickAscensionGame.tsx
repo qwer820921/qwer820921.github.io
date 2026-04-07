@@ -2391,7 +2391,7 @@ export default function ClickAscensionGame() {
             }}
           >
             <div
-              className="ca-currency ca-currency-gold"
+              className={`${styles["ca-currency"]} ${styles["ca-currency-gold"]}`}
               style={{ fontSize: "0.8rem" }}
               title="金幣"
             >
@@ -2401,7 +2401,7 @@ export default function ClickAscensionGame() {
               </span>
             </div>
             <div
-              className="ca-currency ca-currency-diamond"
+              className={`${styles["ca-currency"]} ${styles["ca-currency-diamond"]}`}
               style={{ fontSize: "0.8rem" }}
               title="鑽石"
             >
@@ -2409,7 +2409,7 @@ export default function ClickAscensionGame() {
               <span>{formatBigNumber(player.wallet.diamonds, 2, 1000)}</span>
             </div>
             <div
-              className="ca-currency"
+              className={styles["ca-currency"]}
               style={{
                 fontSize: "0.8rem",
                 color: "var(--ca-accent-cyan, #22d3ee)",
@@ -2426,7 +2426,7 @@ export default function ClickAscensionGame() {
               </span>
             </div>
             <div
-              className="ca-currency"
+              className={styles["ca-currency"]}
               style={{ fontSize: "0.8rem", color: "#4ade80" }}
               title="等級積分"
             >
@@ -2434,7 +2434,7 @@ export default function ClickAscensionGame() {
               <span>{formatBigNumber(player.wallet.levelPoints, 2, 1000)}</span>
             </div>
             <div
-              className="ca-currency"
+              className={styles["ca-currency"]}
               style={{ fontSize: "0.8rem", color: "#d8b4fe" }}
               title="飛昇點數"
             >
@@ -2444,7 +2444,7 @@ export default function ClickAscensionGame() {
               </span>
             </div>
             <div
-              className="ca-currency"
+              className={styles["ca-currency"]}
               style={{ fontSize: "0.8rem", color: "#fca5a5" }}
               title="裝備碎片"
             >
@@ -2499,14 +2499,7 @@ export default function ClickAscensionGame() {
                 🎊 連抽結果摘要 ({popup.gachaResults.drawCount} 抽)
               </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
-                  gap: "10px",
-                  marginBottom: "20px",
-                }}
-              >
+              <div className={styles["ca-gacha-result-grid"]}>
                 {Object.entries(popup.gachaResults.summary).map(
                   ([name, count]) => (
                     <div
@@ -2559,21 +2552,10 @@ export default function ClickAscensionGame() {
             </div>
           )}
 
-          <div
-            style={{
-              marginTop: "24px",
-              display: "flex",
-              justifyContent: "center",
-              gap: "12px",
-              position: "sticky",
-              bottom: 0,
-              background: "var(--ca-bg-modal, #1e293b)",
-              paddingTop: "12px",
-            }}
-          >
+          <div className={styles["ca-popup-footer"]}>
             {popup?.isAutoGacha && (
               <button
-                className="ca-btn"
+                className={styles["ca-btn"]}
                 style={{
                   padding: "10px 24px",
                   background: "linear-gradient(to bottom, #ef4444, #b91c1c)",
@@ -2594,7 +2576,7 @@ export default function ClickAscensionGame() {
               </button>
             )}
             <button
-              className="ca-btn ca-btn-primary"
+              className={`${styles["ca-btn"]} ${styles["ca-btn-primary"]}`}
               style={{
                 padding: "10px 32px",
                 minWidth: "120px",
