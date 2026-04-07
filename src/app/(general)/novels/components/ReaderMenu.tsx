@@ -193,7 +193,7 @@ export default function ReaderMenu({
                       onClick={() => {
                         onClose();
                         router.push(
-                          `/novels/reader/${bookId}/${bm.chapterIndex}`
+                          `/novels/reader/${bookId}?chapter=${bm.chapterIndex}`
                         );
                       }}
                     >

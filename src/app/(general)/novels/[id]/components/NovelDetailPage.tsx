@@ -121,7 +121,7 @@ export default function NovelDetailPage({ bookId }: Props) {
           {/* 單書專屬繼續閱讀 */}
           {bookProgress && (
             <Link
-              href={`/novels/reader/${bookId}/${bookProgress.chapterIndex}`}
+              href={`/novels/reader/${bookId}?chapter=${bookProgress.chapterIndex}`}
               className={styles.detailContinueReading}
             >
               上次閱讀：第 {bookProgress.chapterIndex} 章 ·{" "}
@@ -159,7 +159,7 @@ export default function NovelDetailPage({ bookId }: Props) {
             chapters.map((chapter) => (
               <Link
                 key={chapter.chapter_index}
-                href={`/novels/reader/${bookId}#${chapter.chapter_index}`}
+                href={`/novels/reader/${bookId}?chapter=${chapter.chapter_index}`}
                 className={styles.chapterItem}
               >
                 <span className={styles.chapterTitle}>

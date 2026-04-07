@@ -140,7 +140,7 @@ export default function NovelsPage() {
           {/* 繼續閱讀卡片（有紀錄才顯示） */}
           {isClient && lastRead && (
             <Link
-              href={`/novels/reader/${lastRead.bookId}/${lastRead.chapterIndex}`}
+              href={`/novels/reader/${lastRead.bookId}?chapter=${lastRead.chapterIndex}`}
               className={styles.dashCard + " " + styles.dashCardLink}
             >
               <div className={styles.dashCardIcon}>🔖</div>

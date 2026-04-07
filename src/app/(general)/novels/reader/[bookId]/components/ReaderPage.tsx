@@ -1,9 +1,10 @@
-/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-unused-vars */
 "use client";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
-import { PlayFill, PauseFill, MegaphoneFill } from "react-bootstrap-icons";
+import { useSearchParams, useRouter } from 'next/navigation';
+import { PlayFill, PauseFill, MegaphoneFill } from 'react-bootstrap-icons';
 import { useNovelStore } from "../../../store/novelStore";
 import { useReadingStore } from "../../../store/readingStore";
 import { getStorage } from "../../../utils";
@@ -54,8 +55,8 @@ export default function ReaderPage({ bookId }: Props) {
 
   // 從 URL hash 讀取初始章節
   useEffect(() => {
-    const hash = window.location.hash.replace("#", "");
-    const parsed = parseInt(hash, 10);
+    const chapterParam = new URLSearchParams(window.location.search).get('chapter') || '';
+    const parsed = parseInt(chapterParam, 10);
     if (!isNaN(parsed) && parsed > 0) {
       setCurrentChapterIndex(parsed);
     }
@@ -151,9 +152,10 @@ export default function ReaderPage({ bookId }: Props) {
 
         if (closestIdx !== null && activeEl) {
           // 1. 更新 URL Hash
-          const currentHash = window.location.hash.replace("#", "");
-          if (currentHash !== String(closestIdx)) {
-            window.history.replaceState(null, "", `#${closestIdx}`);
+          const currentSearch = new URLSearchParams(window.location.search);
+          const currentChapter = currentSearch.get("chapter");
+          if (currentChapter !== String(closestIdx)) {
+            window.history.replaceState(null, "", "?chapter=" + closestIdx);
           }
           setVisibleChapterTitle(closestTitle);
 
@@ -274,7 +276,7 @@ export default function ReaderPage({ bookId }: Props) {
     setIsTocOpen(false);
     setIsTTSOpen(false);
     setActiveTTSIndex(null);
-    window.history.replaceState(null, "", `#${chapterIndex}`);
+    window.history.replaceState(null, "", "?chapter=" + chapterIndex);
     window.scrollTo({ top: 0 });
   }, []);
 
