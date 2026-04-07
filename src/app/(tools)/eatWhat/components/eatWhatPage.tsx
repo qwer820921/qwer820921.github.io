@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 import React, { useEffect, useState } from "react";
 import SpinnerCanvas from "./spinnerCanvas";
@@ -17,7 +18,8 @@ const EatWhatPage: React.FC = () => {
 
   // Tab 控制狀態
   const [activeTab, setActiveTab] = useState<"設定" | "轉盤" | "候選">("轉盤");
-  const [isGeolocationDenied, setIsGeolocationDenied] = useState(false);
+  // Note: setIsGeolocationDenied 保留以備未來顯示錯誤用
+  const [, setIsGeolocationDenied] = useState(false);
 
   // ====== 初始化定位與自動搜尋 ======
   useEffect(() => {

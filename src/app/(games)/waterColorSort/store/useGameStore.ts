@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { GameStore, TubeState } from "../types";
+import { GameStore } from "../types";
 import { generateLevel } from "../utils/levelGenerator";
 import {
   canPour,

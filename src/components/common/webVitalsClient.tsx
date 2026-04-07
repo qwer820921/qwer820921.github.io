@@ -5,7 +5,7 @@ import { useEffect } from "react";
 
 const WebVitalsClient = () => {
   useEffect(() => {
-    reportWebVitals((metric) => {
+    reportWebVitals((_metric) => {
       // 傳送至 Google Analytics 或 console
       // console.log(metric);
       // 傳送到後端分析系統

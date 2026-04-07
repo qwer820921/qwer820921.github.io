@@ -1,4 +1,4 @@
-import { Color, TubeState } from "../types";
+import { TubeState } from "../types";
 
 /**
  * 試管容量，固定為 4

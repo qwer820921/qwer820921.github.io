@@ -21,7 +21,7 @@ interface HeaderProps {
 export default function Header({
   player,
   combatPower,
-  stageId,
+  stageId: _stageId,
   userId,
   onAvatarClick,
   onAscension,

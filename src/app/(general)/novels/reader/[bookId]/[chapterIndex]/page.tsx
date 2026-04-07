@@ -56,7 +56,7 @@ export async function generateMetadata({ params }: PageProps) {
       title: `${res.data.chapter_title} | 萬事屋藏書閣`,
       description: `正在閱讀《${bookId}》第 ${chapterIndex} 章。`,
     };
-  } catch (error) {
+  } catch {
     return { title: "閱讀章節 | 萬事屋藏書閣" };
   }
 }

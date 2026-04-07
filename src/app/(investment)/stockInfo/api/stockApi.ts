@@ -17,7 +17,7 @@ export const fetchStockList = async () => {
         name: item.name,
       })
     );
-  } catch (err) {
+  } catch {
     throw new Error("無法獲取股票代號清單");
   }
 };
@@ -121,7 +121,7 @@ export const removeStockCode = async (id: number) => {
         id, // 傳遞 id 來刪除
       },
     });
-  } catch (error) {
+  } catch {
     throw new Error("無法刪除股票代號");
   }
 };

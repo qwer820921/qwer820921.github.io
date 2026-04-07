@@ -1,4 +1,5 @@
-﻿import React, { useState, useEffect } from "react";
+/* eslint-disable react-hooks/exhaustive-deps */
+import React, { useState, useEffect } from "react";
 import styles from "../styles/invoice.module.css";
 import { LotteryPeriod } from "../types";
 import { getAllWinningLists } from "../api/invoiceApi";

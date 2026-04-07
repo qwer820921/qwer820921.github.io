@@ -45,7 +45,7 @@ export async function generateMetadata({ params }: PageProps) {
         ],
       },
     };
-  } catch (error) {
+  } catch {
     return { title: "書籍詳情 | 萬事屋藏書閣" };
   }
 }

@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 import React, { useEffect, useState, useCallback } from "react";
 import { useGameStore } from "../store/useGameStore";
@@ -55,6 +56,10 @@ export default function WaterColorSortPage() {
     return () => clearInterval(interval);
   }, [gameState, lastActionTime]);
 
+  const [hintTimeoutId, setHintTimeoutId] = useState<NodeJS.Timeout | null>(
+    null
+  );
+
   const handleTubeClick = useCallback(
     (id: string) => {
       setLastActionTime(Date.now());
@@ -78,15 +83,11 @@ export default function WaterColorSortPage() {
         setSelectedTubeId(null);
       } else {
         // 嘗試傾倒
-        const success = pour(selectedTubeId, id);
+        pour(selectedTubeId, id);
         setSelectedTubeId(null);
       }
     },
-    [selectedTubeId, tubes, pour]
-  );
-
-  const [hintTimeoutId, setHintTimeoutId] = useState<NodeJS.Timeout | null>(
-    null
+    [selectedTubeId, tubes, pour, hintTimeoutId]
   );
 
   // 搜尋提示動作
@@ -146,7 +147,7 @@ export default function WaterColorSortPage() {
     } else {
       console.log("No valid moves found for hint");
     }
-  }, [findHint, hintTimeoutId]);
+  }, [findHint]);
 
   // 跳轉關卡
   useEffect(() => {

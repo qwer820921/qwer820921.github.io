@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useNovelStore } from "../../store/novelStore";
 import { useReadingStore } from "../../store/readingStore";
 import { getStorage, setStorage, fixDriveCoverUrl } from "../../utils";
-import { Novel, ChapterSummary } from "../../types";
 import BottomTabs from "../../components/BottomTabs";
 import styles from "../../styles/novels.module.css";
 
@@ -15,7 +14,6 @@ interface Props {
 
 export default function NovelDetailPage({ bookId }: Props) {
   const {
-    novels,
     novelsLoading,
     novelsError,
     chaptersMap,

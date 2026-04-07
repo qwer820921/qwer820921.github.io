@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
@@ -375,7 +376,7 @@ export default function ClickAscensionGame() {
     player.clickShop,
     player.ascensionShop,
     gameConfig,
-    player.activeBuffs.ragePotionExpiresAt,
+    player.activeBuffs,
   ]);
 
   // Helper for deep merging player state (handles nested objects like stats, wallet, system)
@@ -566,6 +567,7 @@ export default function ClickAscensionGame() {
     effectiveStats.monsterKillReduction,
     effectiveStats.monsterHpReduction,
     effectiveStats.bossHpReduction,
+    gameConfig,
   ]);
 
   const [userId, setUserId] = useState<string | null>(null);
@@ -631,7 +633,7 @@ export default function ClickAscensionGame() {
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [stage.isBossActive, stage.bossTimeLeft, monster?.id, monster?.isBoss]);
+  }, [stage.isBossActive, stage.bossTimeLeft, monster]);
 
   // Auto-Save Loop (30s)
   useEffect(() => {
@@ -711,7 +713,6 @@ export default function ClickAscensionGame() {
       const currencyShort = parts[1]; // ap, diamond
 
       const isDiamond = currencyShort === "diamond" || currencyShort === "dia";
-      const currencyType = isDiamond ? CurrencyType.DIAMOND : CurrencyType.AP;
 
       // Calculate Cost (100 draws)
       const s = (gameConfig?.settings as any) || {};
@@ -771,7 +772,7 @@ export default function ClickAscensionGame() {
             setStage((prev) => ({ ...prev, ...(cloudData.stage as any) }));
           return; // Success
         }
-      } catch (_e) {}
+      } catch { /* cloud load failed, fallback to local */ }
 
       // 2. Fallback to Local Save
       const localStr = localStorage.getItem(`ca_save_${id}`);
@@ -780,7 +781,7 @@ export default function ClickAscensionGame() {
           const localData = JSON.parse(localStr);
           setPlayer((prev) => ({ ...prev, ...localData.player }));
           setStage((prev) => ({ ...prev, ...localData.stage }));
-        } catch (e) {}
+        } catch { /* local fallback parse error */ }
       }
     },
     [setUserId, setPlayer, setStage, deepMergePlayer]
@@ -922,7 +923,7 @@ export default function ClickAscensionGame() {
 
     return () => clearInterval(interval);
   }, [
-    monster?.id,
+    monster,
     effectiveStats.autoAttackDamage,
     effectiveStats.bossDamageMultiplier,
     effectiveStats.cpMultiplier,
@@ -1050,8 +1051,8 @@ export default function ClickAscensionGame() {
     effectiveStats.criticalDamage,
     effectiveStats.bossDamageMultiplier,
     effectiveStats.cpMultiplier,
-    monster?.id,
-    gameConfig, // Dependency for settings
+    monster,
+    gameConfig,
   ]);
 
   // --------------------------------------------------------------------------
@@ -1772,13 +1773,7 @@ export default function ClickAscensionGame() {
     },
     [
       gameConfig,
-      player.clickShop,
-      player.levelShop,
-      player.wallet,
-      player.goldShop,
-      player.inventory,
-      player.equipment.inventory,
-      player.ascensionShop,
+      player,
       recalculateStats,
       autoGachaBox,
     ]

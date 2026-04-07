@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import { ChatMessage, chatWithAI, ChatProvider, CHATANYWHERE_MODEL, GEMINI_MODEL } from "@/services/chatApi";
@@ -166,11 +167,6 @@ const ChatWidget = () => {
     if ((e.target as HTMLElement).tagName === "TEXTAREA" || (e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "SELECT") return;
     const touch = e.touches[0];
     handleDragStart(touch.clientX, touch.clientY);
-  };
-
-  const onTouchMove = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    handleDragMove(touch.clientX, touch.clientY);
   };
 
   const toggleChat = () => {

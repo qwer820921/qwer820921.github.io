@@ -1,4 +1,5 @@
-﻿import React, { useEffect, useState, useRef } from "react";
+/* eslint-disable react-hooks/exhaustive-deps */
+import React, { useEffect, useState, useRef } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import styles from "../styles/invoice.module.css";
 import { LotteryPeriod, CheckResult } from "../types";

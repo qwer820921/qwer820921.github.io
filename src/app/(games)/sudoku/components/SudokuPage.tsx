@@ -1,12 +1,11 @@
 "use client";
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import { useSudokuStore } from "../store/useSudokuStore";
 import {
   Arrow90degLeft,
   Eraser,
   Pencil,
   Lightbulb,
-  ArrowLeft,
   ArrowCounterclockwise,
   Trophy,
   EmojiFrown,
@@ -32,7 +31,6 @@ const SudokuPage = () => {
     eraseCell,
     useHint,
     tickTimer,
-    setHasHydrated,
   } = useSudokuStore();
 
   const [showDifficultySelector, setShowDifficultySelector] = useState(true);

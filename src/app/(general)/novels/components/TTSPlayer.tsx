@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import {
@@ -31,6 +32,9 @@ interface TTSPlayerProps {
   onPlayingChange: (isPlaying: boolean) => void;
 }
 
+// 可用速率列表
+const rateOptions = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0];
+
 const TTSPlayer = forwardRef<TTSPlayerRef, TTSPlayerProps>(
   (
     {
@@ -50,8 +54,6 @@ const TTSPlayer = forwardRef<TTSPlayerRef, TTSPlayerProps>(
     const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
     const voiceChangeRef = useRef(false);
 
-    // 可用速率列表
-    const rateOptions = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0];
 
     // 取得可用的中文語音
     useEffect(() => {
@@ -96,7 +98,6 @@ const TTSPlayer = forwardRef<TTSPlayerRef, TTSPlayerProps>(
         onParagraphChange(null);
         onPlayingChange(false);
       };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [stopActiveUtterance]);
 
     // 朗讀指定段落

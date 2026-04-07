@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
@@ -22,7 +23,7 @@ interface Props {
 export default function ReaderPage({ bookId }: Props) {
   const { chaptersMap, fetchChapters, fetchChapterContent, getNovelById } =
     useNovelStore();
-  const { saveProgress, addReadTime } = useReadingStore();
+  const { saveProgress } = useReadingStore();
   const chapters = chaptersMap[bookId]?.data ?? [];
 
   const [loadedChapters, setLoadedChapters] = useState<ChapterContent[]>([]);

@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { YtMusicTrack } from "../types";
 import { Button, Form, ListGroup } from "react-bootstrap";

@@ -12,7 +12,7 @@ import {
   Kanban,
 } from "react-bootstrap-icons";
 import { Modal, ButtonGroup, Button, Form, Dropdown } from "react-bootstrap";
-import { printValue } from "@/utils/createElement";
+// printValue removed — unused import
 import toast from "react-hot-toast";
 import ColorSelectorChrome from "../animator/components/colorSelector";
 
@@ -173,11 +173,13 @@ export default function VideoEditor() {
 
     canvasRef.current = canvas;
 
+    const activeAnimations = animationRefs.current;
+
     return () => {
-      animationRefs.current.forEach((animationId) => {
+      activeAnimations.forEach((animationId) => {
         cancelAnimationFrame(animationId);
       });
-      animationRefs.current.clear();
+      activeAnimations.clear();
       canvas.dispose();
     };
   }, [canvasSize]);
@@ -402,11 +404,13 @@ export default function VideoEditor() {
     }
     canvasRef.current.renderAll();
 
+    const activeAnimations = animationRefs.current;
+
     return () => {
-      animationRefs.current.forEach((animationId) => {
+      activeAnimations.forEach((animationId) => {
         cancelAnimationFrame(animationId);
       });
-      animationRefs.current.clear();
+      activeAnimations.clear();
     };
   }, [canvasObjects]);
 
