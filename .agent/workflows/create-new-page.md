@@ -91,6 +91,8 @@ src/app/{moduleFolder}/{englishName}/
 ├── page.tsx
 ├── components/
 │   └── {englishName}Page.tsx
+├── store/ (可選)
+│   └── use{EnglishName}Store.ts
 ├── types/
 │   └── index.ts
 └── styles/
@@ -168,7 +170,23 @@ export default {EnglishName}Page;
 
 > 初始為空檔案，僅保留註解，待開發時新增型別。
 
-### 4.4 `styles/{englishName}.module.css`
+### 4.4 `store/use{EnglishName}Store.ts`（可選）
+
+若該頁面功能較複雜或有跨元件狀態管理需求，建議透過 Zustand 建立 co-located store：
+
+```ts
+import { create } from "zustand";
+
+interface {EnglishName}State {
+  // 狀態與方法
+}
+
+export const use{EnglishName}Store = create<{EnglishName}State>((set) => ({
+  // 初始狀態與 setter
+}));
+```
+
+### 4.5 `styles/{englishName}.module.css`
 
 ```css
 /* {chineseName} 頁面樣式 */
@@ -217,5 +235,6 @@ export default {EnglishName}Page;
 - [ ] `page.tsx` — Server Component，匯出 `metadata`
 - [ ] `components/{englishName}Page.tsx` — Client Component，有 `"use client"` 宣告
 - [ ] `types/index.ts` — 型別檔已建立
+- [ ] (可選) `store/use{EnglishName}Store.ts` — 若有複雜狀態需管理，Zustand store 已建立
 - [ ] `styles/{englishName}.module.css` — CSS Module 樣式檔已建立
 - [ ] 執行 `npm run build` 確認無編譯錯誤
