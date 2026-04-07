@@ -1,0 +1,314 @@
+/* 圖檔轉檔 頁面樣式 */
+
+.container {
+  padding-top: 2rem;
+  padding-bottom: 2rem;
+  margin-top: 70px;
+}
+
+/* 拖曳上傳區容器 */
+.dropZone {
+  border: 2px dashed #6c757d;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background-color: rgba(108, 117, 125, 0.03);
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-height: 350px;
+  position: relative;
+}
+
+/* 無圖片時的置中狀態 */
+.dropZoneEmpty {
+  justify-content: center;
+  align-items: center;
+}
+
+/* 有圖片時的置頂狀態 */
+.dropZoneHasContent {
+  justify-content: flex-start;
+  align-items: stretch;
+  background-color: #fff;
+  border-style: solid;
+  border-color: #e9ecef;
+}
+
+.dropZoneDragging {
+  border-style: dashed;
+  border-color: #0d6efd;
+  background-color: rgba(13, 110, 253, 0.05);
+  box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.1);
+}
+
+.dropZoneContent {
+  pointer-events: none; /* 讓點擊穿透到父層 */
+}
+
+.dropZoneIcon {
+  font-size: 3rem;
+  color: #adb5bd;
+  margin-bottom: 1rem;
+}
+
+.dropZoneText {
+  color: #6c757d;
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.dropZoneSubText {
+  color: #adb5bd;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.hiddenInput {
+  display: none;
+}
+
+/* ========== 縮圖列表 (整合在 DropZone 內) ========== */
+.thumbnailGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1rem;
+  width: 100%;
+  pointer-events: auto; /* 恢復卡片區域的點擊 */
+}
+
+.thumbnailCard {
+  position: relative;
+  border: 1px solid #e9ecef;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+  cursor: default; /* 卡片本身不觸發上傳 */
+}
+
+.thumbnailCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.thumbnailRemove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(220, 53, 69, 0.9);
+  color: #fff;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.thumbnailCard:hover .thumbnailRemove {
+  opacity: 1;
+}
+
+.thumbnailImageWrapper {
+  width: 100%;
+  height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f8f9fa;
+  overflow: hidden;
+  border-bottom: 1px solid #f1f3f5;
+}
+
+.thumbnailImage {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.thumbnailInfo {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 6px 0;
+  font-size: 0.7rem;
+  color: #6c757d;
+}
+
+.thumbnailDim {
+  font-weight: 500;
+}
+
+.thumbnailSize {
+  font-weight: 500;
+}
+
+.thumbnailMeta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 6px 6px;
+  gap: 4px;
+}
+
+.thumbnailName {
+  font-size: 0.65rem;
+  color: #495057;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.thumbnailFormatBadge {
+  font-size: 0.6rem !important;
+  padding: 0.15em 0.4em !important;
+  flex-shrink: 0;
+}
+
+/* ========== 設定面板 ========== */
+.settingsCard {
+  border-radius: 12px;
+  position: sticky;
+  top: 80px;
+}
+
+.qualityValue {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #0d6efd;
+  min-width: 3rem;
+  text-align: center;
+}
+
+.privacyBadge {
+  font-size: 0.8rem;
+}
+
+/* ========== 轉換結果卡片 ========== */
+.resultCard {
+  border-radius: 10px;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease;
+  height: 100%;
+}
+
+.resultCard:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.resultImageWrapper {
+  width: 100%;
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f8f9fa;
+  background-image:
+    linear-gradient(45deg, #e9ecef 25%, transparent 25%),
+    linear-gradient(-45deg, #e9ecef 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e9ecef 75%),
+    linear-gradient(-45deg, transparent 75%, #e9ecef 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+  overflow: hidden;
+}
+
+.resultImage {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.resultFileName {
+  font-size: 0.75rem;
+  color: #6c757d;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ========== 箭頭對比 (Grid) ========== */
+.compareContainer {
+  display: inline-grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.25rem 0.5rem;
+  align-items: center;
+  font-size: 0.85rem;
+  margin-bottom: 0.25rem;
+  width: 100%;
+}
+
+.compareLeft {
+  text-align: right;
+  color: #495057;
+  font-weight: 600;
+}
+
+.compareRight {
+  text-align: left;
+  color: #495057;
+  font-weight: 600;
+}
+
+.compareArrow {
+  color: #adb5bd;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.comparePercent {
+  color: #6c757d;
+  font-weight: 700;
+}
+
+.compareFormatBadge {
+  background-color: #0d6efd;
+  color: #fff;
+  font-weight: 700;
+  padding: 0.1rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+.fileSizeReduced {
+  color: #198754;
+  font-weight: 700;
+}
+
+.fileSizeIncreased {
+  color: #dc3545;
+  font-weight: 700;
+}
+
+/* ========== 動畫 ========== */
+.fadeIn {
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

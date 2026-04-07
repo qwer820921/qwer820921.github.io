@@ -21,4 +21,5 @@ export const ROUTES = {
   GAME2048: "/game2048", // 2048
   WATER_COLOR_SORT: "/waterColorSort", // 水彩分類
   SUDOKU: "/sudoku", // 數獨
+  IMAGE_CONVERTER: "/imageConverter", // 圖檔轉檔
 };

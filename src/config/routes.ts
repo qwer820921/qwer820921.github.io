@@ -41,6 +41,11 @@ const routes: RouteGroup[] = [
         name: "限時動態編輯器",
         showInNavbar: true,
       },
+      {
+        path: ROUTES.IMAGE_CONVERTER,
+        name: "圖檔轉檔",
+        showInNavbar: true,
+      },
     ],
   },
   {

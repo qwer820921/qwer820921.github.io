@@ -129,4 +129,11 @@ export const seoMap: {
     keywords:
       "數獨, Sudoku, 經典數獨, 數位拼圖, 益智遊戲, 邏輯挑戰, 線上小遊戲, 萬事屋, 數獨技巧",
   },
+  [ROUTES.IMAGE_CONVERTER]: {
+    title: "子yee 萬事屋 | 圖檔轉檔 - 線上圖片格式轉換工具",
+    description:
+      "免費線上圖片格式轉換工具，支援 PNG、JPEG、WebP 互轉，可調整輸出品質與預覽對比。純瀏覽器端處理，圖片不會上傳至伺服器，安全又快速。",
+    keywords:
+      "圖檔轉檔, 圖片轉換, PNG 轉 JPG, WebP 轉換, 線上轉檔, 圖片格式, 免費工具, 子yee 萬事屋",
+  },
 };
