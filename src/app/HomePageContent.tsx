@@ -15,6 +15,7 @@ interface HomePageContentProps {
 
 const ToolCard = ({ route }: { route: RouteConfig }) => {
   const [hasError, setHasError] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
   const imagePath = `/images/cover${route.path}.webp`;
 
   return (
@@ -24,13 +25,37 @@ const ToolCard = ({ route }: { route: RouteConfig }) => {
           href={route.path}
           className={`text-decoration-none text-white h-100 w-100 ${styles.toolLink}`}
         >
-          {!hasError ? (
-            <div className={styles.toolImageWrapper}>
+          {/* 預設顯示 Fallback，如果載入成功就淡出 */}
+          <div
+            className={styles.toolFallback}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              opacity: isLoaded && !hasError ? 0 : 1,
+              transition: "opacity 0.3s ease-in-out",
+              zIndex: 1,
+            }}
+          >
+            <h3 className={styles.toolTitle}>{route.name}</h3>
+          </div>
+
+          {/* 如果沒有錯誤，就渲染圖片。載入完成後淡入 */}
+          {!hasError && (
+            <div
+              className={styles.toolImageWrapper}
+              style={{
+                opacity: isLoaded ? 1 : 0,
+                transition: "opacity 0.3s ease-in-out",
+                zIndex: 2,
+              }}
+            >
               <Image
                 src={imagePath}
                 alt={route.name}
                 fill
                 className={styles.toolImage}
+                onLoad={() => setIsLoaded(true)}
                 onError={() => setHasError(true)}
                 sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                 priority={
@@ -38,10 +63,6 @@ const ToolCard = ({ route }: { route: RouteConfig }) => {
                 }
               />
               <div className={styles.toolImageHoverOverlay} />
-            </div>
-          ) : (
-            <div className={styles.toolFallback}>
-              <h3 className={styles.toolTitle}>{route.name}</h3>
             </div>
           )}
         </Link>
