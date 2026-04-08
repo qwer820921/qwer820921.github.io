@@ -25,4 +25,5 @@ export const ROUTES = {
   BG_REMOVER: "/bgRemover", // AI 圖片去背
   JSON_FORMAT: "/jsonFormat", // JSON格式化工具
   TEN_MIN_EMAIL: "/tenMinEmail", // 10分鐘信箱
+  QR_CODE_GENERATOR: "/qrCodeGenerator", // QRCode產生器
 };

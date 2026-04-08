@@ -156,4 +156,9 @@ export const seoMap: {
     keywords:
       "10分鐘信箱, 臨時信箱, 免洗信箱, 驗證碼收取, 垃圾郵件防治, Temp Mail, 10 Minute Mail, 子yee 萬事屋",
   },
+  [ROUTES.QR_CODE_GENERATOR]: {
+    title: "子yee 萬事屋 | QRCode產生器 - 強大的動態二維碼與視覺特效工具",
+    description: "提供免費且強大的 QR Code 產生體驗。支援背景 GIF 融合、顏色漸層、以及獨特的「動態追蹤碼」功能，即使圖案印出也能隨時替換網址歸屬！",
+    keywords: "QRCode產生器, 動態二維碼, QR Code 背景, 短網址, vCard, Wi-Fi QRcode, 萬事屋",
+  },
 };
