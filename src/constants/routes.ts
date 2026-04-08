@@ -23,4 +23,5 @@ export const ROUTES = {
   SUDOKU: "/sudoku", // 數獨
   IMAGE_CONVERTER: "/imageConverter", // 圖檔轉檔
   BG_REMOVER: "/bgRemover", // AI 圖片去背
+  JSON_FORMAT: "/jsonFormat", // JSON格式化工具
 };

@@ -47,6 +47,7 @@ const routes: RouteGroup[] = [
         name: "圖檔轉檔",
         showInNavbar: true,
       },
+      { path: ROUTES.JSON_FORMAT, name: "JSON格式化工具", showInNavbar: true },
     ],
   },
   {

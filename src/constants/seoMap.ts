@@ -142,4 +142,11 @@ export const seoMap: {
     keywords:
       "圖檔轉檔, 圖片轉換, PNG 轉 JPG, WebP 轉換, 線上轉檔, 圖片格式, 免費工具, 子yee 萬事屋",
   },
+  [ROUTES.JSON_FORMAT]: {
+    title: "子yee 萬事屋 | JSON格式化工具 - 輕鬆排版與壓縮 JSON",
+    description:
+      "提供免費線上 JSON 格式化、美化與壓縮工具，支援語法錯誤提示與一鍵複製功能，讓開發者處理 JSON 格式資料更有效率。",
+    keywords:
+      "子yee 萬事屋, JSON格式化工具, JSON formatter, JSON minify, JSON 美化, JSON 壓縮, JSON syntax check",
+  },
 };
