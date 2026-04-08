@@ -150,13 +150,16 @@ npm run lint         # ESLint 檢查
 
 ---
 
-## 6. 程式碼風格
+## 6. 程式碼風格與 ESLint 規範
 
-- 使用 TypeScript strict mode
-- 使用 ESLint + Prettier（設定已透過 husky pre-commit hook 自動執行）
-- 匯入順序：React/Next → 第三方套件 → 專案內部模組 → 樣式
-- 避免使用 `any`，應定義明確的型別
-- 檔案結尾保留一個空行
+此專案設計有嚴格的靜態檢查，且 Next.js 在 `npm run build` 時會將所有 ESLint Error 視為 Fatal Error 並中斷建置。所有 AI 在撰寫程式碼時請嚴格遵守以下約定：
+
+- **JSX 字元跳脫 (Escaping)**：在 React JSX 中輸出字串時，若包含 `>`、`"`、`'`、`}` 等特殊符號，請務必使用 HTML Entity（如 `&quot;`）。嚴禁直接寫出未跳脫的字元（如 `<span>"</span>`），否則會觸發 `react/no-unescaped-entities` 導致無法編譯。
+- **嚴禁手動隨意加上 `eslint-disable`**：專案全局已設定好合適的規則放寬（例如針對 `any` 的放寬），切勿預設插入 `// eslint-disable-next-line` 註解，以免反而觸發 `Unused eslint-disable directive` 警告。請信任專案預設的 linter 設定。
+- **未使用的 Catch 變數**：在 `try-catch` 中若不需要使用 Error 物件，必須使用 TypeScript 現代語法 `catch { ... }`，不准寫成 `catch (e)` 但卻沒用到，以免觸發 `no-unused-vars`。
+- **TypeScript 嚴格模式**：遵循 TS strict mode，盡量定義明確型別，減少 `any` 的直接使用（除非是動態資料如 JSON 處理）。
+- **自動排版與匯入**：匯入順序原則為 React/Next → 第三方套件 → 專案內部模組 → 樣式。代碼排版使用 Prettier（透過 Husky hooks 自動執行）。
+- **檔案結尾**：檔案結尾需保留一個空行。
 
 ---
 

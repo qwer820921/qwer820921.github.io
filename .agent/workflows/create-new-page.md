@@ -107,6 +107,8 @@ src/app/{moduleFolder}/{englishName}/
 ├── page.tsx
 ├── components/
 │   └── {englishName}Page.tsx
+├── doc/ (用以存放實作計畫與相關開發討論文件)
+│   └── implementation_plan.md
 ├── store/ (可選)
 │   └── use{EnglishName}Store.ts
 ├── types/
@@ -202,7 +204,13 @@ export const use{EnglishName}Store = create<{EnglishName}State>((set) => ({
 }));
 ```
 
-### 4.5 `styles/{englishName}.module.css`
+### 4.5 `doc/implementation_plan.md`（開發文件）
+
+此資料夾用於存放專案開發期間產生的實作計畫與討論結果。
+- **情境 A（已有事前討論）**：若在執行此 Workflow 前，我們已經完成了需求討論且系統產生過 `implementation_plan.md`，則必須將該份舊文件遷移或複製到此路徑下保存。
+- **情境 B（直接建立）**：若無事前討論直接執行此 Workflow，則此處建立一份空的 `implementation_plan.md`，留作未來紀錄使用。
+
+### 4.6 `styles/{englishName}.module.css`
 
 ```css
 /* {chineseName} 頁面樣式 */
@@ -252,5 +260,6 @@ export const use{EnglishName}Store = create<{EnglishName}State>((set) => ({
 - [ ] `components/{englishName}Page.tsx` — Client Component，有 `"use client"` 宣告
 - [ ] `types/index.ts` — 型別檔已建立
 - [ ] (可選) `store/use{EnglishName}Store.ts` — 若有複雜狀態需管理，Zustand store 已建立
+- [ ] `doc/implementation_plan.md` — 已確認遷移了系統產生的計畫文件 (如果有)，或已建立初始模板
 - [ ] `styles/{englishName}.module.css` — CSS Module 樣式檔已建立
 - [ ] 執行 `npm run build` 確認無編譯錯誤
