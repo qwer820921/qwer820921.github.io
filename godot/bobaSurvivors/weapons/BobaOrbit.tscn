@@ -1,0 +1,18 @@
+[gd_scene format=3 uid="uid://bbe6vdlscc720"]
+
+[ext_resource type="Script" uid="uid://bclhpyiiu57g" path="res://weapons/BobaOrbit.gd" id="1_38lxl"]
+[ext_resource type="Texture2D" uid="uid://x1hwwh22shrp" path="res://gfx/pearl_bullet.png" id="2_fnqlu"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_fnqlu"]
+
+[node name="BobaOrbit" type="Area2D" unique_id=774249299]
+scale = Vector2(0.5, 0.5)
+script = ExtResource("1_38lxl")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1021585586]
+scale = Vector2(0.07, 0.07)
+texture = ExtResource("2_fnqlu")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1586171248]
+scale = Vector2(4, 4)
+shape = SubResource("CircleShape2D_fnqlu")

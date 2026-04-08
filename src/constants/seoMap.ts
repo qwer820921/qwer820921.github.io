@@ -158,7 +158,16 @@ export const seoMap: {
   },
   [ROUTES.QR_CODE_GENERATOR]: {
     title: "子yee 萬事屋 | QRCode產生器 - 強大的動態二維碼與視覺特效工具",
-    description: "提供免費且強大的 QR Code 產生體驗。支援背景 GIF 融合、顏色漸層、以及獨特的「動態追蹤碼」功能，即使圖案印出也能隨時替換網址歸屬！",
-    keywords: "QRCode產生器, 動態二維碼, QR Code 背景, 短網址, vCard, Wi-Fi QRcode, 萬事屋",
+    description:
+      "提供免費且強大的 QR Code 產生體驗。支援背景 GIF 融合、顏色漸層、以及獨特的「動態追蹤碼」功能，即使圖案印出也能隨時替換網址歸屬！",
+    keywords:
+      "QRCode產生器, 動態二維碼, QR Code 背景, 短網址, vCard, Wi-Fi QRcode, 萬事屋",
+  },
+  [ROUTES.BOBA_SURVIVORS]: {
+    title: "子yee 萬事屋 | 重裝全糖珍奶 - 珍奶主題自動戰鬥生存遊戲",
+    description:
+      "化身奶茶師傅，用珍珠彈、芋泥旋風、黑糖護盾等配料武器迎戰無盡汙染體大軍！自動攻擊、無限升級、存活到最後一刻。基於 Godot 引擎的 Vampire Survivors 風格網頁遊戲。",
+    keywords:
+      "重裝全糖珍奶, Boba Survivors, 生存遊戲, Vampire Survivors, 自動戰鬥, 珍珠奶茶遊戲, 線上遊戲, 子yee 萬事屋, Godot, 網頁遊戲",
   },
 };

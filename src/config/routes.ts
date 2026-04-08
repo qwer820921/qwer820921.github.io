@@ -23,6 +23,11 @@ const routes: RouteGroup[] = [
       { path: ROUTES.GAME2048, name: "2048 數位拼圖", showInNavbar: true },
       { path: ROUTES.WATER_COLOR_SORT, name: "水彩分類", showInNavbar: true },
       { path: ROUTES.SUDOKU, name: "數獨", showInNavbar: true },
+      {
+        path: ROUTES.BOBA_SURVIVORS,
+        name: "重裝全糖珍奶",
+        showInNavbar: true,
+      },
     ],
   },
   {
@@ -49,7 +54,11 @@ const routes: RouteGroup[] = [
       },
       { path: ROUTES.JSON_FORMAT, name: "JSON格式化工具", showInNavbar: true },
       { path: ROUTES.TEN_MIN_EMAIL, name: "10分鐘信箱", showInNavbar: true },
-      { path: ROUTES.QR_CODE_GENERATOR, name: "QRCode產生器", showInNavbar: true },
+      {
+        path: ROUTES.QR_CODE_GENERATOR,
+        name: "QRCode產生器",
+        showInNavbar: true,
+      },
     ],
   },
   {

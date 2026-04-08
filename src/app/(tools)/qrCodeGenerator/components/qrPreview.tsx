@@ -1,15 +1,15 @@
 "use client";
 import React, { useEffect, useState, useRef } from "react";
-import { Button, Spinner, Form, InputGroup } from "react-bootstrap";
+import { Button, Form, InputGroup } from "react-bootstrap";
 import QRCodeStyling from "qr-code-styling";
 import { useQRStore } from "../store/useQRStore";
 import { updateDynamicQRCode } from "../services/qrApi";
 import styles from "../styles/qrCodeGenerator.module.css";
 
 export const QRPreview: React.FC = () => {
-  const { finalEncodedText, styleOptions, isDynamic, dynamicInfo } = useQRStore();
-  const [isRendering, setIsRendering] = useState(false);
-  
+  const { finalEncodedText, styleOptions, isDynamic, dynamicInfo } =
+    useQRStore();
+
   // Dynamic update specific states
   const [updateUrl, setUpdateUrl] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
@@ -26,7 +26,6 @@ export const QRPreview: React.FC = () => {
     }
 
     const renderQR = () => {
-      setIsRendering(true);
       try {
         const options: any = {
           width: styleOptions.size,
@@ -35,23 +34,23 @@ export const QRPreview: React.FC = () => {
           data: finalEncodedText,
           margin: styleOptions.margin,
           qrOptions: {
-            errorCorrectionLevel: styleOptions.correctLevel
+            errorCorrectionLevel: styleOptions.correctLevel,
           },
           imageOptions: {
             crossOrigin: "anonymous",
-            margin: styleOptions.logoMargin || 5
+            margin: styleOptions.logoMargin || 5,
           },
           dotsOptions: {
             color: styleOptions.dotsColor,
-            type: styleOptions.dotsType
+            type: styleOptions.dotsType,
           },
           backgroundOptions: {
             color: styleOptions.backgroundColor,
           },
           cornersSquareOptions: {
             color: styleOptions.cornersSquareColor,
-            type: styleOptions.cornersSquareType
-          }
+            type: styleOptions.cornersSquareType,
+          },
         };
 
         if (styleOptions.logoImage) {
@@ -67,17 +66,26 @@ export const QRPreview: React.FC = () => {
         } else {
           qrCodeInstance.current.update(options);
         }
+
+        // --- 強制縮放邏輯 [IMPORTANT] ---
+        // 直接對產出的 canvas/svg 進行樣式壓制
+        if (qrRef.current) {
+          const children = qrRef.current.querySelectorAll("canvas, svg, img");
+          children.forEach((child: any) => {
+            child.style.maxWidth = "100%";
+            child.style.height = "auto";
+            child.style.display = "block";
+          });
+        }
       } catch (err) {
         console.error("QR Code rendering failed:", err);
-      } finally {
-        setIsRendering(false);
       }
     };
 
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(() => {
       renderQR();
-    }, 300); // 300ms debounce on input
+    }, 300);
 
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -86,7 +94,10 @@ export const QRPreview: React.FC = () => {
 
   const handleDownload = () => {
     if (!qrCodeInstance.current) return;
-    qrCodeInstance.current.download({ name: `qrcode_${Date.now()}`, extension: "png" });
+    qrCodeInstance.current.download({
+      name: `qrcode_${Date.now()}`,
+      extension: "png",
+    });
   };
 
   const handleUpdateTarget = async () => {
@@ -98,8 +109,8 @@ export const QRPreview: React.FC = () => {
       if (res.success) {
         setUpdateMsg("網址更新成功！實體條碼立刻生效。");
       }
-    } catch (e: any) {
-      setUpdateMsg(`更新失敗: ${e.message}`);
+    } catch {
+      setUpdateMsg("更新失敗，請稍後再試。");
     } finally {
       setIsUpdating(false);
     }
@@ -107,47 +118,68 @@ export const QRPreview: React.FC = () => {
 
   return (
     <div className={styles.previewContainer}>
-      <div 
-        ref={qrRef} 
-        style={{ 
-          maxWidth: "100%",
+      <div
+        className={styles.qrCanvasWrapper}
+        style={{
+          width: "100%",
+          maxWidth: "400px", // 稍微調小一點，外觀更精緻
+          margin: "0 auto",
+          overflow: "hidden",
           display: "flex",
           justifyContent: "center",
-          alignItems: "center"
+          alignItems: "center",
+          aspectRatio: "1/1",
+          background: "#fff",
+          borderRadius: "8px",
+          border: "1px solid #eee",
         }}
-      />
-      
+      >
+        <div ref={qrRef} style={{ width: "100%" }} />
+      </div>
+
       {!finalEncodedText && (
-        <div className="text-muted">請在左側輸入資料以產生 QR Code</div>
+        <div className="text-muted mt-3">請在左側輸入資料以產生 QR Code</div>
       )}
 
       {finalEncodedText && (
-        <Button variant="outline-primary" className="mt-4" onClick={handleDownload} style={{ width: "250px" }}>
+        <Button
+          variant="outline-primary"
+          className="mt-4"
+          onClick={handleDownload}
+          style={{ width: "200px" }}
+        >
           下載 PNG 圖檔
         </Button>
       )}
 
-      {/* Dynamic Info 直出面板 */}
+      {/* Dynamic Info 面板 */}
       {isDynamic && dynamicInfo && (
-        <div className={styles.dynamicAlert + " w-100"}>
+        <div className={styles.dynamicAlert + " w-100 mt-4"}>
           <h6 className="fw-bold mb-2">⚡ 動態追蹤碼已建立</h6>
           <p className="mb-1 small">
-            短網址：<a href={dynamicInfo.shortUrl} target="_blank" rel="noreferrer">{dynamicInfo.shortUrl}</a> <br/>
-            ID：<code>{dynamicInfo.shortId}</code>
+            短網址：
+            <a href={dynamicInfo.shortUrl} target="_blank" rel="noreferrer">
+              {dynamicInfo.shortUrl}
+            </a>
           </p>
-          <hr style={{ opacity: 0.2 }}/>
-          <Form.Label className="small fw-bold">隨時重新導向至新網址 (不改變目前圖案)</Form.Label>
+          <hr style={{ opacity: 0.2 }} />
           <InputGroup size="sm">
-            <Form.Control 
-              placeholder="輸入新的目標網址 https://..." 
+            <Form.Control
+              placeholder="更新目標網址..."
               value={updateUrl}
               onChange={(e) => setUpdateUrl(e.target.value)}
             />
-            <Button variant="primary" onClick={handleUpdateTarget} disabled={isUpdating || !updateUrl}>
-              {isUpdating ? "更新中" : "套用新網址"}
+            <Button
+              variant="primary"
+              onClick={handleUpdateTarget}
+              disabled={isUpdating || !updateUrl}
+            >
+              套用
             </Button>
           </InputGroup>
-          {updateMsg && <div className="mt-2 small text-success fw-bold">{updateMsg}</div>}
+          {updateMsg && (
+            <div className="mt-2 small text-success fw-bold">{updateMsg}</div>
+          )}
         </div>
       )}
     </div>

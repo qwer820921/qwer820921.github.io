@@ -40,6 +40,27 @@
   background-color: rgba(255, 255, 255, 0.5);
 }
 
+.qrCanvasWrapper {
+  width: 100%;
+  max-width: 500px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  border: 1px dashed var(--bs-border-color); /* 增加一個虛線框輔助視覺 */
+  border-radius: 8px;
+  aspect-ratio: 1/1;
+}
+
+.qrCanvasWrapper canvas,
+.qrCanvasWrapper img,
+.qrCanvasWrapper svg {
+  max-width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+}
+
 .previewContainer {
   display: flex;
   flex-direction: column;

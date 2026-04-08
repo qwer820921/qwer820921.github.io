@@ -1,0 +1,21 @@
+[gd_scene format=3 uid="uid://d0mba7krbfpss"]
+
+[ext_resource type="PackedScene" uid="uid://cye0ht476863w" path="res://player/player.tscn" id="1_53q0u"]
+[ext_resource type="Script" uid="uid://k44b2wtbwdl7" path="res://main/Main.gd" id="1_c651c"]
+[ext_resource type="PackedScene" uid="uid://f45wwpvlkixd" path="res://enemies/BaseEnemy.tscn" id="3_xwkvk"]
+[ext_resource type="PackedScene" uid="uid://c0rnpvhe15qm3" path="res://ui/level_up_ui.tscn" id="4_c651c"]
+[ext_resource type="PackedScene" uid="uid://b2twdu8h007qe" path="res://ui/VirtualJoystick.tscn" id="6_kfbq2"]
+
+[node name="Main" type="Node2D" unique_id=417939487 groups=["enemy"]]
+script = ExtResource("1_c651c")
+enemy_scene = ExtResource("3_xwkvk")
+
+[node name="Player" parent="." unique_id=1083023635 instance=ExtResource("1_53q0u")]
+
+[node name="LevelUpUI" parent="." unique_id=473439875 groups=["level_up_ui"] instance=ExtResource("4_c651c")]
+
+[node name="Control" parent="." unique_id=354341431 instance=ExtResource("6_kfbq2")]
+offset_left = -1158.0
+offset_top = 986.0
+offset_right = -1118.0
+offset_bottom = 1026.0

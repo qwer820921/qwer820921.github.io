@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://ot1gy26m8kyq"]
+
+[ext_resource type="Script" uid="uid://bdulpwb1odei" path="res://items/XpGem.gd" id="1_mt7t3"]
+[ext_resource type="Texture2D" uid="uid://bgsxjpdnn11pl" path="res://gfx/energy_gem.png" id="2_mt7t3"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_mt7t3"]
+radius = 8.339998
+
+[node name="XpGem" type="Area2D" unique_id=456190658]
+script = ExtResource("1_mt7t3")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1823633610]
+modulate = Color(1, 1, 0.08627451, 1)
+scale = Vector2(0.02, 0.02)
+texture = ExtResource("2_mt7t3")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=319388601]
+scale = Vector2(3, 3)
+shape = SubResource("CircleShape2D_mt7t3")

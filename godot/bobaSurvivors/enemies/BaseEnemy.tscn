@@ -1,0 +1,28 @@
+[gd_scene format=3 uid="uid://f45wwpvlkixd"]
+
+[ext_resource type="Script" uid="uid://down2awydilsa" path="res://enemies/BaseEnemy.gd" id="1_kv64r"]
+[ext_resource type="PackedScene" uid="uid://ot1gy26m8kyq" path="res://items/XpGem.tscn" id="2_q2jdm"]
+[ext_resource type="Texture2D" uid="uid://dre8dr38jqra3" path="res://gfx/pudding_minion.png" id="3_q2jdm"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_kv64r"]
+size = Vector2(129, 129)
+
+[node name="BaseEnemy" type="Area2D" unique_id=1056758745 groups=["enemy"]]
+script = ExtResource("1_kv64r")
+gem_scene = ExtResource("2_q2jdm")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=2113890749]
+modulate = Color(0.73405147, 0.21877632, 0.29292175, 1)
+scale = Vector2(0.09, 0.09)
+texture = ExtResource("3_q2jdm")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1429355589]
+scale = Vector2(0.7, 0.7)
+shape = SubResource("RectangleShape2D_kv64r")
+
+[node name="ProgressBar" type="ProgressBar" parent="." unique_id=856244426]
+offset_left = -45.0
+offset_top = -58.0
+offset_right = 45.0
+offset_bottom = -46.0
+show_percentage = false

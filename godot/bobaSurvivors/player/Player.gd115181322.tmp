@@ -1,0 +1,30 @@
+extends CharacterBody2D
+
+# 變數宣告 (@export 讓這個數值可以在右側屬性面板直接調整)
+@export var movement_speed: float = 200.0
+
+func _physics_process(_delta: float) -> void:
+	# 這裡我們換個寫法：直接偵測實體鍵盤的 W, A, S, D 以及 方向鍵
+	# 這樣就算不設定專案也可以 100% 成功移動！
+	var move_input = Vector2.ZERO
+	
+	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT):
+		move_input.x += 1
+	if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT):
+		move_input.x -= 1
+	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN):
+		move_input.y += 1
+	if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP):
+		move_input.y -= 1
+		
+	# 將向量正規化，確保斜走不會比較快
+	move_input = move_input.normalized()
+	
+	if move_input != Vector2.ZERO:
+		print("正在移動中！方向：", move_input)
+	
+	# 設定速度
+	velocity = move_input * movement_speed
+	
+	# 呼叫內建函式進行移動與碰撞處理
+	move_and_slide()

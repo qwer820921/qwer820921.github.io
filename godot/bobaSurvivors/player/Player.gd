@@ -1,0 +1,243 @@
+extends CharacterBody2D
+
+# 變數宣告 (@export 讓這個數值可以在右側屬性面板直接調整)
+@export var movement_speed: float = 200.0
+@export var max_health: float = 100.0
+@export var camera_zoom: float = 0.5 # [NEW] 設為 0.5，讓人物看起來更小，戰場更大
+var current_health: float = 100.0
+
+# 武器與射擊相關
+@export var bullet_scene: PackedScene
+@export var orbit_scene: PackedScene  # [NEW] 旋轉珠環場景
+var shoot_timer: float = 0.0
+var shoot_interval: float = 1.0 # 每 1 秒發射一次
+
+# UI 相關
+@export var game_over_ui_scene: PackedScene # [NEW] 遊戲結束介面
+# 經驗值與等級相關
+var current_level: int = 1
+var current_xp: int = 0
+var xp_to_next_level: int = 5
+
+# 玩家屬性 (數值成長核心)
+@export var attack_damage: float = 5.0
+@export var extra_bullet_speed: float = 0.0
+var bullet_count: int = 1         # 每次發射幾顆
+var bounce_count: int = 0         # 子彈彈跳次數
+var pierce_count: int = 0         # 子彈穿透次數
+var orbit_count: int = 0          # 旋轉珍珠數量
+
+func _ready() -> void:
+	# 確保相機縮放正確
+	var cam = find_child("Camera2D", true, false)
+	if cam:
+		cam.zoom = Vector2(camera_zoom, camera_zoom)
+
+func _physics_process(_delta: float) -> void:
+	# 隨機在玩家周圍「超遠」範圍生成（適配 0.5 的超廣角視野）
+	var random_angle = randf() * PI * 2
+	var random_distance = randf_range(1200, 1500)
+	var spawn_offset = Vector2(cos(random_angle), sin(random_angle)) * random_distance
+
+	# 這裡我們換個寫法：直接偵測實體鍵盤的 W, A, S, D 以及 方向鍵
+	# 這樣就算不設定專案也可以 100% 成功移動！
+	# --- [移動輸入偵測] ---
+	var move_input = Vector2.ZERO
+	
+	# 1. 鍵盤輸入 (W, A, S, D)
+	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT):
+		move_input.x += 1
+	if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT):
+		move_input.x -= 1
+	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN):
+		move_input.y += 1
+	if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP):
+		move_input.y -= 1
+		
+	# 2. 虛擬搖桿輸入 (如果存在於畫面上)
+	var joystick = get_tree().get_first_node_in_group("joystick")
+	if joystick and joystick.has_method("get_velocity"):
+		var joystick_vec = joystick.get_velocity()
+		if joystick_vec.length() > 0:
+			move_input = joystick_vec # 優先使用搖桿，或您可以定義相加邏輯
+		
+	# 將向量正規化，確保斜走不會比較快
+	move_input = move_input.normalized()
+	
+	# 設定速度
+	velocity = move_input * movement_speed
+	
+	# 呼叫內建函式進行移動與碰撞處理
+	move_and_slide()
+	
+	# ----- 自動射擊邏輯 -----
+	shoot_timer -= _delta
+	if shoot_timer <= 0:
+		shoot_timer = shoot_interval
+		shoot_closest_enemy()
+
+func shoot_closest_enemy() -> void:
+	if bullet_scene == null:
+		return
+		
+	# --- [更精準的瞄準系統] ---
+	# 直接抓取所有在 "enemy" 群組裡的節點
+	var enemies = get_tree().get_nodes_in_group("enemy")
+				
+	if enemies.size() == 0:
+		return
+		
+	# 找最近的敵人
+	var closest_enemy = null
+	var min_dist = 999999.0 # 設定一個超遠初始距離
+	
+	for enemy in enemies:
+		if is_instance_valid(enemy): # 確保怪物還活著
+			var dist = global_position.distance_to(enemy.global_position)
+			if dist < min_dist:
+				min_dist = dist
+				closest_enemy = enemy
+			
+	if closest_enemy == null:
+		return
+			
+	# ！！！多重發射邏輯！！！
+	for i in range(bullet_count):
+		var bullet = bullet_scene.instantiate()
+		get_parent().add_child(bullet)
+		bullet.global_position = global_position
+		
+		# 計算基準方向
+		var base_direction = global_position.direction_to(closest_enemy.global_position)
+		
+		# 如果射超過一顆，就加入扇形偏移
+		if bullet_count > 1:
+			var angle_offset = (i - (bullet_count - 1) / 2.0) * 0.2 # 0.2 弧度約為 11 度
+			base_direction = base_direction.rotated(angle_offset)
+			
+		bullet.direction = base_direction
+		
+		# 傳遞所有屬性給子彈
+		if "damage" in bullet:
+			bullet.damage = attack_damage
+		if "pierce_count" in bullet:
+			bullet.pierce_count = pierce_count
+		if "bounce_count" in bullet:
+			bullet.bounce_count = bounce_count
+
+func gain_xp(amount: int) -> void:
+	current_xp += amount
+	print("獲得經驗值！目前: ", current_xp, "/", xp_to_next_level)
+	
+	if current_xp >= xp_to_next_level:
+		level_up()
+		
+	# 嘗試更新經驗值條 (使用 find_child 更精準)
+	var xp_bar = find_child("XpBar", true, false)
+	if xp_bar != null:
+		xp_bar.max_value = xp_to_next_level
+		xp_bar.value = current_xp
+
+func level_up() -> void:
+	current_level += 1
+	current_xp -= xp_to_next_level
+	xp_to_next_level = int(xp_to_next_level * 1.5) # 下一級需要更多經驗值
+	
+	# --- [NEW] 升級回血：每次升級回復 20% 最大血量 ---
+	var heal_amount = max_health * 0.2
+	current_health = min(max_health, current_health + heal_amount)
+	print("🎉 升級了！目前等級: ", current_level, " (回復了 ", heal_amount, " 血量)")
+	
+	# --- 嘗試尋找三選一 UI ---
+	var ui = get_tree().get_first_node_in_group("level_up_ui")
+	
+	if ui:
+		if ui.has_method("show_ui"):
+			print("✅ 找到 UI 並成功呼叫 show_ui！")
+			get_tree().paused = true
+			ui.show_ui()
+		else:
+			print("❌ 警告：找到 UI 節點但其並未掛載正確的腳本 (缺少 show_ui 函式)！")
+			# 給予保險獎勵，避免玩家卡死
+			attack_damage += 1
+	else:
+		print("❌ 警告：在 level_up_ui 群組中找不到任何節點！")
+		shoot_interval = max(0.2, shoot_interval - 0.1)
+
+# 提供給三選一 UI 呼叫的強化函式
+func add_damage(amount: float):
+	attack_damage += amount
+	print("傷害提升！目前傷害: ", attack_damage)
+
+func add_speed(amount: float):
+	movement_speed += amount
+	print("速度提升！目前速度: ", movement_speed)
+
+func add_max_health(amount: float):
+	max_health += amount
+	current_health += amount # 提升上限時也補滿這部分的血量
+	print("血量上限提升！目前最大血量: ", max_health)
+	
+	# 更新血條顯示
+	var hp_bar = find_child("HealthBar", true, false)
+	if hp_bar:
+		hp_bar.max_value = max_health
+		hp_bar.value = current_health
+
+func add_fire_rate(amount: float):
+	shoot_interval = max(0.1, shoot_interval - amount)
+	print("攻速提升！目前間隔: ", shoot_interval)
+
+# --- [NEW] 進階技能強化函式 ---
+
+func add_bullet_count(amount: int):
+	bullet_count += amount
+	print("雙倍加料！每次發射: ", bullet_count, " 顆")
+
+func add_pierce(amount: int):
+	pierce_count += amount
+	print("大顆珍珠 (穿透)！穿透次數: ", pierce_count)
+
+func add_bounce(amount: int):
+	bounce_count += amount
+	print("彈跳椰果！彈跳次數: ", bounce_count)
+
+func add_orbit_pearl():
+	if orbit_scene == null: return
+	
+	orbit_count += 1
+	var new_orbit = orbit_scene.instantiate()
+	add_child(new_orbit)
+	
+	# 如果有多顆，重新分配角度（這部分我們先簡單處理，讓它們在不同起始點）
+	new_orbit.angle = randf() * PI * 2
+	print("旋轉焦糖圓環！目前珍珠數: ", orbit_count)
+
+# --- [NEW] 生命與受傷邏輯 ---
+
+func take_damage(amount: float):
+	current_health -= amount
+	print("玩家受傷！剩餘血量: ", current_health)
+	
+	# 更新玩家血條 (使用 find_child 更強大)
+	var hp_bar = find_child("HealthBar", true, false)
+	if hp_bar:
+		hp_bar.max_value = max_health
+		hp_bar.value = current_health
+		
+	if current_health <= 0:
+		game_over()
+
+func game_over():
+	print("💀 遊戲結束！您被怪物淹沒了...")
+	get_tree().paused = true
+	
+	if game_over_ui_scene:
+		var ui = game_over_ui_scene.instantiate()
+		# 這裡改為加到父節點，隨場景重啟而銷毀
+		get_parent().add_child(ui)
+	else:
+		# 如果沒設定 UI，簡單的 2 秒後重開
+		await get_tree().create_timer(2.0).timeout
+		get_tree().paused = false
+		get_tree().reload_current_scene()

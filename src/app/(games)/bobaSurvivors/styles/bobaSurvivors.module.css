@@ -1,0 +1,146 @@
+/* bobaSurvivors 頁面樣式 */
+
+.pageContainer {
+  padding-top: 2rem;
+  padding-bottom: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 40px;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.gameWrapper {
+  position: relative;
+  width: 100%;
+  max-width: 1024px;
+  /* 設定一個預設的 16:9 比例高度 */
+  aspect-ratio: 16/9;
+  background-color: #1a1a2e; /* 深色背景，配合遊戲 */
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+
+  /* 行動裝置優化：禁止捲動與長按選取 */
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 當全螢幕時，移除圓角和比例限制 */
+.gameWrapper:fullscreen {
+  max-width: none;
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+
+.toolbar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 10;
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+.toolbar:hover {
+  opacity: 1;
+}
+
+.fullscreenBtn {
+  background-color: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(4px);
+}
+
+.gameIframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+  /* 行動裝置優化：二層保險 */
+  touch-action: none;
+}
+
+.loadingOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #16213e;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 5;
+  color: white;
+}
+
+.loadingContent {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.loadingTitle {
+  margin: 0;
+  font-weight: bold;
+  color: #e94560; /* 櫻桃色點綴 */
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.spinner {
+  width: 3rem;
+  height: 3rem;
+  border-width: 0.3em;
+}
+
+.loadingSub {
+  opacity: 0.7;
+  font-size: 0.9rem;
+}
+
+.gameInfo {
+  margin-top: 2rem;
+  width: 100%;
+  max-width: 1024px;
+  background-color: rgba(255, 255, 255, 0.05); /* 適應亮暗主題 */
+  padding: 1.5rem;
+  border-radius: 8px;
+}
+
+@media (prefers-color-scheme: light) {
+  .gameInfo {
+    background-color: rgba(0, 0, 0, 0.03);
+  }
+}
+
+.gameInfo h4 {
+  margin-bottom: 1rem;
+  font-size: 1.2rem;
+}
+
+.gameInfo ul {
+  margin-bottom: 0;
+  padding-left: 1.5rem;
+}
+
+.gameInfo li {
+  margin-bottom: 0.5rem;
+}
+
+.gameInfo code {
+  background-color: rgba(128, 128, 128, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: bold;
+}
