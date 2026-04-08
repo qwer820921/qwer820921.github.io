@@ -149,4 +149,11 @@ export const seoMap: {
     keywords:
       "子yee 萬事屋, JSON格式化工具, JSON formatter, JSON minify, JSON 美化, JSON 壓縮, JSON syntax check",
   },
+  [ROUTES.TEN_MIN_EMAIL]: {
+    title: "子yee 萬事屋 | 10分鐘信箱 - 快速獲取臨時免洗信箱",
+    description:
+      "提供免費、穩定且快速的 10 分鐘臨時信箱服務。無需註冊即開即用，幫助您避開廣告垃圾郵件，支援即時郵件接收、驗證碼收取與倒數計時功能。",
+    keywords:
+      "10分鐘信箱, 臨時信箱, 免洗信箱, 驗證碼收取, 垃圾郵件防治, Temp Mail, 10 Minute Mail, 子yee 萬事屋",
+  },
 };

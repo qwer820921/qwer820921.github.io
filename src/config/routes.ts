@@ -48,6 +48,7 @@ const routes: RouteGroup[] = [
         showInNavbar: true,
       },
       { path: ROUTES.JSON_FORMAT, name: "JSON格式化工具", showInNavbar: true },
+      { path: ROUTES.TEN_MIN_EMAIL, name: "10分鐘信箱", showInNavbar: true },
     ],
   },
   {

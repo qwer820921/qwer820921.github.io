@@ -1,0 +1,345 @@
+.container {
+  padding-top: 2rem;
+  padding-bottom: 5rem;
+  margin-top: 50px;
+  position: relative;
+  z-index: 1;
+}
+
+.stickyWrapper {
+  position: sticky;
+  z-index: 10;
+  transition: all 0.3s ease;
+}
+
+@media (max-width: 991px) {
+  .stickyWrapper {
+    position: relative;
+    top: 0;
+    margin-bottom: 1rem;
+  }
+}
+
+/* Background Animation Overlay */
+.bgAnimation {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(0, 210, 255, 0.05) 0%,
+    transparent 50%
+  );
+  animation: bgMove 10s infinite alternate ease-in-out;
+}
+
+@keyframes bgMove {
+  0% {
+    transform: scale(1) translate(0, 0);
+  }
+  100% {
+    transform: scale(1.2) translate(5%, 5%);
+  }
+}
+
+/* High-Contrast Dark Glassmorphism */
+.emailCard {
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 28px;
+  padding: 3rem;
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(0, 210, 255, 0.15);
+  text-align: center;
+  margin-bottom: 3.5rem;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.emailCard:hover {
+  border-color: rgba(0, 210, 255, 0.4);
+  box-shadow:
+    0 30px 60px -12px rgba(0, 0, 0, 0.6),
+    0 0 40px rgba(0, 210, 255, 0.25);
+}
+
+.emailDisplay {
+  font-size: 2.4rem;
+  font-weight: 800;
+  color: #fff;
+  margin: 1.5rem 0;
+  word-break: break-all;
+  letter-spacing: 1px;
+  text-shadow:
+    0 0 10px rgba(255, 255, 255, 0.3),
+    0 0 20px rgba(0, 210, 255, 0.5);
+}
+
+.emailPlaceholder {
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
+}
+
+/* Timer Section */
+.timerWrapper {
+  margin: 2.5rem 0;
+  position: relative;
+}
+
+.timerText {
+  font-family: "JetBrains Mono", "Courier New", monospace;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #00f2fe;
+  margin-bottom: 0.8rem;
+  text-shadow: 0 0 15px rgba(0, 242, 254, 0.4);
+}
+
+.progressBar {
+  height: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.progressFill {
+  height: 100%;
+  background: linear-gradient(90deg, #00f2fe 0%, #4facfe 100%);
+  transition: width 1s linear;
+  box-shadow: 0 0 10px rgba(0, 242, 254, 0.5);
+}
+
+.progressWarning {
+  background: linear-gradient(90deg, #ff0844 0%, #ffb199 100%);
+  box-shadow: 0 0 15px rgba(255, 8, 68, 0.6);
+}
+
+/* Inbox Section */
+.inboxHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  color: #fff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.inboxCard {
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 6px solid #00f2fe;
+  border-radius: 16px;
+  padding: 1.8rem;
+  margin-bottom: 1.2rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  animation: slideIn 0.5s ease-out forwards;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.inboxCard:hover {
+  background: rgba(15, 23, 42, 0.75);
+  border-color: rgba(0, 242, 254, 0.4);
+  transform: translateX(8px) scale(1.01);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    0 0 15px rgba(0, 242, 254, 0.2);
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.emptyInbox {
+  text-align: center;
+  padding: 5rem;
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.03);
+  border: 2px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+}
+
+.mailSubject {
+  font-weight: 700;
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+  color: #fff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.mailFrom {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.mailTime {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+}
+
+/* Modal Styling Improvements - Light Glassmorphism Theme */
+.modalDialog :global(.modal-content) {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  color: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 28px;
+  box-shadow:
+    0 10px 40px -10px rgba(0, 0, 0, 0.1),
+    0 0 1px rgba(0, 0, 0, 0.2);
+  height: 90vh;
+  display: flex !important;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modalDialog :global(.modal-header) {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  padding: 1.5rem 2rem;
+  background: rgba(255, 255, 255, 0.4);
+  color: #1e293b;
+  flex-shrink: 0;
+}
+
+.modalDialog :global(.modal-title) {
+  color: #0f172a;
+  font-weight: 800;
+  font-size: 1.4rem;
+}
+
+.modalDialog :global(.modal-header .btn-close) {
+  filter: none; /* 移除深色模式的反轉 */
+  opacity: 0.6;
+  transition: all 0.2s;
+}
+
+.modalDialog :global(.modal-header .btn-close:hover) {
+  transform: rotate(90deg);
+  opacity: 1;
+}
+
+.modalBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.modalInfoSection {
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.3);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  flex-shrink: 0;
+}
+
+.infoBadge {
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  padding: 0.75rem 1rem;
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  height: 100%;
+  transition: all 0.3s ease;
+}
+
+.infoBadge:hover {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.infoLabel {
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #64748b; /* 柔和副標題 */
+  letter-spacing: 2px;
+}
+
+.infoValue {
+  font-size: 1.05rem;
+  color: #1e293b;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.mailContent {
+  flex-grow: 1;
+  overflow-y: auto;
+  padding: 2.5rem 3rem;
+  line-height: 1.8;
+  font-size: 1.1rem;
+  color: #334155;
+}
+
+.mailContent a {
+  color: #2563eb; /* 經典藍色連結 */
+  text-decoration: none;
+  font-weight: 600;
+  border-bottom: 1px dashed rgba(37, 99, 235, 0.3);
+}
+
+.mailContent a:hover {
+  color: #1d4ed8;
+  border-bottom-style: solid;
+}
+
+/* 自訂捲動條樣式 */
+.mailContent::-webkit-scrollbar {
+  width: 8px;
+}
+
+.mailContent::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mailContent::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+
+.mailContent::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.modalDialog :global(.modal-footer) {
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  padding: 1.2rem 2rem;
+  background: rgba(255, 255, 255, 0.4);
+  flex-shrink: 0;
+}
+
+/* Mobile Adjustments */
+@media (max-width: 768px) {
+  .emailDisplay {
+    font-size: 1.6rem;
+  }
+  .emailCard {
+    padding: 1.8rem;
+  }
+  .timerText {
+    font-size: 1.4rem;
+  }
+}
