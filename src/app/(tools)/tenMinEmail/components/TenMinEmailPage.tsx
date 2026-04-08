@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Container,
   Row,
@@ -25,7 +25,6 @@ const TenMinEmailPage: React.FC = () => {
     fetchInbox,
     extendMail,
     fetchMessageDetail,
-    clearMail,
   } = useTenMinEmailStore();
 
   const [timeLeft, setTimeLeft] = useState<number>(0); // Seconds
