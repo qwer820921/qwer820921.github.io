@@ -9,15 +9,17 @@
 - **部署**：GitHub Pages (靜態匯出)
 - **GitHub**：https://github.com/qwer820921/qwer820921.github.io
 
-## 部署指令
+## 部署方式
 
-當使用者要求部署至 GitHub Pages 時，請直接在終端機執行：
+當使用者要求部署至 GitHub Pages 時，請依序在終端機執行：
 
 ```bash
-npm run deploy
+git add .
+git commit -m "描述此次變更的訊息"
+git push
 ```
 
-這會自動執行 `npm run build`（靜態匯出至 `out/`）+ `gh-pages -d out -t`（推送至 gh-pages 分支）。
+推送後 GitHub Actions 會自動觸發建置與部署，不需要手動執行其他指令。
 
 ## 開發指令
 
