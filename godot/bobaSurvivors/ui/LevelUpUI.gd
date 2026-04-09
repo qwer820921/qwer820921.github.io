@@ -23,6 +23,11 @@ func _ready() -> void:
 	print("--- UI 系統啟動：我現在是長官 (CanvasLayer) 了 ---")
 
 func show_ui() -> void:
+	# --- [修正標題亂碼] ---
+	var title_label = find_child("Label", true, false)
+	if title_label:
+		title_label.text = "恭喜升級！選一個材料讓珍珠變強吧！"
+	
 	all_skills.shuffle()
 	current_options = all_skills.slice(0, 3)
 	
@@ -54,21 +59,30 @@ func _on_skill_button_2_pressed(): apply_skill(current_options[1])
 func _on_skill_button_3_pressed(): apply_skill(current_options[2])
 
 func apply_skill(skill_data: Dictionary) -> void:
-	# 直接在全場搜尋名字叫 Player 的人，防呆且精準
-	var player = get_tree().root.find_child("Player", true, false)
+	var player = get_tree().get_first_node_in_group("player")
 	
 	if player:
-		print("✅ 成功對準玩家套用技能：" + skill_data["name"])
-		match skill_data["type"]:
-			"damage": player.add_damage(skill_data["value"])
-			"speed": player.add_speed(skill_data["value"])
-			"fire_rate": player.add_fire_rate(skill_data["value"])
-			"bullet_count": player.add_bullet_count(skill_data["value"])
-			"orbit": player.add_orbit_pearl()
-			"bounce": player.add_bounce(skill_data["value"])
-			"pierce": player.add_pierce(skill_data["value"])
+		# --- [暴力注入邏輯] ---
+		# 使用 ID 直接判定，最笨但最穩
+		if skill_data["id"] == "damage":
+			player.add_damage(2.0)
+		elif skill_data["id"] == "speed":
+			player.add_speed(50.0)
+		elif skill_data["id"] == "fire_rate":
+			player.add_fire_rate(0.15)
+		elif skill_data["id"] == "bullet_count":
+			player.add_bullet_count(1)
+		elif skill_data["id"] == "orbit":
+			player.add_orbit_pearl()
+		elif skill_data.has("type"):
+			# 備用方案
+			match skill_data["type"]:
+				"bounce": player.add_bounce(1)
+				"pierce": player.add_pierce(1)
+		
+		print("✅ [Debug] 已套用技能: ", skill_data["name"])
 	else:
-		print("❌ 錯誤：在大地圖內找不到名字為 Player 的節點！")
+		print("❌ [Debug] 找不到 Player 節點！")
 	
 	get_tree().paused = false
 	self.visible = false

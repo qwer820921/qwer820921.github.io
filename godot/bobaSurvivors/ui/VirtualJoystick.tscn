@@ -1,20 +1,17 @@
 [gd_scene format=3 uid="uid://b2twdu8h007qe"]
 
-[ext_resource type="Script" uid="uid://cohmlau38qlk2" path="res://ui/VirtualJoystick.gd" id="1_kiew3"]
-[ext_resource type="Texture2D" uid="uid://bf217lpil17sl" path="res://gfx/joystick_base.png" id="2_jw6xk"]
-[ext_resource type="Texture2D" uid="uid://c1qmv6rc120n7" path="res://gfx/joystick_knob.png" id="3_4jsoa"]
+[ext_resource type="Script" uid="uid://cc525n7uqguhf" path="res://ui/VirtualJoystick.gd" id="1_kiew3"]
 
 [node name="Control" type="Control" unique_id=354341431 groups=["joystick"]]
 layout_mode = 3
-anchors_preset = 0
-offset_right = 40.0
-offset_bottom = 40.0
+anchors_preset = 9
+anchor_bottom = 1.0
+anchor_right = 0.5
+grow_vertical = 2
 script = ExtResource("1_kiew3")
 
 [node name="Base" type="Sprite2D" parent="." unique_id=32325028]
 scale = Vector2(0.3, 0.3)
-texture = ExtResource("2_jw6xk")
 
 [node name="Knob" type="Sprite2D" parent="." unique_id=1304985919]
 scale = Vector2(0.1, 0.1)
-texture = ExtResource("3_4jsoa")

@@ -1,26 +1,26 @@
 extends CharacterBody2D
 
 # 變數宣告 (@export 讓這個數值可以在右側屬性面板直接調整)
-@export var movement_speed: float = 200.0
-@export var max_health: float = 100.0
-@export var camera_zoom: float = 0.5 # [NEW] 設為 0.5，讓人物看起來更小，戰場更大
-var current_health: float = 100.0
+@export var movement_speed: float = 220.0
+@export var max_health: float = 10.0 # [HARDCORE] 初始血量下修至 10
+@export var camera_zoom: float = 0.5 
+var current_health: float = 10.0
 
 # 武器與射擊相關
 @export var bullet_scene: PackedScene
-@export var orbit_scene: PackedScene  # [NEW] 旋轉珠環場景
+@export var orbit_scene: PackedScene  
 var shoot_timer: float = 0.0
-var shoot_interval: float = 1.0 # 每 1 秒發射一次
+var shoot_interval: float = 1.0 
 
 # UI 相關
-@export var game_over_ui_scene: PackedScene # [NEW] 遊戲結束介面
+@export var game_over_ui_scene: PackedScene 
 # 經驗值與等級相關
 var current_level: int = 1
 var current_xp: int = 0
-var xp_to_next_level: int = 5
+var xp_to_next_level: int = 5 # [NEW] 初始經驗值為 5
 
-# 玩家屬性 (數值成長核心)
-@export var attack_damage: float = 5.0
+# 玩家屬性
+@export var attack_damage: float = 10.0
 @export var extra_bullet_speed: float = 0.0
 var bullet_count: int = 1         # 每次發射幾顆
 var bounce_count: int = 0         # 子彈彈跳次數
@@ -28,10 +28,17 @@ var pierce_count: int = 0         # 子彈穿透次數
 var orbit_count: int = 0          # 旋轉珍珠數量
 
 func _ready() -> void:
+	# 加入群組，方便其他 UI 找我
+	add_to_group("player")
+	
 	# 確保相機縮放正確
 	var cam = find_child("Camera2D", true, false)
 	if cam:
 		cam.zoom = Vector2(camera_zoom, camera_zoom)
+		
+	# --- [NEW] 開局福利：初始獲得一顆旋轉護身珍珠 ---
+	# 我們在物理更新開始前先生成它
+	call_deferred("add_orbit_pearl")
 
 func _physics_process(_delta: float) -> void:
 	# 隨機在玩家周圍「超遠」範圍生成（適配 0.5 的超廣角視野）
@@ -141,33 +148,58 @@ func gain_xp(amount: int) -> void:
 func level_up() -> void:
 	current_level += 1
 	current_xp -= xp_to_next_level
-	xp_to_next_level = int(xp_to_next_level * 1.5) # 下一級需要更多經驗值
 	
-	# --- [NEW] 升級回血：每次升級回復 20% 最大血量 ---
+	# --- [NEW] 階梯式 XP 系統 ---
+	# 邏輯：每 10 等一個區間，區間內 +2, +3...，每逢 11, 21.. 翻倍
+	var decade = int((current_level - 1) / 10) # 0, 1, 2...
+	var increment = 2 + decade
+	
+	# 如果剛好是 11, 21, 31... (也就是 (current_level-1) 是 10 的倍數)
+	if (current_level - 1) % 10 == 0:
+		xp_to_next_level *= 2
+	else:
+		xp_to_next_level += increment
+	
+	# --- [NEW] 基礎體質成長 ---
+	# 每次升級基礎 Max HP +2, 攻擊力 +2
+	max_health += 2.0
+	attack_damage += 2.0
+	
+	# 升級回血：回復 20% 最大血量
 	var heal_amount = max_health * 0.2
 	current_health = min(max_health, current_health + heal_amount)
-	print("🎉 升級了！目前等級: ", current_level, " (回復了 ", heal_amount, " 血量)")
+	
+	print("🎉 升級到 Lv ", current_level, " ! HP上限: ", max_health, " 攻擊力: ", attack_damage)
+	
+	# --- 更新 UI 顯示 (血條與經驗條) ---
+	var hp_bar = find_child("HealthBar", true, false)
+	if hp_bar:
+		hp_bar.max_value = max_health
+		hp_bar.value = current_health
+		
+	var xp_bar = find_child("XpBar", true, false)
+	if xp_bar:
+		xp_bar.max_value = xp_to_next_level
+		xp_bar.value = current_xp
 	
 	# --- 嘗試尋找三選一 UI ---
 	var ui = get_tree().get_first_node_in_group("level_up_ui")
-	
 	if ui:
 		if ui.has_method("show_ui"):
-			print("✅ 找到 UI 並成功呼叫 show_ui！")
 			get_tree().paused = true
 			ui.show_ui()
 		else:
-			print("❌ 警告：找到 UI 節點但其並未掛載正確的腳本 (缺少 show_ui 函式)！")
-			# 給予保險獎勵，避免玩家卡死
-			attack_damage += 1
+			# 給予保險獎勵
+			add_damage(2.0)
 	else:
-		print("❌ 警告：在 level_up_ui 群組中找不到任何節點！")
-		shoot_interval = max(0.2, shoot_interval - 0.1)
+		# 給予攻速補償
+		add_fire_rate(0.1)
 
 # 提供給三選一 UI 呼叫的強化函式
 func add_damage(amount: float):
-	attack_damage += amount
-	print("傷害提升！目前傷害: ", attack_damage)
+	# 強制每次增加 2 點，符合玩家期待
+	attack_damage += 2.0
+	print("🔥 傷害提升！目前傷害: ", attack_damage)
 
 func add_speed(amount: float):
 	movement_speed += amount

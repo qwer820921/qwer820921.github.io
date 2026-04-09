@@ -7,7 +7,7 @@
 [ext_resource type="Texture2D" uid="uid://cqydav4racuwg" path="res://gfx/boba_hero.png" id="4_yw30f"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_onrkg"]
-size = Vector2(126.25, 122.5)
+size = Vector2(43.75, 56.25)
 
 [node name="Player" type="CharacterBody2D" unique_id=1083023635 groups=["player"]]
 script = ExtResource("1_onrkg")
@@ -20,6 +20,7 @@ scale = Vector2(0.1, 0.1)
 texture = ExtResource("4_yw30f")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1987217753]
+position = Vector2(1.5, 1.499999)
 scale = Vector2(0.8, 0.8)
 shape = SubResource("RectangleShape2D_onrkg")
 
@@ -27,19 +28,19 @@ shape = SubResource("RectangleShape2D_onrkg")
 zoom = Vector2(0.2, 0.2)
 
 [node name="HealthBar" type="ProgressBar" parent="." unique_id=1332674616]
-offset_left = -63.0
-offset_top = -67.0
-offset_right = 64.0
-offset_bottom = -51.0
+offset_left = -22.0
+offset_top = -30.0
+offset_right = 24.0
+offset_bottom = -22.0
 theme_override_colors/font_color = Color(0.74337953, 0.15974814, 0.2019305, 1)
 step = 1.0
 show_percentage = false
 
 [node name="XpBar" type="ProgressBar" parent="." unique_id=785328892]
-offset_left = -63.0
-offset_top = 52.0
-offset_right = 64.0
-offset_bottom = 66.0
+offset_left = -21.0
+offset_top = 26.0
+offset_right = 23.0
+offset_bottom = 34.0
 theme_override_colors/font_color = Color(0.28627452, 0.9372549, 0.4, 1)
 step = 1.0
 show_percentage = false

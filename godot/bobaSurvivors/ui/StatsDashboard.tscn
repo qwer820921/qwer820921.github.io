@@ -1,0 +1,127 @@
+[gd_scene format=3 uid="uid://b8yqb8qb8qb8q"]
+
+[ext_resource type="Script" path="res://ui/StatsDashboard.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://timeicon" path="res://gfx/time_icon.webp" id="8_time_icon"]
+[ext_resource type="Texture2D" uid="uid://stageicon" path="res://gfx/stage_icon.webp" id="9_stage_icon"]
+[ext_resource type="Texture2D" uid="uid://damageicon" path="res://gfx/damage_icon.webp" id="10_damage_icon"]
+[ext_resource type="Texture2D" uid="uid://healthicon" path="res://gfx/health_icon.webp" id="11_health_icon"]
+[ext_resource type="Texture2D" uid="uid://expicon" path="res://gfx/exp_icon.webp" id="12_exp_icon"]
+
+[node name="StatsDashboard" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+anchor_left = 0.0
+anchor_right = 0.0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = 220.0
+offset_bottom = 170.0
+mouse_filter = 2
+grow_horizontal = 1
+script = ExtResource("1_script")
+
+[node name="Panel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="VBox" type="VBoxContainer" parent="Panel"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -100.0
+offset_top = -70.0
+offset_right = 100.0
+offset_bottom = 70.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 6
+
+[node name="TimeBox" type="HBoxContainer" parent="Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TimeIcon" type="TextureRect" parent="Panel/VBox/TimeBox"]
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+texture = ExtResource("8_time_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="TimerLabel" type="Label" parent="Panel/VBox/TimeBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0, 1, 0.8, 1)
+theme_override_font_sizes/font_size = 16
+text = "時間: 00:00"
+
+[node name="StageBox" type="HBoxContainer" parent="Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="StageIcon" type="TextureRect" parent="Panel/VBox/StageBox"]
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+texture = ExtResource("9_stage_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="StageLabel" type="Label" parent="Panel/VBox/StageBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "階段: 1 / 20"
+
+[node name="AtkBox" type="HBoxContainer" parent="Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="AtkIcon" type="TextureRect" parent="Panel/VBox/AtkBox"]
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+texture = ExtResource("10_damage_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="AtkLabel" type="Label" parent="Panel/VBox/AtkBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "傷害: 10.0"
+
+[node name="HpBox" type="HBoxContainer" parent="Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HpIcon" type="TextureRect" parent="Panel/VBox/HpBox"]
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+texture = ExtResource("11_health_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="HpLabel" type="Label" parent="Panel/VBox/HpBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "生命: 10 / 10"
+
+[node name="XpBox" type="HBoxContainer" parent="Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="XpIcon" type="TextureRect" parent="Panel/VBox/XpBox"]
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+texture = ExtResource("12_exp_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="XpLabel" type="Label" parent="Panel/VBox/XpBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "經驗: 0 / 5"

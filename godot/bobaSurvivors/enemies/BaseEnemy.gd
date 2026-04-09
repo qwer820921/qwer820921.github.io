@@ -1,68 +1,122 @@
 extends Area2D
 
+# --- [珍珠怪獸：基礎與變體腳本] ---
+
 # 變數宣告
 @export var movement_speed: float = 100.0
 @export var max_hp: float = 10.0
-@export var damage: float = 10.0 # 怪物對玩家的傷害
-@export var gem_scene: PackedScene # 死亡掉落的經驗珍珠
+@export var damage: float = 1.0
+@export var gem_scene: PackedScene 
 
+# 動態屬性
 var current_hp: float
 var player_node: Node2D = null
-var difficulty_multiplier: float = 1.0 # 由 Main 傳入
+var difficulty_multiplier: float = 1.0
+
+# 類型定義
+enum EnemyType { PUDDING, TARO, MATCHA }
+var current_type = EnemyType.PUDDING
+var is_split_version: bool = false # 標記是否為分裂後的小怪
+var is_boss: bool = false # [NEW] 是否為首領怪
 
 func _ready() -> void:
-	# 根據難度提升血量
+	# 基礎數值套用難度
 	current_hp = max_hp * difficulty_multiplier
-	max_hp = current_hp # 更新最大血量，如果有血條的話可以用到
+	
+	# 如果是 Boss，血量與傷害再大幅強化
+	if is_boss:
+		current_hp *= 15.0 # Boss 血量是雜魚 15 倍
+		damage = 5.0      # Boss 傷害下修至 5 點 (兩下致命)
+		scale = Vector2(3.0, 3.0) # 3 倍大
+		modulate = Color(1.2, 1.2, 1.2) # 稍微發光
+		
+	max_hp = current_hp
+	
+	# 重設視覺：移除原本可能存在的色偏，確保新素材顏色正確
+	var sprite = get_node_or_null("Sprite2D")
+	if sprite:
+		sprite.modulate = Color.WHITE
+	
+	# 初始化生命條：先隱藏，等到受傷再顯示
+	var hp_bar = get_node_or_null("ProgressBar")
+	if hp_bar:
+		hp_bar.visible = false
+	
+	# 如果是分裂後的，體積縮小且血量減半
+	if is_split_version:
+		scale = Vector2(0.5, 0.5)
+		current_hp *= 0.5
+		max_hp = current_hp
 	
 	# 連接對玩家的碰撞事件
-	body_entered.connect(_on_body_entered)
+	if not body_entered.is_connected(_on_body_entered):
+		body_entered.connect(_on_body_entered)
+
+# 外部呼叫：設定怪獸的視覺與屬性
+func setup_variant(type: EnemyType, texture_path: String, speed_mult: float, hp_mult: float):
+	current_type = type
+	movement_speed *= speed_mult
+	max_hp *= hp_mult
+	current_hp = max_hp
+	
+	# 載入貼圖 (使用 ResourceLoader 比較安全)
+	var tex = ResourceLoader.load(texture_path)
+	if tex:
+		var sprite = get_node_or_null("Sprite2D")
+		if sprite:
+			sprite.texture = tex
+	else:
+		print("❌ 警告：找不到素材路徑: ", texture_path)
 
 func _process(delta: float) -> void:
-	# 防呆裝置：直接透過資料夾結構去抓隔壁的 Player，完全不依賴標籤！
 	if player_node == null:
-		var parent = get_parent()
-		if parent != null and parent.has_node("Player"):
-			player_node = parent.get_node("Player")
-		
-		if player_node == null:
-			return
+		# 使用最穩定可靠的群組尋找法
+		player_node = get_tree().get_first_node_in_group("player")
+		if player_node == null: return
 			
-	# 如果有找到玩家，就移動
 	if player_node != null:
-		# 計算朝向玩家的方向
 		var direction = global_position.direction_to(player_node.global_position)
-		
-		# 手動更新位置
 		global_position += direction * movement_speed * delta
 
-# 這是拿來承受傷害的函式
 func take_damage(damage_amount: float) -> void:
 	current_hp -= damage_amount
 	
-	# 更新怪物腳下的血條 ProgressBar（如果有的話）
 	var hp_bar = get_node_or_null("ProgressBar")
 	if hp_bar:
-		hp_bar.visible = true # 受傷時才顯示
+		hp_bar.visible = true
 		hp_bar.max_value = max_hp
 		hp_bar.value = current_hp
 		
 	if current_hp <= 0:
 		die()
 
-# 當怪物碰到玩家時（玩家是 CharacterBody2D，屬於 Body）
 func _on_body_entered(body: Node2D) -> void:
 	if body.has_method("take_damage") and "Player" in body.name:
 		body.take_damage(damage)
-		# 選配：碰完之後彈開或是直接原地消失（這裡我們先讓它碰完玩家就自爆，增加生存壓力）
-		# die() 
-
 
 func die() -> void:
+	# 只有「抹茶系 (MATCHA)」且「非分裂版」死亡時會分裂
+	if current_type == EnemyType.MATCHA and not is_split_version:
+		spawn_splits()
+		
 	if gem_scene != null:
 		var gem = gem_scene.instantiate()
-		get_parent().call_deferred("add_child", gem) # 使用 call_deferred 確保在物理更新時生成不會出錯
+		
+		# [NEW] Boss 遺產：掉落 10 點經驗
+		if is_boss:
+			gem.xp_amount = 10
+			
+		get_parent().call_deferred("add_child", gem)
 		gem.global_position = global_position
 		
-	# 從畫面上刪除自己
 	queue_free()
+
+func spawn_splits():
+	# 產生兩隻小怪
+	for i in range(2):
+		var split_enemy = self.duplicate() # 複製一份自己
+		split_enemy.is_split_version = true
+		# 稍微給一點偏移
+		var offset = Vector2(randf_range(-20, 20), randf_range(-20, 20))
+		get_parent().call_deferred("add_child", split_enemy)
+		split_enemy.global_position = global_position + offset
