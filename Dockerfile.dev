@@ -1,0 +1,16 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# 先複製 package 檔案，利用 Docker Layer Cache 加速重建
+COPY package.json package-lock.json ./
+
+# 安裝依賴（在 Linux 容器內編譯 native modules）
+RUN npm ci
+
+# 複製其餘原始碼（實際上會被 volume 覆蓋，但首次建置需要）
+COPY . .
+
+EXPOSE 3000
+
+CMD ["npm", "run", "dev"]

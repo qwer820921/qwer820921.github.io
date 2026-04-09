@@ -1,0 +1,17 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3001:3000"
+    volumes:
+      # 掛載專案目錄，支援 Hot Reload
+      - .:/app
+      # 匿名卷排除 node_modules（防止 Windows 模組覆蓋 Linux 編譯結果）
+      - /app/node_modules
+      # 匿名卷排除 .next（防止跨系統快取衝突）
+      - /app/.next
+    environment:
+      - WATCHPACK_POLLING=true
+      - CHOKIDAR_USEPOLLING=true
