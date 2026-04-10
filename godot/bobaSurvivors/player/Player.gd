@@ -64,14 +64,16 @@ func _physics_process(_delta: float) -> void:
 	# --- [移動輸入偵測] ---
 	var move_input = Vector2.ZERO
 	
-	# 1. 鍵盤輸入 (W, A, S, D)
-	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT):
+	# 1. 強化版通用輸入 (支援鍵盤 WASD/方向鍵 與 手機 D-Pad)
+	# 我們在 Project Settings 中雖然沒定義，但可以用 Input.get_action_strength 或手動累加狀態
+	# 這裡我保留原本的物理按鍵偵測，並疊加虛擬按鈕的狀態
+	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT) or Input.is_action_pressed("ui_right"):
 		move_input.x += 1
-	if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT):
+	if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT) or Input.is_action_pressed("ui_left"):
 		move_input.x -= 1
-	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN):
+	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN) or Input.is_action_pressed("ui_down"):
 		move_input.y += 1
-	if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP):
+	if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP) or Input.is_action_pressed("ui_up"):
 		move_input.y -= 1
 		
 	# 2. 虛擬搖桿輸入 (如果存在於畫面上)
@@ -79,7 +81,7 @@ func _physics_process(_delta: float) -> void:
 	if joystick and joystick.has_method("get_velocity"):
 		var joystick_vec = joystick.get_velocity()
 		if joystick_vec.length() > 0:
-			move_input = joystick_vec # 優先使用搖桿，或您可以定義相加邏輯
+			move_input = joystick_vec 
 		
 	# 將向量正規化，確保斜走不會比較快
 	move_input = move_input.normalized()

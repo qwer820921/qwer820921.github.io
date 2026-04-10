@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://d0mba7krbfpss"]
+[gd_scene load_steps=12 format=3 uid="uid://d0mba7krbfpss"]
 
 [ext_resource type="PackedScene" uid="uid://cye0ht476863w" path="res://player/player.tscn" id="1_53q0u"]
 [ext_resource type="Script" uid="uid://k44b2wtbwdl7" path="res://main/Main.gd" id="1_c651c"]
@@ -9,6 +9,7 @@
 [ext_resource type="PackedScene" uid="uid://brownsugarpuddle" path="res://weapons/BrownSugarPuddle.tscn" id="9_puddle"]
 [ext_resource type="PackedScene" uid="uid://icecube" path="res://weapons/IceCube.tscn" id="10_ice"]
 [ext_resource type="Texture2D" uid="uid://dddddddddddd" path="res://gfx/boba_floor.webp" id="8_floor_tex"]
+[ext_resource type="PackedScene" uid="uid://be5e8fbf-4031-4d99-ae35-d358c6478a83" path="res://ui/MobileControls.tscn" id="11_dpad"]
 
 [node name="Main" type="Node2D" unique_id=417939487 groups=["main"]]
 script = ExtResource("1_c651c")
@@ -29,6 +30,8 @@ brown_sugar_puddle_scene = ExtResource("9_puddle")
 ice_cube_scene = ExtResource("10_ice")
 
 [node name="LevelUpUI" parent="." unique_id=473439875 groups=["level_up_ui"] instance=ExtResource("4_c651c")]
+
+[node name="MobileControls" parent="." instance=ExtResource("11_dpad")]
 
 [node name="HUD" type="CanvasLayer" parent="."]
 layer = 10

@@ -1,0 +1,46 @@
+[gd_scene load_steps=3 format=3 uid="uid://be5e8fbf-4031-4d99-ae35-d358c6478a83"]
+
+[ext_resource type="Texture2D" uid="uid://be5e8fbf-4031-4d99-ae35-d358c6478a83" path="res://mobile_arrow_btn.webp" id="1_tex"]
+[ext_resource type="Script" uid="uid://be5e8fbf-4031-4d99-ae35-d358c6478a83" path="res://ui/MobileControls.gd" id="2_script"]
+
+[node name="MobileControls" type="CanvasLayer"]
+script = ExtResource("2_script")
+
+[node name="Control" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_bottom = -300.0
+grow_horizontal = 2
+grow_vertical = 0
+scale = Vector2(0.4, 0.4)
+
+[node name="Up" type="TouchScreenButton" parent="Control"]
+position = Vector2(-256, -600)
+texture_normal = ExtResource("1_tex")
+action = "ui_up"
+visibility_mode = 1
+
+[node name="Down" type="TouchScreenButton" parent="Control"]
+position = Vector2(256, 600)
+rotation = 3.14159
+texture_normal = ExtResource("1_tex")
+action = "ui_down"
+visibility_mode = 1
+
+[node name="Left" type="TouchScreenButton" parent="Control"]
+position = Vector2(-600, 256)
+rotation = -1.5708
+texture_normal = ExtResource("1_tex")
+action = "ui_left"
+visibility_mode = 1
+
+[node name="Right" type="TouchScreenButton" parent="Control"]
+position = Vector2(600, -256)
+rotation = 1.5708
+texture_normal = ExtResource("1_tex")
+action = "ui_right"
+visibility_mode = 1
