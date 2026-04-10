@@ -112,7 +112,6 @@ func _process(delta: float) -> void:
 	var current_spawn_interval = max(0.3, spawn_interval * pow(0.9, total_stage - 1))
 	# 數量成長恢復：每 4 分鐘增加 1 隻
 	var spawn_count = 1 + int(total_stage / 4.0)
- Riverside
 	
 	if enemy_scene == null: return
 		
