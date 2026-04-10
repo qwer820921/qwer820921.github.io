@@ -7,6 +7,8 @@
 size = Vector2(129, 129)
 
 [node name="BaseEnemy" type="Area2D" unique_id=1056758745 groups=["enemy"]]
+collision_layer = 2
+collision_mask = 5
 script = ExtResource("1_kv64r")
 gem_scene = ExtResource("2_q2jdm")
 

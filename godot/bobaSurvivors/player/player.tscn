@@ -4,23 +4,25 @@
 [ext_resource type="PackedScene" uid="uid://j6vqxw40bstl" path="res://weapons/BobaBullet.tscn" id="2_g1dw6"]
 [ext_resource type="PackedScene" uid="uid://bbe6vdlscc720" path="res://weapons/BobaOrbit.tscn" id="3_yw30f"]
 [ext_resource type="PackedScene" uid="uid://cn3dmjnq28ibl" path="res://ui/GameOverUI.tscn" id="4_qjkh3"]
-[ext_resource type="Texture2D" uid="uid://cqydav4racuwg" path="res://gfx/boba_hero.png" id="4_yw30f"]
+[ext_resource type="Texture2D" uid="uid://b4khimlffij0m" path="res://gfx/boba_hero.webp" id="4_yw30f"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_onrkg"]
-size = Vector2(43.75, 56.25)
+size = Vector2(54.999996, 49.999996)
 
 [node name="Player" type="CharacterBody2D" unique_id=1083023635 groups=["player"]]
+z_index = 100
 script = ExtResource("1_onrkg")
 bullet_scene = ExtResource("2_g1dw6")
 orbit_scene = ExtResource("3_yw30f")
 game_over_ui_scene = ExtResource("4_qjkh3")
 
 [node name="Sprite2D" type="Sprite2D" parent="." unique_id=690930011]
-scale = Vector2(0.1, 0.1)
+position = Vector2(1.0000019, -0.74)
+scale = Vector2(0.04296875, 0.038554687)
 texture = ExtResource("4_yw30f")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1987217753]
-position = Vector2(1.5, 1.499999)
+position = Vector2(0.99999917, -0.9999994)
 scale = Vector2(0.8, 0.8)
 shape = SubResource("RectangleShape2D_onrkg")
 
@@ -29,18 +31,18 @@ zoom = Vector2(0.2, 0.2)
 
 [node name="HealthBar" type="ProgressBar" parent="." unique_id=1332674616]
 offset_left = -22.0
-offset_top = -30.0
+offset_top = -28.0
 offset_right = 24.0
-offset_bottom = -22.0
+offset_bottom = -20.0
 theme_override_colors/font_color = Color(0.74337953, 0.15974814, 0.2019305, 1)
 step = 1.0
 show_percentage = false
 
 [node name="XpBar" type="ProgressBar" parent="." unique_id=785328892]
 offset_left = -21.0
-offset_top = 26.0
+offset_top = 19.0
 offset_right = 23.0
-offset_bottom = 34.0
+offset_bottom = 27.0
 theme_override_colors/font_color = Color(0.28627452, 0.9372549, 0.4, 1)
 step = 1.0
 show_percentage = false

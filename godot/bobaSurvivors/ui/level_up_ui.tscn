@@ -28,7 +28,7 @@ layout_mode = 2
 theme_override_constants/separation = 20
 
 [node name="IconRect" type="TextureRect" parent="CenterContainer/VBoxContainer"]
-custom_minimum_size = Vector2(100, 100)
+custom_minimum_size = Vector2(150, 150)
 layout_mode = 2
 size_flags_horizontal = 4
 texture = ExtResource("2_lvlup_icon")
@@ -37,25 +37,28 @@ stretch_mode = 5
 
 [node name="Label" type="Label" parent="CenterContainer/VBoxContainer" unique_id=1747774209]
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
+theme_override_font_sizes/font_size = 32
 text = "恭喜升級！選一個材料讓珍珠變強吧！"
 horizontal_alignment = 1
 
 [node name="HBoxContainer" type="HBoxContainer" parent="CenterContainer/VBoxContainer" unique_id=819858847]
 layout_mode = 2
-theme_override_constants/separation = 20
+theme_override_constants/separation = 30
 
 [node name="SkillButton1" type="Button" parent="CenterContainer/VBoxContainer/HBoxContainer" unique_id=1268464206]
-custom_minimum_size = Vector2(180, 260)
+custom_minimum_size = Vector2(240, 340)
 layout_mode = 2
+theme_override_font_sizes/font_size = 18
 
 [node name="SkillButton2" type="Button" parent="CenterContainer/VBoxContainer/HBoxContainer" unique_id=1807098212]
-custom_minimum_size = Vector2(180, 260)
+custom_minimum_size = Vector2(240, 340)
 layout_mode = 2
+theme_override_font_sizes/font_size = 18
 
 [node name="SkillButton3" type="Button" parent="CenterContainer/VBoxContainer/HBoxContainer" unique_id=401776366]
-custom_minimum_size = Vector2(180, 260)
+custom_minimum_size = Vector2(240, 340)
 layout_mode = 2
+theme_override_font_sizes/font_size = 18
 
 [connection signal="pressed" from="CenterContainer/VBoxContainer/HBoxContainer/SkillButton1" to="." method="_on_skill_button_1_pressed"]
 [connection signal="pressed" from="CenterContainer/VBoxContainer/HBoxContainer/SkillButton2" to="." method="_on_skill_button_2_pressed"]

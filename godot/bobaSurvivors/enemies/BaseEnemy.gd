@@ -32,6 +32,9 @@ func _ready() -> void:
 		
 	max_hp = current_hp
 	
+	# 在原有基礎上再放大 1.5 倍 (小兵 1.5x, Boss 4.5x)
+	scale *= 1.5
+	
 	# 重設視覺：移除原本可能存在的色偏，確保新素材顏色正確
 	var sprite = get_node_or_null("Sprite2D")
 	if sprite:
@@ -68,15 +71,48 @@ func setup_variant(type: EnemyType, texture_path: String, speed_mult: float, hp_
 	else:
 		print("❌ 警告：找不到素材路徑: ", texture_path)
 
+# 狀態異常
+var speed_multiplier: float = 1.0
+var freeze_timer: float = 0.0
+var puddles_inside: int = 0 # 踩在地上的陷阱數量
+
 func _process(delta: float) -> void:
+	# 1. 處理凍結計時
+	if freeze_timer > 0:
+		freeze_timer -= delta
+		modulate = Color(0.5, 0.8, 1.0) # 變為冰藍色
+		return # 凍結中無法移動
+	else:
+		# 解凍後恢復顏色
+		if puddles_inside > 0:
+			modulate = Color(0.7, 0.5, 0.3) # 踩在黑糖裡的顏色
+		elif is_boss:
+			modulate = Color(1.2, 1.2, 1.2)
+		else:
+			modulate = Color.WHITE
+
+	# 2. 尋找玩家
 	if player_node == null:
-		# 使用最穩定可靠的群組尋找法
 		player_node = get_tree().get_first_node_in_group("player")
 		if player_node == null: return
 			
+	# 3. 計算速度並移動
 	if player_node != null:
+		# 緩速邏輯：踩在黑糖裡則速度減半
+		var current_speed_mult = 0.5 if puddles_inside > 0 else 1.0
 		var direction = global_position.direction_to(player_node.global_position)
-		global_position += direction * movement_speed * delta
+		global_position += direction * movement_speed * current_speed_mult * delta
+
+# 由黑糖陷阱呼叫
+func set_puddle_status(inside: bool):
+	if inside:
+		puddles_inside += 1
+	else:
+		puddles_inside = max(0, puddles_inside - 1)
+
+# 由冰塊呼叫
+func freeze(duration: float):
+	freeze_timer = duration
 
 func take_damage(damage_amount: float) -> void:
 	current_hp -= damage_amount
@@ -102,9 +138,22 @@ func die() -> void:
 	if gem_scene != null:
 		var gem = gem_scene.instantiate()
 		
-		# [NEW] Boss 遺產：掉落 10 點經驗
+		# [NEW] Boss 遺產通知 (恢復為 10 經驗)
 		if is_boss:
 			gem.xp_amount = 10
+			print("🚨 [DEBUG] BOSS 已倒下！掉落 100 經驗大珍珠！")
+			# 建立一個臨時標籤顯示在掉落位置
+			var label = Label.new()
+			label.text = "👑 LEGENDARY BOBA GEM 👑"
+			label.modulate = Color(1, 1, 0)
+			label.z_index = 250
+			get_parent().add_child(label)
+			label.global_position = global_position + Vector2(-100, -150)
+			var t = label.create_tween()
+			t.tween_property(label, "scale", Vector2(2, 2), 0.5)
+			t.tween_property(label, "global_position", label.global_position + Vector2(0, -200), 2.0)
+			t.parallel().tween_property(label, "modulate:a", 0, 2.0)
+			t.tween_callback(label.queue_free)
 			
 		get_parent().call_deferred("add_child", gem)
 		gem.global_position = global_position

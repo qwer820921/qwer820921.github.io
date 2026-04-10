@@ -1,96 +1,96 @@
 extends Control
 
-# --- [BobaSurvivors 動態搖桿系統] ---
+# --- [BobaSurvivors：極致精準 & 動態滑動搖桿] ---
 
 @export var max_distance: float = 120.0
-@export var deadzone: float = 10.0
-@export var lerp_speed: float = 15.0
+@export var deadzone: float = 5.0 # 極精細死區
 
 var joystick_vector: Vector2 = Vector2.ZERO
-var input_vector: Vector2 = Vector2.ZERO # 原始輸入向量
 
 var is_dragging: bool = false
 var touch_index: int = -1 
-var rest_position: Vector2 # 預設休息位置
+var rest_local_pos: Vector2 # 紀錄初始本地位置
 
 @onready var base = $Base
 @onready var knob = $Knob
 
 func _ready() -> void:
 	add_to_group("joystick")
-	# 搖桿平時設為半透明，觸摸時變亮
 	modulate.a = 0.5
 	
-	# 初始化：我們將 Control 設為螢幕左側一大區塊
-	# 這樣玩家點擊左邊任何地方都能觸發
-	rest_position = base.position
+	# 紀錄初始的本地中心點 (用於閒置歸位)
+	rest_local_pos = base.position
 	
-	# 確保處理輸入
 	mouse_filter = Control.MOUSE_FILTER_STOP
 
-func _process(delta: float) -> void:
-	# 這裡實作向量平滑化，讓手感不生硬
-	joystick_vector = joystick_vector.lerp(input_vector, delta * lerp_speed)
-	
-	if not is_dragging and joystick_vector.length() < 0.05:
-		joystick_vector = Vector2.ZERO
-
 func _gui_input(event: InputEvent) -> void:
-	if event is InputEventScreenTouch or (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT):
-		var is_pressed = event.pressed
-		var pos = event.position
-		
-		if is_pressed:
-			if not is_dragging:
-				is_dragging = true
-				if event is InputEventScreenTouch:
-					touch_index = event.index
-				
-				# [Dynamic Centering] 當點擊時，底座移動到指尖位置
-				base.position = pos
-				knob.position = Vector2.ZERO
-				modulate.a = 1.0 # 觸摸時變亮
-				update_input(pos)
-		elif not is_pressed:
-			if (event is InputEventScreenTouch and event.index == touch_index) or event is InputEventMouseButton:
-				is_dragging = false
-				touch_index = -1
-				modulate.a = 0.5 # 放開時變淡
-				reset_joystick()
-				
-	elif event is InputEventScreenDrag or event is InputEventMouseMotion:
-		if is_dragging:
-			if event is InputEventScreenDrag and event.index != touch_index:
-				return
-			update_input(event.position)
-
-func update_input(touch_pos: Vector2) -> void:
-	# 計算相對於底座中心點的向量
-	var offset = touch_pos - base.position
+	# [絕對精準邏輯]：直接使用 event.position，這是相對於本 Control 的空間
+	# 這樣可以完全無視螢幕縮放、DPI 或是 Canvas 位移造成的 Global 座標偏差。
 	
-	# 死區 (Deadzone) 判定
-	if offset.length() < deadzone:
-		input_vector = Vector2.ZERO
+	var is_touch = event is InputEventScreenTouch or event is InputEventScreenDrag
+	var is_mouse = event is InputEventMouseButton or event is InputEventMouseMotion
+	
+	if not is_touch and not is_mouse: return
+
+	# 1. 處理按下
+	if (event is InputEventScreenTouch and event.pressed) or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
+		if not is_dragging:
+			is_dragging = true
+			if event is InputEventScreenTouch:
+				touch_index = event.index
+			
+			# 底座瞬間移動到本地點擊點
+			base.position = event.position
+			knob.position = Vector2.ZERO
+			modulate.a = 1.0
+			update_joystick_logic(event.position)
+				
+	# 2. 處理放開
+	elif (event is InputEventScreenTouch and not event.pressed and event.index == touch_index) or (event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
+		is_dragging = false
+		touch_index = -1
+		modulate.a = 0.5
+		reset_joystick()
+			
+	# 3. 處理滑動
+	elif event is InputEventScreenDrag or (event is InputEventMouseMotion and is_dragging):
+		if event is InputEventScreenDrag and event.index != touch_index:
+			return
+		update_joystick_logic(event.position)
+
+func update_joystick_logic(local_touch_pos: Vector2) -> void:
+	# 計算本地偏移向量
+	var diff = local_touch_pos - base.position
+	
+	# [動態滑動邏輯 (Dynamic Sliding)]：
+	# 如果手指拉動超過最大半徑，我們移動底座來跟隨手指。
+	# 這能確保轉向回饋始終是 100% 精準且貼手的。
+	if diff.length() > max_distance:
+		var sliding_dist = diff.length() - max_distance
+		# 讓中心底座往手指方向滑動，保持最大半徑
+		base.position += diff.normalized() * sliding_dist
+		# 重新計算 diff 確保它剛好在邊界上
+		diff = diff.normalized() * max_distance
+		
+	# 處理死區
+	if diff.length() < deadzone:
+		joystick_vector = Vector2.ZERO
 		knob.position = Vector2.ZERO
 		return
 		
-	# 限制長度
-	if offset.length() > max_distance:
-		offset = offset.normalized() * max_distance
-		
-	knob.position = offset
+	# 更新視覺
+	knob.position = diff
 	
-	# 輸出歸一化向量 (-1.0 ~ 1.0)
-	input_vector = offset / max_distance
+	# 輸出精確方向
+	joystick_vector = diff / max_distance
 
 func reset_joystick() -> void:
-	input_vector = Vector2.ZERO
-	# 回到原本的底座位置 (或者您可以選擇讓它留在原地)
+	joystick_vector = Vector2.ZERO
 	var tween = create_tween()
 	tween.set_parallel(true)
-	tween.tween_property(base, "position", rest_position, 0.2).set_trans(Tween.TRANS_SINE)
-	tween.tween_property(knob, "position", Vector2.ZERO, 0.2).set_trans(Tween.TRANS_SINE)
+	# 平滑回到預設休息點 (本地)
+	tween.tween_property(base, "position", rest_local_pos, 0.15).set_trans(Tween.TRANS_SINE)
+	tween.tween_property(knob, "position", Vector2.ZERO, 0.15).set_trans(Tween.TRANS_SINE)
 
-# 給 Player 讀取的最終向量
 func get_velocity() -> Vector2:
 	return joystick_vector

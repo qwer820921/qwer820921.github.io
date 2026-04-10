@@ -11,18 +11,14 @@ var is_attracted: bool = false
 
 func _ready() -> void:
 	body_entered.connect(_on_body_entered)
+	# 基礎發光
+	modulate = Color(1.2, 1.2, 1.2)
 	
-	# [NEW] 珍珠自發光特效 (即使在暗處也清晰)
-	modulate = Color(1.2, 1.2, 1.2) # 輕微過曝發光
-	
-	# 如果是高價值珍珠 (Boss 掉落)，強化視覺表現
-	if xp_amount >= 10:
-		modulate = Color(2.5, 2.0, 0.5) # 超亮金黃色
-		scale = Vector2(2.5, 2.5)
-		attract_distance = 600.0 # 超強大磁吸範圍
-		move_speed = 600.0
-
 func _process(delta: float) -> void:
+	# [NEW] 每幀確認：一旦發現自己是 Boss 珍珠 (或是經驗值大於 10)
+	if xp_amount >= 10 and scale.x < 3.0:
+		apply_boss_visuals()
+
 	# 如果還沒被吸，就持續找玩家
 	if not is_attracted:
 		var player = get_tree().get_first_node_in_group("player")
@@ -36,7 +32,19 @@ func _process(delta: float) -> void:
 	if is_attracted and is_instance_valid(target_player):
 		var direction = global_position.direction_to(target_player.global_position)
 		global_position += direction * move_speed * delta
-		move_speed += 20.0 # 高速吸取
+		move_speed += 30.0 # 吸取加速度提高
+
+func apply_boss_visuals():
+	z_index = 200
+	scale = Vector2(4.0, 4.0) # 變超大，不信看不見
+	modulate = Color(5.0, 4.0, 1.0) # 極致發光
+	attract_distance = 6000.0 # 全地圖
+	move_speed = 1500.0 # 衝刺速度
+	
+	# 加入閃爍動畫
+	var tween = create_tween().set_loops()
+	tween.tween_property(self, "modulate", Color(10, 10, 1), 0.1)
+	tween.tween_property(self, "modulate", Color(5, 4, 1), 0.1)
 
 func _on_body_entered(body: Node2D) -> void:
 	if body.has_method("gain_xp"):

@@ -11,6 +11,8 @@ var direction: Vector2 = Vector2.ZERO
 var lifetime: float = 0.0
 
 func _ready() -> void:
+	# 珍珠子彈放大 2 倍
+	scale = Vector2(2.0, 2.0)
 	# 用程式碼自動連接碰撞訊號，省去手動拉線的麻煩
 	area_entered.connect(_on_area_entered)
 

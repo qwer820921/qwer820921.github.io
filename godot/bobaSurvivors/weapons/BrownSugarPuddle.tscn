@@ -1,0 +1,19 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://weapons/BrownSugarPuddle.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://brownsugarpuddle" path="res://gfx/brown_sugar_puddle.webp" id="2_texture"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_puddle"]
+radius = 60.0
+
+[node name="BrownSugarPuddle" type="Area2D"]
+collision_layer = 4
+collision_mask = 2
+script = ExtResource("1_script")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+modulate = Color(1, 1, 1, 0.7)
+texture = ExtResource("2_texture")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_puddle")

@@ -99,7 +99,7 @@ func _process(delta: float) -> void:
 	
 	difficulty_multiplier = pow(total_stage, 2.3)
 	
-	# --- [首領生成邏輯] ---
+	# [首領生成邏輯] ---
 	# 在每分鐘的第 50 秒出現一次 Boss
 	var current_minute = int(game_time / 60.0)
 	var seconds = int(game_time) % 60
@@ -108,9 +108,11 @@ func _process(delta: float) -> void:
 		spawn_boss(visual_stage)
 		last_boss_minute = current_minute
 	
-	# 生成速率：隨時間變快
-	var current_spawn_interval = max(0.15, spawn_interval * pow(0.85, total_stage - 1))
+	# 生成速率：精準調整 (0.90 係數，0.3s 保底)
+	var current_spawn_interval = max(0.3, spawn_interval * pow(0.9, total_stage - 1))
+	# 數量成長恢復：每 4 分鐘增加 1 隻
 	var spawn_count = 1 + int(total_stage / 4.0)
+ Riverside
 	
 	if enemy_scene == null: return
 		

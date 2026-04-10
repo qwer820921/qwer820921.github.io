@@ -16,16 +16,18 @@
 
 .gameWrapper {
   position: relative;
-  width: 100%;
-  max-width: 1024px;
-  /* 設定一個預設的 16:9 比例高度 */
-  aspect-ratio: 16/9;
-  background-color: #1a1a2e; /* 深色背景，配合遊戲 */
+  /* 智慧型比例適配：如果寬度是瓶頸就滿寬，如果高度是瓶頸就縮小寬度以保證高度不溢出 */
+  width: min(100%, calc(85vh * 9 / 16));
+  aspect-ratio: 9 / 16;
+  max-width: 100%;
+
+  background-color: #1a1a2e;
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
+  margin: 0 auto;
 
   /* 行動裝置優化：禁止捲動與長按選取 */
   touch-action: none;
@@ -39,6 +41,21 @@
   max-width: none;
   aspect-ratio: auto;
   border-radius: 0;
+}
+
+/* iOS 偽全螢幕支援 */
+.pseudoFullscreen {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  aspect-ratio: auto !important;
+  border-radius: 0 !important;
+  z-index: 9999 !important;
+  background-color: #000;
+  margin: 0 !important;
 }
 
 .toolbar {

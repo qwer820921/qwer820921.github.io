@@ -8,7 +8,9 @@ var all_skills = [
 	{"id": "bullet_count", "name": "雙倍加料", "desc": "每次噴出的珍珠數量 +1", "type": "bullet_count", "value": 1},
 	{"id": "orbit", "name": "旋轉焦糖圓環", "desc": "召喚波霸形成絕對防禦圈", "type": "orbit", "value": 1},
 	{"id": "bounce", "name": "彈跳椰果", "desc": "珍珠將在怪群中瘋狂彈跳", "type": "bounce", "value": 1},
-	{"id": "pierce", "name": "穿透大珍珠", "desc": "珍珠將會貫穿整排敵人", "type": "pierce", "value": 1}
+	{"id": "pierce", "name": "穿透大珍珠", "desc": "珍珠將會貫穿整排敵人", "type": "pierce", "value": 1},
+	{"id": "brown_sugar", "name": "黑糖黏人陷阱", "desc": "在移動路徑留下緩速黑糖漿", "type": "brown_sugar", "value": 1},
+	{"id": "ice_cube", "name": "冰晶之盾", "desc": "外圈旋轉冰晶，可強烈凍結敵軍", "type": "ice_cube", "value": 1}
 ]
 
 var current_options = []
@@ -43,12 +45,19 @@ func show_ui() -> void:
 
 func update_button(index: int, skill_data: Dictionary) -> void:
 	var btn_name = "SkillButton" + str(index)
-	# 使用 find_child 直接搜尋全場
 	var btn = find_child(btn_name, true, false)
 	
 	if btn:
-		btn.text = skill_data["name"] + "\n(" + skill_data["desc"] + ")"
-		btn.custom_minimum_size = Vector2(200, 100) # 給個保險的大小
+		var player = get_tree().get_first_node_in_group("player")
+		var display_desc = skill_data["desc"]
+		
+		# [NEW] 動態修正傷害描述
+		if skill_data["id"] == "damage" and player:
+			var current_bonus = player.get_attack_growth_base() * 2.0
+			display_desc = "珍珠傷害 +" + str(current_bonus)
+		
+		btn.text = skill_data["name"] + "\n(" + display_desc + ")"
+		btn.custom_minimum_size = Vector2(200, 100)
 		print("成功設定按鈕：" + btn_name)
 	else:
 		print("重大錯誤：在 LevelUpUI 內部完全找不到 " + btn_name + "，請檢查按鈕名字！")
@@ -74,6 +83,10 @@ func apply_skill(skill_data: Dictionary) -> void:
 			player.add_bullet_count(1)
 		elif skill_data["id"] == "orbit":
 			player.add_orbit_pearl()
+		elif skill_data["id"] == "brown_sugar":
+			player.add_brown_sugar()
+		elif skill_data["id"] == "ice_cube":
+			player.add_ice_cube()
 		elif skill_data.has("type"):
 			# 備用方案
 			match skill_data["type"]:

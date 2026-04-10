@@ -15,6 +15,20 @@ run/main_scene="uid://d0mba7krbfpss"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.svg"
 
+[display]
+
+window/size/viewport_width=720
+window/size/viewport_height=1280
+window/size/window_width_override=540
+window/size/window_height_override=960
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=1
+
+[gui]
+
+theme/custom_font="res://fonts/font.ttf"
+
 [input_devices]
 
 pointing/emulate_touch_from_mouse=true
@@ -22,9 +36,6 @@ pointing/emulate_touch_from_mouse=true
 [physics]
 
 3d/physics_engine="Jolt Physics"
-
-[gui]
-theme/custom_font="res://fonts/font.ttf"
 
 [rendering]
 

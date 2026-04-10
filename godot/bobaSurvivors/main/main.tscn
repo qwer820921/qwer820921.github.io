@@ -6,7 +6,9 @@
 [ext_resource type="PackedScene" uid="uid://c0rnpvhe15qm3" path="res://ui/level_up_ui.tscn" id="4_c651c"]
 [ext_resource type="PackedScene" uid="uid://b2twdu8h007qe" path="res://ui/VirtualJoystick.tscn" id="6_kfbq2"]
 [ext_resource type="PackedScene" uid="uid://b8yqb8qb8qb8q" path="res://ui/StatsDashboard.tscn" id="7_dash"]
-[ext_resource type="Texture2D" uid="uid://dddddddddddd" path="res://gfx/boba_floor_bright_grass.webp" id="8_floor_tex"]
+[ext_resource type="PackedScene" uid="uid://brownsugarpuddle" path="res://weapons/BrownSugarPuddle.tscn" id="9_puddle"]
+[ext_resource type="PackedScene" uid="uid://icecube" path="res://weapons/IceCube.tscn" id="10_ice"]
+[ext_resource type="Texture2D" uid="uid://dddddddddddd" path="res://gfx/boba_floor.webp" id="8_floor_tex"]
 
 [node name="Main" type="Node2D" unique_id=417939487 groups=["main"]]
 script = ExtResource("1_c651c")
@@ -23,6 +25,8 @@ region_enabled = true
 region_rect = Rect2(0, 0, 100000, 100000)
 
 [node name="Player" parent="." unique_id=1083023635 instance=ExtResource("1_53q0u")]
+brown_sugar_puddle_scene = ExtResource("9_puddle")
+ice_cube_scene = ExtResource("10_ice")
 
 [node name="LevelUpUI" parent="." unique_id=473439875 groups=["level_up_ui"] instance=ExtResource("4_c651c")]
 

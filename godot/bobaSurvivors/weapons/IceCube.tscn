@@ -1,0 +1,20 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://weapons/IceCube.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://weapons/IceZone.tscn" id="2_zone"]
+[ext_resource type="Texture2D" path="res://gfx/ice_cube.webp" id="3_texture"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_ice"]
+radius = 20.0
+
+[node name="IceCube" type="Area2D"]
+collision_layer = 4
+collision_mask = 2
+script = ExtResource("1_script")
+ice_zone_scene = ExtResource("2_zone")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("3_texture")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_ice")
