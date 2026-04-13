@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://bc8xe7xplu3fp" path="res://ui/GameOverUI.gd" id="1_71t7p"]
 
 [node name="CanvasLayer" type="CanvasLayer" unique_id=1945407487]
+layer = 100
 process_mode = 3
 script = ExtResource("1_71t7p")
 
@@ -12,20 +13,16 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0, 0, 0, 0.46666667)
+mouse_filter = 2
+color = Color(0, 0, 0, 0.6)
 
 [node name="CenterContainer" type="CenterContainer" parent="." unique_id=1600284920]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -20.0
-offset_top = -20.0
-offset_right = 20.0
-offset_bottom = 20.0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 
 [node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer" unique_id=1144686839]
 layout_mode = 2

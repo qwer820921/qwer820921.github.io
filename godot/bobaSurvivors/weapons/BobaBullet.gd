@@ -2,65 +2,97 @@ extends Area2D
 
 @export var speed: float = 400.0
 @export var damage: float = 5.0
-@export var max_lifetime: float = 3.0 # 子彈最多存活3秒
+@export var max_lifetime: float = 3.0 
 
-var pierce_count: int = 0  # 剩餘穿透次數
-var bounce_count: int = 0  # 剩餘彈跳次數
+var pierce_count: int = 0
+var bounce_count: int = 0
 
 var direction: Vector2 = Vector2.ZERO
 var lifetime: float = 0.0
 
+@onready var sprite = $Sprite2D
+var trail: Line2D
+
 func _ready() -> void:
-	# 珍珠子彈放大 2 倍
+	# 珍珠子彈放大
 	scale = Vector2(2.0, 2.0)
-	# 用程式碼自動連接碰撞訊號，省去手動拉線的麻煩
 	area_entered.connect(_on_area_entered)
+	
+	# --- [NEW] 初始化黑糖拖尾 ---
+	trail = Line2D.new()
+	trail.width = 15.0 # 適中的寬度
+	trail.default_color = Color(0.3, 0.15, 0.0, 0.4) # 深棕色半透明 (黑糖感)
+	trail.begin_cap_mode = Line2D.LINE_CAP_ROUND
+	trail.end_cap_mode = Line2D.LINE_CAP_ROUND
+	# 設定為 Top Level，這樣拖尾座標才不會隨子彈位移
+	trail.top_level = true
+	add_child(trail)
 
 func _process(delta: float) -> void:
 	# 依照方向往前飛
 	global_position += direction * speed * delta
 	
-	# 生命週期計算，超過就自動銷毀
+	# 更新拖尾
+	if trail:
+		trail.add_point(global_position)
+		if trail.get_point_count() > 8: # 保持 8 個點的長度
+			trail.remove_point(0)
+	
+	# 生命週期
 	lifetime += delta
 	if lifetime >= max_lifetime:
-		queue_free()
+		cleanup_and_free()
 
-# 當子彈碰觸到其他 Area2D (例如敵人) 時觸發
+# 確保銷毀時拖尾不會突然消失 (優雅淡出)
+func cleanup_and_free():
+	if trail:
+		var tween = create_tween()
+		tween.tween_property(trail, "modulate:a", 0.0, 0.2)
+		tween.finished.connect(func(): trail.queue_free())
+	queue_free()
+
 func _on_area_entered(area: Area2D) -> void:
-	# 防呆檢查：不管有沒有標籤，只要名字有 Enemy 就打
 	if area.is_in_group("enemy") or "Enemy" in area.name:
 		if area.has_method("take_damage"):
 			area.take_damage(damage)
 			
-			# --- 處理彈跳與穿透 ---
+			# 擊中瞬間微閃
+			var tween = create_tween()
+			tween.tween_property(sprite, "scale", Vector2(0.045, 0.045), 0.05)
+			tween.tween_property(sprite, "scale", Vector2(0.032, 0.03), 0.1)
+			
+			# --- 處理彈跳 ---
 			if bounce_count > 0:
 				bounce_count -= 1
-				find_next_target(area) # 找下一個彈跳目標
-				return # 彈跳時不銷毀
+				find_next_target(area)
+				return
 				
 			if pierce_count > 0:
 				pierce_count -= 1
-				# 穿透時繼續直走，不銷毀
 				return
 				
-			# 如果沒有彈跳也沒有穿透，就銷毀
-			queue_free()
+			cleanup_and_free()
 
 func find_next_target(current_enemy: Area2D) -> void:
-	var enemies = []
-	var parent = get_parent()
-	if parent == null: return
+	# [重大修復]：不再依賴父節點，改用全場群組搜尋，確保 100% 抓到敵人
+	var all_enemies = get_tree().get_nodes_in_group("enemy")
+	var target_candidates = []
 	
-	for child in parent.get_children():
-		if "Enemy" in child.name and child != current_enemy:
-			# 限制彈跳距離，不要跳太遠
-			if global_position.distance_to(child.global_position) < 300:
-				enemies.append(child)
+	for enemy in all_enemies:
+		if is_instance_valid(enemy) and enemy != current_enemy:
+			var dist = global_position.distance_to(enemy.global_position)
+			# [範圍擴大]：放寬至 800 像素，適配超廣角視野
+			if dist < 800:
+				target_candidates.append({"node": enemy, "dist": dist})
 				
-	if enemies.size() > 0:
-		# 隨機挑一個敵人彈跳 (或者挑最近的)
-		var next_enemy = enemies[randi() % enemies.size()]
-		direction = global_position.direction_to(next_enemy.global_position)
+	if target_candidates.size() > 0:
+		# 選取最近的敵人
+		target_candidates.sort_custom(func(a, b): return a["dist"] < b["dist"])
+		var next_target = target_candidates[0]["node"]
+		
+		# 獲取新方向
+		direction = global_position.direction_to(next_target.global_position)
+		print("🎯 [珍珠彈跳]：找到下一個目標 " + next_target.name + "，距離：" + str(target_candidates[0]["dist"]))
 	else:
-		# 找不到下一個就直接消失
-		queue_free()
+		print("❌ [珍珠彈跳]：範圍內找不到適合的下一個敵人，消失")
+		cleanup_and_free()

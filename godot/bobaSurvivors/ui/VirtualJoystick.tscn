@@ -1,17 +1,33 @@
-[gd_scene format=3 uid="uid://b2twdu8h007qe"]
+[gd_scene load_steps=3 format=3 uid="uid://b2twdu8h007qe"]
 
 [ext_resource type="Script" uid="uid://cc525n7uqguhf" path="res://ui/VirtualJoystick.gd" id="1_kiew3"]
+[ext_resource type="Texture2D" uid="uid://pearlbullet" path="res://gfx/pearl_bullet.png" id="2_pearl"]
+[ext_resource type="Texture2D" uid="uid://obsidian" path="res://gfx/joystick_knob_obsidian.webp" id="3_obsidian"]
 
-[node name="Control" type="Control" unique_id=354341431 groups=["joystick"]]
+[node name="VirtualJoystick" type="Control" unique_id=354341431 groups=["joystick"]]
+custom_minimum_size = Vector2(300, 300)
 layout_mode = 3
-anchors_preset = 9
-anchor_bottom = 1.0
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
 anchor_right = 0.5
-grow_vertical = 2
+anchor_bottom = 1.0
+offset_left = -150.0
+offset_top = -350.0
+offset_right = 150.0
+offset_bottom = -50.0
+grow_horizontal = 2
+grow_vertical = 0
+pivot_offset = Vector2(150, 300)
 script = ExtResource("1_kiew3")
 
 [node name="Base" type="Sprite2D" parent="." unique_id=32325028]
-scale = Vector2(0.3, 0.3)
+modulate = Color(1, 1, 1, 0.25)
+position = Vector2(150, 150)
+scale = Vector2(0.9, 0.9)
+texture = ExtResource("2_pearl")
 
 [node name="Knob" type="Sprite2D" parent="." unique_id=1304985919]
-scale = Vector2(0.1, 0.1)
+position = Vector2(150, 150)
+scale = Vector2(0.2, 0.2)
+texture = ExtResource("3_obsidian")

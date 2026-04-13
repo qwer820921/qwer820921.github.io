@@ -45,20 +45,182 @@ horizontal_alignment = 1
 layout_mode = 2
 theme_override_constants/separation = 30
 
-[node name="SkillButton1" type="Button" parent="CenterContainer/VBoxContainer/HBoxContainer" unique_id=1268464206]
-custom_minimum_size = Vector2(240, 340)
-layout_mode = 2
-theme_override_font_sizes/font_size = 18
+		[node name="SkillButton1" type="Button" parent="CenterContainer/VBoxContainer/HBoxContainer" unique_id=1268464206]
+		custom_minimum_size = Vector2(240, 340)
+		layout_mode = 2
+		theme_override_font_sizes/font_size = 18
 
-[node name="SkillButton2" type="Button" parent="CenterContainer/VBoxContainer/HBoxContainer" unique_id=1807098212]
-custom_minimum_size = Vector2(240, 340)
-layout_mode = 2
-theme_override_font_sizes/font_size = 18
+		[node name="VBox" type="VBoxContainer" parent="CenterContainer/VBoxContainer/HBoxContainer/SkillButton1"]
+		layout_mode = 1
+		anchors_preset = 15
+		anchor_right = 1.0
+		anchor_bottom = 1.0
+		offset_left = 15.0
+		offset_top = 15.0
+		offset_right = -15.0
+		offset_bottom = -15.0
+		grow_horizontal = 2
+		grow_vertical = 2
+		mouse_filter = 2
+		theme_override_constants/separation = 15
+		alignment = 1
 
-[node name="SkillButton3" type="Button" parent="CenterContainer/VBoxContainer/HBoxContainer" unique_id=401776366]
-custom_minimum_size = Vector2(240, 340)
-layout_mode = 2
-theme_override_font_sizes/font_size = 18
+		[node name="IconDisplay" type="TextureRect" parent="CenterContainer/VBoxContainer/HBoxContainer/SkillButton1/VBox"]
+		custom_minimum_size = Vector2(140, 140)
+		layout_mode = 2
+		size_flags_horizontal = 4
+		mouse_filter = 2
+		expand_mode = 1
+		stretch_mode = 5
+
+		[node name="LevelLabel" type="Label" parent="CenterContainer/VBoxContainer/HBoxContainer/SkillButton1/VBox/IconDisplay"]
+		layout_mode = 1
+		anchors_preset = 3
+		anchor_left = 1.0
+		anchor_top = 1.0
+		anchor_right = 1.0
+		anchor_bottom = 1.0
+		offset_left = -60.0
+		offset_top = -30.0
+		grow_horizontal = 0
+		grow_vertical = 0
+		theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+		theme_override_constants/outline_size = 6
+		theme_override_font_sizes/font_size = 20
+		text = "Lv.1"
+		horizontal_alignment = 2
+
+		[node name="NameLabel" type="Label" parent="CenterContainer/VBoxContainer/HBoxContainer/SkillButton1/VBox"]
+		layout_mode = 2
+		theme_override_colors/font_color = Color(1, 0.9, 0.4, 1)
+		theme_override_font_sizes/font_size = 26
+		text = "技能名稱"
+		horizontal_alignment = 1
+
+		[node name="DescLabel" type="Label" parent="CenterContainer/VBoxContainer/HBoxContainer/SkillButton1/VBox"]
+		layout_mode = 2
+		theme_override_font_sizes/font_size = 18
+		text = "技能詳細描述內容"
+		horizontal_alignment = 1
+		autowrap_mode = 2
+
+		[node name="SkillButton2" type="Button" parent="CenterContainer/VBoxContainer/HBoxContainer" unique_id=1807098212]
+		custom_minimum_size = Vector2(240, 340)
+		layout_mode = 2
+		theme_override_font_sizes/font_size = 18
+
+		[node name="VBox" type="VBoxContainer" parent="CenterContainer/VBoxContainer/HBoxContainer/SkillButton2"]
+		layout_mode = 1
+		anchors_preset = 15
+		anchor_right = 1.0
+		anchor_bottom = 1.0
+		offset_left = 15.0
+		offset_top = 15.0
+		offset_right = -15.0
+		offset_bottom = -15.0
+		grow_horizontal = 2
+		grow_vertical = 2
+		mouse_filter = 2
+		theme_override_constants/separation = 15
+		alignment = 1
+
+		[node name="IconDisplay" type="TextureRect" parent="CenterContainer/VBoxContainer/HBoxContainer/SkillButton2/VBox"]
+		custom_minimum_size = Vector2(140, 140)
+		layout_mode = 2
+		size_flags_horizontal = 4
+		mouse_filter = 2
+		expand_mode = 1
+		stretch_mode = 5
+
+		[node name="LevelLabel" type="Label" parent="CenterContainer/VBoxContainer/HBoxContainer/SkillButton2/VBox/IconDisplay"]
+		layout_mode = 1
+		anchors_preset = 3
+		anchor_left = 1.0
+		anchor_top = 1.0
+		anchor_right = 1.0
+		anchor_bottom = 1.0
+		offset_left = -60.0
+		offset_top = -30.0
+		grow_horizontal = 0
+		grow_vertical = 0
+		theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+		theme_override_constants/outline_size = 6
+		theme_override_font_sizes/font_size = 20
+		text = "Lv.1"
+		horizontal_alignment = 2
+
+		[node name="NameLabel" type="Label" parent="CenterContainer/VBoxContainer/HBoxContainer/SkillButton2/VBox"]
+		layout_mode = 2
+		theme_override_colors/font_color = Color(1, 0.9, 0.4, 1)
+		theme_override_font_sizes/font_size = 26
+		text = "技能名稱"
+		horizontal_alignment = 1
+
+		[node name="DescLabel" type="Label" parent="CenterContainer/VBoxContainer/HBoxContainer/SkillButton2/VBox"]
+		layout_mode = 2
+		theme_override_font_sizes/font_size = 18
+		text = "技能詳細描述內容"
+		horizontal_alignment = 1
+		autowrap_mode = 2
+
+		[node name="SkillButton3" type="Button" parent="CenterContainer/VBoxContainer/HBoxContainer" unique_id=401776366]
+		custom_minimum_size = Vector2(240, 340)
+		layout_mode = 2
+		theme_override_font_sizes/font_size = 18
+
+		[node name="VBox" type="VBoxContainer" parent="CenterContainer/VBoxContainer/HBoxContainer/SkillButton3"]
+		layout_mode = 1
+		anchors_preset = 15
+		anchor_right = 1.0
+		anchor_bottom = 1.0
+		offset_left = 15.0
+		offset_top = 15.0
+		offset_right = -15.0
+		offset_bottom = -15.0
+		grow_horizontal = 2
+		grow_vertical = 2
+		mouse_filter = 2
+		theme_override_constants/separation = 15
+		alignment = 1
+
+		[node name="IconDisplay" type="TextureRect" parent="CenterContainer/VBoxContainer/HBoxContainer/SkillButton3/VBox"]
+		custom_minimum_size = Vector2(140, 140)
+		layout_mode = 2
+		size_flags_horizontal = 4
+		mouse_filter = 2
+		expand_mode = 1
+		stretch_mode = 5
+
+		[node name="LevelLabel" type="Label" parent="CenterContainer/VBoxContainer/HBoxContainer/SkillButton3/VBox/IconDisplay"]
+		layout_mode = 1
+		anchors_preset = 3
+		anchor_left = 1.0
+		anchor_top = 1.0
+		anchor_right = 1.0
+		anchor_bottom = 1.0
+		offset_left = -60.0
+		offset_top = -30.0
+		grow_horizontal = 0
+		grow_vertical = 0
+		theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+		theme_override_constants/outline_size = 6
+		theme_override_font_sizes/font_size = 20
+		text = "Lv.1"
+		horizontal_alignment = 2
+
+		[node name="NameLabel" type="Label" parent="CenterContainer/VBoxContainer/HBoxContainer/SkillButton3/VBox"]
+		layout_mode = 2
+		theme_override_colors/font_color = Color(1, 0.9, 0.4, 1)
+		theme_override_font_sizes/font_size = 26
+		text = "技能名稱"
+		horizontal_alignment = 1
+
+		[node name="DescLabel" type="Label" parent="CenterContainer/VBoxContainer/HBoxContainer/SkillButton3/VBox"]
+		layout_mode = 2
+		theme_override_font_sizes/font_size = 18
+		text = "技能詳細描述內容"
+		horizontal_alignment = 1
+		autowrap_mode = 2
 
 [connection signal="pressed" from="CenterContainer/VBoxContainer/HBoxContainer/SkillButton1" to="." method="_on_skill_button_1_pressed"]
 [connection signal="pressed" from="CenterContainer/VBoxContainer/HBoxContainer/SkillButton2" to="." method="_on_skill_button_2_pressed"]

@@ -37,6 +37,19 @@ var orbit_rotation: float = 0.0 # [NEW] 用於同步所有旋轉珍珠的相位
 var brown_sugar_puddle_count: int = 0
 var ice_cube_count: int = 0
 
+# --- [NEW] 技能等級追蹤與 UI 訊號 ---
+signal skill_updated(skill_id: String, level: int)
+var skill_levels: Dictionary = {} # 格式為 { "damage": 1, "speed": 2 ... }
+
+func increment_skill_level(skill_id: String):
+	if not skill_levels.has(skill_id):
+		skill_levels[skill_id] = 1
+	else:
+		skill_levels[skill_id] += 1
+	
+	emit_signal("skill_updated", skill_id, skill_levels[skill_id])
+	print("📊 [技能紀錄]：", skill_id, " 等級提升至 Lv. ", skill_levels[skill_id])
+
 func _ready() -> void:
 	# 加入群組，方便其他 UI 找我
 	add_to_group("player")
@@ -240,11 +253,13 @@ func get_attack_growth_base() -> float:
 	return 2.0 + int((current_level - 1) / 5.0)
 
 # 提供給三選一 UI 呼叫的強化函式
-func add_damage(amount: float):
-	# [NEW] 強化倍增：獲得當前成長基數的 2 倍
-	var bonus = get_attack_growth_base() * 2.0
+func add_damage(_amount: float):
+	# [NEW] 依照技能等級進行梯級進化：Lv.1:+4, Lv.2:+6, Lv.3:+8...
+	var current_lv = skill_levels.get("damage", 1) 
+	var bonus = 4.0 + (current_lv - 1) * 2.0
+	
 	attack_damage += bonus
-	print("🔥 傳奇覺醒！獲得雙倍強化: +", bonus, " 總攻擊力: ", attack_damage)
+	print("🔥 渾圓珍珠強化 (Lv.", current_lv, ")：獲得加成 +", bonus, " 總攻擊力: ", attack_damage)
 
 func add_speed(amount: float):
 	movement_speed += amount
@@ -323,6 +338,7 @@ func shoot_ice_cube():
 	ice.direction = global_position.direction_to(closest_enemy.global_position)
 
 func add_ice_cube():
+	print("❄️ 啟動：冰晶之盾")
 	ice_cube_count += 1
 	# 強化時縮短冷卻時間
 	ice_cube_interval = max(0.8, ice_cube_interval - 0.2)
@@ -332,6 +348,13 @@ func add_ice_cube():
 
 func take_damage(amount: float):
 	current_health -= amount
+	
+	# --- [NEW] 彈出紅色受傷數字 ---
+	var dmg_node = preload("res://ui/DamageNumber.tscn").instantiate()
+	get_parent().add_child(dmg_node)
+	dmg_node.global_position = global_position + Vector2(0, -80) # 在玩家頭頂稍高處彈出
+	dmg_node.set_values(amount, Color(1, 0.2, 0.2)) # 玩家受傷用鮮紅色
+	
 	print("玩家受傷！剩餘血量: ", current_health)
 	
 	# 更新玩家血條 (使用 find_child 更強大)

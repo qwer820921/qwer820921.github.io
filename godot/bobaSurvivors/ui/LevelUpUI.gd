@@ -51,16 +51,48 @@ func update_button(index: int, skill_data: Dictionary) -> void:
 		var player = get_tree().get_first_node_in_group("player")
 		var display_desc = skill_data["desc"]
 		
-		# [NEW] 動態修正傷害描述
+		# 動態修正傷害描述
 		if skill_data["id"] == "damage" and player:
 			var current_bonus = player.get_attack_growth_base() * 2.0
 			display_desc = "珍珠傷害 +" + str(current_bonus)
 		
-		btn.text = skill_data["name"] + "\n(" + display_desc + ")"
-		btn.custom_minimum_size = Vector2(200, 100)
-		print("成功設定按鈕：" + btn_name)
+		# --- [NEW] 卡片式渲染邏輯 ---
+		var icon_node = btn.find_child("IconDisplay", true, false)
+		var name_node = btn.find_child("NameLabel", true, false)
+		var desc_node = btn.find_child("DescLabel", true, false)
+		var level_node = btn.find_child("LevelLabel", true, false)
+		
+		# 取得當前等級並計算目標等級
+		var current_lv = player.skill_levels.get(skill_data["id"], 0)
+		var target_lv = current_lv + 1
+		
+		# 1. 處理圖標
+		if icon_node:
+			var icon_path = "res://gfx/skills/" + skill_data["id"] + ".webp"
+			if FileAccess.file_exists(icon_path):
+				icon_node.texture = load(icon_path)
+		
+		# 2. 處理等級標籤 (顯示即將達到的等級)
+		if level_node:
+			level_node.text = "Lv." + str(target_lv)
+				
+		# 3. 處理名稱
+		if name_node:
+			name_node.text = skill_data["name"]
+			
+		# 4. 處理描述 (針對傷害進行動態數值提示)
+		if desc_node:
+			var final_desc = display_desc
+			if skill_data["id"] == "damage":
+				# 套用新公式計算本次能加多少：4 + (target_lv - 1) * 2
+				var next_bonus = 4.0 + (target_lv - 1) * 2.0
+				final_desc = "珍珠傷害 +" + str(next_bonus)
+			
+			desc_node.text = final_desc
+			
+		print("成功設定智慧卡片：" + skill_data["name"] + " (目標 Lv." + str(target_lv) + ")")
 	else:
-		print("重大錯誤：在 LevelUpUI 內部完全找不到 " + btn_name + "，請檢查按鈕名字！")
+		print("重大錯誤：在 LevelUpUI 內部完全找不到 " + btn_name)
 
 # 按鈕訊號連接 (請確保訊號有連到這裡)
 func _on_skill_button_1_pressed(): apply_skill(current_options[0])
@@ -71,6 +103,9 @@ func apply_skill(skill_data: Dictionary) -> void:
 	var player = get_tree().get_first_node_in_group("player")
 	
 	if player:
+		# [NEW] 紀錄技能等級
+		player.increment_skill_level(skill_data["id"])
+		
 		# --- [暴力注入邏輯] ---
 		# 使用 ID 直接判定，最笨但最穩
 		if skill_data["id"] == "damage":
@@ -101,3 +136,18 @@ func apply_skill(skill_data: Dictionary) -> void:
 	self.visible = false
 	if get_parent() is CanvasLayer:
 		get_parent().visible = false
+		
+	# --- [NEW] 恢復遊戲後的輸入大清掃 ---
+	# 1. 重置所有虛擬搖桿
+	var joysticks = get_tree().get_nodes_in_group("joystick")
+	for js in joysticks:
+		if js.has_method("force_reset_state"):
+			js.force_reset_state()
+	
+	# 2. 強制釋放所有方向鍵 Action，防止 ghosting
+	Input.action_release("ui_up")
+	Input.action_release("ui_down")
+	Input.action_release("ui_left")
+	Input.action_release("ui_right")
+	
+	print("✅ [Debug] 遊戲恢復，輸入狀態已強制清空")

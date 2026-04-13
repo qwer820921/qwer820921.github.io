@@ -9,6 +9,44 @@
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_onrkg"]
 size = Vector2(54.999996, 49.999996)
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_player_hp_bg"]
+bg_color = Color(0.15, 0.05, 0.05, 0.4)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_player_hp_fill"]
+bg_color = Color(0.85, 0.1, 0.1, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 0.3, 0.3, 0.2)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_player_xp_bg"]
+bg_color = Color(0.05, 0.1, 0.05, 0.4)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_player_xp_fill"]
+bg_color = Color(0.18, 0.8, 0.44, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.5, 1, 0.7, 0.2)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
 [node name="Player" type="CharacterBody2D" unique_id=1083023635 groups=["player"]]
 z_index = 100
 script = ExtResource("1_onrkg")
@@ -30,19 +68,23 @@ shape = SubResource("RectangleShape2D_onrkg")
 zoom = Vector2(0.2, 0.2)
 
 [node name="HealthBar" type="ProgressBar" parent="." unique_id=1332674616]
-offset_left = -22.0
-offset_top = -28.0
-offset_right = 24.0
-offset_bottom = -20.0
-theme_override_colors/font_color = Color(0.74337953, 0.15974814, 0.2019305, 1)
-step = 1.0
+custom_minimum_size = Vector2(0, 8)
+offset_left = -26.0
+offset_top = -34.0
+offset_right = 26.0
+offset_bottom = -26.0
+theme_override_styles/background = SubResource("StyleBoxFlat_player_hp_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_player_hp_fill")
+value = 70.0
 show_percentage = false
 
 [node name="XpBar" type="ProgressBar" parent="." unique_id=785328892]
-offset_left = -21.0
-offset_top = 19.0
-offset_right = 23.0
-offset_bottom = 27.0
-theme_override_colors/font_color = Color(0.28627452, 0.9372549, 0.4, 1)
-step = 1.0
+custom_minimum_size = Vector2(0, 6)
+offset_left = -26.0
+offset_top = 26.0
+offset_right = 26.0
+offset_bottom = 32.0
+theme_override_styles/background = SubResource("StyleBoxFlat_player_xp_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_player_xp_fill")
+value = 40.0
 show_percentage = false

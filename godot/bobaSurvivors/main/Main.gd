@@ -89,7 +89,7 @@ func _process(delta: float) -> void:
 	game_time += delta
 	
 	# --- [階段與難度計算] ---
-	var total_stage = int(game_time / 60.0) + 1
+	var total_stage = int(game_time / 40.0) + 1
 	var visual_stage: int
 	
 	if total_stage <= 20:
@@ -100,13 +100,13 @@ func _process(delta: float) -> void:
 	difficulty_multiplier = pow(total_stage, 2.3)
 	
 	# [首領生成邏輯] ---
-	# 在每分鐘的第 50 秒出現一次 Boss
-	var current_minute = int(game_time / 60.0)
-	var seconds = int(game_time) % 60
+	# 在每 40 秒的第 35 秒出現一次 Boss
+	var current_period = int(game_time / 40.0)
+	var seconds = int(game_time) % 40
 	
-	if seconds == 50 and last_boss_minute < current_minute:
+	if seconds == 35 and last_boss_minute < current_period:
 		spawn_boss(visual_stage)
-		last_boss_minute = current_minute
+		last_boss_minute = current_period
 	
 	# 生成速率：精準調整 (0.90 係數，0.3s 保底)
 	var current_spawn_interval = max(0.3, spawn_interval * pow(0.9, total_stage - 1))

@@ -7,6 +7,44 @@
 [ext_resource type="Texture2D" uid="uid://healthicon" path="res://gfx/health_icon.webp" id="11_health_icon"]
 [ext_resource type="Texture2D" uid="uid://expicon" path="res://gfx/exp_icon.webp" id="12_exp_icon"]
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xp_bg"]
+bg_color = Color(0.05, 0.1, 0.05, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xp_fill"]
+bg_color = Color(0.18, 0.8, 0.44, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.5, 1, 0.7, 0.3)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hp_bg"]
+bg_color = Color(0.15, 0.05, 0.05, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hp_fill"]
+bg_color = Color(0.85, 0.1, 0.1, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 0.44, 0.44, 0.3)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [node name="StatsDashboard" type="Control"]
 layout_mode = 3
 anchors_preset = 0
@@ -25,103 +63,141 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_right = 500.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="VBox" type="VBoxContainer" parent="Panel"]
+[node name="MainHBox" type="HBoxContainer" parent="Panel"]
 layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -155.0
-offset_top = -105.0
-offset_right = 155.0
-offset_bottom = 105.0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_right = -20.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 40
 
-[node name="TimeBox" type="HBoxContainer" parent="Panel/VBox"]
+[node name="VBox" type="VBoxContainer" parent="Panel/MainHBox"]
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+theme_override_constants/separation = 6
+
+[node name="TimeBox" type="HBoxContainer" parent="Panel/MainHBox/VBox"]
 layout_mode = 2
 theme_override_constants/separation = 15
 
-[node name="TimeIcon" type="TextureRect" parent="Panel/VBox/TimeBox"]
+[node name="TimeIcon" type="TextureRect" parent="Panel/MainHBox/VBox/TimeBox"]
 custom_minimum_size = Vector2(30, 30)
 layout_mode = 2
 texture = ExtResource("8_time_icon")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="TimerLabel" type="Label" parent="Panel/VBox/TimeBox"]
+[node name="TimerLabel" type="Label" parent="Panel/MainHBox/VBox/TimeBox"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0, 1, 0.8, 1)
 theme_override_font_sizes/font_size = 28
 text = "時間: 00:00"
 
-[node name="StageBox" type="HBoxContainer" parent="Panel/VBox"]
+[node name="StageBox" type="HBoxContainer" parent="Panel/MainHBox/VBox"]
 layout_mode = 2
 theme_override_constants/separation = 15
 
-[node name="StageIcon" type="TextureRect" parent="Panel/VBox/StageBox"]
+[node name="StageIcon" type="TextureRect" parent="Panel/MainHBox/VBox/StageBox"]
 custom_minimum_size = Vector2(30, 30)
 layout_mode = 2
 texture = ExtResource("9_stage_icon")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="StageLabel" type="Label" parent="Panel/VBox/StageBox"]
+[node name="StageLabel" type="Label" parent="Panel/MainHBox/VBox/StageBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
 text = "階段: 1 / 20"
 
-[node name="AtkBox" type="HBoxContainer" parent="Panel/VBox"]
+[node name="AtkBox" type="HBoxContainer" parent="Panel/MainHBox/VBox"]
 layout_mode = 2
 theme_override_constants/separation = 15
 
-[node name="AtkIcon" type="TextureRect" parent="Panel/VBox/AtkBox"]
+[node name="AtkIcon" type="TextureRect" parent="Panel/MainHBox/VBox/AtkBox"]
 custom_minimum_size = Vector2(30, 30)
 layout_mode = 2
 texture = ExtResource("10_damage_icon")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="AtkLabel" type="Label" parent="Panel/VBox/AtkBox"]
+[node name="AtkLabel" type="Label" parent="Panel/MainHBox/VBox/AtkBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
 text = "傷害: 10.0"
 
-[node name="HpBox" type="HBoxContainer" parent="Panel/VBox"]
+[node name="HpBox" type="VBoxContainer" parent="Panel/MainHBox/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Header" type="HBoxContainer" parent="Panel/MainHBox/VBox/HpBox"]
 layout_mode = 2
 theme_override_constants/separation = 15
 
-[node name="HpIcon" type="TextureRect" parent="Panel/VBox/HpBox"]
+[node name="HpIcon" type="TextureRect" parent="Panel/MainHBox/VBox/HpBox/Header"]
 custom_minimum_size = Vector2(30, 30)
 layout_mode = 2
 texture = ExtResource("11_health_icon")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="HpLabel" type="Label" parent="Panel/VBox/HpBox"]
+[node name="HpLabel" type="Label" parent="Panel/MainHBox/VBox/HpBox/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
-text = "生命: 10 / 10"
+theme_override_font_sizes/font_size = 20
+text = "10 / 10"
 
-[node name="XpBox" type="HBoxContainer" parent="Panel/VBox"]
+[node name="HpBar" type="ProgressBar" parent="Panel/MainHBox/VBox/HpBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+theme_override_styles/background = SubResource("StyleBoxFlat_hp_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_hp_fill")
+value = 50.0
+show_percentage = false
+
+[node name="XpBox" type="VBoxContainer" parent="Panel/MainHBox/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Header" type="HBoxContainer" parent="Panel/MainHBox/VBox/XpBox"]
 layout_mode = 2
 theme_override_constants/separation = 15
 
-[node name="XpIcon" type="TextureRect" parent="Panel/VBox/XpBox"]
+[node name="XpIcon" type="TextureRect" parent="Panel/MainHBox/VBox/XpBox/Header"]
 custom_minimum_size = Vector2(30, 30)
 layout_mode = 2
 texture = ExtResource("12_exp_icon")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="XpLabel" type="Label" parent="Panel/VBox/XpBox"]
+[node name="XpLabel" type="Label" parent="Panel/MainHBox/VBox/XpBox/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
-text = "經驗: 0 / 5"
+theme_override_font_sizes/font_size = 20
+text = "0 / 5 (Lv 1)"
+
+[node name="XpBar" type="ProgressBar" parent="Panel/MainHBox/VBox/XpBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+theme_override_styles/background = SubResource("StyleBoxFlat_xp_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_xp_fill")
+value = 30.0
+show_percentage = false
+
+[node name="SkillBox" type="GridContainer" parent="Panel/MainHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+columns = 6
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 10

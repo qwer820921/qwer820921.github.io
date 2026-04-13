@@ -30,16 +30,22 @@ brown_sugar_puddle_scene = ExtResource("9_puddle")
 ice_cube_scene = ExtResource("10_ice")
 
 [node name="LevelUpUI" parent="." unique_id=473439875 groups=["level_up_ui"] instance=ExtResource("4_c651c")]
-
-[node name="MobileControls" parent="." instance=ExtResource("11_dpad")]
+layer = 20
 
 [node name="HUD" type="CanvasLayer" parent="."]
 layer = 10
 
 [node name="StatsDashboard" parent="HUD" instance=ExtResource("7_dash")]
 
-[node name="Control" parent="." unique_id=354341431 instance=ExtResource("6_kfbq2")]
-offset_left = -1459.0
-offset_top = -1097.0
-offset_right = 1547.0
-offset_bottom = 1119.0
+[node name="VirtualJoystick" parent="HUD" unique_id=354341431 instance=ExtResource("6_kfbq2")]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -337.5
+offset_top = -700.0
+offset_right = 337.5
+offset_bottom = -25.0
+grow_horizontal = 2
+grow_vertical = 0

@@ -19,13 +19,20 @@ var current_type = EnemyType.PUDDING
 var is_split_version: bool = false # 標記是否為分裂後的小怪
 var is_boss: bool = false # [NEW] 是否為首領怪
 
+# 狀態異常
+var speed_multiplier: float = 1.0
+var freeze_timer: float = 0.0
+var puddles_inside: int = 0 # 踩在地上的陷阱數量
+var player_in_contact: Node2D = null # 目前正在接觸的玩家
+var contact_damage_timer: float = 0.0 # 接觸傷害計時器
+
 func _ready() -> void:
 	# 基礎數值套用難度
 	current_hp = max_hp * difficulty_multiplier
 	
 	# 如果是 Boss，血量與傷害再大幅強化
 	if is_boss:
-		current_hp *= 15.0 # Boss 血量是雜魚 15 倍
+		current_hp *= 30.0 # Boss 血量強化至雜魚 30 倍
 		damage = 5.0      # Boss 傷害下修至 5 點 (兩下致命)
 		scale = Vector2(3.0, 3.0) # 3 倍大
 		modulate = Color(1.2, 1.2, 1.2) # 稍微發光
@@ -54,6 +61,8 @@ func _ready() -> void:
 	# 連接對玩家的碰撞事件
 	if not body_entered.is_connected(_on_body_entered):
 		body_entered.connect(_on_body_entered)
+	if not body_exited.is_connected(_on_body_exited):
+		body_exited.connect(_on_body_exited)
 
 # 外部呼叫：設定怪獸的視覺與屬性
 func setup_variant(type: EnemyType, texture_path: String, speed_mult: float, hp_mult: float):
@@ -71,11 +80,6 @@ func setup_variant(type: EnemyType, texture_path: String, speed_mult: float, hp_
 	else:
 		print("❌ 警告：找不到素材路徑: ", texture_path)
 
-# 狀態異常
-var speed_multiplier: float = 1.0
-var freeze_timer: float = 0.0
-var puddles_inside: int = 0 # 踩在地上的陷阱數量
-
 func _process(delta: float) -> void:
 	# 1. 處理凍結計時
 	if freeze_timer > 0:
@@ -91,7 +95,7 @@ func _process(delta: float) -> void:
 		else:
 			modulate = Color.WHITE
 
-	# 2. 尋找玩家
+	# 2. 尋找玩家 (用於追蹤移動)
 	if player_node == null:
 		player_node = get_tree().get_first_node_in_group("player")
 		if player_node == null: return
@@ -102,6 +106,15 @@ func _process(delta: float) -> void:
 		var current_speed_mult = 0.5 if puddles_inside > 0 else 1.0
 		var direction = global_position.direction_to(player_node.global_position)
 		global_position += direction * movement_speed * current_speed_mult * delta
+
+	# --- [NEW] 持續碰撞傷害邏輯 ---
+	if player_in_contact != null:
+		contact_damage_timer -= delta
+		if contact_damage_timer <= 0:
+			contact_damage_timer = 1.0 # 每秒觸發一次持續傷害
+			if player_in_contact.has_method("take_damage"):
+				print("🔥 [持續傷害]：玩家處於 ", name, " 接觸區，再次造成傷害：", damage)
+				player_in_contact.take_damage(damage)
 
 # 由黑糖陷阱呼叫
 func set_puddle_status(inside: bool):
@@ -117,6 +130,12 @@ func freeze(duration: float):
 func take_damage(damage_amount: float) -> void:
 	current_hp -= damage_amount
 	
+	# --- [NEW] 彈出傷害數字 ---
+	var dmg_node = preload("res://ui/DamageNumber.tscn").instantiate()
+	get_parent().add_child(dmg_node)
+	dmg_node.global_position = global_position + Vector2(0, -50) # 在怪頭頂彈出
+	dmg_node.set_values(damage_amount, Color(1, 0.9, 0.2)) # 怪物受傷用黃色
+	
 	var hp_bar = get_node_or_null("ProgressBar")
 	if hp_bar:
 		hp_bar.visible = true
@@ -127,8 +146,18 @@ func take_damage(damage_amount: float) -> void:
 		die()
 
 func _on_body_entered(body: Node2D) -> void:
-	if body.has_method("take_damage") and "Player" in body.name:
+	if body.is_in_group("player") and body.has_method("take_damage"):
+		print("💥 [碰撞回報]：玩家進入了 ", name, " 核心區！造成即時傷害：", damage)
 		body.take_damage(damage)
+		
+		# 記錄接觸狀態並重置計時器
+		player_in_contact = body
+		contact_damage_timer = 1.0 # 下一次傷害在 1 秒後
+
+func _on_body_exited(body: Node2D) -> void:
+	if body == player_in_contact:
+		print("🚶 [脫離回報]：玩家離開了 ", name, " 的接觸範圍")
+		player_in_contact = null
 
 func die() -> void:
 	# 只有「抹茶系 (MATCHA)」且「非分裂版」死亡時會分裂
