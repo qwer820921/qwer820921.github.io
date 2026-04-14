@@ -24,13 +24,16 @@ func _process(_delta: float) -> void:
 		var seconds = total_seconds % 60
 		timer_label.text = "時間: %02d:%02d" % [minutes, seconds]
 		
-		var total_stage = int(main.game_time / 40.0) + 1
-		var visual_stage = ((total_stage - 1) % 10) + 1
+		# --- [效能與邏輯同步優化] ---
+		# 直接讀取 Main 已經算好的階段與狀態，不再自己用 40.0 盲猜
+		var t_stage = main.total_stage
+		var is_inf = main.is_infinite
+		var visual_stage = ((t_stage - 1) % 10) + 1
 		
-		if total_stage <= 20:
-			stage_label.text = "階段: %d / 20 (S%d)" % [total_stage, visual_stage]
+		if not is_inf:
+			stage_label.text = "階段: %d / 20 (S%d)" % [t_stage, visual_stage]
 		else:
-			stage_label.text = "無限大亂鬥 (S:%d)" % total_stage
+			stage_label.text = "無限大亂鬥 (S:%d)" % t_stage
 			stage_label.add_theme_color_override("font_color", Color(1, 0.4, 0.4)) 
 
 	# 2. 更新玩家數值 (從 Player 抓取)

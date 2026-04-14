@@ -65,6 +65,11 @@ func _ready() -> void:
 	# --- [NEW] 開局福利：初始獲得一顆旋轉護身珍珠 ---
 	# 我們在物理更新開始前先生成它
 	call_deferred("add_orbit_pearl")
+	
+	# [效能優化]：連接磁吸與偵測信號
+	var magnet = find_child("MagnetArea")
+	if magnet:
+		magnet.area_entered.connect(_on_magnet_area_entered)
 
 func _physics_process(_delta: float) -> void:
 	# 隨機在玩家周圍「超遠」範圍生成（適配 0.5 的超廣角視野）
@@ -139,26 +144,28 @@ func shoot_closest_enemy() -> void:
 	if bullet_scene == null:
 		return
 		
-	# --- [更精準的瞄準系統] ---
-	# 直接抓取所有在 "enemy" 群組裡的節點
-	var enemies = get_tree().get_nodes_in_group("enemy")
-				
+	# --- [效能優化瞄準] ---
+	# 使用物理引擎的偵測區域，而非遍歷全場群組
+	var detection_area = find_child("DetectionArea")
+	if detection_area == null: return
+	
+	var enemies = detection_area.get_overlapping_areas()
 	if enemies.size() == 0:
 		return
 		
-	# 找最近的敵人
-	var closest_enemy = null
-	var min_dist = 999999.0 # 設定一個超遠初始距離
+	# [恢復行為]：玩家的初始射擊應瞄準「最近」的敵人以維護保命體驗
+	# 由於此處只遍歷「偵測圈內」的敵人，效能依然優於原本的全場掃描
+	var target = null
+	var min_dist = 999999.0
 	
 	for enemy in enemies:
-		if is_instance_valid(enemy): # 確保怪物還活著
+		if is_instance_valid(enemy):
 			var dist = global_position.distance_to(enemy.global_position)
 			if dist < min_dist:
 				min_dist = dist
-				closest_enemy = enemy
-			
-	if closest_enemy == null:
-		return
+				target = enemy
+				
+	if target == null: return
 			
 	# ！！！多重發射邏輯！！！
 	for i in range(bullet_count):
@@ -167,7 +174,7 @@ func shoot_closest_enemy() -> void:
 		bullet.global_position = global_position
 		
 		# 計算基準方向
-		var base_direction = global_position.direction_to(closest_enemy.global_position)
+		var base_direction = global_position.direction_to(target.global_position)
 		
 		# 如果射超過一顆，就加入扇形偏移
 		if bullet_count > 1:
@@ -208,7 +215,7 @@ func level_up() -> void:
 	
 	# 如果剛好是 11, 21, 31... (也就是 (current_level-1) 是 10 的倍數)
 	if (current_level - 1) % 10 == 0:
-		xp_to_next_level *= 2
+		xp_to_next_level = int(xp_to_next_level * 1.5) # 修改為 1.5 倍，緩解升級陡坡
 	else:
 		xp_to_next_level += increment
 	
@@ -318,31 +325,41 @@ func add_brown_sugar():
 func shoot_ice_cube():
 	if ice_cube_scene == null: return
 	
-	# 尋找最近的敵人進行發射
-	var enemies = get_tree().get_nodes_in_group("enemy")
-	var closest_enemy = null
-	var min_dist = 999999.0
+	# --- [效能優化瞄準] ---
+	var detection_area = find_child("DetectionArea")
+	if detection_area == null: return
 	
+	var enemies = detection_area.get_overlapping_areas()
+	if enemies.size() == 0: return
+	
+	# [優化版尋找最近]
+	var target = null
+	var min_dist = 999999.0
 	for enemy in enemies:
 		if is_instance_valid(enemy):
 			var dist = global_position.distance_to(enemy.global_position)
 			if dist < min_dist:
 				min_dist = dist
-				closest_enemy = enemy
+				target = enemy
 				
-	if closest_enemy == null: return
+	if target == null: return
 	
 	var ice = ice_cube_scene.instantiate()
 	get_parent().add_child(ice) # 加到 Main
 	ice.global_position = global_position
-	ice.direction = global_position.direction_to(closest_enemy.global_position)
+	ice.direction = global_position.direction_to(target.global_position)
 
 func add_ice_cube():
 	print("❄️ 啟動：冰晶之盾")
 	ice_cube_count += 1
 	# 強化時縮短冷卻時間
 	ice_cube_interval = max(0.8, ice_cube_interval - 0.2)
-	print("冰晶爆裂解鎖/強化！冷卻時間縮短為: ", ice_cube_interval)
+	print("冰晶爆裂解鎖/強化！冷課時間縮短為: ", ice_cube_interval)
+
+# --- [磁吸處理邏輯] ---
+func _on_magnet_area_entered(area: Area2D) -> void:
+	if area.has_method("start_attraction"):
+		area.start_attraction(self)
 
 # --- [NEW] 生命與受傷邏輯 ---
 

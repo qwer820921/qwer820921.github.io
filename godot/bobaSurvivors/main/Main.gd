@@ -8,6 +8,8 @@ extends Node2D
 var spawn_timer: float = 0.0
 var game_time: float = 0.0
 var difficulty_multiplier: float = 1.0
+var total_stage: int = 1
+var is_infinite: bool = false
 
 # 素材與階段對照表
 # 格式: { StageIndex: { Type: Path } }
@@ -89,10 +91,19 @@ func _process(delta: float) -> void:
 	game_time += delta
 	
 	# --- [階段與難度計算] ---
-	var total_stage = int(game_time / 40.0) + 1
-	var visual_stage: int
+	var normal_wave_duration = 30.0
+	var infinite_wave_duration = 20.0
 	
-	if total_stage <= 20:
+	if game_time < (20 * normal_wave_duration):
+		total_stage = int(game_time / normal_wave_duration) + 1
+		is_infinite = false
+	else:
+		is_infinite = true
+		var extra_time = game_time - (20 * normal_wave_duration)
+		total_stage = 20 + int(extra_time / infinite_wave_duration) + 1
+	
+	var visual_stage: int
+	if not is_infinite:
 		visual_stage = ((total_stage - 1) % 10) + 1
 	else:
 		visual_stage = (randi() % 10) + 1
@@ -100,17 +111,24 @@ func _process(delta: float) -> void:
 	difficulty_multiplier = pow(total_stage, 2.3)
 	
 	# [首領生成邏輯] ---
-	# 在每 40 秒的第 35 秒出現一次 Boss
-	var current_period = int(game_time / 40.0)
-	var seconds = int(game_time) % 40
-	
-	if seconds == 35 and last_boss_minute < current_period:
-		spawn_boss(visual_stage)
-		last_boss_minute = current_period
+	if not is_infinite:
+		# 普通模式：每 30 秒的第 25 秒出現一次 Boss
+		var current_period = int(game_time / normal_wave_duration)
+		var seconds = int(game_time) % 30
+		if seconds == 25 and last_boss_minute < current_period:
+			spawn_boss(visual_stage)
+			last_boss_minute = current_period
+	else:
+		# 無限大亂鬥：每 5 秒噴一隻 Boss
+		var boss_interval = 5
+		var boss_marker = int(game_time / boss_interval)
+		if last_boss_minute < boss_marker:
+			spawn_boss(visual_stage)
+			last_boss_minute = boss_marker
 	
 	# 生成速率：精準調整 (0.90 係數，0.3s 保底)
-	var current_spawn_interval = max(0.3, spawn_interval * pow(0.9, total_stage - 1))
-	# 數量成長恢復：每 4 分鐘增加 1 隻
+	var current_spawn_interval = max(0.3, spawn_interval * pow(0.85, total_stage - 1)) # 加快成長速度
+	# 數量成長恢復：每 4 個階段增加 1 隻
 	var spawn_count = 1 + int(total_stage / 4.0)
 	
 	if enemy_scene == null: return

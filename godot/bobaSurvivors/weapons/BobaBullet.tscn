@@ -6,6 +6,9 @@
 [sub_resource type="CircleShape2D" id="CircleShape2D_74uot"]
 radius = 8.0
 
+[sub_resource type="CircleShape2D" id="CircleShape2D_ricochet"]
+radius = 600.0
+
 [node name="BobaBullet" type="Area2D" unique_id=1179593841]
 collision_mask = 2
 script = ExtResource("1_4basu")
@@ -18,3 +21,11 @@ texture = ExtResource("2_4basu")
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=345862168]
 scale = Vector2(0.8, 0.8)
 shape = SubResource("CircleShape2D_74uot")
+
+[node name="RicochetArea" type="Area2D" parent="." unique_id=2179593842]
+collision_layer = 0
+collision_mask = 2
+monitorable = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="RicochetArea" unique_id=245862169]
+shape = SubResource("CircleShape2D_ricochet")

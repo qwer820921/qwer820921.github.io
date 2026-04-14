@@ -14,37 +14,44 @@ func _ready() -> void:
 	# 基礎發光
 	modulate = Color(1.2, 1.2, 1.2)
 	
-func _process(delta: float) -> void:
-	# [NEW] 每幀確認：一旦發現自己是 Boss 珍珠 (或是經驗值大於 10)
-	if xp_amount >= 10 and scale.x < 3.0:
+	# [優化] 初始即確認是否為大珠珍珠，避免每幀檢查
+	if xp_amount >= 10:
 		apply_boss_visuals()
 
-	# 如果還沒被吸，就持續找玩家
-	if not is_attracted:
-		var player = get_tree().get_first_node_in_group("player")
-		if player:
-			var dist = global_position.distance_to(player.global_position)
-			if dist < attract_distance:
-				is_attracted = true
-				target_player = player
-	
-	# 如果正在被吸，就飛向玩家
-	if is_attracted and is_instance_valid(target_player):
-		var direction = global_position.direction_to(target_player.global_position)
-		global_position += direction * move_speed * delta
-		move_speed += 30.0 # 吸取加速度提高
+func _physics_process(delta: float) -> void:
+	# 如果正在被吸，就飛向玩家 (僅在啟動磁吸時啟動物理運算)
+	if is_attracted:
+		if is_instance_valid(target_player):
+			var direction = global_position.direction_to(target_player.global_position)
+			global_position += direction * move_speed * delta
+			move_speed += 40.0 # 加速度
+		else:
+			is_attracted = false # 目標消失(切換場景等)時停止
+
+func start_attraction(player: Node2D):
+	if is_attracted: return
+	is_attracted = true
+	target_player = player
+	# 稍微調高基礎速度，感官更流暢
+	move_speed = max(move_speed, 500.0) 
 
 func apply_boss_visuals():
 	z_index = 200
-	scale = Vector2(4.0, 4.0) # 變超大，不信看不見
+	scale = Vector2(4.0, 4.0) # 變超大
 	modulate = Color(5.0, 4.0, 1.0) # 極致發光
-	attract_distance = 6000.0 # 全地圖
-	move_speed = 1500.0 # 衝刺速度
 	
 	# 加入閃爍動畫
 	var tween = create_tween().set_loops()
 	tween.tween_property(self, "modulate", Color(10, 10, 1), 0.1)
 	tween.tween_property(self, "modulate", Color(5, 4, 1), 0.1)
+	
+	# [BOSS珍珠特權]：一旦生成，自動尋找全地圖玩家進行吸附
+	call_deferred("_auto_attract_boss_gem")
+
+func _auto_attract_boss_gem():
+	var player = get_tree().get_first_node_in_group("player")
+	if player:
+		start_attraction(player)
 
 func _on_body_entered(body: Node2D) -> void:
 	if body.has_method("gain_xp"):

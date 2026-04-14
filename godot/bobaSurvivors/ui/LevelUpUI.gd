@@ -69,8 +69,11 @@ func update_button(index: int, skill_data: Dictionary) -> void:
 		# 1. 處理圖標
 		if icon_node:
 			var icon_path = "res://gfx/skills/" + skill_data["id"] + ".webp"
-			if FileAccess.file_exists(icon_path):
+			# [修正]：打包後必須使用 ResourceLoader 才能偵測到 .pck 內的資源
+			if ResourceLoader.exists(icon_path):
 				icon_node.texture = load(icon_path)
+			else:
+				print("❌ 找不到圖標資源: ", icon_path)
 		
 		# 2. 處理等級標籤 (顯示即將達到的等級)
 		if level_node:

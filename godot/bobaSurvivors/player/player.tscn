@@ -47,6 +47,12 @@ corner_radius_top_right = 2
 corner_radius_bottom_right = 2
 corner_radius_bottom_left = 2
 
+[sub_resource type="CircleShape2D" id="CircleShape2D_magnet"]
+radius = 450.0
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_detection"]
+radius = 1200.0
+
 [node name="Player" type="CharacterBody2D" unique_id=1083023635 groups=["player"]]
 z_index = 100
 script = ExtResource("1_onrkg")
@@ -88,3 +94,19 @@ theme_override_styles/background = SubResource("StyleBoxFlat_player_xp_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_player_xp_fill")
 value = 40.0
 show_percentage = false
+
+[node name="MagnetArea" type="Area2D" parent="." unique_id=74136289]
+collision_layer = 0
+collision_mask = 8
+monitorable = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="MagnetArea" unique_id=14136289]
+shape = SubResource("CircleShape2D_magnet")
+
+[node name="DetectionArea" type="Area2D" parent="." unique_id=74136290]
+collision_layer = 0
+collision_mask = 2
+monitorable = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="DetectionArea" unique_id=14136290]
+shape = SubResource("CircleShape2D_detection")
