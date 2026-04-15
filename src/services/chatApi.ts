@@ -11,7 +11,8 @@ export type ChatProvider = "chatanywhere" | "gemini";
 
 // --- ChatAnywhere (OpenAI Compatible) ---
 export const CHATANYWHERE_MODEL = "gpt-4o-mini";
-const CHATANYWHERE_API_URL = "https://api.chatanywhere.tech/v1/chat/completions";
+const CHATANYWHERE_API_URL =
+  "https://api.chatanywhere.tech/v1/chat/completions";
 const CHATANYWHERE_API_KEY = process.env.NEXT_PUBLIC_CHATANYWHERE_API_KEY || "";
 
 // --- Google Gemini (透過 GAS 代理) ---
@@ -25,7 +26,8 @@ export const GEMINI_MODEL = "gemini-flash-latest";
  */
 
 // 請將此處替換為您部署新專案 GitHub-Page-Gemini-Safe-Proxy 後取得的網址
-const GAS_PROXY_URL = "https://script.google.com/macros/s/AKfycbyX8Gb41K9uCBDOsZgufvC_G4OiDY5wX181SHb5Gykki4BmXMG3nlhfnY888r8jUbLM/exec";
+const GAS_PROXY_URL =
+  "https://script.google.com/macros/s/AKfycbyX8Gb41K9uCBDOsZgufvC_G4OiDY5wX181SHb5Gykki4BmXMG3nlhfnY888r8jUbLM/exec";
 
 // Helper: ChatAnywhere (直接呼叫)
 async function chatWithChatAnywhere(
@@ -48,7 +50,9 @@ async function chatWithChatAnywhere(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => null);
-    throw new Error(errorData?.error?.message || res.statusText || "ChatAnywhere 呼叫失敗");
+    throw new Error(
+      errorData?.error?.message || res.statusText || "ChatAnywhere 呼叫失敗"
+    );
   }
 
   const data = await res.json();
@@ -62,8 +66,8 @@ async function chatWithGeminiProxy(
 ): Promise<string> {
   const res = await fetch(GAS_PROXY_URL, {
     method: "POST",
-    headers: { 
-      "Content-Type": "text/plain;charset=utf-8" 
+    headers: {
+      "Content-Type": "text/plain;charset=utf-8",
     },
     body: JSON.stringify({ messages }),
     signal,
@@ -82,29 +86,27 @@ async function chatWithGeminiProxy(
 export async function chatWithAI(
   messages: ChatMessage[],
   provider: ChatProvider = "chatanywhere",
-  timeoutMs = 60000 
+  timeoutMs = 60000
 ): Promise<ChatApiResponse> {
-  
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     let reply = "";
-    
+
     if (provider === "gemini") {
       reply = await chatWithGeminiProxy(messages, controller.signal);
     } else {
       reply = await chatWithChatAnywhere(messages, controller.signal);
     }
-    
-    return { reply };
 
+    return { reply };
   } catch (err: unknown) {
     if (err instanceof Error) {
-        if (err.name === 'AbortError') {
-            throw new Error(`請求超時（${timeoutMs/1000}秒），請再試一次。`);
-        }
-        throw new Error(err.message);
+      if (err.name === "AbortError") {
+        throw new Error(`請求超時（${timeoutMs / 1000}秒），請再試一次。`);
+      }
+      throw new Error(err.message);
     }
     throw err;
   } finally {

@@ -314,7 +314,9 @@ const SpinnerCanvas: React.FC<Props> = ({ foods = [] }) => {
                   backgroundColor: "transparent",
                 }}
                 onClick={() => {
-                  const query = encodeURIComponent(`${selectedFood.name} ${selectedFood.address || ""}`);
+                  const query = encodeURIComponent(
+                    `${selectedFood.name} ${selectedFood.address || ""}`
+                  );
                   const url = `https://www.google.com/maps/search/?api=1&query=${query}`;
                   window.open(url, "_blank");
                 }}

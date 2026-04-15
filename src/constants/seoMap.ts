@@ -163,6 +163,13 @@ export const seoMap: {
     keywords:
       "QRCode產生器, 動態二維碼, QR Code 背景, 短網址, vCard, Wi-Fi QRcode, 萬事屋",
   },
+  [ROUTES.SHENMA_SANGUO]: {
+    title: "子yee 萬事屋 | 神馬三國 - 三國主題策略塔防遊戲",
+    description:
+      "以三國為舞台的策略塔防遊戲！招募關羽、趙雲等武將守護陣地，部署防禦塔、抵擋敵軍波次，在亂世中以智謀取勝。",
+    keywords:
+      "神馬三國, 塔防遊戲, 三國遊戲, 策略遊戲, Tower Defense, 武將, 關羽, 趙雲, 線上遊戲, 子yee 萬事屋",
+  },
   [ROUTES.BOBA_SURVIVORS]: {
     title: "子yee 萬事屋 | 重裝全糖珍奶 - 珍奶主題自動戰鬥生存遊戲",
     description:

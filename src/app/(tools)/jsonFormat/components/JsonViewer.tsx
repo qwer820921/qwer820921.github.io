@@ -32,7 +32,9 @@ const JsonNode = ({
   const renderValue = () => {
     if (value === null) return <span className={styles.jsonNull}>null</span>;
     if (typeof value === "boolean")
-      return <span className={styles.jsonBoolean}>{value ? "true" : "false"}</span>;
+      return (
+        <span className={styles.jsonBoolean}>{value ? "true" : "false"}</span>
+      );
     if (typeof value === "number")
       return <span className={styles.jsonNumber}>{value}</span>;
     if (typeof value === "string")

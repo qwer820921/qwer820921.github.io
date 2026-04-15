@@ -27,4 +27,5 @@ export const ROUTES = {
   TEN_MIN_EMAIL: "/tenMinEmail", // 10分鐘信箱
   QR_CODE_GENERATOR: "/qrCodeGenerator", // QRCode產生器
   BOBA_SURVIVORS: "/bobaSurvivors", // 重裝全糖珍奶
+  SHENMA_SANGUO: "/shenmaSanguo", // 神馬三國
 };

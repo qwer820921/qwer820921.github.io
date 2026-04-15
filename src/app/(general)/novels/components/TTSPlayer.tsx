@@ -54,7 +54,6 @@ const TTSPlayer = forwardRef<TTSPlayerRef, TTSPlayerProps>(
     const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
     const voiceChangeRef = useRef(false);
 
-
     // 取得可用的中文語音
     useEffect(() => {
       const loadVoices = () => {

@@ -357,7 +357,6 @@ const EatWhatPage: React.FC = () => {
         )}
       </div>
     </div>
-
   );
 };
 

@@ -3,8 +3,8 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
-import { useSearchParams, useRouter } from 'next/navigation';
-import { PlayFill, PauseFill, MegaphoneFill } from 'react-bootstrap-icons';
+import { useSearchParams, useRouter } from "next/navigation";
+import { PlayFill, PauseFill, MegaphoneFill } from "react-bootstrap-icons";
 import { useNovelStore } from "../../../store/novelStore";
 import { useReadingStore } from "../../../store/readingStore";
 import { getStorage } from "../../../utils";
@@ -55,7 +55,8 @@ export default function ReaderPage({ bookId }: Props) {
 
   // 從 URL hash 讀取初始章節
   useEffect(() => {
-    const chapterParam = new URLSearchParams(window.location.search).get('chapter') || '';
+    const chapterParam =
+      new URLSearchParams(window.location.search).get("chapter") || "";
     const parsed = parseInt(chapterParam, 10);
     if (!isNaN(parsed) && parsed > 0) {
       setCurrentChapterIndex(parsed);

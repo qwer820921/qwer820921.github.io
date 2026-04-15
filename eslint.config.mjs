@@ -9,7 +9,7 @@ const compat = new FlatCompat({
   baseDirectory: __dirname,
 });
 
-export default [
+const config = [
   // Next.js 預設規則
   ...compat.extends("next/core-web-vitals", "next/typescript"),
 
@@ -23,6 +23,9 @@ export default [
       "build/**",
       "coverage/**",
       "public/**",
+      "godot/**",
+      ".claude/**",
+      ".gemini/**",
     ],
   },
 
@@ -60,3 +63,5 @@ export default [
     },
   },
 ];
+
+export default config;

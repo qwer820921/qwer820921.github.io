@@ -94,7 +94,7 @@
   .glassCard {
     padding: 1rem;
   }
-  
+
   .timelineCard {
     padding: 1rem;
   }
@@ -118,7 +118,7 @@
   display: block;
   image-rendering: pixelated; /* 保持像素清晰 */
   margin: 0 auto;
-  border: 1px solid #BEBEBE;
+  border: 1px solid #bebebe;
   background-color: #fff;
 }
 
@@ -131,7 +131,7 @@
   display: block;
   image-rendering: pixelated;
   margin: 0 auto;
-  border: 1px solid #BEBEBE;
+  border: 1px solid #bebebe;
   background-color: #fff;
 }
 

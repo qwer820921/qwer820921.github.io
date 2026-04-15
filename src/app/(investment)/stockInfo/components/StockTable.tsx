@@ -39,15 +39,15 @@ const StockTable: React.FC<StockTableProps> = ({
                 <td className="fw-bold">
                   {stock.n} ({stock.c})
                 </td>
-                <td 
+                <td
                   key={`price-${stock.lastUpdated}`}
-                  className={`fw-bold ${styles['flash-update']}`}
+                  className={`fw-bold ${styles["flash-update"]}`}
                 >
                   {formatPrices(stock.currentPrice?.toString()) || "-"}
                 </td>
-                <td 
+                <td
                   key={`change-${stock.lastUpdated}`}
-                  className={styles['flash-update']}
+                  className={styles["flash-update"]}
                 >
                   {stock.changePoints !== undefined ? (
                     <span
@@ -55,8 +55,8 @@ const StockTable: React.FC<StockTableProps> = ({
                         stock.changePoints > 0
                           ? "text-danger"
                           : stock.changePoints < 0
-                          ? "text-success"
-                          : ""
+                            ? "text-success"
+                            : ""
                       }
                     >
                       {stock.changePoints > 0 ? "+" : ""}
@@ -75,8 +75,8 @@ const StockTable: React.FC<StockTableProps> = ({
                         stock.changePercent > 0
                           ? "text-danger"
                           : stock.changePercent < 0
-                          ? "text-success"
-                          : ""
+                            ? "text-success"
+                            : ""
                       }
                     >
                       {stock.changePercent > 0 ? "+" : ""}

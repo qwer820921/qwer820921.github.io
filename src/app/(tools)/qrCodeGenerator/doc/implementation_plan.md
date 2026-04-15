@@ -4,6 +4,7 @@
 (後續開發改用相容性更佳、支援靜態部署無 native binding 依賴的問題，替換為 `qr-code-styling`)
 
 ## 1. 核心技術架構
+
 - **UI 佈局**：Bootstrap 5 Grid + Accordion (管控多樣設定參數)。
 - **樣式方案**：CSS Modules (`.module.css`) (Modern Light Glassmorphism)。
 - **核心圖形引擎**：`qr-code-styling` (替代 awesome-qr) 負責前端渲染。
@@ -17,6 +18,7 @@
 
 **【板塊 1：資料類型選擇 (Data Types)】**
 提供自定義前綴字串的表單切換：
+
 1. **URL (含動態模式)**：可選靜態或「建立動態追蹤碼 (呼叫 API)」。
 2. **Wi-Fi 網路**：輸入 SSID / 密碼 / 加密方式 (WPA/WEP/None)。
 3. **電子名片 (vCard)**：輸入姓名 / 電話 / 職稱 / Email 等，一鍵存入通訊錄。
@@ -24,12 +26,14 @@
 
 **【板塊 2：視覺特效與材質 (Visual Effects)】**
 提供比原生更炫酷的渲染模式：
+
 1. **背景融合技術**：支援上傳圖片，QR Code 會以半透明方式與背景合而為一。
 2. **前景漸層 (Gradients)**：放棄單一純色，可選「線性漸層 (Linear)」或「放射漸層 (Radial)」。
 3. **資料點風格 (Dot Styles)**：下拉選單提供不同繪製演算 (正方塊, 圓點 Liquid, 平滑流線)。
 4. **Logo 疊加**：正中央品牌標誌 (會自動將容錯率升至 H)。
 
 **【板塊 3：基礎參數與匯出 (Export Options)】**
+
 - **容錯率 (Error Correction)**：L(7%) / M(15%) / Q(25%) / H(30%)。
 - **邊緣留白 (Quiet Zone)**：調整周圍白邊。
 - **匯出尺寸設定**：提供 `Range Slider` 讓使用者拉動決定像素 (例如 500px ~ 4000px)。
@@ -48,6 +52,7 @@
 ---
 
 ## 3. 預計檔案結構
+
 - `src/app/(tools)/qrCodeGenerator/page.tsx`
 - `src/app/(tools)/qrCodeGenerator/components/qrCodeGeneratorPage.tsx`
 - `src/app/(tools)/qrCodeGenerator/components/QRControlPanel.tsx` (合併表單與樣式設定)
@@ -59,11 +64,13 @@
 ---
 
 ## 4. UI 視覺風格
+
 - **明亮磨砂玻璃 (Light Glassmorphism)**：預覽區塊懸浮在半透明白色基底上。控制台採用柔和的折疊面板減少擁擠感，操作直覺流暢。
 
 ---
 
 ## 5. 驗證計畫
+
 - [x] Data Types：驗證 vCard 與 Wi-Fi 格式字串是否有效組成。
 - [x] Engine：確保背景圖片與 Logo 上傳後，能正確融合輸出為二維碼。
 - [x] 下載測試：測試 PNG 圖檔匯出。

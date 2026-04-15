@@ -6,17 +6,17 @@
 
 ## 1. 專案概覽
 
-| 項目         | 說明                                                         |
-| ------------ | ------------------------------------------------------------ |
-| **專案名稱** | 子yee 萬事屋                                                 |
-| **類型**     | 個人多功能平台（工具、遊戲、投資、媒體、部落格）             |
-| **框架**     | Next.js 15 (App Router, Static Export)                       |
-| **語言**     | TypeScript (strict mode)                                     |
-| **UI 框架**  | React 19 + **Bootstrap 5.3** + **react-bootstrap 2.x**      |
-| **狀態管理** | Zustand（各功能模組內 co-located stores）                    |
+| 項目         | 說明                                                             |
+| ------------ | ---------------------------------------------------------------- |
+| **專案名稱** | 子yee 萬事屋                                                     |
+| **類型**     | 個人多功能平台（工具、遊戲、投資、媒體、部落格）                 |
+| **框架**     | Next.js 15 (App Router, Static Export)                           |
+| **語言**     | TypeScript (strict mode)                                         |
+| **UI 框架**  | React 19 + **Bootstrap 5.3** + **react-bootstrap 2.x**           |
+| **狀態管理** | Zustand（各功能模組內 co-located stores）                        |
 | **樣式方案** | Bootstrap CSS + CSS Modules (`.module.css`)；**不使用 Tailwind** |
-| **部署**     | GitHub Pages (`output: "export"`, `gh-pages`)                |
-| **Linting**  | ESLint 9 + Prettier + Husky + lint-staged                    |
+| **部署**     | GitHub Pages (`output: "export"`, `gh-pages`)                    |
+| **Linting**  | ESLint 9 + Prettier + Husky + lint-staged                        |
 
 ---
 
@@ -41,15 +41,19 @@ export default function MyPage() {
   return (
     <Container>
       <Row>
-        <Col xs={12} md={8}>主要內容</Col>
-        <Col xs={12} md={4}>側邊欄</Col>
+        <Col xs={12} md={8}>
+          主要內容
+        </Col>
+        <Col xs={12} md={4}>
+          側邊欄
+        </Col>
       </Row>
     </Container>
   );
 }
 
 // ❌ 錯誤：使用 flexbox 或 grid 手動佈局
-<div style={{ display: "flex", gap: "16px" }}>...</div>
+<div style={{ display: "flex", gap: "16px" }}>...</div>;
 ```
 
 - 使用 `<Container>`, `<Row>`, `<Col>` 或對應的 class (`container`, `row`, `col-*`)
@@ -58,13 +62,13 @@ export default function MyPage() {
 
 ### 2.3 樣式撰寫規範
 
-| 場景                     | 使用方式                                                     |
-| ------------------------ | ------------------------------------------------------------ |
-| 頁面級樣式               | `PageName.module.css`，放在 `styles/` 或元件同層目錄         |
-| 全域樣式                 | `src/app/globals.css`                                        |
-| Bootstrap 元件樣式       | 直接使用 `react-bootstrap` 元件的 `variant`, `size` 等 props |
-| 自訂覆蓋 Bootstrap 主題  | 參見 `.agent/skills/bootstrap-styling/SKILL.md`              |
-| 元件間距 / padding       | 優先使用 Bootstrap spacing utilities (`mb-3`, `p-4`, etc.)   |
+| 場景                    | 使用方式                                                     |
+| ----------------------- | ------------------------------------------------------------ |
+| 頁面級樣式              | `PageName.module.css`，放在 `styles/` 或元件同層目錄         |
+| 全域樣式                | `src/app/globals.css`                                        |
+| Bootstrap 元件樣式      | 直接使用 `react-bootstrap` 元件的 `variant`, `size` 等 props |
+| 自訂覆蓋 Bootstrap 主題 | 參見 `.agent/skills/bootstrap-styling/SKILL.md`              |
+| 元件間距 / padding      | 優先使用 Bootstrap spacing utilities (`mb-3`, `p-4`, etc.)   |
 
 ### 2.4 React 元件規範
 
@@ -165,8 +169,8 @@ npm run lint         # ESLint 檢查
 
 ## 7. 相關 Skills
 
-| Skill | 路徑 | 說明 |
-| ----- | ---- | ---- |
+| Skill                  | 路徑                                       | 說明                                       |
+| ---------------------- | ------------------------------------------ | ------------------------------------------ |
 | Bootstrap 樣式主題覆蓋 | `.agent/skills/bootstrap-styling/SKILL.md` | 如何透過自訂 CSS 覆蓋 Bootstrap 預設主題色 |
 
 ---

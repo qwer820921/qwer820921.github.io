@@ -500,9 +500,7 @@ export default function CraftView({
   }, [player.accessories.equipped, player.accessories.inventory, gameConfig]);
 
   return (
-    <div
-      className={styles["ca-craft-view"]}
-    >
+    <div className={styles["ca-craft-view"]}>
       {/* 貨幣顯示 */}
       <div className={styles["ca-craft-shard-bar"]}>
         <span style={{ color: "#94a3b8", fontSize: "0.9rem" }}>

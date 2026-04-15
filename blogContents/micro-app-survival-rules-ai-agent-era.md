@@ -20,6 +20,7 @@ tags: ["Micro Apps", "AI Agent", "Game Dev", "MCP", "Automation"]
 ### 2.1 生存法則一：極致的數據黏性 (Data Stickiness)
 
 倖存的 App 必須擁有 AI 無法輕易「模擬」或「生成」的核心資產。這包括：
+
 - **獨特的狀態邏輯**：例如 MMORPG 中複雜的角色技能樹、裝備屬性、副本掉落機率、經濟系統的數值平衡。
 - **硬體與感測器掛載**：如控制 Tesla 的空調、Sonos 的音量，或讀取特定工業設備的即時數據。
 - **專有的用戶記憶**：儲存在本地或特定資料庫中，定義了「玩家」與「系統」之間長期互動的結果。
@@ -28,11 +29,11 @@ tags: ["Micro Apps", "AI Agent", "Game Dev", "MCP", "Automation"]
 
 微型 App 不再爭奪使用者的眼球，而是爭奪 AI 的「工具箱位置」。其架構設計應包含以下三個層次：
 
-| 層次 | 名稱 | 職責 | 實作技術 |
-| :--- | :--- | :--- | :--- |
-| **感知層** | Capability Discovery | 向 AI 宣告：「我能幫玩家執行日常任務」。 | MCP Tools Definition / JSON Schema |
-| **邏輯層** | State Machine | 處理具體的遊戲邏輯，如扣除金幣、計算任務進度。 | Backend API / Native Functions |
-| **反饋層** | Real-time Webhook | 當 AI 執行完畢，即時推播結果至 LINE 或 Discord。 | Webhook / SSE / WebSocket |
+| 層次       | 名稱                 | 職責                                             | 實作技術                           |
+| :--------- | :------------------- | :----------------------------------------------- | :--------------------------------- |
+| **感知層** | Capability Discovery | 向 AI 宣告：「我能幫玩家執行日常任務」。         | MCP Tools Definition / JSON Schema |
+| **邏輯層** | State Machine        | 處理具體的遊戲邏輯，如扣除金幣、計算任務進度。   | Backend API / Native Functions     |
+| **反饋層** | Real-time Webhook    | 當 AI 執行完畢，即時推播結果至 LINE 或 Discord。 | Webhook / SSE / WebSocket          |
 
 ## 3. Prerequisites
 
@@ -48,6 +49,7 @@ tags: ["Micro Apps", "AI Agent", "Game Dev", "MCP", "Automation"]
 以 MMORPG 與 LINE Bot 的對接為例，展示如何實作「無介面互動」。
 
 ### 4.1 情境模擬
+
 玩家在 LINE 上傳送：「幫我完成今天的日常任務，然後把背包裡多餘的綠色裝備賣掉。」
 
 ### 4.2 工作流拆解 (Workflow Decomposition)
@@ -55,8 +57,8 @@ tags: ["Micro Apps", "AI Agent", "Game Dev", "MCP", "Automation"]
 1.  **意圖解析**：AI 代理人識別出兩個子任務：`complete_daily_quests` 與 `sell_items`。
 2.  **狀態查詢**：AI 透過 MCP Tool `get_player_inventory` 與 `get_daily_quests_status` 讀取遊戲數據。
 3.  **邏輯編排**：
-    *   AI 發現日常任務未完成，先調用 `complete_daily_quests()`。
-    *   任務完成後，AI 查詢背包，調用 `sell_items(quality="green", type="equipment")`。
+    - AI 發現日常任務未完成，先調用 `complete_daily_quests()`。
+    - 任務完成後，AI 查詢背包，調用 `sell_items(quality="green", type="equipment")`。
 4.  **結果推送**：遊戲後端執行邏輯後，透過 Webhook 讓 LINE Bot 回覆：「報告！日常任務已完成，獲得經驗值 5000 點與金幣 1000 枚。已賣出 10 件綠色裝備，額外獲得金幣 500 枚。」
 
 ### 4.3 程式碼範例：將遊戲邏輯封裝為 AI Tool (Python/Node.js)
@@ -70,17 +72,23 @@ const completeDailyQuestsTool = {
     type: "object",
     properties: {
       // 任務類型或優先級等可選參數
-      priority: { type: "string", enum: ["high", "medium", "low"], description: "優先完成的任務類型" }
+      priority: {
+        type: "string",
+        enum: ["high", "medium", "low"],
+        description: "優先完成的任務類型",
+      },
     },
-    required: []
-  }
+    required: [],
+  },
 };
 
 // 遊戲後端的執行邏輯
 async function handleCompleteDailyQuests(priority) {
   const result = await GameEngine.runDailyQuests(priority);
   // 執行完畢後，除了回傳給 AI，也觸發 Webhook 推送到玩家的 LINE
-  await LineNotify.send(`您的日常任務已完成！獲得經驗值 ${result.exp} 點與金幣 ${result.gold} 枚。`);
+  await LineNotify.send(
+    `您的日常任務已完成！獲得經驗值 ${result.exp} 點與金幣 ${result.gold} 枚。`
+  );
   return result;
 }
 
@@ -91,17 +99,27 @@ const sellItemsTool = {
   inputSchema: {
     type: "object",
     properties: {
-      quality: { type: "string", enum: ["green", "blue", "purple"], description: "要販賣的物品品質" },
-      type: { type: "string", enum: ["equipment", "material", "consumable"], description: "要販賣的物品類型" }
+      quality: {
+        type: "string",
+        enum: ["green", "blue", "purple"],
+        description: "要販賣的物品品質",
+      },
+      type: {
+        type: "string",
+        enum: ["equipment", "material", "consumable"],
+        description: "要販賣的物品類型",
+      },
     },
-    required: ["quality"]
-  }
+    required: ["quality"],
+  },
 };
 
 // 遊戲後端的執行邏輯
 async function handleSellItems(quality, type) {
   const result = await GameEngine.sellInventory(quality, type);
-  await LineNotify.send(`已賣出 ${result.count} 件 ${quality} 品質的物品，獲得金幣 ${result.gold} 枚。`);
+  await LineNotify.send(
+    `已賣出 ${result.count} 件 ${quality} 品質的物品，獲得金幣 ${result.gold} 枚。`
+  );
   return result;
 }
 ```
@@ -110,11 +128,11 @@ async function handleSellItems(quality, type) {
 
 微型 App 的 API 必須具備高度的「語意清晰度」，以下是典型的參數設計：
 
-| 參數名稱 | 類型 | 描述 | AI 調用策略 |
-| :--- | :--- | :--- | :--- |
-| `action_type` | String | `complete_quest`, `sell_item`, `craft_item`, `explore_area` | AI 根據使用者動詞自動匹配。 |
-| `auto_resolve` | Boolean | 是否允許 AI 在資源不足時自動處理（如賣出雜物）。 | AI 會根據此標記決定是否發問。 |
-| `max_cost` | Number | 本次操作允許的最大資源消耗。 | 作為 AI 執行的「安全護欄」。 |
+| 參數名稱       | 類型    | 描述                                                        | AI 調用策略                   |
+| :------------- | :------ | :---------------------------------------------------------- | :---------------------------- |
+| `action_type`  | String  | `complete_quest`, `sell_item`, `craft_item`, `explore_area` | AI 根據使用者動詞自動匹配。   |
+| `auto_resolve` | Boolean | 是否允許 AI 在資源不足時自動處理（如賣出雜物）。            | AI 會根據此標記決定是否發問。 |
+| `max_cost`     | Number  | 本次操作允許的最大資源消耗。                                | 作為 AI 執行的「安全護欄」。  |
 
 ## 6. Notes & Best Practices
 

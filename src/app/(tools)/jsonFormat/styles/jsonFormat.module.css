@@ -202,7 +202,8 @@
   line-height: 1.6;
   margin: 0;
   position: relative;
-  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-family:
+    source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
   font-size: 14px;
 }
 
@@ -240,10 +241,12 @@
 .jsonNumber {
   color: #098658; /* VSCode Light Green */
 }
-.jsonBoolean, .jsonNull {
+.jsonBoolean,
+.jsonNull {
   color: #0000ff; /* VSCode Light Blue */
 }
-.jsonComma, .jsonColon {
+.jsonComma,
+.jsonColon {
   color: #6c757d;
 }
 

@@ -1,0 +1,57 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://main/Main.gd" id="1_maingd"]
+[ext_resource type="Script" path="res://bridge/WebBridge.gd" id="2_bridge"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_maingd")
+
+[node name="WebBridge" type="Node" parent="."]
+script = ExtResource("2_bridge")
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Background" type="ColorRect" parent="UI"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.08, 0.08, 0.12, 1)
+
+[node name="CenterContainer" type="CenterContainer" parent="UI"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UI/CenterContainer"]
+custom_minimum_size = Vector2(700, 0)
+theme_override_constants/separation = 16
+
+[node name="Title" type="Label" parent="UI/CenterContainer/VBoxContainer"]
+text = "神馬三國 — Bridge Demo"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 28
+theme_override_colors/font_color = Color(1, 0.85, 0.3, 1)
+
+[node name="StatusLabel" type="Label" parent="UI/CenterContainer/VBoxContainer"]
+unique_name_in_owner = true
+text = "等待 Web 傳入 payload..."
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 18
+modulate = Color(1, 1, 0, 1)
+
+[node name="PayloadPanel" type="PanelContainer" parent="UI/CenterContainer/VBoxContainer"]
+custom_minimum_size = Vector2(700, 240)
+
+[node name="PayloadLabel" type="RichTextLabel" parent="UI/CenterContainer/VBoxContainer/PayloadPanel"]
+unique_name_in_owner = true
+bbcode_enabled = true
+text = "[color=#8b949e]等待資料...[/color]"
+theme_override_font_sizes/normal_font_size = 14
+fit_content = true
+
+[node name="BattleBtn" type="Button" parent="UI/CenterContainer/VBoxContainer"]
+unique_name_in_owner = true
+text = "開始模擬戰鬥"
+disabled = true
+custom_minimum_size = Vector2(700, 48)
+theme_override_font_sizes/font_size = 18

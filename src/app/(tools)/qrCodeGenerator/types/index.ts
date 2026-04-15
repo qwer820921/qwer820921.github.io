@@ -6,18 +6,24 @@ export interface QRCodeStyleOptions {
   text: string;
   size: number;
   margin: number;
-  
+
   dotsColor: string;
-  dotsType: "rounded" | "dots" | "classy" | "classy-rounded" | "square" | "extra-rounded";
+  dotsType:
+    | "rounded"
+    | "dots"
+    | "classy"
+    | "classy-rounded"
+    | "square"
+    | "extra-rounded";
 
   backgroundColor: string;
   backgroundImage?: string; // Not natively handled very well by qr-code-styling for foreground overlay, but it supports setting a background image.
 
   correctLevel: "L" | "M" | "Q" | "H";
-  
+
   logoImage?: string; // base64 or URL
   logoMargin?: number;
-  
+
   cornersSquareType: "dot" | "square" | "extra-rounded";
   cornersSquareColor: string;
 }

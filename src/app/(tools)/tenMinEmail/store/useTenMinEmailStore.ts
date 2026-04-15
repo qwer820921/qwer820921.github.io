@@ -64,7 +64,9 @@ export const useTenMinEmailStore = create<TenMinEmailState>()(
         try {
           const encodedEmail = encodeURIComponent(currentEmail);
           console.log(`Checking inbox for: ${currentEmail}`);
-          const response = await fetch(`${API_BASE_URL}/api/check?email=${encodedEmail}`);
+          const response = await fetch(
+            `${API_BASE_URL}/api/check?email=${encodedEmail}`
+          );
           const data: CheckResponse = await response.json();
           console.log("Inbox response:", data);
 
@@ -90,7 +92,9 @@ export const useTenMinEmailStore = create<TenMinEmailState>()(
 
         try {
           const encodedEmail = encodeURIComponent(currentEmail);
-          const response = await fetch(`${API_BASE_URL}/api/extend?email=${encodedEmail}`);
+          const response = await fetch(
+            `${API_BASE_URL}/api/extend?email=${encodedEmail}`
+          );
           const data = await response.json();
 
           if (data.success) {
@@ -118,12 +122,14 @@ export const useTenMinEmailStore = create<TenMinEmailState>()(
         set({ isMessageLoading: true });
         try {
           const encodedEmail = encodeURIComponent(currentEmail);
-          const response = await fetch(`${API_BASE_URL}/api/message-detail?email=${encodedEmail}&id=${id}`);
+          const response = await fetch(
+            `${API_BASE_URL}/api/message-detail?email=${encodedEmail}&id=${id}`
+          );
           const data = await response.json();
 
           if (data.success && data.message) {
             // Update the specific message in the inbox array
-            const updatedInbox = inbox.map((m) => 
+            const updatedInbox = inbox.map((m) =>
               m.id === id ? { ...m, ...data.message } : m
             );
             set({ inbox: updatedInbox, isMessageLoading: false });

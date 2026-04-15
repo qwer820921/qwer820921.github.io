@@ -1,0 +1,231 @@
+/* 神馬三國 頁面樣式 */
+
+.pageContainer {
+  padding-top: 2rem;
+  padding-bottom: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 40px;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+/* ── 遊戲 iframe ── */
+.gameWrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background-color: #1a1a2e;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.gameIframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+.loadingOverlay {
+  position: absolute;
+  inset: 0;
+  background-color: #16213e;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 5;
+  color: white;
+}
+
+.loadingText {
+  margin: 0;
+  font-size: 1.1rem;
+  opacity: 0.8;
+}
+
+/* ── 通訊控制台 ── */
+.console {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 560px;
+  background-color: #0d1117;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  font-family: "Courier New", Courier, monospace;
+}
+
+.consoleHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background-color: #161b22;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.consoleTitle {
+  color: #58a6ff;
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+/* ── 三步驟控制區 ── */
+.stepSection {
+  padding: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.stepItem {
+  background-color: #161b22;
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+}
+
+.stepArrow {
+  text-align: center;
+  color: #484f58;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  padding: 2px 0;
+}
+
+.stepLabel {
+  color: #e6edf3;
+  font-size: 0.8rem;
+  font-weight: bold;
+  margin-bottom: 2px;
+}
+
+.stepDesc {
+  color: #8b949e;
+  font-size: 0.7rem;
+}
+
+/* ── 訊息日誌 ── */
+.logSection {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem 1rem 1rem;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.sectionLabel {
+  color: #8b949e;
+  font-size: 0.7rem;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.logList {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-height: 0;
+}
+
+.emptyLog {
+  color: #484f58;
+  font-size: 0.85rem;
+  text-align: center;
+  margin-top: 1rem;
+}
+
+.logEntry {
+  background-color: #161b22;
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  border-left: 3px solid #30363d;
+}
+
+.logEntry_send {
+  border-left-color: #388bfd;
+}
+.logEntry_receive {
+  border-left-color: #3fb950;
+}
+.logEntry_info {
+  border-left-color: #8b949e;
+}
+.logEntry_error {
+  border-left-color: #f85149;
+}
+
+.logMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.logBadge {
+  font-size: 0.6rem;
+  letter-spacing: 0.05em;
+}
+
+.logLabel {
+  color: #c9d1d9;
+  font-size: 0.72rem;
+  flex: 1;
+}
+
+.logTime {
+  color: #484f58;
+  font-size: 0.65rem;
+  white-space: nowrap;
+}
+
+.logData {
+  color: #8b949e;
+  font-size: 0.65rem;
+  margin: 0;
+  overflow-x: auto;
+  max-height: 100px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── Godot 整合說明區 ── */
+.guide {
+  margin-top: 1rem;
+  background-color: rgba(255, 255, 255, 0.03);
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.codeBlock {
+  background-color: #0d1117;
+  color: #e6edf3;
+  font-size: 0.72rem;
+  padding: 0.75rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  white-space: pre;
+}
+
+@media (prefers-color-scheme: light) {
+  .guide {
+    background-color: rgba(0, 0, 0, 0.03);
+    border-color: rgba(0, 0, 0, 0.1);
+  }
+}

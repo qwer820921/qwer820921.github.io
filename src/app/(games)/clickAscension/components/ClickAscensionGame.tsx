@@ -772,7 +772,9 @@ export default function ClickAscensionGame() {
             setStage((prev) => ({ ...prev, ...(cloudData.stage as any) }));
           return; // Success
         }
-      } catch { /* cloud load failed, fallback to local */ }
+      } catch {
+        /* cloud load failed, fallback to local */
+      }
 
       // 2. Fallback to Local Save
       const localStr = localStorage.getItem(`ca_save_${id}`);
@@ -781,7 +783,9 @@ export default function ClickAscensionGame() {
           const localData = JSON.parse(localStr);
           setPlayer((prev) => ({ ...prev, ...localData.player }));
           setStage((prev) => ({ ...prev, ...localData.stage }));
-        } catch { /* local fallback parse error */ }
+        } catch {
+          /* local fallback parse error */
+        }
       }
     },
     [setUserId, setPlayer, setStage, deepMergePlayer]
@@ -1771,12 +1775,7 @@ export default function ClickAscensionGame() {
         }
       }
     },
-    [
-      gameConfig,
-      player,
-      recalculateStats,
-      autoGachaBox,
-    ]
+    [gameConfig, player, recalculateStats, autoGachaBox]
   );
   // 批量購買函數 (用於+25級等批量購買)
   const handleBulkShopPurchase = useCallback(

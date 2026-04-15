@@ -35,7 +35,8 @@ const JsonFormatPage: React.FC = () => {
   const [copied, setCopied] = useState(false);
 
   // Parse check for interactive viewer
-  const isInteractiveViewerAvailable = (activeMode === "format" || activeMode === "sort") && !error;
+  const isInteractiveViewerAvailable =
+    (activeMode === "format" || activeMode === "sort") && !error;
   let parsedOutput = null;
   if (isInteractiveViewerAvailable && outputJson) {
     try {
@@ -110,7 +111,9 @@ const JsonFormatPage: React.FC = () => {
             <strong>格式化</strong>
             ：排版美化，支援自動去除註解與修正異常跳脫字串。
             <br />
-            <span style={{ color: "#0d6efd", fontSize: "12px" }}>✨ 支援互動式折疊檢視</span>
+            <span style={{ color: "#0d6efd", fontSize: "12px" }}>
+              ✨ 支援互動式折疊檢視
+            </span>
           </li>
           <li>
             <strong>轉 TypeScript</strong>：一鍵將 JSON 結構轉為 TypeScript
@@ -120,7 +123,9 @@ const JsonFormatPage: React.FC = () => {
             <strong>屬性排序 A-Z</strong>：自動依英文字母順序遞迴重排所有的鍵
             (Key)。
             <br />
-            <span style={{ color: "#0d6efd", fontSize: "12px" }}>✨ 支援互動式折疊檢視</span>
+            <span style={{ color: "#0d6efd", fontSize: "12px" }}>
+              ✨ 支援互動式折疊檢視
+            </span>
           </li>
           <li>
             <strong>轉義</strong>：轉換為帶有反斜線跳脫的純文字字串格式。
@@ -267,8 +272,15 @@ const JsonFormatPage: React.FC = () => {
                 onClick={clearAll}
                 title="清空所有內容"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '4px' }}>
-                  <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  fill="currentColor"
+                  viewBox="0 0 16 16"
+                  style={{ marginRight: "4px" }}
+                >
+                  <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708" />
                 </svg>
                 清空
               </button>

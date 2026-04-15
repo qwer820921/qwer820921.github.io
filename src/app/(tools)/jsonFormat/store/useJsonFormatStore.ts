@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { sortJsonKeys, generateTypeScript, stripJsonComments } from "../utils/jsonUtils";
+import {
+  sortJsonKeys,
+  generateTypeScript,
+  stripJsonComments,
+} from "../utils/jsonUtils";
 
 export type FormatMode = "format" | "minify" | "sort" | "escape" | "typescript";
 
@@ -40,8 +44,13 @@ export const useJsonFormatStore = create<JsonFormatState>()(
           if (str.startsWith('"') && str.endsWith('"')) {
             str = str.slice(1, -1);
           }
-          str = str.replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t');
-          parsed = JSON.parse(stripJsonComments(str)); 
+          str = str
+            .replace(/\\"/g, '"')
+            .replace(/\\\\/g, "\\")
+            .replace(/\\n/g, "\n")
+            .replace(/\\r/g, "\r")
+            .replace(/\\t/g, "\t");
+          parsed = JSON.parse(stripJsonComments(str));
         }
         set({ outputJson: JSON.stringify(parsed, null, 2), error: null });
       };
@@ -107,20 +116,22 @@ export const useJsonFormatStore = create<JsonFormatState>()(
             else if (activeMode === "escape") escapeLogic();
             else if (activeMode === "typescript") tsLogic();
           } catch (e: any) {
-             // 報錯時不清除先前的 output，避免打字到一半畫面閃爍消失
-             const modeNames: Record<FormatMode, string> = {
-                format: '解析錯誤',
-                minify: '壓縮錯誤',
-                sort: '排序錯誤',
-                escape: '轉義錯誤',
-                typescript: 'TypeScript 轉換錯誤'
-             };
-             set({ error: `${modeNames[activeMode]}: 請確認 JSON 格式是否完整正確 (${e.message})` });
+            // 報錯時不清除先前的 output，避免打字到一半畫面閃爍消失
+            const modeNames: Record<FormatMode, string> = {
+              format: "解析錯誤",
+              minify: "壓縮錯誤",
+              sort: "排序錯誤",
+              escape: "轉義錯誤",
+              typescript: "TypeScript 轉換錯誤",
+            };
+            set({
+              error: `${modeNames[activeMode]}: 請確認 JSON 格式是否完整正確 (${e.message})`,
+            });
           }
         },
 
         clearAll: () => set({ inputJson: "", outputJson: "", error: null }),
-        
+
         setError: (err) => {
           set({ error: err });
         },

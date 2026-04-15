@@ -19,7 +19,7 @@
   padding: 14px 18px;
   border-radius: 12px;
   backdrop-filter: blur(20px);
-  box-shadow: 
+  box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.3),
     0 0 0 1px rgba(255, 255, 255, 0.1);
   animation: slideIn 0.3s ease-out;
@@ -75,7 +75,11 @@
 
 /* 類型樣式 */
 .success {
-  background: linear-gradient(135deg, rgba(39, 174, 96, 0.9), rgba(46, 204, 113, 0.9));
+  background: linear-gradient(
+    135deg,
+    rgba(39, 174, 96, 0.9),
+    rgba(46, 204, 113, 0.9)
+  );
   color: #fff;
 }
 
@@ -85,7 +89,11 @@
 }
 
 .error {
-  background: linear-gradient(135deg, rgba(231, 76, 60, 0.9), rgba(192, 57, 43, 0.9));
+  background: linear-gradient(
+    135deg,
+    rgba(231, 76, 60, 0.9),
+    rgba(192, 57, 43, 0.9)
+  );
   color: #fff;
 }
 
@@ -95,7 +103,11 @@
 }
 
 .warning {
-  background: linear-gradient(135deg, rgba(241, 196, 15, 0.9), rgba(243, 156, 18, 0.9));
+  background: linear-gradient(
+    135deg,
+    rgba(241, 196, 15, 0.9),
+    rgba(243, 156, 18, 0.9)
+  );
   color: #1a1a2e;
 }
 
@@ -105,7 +117,11 @@
 }
 
 .info {
-  background: linear-gradient(135deg, rgba(52, 152, 219, 0.9), rgba(41, 128, 185, 0.9));
+  background: linear-gradient(
+    135deg,
+    rgba(52, 152, 219, 0.9),
+    rgba(41, 128, 185, 0.9)
+  );
   color: #fff;
 }
 

@@ -389,7 +389,8 @@ const ImageConverterPage: React.FC = () => {
         <Col xs={12}>
           <h1 className="mb-2">圖檔轉檔</h1>
           <p className="text-muted mb-0">
-            線上批次圖片格式轉換工具，支援 PNG、JPEG、WebP、AVIF、HEIC、SVG、ICO、BMP
+            線上批次圖片格式轉換工具，支援
+            PNG、JPEG、WebP、AVIF、HEIC、SVG、ICO、BMP
           </p>
           <div className="d-flex flex-wrap gap-2 mt-2">
             <Badge bg="success" className={styles.privacyBadge}>

@@ -28,6 +28,11 @@ const routes: RouteGroup[] = [
         name: "重裝全糖珍奶",
         showInNavbar: true,
       },
+      {
+        path: ROUTES.SHENMA_SANGUO,
+        name: "神馬三國",
+        showInNavbar: true,
+      },
     ],
   },
   {

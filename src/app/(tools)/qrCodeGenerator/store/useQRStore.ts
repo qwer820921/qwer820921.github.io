@@ -1,11 +1,17 @@
 import { create } from "zustand";
-import { QRDataType, QRCodeStyleOptions, DynamicQRInfo, VCardData, WifiData } from "../types";
+import {
+  QRDataType,
+  QRCodeStyleOptions,
+  DynamicQRInfo,
+  VCardData,
+  WifiData,
+} from "../types";
 
 interface QRState {
   // Data State
   dataType: QRDataType;
   setDataType: (type: QRDataType) => void;
-  
+
   // Specific Data Input
   urlInput: string;
   setUrlInput: (val: string) => void;
@@ -42,21 +48,32 @@ const defaultStyle: QRCodeStyleOptions = {
   backgroundColor: "#ffffff",
   correctLevel: "M",
   cornersSquareType: "square",
-  cornersSquareColor: "#000000"
+  cornersSquareColor: "#000000",
 };
 
 export const useQRStore = create<QRState>((set) => ({
   dataType: "url",
-  setDataType: (type) => set({ dataType: type, isDynamic: false, dynamicInfo: null }), // switch type disables dynamic mode
+  setDataType: (type) =>
+    set({ dataType: type, isDynamic: false, dynamicInfo: null }), // switch type disables dynamic mode
 
   urlInput: "https://qwer820921.github.io",
   setUrlInput: (val) => set({ urlInput: val }),
 
-  vCardData: { firstName: "", lastName: "", organization: "", phone: "", email: "", title: "", website: "" },
-  setVCardData: (data) => set((state) => ({ vCardData: { ...state.vCardData, ...data } })),
+  vCardData: {
+    firstName: "",
+    lastName: "",
+    organization: "",
+    phone: "",
+    email: "",
+    title: "",
+    website: "",
+  },
+  setVCardData: (data) =>
+    set((state) => ({ vCardData: { ...state.vCardData, ...data } })),
 
   wifiData: { ssid: "", encryption: "WPA", hidden: false },
-  setWifiData: (data) => set((state) => ({ wifiData: { ...state.wifiData, ...data } })),
+  setWifiData: (data) =>
+    set((state) => ({ wifiData: { ...state.wifiData, ...data } })),
 
   textInput: "",
   setTextInput: (val) => set({ textInput: val }),
@@ -65,9 +82,10 @@ export const useQRStore = create<QRState>((set) => ({
   setFinalEncodedText: (val) => set({ finalEncodedText: val }),
 
   styleOptions: defaultStyle,
-  updateStyle: (options) => set((state) => ({ 
-    styleOptions: { ...state.styleOptions, ...options } 
-  })),
+  updateStyle: (options) =>
+    set((state) => ({
+      styleOptions: { ...state.styleOptions, ...options },
+    })),
 
   isDynamic: false,
   setIsDynamic: (val) => set({ isDynamic: val }),

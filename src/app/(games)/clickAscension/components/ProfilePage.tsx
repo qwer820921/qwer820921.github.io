@@ -448,9 +448,7 @@ function CurrencyItem({
     <div className={styles["ca-profile-currency-item"]}>
       <span style={{ fontSize: "1rem" }}>{icon}</span>
       <div style={{ display: "flex", flexDirection: "column" }}>
-        <span className={styles["ca-profile-currency-label"]}>
-          {label}
-        </span>
+        <span className={styles["ca-profile-currency-label"]}>{label}</span>
         <span style={{ fontSize: "0.85rem", color: color, fontWeight: "bold" }}>
           {value}
         </span>
