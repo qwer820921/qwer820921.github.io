@@ -59,3 +59,12 @@ func send_result(result: Dictionary) -> void:
 	var json = JSON.stringify(result)
 	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
 	print("[WebBridge] 結算結果已傳回 Web")
+
+## 告知 Web 端：Godot 已啟動並準備就緒
+func send_ready() -> void:
+	if OS.get_name() != "Web":
+		return
+	var msg = {"__godot_bridge": true, "type": "game_ready"}
+	var json = JSON.stringify(msg)
+	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
+	print("[WebBridge] 已發送 game_ready 信號給 Web")
