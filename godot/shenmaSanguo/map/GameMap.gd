@@ -8,8 +8,8 @@ extends Node2D
 enum TileType { EMPTY, ROAD, BUILD, OBSTACLE, BASE, SPAWN }
 
 # ── 尺寸設定 ──────────────────────────────────────────────────
-const TILE_SIZE: int    = 64
-const BOTTOM_UI_H: int  = 130   # 底部 UI 高度（留空給 BattleHUD）
+var tile_size: int      = 48
+const BOTTOM_UI_H: int  = 160   # 底部 UI 高度（留空給 BattleHUD）
 const MAP_PADDING: int  = 1     # 地圖四周格子邊距
 
 # ── 顏色 ──────────────────────────────────────────────────────
@@ -38,6 +38,9 @@ var _map_offset: Vector2    = Vector2.ZERO
 var _hl_cell: Vector2i = Vector2i(-99, -99)
 var _hl_valid: bool    = false
 
+# ── 格子貼圖（tile_textures from path_json）─────────────────
+var _tile_textures: Dictionary = {}   # type_name → Texture2D
+
 signal map_ready()
 
 # ═══════════════════════════════════════════
@@ -46,7 +49,9 @@ signal map_ready()
 func setup(path_json: Dictionary) -> void:
 	_parse_path_json(path_json)
 	_compute_map_size()
+	_compute_tile_size()
 	_center_map()
+	_load_tile_textures(path_json)
 	queue_redraw()
 	map_ready.emit()
 
@@ -91,6 +96,31 @@ func _fill_segment(from: Vector2i, to: Vector2i, type: TileType) -> void:
 		_grid[cur] = type
 		cur += Vector2i(dc, dr)
 
+func _load_tile_textures(pj: Dictionary) -> void:
+	_tile_textures.clear()
+	var tex_map: Dictionary = pj.get("tile_textures", {})
+	for type_key: String in tex_map:
+		var img_name: String = str(tex_map[type_key])
+		var path: String = "res://assets/" + img_name
+		if ResourceLoader.exists(path):
+			_tile_textures[type_key] = load(path) as Texture2D
+
+func _tile_type_name(t: TileType) -> String:
+	match t:
+		TileType.ROAD:     return "road"
+		TileType.BUILD:    return "build"
+		TileType.BASE:     return "base"
+		TileType.SPAWN:    return "spawn"
+		TileType.OBSTACLE: return "obstacle"
+		_:                 return "empty"
+
+func _compute_tile_size() -> void:
+	var vp: Vector2 = get_viewport_rect().size
+	var avail_h: float = vp.y - float(BOTTOM_UI_H)
+	var by_w: int = int(vp.x / max(1, _map_cols))
+	var by_h: int = int(avail_h / max(1, _map_rows))
+	tile_size = max(16, min(by_w, by_h))
+
 func _compute_map_size() -> void:
 	var max_c: int = 0
 	var max_r: int = 0
@@ -101,13 +131,14 @@ func _compute_map_size() -> void:
 	_map_rows = max_r + MAP_PADDING + 2
 
 func _center_map() -> void:
-	var vp: Vector2     = get_viewport_rect().size
+	var vp: Vector2    = get_viewport_rect().size
+	var map_w: float   = _map_cols * tile_size
+	var map_h: float   = _map_rows * tile_size
 	var avail_h: float = vp.y - float(BOTTOM_UI_H)
-	var map_w: float   = _map_cols * TILE_SIZE
-	var map_h: float   = _map_rows * TILE_SIZE
+	# 水平置中；垂直靠上留 8px，剩餘空白在地圖下方（近 HUD 處）
 	_map_offset = Vector2(
 		(vp.x - map_w) * 0.5,
-		(avail_h - map_h) * 0.5
+		max(8.0, (avail_h - map_h) * 0.15)
 	)
 
 # ═══════════════════════════════════════════
@@ -115,39 +146,61 @@ func _center_map() -> void:
 # ═══════════════════════════════════════════
 func _draw() -> void:
 	var vp: Vector2 = get_viewport_rect().size
-	# 背景
-	draw_rect(Rect2(Vector2.ZERO, vp), COLOR_BG)
+	# 背景：用 empty 貼圖鋪滿整個視口；無貼圖時用純色
+	if _tile_textures.has("empty"):
+		var bg_tex: Texture2D = _tile_textures["empty"]
+		var ts: float = float(tile_size)
+		for col in range(int(ceil(vp.x / ts)) + 1):
+			for row in range(int(ceil(vp.y / ts)) + 1):
+				draw_texture_rect(bg_tex,
+					Rect2(Vector2(col * ts, row * ts), Vector2(ts, ts)), false)
+	else:
+		draw_rect(Rect2(Vector2.ZERO, vp), COLOR_BG)
+
+	var use_textures: bool = not _tile_textures.is_empty()
 
 	# 繪製每個格子
 	for col in range(_map_cols):
 		for row in range(_map_rows):
 			var cell: Vector2i = Vector2i(col, row)
-			var color: Color = _tile_color(cell)
-			var rect: Rect2  = Rect2(
-				_map_offset + Vector2(col * TILE_SIZE, row * TILE_SIZE),
-				Vector2(TILE_SIZE - 1, TILE_SIZE - 1)
-			)
-			draw_rect(rect, color)
-			# 路標文字
-			_draw_tile_icon(rect, cell)
+			var type_name: String = _tile_type_name(_grid.get(cell, TileType.EMPTY))
+			if use_textures:
+				# 貼圖模式：先墊底色再疊貼圖，透明區域顯示底色而非背景
+				var rect: Rect2 = Rect2(
+					_map_offset + Vector2(col * tile_size, row * tile_size),
+					Vector2(tile_size, tile_size)
+				)
+				draw_rect(rect, _tile_color(cell))
+				if _tile_textures.has(type_name):
+					draw_texture_rect(_tile_textures[type_name], rect, false)
+				_draw_tile_icon(rect, cell)
+			else:
+				# 純色模式：留 1px 縫顯示格線
+				var rect: Rect2 = Rect2(
+					_map_offset + Vector2(col * tile_size, row * tile_size),
+					Vector2(tile_size - 1, tile_size - 1)
+				)
+				draw_rect(rect, _tile_color(cell))
+				_draw_tile_icon(rect, cell)
 
-	# 格線
-	for col in range(_map_cols + 1):
-		var x: float = _map_offset.x + col * TILE_SIZE
-		draw_line(Vector2(x, _map_offset.y),
-				  Vector2(x, _map_offset.y + _map_rows * TILE_SIZE),
-				  COLOR_GRID, 1.0)
-	for row in range(_map_rows + 1):
-		var y: float = _map_offset.y + row * TILE_SIZE
-		draw_line(Vector2(_map_offset.x, y),
-				  Vector2(_map_offset.x + _map_cols * TILE_SIZE, y),
-				  COLOR_GRID, 1.0)
+	# 格線（僅純色模式顯示）
+	if not use_textures:
+		for col in range(_map_cols + 1):
+			var x: float = _map_offset.x + col * tile_size
+			draw_line(Vector2(x, _map_offset.y),
+					  Vector2(x, _map_offset.y + _map_rows * tile_size),
+					  COLOR_GRID, 1.0)
+		for row in range(_map_rows + 1):
+			var y: float = _map_offset.y + row * tile_size
+			draw_line(Vector2(_map_offset.x, y),
+					  Vector2(_map_offset.x + _map_cols * tile_size, y),
+					  COLOR_GRID, 1.0)
 
 	# 高亮
 	if _hl_cell.x >= 0:
 		var hl_rect: Rect2 = Rect2(
-			_map_offset + Vector2(_hl_cell.x * TILE_SIZE, _hl_cell.y * TILE_SIZE),
-			Vector2(TILE_SIZE, TILE_SIZE)
+			_map_offset + Vector2(_hl_cell.x * tile_size, _hl_cell.y * tile_size),
+			Vector2(tile_size, tile_size)
 		)
 		draw_rect(hl_rect, COLOR_HL_OK if _hl_valid else COLOR_HL_NO)
 
@@ -161,28 +214,29 @@ func _tile_color(cell: Vector2i) -> Color:
 		_:                 return COLOR_EMPTY
 
 func _draw_tile_icon(rect: Rect2, cell: Vector2i) -> void:
+	var fs: int = max(10, tile_size - 30)
 	match _grid.get(cell, TileType.EMPTY):
 		TileType.BASE:
 			draw_string(ThemeDB.fallback_font,
-				rect.position + Vector2(6, TILE_SIZE - 8),
-				"⚔", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
+				rect.position + Vector2(4, tile_size - 4),
+				"⚔", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
 		TileType.SPAWN:
 			draw_string(ThemeDB.fallback_font,
-				rect.position + Vector2(6, TILE_SIZE - 8),
-				"▶", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
+				rect.position + Vector2(4, tile_size - 4),
+				"▶", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
 
 # ═══════════════════════════════════════════
 #  座標轉換
 # ═══════════════════════════════════════════
 func grid_to_world(cell: Vector2i) -> Vector2:
 	return _map_offset + Vector2(
-		cell.x * TILE_SIZE + TILE_SIZE * 0.5,
-		cell.y * TILE_SIZE + TILE_SIZE * 0.5
+		cell.x * tile_size + tile_size * 0.5,
+		cell.y * tile_size + tile_size * 0.5
 	)
 
 func world_to_grid(world_pos: Vector2) -> Vector2i:
 	var local: Vector2 = world_pos - _map_offset
-	return Vector2i(int(local.x / TILE_SIZE), int(local.y / TILE_SIZE))
+	return Vector2i(int(local.x / tile_size), int(local.y / tile_size))
 
 func is_valid_cell(cell: Vector2i) -> bool:
 	return cell.x >= 0 and cell.y >= 0 and cell.x < _map_cols and cell.y < _map_rows
@@ -191,7 +245,7 @@ func get_tile_type(cell: Vector2i) -> TileType:
 	return _grid.get(cell, TileType.EMPTY)
 
 func get_tile_size() -> int:
-	return TILE_SIZE
+	return tile_size
 
 func get_map_offset() -> Vector2:
 	return _map_offset

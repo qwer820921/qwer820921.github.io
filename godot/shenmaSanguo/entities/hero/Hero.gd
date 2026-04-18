@@ -27,8 +27,9 @@ var is_on_road: bool      = false   # 若在 ROAD 上，施加緩速效果
 var _atk_timer: float     = 0.0
 var _wave_mgr: Node       = null    # WaveManager 引用
 var _is_selected: bool    = false
-const TILE_SIZE: int      = 64
-const HERO_HALF: int      = 22
+var _texture: Texture2D   = null
+var tile_size: int        = 48
+var hero_half: int        = 16
 const SLOW_RATIO: float   = 0.30   # ROAD 英雄對敵人施加的速度倍率
 
 # 顏色（依職業差異）
@@ -46,6 +47,7 @@ func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: boo
 	grid_cell  = cell
 	is_on_road = on_road
 	_wave_mgr  = wave_mgr
+	hero_half  = max(10, int(tile_size * 0.34))
 
 	# 從 heroes_config 取得靜態屬性
 	for cfg in heroes_config:
@@ -62,6 +64,11 @@ func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: boo
 					body_color = Color(0.65, 0.50, 0.10, 1)
 				_:
 					body_color = Color(0.20, 0.40, 0.80, 1)
+			var img_name: String = str(cfg.get("image", ""))
+			if img_name != "":
+				var path: String = "res://assets/" + img_name
+				if ResourceLoader.exists(path):
+					_texture = load(path) as Texture2D
 			break
 
 	queue_redraw()
@@ -79,7 +86,7 @@ func _process(delta: float) -> void:
 	if not _wave_mgr:
 		return
 
-	var range_px: float = attack_range * TILE_SIZE
+	var range_px: float = attack_range * tile_size
 	var enemies: Array = _wave_mgr.get_active_enemies()
 	var target: Node = _find_target(enemies, range_px)
 	if target == null:
@@ -136,40 +143,45 @@ func set_selected(sel: bool) -> void:
 #  繪製
 # ═══════════════════════════════════════════
 func _draw() -> void:
+	var rect: Rect2 = Rect2(Vector2(-hero_half, -hero_half),
+					  Vector2(hero_half * 2, hero_half * 2))
+
 	# 射程圈（選中時顯示）
 	if _is_selected:
-		# 半透明紅色圓形 (Alpha 0.3)
-		draw_circle(Vector2.ZERO, attack_range * TILE_SIZE, Color(1.0, 0.0, 0.0, 0.3))
-		# 外圈線條 (加粗並提高亮度)
-		draw_arc(Vector2.ZERO, attack_range * TILE_SIZE, 0, TAU, 48, Color(1.0, 0.2, 0.2, 0.7), 2.5)
+		draw_circle(Vector2.ZERO, attack_range * tile_size, Color(1.0, 0.0, 0.0, 0.3))
+		draw_arc(Vector2.ZERO, attack_range * tile_size, 0, TAU, 48, Color(1.0, 0.2, 0.2, 0.7), 2.5)
 
-	# 底盤（圓角方形近似）
-	var rect: Rect2 = Rect2(Vector2(-HERO_HALF, -HERO_HALF),
-					  Vector2(HERO_HALF * 2, HERO_HALF * 2))
-	draw_rect(rect, Color(0, 0, 0, 0.35))
-	draw_rect(rect.grow(-2), body_color)
-
-	# ROAD 武將：顯示 "R" 標記
-	if is_on_road:
+	# 身體
+	if _texture != null:
+		draw_texture_rect(_texture, rect, false)
+		# ROAD 標記疊加在貼圖上
+		if is_on_road:
+			draw_rect(Rect2(Vector2(hero_half - 12, -hero_half), Vector2(12, 12)),
+				Color(0.0, 0.0, 0.0, 0.55))
+			draw_string(ThemeDB.fallback_font,
+				Vector2(hero_half - 11, -hero_half + 10), "R",
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1, 1, 0.5, 1.0))
+	else:
+		draw_rect(rect, Color(0, 0, 0, 0.35))
+		draw_rect(rect.grow(-2), body_color)
+		if is_on_road:
+			draw_string(ThemeDB.fallback_font,
+				Vector2(hero_half - 10, -hero_half + 12), "R",
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1, 1, 0.5, 0.9))
+		var short_name: String = hero_name.left(2) if hero_name.length() > 0 else "?"
 		draw_string(ThemeDB.fallback_font,
-			Vector2(HERO_HALF - 10, -HERO_HALF + 12), "R",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1, 1, 0.5, 0.9))
+			Vector2(-10, 7), short_name,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
 
-	# 名字（取前兩字）
-	var short_name: String = hero_name.left(2) if hero_name.length() > 0 else "?"
-	draw_string(ThemeDB.fallback_font,
-		Vector2(-10, 7), short_name,
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
-
-	# HP 條
-	var bar_w: float = float(HERO_HALF * 2)
-	var bar_x: float = float(-HERO_HALF)
-	var bar_y: float = float(-HERO_HALF - 8)
+	# HP 條（貼圖與純色共用）
+	var bar_w: float = float(hero_half * 2)
+	var bar_x: float = float(-hero_half)
+	var bar_y: float = float(-hero_half - 8)
 	var ratio: float = current_hp / max_hp
 	draw_rect(Rect2(bar_x, bar_y, bar_w, 5), Color(0.2, 0.2, 0.2, 0.8))
 	draw_rect(Rect2(bar_x, bar_y, bar_w * ratio, 5), Color(0.2, 0.9, 0.2, 1))
 
-	# 選取邊框
+	# 選取邊框（貼圖與純色共用）
 	if _is_selected:
 		draw_rect(rect, Color(1.0, 0.9, 0.2, 1.0), false, 2.5)
 
@@ -180,7 +192,7 @@ func get_cell() -> Vector2i:
 	return grid_cell
 
 func get_attack_range_px() -> float:
-	return attack_range * TILE_SIZE
+	return attack_range * tile_size
 
 func reposition(new_cell: Vector2i, world_pos: Vector2, game_map: Node) -> void:
 	grid_cell = new_cell

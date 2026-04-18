@@ -17,12 +17,13 @@ const TOWER_CONFIGS: Dictionary = {
 		"type":        TowerType.ARCHER,
 		"name":        "弓兵塔",
 		"atk":         30.0,
-		"atk_spd":     0.80,   # 攻擊間隔（秒）—越小越快
-		"range":       2.5,    # 格子數
+		"atk_spd":     0.80,
+		"range":       2.5,
 		"cost":        50,
 		"upgrade_base": 50,
 		"color":       Color(0.20, 0.65, 0.20, 1),
 		"aoe":         false,
+		"image":       "tower_archer.webp",
 	},
 	"infantry": {
 		"type":        TowerType.INFANTRY,
@@ -34,7 +35,8 @@ const TOWER_CONFIGS: Dictionary = {
 		"upgrade_base": 60,
 		"color":       Color(0.60, 0.20, 0.20, 1),
 		"aoe":         false,
-		"slow_mult":   0.55,   # 緩速光環效果
+		"slow_mult":   0.55,
+		"image":       "tower_infantry.webp",
 	},
 	"artillery": {
 		"type":        TowerType.ARTILLERY,
@@ -46,7 +48,8 @@ const TOWER_CONFIGS: Dictionary = {
 		"upgrade_base": 80,
 		"color":       Color(0.60, 0.45, 0.10, 1),
 		"aoe":         true,
-		"aoe_radius":  80.0,   # 像素
+		"aoe_radius":  80.0,
+		"image":       "tower_artillery.webp",
 	},
 }
 
@@ -64,9 +67,10 @@ var body_color: Color      = Color.GREEN
 var tower_name: String     = "弓兵塔"
 
 var grid_cell: Vector2i    = Vector2i.ZERO
-const TILE_SIZE: int       = 64
-const TOWER_W: int         = 48
-const TOWER_H: int         = 48
+var tile_size: int         = 48
+var _texture: Texture2D    = null
+var tower_w: int           = 34
+var tower_h: int           = 34
 
 # ── 內部狀態 ──────────────────────────────────────────────────
 var _atk_timer: float      = 0.0
@@ -92,6 +96,13 @@ func setup(type_key: String, cell: Vector2i, wave_mgr: Node) -> void:
 	slow_mult        = float(cfg.get("slow_mult", 1.0))
 	body_color       = cfg["color"]
 	tower_name       = str(cfg["name"])
+	tower_w = max(20, int(tile_size * 0.75))
+	tower_h = tower_w
+	var img_name: String = str(cfg.get("image", ""))
+	if img_name != "":
+		var path: String = "res://assets/" + img_name
+		if ResourceLoader.exists(path):
+			_texture = load(path) as Texture2D
 	queue_redraw()
 
 # ═══════════════════════════════════════════
@@ -110,7 +121,7 @@ func _process(delta: float) -> void:
 	if slow_mult < 1.0 and tower_type_key == "infantry":
 		_apply_slow_aura()
 
-	var range_px: float = range_tiles * TILE_SIZE
+	var range_px: float = range_tiles * tile_size
 	var enemies: Array = _wave_mgr.get_active_enemies()
 	var target: Node = _find_target(enemies, range_px)
 	if target == null:
@@ -148,7 +159,7 @@ func _attack_aoe(primary: Node, all_enemies: Array) -> void:
 func _apply_slow_aura() -> void:
 	if not _wave_mgr:
 		return
-	var range_px: float = range_tiles * TILE_SIZE
+	var range_px: float = range_tiles * tile_size
 	for e in _wave_mgr.get_active_enemies():
 		if is_instance_valid(e) and not e.is_dead():
 			var dist: float = global_position.distance_to(e.global_position)
@@ -190,44 +201,40 @@ func set_selected(sel: bool) -> void:
 #  繪製
 # ═══════════════════════════════════════════
 func _draw() -> void:
-	var half_w: float = TOWER_W / 2.0
-	var half_h: float = TOWER_H / 2.0
+	var half_w: float = tower_w / 2.0
+	var half_h: float = tower_h / 2.0
+	var body_rect: Rect2 = Rect2(Vector2(-half_w, -half_h), Vector2(tower_w, tower_h))
+	var flash: bool = _is_attacking
 
 	# 射程圈（選中時顯示）
 	if _is_selected:
-		# 半透明紅色圓形 (Alpha 0.3)
-		draw_circle(Vector2.ZERO, range_tiles * TILE_SIZE, Color(1.0, 0.0, 0.0, 0.3))
-		# 外圈線條 (加粗並提高亮度)
-		draw_arc(Vector2.ZERO, range_tiles * TILE_SIZE, 0, TAU, 48, Color(1.0, 0.2, 0.2, 0.7), 2.5)
-
-	# 底座陰影
-	draw_rect(Rect2(Vector2(-half_w, -half_h) + Vector2(2, 2),
-				Vector2(TOWER_W, TOWER_H)), Color(0, 0, 0, 0.35))
+		draw_circle(Vector2.ZERO, range_tiles * tile_size, Color(1.0, 0.0, 0.0, 0.3))
+		draw_arc(Vector2.ZERO, range_tiles * tile_size, 0, TAU, 48, Color(1.0, 0.2, 0.2, 0.7), 2.5)
 
 	# 塔身
-	var flash: bool = _is_attacking
-	draw_rect(Rect2(Vector2(-half_w, -half_h), Vector2(TOWER_W, TOWER_H)),
-		Color.WHITE if flash else body_color)
+	if _texture != null:
+		draw_texture_rect(_texture, body_rect, false)
+		if flash:
+			draw_rect(body_rect, Color(1.0, 1.0, 1.0, 0.5))
+	else:
+		draw_rect(Rect2(Vector2(-half_w, -half_h) + Vector2(2, 2),
+					Vector2(tower_w, tower_h)), Color(0, 0, 0, 0.35))
+		draw_rect(body_rect, Color.WHITE if flash else body_color)
+		draw_rect(Rect2(Vector2(-half_w, -half_h), Vector2(tower_w, 8)),
+			(body_color if flash else body_color.darkened(0.3)))
+		var short: String = tower_name.left(2)
+		draw_string(ThemeDB.fallback_font,
+			Vector2(-10, 8), short,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
+			Color(0, 0, 0, 1) if flash else Color.WHITE)
 
-	# 頂部深色帽簷
-	draw_rect(Rect2(Vector2(-half_w, -half_h), Vector2(TOWER_W, 8)),
-		(body_color if flash else body_color.darkened(0.3)))
-
-	# 等級圓點
+	# 等級圓點（貼圖與純色共用）
 	for i in range(tower_level):
 		draw_circle(Vector2(-half_w + 6 + i * 8, half_h - 7), 3, Color.WHITE)
 
-	# 塔名（前兩字）
-	var short: String = tower_name.left(2)
-	draw_string(ThemeDB.fallback_font,
-		Vector2(-10, 8), short,
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
-		Color(0, 0, 0, 1) if flash else Color.WHITE)
-
-	# 選取邊框
+	# 選取邊框（貼圖與純色共用）
 	if _is_selected:
-		draw_rect(Rect2(Vector2(-half_w, -half_h), Vector2(TOWER_W, TOWER_H)),
-			Color(1.0, 0.9, 0.2, 1.0), false, 2.5)
+		draw_rect(body_rect, Color(1.0, 0.9, 0.2, 1.0), false, 2.5)
 
 # ═══════════════════════════════════════════
 #  查詢

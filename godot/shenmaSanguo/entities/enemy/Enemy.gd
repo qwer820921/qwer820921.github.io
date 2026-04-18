@@ -20,8 +20,8 @@ var _waypoints: Array   = []       # Array[Vector2] 像素座標
 var _wp_index: int      = 0
 
 # ── 視覺常數 ──────────────────────────────────────────────────
-const TILE_SIZE: int    = 64
-const ENEMY_RADIUS: int = 18
+var tile_size: int      = 48
+var enemy_radius: int   = 17
 const HP_BAR_W: int     = 36
 const HP_BAR_H: int     = 5
 const FLASH_TIME: float = 0.12
@@ -29,6 +29,7 @@ const FLASH_TIME: float = 0.12
 # ── 閃爍效果 ──────────────────────────────────────────────────
 var _flash_timer: float = 0.0
 var _is_dead: bool      = false
+var _texture: Texture2D = null
 
 # ── 顏色（依 enemy_id 可設不同顏色，預設灰） ──────────────
 var body_color: Color   = Color(0.55, 0.20, 0.20, 1)  # 深紅兵
@@ -45,6 +46,12 @@ func setup(cfg: Dictionary, waypoints: Array) -> void:
 	base_speed   = float(cfg.get("speed", 1.5))
 	enemy_id     = str(cfg.get("enemy_id", "soldier"))
 	label_text   = str(cfg.get("name", "兵")).left(1)
+	enemy_radius = max(8, int(tile_size * 0.35))
+	var img_name: String = str(cfg.get("image", ""))
+	if img_name != "":
+		var path: String = "res://assets/" + img_name
+		if ResourceLoader.exists(path):
+			_texture = load(path) as Texture2D
 
 	# 依 enemy_id 設定顏色
 	match enemy_id:
@@ -130,20 +137,24 @@ func _on_reached_base() -> void:
 #  繪製
 # ═══════════════════════════════════════════
 func _draw() -> void:
-	var color: Color = Color.WHITE if _flash_timer > 0.0 else body_color
+	var r: float = float(enemy_radius)
+	var sprite_rect: Rect2 = Rect2(Vector2(-r, -r), Vector2(r * 2.0, r * 2.0))
 
-	# 身體（圓形）
-	draw_circle(Vector2.ZERO, ENEMY_RADIUS, color)
-	draw_arc(Vector2.ZERO, ENEMY_RADIUS, 0, TAU, 24, Color(0, 0, 0, 0.5), 1.5)
+	if _texture != null:
+		draw_texture_rect(_texture, sprite_rect, false)
+		if _flash_timer > 0.0:
+			draw_rect(sprite_rect, Color(1.0, 0.2, 0.2, 0.45))
+	else:
+		var color: Color = Color.WHITE if _flash_timer > 0.0 else body_color
+		draw_circle(Vector2.ZERO, r, color)
+		draw_arc(Vector2.ZERO, r, 0, TAU, 24, Color(0, 0, 0, 0.5), 1.5)
+		draw_string(ThemeDB.fallback_font,
+			Vector2(-6, 6), label_text,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
 
-	# 標籤文字
-	draw_string(ThemeDB.fallback_font,
-		Vector2(-6, 6), label_text,
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
-
-	# HP 條
+	# HP 條（貼圖與純色模式共用）
 	var bar_x: float = -HP_BAR_W / 2.0
-	var bar_y: float = -(ENEMY_RADIUS + HP_BAR_H + 3)
+	var bar_y: float = -(r + HP_BAR_H + 3)
 	var hp_ratio: float = current_hp / max_hp
 	draw_rect(Rect2(bar_x, bar_y, HP_BAR_W, HP_BAR_H), Color(0.2, 0.2, 0.2, 0.8))
 	draw_rect(Rect2(bar_x, bar_y, HP_BAR_W * hp_ratio, HP_BAR_H),

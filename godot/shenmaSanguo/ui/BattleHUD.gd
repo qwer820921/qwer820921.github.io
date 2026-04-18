@@ -13,13 +13,13 @@ signal drag_tower_started(tower_type: String)
 signal upgrade_panel_closed()
 signal unit_move_requested(unit: Node)
 
-# ── Layout 常數 ───────────────────────────────────────────────
-const PANEL_H:   int = 128
-const CARD_W:    int = 64
-const CARD_H:    int = 80
-const BTN_W:     int = 90
-const BTN_H:     int = 44
-const BOTTOM_UI_H: int = 128    # 底部 UI 高度預留
+# ── Layout 常數（直式 9:16）────────────────────────────────────
+const PANEL_H:   int = 160
+const CARD_W:    int = 52
+const CARD_H:    int = 64
+const BTN_W:     int = 76
+const BTN_H:     int = 36
+const BOTTOM_UI_H: int = 160    # 底部 UI 高度預留
 
 # ── 節點引用（_ready 建立後快取）────────────────────────────
 var _gold_label:   Label
@@ -43,18 +43,14 @@ func _ready() -> void:
 	_build_ui()
 
 func _build_ui() -> void:
-	var vp: Vector2 = get_viewport().get_visible_rect().size
-
-	# ── 底部主面板 ──────────────────────────────────────────
+	# ── 底部主面板（固定在螢幕底部）────────────────────────
 	var panel: PanelContainer = PanelContainer.new()
 	add_child(panel)
-	
-	# 強制固定在底部
-	panel.anchor_top = 1.0
+	panel.anchor_top    = 1.0
 	panel.anchor_bottom = 1.0
-	panel.anchor_left = 0.0
-	panel.anchor_right = 1.0
-	panel.offset_top = -PANEL_H
+	panel.anchor_left   = 0.0
+	panel.anchor_right  = 1.0
+	panel.offset_top    = -PANEL_H
 	panel.offset_bottom = 0
 	panel.custom_minimum_size = Vector2(0, PANEL_H)
 
@@ -64,92 +60,102 @@ func _build_ui() -> void:
 	panel_style.border_width_top = 2
 	panel.add_theme_stylebox_override("panel", panel_style)
 
-	var main_hbox: HBoxContainer = HBoxContainer.new()
-	main_hbox.set_anchors_preset(Control.PRESET_FULL_RECT)
-	main_hbox.add_theme_constant_override("separation", 12)
-	panel.add_child(main_hbox)
+	# 主 VBox：第一行（卡片）+ 第二行（狀態+按鈕）
+	var main_vbox: VBoxContainer = VBoxContainer.new()
+	main_vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	main_vbox.add_theme_constant_override("separation", 4)
+	panel.add_child(main_vbox)
 
-	# ── 武將區 ─────────────────────────────────────────────
-	var hero_vbox: VBoxContainer = VBoxContainer.new()
-	hero_vbox.custom_minimum_size = Vector2(300, 0)
-	main_hbox.add_child(hero_vbox)
+	# ── Row 1：卡片區（武將 + 防禦塔）─────────────────────
+	var cards_hbox: HBoxContainer = HBoxContainer.new()
+	cards_hbox.add_theme_constant_override("separation", 6)
+	main_vbox.add_child(cards_hbox)
+
+	# 武將子區
+	var hero_section: VBoxContainer = VBoxContainer.new()
+	hero_section.add_theme_constant_override("separation", 2)
+	cards_hbox.add_child(hero_section)
 
 	var hero_title: Label = Label.new()
-	hero_title.text = "⚔ 武將"
+	hero_title.text = "⚔武將"
 	hero_title.add_theme_color_override("font_color", Color(0.95, 0.80, 0.30, 1))
-	hero_title.add_theme_font_size_override("font_size", 13)
-	hero_vbox.add_child(hero_title)
+	hero_title.add_theme_font_size_override("font_size", 11)
+	hero_section.add_child(hero_title)
 
 	_hero_container = HBoxContainer.new()
-	_hero_container.add_theme_constant_override("separation", 8)
-	hero_vbox.add_child(_hero_container)
+	_hero_container.add_theme_constant_override("separation", 4)
+	hero_section.add_child(_hero_container)
 
-	# ── 防禦塔區 ────────────────────────────────────────────
-	var tower_vbox: VBoxContainer = VBoxContainer.new()
-	tower_vbox.custom_minimum_size = Vector2(240, 0)
-	main_hbox.add_child(tower_vbox)
-
-	var tower_title: Label = Label.new()
-	tower_title.text = "🏯 防禦塔"
-	tower_title.add_theme_color_override("font_color", Color(0.95, 0.80, 0.30, 1))
-	tower_title.add_theme_font_size_override("font_size", 13)
-	tower_vbox.add_child(tower_title)
-
-	var tower_hbox: HBoxContainer = HBoxContainer.new()
-	tower_hbox.add_theme_constant_override("separation", 8)
-	tower_vbox.add_child(tower_hbox)
-
-	_add_tower_card(tower_hbox, "archer",   "弓兵塔", "50G", Color(0.20, 0.65, 0.20, 1))
-	_add_tower_card(tower_hbox, "infantry", "步兵塔", "70G", Color(0.60, 0.20, 0.20, 1))
-	_add_tower_card(tower_hbox, "artillery","砲兵塔","100G", Color(0.60, 0.45, 0.10, 1))
-
-	# ── 分隔 ─────────────────────────────────────────────
+	# 分隔線
 	var sep: VSeparator = VSeparator.new()
 	sep.add_theme_color_override("separator_color", Color(0.35, 0.30, 0.20, 0.5))
-	main_hbox.add_child(sep)
+	cards_hbox.add_child(sep)
 
-	# ── 狀態區 ─────────────────────────────────────────────
+	# 防禦塔子區
+	var tower_section: VBoxContainer = VBoxContainer.new()
+	tower_section.add_theme_constant_override("separation", 2)
+	cards_hbox.add_child(tower_section)
+
+	var tower_title: Label = Label.new()
+	tower_title.text = "🏯防禦塔"
+	tower_title.add_theme_color_override("font_color", Color(0.95, 0.80, 0.30, 1))
+	tower_title.add_theme_font_size_override("font_size", 11)
+	tower_section.add_child(tower_title)
+
+	var tower_hbox: HBoxContainer = HBoxContainer.new()
+	tower_hbox.add_theme_constant_override("separation", 4)
+	tower_section.add_child(tower_hbox)
+
+	_add_tower_card(tower_hbox, "archer",   "弓兵塔", "50G",  Color(0.20, 0.65, 0.20, 1))
+	_add_tower_card(tower_hbox, "infantry", "步兵塔", "70G",  Color(0.60, 0.20, 0.20, 1))
+	_add_tower_card(tower_hbox, "artillery","砲兵塔", "100G", Color(0.60, 0.45, 0.10, 1))
+
+	# ── Row 2：狀態 + 按鈕 ─────────────────────────────────
+	var bottom_hbox: HBoxContainer = HBoxContainer.new()
+	bottom_hbox.add_theme_constant_override("separation", 8)
+	main_vbox.add_child(bottom_hbox)
+
+	# 狀態顯示（左側 EXPAND）
 	var status_vbox: VBoxContainer = VBoxContainer.new()
-	status_vbox.custom_minimum_size = Vector2(160, 0)
-	status_vbox.add_theme_constant_override("separation", 4)
-	main_hbox.add_child(status_vbox)
+	status_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	status_vbox.add_theme_constant_override("separation", 2)
+	bottom_hbox.add_child(status_vbox)
 
-	_gold_label = _mk_label("💰 金幣：500", Color(1.0, 0.85, 0.20, 1))
+	_gold_label = _mk_label("💰 500", Color(1.0, 0.85, 0.20, 1))
 	status_vbox.add_child(_gold_label)
 
-	_wave_label = _mk_label("🌊 波次：0 / 0", Color(0.70, 0.85, 1.0, 1))
+	_wave_label = _mk_label("🌊 0/0", Color(0.70, 0.85, 1.0, 1))
 	status_vbox.add_child(_wave_label)
 
-	_hp_label = _mk_label("🏰 基地：20 / 20", Color(0.85, 0.40, 0.40, 1))
+	_hp_label = _mk_label("🏰 20/20", Color(0.85, 0.40, 0.40, 1))
 	status_vbox.add_child(_hp_label)
 
 	_base_bar = ProgressBar.new()
-	_base_bar.custom_minimum_size = Vector2(150, 10)
+	_base_bar.custom_minimum_size = Vector2(100, 6)
 	_base_bar.max_value = 20
 	_base_bar.value = 20
 	_base_bar.show_percentage = false
 	status_vbox.add_child(_base_bar)
 
-	# ── 按鈕區 ─────────────────────────────────────────────
-	var btn_vbox: VBoxContainer = VBoxContainer.new()
-	btn_vbox.custom_minimum_size = Vector2(BTN_W + 20, 0)
-	btn_vbox.add_theme_constant_override("separation", 8)
-	main_hbox.add_child(btn_vbox)
+	# 按鈕（右側）
+	var btn_hbox: HBoxContainer = HBoxContainer.new()
+	btn_hbox.add_theme_constant_override("separation", 6)
+	bottom_hbox.add_child(btn_hbox)
 
 	_start_btn = Button.new()
-	_start_btn.text = "⚔ 迎戰"
+	_start_btn.text = "迎戰"
 	_start_btn.custom_minimum_size = Vector2(BTN_W, BTN_H)
-	_start_btn.add_theme_font_size_override("font_size", 16)
+	_start_btn.add_theme_font_size_override("font_size", 14)
 	_start_btn.pressed.connect(func(): start_btn_pressed.emit())
-	btn_vbox.add_child(_start_btn)
+	btn_hbox.add_child(_start_btn)
 
 	_auto_btn = Button.new()
-	_auto_btn.text = "▶ 自動"
-	_auto_btn.custom_minimum_size = Vector2(BTN_W, BTN_H)
-	_auto_btn.add_theme_font_size_override("font_size", 14)
+	_auto_btn.text = "自動"
+	_auto_btn.custom_minimum_size = Vector2(BTN_W - 10, BTN_H)
+	_auto_btn.add_theme_font_size_override("font_size", 13)
 	_auto_btn.toggle_mode = true
 	_auto_btn.pressed.connect(func(): auto_btn_pressed.emit())
-	btn_vbox.add_child(_auto_btn)
+	btn_hbox.add_child(_auto_btn)
 
 	# ── 升級/資訊浮動面板（選中塔時出現）──────────────────
 	_info_panel = PanelContainer.new()
@@ -157,8 +163,8 @@ func _build_ui() -> void:
 	_info_panel.z_index = 20
 	add_child(_info_panel)
 	var info_style: StyleBoxFlat = StyleBoxFlat.new()
-	info_style.bg_color = Color(0.08, 0.08, 0.12, 0.88) # 半透明深色
-	info_style.border_color = Color(0.95, 0.80, 0.30, 0.8) # 金色發光邊框
+	info_style.bg_color = Color(0.08, 0.08, 0.12, 0.88)
+	info_style.border_color = Color(0.95, 0.80, 0.30, 0.8)
 	info_style.set_border_width_all(2)
 	info_style.set_corner_radius_all(6)
 	info_style.shadow_color = Color(0, 0, 0, 0.45)
@@ -294,15 +300,15 @@ func _add_tower_card(parent: HBoxContainer, type_key: String, name_text: String,
 # ═══════════════════════════════════════════
 func update_gold(gold: int) -> void:
 	if _gold_label:
-		_gold_label.text = "戰場點數：%d" % gold
+		_gold_label.text = "💰 %d" % gold
 
 func update_wave(current: int, total: int) -> void:
 	if _wave_label:
-		_wave_label.text = "波次：%d / %d" % [current, total]
+		_wave_label.text = "🌊 %d/%d" % [current, total]
 
 func update_base_hp(hp: int, max_hp: int) -> void:
 	if _hp_label:
-		_hp_label.text = "基地：%d / %d" % [hp, max_hp]
+		_hp_label.text = "🏰 %d/%d" % [hp, max_hp]
 	if _base_bar:
 		_base_bar.max_value = max_hp
 		_base_bar.value = hp

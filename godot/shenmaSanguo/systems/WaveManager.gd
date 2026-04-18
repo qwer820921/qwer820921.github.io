@@ -17,17 +17,19 @@ var _enemy_scene: PackedScene = null
 # ── 波次資料 ──────────────────────────────────────────────────
 # waves: Array of { wave: int, enemies: [{ enemy_id, count, interval, path }] }
 var _waves_data: Array = []
+var _tile_size: int = 48
 var _active_enemies: Array = []
 var _current_wave_num: int = 0
 var _active_spawning_groups: int = 0
 
 # ── 初始化 ────────────────────────────────────────────────────
-func setup(waves: Array, enemies_config: Array, game_map: Node, units_layer: Node, enemy_scene: PackedScene) -> void:
+func setup(waves: Array, enemies_config: Array, game_map: Node, units_layer: Node, enemy_scene: PackedScene, tile_size: int = 48) -> void:
 	_waves_data     = waves
 	_enemies_config = enemies_config
 	_game_map       = game_map
 	_units_layer    = units_layer
 	_enemy_scene    = enemy_scene
+	_tile_size      = tile_size
 
 # ── 啟動指定波次 ──────────────────────────────────────────────
 func start_wave(wave_num: int) -> void:
@@ -111,6 +113,7 @@ func _create_enemy(cfg: Dictionary, waypoints: Array) -> Node:
 
 	var enemy: Node = _enemy_scene.instantiate()
 	_units_layer.add_child(enemy)
+	enemy.tile_size = _tile_size
 	enemy.setup(cfg, waypoints)
 	enemy.died.connect(_on_enemy_died)
 	enemy.reached_base.connect(_on_enemy_reached_base)

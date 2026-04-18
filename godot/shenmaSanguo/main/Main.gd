@@ -33,6 +33,7 @@ var _drag_tower_type: String = ""
 var _is_dragging: bool       = false
 
 # ── 已放置的武將（避免同一英雄放多次）────────────────────────
+var _tile_size: int            = 48    # 從 GameMap 取得，傳給 Entity
 var _placed_heroes: Dictionary = {}   # hero_id → Hero node
 var _selected_unit: Node       = null  # 選中的塔/武將
 var _moving_unit: Node         = null  # 正在重新佈置的單位
@@ -93,10 +94,11 @@ func _on_payload_received(payload: Dictionary) -> void:
 
 	# 初始化地圖
 	game_map.setup(path_json)
+	_tile_size = game_map.get_tile_size()
 
 	# 初始化 WaveManager
 	# 攤平 waves 結構（Wave[] → 直接傳陣列）
-	wave_manager.setup(_waves, _enemies_config, game_map, units_layer, ENEMY_SCENE)
+	wave_manager.setup(_waves, _enemies_config, game_map, units_layer, ENEMY_SCENE, _tile_size)
 
 	# 初始化 BattleManager
 	var total_waves: int = _count_waves(_waves)
@@ -305,6 +307,7 @@ func _place_hero(cell: Vector2i, world_pos: Vector2) -> void:
 	var hero: Node = HERO_SCENE.instantiate()
 	units_layer.add_child(hero)
 	hero.position = world_pos
+	hero.tile_size = _tile_size
 
 	var on_road: bool = game_map.get_tile_type(cell) == game_map.TileType.ROAD
 	hero.setup(_drag_hero_data, _heroes_config, cell, on_road, wave_manager)
@@ -323,6 +326,7 @@ func _place_tower(cell: Vector2i, world_pos: Vector2) -> void:
 	var tower: Node = TOWER_SCENE.instantiate()
 	units_layer.add_child(tower)
 	tower.position = world_pos
+	tower.tile_size = _tile_size
 	tower.setup(_drag_tower_type, cell, wave_manager)
 	tower.tower_clicked.connect(_on_tower_clicked.bind(tower))
 	tower.upgrade_requested.connect(_on_upgrade_requested)
@@ -389,17 +393,19 @@ func _inject_test_payload() -> void:
 			  "attack_range": 1.5, "attack_speed": 1.2,
 			  "base_atk": 150, "base_def": 120, "base_hp": 1500,
 			  "rarity": "orange", "cost": 8, "upgrade_cost_base": 100,
-			  "atk_growth": 0.08, "def_growth": 0.06, "hp_growth": 0.10 },
+			  "atk_growth": 0.08, "def_growth": 0.06, "hp_growth": 0.10,
+			  "image": "hero_guan_yu.webp" },
 			{ "hero_id": "zhou_cang", "name": "周倉", "job": "infantry",
 			  "attack_range": 1.2, "attack_speed": 1.5,
 			  "base_atk": 100, "base_def":  70, "base_hp": 900,
 			  "rarity": "purple", "cost": 6, "upgrade_cost_base": 70,
-			  "atk_growth": 0.07, "def_growth": 0.05, "hp_growth": 0.09 },
+			  "atk_growth": 0.07, "def_growth": 0.05, "hp_growth": 0.09,
+			  "image": "hero_zhou_cang.webp" },
 		],
 		"enemies_config": [
-			{ "enemy_id": "soldier",  "name": "步兵", "hp": 150.0, "speed": 80.0 },
-			{ "enemy_id": "cavalry",  "name": "騎兵", "hp": 200.0, "speed": 160.0 },
-			{ "enemy_id": "archer",   "name": "弓兵", "hp": 100.0, "speed": 100.0 },
+			{ "enemy_id": "grunt_lv1",   "name": "步兵LV1", "hp": 150.0, "speed": 80.0,  "image": "enemy_grunt1.webp" },
+			{ "enemy_id": "cavalry_lv1", "name": "騎兵LV1", "hp": 200.0, "speed": 160.0, "image": "enemy_cavalry1.webp" },
+			{ "enemy_id": "siege_lv1",   "name": "攻城車LV1","hp": 400.0, "speed": 40.0,  "image": "enemy_siege1.webp" },
 		],
 		"map": {
 			"map_id": "chapter1_1",
@@ -422,19 +428,26 @@ func _inject_test_payload() -> void:
 					[3,6],[4,6],[6,6],[7,6],
 					[3,7],[4,7],[6,7],[7,7],
 					[6,9],[7,9],[8,9]
-				]
+				],
+				"tile_textures": {
+					"road":  "tile_stone.webp",
+					"build": "tile_grass.webp",
+					"empty": "tile_dirt.webp",
+					"base":  "tile_fortress.webp",
+					"spawn": "tile_gate.webp"
+				}
 			},
 			"waves": [
 				{ "wave": 1, "enemies": [
-					{ "enemy_id": "soldier", "count": 5, "interval": 1.0, "path": "path_a" }
+					{ "enemy_id": "grunt_lv1",   "count": 5, "interval": 1.0, "path": "path_a" }
 				]},
 				{ "wave": 2, "enemies": [
-					{ "enemy_id": "soldier",  "count": 5, "interval": 0.8, "path": "path_a" },
-					{ "enemy_id": "cavalry",  "count": 2, "interval": 2.0, "path": "path_a" }
+					{ "enemy_id": "grunt_lv1",   "count": 5, "interval": 0.8, "path": "path_a" },
+					{ "enemy_id": "cavalry_lv1", "count": 2, "interval": 2.0, "path": "path_a" }
 				]},
 				{ "wave": 3, "enemies": [
-					{ "enemy_id": "cavalry",  "count": 4, "interval": 1.5, "path": "path_a" },
-					{ "enemy_id": "archer",   "count": 6, "interval": 0.7, "path": "path_a" }
+					{ "enemy_id": "cavalry_lv1", "count": 4, "interval": 1.5, "path": "path_a" },
+					{ "enemy_id": "siege_lv1",   "count": 2, "interval": 3.0, "path": "path_a" }
 				]},
 			]
 		}

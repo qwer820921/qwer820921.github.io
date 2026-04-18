@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Container, Row, Col, Spinner, Modal } from "react-bootstrap";
+import { Spinner, Modal } from "react-bootstrap";
 import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import {
@@ -109,7 +109,7 @@ export default function BattlePageContent() {
     (staticConfig && !staticConfig.maps.find((m) => m.map_id === mapId))
   ) {
     return (
-      <Container className={styles.pageContainer}>
+      <div className={styles.pageContainer}>
         <p style={{ color: "var(--sg-red)" }}>找不到地圖：{mapId}</p>
         <button
           className={styles.btnOutline}
@@ -117,119 +117,117 @@ export default function BattlePageContent() {
         >
           返回關卡選擇
         </button>
-      </Container>
+      </div>
     );
   }
 
   const mapName =
     staticConfig?.maps.find((m) => m.map_id === mapId)?.name ?? mapId;
 
+  const statusText = payloadSent
+    ? battleResult
+      ? battleResult.result === BattleResult.Win
+        ? "勝利"
+        : "落敗"
+      : "出征中..."
+    : iframeLoading
+      ? "載入中..."
+      : "準備中...";
+
   return (
-    <Container fluid className={styles.pageContainer}>
-      <div className={styles.header} style={{ marginBottom: "1rem" }}>
-        <h2 className={styles.pageTitle}>{mapName}</h2>
-        <p className={styles.subtitle}>
-          {payloadSent
-            ? "出征中，等待結算..."
-            : iframeLoading
-              ? "載入戰場..."
-              : "準備傳送出征資料..."}
-        </p>
+    <div className={styles.battleLayout}>
+      {/* 頂部狀態列 */}
+      <div className={styles.battleTopBar}>
+        <span className={styles.battleTopBarTitle}>{mapName}</span>
+        <span className={styles.battleTopBarStatus}>
+          {payloadSent && !battleResult && (
+            <Spinner
+              animation="border"
+              size="sm"
+              className="me-1"
+              style={{ width: "0.7rem", height: "0.7rem" }}
+            />
+          )}
+          {statusText}
+        </span>
       </div>
 
-      <Row className="w-100" style={{ maxWidth: 1280 }}>
-        <Col xs={12} lg={9} className="mb-3">
-          <div className={styles.gameWrapper}>
-            {iframeLoading && (
-              <div className={styles.loadingOverlay}>
-                <Spinner animation="border" variant="light" />
-                <p className={styles.loadingText}>載入戰場中...</p>
-              </div>
-            )}
-            <iframe
-              ref={iframeRef}
-              src="/games/shenmaSanguo/index.html"
-              className={styles.gameIframe}
-              onLoad={handleIframeLoad}
-              allow="autoplay; fullscreen"
-              title="Shenma Sanguo Battle"
-            />
-          </div>
-        </Col>
+      {/* 遊戲 iframe（直式 9:16）*/}
+      <div className={styles.gamePortraitWrap}>
+        <div className={styles.gameWrapper}>
+          {iframeLoading && (
+            <div className={styles.loadingOverlay}>
+              <Spinner animation="border" variant="light" />
+              <p className={styles.loadingText}>載入戰場中...</p>
+            </div>
+          )}
+          <iframe
+            ref={iframeRef}
+            src="/games/shenmaSanguo/index.html"
+            className={styles.gameIframe}
+            onLoad={handleIframeLoad}
+            allow="autoplay; fullscreen"
+            title="Shenma Sanguo Battle"
+          />
+        </div>
+      </div>
 
-        <Col xs={12} lg={3} className="mb-3">
-          <div
+      {/* 底部隊伍條 */}
+      <div className={styles.battleTeamStrip}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.75rem",
+            flexWrap: "wrap",
+          }}
+        >
+          <span
             style={{
-              background: "var(--sg-surface)",
-              border: "1px solid var(--sg-border)",
-              borderRadius: 10,
-              padding: "1rem",
-              minHeight: 200,
+              fontSize: "0.7rem",
+              color: "var(--sg-muted)",
+              flexShrink: 0,
             }}
           >
-            <div className={styles.sectionLabel}>出征隊伍</div>
-            {(player?.team || []).map((slot) => {
-              const heroConf = staticConfig?.heroesConfig.find(
-                (c) => c.hero_id === slot.hero_id
-              );
-              const heroState = (player?.heroes || []).find(
-                (h) => h.hero_id === slot.hero_id
-              );
-              return (
-                <div
-                  key={slot.slot}
-                  style={{
-                    marginBottom: "0.6rem",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: "0.65rem",
-                      color: "var(--sg-muted)",
-                      minWidth: 20,
-                    }}
-                  >
-                    #{slot.slot}
-                  </span>
-                  <span
-                    style={{
-                      fontWeight: 600,
-                      color: "var(--sg-text)",
-                      fontSize: "0.85rem",
-                    }}
-                  >
-                    {heroConf?.name ?? slot.hero_id}
-                  </span>
-                  {heroState && (
-                    <span
-                      style={{ fontSize: "0.68rem", color: "var(--sg-gold)" }}
-                    >
-                      Lv.{heroState.level}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-            {payloadSent && !battleResult && (
+            出征隊伍
+          </span>
+          {(player?.team || []).map((slot) => {
+            const heroConf = staticConfig?.heroesConfig.find(
+              (c) => c.hero_id === slot.hero_id
+            );
+            const heroState = (player?.heroes || []).find(
+              (h) => h.hero_id === slot.hero_id
+            );
+            return (
               <div
+                key={slot.slot}
                 style={{
-                  color: "var(--sg-muted)",
-                  fontSize: "0.75rem",
-                  marginTop: "1rem",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.25rem",
+                  background: "var(--sg-surface2)",
+                  borderRadius: 6,
+                  padding: "2px 8px",
+                  fontSize: "0.78rem",
                 }}
               >
-                <Spinner animation="border" size="sm" className="me-1" />
-                等待 Godot 結算...
+                <span style={{ fontWeight: 600, color: "var(--sg-text)" }}>
+                  {heroConf?.name ?? slot.hero_id}
+                </span>
+                {heroState && (
+                  <span
+                    style={{ color: "var(--sg-gold)", fontSize: "0.68rem" }}
+                  >
+                    Lv.{heroState.level}
+                  </span>
+                )}
               </div>
-            )}
-          </div>
-        </Col>
-      </Row>
+            );
+          })}
+        </div>
+      </div>
 
-      {/* 結算 Modal — 透過 portal 渲染在 .gameBody 外，CSS 變數無效，使用硬編碼值 */}
+      {/* 結算 Modal */}
       {battleResult &&
         (() => {
           const isWin = battleResult.result === BattleResult.Win;
@@ -364,6 +362,6 @@ export default function BattlePageContent() {
             </Modal>
           );
         })()}
-    </Container>
+    </div>
   );
 }

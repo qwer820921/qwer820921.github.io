@@ -536,16 +536,54 @@
   background: rgba(99, 102, 241, 0.04);
 }
 
-/* ── Battle iframe ──────────────────────────────────────── */
+/* ── Battle 直式版面 ─────────────────────────────────────── */
+.battleLayout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  min-height: 100vh;
+  padding: 0;
+  gap: 0;
+}
+
+.battleTopBar {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 1rem;
+  background: var(--sg-surface);
+  border-bottom: 1px solid var(--sg-border);
+}
+
+.battleTopBarTitle {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--sg-text);
+}
+
+.battleTopBarStatus {
+  font-size: 0.75rem;
+  color: var(--sg-muted);
+}
+
+/* 直式遊戲框 */
+.gamePortraitWrap {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  justify-content: center;
+}
+
 .gameWrapper {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 540 / 800;
   background: #1a1a2e;
-  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
 }
 .gameIframe {
   width: 100%;
@@ -569,6 +607,15 @@
   margin: 0;
   font-size: 0.85rem;
   letter-spacing: 0.1em;
+}
+
+/* 底部隊伍條 */
+.battleTeamStrip {
+  width: 100%;
+  max-width: 480px;
+  background: var(--sg-surface);
+  border-top: 1px solid var(--sg-border);
+  padding: 0.6rem 1rem;
 }
 
 /* ── Team preview badges ────────────────────────────────── */
