@@ -157,6 +157,7 @@ export interface ExpeditionPayload {
   player: Pick<PlayerState, "nickname" | "level" | "gold"> & { key: string };
   team_list: Array<HeroState & { slot: number }>;
   heroes_config: HeroConfig[];
+  enemies_config: EnemyConfig[];
   map: MapConfig;
 }
 
