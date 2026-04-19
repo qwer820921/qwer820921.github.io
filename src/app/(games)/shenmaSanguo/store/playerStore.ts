@@ -7,13 +7,12 @@ import {
   BattleResultPayload,
   BattleResult,
 } from "../types";
-import { gameApi } from "../api/gameApi";
+import { gameApi, SHENMA_SANGUO_GAS_URL as GAS_URL } from "../api/gameApi";
 import { stageToNum, getNextStage } from "../utils/stageUtils";
 
 // ── 常數 ──────────────────────────────────────────────────────
 const PLAYER_SESSION_KEY = "shenma_player_state";
 const DEBOUNCE_MS = 30_000;
-const GAS_URL = process.env.NEXT_PUBLIC_SHENMA_SANGUO_GAS_URL!;
 
 // Module-level debounce timer（跨 render 持久）
 let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -292,6 +291,18 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
           .filter((l) => l.item === "battle_points" || l.item === "gold")
           .reduce((sum, l) => sum + l.count, 0)
       : 10; // 失敗低保
+
+    // EXP：勝利 50 + 星數×20；失敗低保 10
+    const expGain = isWin ? 50 + result.stars_earned * 20 : 10;
+    const expAfter = player.exp + expGain;
+    const expNeeded = (level: number) => level * 100;
+    let newLevel = player.level;
+    let newExp = expAfter;
+    while (newExp >= expNeeded(newLevel)) {
+      newExp -= expNeeded(newLevel);
+      newLevel += 1;
+    }
+
     const nextStage = getNextStage(result.stage_id);
     const shouldUpdateStage =
       isWin && stageToNum(nextStage) > stageToNum(player.max_stage);
@@ -299,6 +310,9 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     const updated: SessionPlayerState = {
       ...player, // 保留 pending 的 heroes / team 變更
       gold: player.gold + pointsReward,
+      exp: newExp,
+      level: newLevel,
+      capacity: 10 + newLevel,
       max_stage: shouldUpdateStage ? nextStage : player.max_stage,
       syncStatus: SyncStatus.Syncing,
     };

@@ -5,6 +5,8 @@
 extends Node
 
 signal payload_received(data: Dictionary)
+signal start_battle_requested()
+signal auto_toggle_requested()
 
 var _msg_callback: JavaScriptObject
 
@@ -26,9 +28,11 @@ func _setup_bridge() -> void:
 		window.addEventListener('message', function(event) {
 			try {
 				var d = event.data;
-				if (d && typeof d === 'object' && d.stage_id) {
-					if (typeof window.__godot_receive === 'function') {
-						window.__godot_receive(JSON.stringify(d));
+				if (d && typeof d === 'object') {
+					if (d.stage_id || d.__godot_bridge) {
+						if (typeof window.__godot_receive === 'function') {
+							window.__godot_receive(JSON.stringify(d));
+						}
 					}
 				}
 			} catch(e) {
@@ -47,8 +51,13 @@ func _on_js_message(args: Array) -> void:
 	if payload == null:
 		push_error("[WebBridge] JSON 解析失敗：" + json_str)
 		return
-	print("[WebBridge] 收到 payload，stage_id = ", payload.get("stage_id", "?"))
-	payload_received.emit(payload)
+	print("[WebBridge] 收到訊號:", payload.get("type", "payload"))
+	if payload.get("type") == "start_battle":
+		start_battle_requested.emit()
+	elif payload.get("type") == "toggle_auto":
+		auto_toggle_requested.emit()
+	else:
+		payload_received.emit(payload)
 
 ## 戰鬥結束後，呼叫此函式將結算結果傳回 Web
 func send_result(result: Dictionary) -> void:
@@ -67,4 +76,11 @@ func send_ready() -> void:
 	var msg = {"__godot_bridge": true, "type": "game_ready"}
 	var json = JSON.stringify(msg)
 	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
-	print("[WebBridge] 已發送 game_ready 信號給 Web")
+## 傳送即時戰鬥數據（金幣、波次、血量）給 Web
+func send_stats(stats: Dictionary) -> void:
+	stats["__godot_bridge"] = true
+	stats["type"] = "update_stats"
+	if OS.get_name() != "Web":
+		return
+	var json = JSON.stringify(stats)
+	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)

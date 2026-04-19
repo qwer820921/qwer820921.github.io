@@ -88,6 +88,12 @@ func _parse_path_json(pj: Dictionary) -> void:
 		if not _grid.has(bpos):   # 不覆蓋 ROAD / BASE / SPAWN
 			_grid[bpos] = TileType.BUILD
 
+	# --- obstacles ---
+	for ob in pj.get("obstacles", []):
+		var opos: Vector2i = Vector2i(int(ob[0]), int(ob[1]))
+		if not _grid.has(opos):   # 不覆蓋 ROAD / BASE / SPAWN
+			_grid[opos] = TileType.OBSTACLE
+
 func _fill_segment(from: Vector2i, to: Vector2i, type: TileType) -> void:
 	var dc: int = sign(to.x - from.x)
 	var dr: int = sign(to.y - from.y)

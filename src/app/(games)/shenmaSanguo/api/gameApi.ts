@@ -2,7 +2,10 @@
 // GAS 不支援 CORS preflight，所以不設定 Content-Type header
 // body 傳純字串，GAS 用 e.postData.contents 讀取
 
-const GAS_URL = process.env.NEXT_PUBLIC_SHENMA_SANGUO_GAS_URL!;
+export const SHENMA_SANGUO_GAS_URL =
+  "https://script.google.com/macros/s/AKfycbwfRU7lwjMWiU3in7gkexsNpZVSJFbLyk3X0E56_va2arMUDvJNNnitKE19Iui3oYKm/exec";
+
+const GAS_URL = SHENMA_SANGUO_GAS_URL;
 
 async function callGAS(action: string, key?: string, payload?: object) {
   const res = await fetch(GAS_URL, {

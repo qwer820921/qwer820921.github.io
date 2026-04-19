@@ -14,7 +14,7 @@ signal upgrade_panel_closed()
 signal unit_move_requested(unit: Node)
 
 # ── Layout 常數（直式 9:16）────────────────────────────────────
-const PANEL_H:   int = 160
+const PANEL_H:   int = 100
 const CARD_W:    int = 52
 const CARD_H:    int = 64
 const BTN_W:     int = 76
@@ -77,7 +77,7 @@ func _build_ui() -> void:
 	cards_hbox.add_child(hero_section)
 
 	var hero_title: Label = Label.new()
-	hero_title.text = "⚔武將"
+	hero_title.text = "武將"
 	hero_title.add_theme_color_override("font_color", Color(0.95, 0.80, 0.30, 1))
 	hero_title.add_theme_font_size_override("font_size", 11)
 	hero_section.add_child(hero_title)
@@ -97,7 +97,7 @@ func _build_ui() -> void:
 	cards_hbox.add_child(tower_section)
 
 	var tower_title: Label = Label.new()
-	tower_title.text = "🏯防禦塔"
+	tower_title.text = "防禦塔"
 	tower_title.add_theme_color_override("font_color", Color(0.95, 0.80, 0.30, 1))
 	tower_title.add_theme_font_size_override("font_size", 11)
 	tower_section.add_child(tower_title)
@@ -110,52 +110,6 @@ func _build_ui() -> void:
 	_add_tower_card(tower_hbox, "infantry", "步兵塔", "70G",  Color(0.60, 0.20, 0.20, 1))
 	_add_tower_card(tower_hbox, "artillery","砲兵塔", "100G", Color(0.60, 0.45, 0.10, 1))
 
-	# ── Row 2：狀態 + 按鈕 ─────────────────────────────────
-	var bottom_hbox: HBoxContainer = HBoxContainer.new()
-	bottom_hbox.add_theme_constant_override("separation", 8)
-	main_vbox.add_child(bottom_hbox)
-
-	# 狀態顯示（左側 EXPAND）
-	var status_vbox: VBoxContainer = VBoxContainer.new()
-	status_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	status_vbox.add_theme_constant_override("separation", 2)
-	bottom_hbox.add_child(status_vbox)
-
-	_gold_label = _mk_label("💰 500", Color(1.0, 0.85, 0.20, 1))
-	status_vbox.add_child(_gold_label)
-
-	_wave_label = _mk_label("🌊 0/0", Color(0.70, 0.85, 1.0, 1))
-	status_vbox.add_child(_wave_label)
-
-	_hp_label = _mk_label("🏰 20/20", Color(0.85, 0.40, 0.40, 1))
-	status_vbox.add_child(_hp_label)
-
-	_base_bar = ProgressBar.new()
-	_base_bar.custom_minimum_size = Vector2(100, 6)
-	_base_bar.max_value = 20
-	_base_bar.value = 20
-	_base_bar.show_percentage = false
-	status_vbox.add_child(_base_bar)
-
-	# 按鈕（右側）
-	var btn_hbox: HBoxContainer = HBoxContainer.new()
-	btn_hbox.add_theme_constant_override("separation", 6)
-	bottom_hbox.add_child(btn_hbox)
-
-	_start_btn = Button.new()
-	_start_btn.text = "迎戰"
-	_start_btn.custom_minimum_size = Vector2(BTN_W, BTN_H)
-	_start_btn.add_theme_font_size_override("font_size", 14)
-	_start_btn.pressed.connect(func(): start_btn_pressed.emit())
-	btn_hbox.add_child(_start_btn)
-
-	_auto_btn = Button.new()
-	_auto_btn.text = "自動"
-	_auto_btn.custom_minimum_size = Vector2(BTN_W - 10, BTN_H)
-	_auto_btn.add_theme_font_size_override("font_size", 13)
-	_auto_btn.toggle_mode = true
-	_auto_btn.pressed.connect(func(): auto_btn_pressed.emit())
-	btn_hbox.add_child(_auto_btn)
 
 	# ── 升級/資訊浮動面板（選中塔時出現）──────────────────
 	_info_panel = PanelContainer.new()

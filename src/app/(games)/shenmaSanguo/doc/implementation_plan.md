@@ -1,6 +1,6 @@
 # 《神馬三國》塔防遊戲 - 實作計畫
 
-> 最後更新：2026-04-16
+> 最後更新：2026-04-19
 
 ---
 
@@ -20,7 +20,7 @@
 
 ### GAS 部署資訊
 
-- **部署 URL**：已設定於 `.env.local` 的 `NEXT_PUBLIC_SHENMA_SANGUO_GAS_URL`
+- **部署 URL**：已集中管理於 `src/app/(games)/shenmaSanguo/api/gameApi.ts`
 - **識別機制**：`key` 由玩家自行輸入（任意字串），存於 `localStorage`，無需登入
 - **Key 流程**：玩家輸入 key → 呼叫 `get_profile`；若不存在則呼叫 `create_profile` → 自動建檔
 
@@ -356,7 +356,7 @@ sessionStorage 有 shenma_player_state？
 
 ```
 godot/shenmaSanguo/
-├── project.godot        （1280×720 橫版，GL Compatibility）
+├── project.godot        （540×800 直版 9:~14.8，GL Compatibility）
 ├── export_presets.cfg
 ├── fonts/font.ttf       （繁中字體，解決 Web 端亂碼）
 ├── bridge/
@@ -378,7 +378,23 @@ godot/shenmaSanguo/
 
 ### 玩家容量
 
-- 公式：`Capacity = 10 + (Level * 2)`
+- 公式：`capacity = 10 + level`
+- Lv.1 起始容量 11，每升一級 +1
+- 範例：Lv.10 → 容量 20（可帶 4 小武將+1大武將）；Lv.30 → 容量 40（可帶 5 大武將）
+- 戰鬥結算升級時由 `applyBattleResult` 自動重算，**不需手動維護 `capacity` 欄位**
+
+### 玩家經驗值（EXP）與升級
+
+- **升級門檻**：`level × 100` EXP（Lv.1→100, Lv.2→200, Lv.3→300...）
+- **EXP 獎勵公式（A+C 混合）**：
+
+| 結果 | 基礎 | 星數加成  | 合計範例               |
+| ---- | ---- | --------- | ---------------------- |
+| 勝利 | 50   | 星數 × 20 | 1★=70 / 2★=90 / 3★=110 |
+| 失敗 | 10   | —         | 10（低保）             |
+
+- 升級後 `capacity` 自動更新為 `10 + newLevel`
+- 結算 Modal 顯示本場 EXP 獲得量
 
 ### 武將稀有度與 Cost
 
@@ -520,7 +536,7 @@ godot/shenmaSanguo/
   - 點擊頭像 → 升級 modal（顯示升級費用、升級後屬性預覽）
   - 升級後更新 session → 觸發 debounce 同步
 - [ ] 隊伍編排頁（`/shenmaSanguo/team`）
-  - 選擇武將、容量驗證（`Capacity = 10 + Level * 2`）
+  - 選擇武將、容量驗證（`capacity = 10 + level`）
   - 儲存後更新 session → 觸發 debounce 同步
 - [ ] 關卡選擇頁（`/shenmaSanguo/stages`）
   - 從 `get_all_maps` 讀取，依 session `max_stage` 鎖關

@@ -53,6 +53,7 @@ func initialize(p_total_waves: int, p_stage_id: String, wave_mgr: Node, bridge: 
 	base_hp_changed.emit(base_hp, MAX_BASE_HP)
 	battle_gold_changed.emit(battle_gold)
 	wave_changed.emit(current_wave, total_waves)
+	_sync_stats_to_web()
 
 # ── _process ─────────────────────────────────────────────────
 func _process(delta: float) -> void:
@@ -83,11 +84,13 @@ func spend_gold(amount: int) -> bool:
 		return false
 	battle_gold -= amount
 	battle_gold_changed.emit(battle_gold)
+	_sync_stats_to_web()
 	return true
 
 func earn_gold(amount: int) -> void:
 	battle_gold += amount
 	battle_gold_changed.emit(battle_gold)
+	_sync_stats_to_web()
 
 # ── 敵人事件（由 Main.gd 轉接）────────────────────────────────
 func on_enemy_reached_base() -> void:
@@ -95,6 +98,7 @@ func on_enemy_reached_base() -> void:
 		return
 	base_hp -= 1
 	base_hp_changed.emit(base_hp, MAX_BASE_HP)
+	_sync_stats_to_web()
 	if base_hp <= 0:
 		_end_battle(false)
 
@@ -131,6 +135,7 @@ func _spawn_next_wave() -> void:
 	game_state = GameState.BATTLE
 	state_changed.emit(game_state)
 	wave_changed.emit(current_wave, total_waves)
+	_sync_stats_to_web()
 	auto_timer = 0.0
 	if _wave_manager:
 		_wave_manager.start_wave(current_wave)
@@ -174,3 +179,17 @@ func _end_battle(is_win: bool) -> void:
 	battle_ended.emit(result)
 	if _web_bridge:
 		_web_bridge.send_result(result)
+
+func _sync_stats_to_web() -> void:
+	if _web_bridge == null:
+		return
+	var stats = {
+		"gold": battle_gold,
+		"wave": current_wave,
+		"total_waves": total_waves,
+		"hp": base_hp,
+		"max_hp": MAX_BASE_HP,
+		"game_state": game_state,
+		"auto_mode": auto_mode
+	}
+	_web_bridge.send_stats(stats)

@@ -22,7 +22,7 @@
 
   min-height: 100vh;
   color: var(--sg-text);
-  padding-top: 50px;
+  padding-top: 60px;
 }
 
 /* ── Page container ─────────────────────────────────────── */
@@ -536,6 +536,57 @@
   background: rgba(99, 102, 241, 0.04);
 }
 
+/* ── Stages 版面 ────────────────────────────────────────── */
+.stagesLayout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.stagesTopBar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--sg-surface);
+  border-bottom: 1px solid var(--sg-border);
+  flex-shrink: 0;
+}
+
+.stagesBackBtn {
+  background: none;
+  border: none;
+  color: var(--sg-muted);
+  cursor: pointer;
+  font-size: 1.6rem;
+  line-height: 1;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+.stagesBackBtn:hover {
+  color: var(--sg-text);
+}
+
+.stagesTopTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--sg-text);
+}
+
+.stagesTopSub {
+  font-size: 0.72rem;
+  color: var(--sg-muted);
+  margin-top: 1px;
+}
+
+.stagesScrollArea {
+  flex: 1;
+  overflow-y: auto;
+  padding-top: 1rem;
+}
+
 /* ── Battle 直式版面 ─────────────────────────────────────── */
 .battleLayout {
   display: flex;
@@ -780,4 +831,107 @@
   margin: 0;
   border: 1px solid rgba(0, 0, 0, 0.1);
   white-space: pre;
+}
+
+/* ── Battle Top Bar Stats ───────────────────────────────── */
+.statsRow {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  background: var(--sg-surface2);
+  padding: 2px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--sg-border);
+}
+
+.statItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+}
+
+.statIcon {
+  font-size: 0.85rem;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.1));
+}
+
+.statValue {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--sg-text);
+  font-family: var(--bs-font-monospace), monospace;
+}
+
+.hpBarMini {
+  position: absolute;
+  bottom: -4px;
+  left: 1.2rem;
+  right: 0;
+  height: 2px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 1px;
+  overflow: hidden;
+}
+.hpBarMini::after {
+  content: "";
+  display: block;
+  height: 100%;
+  width: var(--hp-percent, 100%);
+  background: var(--sg-green);
+  transition: width 0.3s ease;
+}
+
+@media (max-width: 400px) {
+  .statsRow {
+    gap: 0.5rem;
+    padding: 2px 8px;
+  }
+  .statValue {
+    font-size: 0.72rem;
+  }
+}
+
+.topBtn {
+  background: var(--sg-surface2);
+  border: 1px solid var(--sg-border);
+  color: var(--sg-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 6px;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+.topBtn:hover {
+  border-color: var(--sg-primary);
+  color: var(--sg-primary);
+}
+.topBtnActive {
+  background: var(--sg-primary);
+  color: #fff !important;
+  border-color: var(--sg-primary);
+}
+
+.topBtnPrimary {
+  background: linear-gradient(135deg, var(--sg-primary), #818cf8);
+  border: none;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 4px 14px;
+  border-radius: 6px;
+  transition: all 0.2s;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.2);
+}
+.topBtnPrimary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+.topBtnPrimary:disabled {
+  background: #e2e8f0;
+  color: #94a3b8;
+  cursor: not-allowed;
+  box-shadow: none;
 }

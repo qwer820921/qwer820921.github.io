@@ -45,24 +45,17 @@ export const useStaticConfigStore = create<StaticConfigStore>((set, get) => ({
 
     set({ isLoading: true, error: null });
     try {
-      // 並行拉取 heroes / enemies / 地圖清單
+      // 並行拉取 heroes / enemies / 全量地圖（含 path_json + waves）
       const [heroesRes, enemiesRes, allMapsRes] = await Promise.all([
         gameApi.getHeroesConfig(),
         gameApi.getEnemiesConfig(),
         gameApi.getAllMaps(),
       ]);
 
-      // 並行拉取每張地圖的完整設定（含 path_json + waves）
-      const mapDetails: MapConfig[] = await Promise.all(
-        (allMapsRes.maps as { map_id: string }[]).map((m) =>
-          gameApi.getMapConfig(m.map_id).then((r) => r.map as MapConfig)
-        )
-      );
-
       const config: StaticConfig = {
         heroesConfig: heroesRes.heroes,
         enemiesConfig: enemiesRes.enemies,
-        maps: mapDetails,
+        maps: allMapsRes.maps as MapConfig[],
       };
 
       sessionStorage.setItem(STATIC_SESSION_KEY, JSON.stringify(config));
