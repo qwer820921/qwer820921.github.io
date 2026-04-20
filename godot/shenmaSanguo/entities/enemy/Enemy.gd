@@ -111,6 +111,12 @@ func take_damage(amount: float) -> void:
 		return
 	current_hp -= amount
 	_flash_timer = FLASH_TIME
+	
+	# 顯示傷害數字
+	var ft = load("res://ui/FloatingText.gd").new()
+	get_parent().add_child(ft)
+	ft.setup("%.0f" % amount, Color(1.0, 0.4, 0.2), global_position)
+
 	if current_hp <= 0.0:
 		current_hp = 0.0
 		_die()

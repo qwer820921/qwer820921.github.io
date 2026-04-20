@@ -109,6 +109,7 @@ func _build_ui() -> void:
 	_add_tower_card(tower_hbox, "archer",   "弓兵塔", "50G",  Color(0.20, 0.65, 0.20, 1))
 	_add_tower_card(tower_hbox, "infantry", "步兵塔", "70G",  Color(0.60, 0.20, 0.20, 1))
 	_add_tower_card(tower_hbox, "artillery","砲兵塔", "100G", Color(0.60, 0.45, 0.10, 1))
+	_add_tower_card(tower_hbox, "cavalry",  "騎兵塔", "120G", Color(0.55, 0.25, 0.65, 1))
 
 
 	# ── 升級/資訊浮動面板（選中塔時出現）──────────────────
@@ -153,6 +154,7 @@ func _job_color(job: String) -> Color:
 		"infantry":  return Color(0.65, 0.20, 0.20, 1)
 		"archer":    return Color(0.20, 0.65, 0.20, 1)
 		"artillery": return Color(0.65, 0.50, 0.10, 1)
+		"cavalry":   return Color(0.55, 0.25, 0.65, 1)
 		_:           return Color(0.20, 0.40, 0.80, 1)
 
 # ── 建立武將卡片 ─────────────────────────────────────────────

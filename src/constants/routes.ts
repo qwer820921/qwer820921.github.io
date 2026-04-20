@@ -28,4 +28,5 @@ export const ROUTES = {
   QR_CODE_GENERATOR: "/qrCodeGenerator", // QRCode產生器
   BOBA_SURVIVORS: "/bobaSurvivors", // 重裝全糖珍奶
   SHENMA_SANGUO: "/shenmaSanguo", // 神馬三國
+  MAP_EDITOR: "/mapEditor", // 地圖編輯器
 };

@@ -290,6 +290,9 @@
 .jobArtillery {
   background: #3b82f6;
 }
+.jobCavalry {
+  background: #8b5cf6;
+}
 
 .heroCardInner {
   padding: 0.65rem 0.75rem;
@@ -596,11 +599,19 @@
   min-height: 100vh;
   padding: 0;
   gap: 0;
+  /* 寬度完全跟隨 Bootstrap Container */
+  --battle-max-w: 100%;
+}
+
+.battleContainer {
+  padding: 0;
+  display: flex;
+  justify-content: center;
 }
 
 .battleTopBar {
   width: 100%;
-  max-width: 480px;
+  max-width: var(--battle-max-w);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -623,7 +634,7 @@
 /* 直式遊戲框 */
 .gamePortraitWrap {
   width: 100%;
-  max-width: 480px;
+  max-width: var(--battle-max-w);
   display: flex;
   justify-content: center;
 }
@@ -663,7 +674,7 @@
 /* 底部隊伍條 */
 .battleTeamStrip {
   width: 100%;
-  max-width: 480px;
+  max-width: var(--battle-max-w);
   background: var(--sg-surface);
   border-top: 1px solid var(--sg-border);
   padding: 0.6rem 1rem;

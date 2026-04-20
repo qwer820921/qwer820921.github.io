@@ -15,6 +15,7 @@ export enum JobClass {
   Infantry = "infantry",
   Archer = "archer",
   Artillery = "artillery",
+  Cavalry = "cavalry",
 }
 
 export enum BattleResult {
@@ -51,6 +52,9 @@ export interface HeroConfig {
   atk_growth: number;
   def_growth: number;
   hp_growth: number;
+  attack_image?: string;
+  range_growth: number;
+  atk_spd_growth: number;
 }
 
 export interface EnemyConfig {

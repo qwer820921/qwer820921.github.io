@@ -33,11 +33,13 @@ const jobLabel: Record<JobClass, string> = {
   [JobClass.Infantry]: "步兵",
   [JobClass.Archer]: "弓兵",
   [JobClass.Artillery]: "砲兵",
+  [JobClass.Cavalry]: "騎兵",
 };
 const jobBarClass: Record<JobClass, string> = {
   [JobClass.Infantry]: styles.jobInfantry,
   [JobClass.Archer]: styles.jobArcher,
   [JobClass.Artillery]: styles.jobArtillery,
+  [JobClass.Cavalry]: styles.jobCavalry,
 };
 const rarityBgClass: Record<Rarity, string> = {
   [Rarity.Orange]: styles.rarityOrange,

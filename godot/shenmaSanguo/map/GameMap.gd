@@ -8,7 +8,9 @@ extends Node2D
 enum TileType { EMPTY, ROAD, BUILD, OBSTACLE, BASE, SPAWN }
 
 # ── 尺寸設定 ──────────────────────────────────────────────────
-var tile_size: int      = 48
+var tile_size: int      = 48   # min(_tile_w, _tile_h)，供 entity 大小使用
+var _tile_w: int        = 48   # 每格寬度（填滿 viewport 寬）
+var _tile_h: int        = 48   # 每格高度（填滿 viewport 高）
 const BOTTOM_UI_H: int  = 160   # 底部 UI 高度（留空給 BattleHUD）
 const MAP_PADDING: int  = 1     # 地圖四周格子邊距
 
@@ -33,6 +35,8 @@ var _base_pos: Vector2i     = Vector2i.ZERO
 var _map_cols: int          = 0
 var _map_rows: int          = 0
 var _map_offset: Vector2    = Vector2.ZERO
+var _json_cols: int         = 0    # 從 path_json 讀取的精確欄數
+var _json_rows: int         = 0    # 從 path_json 讀取的精確列數
 
 # ── 高亮 ──────────────────────────────────────────────────────
 var _hl_cell: Vector2i = Vector2i(-99, -99)
@@ -56,26 +60,25 @@ func setup(path_json: Dictionary) -> void:
 	map_ready.emit()
 
 func _parse_path_json(pj: Dictionary) -> void:
-	# --- paths ---
-	for path_data in pj.get("paths", []):
-		var pid: String = str(path_data.get("id", "path_a"))
-		var wps: Array[Vector2i] = []
-		for wp in path_data.get("waypoints", []):
-			wps.append(Vector2i(int(wp[0]), int(wp[1])))
-		_paths[pid] = wps
-		# 將路徑每一段插值為格子
-		for i in range(wps.size() - 1):
-			_fill_segment(wps[i], wps[i + 1], TileType.ROAD)
-		if not wps.is_empty():
-			_grid[wps[-1]] = TileType.ROAD
+	_json_cols = int(pj.get("cols", 0))
+	_json_rows = int(pj.get("rows", 0))
+	# --- single path from flat waypoints array ---
+	var pid: String = "path_a"
+	var wps: Array[Vector2i] = []
+	for wp in pj.get("waypoints", []):
+		wps.append(Vector2i(int(wp[0]), int(wp[1])))
+	_paths[pid] = wps
+	for i in range(wps.size() - 1):
+		_fill_segment(wps[i], wps[i + 1], TileType.ROAD)
+	if not wps.is_empty():
+		_grid[wps[-1]] = TileType.ROAD
 
-	# --- spawn ---
-	for sp in pj.get("spawn", []):
-		var pid: String = str(sp.get("path", "path_a"))
-		var pos_arr: Array = sp.get("pos", [0, 0])
-		var pos: Vector2i = Vector2i(int(pos_arr[0]), int(pos_arr[1]))
-		_spawn_points[pid] = pos
-		_grid[pos] = TileType.SPAWN
+	# --- spawn: flat [col, row] array ---
+	var spawn_arr: Array = pj.get("spawn", [0, 0])
+	if spawn_arr.size() >= 2:
+		var spos: Vector2i = Vector2i(int(spawn_arr[0]), int(spawn_arr[1]))
+		_spawn_points[pid] = spos
+		_grid[spos] = TileType.SPAWN
 
 	# --- base ---
 	var base_arr: Array = pj.get("base", [0, 0])
@@ -102,9 +105,20 @@ func _fill_segment(from: Vector2i, to: Vector2i, type: TileType) -> void:
 		_grid[cur] = type
 		cur += Vector2i(dc, dr)
 
+const _DEFAULT_TILE_TEXTURES: Dictionary = {
+	"road":     "tile_stone.webp",
+	"build":    "tile_grass.webp",
+	"empty":    "tile_empty.webp",
+	"base":     "tile_fortress.webp",
+	"spawn":    "tile_gate.webp",
+	"obstacle": "tile_dirt.webp",
+}
+
 func _load_tile_textures(pj: Dictionary) -> void:
 	_tile_textures.clear()
-	var tex_map: Dictionary = pj.get("tile_textures", {})
+	# 以 DEFAULT 為底，再用 path_json 的值覆蓋，確保 obstacle 等缺失 key 也能載入
+	var tex_map: Dictionary = _DEFAULT_TILE_TEXTURES.duplicate()
+	tex_map.merge(pj.get("tile_textures", {}), true)
 	for type_key: String in tex_map:
 		var img_name: String = str(tex_map[type_key])
 		var path: String = "res://assets/" + img_name
@@ -123,11 +137,16 @@ func _tile_type_name(t: TileType) -> String:
 func _compute_tile_size() -> void:
 	var vp: Vector2 = get_viewport_rect().size
 	var avail_h: float = vp.y - float(BOTTOM_UI_H)
-	var by_w: int = int(vp.x / max(1, _map_cols))
-	var by_h: int = int(avail_h / max(1, _map_rows))
-	tile_size = max(16, min(by_w, by_h))
+	_tile_w   = max(16, int(vp.x / max(1, _map_cols)))
+	_tile_h   = max(16, int(avail_h / max(1, _map_rows)))
+	tile_size = min(_tile_w, _tile_h)   # entity 大小仍用較小值避免超出格子
 
 func _compute_map_size() -> void:
+	if _json_cols > 0 and _json_rows > 0:
+		_map_cols = _json_cols
+		_map_rows = _json_rows
+		return
+	# fallback：從格子座標推算
 	var max_c: int = 0
 	var max_r: int = 0
 	for pos: Vector2i in _grid:
@@ -138,13 +157,12 @@ func _compute_map_size() -> void:
 
 func _center_map() -> void:
 	var vp: Vector2    = get_viewport_rect().size
-	var map_w: float   = _map_cols * tile_size
-	var map_h: float   = _map_rows * tile_size
+	var map_w: float   = _map_cols * _tile_w
+	var map_h: float   = _map_rows * _tile_h
 	var avail_h: float = vp.y - float(BOTTOM_UI_H)
-	# 水平置中；垂直靠上留 8px，剩餘空白在地圖下方（近 HUD 處）
 	_map_offset = Vector2(
 		(vp.x - map_w) * 0.5,
-		max(8.0, (avail_h - map_h) * 0.15)
+		max(0.0, (avail_h - map_h) * 0.5)
 	)
 
 # ═══════════════════════════════════════════

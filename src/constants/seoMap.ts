@@ -170,6 +170,13 @@ export const seoMap: {
     keywords:
       "神馬三國, 塔防遊戲, 三國遊戲, 策略遊戲, Tower Defense, 武將, 關羽, 趙雲, 線上遊戲, 子yee 萬事屋",
   },
+  [ROUTES.MAP_EDITOR]: {
+    title: "子yee 萬事屋 | 地圖編輯器 - 塔防地圖路徑設計工具",
+    description:
+      "可視化塔防地圖編輯器，自訂格子尺寸、繪製路徑航點、標記障礙物與防禦卡放置區，一鍵輸出標準 JSON 與 Google Sheets 格式，讓地圖設計更直覺高效。",
+    keywords:
+      "地圖編輯器, 塔防地圖, 路徑設計, JSON 輸出, 障礙物設計, 防禦卡, 子yee 萬事屋, 神馬三國",
+  },
   [ROUTES.BOBA_SURVIVORS]: {
     title: "子yee 萬事屋 | 重裝全糖珍奶 - 珍奶主題自動戰鬥生存遊戲",
     description:

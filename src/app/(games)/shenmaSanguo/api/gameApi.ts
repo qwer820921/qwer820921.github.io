@@ -3,7 +3,7 @@
 // body 傳純字串，GAS 用 e.postData.contents 讀取
 
 export const SHENMA_SANGUO_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbwfRU7lwjMWiU3in7gkexsNpZVSJFbLyk3X0E56_va2arMUDvJNNnitKE19Iui3oYKm/exec";
+  "https://script.google.com/macros/s/AKfycbyttV9I8Zmw34dKldbEZLMshke3KDu8uhRIY3B3Z4ZPciJF0W25f7YFLT0_EW4MAlxX/exec";
 
 const GAS_URL = SHENMA_SANGUO_GAS_URL;
 

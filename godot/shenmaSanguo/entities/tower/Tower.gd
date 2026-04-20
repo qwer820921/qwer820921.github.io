@@ -10,7 +10,7 @@ signal tower_clicked(tower: Node)
 signal upgrade_requested(tower: Node, cost: int)
 
 # ── 職業常數 ──────────────────────────────────────────────────
-enum TowerType { ARCHER, INFANTRY, ARTILLERY }
+enum TowerType { ARCHER, INFANTRY, ARTILLERY, CAVALRY }
 
 const TOWER_CONFIGS: Dictionary = {
 	"archer": {
@@ -24,6 +24,7 @@ const TOWER_CONFIGS: Dictionary = {
 		"color":       Color(0.20, 0.65, 0.20, 1),
 		"aoe":         false,
 		"image":       "tower_archer.webp",
+		"scale":       0.9,
 	},
 	"infantry": {
 		"type":        TowerType.INFANTRY,
@@ -37,6 +38,7 @@ const TOWER_CONFIGS: Dictionary = {
 		"aoe":         false,
 		"slow_mult":   0.55,
 		"image":       "tower_infantry.webp",
+		"scale":       1.2,
 	},
 	"artillery": {
 		"type":        TowerType.ARTILLERY,
@@ -50,6 +52,20 @@ const TOWER_CONFIGS: Dictionary = {
 		"aoe":         true,
 		"aoe_radius":  80.0,
 		"image":       "tower_artillery.webp",
+		"scale":       0.9,
+	},
+	"cavalry": {
+		"type":        TowerType.CAVALRY,
+		"name":        "騎兵塔",
+		"atk":         50.0,
+		"atk_spd":     1.20,
+		"range":       1.8,
+		"cost":        120,
+		"upgrade_base": 70,
+		"color":       Color(0.55, 0.25, 0.65, 1),
+		"aoe":         false,
+		"image":       "tower_cavalry.webp",
+		"scale":       1.2,
 	},
 }
 
@@ -69,14 +85,16 @@ var tower_name: String     = "弓兵塔"
 var grid_cell: Vector2i    = Vector2i.ZERO
 var tile_size: int         = 48
 var _texture: Texture2D    = null
+var _texture_atk: Texture2D = null
 var tower_w: int           = 34
 var tower_h: int           = 34
 
 # ── 內部狀態 ──────────────────────────────────────────────────
 var _atk_timer: float      = 0.0
+var _anim_timer: float     = 0.0   # 攻擊動畫計時器
 var _wave_mgr: Node        = null
 var _is_selected: bool     = false
-var _is_attacking: bool    = false  # 用於攻擊動畫閃光
+var _is_attacking: bool    = false  # 用於攻擊狀態識別
 
 # ═══════════════════════════════════════════
 #  初始化
@@ -96,13 +114,23 @@ func setup(type_key: String, cell: Vector2i, wave_mgr: Node) -> void:
 	slow_mult        = float(cfg.get("slow_mult", 1.0))
 	body_color       = cfg["color"]
 	tower_name       = str(cfg["name"])
-	tower_w = max(20, int(tile_size * 0.75))
+	tower_w = max(20, int(tile_size * cfg.get("scale", 0.88)))
 	tower_h = tower_w
 	var img_name: String = str(cfg.get("image", ""))
 	if img_name != "":
 		var path: String = "res://assets/" + img_name
 		if ResourceLoader.exists(path):
 			_texture = load(path) as Texture2D
+		
+		# 優先嘗試尋找 _atk.webp (例如 tower_archer_atk.webp)
+		var atk_path: String = path.replace(".webp", "_atk.webp")
+		if ResourceLoader.exists(atk_path):
+			_texture_atk = load(atk_path) as Texture2D
+		else:
+			# 嘗試尋找 _attack.webp
+			atk_path = path.replace(".webp", "_attack.webp")
+			if ResourceLoader.exists(atk_path):
+				_texture_atk = load(atk_path) as Texture2D
 	queue_redraw()
 
 # ═══════════════════════════════════════════
@@ -110,9 +138,12 @@ func setup(type_key: String, cell: Vector2i, wave_mgr: Node) -> void:
 # ═══════════════════════════════════════════
 func _process(delta: float) -> void:
 	_atk_timer -= delta
-	if _is_attacking:
-		_is_attacking = false
-		queue_redraw()
+	
+	if _anim_timer > 0.0:
+		_anim_timer -= delta
+		if _anim_timer <= 0.0:
+			_is_attacking = false
+			queue_redraw()
 
 	if _atk_timer > 0.0 or not _wave_mgr:
 		return
@@ -133,6 +164,7 @@ func _process(delta: float) -> void:
 		target.take_damage(atk)
 
 	_is_attacking = true
+	_anim_timer   = 0.22  # 攻擊圖顯示時長
 	_atk_timer    = atk_spd
 	queue_redraw()
 
@@ -212,9 +244,12 @@ func _draw() -> void:
 		draw_arc(Vector2.ZERO, range_tiles * tile_size, 0, TAU, 48, Color(1.0, 0.2, 0.2, 0.7), 2.5)
 
 	# 塔身
-	if _texture != null:
-		draw_texture_rect(_texture, body_rect, false)
-		if flash:
+	var current_tex = _texture_atk if (_is_attacking and _texture_atk) else _texture
+	
+	if current_tex != null:
+		draw_texture_rect(current_tex, body_rect, false)
+		if _is_attacking and not _texture_atk:
+			# 如果沒有攻擊貼圖，則使用原本的白光閃爍效果
 			draw_rect(body_rect, Color(1.0, 1.0, 1.0, 0.5))
 	else:
 		draw_rect(Rect2(Vector2(-half_w, -half_h) + Vector2(2, 2),

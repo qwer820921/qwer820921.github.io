@@ -18,11 +18,13 @@ const jobLabel: Record<JobClass, string> = {
   [JobClass.Infantry]: "步",
   [JobClass.Archer]: "弓",
   [JobClass.Artillery]: "砲",
+  [JobClass.Cavalry]: "騎",
 };
 const jobBarClass: Record<JobClass, string> = {
   [JobClass.Infantry]: styles.jobInfantry,
   [JobClass.Archer]: styles.jobArcher,
   [JobClass.Artillery]: styles.jobArtillery,
+  [JobClass.Cavalry]: styles.jobCavalry,
 };
 
 function resolveHeroState(

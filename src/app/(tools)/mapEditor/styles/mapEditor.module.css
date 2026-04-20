@@ -1,0 +1,348 @@
+/* 地圖編輯器頁面樣式 */
+
+.container {
+  padding-top: 1.5rem;
+  padding-bottom: 3rem;
+  max-width: 1200px;
+}
+
+.pageTitle {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.pageSub {
+  font-size: 0.82rem;
+  color: #6b7280;
+  margin-bottom: 1.5rem;
+}
+
+/* ── 工具列 ── */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.toolBtn {
+  padding: 0.35rem 0.85rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+  user-select: none;
+}
+
+.toolBtn:hover {
+  background: #f3f4f6;
+}
+
+.toolBtnActive {
+  background: #1e40af;
+  color: #fff;
+  border-color: #1e40af;
+}
+
+.toolBtnActive:hover {
+  background: #1d3a9e;
+}
+
+.toolBtnDanger {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.toolBtnDanger:hover {
+  background: #fef2f2;
+}
+
+.toolSep {
+  width: 1px;
+  height: 1.5rem;
+  background: #d1d5db;
+  margin: 0 0.25rem;
+}
+
+.toolLabel {
+  font-size: 0.78rem;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+/* ── 尺寸設定 ── */
+.sizeControl {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.sizeInput {
+  width: 56px;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+/* ── 主體佈局 ── */
+.editorBody {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+/* ── 格子區 ── */
+.gridWrap {
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f3f4f6;
+  flex-shrink: 0;
+  max-width: 100%;
+  max-height: 72vh;
+  cursor: crosshair;
+  user-select: none;
+}
+
+.grid {
+  display: inline-grid;
+  gap: 1px;
+  padding: 1px;
+  background: #d1d5db;
+}
+
+.cell {
+  width: 36px;
+  height: 36px;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.62rem;
+  font-weight: 700;
+  transition: filter 0.1s;
+  cursor: crosshair;
+  box-sizing: border-box;
+}
+
+.cell:hover {
+  filter: brightness(0.88);
+}
+
+.cellEmpty {
+  background: #e5e7eb;
+}
+
+.cellRoad {
+  background: #fcd34d;
+}
+
+.cellBuild {
+  background: #86efac;
+}
+
+.cellObstacle {
+  background: #6b7280;
+}
+
+.cellWaypoint {
+  background: #fcd34d;
+  border: 2px solid #f59e0b;
+}
+
+.cellSpawn {
+  background: #fcd34d;
+  border: 2px solid #10b981;
+}
+
+.cellBase {
+  background: #fcd34d;
+  border: 2px solid #ef4444;
+}
+
+/* ── 側邊面板 ── */
+.sidePanel {
+  min-width: 260px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.panelCard {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.panelTitle {
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  color: #374151;
+}
+
+.textureRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.textureLabel {
+  font-size: 0.78rem;
+  color: #6b7280;
+  width: 48px;
+  flex-shrink: 0;
+}
+
+.textureInput {
+  flex: 1;
+  padding: 0.28rem 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  font-size: 0.78rem;
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.metaLabel {
+  font-size: 0.78rem;
+  color: #6b7280;
+  width: 56px;
+  flex-shrink: 0;
+}
+
+.metaInput {
+  flex: 1;
+  padding: 0.28rem 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  font-size: 0.78rem;
+}
+
+.waypointList {
+  font-size: 0.75rem;
+  color: #374151;
+  line-height: 1.8;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.waypointItem {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.waypointBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #1e40af;
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.waypointBadgeSpawn {
+  background: #10b981;
+}
+
+.waypointBadgeBase {
+  background: #ef4444;
+}
+
+/* ── 輸出區 ── */
+.outputCard {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1.25rem;
+}
+
+.outputTitle {
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  color: #374151;
+}
+
+.outputTabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.outputTab {
+  padding: 0.3rem 0.9rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.outputTabActive {
+  background: #1e40af;
+  color: #fff;
+  border-color: #1e40af;
+}
+
+.outputPre {
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+  font-size: 0.72rem;
+  line-height: 1.55;
+  overflow: auto;
+  max-height: 320px;
+  white-space: pre;
+  font-family: "Fira Code", "Cascadia Code", monospace;
+}
+
+.copyBtn {
+  margin-top: 0.6rem;
+  padding: 0.35rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #f9fafb;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.copyBtn:hover {
+  background: #f3f4f6;
+}
+
+.copyBtnOk {
+  border-color: #10b981;
+  color: #10b981;
+  background: #f0fdf4;
+}
