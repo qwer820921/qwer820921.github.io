@@ -17,7 +17,7 @@ interface TenMinEmailState {
   clearMail: () => void;
 }
 
-const API_BASE_URL = "https://temp-mail-api.qwer820921.workers.dev";
+const API_BASE_URL = "https://zyee-core-api.qwer820921.workers.dev";
 
 export const useTenMinEmailStore = create<TenMinEmailState>()(
   persist(
@@ -32,7 +32,21 @@ export const useTenMinEmailStore = create<TenMinEmailState>()(
       createMail: async () => {
         set({ isLoading: true, error: null });
         try {
-          const response = await fetch(`${API_BASE_URL}/api/create`);
+          const response = await fetch(`${API_BASE_URL}/api/mail/create`);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(
+              `Create mail failed with status ${response.status}:`,
+              errorText
+            );
+            set({
+              error: `伺服器回傳錯誤 (${response.status})`,
+              isLoading: false,
+            });
+            return;
+          }
+
           const data: CreateResponse = await response.json();
 
           if (data.success) {
@@ -43,7 +57,7 @@ export const useTenMinEmailStore = create<TenMinEmailState>()(
               isLoading: false,
             });
           } else {
-            set({ error: "無法建立信箱", isLoading: false });
+            set({ error: data.message || "無法建立信箱", isLoading: false });
           }
         } catch (err) {
           set({ error: "網路連線錯誤", isLoading: false });
@@ -65,8 +79,19 @@ export const useTenMinEmailStore = create<TenMinEmailState>()(
           const encodedEmail = encodeURIComponent(currentEmail);
           console.log(`Checking inbox for: ${currentEmail}`);
           const response = await fetch(
-            `${API_BASE_URL}/api/check?email=${encodedEmail}`
+            `${API_BASE_URL}/api/mail/check?email=${encodedEmail}`
           );
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(
+              `Fetch inbox failed with status ${response.status}:`,
+              errorText
+            );
+            // Don't set state error for background fetch unless critical
+            return;
+          }
+
           const data: CheckResponse = await response.json();
           console.log("Inbox response:", data);
 
@@ -93,8 +118,19 @@ export const useTenMinEmailStore = create<TenMinEmailState>()(
         try {
           const encodedEmail = encodeURIComponent(currentEmail);
           const response = await fetch(
-            `${API_BASE_URL}/api/extend?email=${encodedEmail}`
+            `${API_BASE_URL}/api/mail/extend?email=${encodedEmail}`
           );
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(
+              `Extend mail failed with status ${response.status}:`,
+              errorText
+            );
+            set({ error: `延長失敗 (${response.status})` });
+            return;
+          }
+
           const data = await response.json();
 
           if (data.success) {
@@ -123,8 +159,19 @@ export const useTenMinEmailStore = create<TenMinEmailState>()(
         try {
           const encodedEmail = encodeURIComponent(currentEmail);
           const response = await fetch(
-            `${API_BASE_URL}/api/message-detail?email=${encodedEmail}&id=${id}`
+            `${API_BASE_URL}/api/mail/message-detail?email=${encodedEmail}&id=${id}`
           );
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(
+              `Fetch detail failed with status ${response.status}:`,
+              errorText
+            );
+            set({ isMessageLoading: false });
+            return;
+          }
+
           const data = await response.json();
 
           if (data.success && data.message) {

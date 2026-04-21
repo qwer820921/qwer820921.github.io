@@ -19,6 +19,7 @@ export interface CreateResponse {
   success: boolean;
   email: string;
   expires_in: number;
+  message?: string;
 }
 
 export interface CheckResponse {
