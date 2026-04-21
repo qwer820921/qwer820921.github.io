@@ -1,0 +1,240 @@
+/* 物件 Tab 樣式 */
+
+/* ── 子 Tab 導覽 ── */
+.subTabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 2px solid #e5e7eb;
+  padding-bottom: 0;
+}
+
+.subTab {
+  padding: 0.45rem 1.2rem;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: #6b7280;
+  transition:
+    background 0.15s,
+    color 0.15s;
+  margin-bottom: -2px;
+}
+
+.subTab:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.subTabActive {
+  background: #fff;
+  border-color: #e5e7eb;
+  border-bottom-color: #fff;
+  color: #1e40af;
+  font-weight: 600;
+}
+
+/* ── 操作列 ── */
+.actionBar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.actionBtn {
+  padding: 0.38rem 0.9rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+  white-space: nowrap;
+}
+
+.actionBtn:hover {
+  background: #f3f4f6;
+}
+
+.actionBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.actionBtnPrimary {
+  background: #1e40af;
+  color: #fff;
+  border-color: #1e40af;
+}
+
+.actionBtnPrimary:hover {
+  background: #1d3a9e;
+}
+
+.actionBtnDanger {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.actionBtnDanger:hover {
+  background: #fef2f2;
+}
+
+.actionBtnSuccess {
+  background: #059669;
+  color: #fff;
+  border-color: #059669;
+}
+
+.actionBtnSuccess:hover {
+  background: #047857;
+}
+
+/* ── 狀態提示 ── */
+.statusMsg {
+  font-size: 0.78rem;
+  margin-left: auto;
+}
+
+.statusOk {
+  color: #10b981;
+}
+.statusErr {
+  color: #ef4444;
+}
+.statusBusy {
+  color: #6b7280;
+}
+
+/* ── 可編輯表格容器 ── */
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+/* ── 設定表格 ── */
+.configTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  min-width: 900px;
+}
+
+.configTable thead tr {
+  background: #f1f5f9;
+}
+
+.configTable th {
+  padding: 0.45rem 0.5rem;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+  border-bottom: 1px solid #e5e7eb;
+  position: sticky;
+  top: 0;
+  background: #f1f5f9;
+}
+
+.configTable td {
+  padding: 0.25rem 0.3rem;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+
+.configTable tr:hover td {
+  background: #f9fafb;
+}
+
+.configTable tr:last-child td {
+  border-bottom: none;
+}
+
+/* ── 表格內 input / select ── */
+.configInput {
+  width: 100%;
+  min-width: 70px;
+  padding: 0.22rem 0.38rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  background: transparent;
+  box-sizing: border-box;
+  transition:
+    border-color 0.12s,
+    background 0.12s;
+}
+
+.configInput:focus {
+  outline: none;
+  border-color: #3b82f6;
+  background: #fff;
+}
+
+.configInput:hover {
+  border-color: #d1d5db;
+  background: #fff;
+}
+
+.configInputWide {
+  min-width: 110px;
+}
+
+.configInputNum {
+  min-width: 60px;
+  text-align: right;
+}
+
+.configSelect {
+  width: 100%;
+  min-width: 80px;
+  padding: 0.22rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  background: transparent;
+  box-sizing: border-box;
+  transition:
+    border-color 0.12s,
+    background 0.12s;
+}
+
+.configSelect:focus,
+.configSelect:hover {
+  outline: none;
+  border-color: #3b82f6;
+  background: #fff;
+}
+
+/* ── 刪除按鈕 ── */
+.deleteBtn {
+  padding: 0.18rem 0.45rem;
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+  background: #fff;
+  color: #ef4444;
+  font-size: 0.72rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+
+.deleteBtn:hover {
+  background: #fef2f2;
+}
+
+/* ── 空狀態 ── */
+.emptyHint {
+  padding: 2rem;
+  text-align: center;
+  font-size: 0.82rem;
+  color: #9ca3af;
+}

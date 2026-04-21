@@ -11,7 +11,7 @@ enum TileType { EMPTY, ROAD, BUILD, OBSTACLE, BASE, SPAWN }
 var tile_size: int      = 48   # min(_tile_w, _tile_h)，供 entity 大小使用
 var _tile_w: int        = 48   # 每格寬度（填滿 viewport 寬）
 var _tile_h: int        = 48   # 每格高度（填滿 viewport 高）
-const BOTTOM_UI_H: int  = 160   # 底部 UI 高度（留空給 BattleHUD）
+const TOP_UI_H: int  = 160   # 頂部 UI 高度（留空給 BattleHUD）
 const MAP_PADDING: int  = 1     # 地圖四周格子邊距
 
 # ── 顏色 ──────────────────────────────────────────────────────
@@ -62,39 +62,65 @@ func setup(path_json: Dictionary) -> void:
 func _parse_path_json(pj: Dictionary) -> void:
 	_json_cols = int(pj.get("cols", 0))
 	_json_rows = int(pj.get("rows", 0))
-	# --- single path from flat waypoints array ---
-	var pid: String = "path_a"
-	var wps: Array[Vector2i] = []
-	for wp in pj.get("waypoints", []):
-		wps.append(Vector2i(int(wp[0]), int(wp[1])))
-	_paths[pid] = wps
-	for i in range(wps.size() - 1):
-		_fill_segment(wps[i], wps[i + 1], TileType.ROAD)
-	if not wps.is_empty():
-		_grid[wps[-1]] = TileType.ROAD
+	
+	_paths.clear()
+	_spawn_points.clear()
 
-	# --- spawn: flat [col, row] array ---
-	var spawn_arr: Array = pj.get("spawn", [0, 0])
-	if spawn_arr.size() >= 2:
-		var spos: Vector2i = Vector2i(int(spawn_arr[0]), int(spawn_arr[1]))
-		_spawn_points[pid] = spos
-		_grid[spos] = TileType.SPAWN
+	# 1. 優先處理新版多路徑格式 (paths: { "path_a": [...], "path_b": [...] })
+	if pj.has("paths"):
+		var pths: Dictionary = pj["paths"]
+		for pid in pths:
+			var raw_pts: Array = pths[pid]
+			var wps: Array[Vector2i] = []
+			for wp in raw_pts:
+				wps.append(Vector2i(int(wp[0]), int(wp[1])))
+			
+			_paths[pid] = wps
+			
+			# 標記格子為 ROAD 並填充路徑
+			for i in range(wps.size() - 1):
+				_fill_segment(wps[i], wps[i + 1], TileType.ROAD)
+			if not wps.is_empty():
+				_grid[wps[-1]] = TileType.ROAD
+				
+			# 設定生成點 (該路徑的第一個點)
+			if not wps.is_empty():
+				_spawn_points[pid] = wps[0]
+				# 標記為 SPAWN (如果還沒被標記)
+				if not _grid.has(wps[0]) or _grid[wps[0]] == TileType.ROAD:
+					_grid[wps[0]] = TileType.SPAWN
 
-	# --- base ---
+	# 2. 如果沒有 paths 但有 waypoints (舊版相容)
+	elif pj.has("waypoints"):
+		var pid: String = "path_a"
+		var raw_pts: Array = pj["waypoints"]
+		var wps: Array[Vector2i] = []
+		for wp in raw_pts:
+			wps.append(Vector2i(int(wp[0]), int(wp[1])))
+		
+		_paths[pid] = wps
+		for i in range(wps.size() - 1):
+			_fill_segment(wps[i], wps[i + 1], TileType.ROAD)
+		if not wps.is_empty():
+			_grid[wps[-1]] = TileType.ROAD
+			_spawn_points[pid] = wps[0]
+			_grid[wps[0]] = TileType.SPAWN
+
+	# 3. 基地 (由 JSON 明確指定)
 	var base_arr: Array = pj.get("base", [0, 0])
-	_base_pos    = Vector2i(int(base_arr[0]), int(base_arr[1]))
+	_base_pos = Vector2i(int(base_arr[0]), int(base_arr[1]))
 	_grid[_base_pos] = TileType.BASE
 
-	# --- build_zones ---
+	# 4. 建築區 (不覆蓋 ROAD / BASE / SPAWN)
 	for bz in pj.get("build_zones", []):
 		var bpos: Vector2i = Vector2i(int(bz[0]), int(bz[1]))
-		if not _grid.has(bpos):   # 不覆蓋 ROAD / BASE / SPAWN
+		if not _grid.has(bpos):
 			_grid[bpos] = TileType.BUILD
 
-	# --- obstacles ---
+	# 5. 障礙物 (不覆蓋 ROAD / BASE / SPAWN)
 	for ob in pj.get("obstacles", []):
 		var opos: Vector2i = Vector2i(int(ob[0]), int(ob[1]))
-		if not _grid.has(opos):   # 不覆蓋 ROAD / BASE / SPAWN
+		if not _grid.has(opos):
 			_grid[opos] = TileType.OBSTACLE
 
 func _fill_segment(from: Vector2i, to: Vector2i, type: TileType) -> void:
@@ -136,7 +162,7 @@ func _tile_type_name(t: TileType) -> String:
 
 func _compute_tile_size() -> void:
 	var vp: Vector2 = get_viewport_rect().size
-	var avail_h: float = vp.y - float(BOTTOM_UI_H)
+	var avail_h: float = vp.y - float(TOP_UI_H)
 	_tile_w   = max(16, int(vp.x / max(1, _map_cols)))
 	_tile_h   = max(16, int(avail_h / max(1, _map_rows)))
 	tile_size = min(_tile_w, _tile_h)   # entity 大小仍用較小值避免超出格子
@@ -159,10 +185,10 @@ func _center_map() -> void:
 	var vp: Vector2    = get_viewport_rect().size
 	var map_w: float   = _map_cols * _tile_w
 	var map_h: float   = _map_rows * _tile_h
-	var avail_h: float = vp.y - float(BOTTOM_UI_H)
+	var avail_h: float = vp.y - float(TOP_UI_H)
 	_map_offset = Vector2(
 		(vp.x - map_w) * 0.5,
-		max(0.0, (avail_h - map_h) * 0.5)
+		TOP_UI_H + max(0.0, (avail_h - map_h) * 0.5)
 	)
 
 # ═══════════════════════════════════════════
@@ -170,14 +196,18 @@ func _center_map() -> void:
 # ═══════════════════════════════════════════
 func _draw() -> void:
 	var vp: Vector2 = get_viewport_rect().size
-	# 背景：用 empty 貼圖鋪滿整個視口；無貼圖時用純色
+	# 背景：用 empty 貼圖鋪滿整個視口；無貼圖時用純色，需要對齊 _map_offset
 	if _tile_textures.has("empty"):
 		var bg_tex: Texture2D = _tile_textures["empty"]
 		var ts: float = float(tile_size)
-		for col in range(int(ceil(vp.x / ts)) + 1):
-			for row in range(int(ceil(vp.y / ts)) + 1):
+		var start_x: float = fmod(_map_offset.x, ts) - ts
+		var start_y: float = fmod(_map_offset.y, ts) - ts
+		var max_c: int = int(ceil(vp.x / ts)) + 2
+		var max_r: int = int(ceil(vp.y / ts)) + 2
+		for col in range(max_c):
+			for row in range(max_r):
 				draw_texture_rect(bg_tex,
-					Rect2(Vector2(col * ts, row * ts), Vector2(ts, ts)), false)
+					Rect2(Vector2(start_x + col * ts, start_y + row * ts), Vector2(ts, ts)), false)
 	else:
 		draw_rect(Rect2(Vector2.ZERO, vp), COLOR_BG)
 

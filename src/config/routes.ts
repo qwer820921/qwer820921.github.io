@@ -64,7 +64,12 @@ const routes: RouteGroup[] = [
         name: "QRCode產生器",
         showInNavbar: true,
       },
-      { path: ROUTES.MAP_EDITOR, name: "地圖編輯器", showInNavbar: false },
+      {
+        path: ROUTES.MAP_EDITOR,
+        name: "地圖編輯器",
+        showInNavbar: true,
+        protected: true,
+      },
     ],
   },
   {

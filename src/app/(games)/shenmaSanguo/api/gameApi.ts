@@ -3,7 +3,7 @@
 // body 傳純字串，GAS 用 e.postData.contents 讀取
 
 export const SHENMA_SANGUO_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbyttV9I8Zmw34dKldbEZLMshke3KDu8uhRIY3B3Z4ZPciJF0W25f7YFLT0_EW4MAlxX/exec";
+  "https://script.google.com/macros/s/AKfycby9ihuxuXZgJRK6iRbO4sOOxsWGCeqwPaNTK0Dr3JybbdL6BHB_pcHDhZ_Vz6OISYDS/exec";
 
 const GAS_URL = SHENMA_SANGUO_GAS_URL;
 
@@ -60,13 +60,27 @@ export const gameApi = {
   upgradeHero: (key: string, heroId: string) =>
     callGAS("upgrade_hero", key, { hero_id: heroId }),
 
-  // ── 靜態設定 ──
+  // ── 靜態設定（讀取）──
 
   getHeroesConfig: () => callGAS("get_heroes_config"),
   getEnemiesConfig: () => callGAS("get_enemies_config"),
   getAllMaps: () => callGAS("get_all_maps"),
   getMapConfig: (mapId: string) =>
     callGAS("get_map_config", undefined, { map_id: mapId }),
+
+  // ── 靜態設定（寫入）──
+
+  /**
+   * 批次覆寫整張 enemies_config sheet
+   */
+  saveEnemiesConfig: (enemies: object[]) =>
+    callGAS("save_enemies_config", undefined, { enemies }),
+
+  /**
+   * 批次覆寫整張 heroes_config sheet
+   */
+  saveHeroesConfig: (heroes: object[]) =>
+    callGAS("save_heroes_config", undefined, { heroes }),
 };
 
 // ── localStorage key 管理 ──

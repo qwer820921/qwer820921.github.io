@@ -15,7 +15,44 @@
 .pageSub {
   font-size: 0.82rem;
   color: #6b7280;
+  margin-bottom: 1rem;
+}
+
+/* ── 頁面 Tab 導覽 ── */
+.pageTabs {
+  display: flex;
+  gap: 0.4rem;
   margin-bottom: 1.5rem;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.pageTab {
+  padding: 0.5rem 1.4rem;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  color: #6b7280;
+  transition:
+    background 0.15s,
+    color 0.15s;
+  margin-bottom: -2px;
+}
+
+.pageTab:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.pageTabActive {
+  background: #fff;
+  border-color: #e5e7eb;
+  border-bottom-color: #fff;
+  color: #1e40af;
+  font-weight: 700;
 }
 
 /* ── 工具列 ── */
@@ -105,6 +142,15 @@
   flex-wrap: wrap;
 }
 
+/* ── 格子欄（格子 + 波次垂直排列）── */
+.gridCol {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
 /* ── 格子區 ── */
 .gridWrap {
   overflow: auto;
@@ -134,6 +180,10 @@
   justify-content: center;
   font-size: 0.62rem;
   font-weight: 700;
+  color: #fff;
+  text-shadow:
+    0 0 3px #000,
+    0 0 6px #000;
   transition: filter 0.1s;
   cursor: crosshair;
   box-sizing: border-box;
@@ -144,34 +194,46 @@
 }
 
 .cellEmpty {
-  background: #e5e7eb;
 }
 
 .cellRoad {
-  background: #fcd34d;
 }
 
 .cellBuild {
-  background: #86efac;
 }
 
 .cellObstacle {
-  background: #6b7280;
 }
 
 .cellWaypoint {
-  background: #fcd34d;
   border: 2px solid #f59e0b;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+.cellPath_path_a {
+  filter: hue-rotate(0deg);
+}
+.cellPath_path_b {
+  filter: hue-rotate(120deg) brightness(1.2);
+}
+.cellPath_path_c {
+  filter: hue-rotate(240deg) brightness(1.2);
+}
+.cellPath_path_d {
+  filter: hue-rotate(90deg) brightness(1.2);
+}
+.cellPath_path_e {
+  filter: hue-rotate(270deg) brightness(1.2);
 }
 
 .cellSpawn {
-  background: #fcd34d;
   border: 2px solid #10b981;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
 }
 
 .cellBase {
-  background: #fcd34d;
   border: 2px solid #ef4444;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
 }
 
 /* ── 側邊面板 ── */
@@ -190,6 +252,23 @@
   padding: 1rem;
 }
 
+/* ── Tile Textures 全寬卡片 ── */
+.textureCard {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1.25rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.textureGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2rem;
+}
+
 .panelTitle {
   font-size: 0.88rem;
   font-weight: 700;
@@ -199,24 +278,100 @@
 
 .textureRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.6rem;
 }
 
 .textureLabel {
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   color: #6b7280;
-  width: 48px;
+  width: 52px;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+
+.textureOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  flex: 1;
+}
+
+.textureOption {
+  width: 32px;
+  height: 32px;
+  padding: 1px;
+  border: 2px solid transparent;
+  border-radius: 5px;
+  background: #f3f4f6;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    border-color 0.1s,
+    transform 0.1s,
+    box-shadow 0.1s;
   flex-shrink: 0;
 }
 
-.textureInput {
+.textureOption:hover {
+  border-color: #93c5fd;
+  transform: scale(1.08);
+}
+
+.textureOptionSelected {
+  border: 3px solid #1d4ed8;
+  background: #dbeafe;
+  transform: scale(1.15);
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 4px #3b82f6,
+    0 2px 8px rgba(59, 130, 246, 0.5);
+}
+
+/* ── Sheet 連動 ── */
+.sheetPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sheetRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sheetInput {
   flex: 1;
   padding: 0.28rem 0.5rem;
   border: 1px solid #d1d5db;
   border-radius: 5px;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
+}
+
+.sheetBtnRow {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.sheetStatus {
+  font-size: 0.72rem;
+  min-height: 1rem;
+}
+
+.sheetStatusOk {
+  color: #10b981;
+}
+
+.sheetStatusErr {
+  color: #ef4444;
+}
+
+.sheetStatusBusy {
+  color: #6b7280;
 }
 
 .metaRow {
@@ -345,4 +500,183 @@
   border-color: #10b981;
   color: #10b981;
   background: #f0fdf4;
+}
+
+/* ── 波次編輯器 ── */
+.waveCard {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.wavePanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.wavePanelActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.waveItem {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  background: #f9fafb;
+}
+
+.waveItemHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.waveItemTitle {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #374151;
+}
+
+.waveTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  margin-bottom: 0.5rem;
+}
+
+.waveTable th {
+  text-align: left;
+  padding: 0.2rem 0.4rem;
+  color: #6b7280;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.waveTable td {
+  padding: 0.2rem 0.3rem;
+}
+
+.waveSelect {
+  padding: 0.25rem 0.35rem;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  font-size: 0.78rem;
+  background: #fff;
+  min-width: 120px;
+}
+
+.waveNumInput {
+  width: 56px;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.waveIntervalInput {
+  width: 64px;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.waveSaveBtn {
+  background: #1e40af;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.35rem 1rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.waveSaveBtn:hover {
+  background: #1d3a9e;
+}
+
+.waveStatusOk {
+  font-size: 0.72rem;
+  color: #10b981;
+}
+.waveStatusErr {
+  font-size: 0.72rem;
+  color: #ef4444;
+}
+.waveStatusBusy {
+  font-size: 0.72rem;
+  color: #6b7280;
+}
+
+/* ── Modal ── */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 10px;
+  padding: 1.5rem;
+  width: 360px;
+  max-width: calc(100vw - 2rem);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+.modalTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 1.25rem;
+}
+
+.modalField {
+  margin-bottom: 0.85rem;
+}
+
+.modalLabel {
+  display: block;
+  font-size: 0.78rem;
+  color: #6b7280;
+  margin-bottom: 0.3rem;
+}
+
+.modalInput {
+  width: 100%;
+  padding: 0.38rem 0.55rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  box-sizing: border-box;
+}
+
+.modalInput:focus {
+  outline: none;
+  border-color: #1e40af;
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.toolbarRight {
+  margin-left: auto;
 }

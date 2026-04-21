@@ -15,7 +15,7 @@ signal battle_ended(result: Dictionary)
 signal auto_mode_changed(enabled: bool)
 
 # ── 常數 ──────────────────────────────────────────────────────
-const INITIAL_GOLD: int        = 500
+const INITIAL_GOLD: int        = 5000
 const GOLD_PER_KILL: int       = 5
 const AUTO_WAVE_INTERVAL: float  = 30.0
 const MAX_BASE_HP: int         = 20

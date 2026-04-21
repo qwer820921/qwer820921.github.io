@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
 import MapEditorPage from "./components/mapEditorPage";
@@ -29,5 +31,14 @@ export const metadata = {
 };
 
 export default function Page() {
-  return <MapEditorPage />;
+  let tileImages: string[] = [];
+  try {
+    const imgDir = path.join(process.cwd(), "public/images/shenmaSanguo");
+    tileImages = fs
+      .readdirSync(imgDir)
+      .filter((f) => /\.(webp|png|jpg|jpeg|gif)$/i.test(f))
+      .sort();
+  } catch {}
+
+  return <MapEditorPage tileImages={tileImages} />;
 }

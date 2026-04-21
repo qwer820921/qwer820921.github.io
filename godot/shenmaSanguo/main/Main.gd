@@ -184,6 +184,11 @@ func _on_drag_hero_started(hero_data: Dictionary) -> void:
 	drag_ghost.start_drag("hero", hero_data.get("hero_id", "?"), Color(0.20, 0.40, 0.80, 0.75))
 
 func _on_drag_tower_started(tower_type: String) -> void:
+	var cfg = Tower.TOWER_CONFIGS.get(tower_type, {})
+	var cost: int = int(cfg.get("cost", 50))
+	if not battle_manager.can_spend_gold(cost):
+		return  # 金幣不足，不允許拖拉
+
 	_moving_unit     = null
 	_drag_type       = DragType.TOWER
 	_drag_tower_type = tower_type
@@ -229,10 +234,12 @@ func _on_unit_move_requested(unit: Node) -> void:
 func _on_upgrade_panel_closed() -> void:
 	_deselect_unit()
 
-func _input(event: InputEvent) -> void:
-	# --- 新增：偵測「點擊」地圖上的單位或空地 ---
+func _unhandled_input(event: InputEvent) -> void:
+	# --- 偵測「點擊」地圖上的單位或空地 ---
+	# 只有在事件未被 UI 攔截時才會進入這裡
 	if not _is_dragging and event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var cell: Vector2i = game_map.world_to_grid(event.position)
+		var mouse_pos: Vector2 = get_global_mouse_position()
+		var cell: Vector2i = game_map.world_to_grid(mouse_pos)
 		if game_map.is_valid_cell(cell):
 			var unit: Node = game_map.get_occupant(cell)
 			if unit != null:
@@ -251,6 +258,7 @@ func _input(event: InputEvent) -> void:
 				_deselect_unit()
 				battle_hud.hide_upgrade_panel()
 
+func _input(event: InputEvent) -> void:
 	if not _is_dragging:
 		return
 
@@ -358,9 +366,10 @@ func _on_tower_clicked(tower: Node) -> void:
 	_deselect_unit()
 	_selected_unit = tower
 	tower.set_selected(true)
-	var cam: Camera2D = get_viewport().get_camera_2d()
-	var screen_pos: Vector2 = cam.get_screen_center_position() if cam else tower.global_position
-	battle_hud.show_upgrade_panel(tower, tower.global_position, battle_manager.spend_gold(0)) # 傳入 0 只是為了檢查金幣，實際檢查邏輯在 HUD
+	
+	var pos_screen: Vector2 = tower.get_global_transform_with_canvas().origin
+	var can_afford: bool    = battle_manager.can_spend_gold(tower.get_upgrade_cost())
+	battle_hud.show_upgrade_panel(tower, pos_screen, can_afford)
 	
 	# 直接進入移動模式（僅限備戰期間）
 	if battle_manager.game_state == BattleManager.GameState.PREP:
@@ -411,12 +420,35 @@ func _inject_test_payload() -> void:
 		],
 		"map": {
 			"map_id": "chapter1_1",
-			"name": "汜水關",
+			"name": "汜水關（雙路）",
+			# ─────────────────────────────────────────────────────
+			# 地圖 14×11（cols 0-13, rows 0-10）
+			#
+			# path_a（上路，橘色出生點 [0,2]）：
+			#   [0,2] → [6,2] → [6,9] → [13,9]
+			#
+			# path_b（下路，橘色出生點 [0,7]）：
+			#   [0,7] → [4,7] → [4,4] → [10,4] → [10,9] → [13,9]
+			#
+			# base 終點：[13,9]
+			# ─────────────────────────────────────────────────────
 			"path_json": {
-				"paths": [
-					{ "id": "path_a", "waypoints": [[0,2],[11,2],[11,6],[2,6],[2,9],[13,9]] }
-				],
-				"spawn": [{ "path": "path_a", "pos": [0,2] }],
+				"cols": 14,
+				"rows": 11,
+				"paths": {
+					"path_a": [
+						[0,2],[1,2],[2,2],[3,2],[4,2],[5,2],[6,2],
+						[6,3],[6,4],[6,5],[6,6],[6,7],[6,8],[6,9],
+						[7,9],[8,9],[9,9],[10,9],[11,9],[12,9],[13,9]
+					],
+					"path_b": [
+						[0,7],[1,7],[2,7],[3,7],[4,7],
+						[4,6],[4,5],[4,4],
+						[5,4],[6,4],[7,4],[8,4],[9,4],[10,4],
+						[10,5],[10,6],[10,7],[10,8],[10,9],
+						[11,9],[12,9],[13,9]
+					]
+				},
 				"base": [13,9],
 				"build_zones": [
 					[2,0],[3,0],[4,0],[5,0],[6,0],[7,0],[8,0],[9,0],[10,0],[11,0],
@@ -444,16 +476,20 @@ func _inject_test_payload() -> void:
 				}
 			},
 			"waves": [
+				# 波次 1 ── path_a 步兵、path_b 騎兵（同時衝鋒）
 				{ "wave": 1, "enemies": [
-					{ "enemy_id": "grunt_lv1",   "count": 5, "interval": 1.0, "path": "path_a" }
+					{ "enemy_id": "grunt_lv1",   "count": 5, "interval": 1.0, "path": "path_a" },
+					{ "enemy_id": "cavalry_lv1", "count": 3, "interval": 1.5, "path": "path_b" }
 				]},
+				# 波次 2 ── 兩條路都有步兵
 				{ "wave": 2, "enemies": [
-					{ "enemy_id": "grunt_lv1",   "count": 5, "interval": 0.8, "path": "path_a" },
-					{ "enemy_id": "cavalry_lv1", "count": 2, "interval": 2.0, "path": "path_a" }
+					{ "enemy_id": "grunt_lv1",   "count": 6, "interval": 0.8, "path": "path_a" },
+					{ "enemy_id": "grunt_lv1",   "count": 6, "interval": 0.8, "path": "path_b" }
 				]},
+				# 波次 3 ── path_a 攻城車、path_b 騎兵急速衝
 				{ "wave": 3, "enemies": [
-					{ "enemy_id": "cavalry_lv1", "count": 4, "interval": 1.5, "path": "path_a" },
-					{ "enemy_id": "siege_lv1",   "count": 2, "interval": 3.0, "path": "path_a" }
+					{ "enemy_id": "siege_lv1",   "count": 2, "interval": 3.0, "path": "path_a" },
+					{ "enemy_id": "cavalry_lv1", "count": 5, "interval": 1.0, "path": "path_b" }
 				]},
 			]
 		}

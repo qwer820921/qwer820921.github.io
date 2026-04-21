@@ -43,15 +43,15 @@ func _ready() -> void:
 	_build_ui()
 
 func _build_ui() -> void:
-	# ── 底部主面板（固定在螢幕底部）────────────────────────
+	# ── 頂部主面板（固定在螢幕頂部）────────────────────────
 	var panel: PanelContainer = PanelContainer.new()
 	add_child(panel)
-	panel.anchor_top    = 1.0
-	panel.anchor_bottom = 1.0
+	panel.anchor_top    = 0.0
+	panel.anchor_bottom = 0.0
 	panel.anchor_left   = 0.0
 	panel.anchor_right  = 1.0
-	panel.offset_top    = -PANEL_H
-	panel.offset_bottom = 0
+	panel.offset_top    = 0
+	panel.offset_bottom = PANEL_H
 	panel.custom_minimum_size = Vector2(0, PANEL_H)
 
 	var panel_style: StyleBoxFlat = StyleBoxFlat.new()
@@ -115,6 +115,7 @@ func _build_ui() -> void:
 	# ── 升級/資訊浮動面板（選中塔時出現）──────────────────
 	_info_panel = PanelContainer.new()
 	_info_panel.visible = false
+	_info_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_info_panel.z_index = 20
 	add_child(_info_panel)
 	var info_style: StyleBoxFlat = StyleBoxFlat.new()
