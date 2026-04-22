@@ -3,7 +3,7 @@
 // body 傳純字串，GAS 用 e.postData.contents 讀取
 
 export const SHENMA_SANGUO_GAS_URL =
-  "https://script.google.com/macros/s/AKfycby9ihuxuXZgJRK6iRbO4sOOxsWGCeqwPaNTK0Dr3JybbdL6BHB_pcHDhZ_Vz6OISYDS/exec";
+  "https://script.google.com/macros/s/AKfycbzxwoXOxrDPjMHlp9FipisZTz0Jn7yff5KpMMBIDTRJQkxRB_If55bBJNhCzWNTZn3c/exec";
 
 const GAS_URL = SHENMA_SANGUO_GAS_URL;
 
@@ -62,6 +62,7 @@ export const gameApi = {
 
   // ── 靜態設定（讀取）──
 
+  getSettings: () => callGAS("get_settings"),
   getHeroesConfig: () => callGAS("get_heroes_config"),
   getEnemiesConfig: () => callGAS("get_enemies_config"),
   getAllMaps: () => callGAS("get_all_maps"),

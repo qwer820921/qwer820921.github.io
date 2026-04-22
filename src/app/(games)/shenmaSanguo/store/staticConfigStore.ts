@@ -2,13 +2,14 @@ import { create } from "zustand";
 import { StaticConfig, MapConfig } from "../types";
 import { gameApi } from "../api/gameApi";
 
-const STATIC_SESSION_KEY = "shenma_static_config";
+const STATIC_LOCAL_KEY = "shenma_static_config";
+const STATIC_VERSION_KEY = "shenma_static_version";
 
-// ── sessionStorage helpers ─────────────────────────────────────
-function readStaticSession(): StaticConfig | null {
+// ── localStorage helpers ─────────────────────────────────────
+function readStaticLocal(): StaticConfig | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = sessionStorage.getItem(STATIC_SESSION_KEY);
+    const raw = localStorage.getItem(STATIC_LOCAL_KEY);
     return raw ? (JSON.parse(raw) as StaticConfig) : null;
   } catch {
     return null;
@@ -36,16 +37,38 @@ export const useStaticConfigStore = create<StaticConfigStore>((set, get) => ({
   error: null,
 
   loadConfig: async () => {
-    // 優先使用 session 快取（需有武將資料才算有效）
-    const cached = readStaticSession();
-    if (cached && cached.heroesConfig?.length > 0) {
-      set({ config: cached });
-      return;
-    }
-
     set({ isLoading: true, error: null });
     try {
-      // 並行拉取 heroes / enemies / 全量地圖（含 path_json + waves）
+      // 1. 抓取遠端版本號
+      const settingsRes = await gameApi.getSettings();
+      // 我們預期遠端回傳的格式為： { status: 200, settings: { version: "V1.0.1", ... } }
+      const remoteVersion = settingsRes?.settings?.version || "unknown";
+
+      // 2. 取得本地快取與版本號
+      let localVersion = null;
+      if (typeof window !== "undefined") {
+        localVersion = localStorage.getItem(STATIC_VERSION_KEY);
+      }
+      const cached = readStaticLocal();
+
+      // 如果版本一致，且快取有效，直接使用快取
+      if (
+        localVersion === remoteVersion &&
+        cached &&
+        cached.heroesConfig?.length > 0
+      ) {
+        console.log(
+          `[StaticConfig] Version match (${remoteVersion}). Using local cache.`
+        );
+        set({ config: cached, isLoading: false });
+        return;
+      }
+
+      console.log(
+        `[StaticConfig] Version mismatch or missing cache (Local: ${localVersion}, Remote: ${remoteVersion}). Fetching new data...`
+      );
+
+      // 3. 版本不同或無快取，並行拉取所有資料
       const [heroesRes, enemiesRes, allMapsRes] = await Promise.all([
         gameApi.getHeroesConfig(),
         gameApi.getEnemiesConfig(),
@@ -58,17 +81,23 @@ export const useStaticConfigStore = create<StaticConfigStore>((set, get) => ({
         maps: allMapsRes.maps as MapConfig[],
       };
 
-      sessionStorage.setItem(STATIC_SESSION_KEY, JSON.stringify(config));
+      if (typeof window !== "undefined") {
+        localStorage.setItem(STATIC_LOCAL_KEY, JSON.stringify(config));
+        localStorage.setItem(STATIC_VERSION_KEY, remoteVersion);
+      }
+
       set({ config, isLoading: false });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "GAS_ERROR";
+      console.error("[StaticConfig] Error loading config:", msg);
       set({ error: msg, isLoading: false });
     }
   },
 
   refreshConfig: async () => {
     if (typeof window !== "undefined") {
-      sessionStorage.removeItem(STATIC_SESSION_KEY);
+      localStorage.removeItem(STATIC_LOCAL_KEY);
+      localStorage.removeItem(STATIC_VERSION_KEY);
     }
     await get().loadConfig();
   },

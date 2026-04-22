@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import Image from "next/image";
 import styles from "../styles/mapEditor.module.css";
 import {
@@ -12,34 +12,47 @@ import {
 } from "../types";
 import { SHENMA_SANGUO_GAS_URL } from "@/app/(games)/shenmaSanguo/api/gameApi";
 
-type Tool = "waypoint" | "build" | "obstacle" | "erase";
+type Tool = "waypoint" | "build" | "obstacle" | "erase" | "texture";
 
 const DEFAULT_COLS = 14;
 const DEFAULT_ROWS = 11;
 const DEFAULT_TEXTURES: TileTextures = {
-  road: "tile_stone.webp",
-  build: "tile_grass.webp",
-  empty: "tile_empty.webp",
-  base: "tile_fortress.webp",
-  spawn: "tile_gate.webp",
-  obstacle: "tile_dirt.webp",
+  road: "tiles/tile_stone.webp",
+  build: "tiles/tile_grass.webp",
+  empty: "tiles/tile_empty.webp",
+  base: "tiles/tile_fortress.webp",
+  spawn: "tiles/tile_gate.webp",
+  obstacle: "tiles/tile_dirt.webp",
 };
 
 const DEFAULT_TILE_IMAGE_OPTIONS = [
-  "tile_stone.webp",
-  "tile_grass.webp",
-  "tile_dirt.webp",
-  "tile_empty.webp",
-  "tile_fortress.webp",
-  "tile_gate.webp",
-  "tile_tree.webp",
+  "tiles/tile_stone.webp",
+  "tiles/tile_grass.webp",
+  "tiles/tile_dirt.webp",
+  "tiles/tile_empty.webp",
+  "tiles/tile_fortress.webp",
+  "tiles/tile_gate.webp",
+  "tiles/tile_tree.webp",
 ];
 
 // ── 格子工具函式 ──────────────────────────────────────────────
 
-function makeGrid(cols: number, rows: number): GridCell[][] {
+// 舊格式路徑沒有子目錄前綴，統一補 tiles/
+function normalizeTex(p: string): string {
+  if (!p) return DEFAULT_TEXTURES.empty;
+  return p.includes("/") ? p : `tiles/${p}`;
+}
+
+function makeGrid(
+  cols: number,
+  rows: number,
+  defaultTex = DEFAULT_TEXTURES.empty
+): GridCell[][] {
   return Array.from({ length: rows }, () =>
-    Array.from({ length: cols }, () => ({ type: "empty" as CellType }))
+    Array.from({ length: cols }, () => ({
+      type: "empty" as CellType,
+      texture: defaultTex,
+    }))
   );
 }
 
@@ -54,22 +67,8 @@ function cellClass(cell: GridCell, s: Record<string, string>): string {
   return `${s.cell} ${s.cellEmpty}`;
 }
 
-function getCellTexture(
-  cell: GridCell,
-  paths: Record<string, [number, number][]>,
-  textures: TileTextures
-): string {
-  if (cell.type === "obstacle") return textures.obstacle;
-  if (cell.type === "build") return textures.build;
-  if (cell.type === "road" && cell.pathId) {
-    const pts = paths[cell.pathId] || [];
-    if (cell.waypointIndex === 0) return textures.spawn;
-    if (cell.waypointIndex === pts.length - 1 && pts.length > 1) {
-      return textures.base; // 所有路徑最後一點都給 base 圖示（如果需要）
-    }
-    return textures.road;
-  }
-  return textures.empty;
+function getCellTexture(cell: GridCell): string {
+  return cell.texture;
 }
 
 function cellLabel(
@@ -103,46 +102,6 @@ function cellLabel(
   return uniqueLabels[0] || "";
 }
 
-// ── Tile 圖片選擇器 ───────────────────────────────────────────
-
-function TextureSelector({
-  label,
-  value,
-  onChange,
-  imageOptions,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  imageOptions: string[];
-}) {
-  return (
-    <div className={styles.textureRow}>
-      <span className={styles.textureLabel}>{label}</span>
-      <div className={styles.textureOptions}>
-        {imageOptions.map((img) => (
-          <button
-            key={img}
-            className={`${styles.textureOption} ${value === img ? styles.textureOptionSelected : ""}`}
-            onClick={() => onChange(img)}
-            title={img}
-            type="button"
-          >
-            <Image
-              src={`/images/shenmaSanguo/${img}`}
-              alt={img}
-              width={26}
-              height={26}
-              style={{ imageRendering: "pixelated", objectFit: "cover" }}
-              unoptimized
-            />
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ── GAS 呼叫 ─────────────────────────────────────────────────
 
 async function gasCall(action: string, payload: object) {
@@ -155,9 +114,20 @@ async function gasCall(action: string, payload: object) {
 
 // ── 主元件 ───────────────────────────────────────────────────
 
-export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
-  const imageOptions =
-    tileImages.length > 0 ? tileImages : DEFAULT_TILE_IMAGE_OPTIONS;
+export default function MapTab({
+  tileImages = [],
+  mapImages = [],
+}: {
+  tileImages?: string[];
+  mapImages?: string[];
+}) {
+  const [extraTileImages, setExtraTileImages] = useState<string[]>([]);
+  const [extraMapImages, setExtraMapImages] = useState<string[]>([]);
+  const imageOptions = [
+    ...(tileImages.length > 0 ? tileImages : DEFAULT_TILE_IMAGE_OPTIONS),
+    ...extraTileImages,
+  ];
+  const mapImageOptions = [...mapImages, ...extraMapImages];
   const [cols, setCols] = useState(DEFAULT_COLS);
   const [rows, setRows] = useState(DEFAULT_ROWS);
   const [colsInput, setColsInput] = useState(String(DEFAULT_COLS));
@@ -201,7 +171,43 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
   >("idle");
   const [waveMsg, setWaveMsg] = useState("");
   const [importJson, setImportJson] = useState("");
+  const [activeCellTexture, setActiveCellTexture] = useState(
+    DEFAULT_TEXTURES.road
+  );
+  const [bgTexture, setBgTexture] = useState("maps/bg_forest.webp");
+  const [uploadType, setUploadType] = useState<"tile" | "map">("tile");
+  const [pickerCell, setPickerCell] = useState<{
+    col: number;
+    row: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<
+    "idle" | "uploading" | "ok" | "error"
+  >("idle");
+  // 點擊 split button 左側縮圖時彈出的材質選擇器
+  const [texPicker, setTexPicker] = useState<{
+    key: keyof TileTextures;
+    x: number;
+    y: number;
+  } | null>(null);
+  const uploadCanvasRef = useRef<HTMLCanvasElement>(null);
   const isPainting = useRef(false);
+  // ref 讓 applyCell callback 永遠讀到最新 textures/activeCellTexture
+  const texturesRef = useRef(textures);
+  const activeCellTextureRef = useRef(activeCellTexture);
+  useEffect(() => {
+    texturesRef.current = textures;
+  }, [textures]);
+  useEffect(() => {
+    activeCellTextureRef.current = activeCellTexture;
+  }, [activeCellTexture]);
+  useEffect(() => {
+    if (!pickerCell) return;
+    const close = () => setPickerCell(null);
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [pickerCell]);
 
   // ── 尺寸 ──
   const applySize = (c?: number, r?: number) => {
@@ -234,9 +240,14 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
         const next = prev.map((r) => r.map((c) => ({ ...c })));
         const cell = next[row][col];
 
+        const tx = texturesRef.current;
+
+        if (tool === "texture") {
+          next[row][col] = { ...cell, texture: activeCellTextureRef.current };
+          return next;
+        }
         if (tool === "erase") {
           let wasRoad = false;
-          // Check if it's a road in ANY path and erase it from paths
           setPaths((p) => {
             let changed = false;
             const nextP = { ...p };
@@ -251,14 +262,13 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
               }
             }
             if (changed) {
-              // Updates grid sequentially
               setGrid((g) => {
                 const g2 = g.map((r) => r.map((c) => ({ ...c })));
-                g2[row][col] = { type: "empty" }; // Clear this block
-                // Re-apply remaining paths to restore overlaps if any
+                g2[row][col] = { type: "empty", texture: tx.empty };
                 for (const pid in nextP) {
                   nextP[pid].forEach(([c, r], index) => {
                     g2[r][c] = {
+                      ...g2[r][c],
                       type: "road",
                       waypointIndex: index,
                       pathId: pid,
@@ -270,40 +280,38 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
             }
             return changed ? nextP : p;
           });
-
-          // If it wasn't a road, it might be a build or obstacle, just clear it.
-          next[row][col] = { type: "empty" };
+          next[row][col] = { type: "empty", texture: tx.empty };
           return wasRoad ? prev : next;
         }
         if (tool === "build") {
           if (cell.type === "road") return prev;
-          next[row][col] = { type: "build" };
+          next[row][col] = { type: "build", texture: tx.build };
           return next;
         }
         if (tool === "obstacle") {
           if (cell.type === "road") return prev;
-          next[row][col] = { type: "obstacle" };
+          next[row][col] = { type: "obstacle", texture: tx.obstacle };
           return next;
         }
         if (tool === "waypoint") {
-          // Allow overlapping! Ignore only if it's build or obstacle.
           if (cell.type === "build" || cell.type === "obstacle") return prev;
 
           setPaths((p) => {
             const currentPath = p[activePathId] || [];
-            // Prevent consecutive duplicate points on the exact same cell
             if (currentPath.length > 0) {
               const last = currentPath[currentPath.length - 1];
               if (last[0] === col && last[1] === row) return p;
             }
 
             const newPath = [...currentPath, [col, row] as [number, number]];
+            const isSpawn = newPath.length === 1;
             setGrid((g) => {
               const g2 = g.map((r) => r.map((c) => ({ ...c })));
               g2[row][col] = {
                 type: "road",
                 waypointIndex: newPath.length - 1,
                 pathId: activePathId,
+                texture: isSpawn ? tx.spawn : tx.road,
               };
               return g2;
             });
@@ -317,19 +325,93 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
     [tool, activePathId]
   );
 
-  const handleMouseDown = (col: number, row: number) => {
+  const draggedCells = useRef(0);
+  const mouseDownCell = useRef<{
+    col: number;
+    row: number;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const handleMouseDown = (col: number, row: number, e: React.MouseEvent) => {
+    draggedCells.current = 0;
+    mouseDownCell.current = { col, row, x: e.clientX, y: e.clientY };
     isPainting.current = true;
-    applyCell(col, row);
+    // texture tool：先不 apply，等 mouseUp 判斷是點擊還是拖動
+    if (tool !== "texture") applyCell(col, row);
   };
   const handleMouseEnter = (col: number, row: number) => {
     if (!isPainting.current) return;
-    if (tool !== "waypoint") applyCell(col, row);
+    if (tool !== "waypoint") {
+      draggedCells.current++;
+      applyCell(col, row);
+    }
   };
   const handleMouseUp = () => {
+    if (
+      tool === "texture" &&
+      draggedCells.current === 0 &&
+      mouseDownCell.current
+    ) {
+      setPickerCell(mouseDownCell.current);
+    }
     isPainting.current = false;
+    mouseDownCell.current = null;
   };
+  const handleUploadImage = useCallback(
+    async (file: File, type: "tile" | "map") => {
+      const canvas = uploadCanvasRef.current;
+      if (!canvas) return;
+      setUploadStatus("uploading");
+      try {
+        const url = URL.createObjectURL(file);
+        const img = document.createElement("img");
+        await new Promise<void>((res, rej) => {
+          img.onload = () => res();
+          img.onerror = rej;
+          img.src = url;
+        });
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d")!;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+
+        const blob = await new Promise<Blob | null>((res) =>
+          canvas.toBlob(res, "image/webp", 0.9)
+        );
+        if (!blob) throw new Error("webp 轉換失敗");
+
+        const baseName = file.name.replace(/\.[^.]+$/, "") + ".webp";
+        const fd = new FormData();
+        fd.append("file", blob, baseName);
+        fd.append("type", type);
+        fd.append("name", baseName);
+
+        const resp = await fetch("/api/mapEditor/upload", {
+          method: "POST",
+          body: fd,
+        });
+        const json = await resp.json();
+        if (!resp.ok || json.error) throw new Error(json.error || "上傳失敗");
+
+        const savedPath: string = json.path; // e.g. "tiles/my_img.webp"
+        if (type === "tile") setExtraTileImages((p) => [...p, savedPath]);
+        else setExtraMapImages((p) => [...p, savedPath]);
+        setUploadStatus("ok");
+        setTimeout(() => setUploadStatus("idle"), 2000);
+      } catch (e) {
+        console.error(e);
+        setUploadStatus("error");
+        setTimeout(() => setUploadStatus("idle"), 3000);
+      }
+    },
+    []
+  );
+
   const handleClear = () => {
-    setGrid(makeGrid(cols, rows));
+    setGrid(makeGrid(cols, rows, textures.empty));
     setPaths({ path_a: [] });
     setActivePathId("path_a");
   };
@@ -345,6 +427,8 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
         build_zones,
         obstacles,
         tile_textures,
+        cell_textures,
+        background_texture,
         map_id,
         name,
         chapter: ch,
@@ -355,7 +439,12 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
       setMapName(name || "");
       setChapter(String(ch || 1));
       setUnlockStage(unlock_stage || "");
-      if (tile_textures) setTextures({ ...DEFAULT_TEXTURES, ...tile_textures });
+      const rawTx = tile_textures || {};
+      const normalizedTx = Object.fromEntries(
+        Object.entries(rawTx).map(([k, v]) => [k, normalizeTex(String(v))])
+      ) as Partial<TileTextures>;
+      const tx: TileTextures = { ...DEFAULT_TEXTURES, ...normalizedTx };
+      setTextures(tx);
 
       const nc = c || DEFAULT_COLS;
       const nr = r || DEFAULT_ROWS;
@@ -364,7 +453,6 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
       setColsInput(String(nc));
       setRowsInput(String(nr));
 
-      // 處理路徑（相容舊版 waypoints）
       let loadedPaths: Record<string, [number, number][]> = {};
       if (pths && Object.keys(pths).length > 0) {
         loadedPaths = { ...pths } as Record<string, [number, number][]>;
@@ -373,41 +461,54 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
       } else {
         loadedPaths = { path_a: [] };
       }
-
       setPaths(loadedPaths);
       setActivePathId(Object.keys(loadedPaths)[0] || "path_a");
 
-      // 先把 Grid 刷成 EMPTY
-      const finalGrid = makeGrid(nc, nr);
+      const bgTex =
+        background_texture && background_texture.startsWith("maps/")
+          ? background_texture
+          : "maps/bg_forest.webp";
+      setBgTexture(bgTex);
+      const finalGrid = makeGrid(nc, nr, DEFAULT_TEXTURES.empty);
 
-      // 套用 Path (不論重疊與否，只要是路徑就標記成 road)
+      // 路徑：texture 依位置推算（spawn/road/base）
       Object.entries(loadedPaths).forEach(([pid, pts]) => {
         pts.forEach(([col, row], i) => {
           if (col >= 0 && col < nc && row >= 0 && row < nr) {
+            const isSpawn = i === 0;
+            const isBase = i === pts.length - 1 && pts.length > 1;
             finalGrid[row][col] = {
               type: "road",
               waypointIndex: i,
               pathId: pid,
+              texture: isSpawn ? tx.spawn : isBase ? tx.base : tx.road,
             };
           }
         });
       });
 
-      // 套用建築區 (只覆蓋 empty)
       (build_zones || []).forEach(([col, row]) => {
         if (col >= 0 && col < nc && row >= 0 && row < nr) {
-          if (finalGrid[row][col].type === "empty") {
-            finalGrid[row][col] = { type: "build" };
-          }
+          if (finalGrid[row][col].type === "empty")
+            finalGrid[row][col] = { type: "build", texture: tx.build };
         }
       });
 
-      // 套用障礙物 (覆蓋所有)
       (obstacles || []).forEach(([col, row]) => {
-        if (col >= 0 && col < nc && row >= 0 && row < nr) {
-          finalGrid[row][col] = { type: "obstacle" };
-        }
+        if (col >= 0 && col < nc && row >= 0 && row < nr)
+          finalGrid[row][col] = { type: "obstacle", texture: tx.obstacle };
       });
+
+      // 新格式：cell_textures 直接覆蓋每格 texture
+      if (cell_textures) {
+        Object.entries(cell_textures).forEach(([key, tex]) => {
+          const [colStr, rowStr] = key.split(",");
+          const col = Number(colStr),
+            row = Number(rowStr);
+          if (finalGrid[row]?.[col])
+            finalGrid[row][col].texture = normalizeTex(tex);
+        });
+      }
 
       setGrid(finalGrid);
     },
@@ -415,6 +516,7 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
       setPaths,
       setActivePathId,
       setTextures,
+      setBgTexture,
       setCols,
       setRows,
       setGrid,
@@ -627,10 +729,12 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
   const buildMapJson = (): MapJson => {
     const buildZones: number[][] = [];
     const obstacles: number[][] = [];
+    const cellTextures: Record<string, string> = {};
     grid.forEach((rowArr, rowIdx) =>
       rowArr.forEach((cell, colIdx) => {
         if (cell.type === "build") buildZones.push([colIdx, rowIdx]);
         if (cell.type === "obstacle") obstacles.push([colIdx, rowIdx]);
+        cellTextures[`${colIdx},${rowIdx}`] = cell.texture;
       })
     );
     // 向後相容（若只有 path_a 就提取給 waypoints）
@@ -664,7 +768,8 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
       base,
       build_zones: buildZones,
       obstacles,
-      tile_textures: textures,
+      background_texture: bgTexture,
+      cell_textures: cellTextures,
     };
   };
 
@@ -736,12 +841,54 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
       {/* ── 工具列 ── */}
       <div className={styles.toolbar}>
         <span className={styles.toolLabel}>工具：</span>
+        {/* 航點 / 防禦區 / 障礙物：split button（左=材質，右=工具）*/}
         {(
           [
-            { id: "waypoint", label: "🚩 航點" },
-            { id: "build", label: "🟩 防禦區" },
-            { id: "obstacle", label: "⬛ 障礙物" },
+            { id: "waypoint", label: "🚩 航點", texKey: "road" },
+            { id: "build", label: "🟩 防禦區", texKey: "build" },
+            { id: "obstacle", label: "⬛ 障礙物", texKey: "obstacle" },
+          ] as { id: Tool; label: string; texKey: keyof TileTextures }[]
+        ).map(({ id, label, texKey }) => (
+          <div
+            key={id}
+            className={`${styles.splitBtn} ${tool === id ? styles.splitBtnActive : ""}`}
+          >
+            {/* 左半：材質縮圖，點擊彈出 popup 更換此工具的預設材質縮圖 */}
+            <button
+              className={styles.splitBtnTex}
+              title={`點擊更換 ${label.replace(/^\S+\s/, "")} 預設材質縮圖`}
+              type="button"
+              onClick={(e) => {
+                const rect = (
+                  e.currentTarget as HTMLButtonElement
+                ).getBoundingClientRect();
+                setTexPicker({ key: texKey, x: rect.left, y: rect.bottom });
+              }}
+            >
+              <Image
+                src={`/images/shenmaSanguo/${textures[texKey]}`}
+                alt={texKey}
+                width={18}
+                height={18}
+                style={{ imageRendering: "pixelated", objectFit: "cover" }}
+                unoptimized
+              />
+            </button>
+            {/* 右半：切換工具 */}
+            <button
+              className={`${styles.splitBtnMain} ${tool === id ? styles.splitBtnMainActive : ""}`}
+              type="button"
+              onClick={() => setTool(id)}
+            >
+              {label}
+            </button>
+          </div>
+        ))}
+        {/* 清除 / 格子貼圖：維持原本按鈕 */}
+        {(
+          [
             { id: "erase", label: "🧹 清除" },
+            { id: "texture", label: "🎨 格子貼圖" },
           ] as { id: Tool; label: string }[]
         ).map(({ id, label }) => (
           <button
@@ -826,14 +973,147 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
         </div>
       </div>
 
+      {/* ── 地圖背景貼圖選取列（常駐顯示）── */}
+      <div className={styles.bgTextureBar}>
+        <span className={styles.toolLabel}>地圖背景：</span>
+        {mapImageOptions.map((img) => (
+          <button
+            key={img}
+            className={`${styles.textureOption} ${bgTexture === img ? styles.textureOptionSelected : ""}`}
+            onClick={() => setBgTexture(img)}
+            title={img}
+            type="button"
+          >
+            <Image
+              src={`/images/shenmaSanguo/${img}`}
+              alt={img}
+              width={26}
+              height={26}
+              style={{ imageRendering: "pixelated", objectFit: "cover" }}
+              unoptimized
+            />
+          </button>
+        ))}
+      </div>
+
+      {/* ── 出生點材質選取列 ── */}
+      <div className={styles.bgTextureBar}>
+        <span className={styles.toolLabel}>出生點：</span>
+        {imageOptions.map((img) => (
+          <button
+            key={img}
+            className={`${styles.textureOption} ${textures.spawn === img ? styles.textureOptionSelected : ""}`}
+            onClick={() => setTextures((t) => ({ ...t, spawn: img }))}
+            title={img}
+            type="button"
+          >
+            <Image
+              src={`/images/shenmaSanguo/${img}`}
+              alt={img}
+              width={26}
+              height={26}
+              style={{ imageRendering: "pixelated", objectFit: "cover" }}
+              unoptimized
+            />
+          </button>
+        ))}
+      </div>
+
+      {/* ── 基地（終點）材質選取列 ── */}
+      <div className={styles.bgTextureBar}>
+        <span className={styles.toolLabel}>基地：</span>
+        {imageOptions.map((img) => (
+          <button
+            key={img}
+            className={`${styles.textureOption} ${textures.base === img ? styles.textureOptionSelected : ""}`}
+            onClick={() => setTextures((t) => ({ ...t, base: img }))}
+            title={img}
+            type="button"
+          >
+            <Image
+              src={`/images/shenmaSanguo/${img}`}
+              alt={img}
+              width={26}
+              height={26}
+              style={{ imageRendering: "pixelated", objectFit: "cover" }}
+              unoptimized
+            />
+          </button>
+        ))}
+      </div>
+
+      {/* ── 上傳圖片區（統一入口）── */}
+      <div className={styles.uploadBar}>
+        <span className={styles.toolLabel}>上傳圖片：</span>
+        <div className={styles.uploadTypeGroup}>
+          <label
+            className={`${styles.uploadTypeBtn} ${uploadType === "tile" ? styles.uploadTypeBtnActive : ""}`}
+          >
+            <input
+              type="radio"
+              name="uploadType"
+              value="tile"
+              checked={uploadType === "tile"}
+              onChange={() => setUploadType("tile")}
+              style={{ display: "none" }}
+            />
+            🖼️ 格子貼圖
+          </label>
+          <label
+            className={`${styles.uploadTypeBtn} ${uploadType === "map" ? styles.uploadTypeBtnActive : ""}`}
+          >
+            <input
+              type="radio"
+              name="uploadType"
+              value="map"
+              checked={uploadType === "map"}
+              onChange={() => setUploadType("map")}
+              style={{ display: "none" }}
+            />
+            🗺️ 地圖背景
+          </label>
+        </div>
+        <label className={styles.uploadFileBtn}>
+          {uploadStatus === "uploading"
+            ? "⏳ 上傳中…"
+            : uploadStatus === "ok"
+              ? "✅ 完成"
+              : uploadStatus === "error"
+                ? "❌ 失敗"
+                : "＋ 選擇檔案"}
+          <input
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            disabled={uploadStatus === "uploading"}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleUploadImage(f, uploadType);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <span className={styles.uploadHint}>
+          → 儲存至 {uploadType === "tile" ? "tiles/" : "maps/"}（自動轉 webp）
+        </span>
+      </div>
+
       {/* ── 主體 ── */}
       <div className={styles.editorBody}>
         {/* 格子 + 波次（左欄） */}
         <div className={styles.gridCol}>
           <div
             className={styles.gridWrap}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
+            onMouseUp={() => handleMouseUp()}
+            onMouseLeave={() => handleMouseUp()}
+            style={{
+              backgroundImage: bgTexture.startsWith("maps/")
+                ? `url(/images/shenmaSanguo/${bgTexture})`
+                : undefined,
+              backgroundSize: "cover",
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "center",
+            }}
           >
             <div
               className={styles.grid}
@@ -850,6 +1130,14 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
                   const dynamicOpacity =
                     cell.type === "road" && !isActivePath ? 0.6 : 1;
 
+                  const labelStr = cellLabel(cell, paths, colIdx, rowIdx);
+                  const cellTex =
+                    labelStr === "S"
+                      ? textures.spawn
+                      : labelStr === "E"
+                        ? textures.base
+                        : getCellTexture(cell);
+
                   return (
                     <div
                       key={`${colIdx}-${rowIdx}`}
@@ -863,7 +1151,7 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
                         styles
                       )}
                       style={{
-                        backgroundImage: `url(/images/shenmaSanguo/${getCellTexture(cell, paths, textures)})`,
+                        backgroundImage: `url(/images/shenmaSanguo/${cellTex})`,
                         backgroundSize: "cover",
                         backgroundPosition: "center",
                         opacity: dynamicOpacity,
@@ -871,11 +1159,11 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
                         outlineOffset: "-2px",
                         zIndex: isActivePath ? 2 : 1,
                       }}
-                      onMouseDown={() => handleMouseDown(colIdx, rowIdx)}
+                      onMouseDown={(e) => handleMouseDown(colIdx, rowIdx, e)}
                       onMouseEnter={() => handleMouseEnter(colIdx, rowIdx)}
                       title={`[${colIdx},${rowIdx}]`}
                     >
-                      {cellLabel(cell, paths, colIdx, rowIdx)}
+                      {labelStr}
                     </div>
                   );
                 })
@@ -1187,22 +1475,6 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
         </div>
       </div>
 
-      {/* ── Tile Textures（全寬，editorBody 下方）── */}
-      <div className={styles.textureCard}>
-        <div className={styles.panelTitle}>Tile Textures</div>
-        <div className={styles.textureGrid}>
-          {(Object.keys(textures) as (keyof TileTextures)[]).map((key) => (
-            <TextureSelector
-              key={key}
-              label={key}
-              value={textures[key]}
-              onChange={(v) => setTextures((t) => ({ ...t, [key]: v }))}
-              imageOptions={imageOptions}
-            />
-          ))}
-        </div>
-      </div>
-
       {/* ── 輸出區 ── */}
       <div className={styles.outputCard}>
         <div className={styles.outputTitle}>產生 JSON</div>
@@ -1304,6 +1576,152 @@ export default function MapTab({ tileImages = [] }: { tileImages?: string[] }) {
           </div>
         </div>
       )}
+
+      {/* ── 格子材質選擇器 popup（fixed，不受 overflow 裁切）── */}
+      {pickerCell &&
+        (() => {
+          const POPUP_W = 200;
+          const POPUP_H = 160;
+          const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+          const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+          const left = Math.min(pickerCell.x + 8, vw - POPUP_W - 8);
+          const top =
+            pickerCell.y + 8 + POPUP_H > vh
+              ? pickerCell.y - POPUP_H - 8
+              : pickerCell.y + 8;
+          return (
+            <div
+              className={styles.cellPicker}
+              style={{ position: "fixed", left, top }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <span className={styles.cellPickerTitle}>
+                  [{pickerCell.col}, {pickerCell.row}] 選擇材質
+                </span>
+                <button
+                  className={styles.cellPickerClose}
+                  onClick={() => setPickerCell(null)}
+                >
+                  ✕
+                </button>
+              </div>
+              <div className={styles.cellPickerGrid}>
+                {imageOptions.map((img) => (
+                  <button
+                    key={img}
+                    className={`${styles.textureOption} ${
+                      grid[pickerCell.row]?.[pickerCell.col]?.texture === img
+                        ? styles.textureOptionSelected
+                        : ""
+                    }`}
+                    title={img}
+                    type="button"
+                    onClick={() => {
+                      setGrid((prev) => {
+                        const next = prev.map((r) => r.map((c) => ({ ...c })));
+                        next[pickerCell.row][pickerCell.col] = {
+                          ...next[pickerCell.row][pickerCell.col],
+                          texture: img,
+                        };
+                        return next;
+                      });
+                      setActiveCellTexture(img);
+                      setPickerCell(null);
+                    }}
+                  >
+                    <Image
+                      src={`/images/shenmaSanguo/${img}`}
+                      alt={img}
+                      width={28}
+                      height={28}
+                      style={{
+                        imageRendering: "pixelated",
+                        objectFit: "cover",
+                      }}
+                      unoptimized
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
+      {/* ── Split Button 材質縮圖選擇 popup ── */}
+      {texPicker &&
+        (() => {
+          const POPUP_W = 224;
+          const POPUP_H = 188;
+          const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+          const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+          const left = Math.min(texPicker.x, vw - POPUP_W - 8);
+          const top =
+            texPicker.y + 6 + POPUP_H > vh
+              ? texPicker.y - POPUP_H - 6
+              : texPicker.y + 6;
+          return (
+            <div
+              className={styles.cellPicker}
+              style={{ position: "fixed", left, top }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <span className={styles.cellPickerTitle}>
+                  更換縮圖（{texPicker.key}）
+                </span>
+                <button
+                  className={styles.cellPickerClose}
+                  onClick={() => setTexPicker(null)}
+                >
+                  ✕
+                </button>
+              </div>
+              <div className={styles.cellPickerGrid}>
+                {imageOptions.map((img) => (
+                  <button
+                    key={img}
+                    className={`${styles.textureOption} ${textures[texPicker.key] === img ? styles.textureOptionSelected : ""}`}
+                    title={img}
+                    type="button"
+                    onClick={() => {
+                      setTextures((t) => ({ ...t, [texPicker.key]: img }));
+                      setActiveCellTexture(img);
+                      setTexPicker(null);
+                    }}
+                  >
+                    <Image
+                      src={`/images/shenmaSanguo/${img}`}
+                      alt={img}
+                      width={28}
+                      height={28}
+                      style={{
+                        imageRendering: "pixelated",
+                        objectFit: "cover",
+                      }}
+                      unoptimized
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
+      {/* hidden canvas for webp conversion */}
+      <canvas ref={uploadCanvasRef} style={{ display: "none" }} />
     </>
   );
 }

@@ -63,7 +63,7 @@ export default function TeamPageContent() {
 
   if (!player || configLoading || !staticConfig) {
     return (
-      <Container className={styles.pageContainer}>
+      <Container fluid className={styles.pageContainer}>
         <Spinner animation="border" variant="primary" />
         <p
           style={{
@@ -125,7 +125,7 @@ export default function TeamPageContent() {
   );
 
   return (
-    <Container className={styles.pageContainer} style={{ maxWidth: 680 }}>
+    <Container fluid className={styles.pageContainer}>
       <div className={styles.header}>
         <h2 className={styles.pageTitle}>隊伍編排</h2>
       </div>

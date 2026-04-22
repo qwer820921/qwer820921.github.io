@@ -9,8 +9,10 @@ type PageTab = "map" | "object";
 
 export default function MapEditorPage({
   tileImages = [],
+  mapImages = [],
 }: {
   tileImages?: string[];
+  mapImages?: string[];
 }) {
   const [activeTab, setActiveTab] = useState<PageTab>("map");
 
@@ -40,7 +42,9 @@ export default function MapEditorPage({
       </div>
 
       {/* ── Tab 內容 ── */}
-      {activeTab === "map" && <MapTab tileImages={tileImages} />}
+      {activeTab === "map" && (
+        <MapTab tileImages={tileImages} mapImages={mapImages} />
+      )}
       {activeTab === "object" && <ObjectTabPage />}
     </Container>
   );

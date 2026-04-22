@@ -106,10 +106,11 @@ func _build_ui() -> void:
 	tower_hbox.add_theme_constant_override("separation", 4)
 	tower_section.add_child(tower_hbox)
 
-	_add_tower_card(tower_hbox, "archer",   "弓兵塔", "50G",  Color(0.20, 0.65, 0.20, 1))
-	_add_tower_card(tower_hbox, "infantry", "步兵塔", "70G",  Color(0.60, 0.20, 0.20, 1))
-	_add_tower_card(tower_hbox, "artillery","砲兵塔", "100G", Color(0.60, 0.45, 0.10, 1))
-	_add_tower_card(tower_hbox, "cavalry",  "騎兵塔", "120G", Color(0.55, 0.25, 0.65, 1))
+	_add_tower_card(tower_hbox, "archer",   "弓兵塔", "50G",  Color(0.20, 0.65, 0.20, 1), "tower_archer.webp")
+	_add_tower_card(tower_hbox, "infantry", "步兵塔", "70G",  Color(0.60, 0.20, 0.20, 1), "tower_infantry.webp")
+	_add_tower_card(tower_hbox, "artillery","砲兵塔", "100G", Color(0.60, 0.45, 0.10, 1), "tower_artillery.webp")
+	_add_tower_card(tower_hbox, "cavalry",  "騎兵塔", "120G", Color(0.55, 0.25, 0.65, 1), "tower_cavalry.webp")
+	_add_tower_card(tower_hbox, "scholar",  "文士塔", "80G",  Color(0.20, 0.50, 0.65, 1), "tower_scholar.webp")
 
 
 	# ── 升級/資訊浮動面板（選中塔時出現）──────────────────
@@ -140,14 +141,16 @@ func setup_heroes(team_list: Array, heroes_config: Array) -> void:
 		var hid: String = str(hero_state.get("hero_id", ""))
 		var hname: String = hid
 		var job: String = ""
+		var img_name: String = ""
 		for cfg in heroes_config:
 			if cfg.get("hero_id", "") == hid:
 				hname = str(cfg.get("name", hid))
 				job   = str(cfg.get("job", ""))
+				img_name = str(cfg.get("image", ""))
 				break
 
 		var color: Color = _job_color(job)
-		var card: Control = _make_hero_card(hname, hero_state, color)
+		var card: Control = _make_hero_card(hname, hero_state, color, img_name)
 		_hero_container.add_child(card)
 
 func _job_color(job: String) -> Color:
@@ -159,7 +162,7 @@ func _job_color(job: String) -> Color:
 		_:           return Color(0.20, 0.40, 0.80, 1)
 
 # ── 建立武將卡片 ─────────────────────────────────────────────
-func _make_hero_card(name_text: String, hero_data: Dictionary, color: Color) -> Control:
+func _make_hero_card(name_text: String, hero_data: Dictionary, color: Color, img_name: String) -> Control:
 	var card: Button = Button.new()
 	card.custom_minimum_size = Vector2(CARD_W, CARD_H)
 	card.text = ""
@@ -180,13 +183,22 @@ func _make_hero_card(name_text: String, hero_data: Dictionary, color: Color) -> 
 	var vbox: VBoxContainer = VBoxContainer.new()
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	vbox.add_theme_constant_override("separation", 2)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	card.add_child(vbox)
 
-	var hero_icon: Label = Label.new()
-	hero_icon.text = "" # 移除標誌文字
-	hero_icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hero_icon.add_theme_font_size_override("font_size", 24)
-	vbox.add_child(hero_icon)
+	var icon_rect: TextureRect = TextureRect.new()
+	icon_rect.custom_minimum_size = Vector2(28, 28)
+	icon_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	
+	if img_name != "":
+		var path: String = "res://assets/units/" + img_name
+		var tex = load(path) as Texture2D
+		if tex:
+			icon_rect.texture = tex
+	
+	vbox.add_child(icon_rect)
 
 	var name_label: Label = Label.new()
 	name_label.text = name_text
@@ -207,7 +219,7 @@ func _make_hero_card(name_text: String, hero_data: Dictionary, color: Color) -> 
 	return card
 
 # ── 建立塔卡片 ───────────────────────────────────────────────
-func _add_tower_card(parent: HBoxContainer, type_key: String, name_text: String, cost_text: String, color: Color) -> void:
+func _add_tower_card(parent: HBoxContainer, type_key: String, name_text: String, cost_text: String, color: Color, img_name: String) -> void:
 	var card: Button = Button.new()
 	card.custom_minimum_size = Vector2(CARD_W, CARD_H)
 	card.text = ""
@@ -227,13 +239,22 @@ func _add_tower_card(parent: HBoxContainer, type_key: String, name_text: String,
 	var vbox: VBoxContainer = VBoxContainer.new()
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	vbox.add_theme_constant_override("separation", 2)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	card.add_child(vbox)
 
-	var icon_label: Label = Label.new()
-	icon_label.text = "" # 移除標誌文字
-	icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	icon_label.add_theme_font_size_override("font_size", 22)
-	vbox.add_child(icon_label)
+	var icon_rect: TextureRect = TextureRect.new()
+	icon_rect.custom_minimum_size = Vector2(24, 24)
+	icon_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	
+	if img_name != "":
+		var path: String = "res://assets/units/" + img_name
+		var tex = load(path) as Texture2D
+		if tex:
+			icon_rect.texture = tex
+			
+	vbox.add_child(icon_rect)
 
 	var name_lbl: Label = Label.new()
 	name_lbl.text = name_text
@@ -316,15 +337,20 @@ func show_upgrade_panel(tower_node: Node, pos_screen: Vector2, can_afford: bool)
 	stats_grid.add_theme_constant_override("h_separation", 15)
 	vbox.add_child(stats_grid)
 
-	stats_grid.add_child(_mk_label("攻擊力:", Color(0.8, 0.8, 0.8)))
-	stats_grid.add_child(_mk_label(str(tower.atk), Color.WHITE))
+	stats_grid.add_child(_mk_label("範圍:", Color(0.8, 0.8, 0.8)))
+	stats_grid.add_child(_mk_label("%.1f 格" % tower.range_tiles, Color.WHITE))
+
+	if tower.tower_type_key == "scholar":
+		stats_grid.add_child(_mk_label("減速疊加:", Color(0.8, 0.8, 0.8)))
+		stats_grid.add_child(_mk_label("%.0f%%" % (tower.stack_slow_amount * 100), Color(0.4, 0.8, 1.0, 1)))
+	else:
+		stats_grid.add_child(_mk_label("攻擊力:", Color(0.8, 0.8, 0.8)))
+		stats_grid.add_child(_mk_label(str(tower.atk), Color.WHITE))
 	
 	stats_grid.add_child(_mk_label("頻率:", Color(0.8, 0.8, 0.8)))
 	var freq: float = 1.0 / tower.atk_spd if tower.atk_spd > 0 else 0
 	stats_grid.add_child(_mk_label("%.1f 次/秒" % freq, Color.WHITE))
 	
-	stats_grid.add_child(_mk_label("範圍:", Color(0.8, 0.8, 0.8)))
-	stats_grid.add_child(_mk_label("%.1f 格" % tower.range_tiles, Color.WHITE))
 
 	if tower.can_upgrade():
 		var upgrade_btn: Button = Button.new()

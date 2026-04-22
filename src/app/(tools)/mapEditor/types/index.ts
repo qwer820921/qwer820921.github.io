@@ -16,8 +16,9 @@ export type CellType = "empty" | "road" | "build" | "obstacle";
 
 export interface GridCell {
   type: CellType;
-  pathId?: string; // 屬於哪條路徑
-  waypointIndex?: number; // 該路徑的順序（0-based）
+  pathId?: string;
+  waypointIndex?: number;
+  texture: string; // 每格獨立貼圖，與 type 完全解耦
 }
 
 export interface TileTextures {
@@ -42,7 +43,9 @@ export interface MapJson {
   base: number[];
   build_zones: number[][];
   obstacles: number[][];
-  tile_textures: TileTextures;
+  background_texture?: string;
+  cell_textures?: Record<string, string>;
+  tile_textures?: TileTextures; // optional，向後相容舊格式匯入用
 }
 
 // ── enemies_config sheet ──

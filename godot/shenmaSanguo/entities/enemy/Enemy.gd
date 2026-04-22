@@ -13,7 +13,9 @@ var enemy_id: String  = "soldier"
 var max_hp: float     = 100.0
 var current_hp: float = 100.0
 var base_speed: float = 1.5        # 格子/秒
-var speed_mult: float = 1.0        # 速度乘數（被減速時 < 1.0）
+var speed_mult: float = 1.0        # 速度乘數（被減速時 < 1.0，通常為光環）
+var _stack_slow_amount: float = 0.0 # 疊加的減速量（來自文士塔）
+var _stack_slow_timer: float = 0.0  # 疊加減速持續時間
 
 # ── 路徑 ──────────────────────────────────────────────────────
 var _waypoints: Array   = []       # Array[Vector2] 像素座標
@@ -30,6 +32,7 @@ const FLASH_TIME: float = 0.12
 var _flash_timer: float = 0.0
 var _is_dead: bool      = false
 var _texture: Texture2D = null
+var _texture_atk: Texture2D = null
 
 # ── 顏色（依 enemy_id 可設不同顏色，預設灰） ──────────────
 var body_color: Color   = Color(0.55, 0.20, 0.20, 1)  # 深紅兵
@@ -49,9 +52,18 @@ func setup(cfg: Dictionary, waypoints: Array) -> void:
 	enemy_radius = max(8, int(tile_size * 0.35))
 	var img_name: String = str(cfg.get("image", ""))
 	if img_name != "":
-		var path: String = "res://assets/" + img_name
+		var path: String = "res://assets/units/" + img_name
 		if ResourceLoader.exists(path):
 			_texture = load(path) as Texture2D
+			
+			# 嘗試讀取攻擊圖片
+			var atk_path: String = path.replace(".webp", "_atk.webp")
+			if ResourceLoader.exists(atk_path):
+				_texture_atk = load(atk_path) as Texture2D
+			else:
+				atk_path = path.replace(".webp", "_attack.webp")
+				if ResourceLoader.exists(atk_path):
+					_texture_atk = load(atk_path) as Texture2D
 
 	# 依 enemy_id 設定顏色
 	match enemy_id:
@@ -74,10 +86,16 @@ func _physics_process(delta: float) -> void:
 	# 防止 Web 端 delta 異常導致的「瞬移」
 	delta = min(delta, 0.1)
 
-	# 閃爍計時
+	# 閃爍與狀態計時
 	if _flash_timer > 0.0:
 		_flash_timer -= delta
 		if _flash_timer <= 0.0:
+			queue_redraw()
+
+	if _stack_slow_timer > 0.0:
+		_stack_slow_timer -= delta
+		if _stack_slow_timer <= 0.0:
+			_stack_slow_amount = 0.0 # 疊加效果結束
 			queue_redraw()
 
 	# 抵達終點
@@ -87,7 +105,8 @@ func _physics_process(delta: float) -> void:
 
 	# 移動
 	var target: Vector2        = _waypoints[_wp_index]
-	var effective_speed: float = base_speed * speed_mult  # 直接使用像素/秒（對齊試算表數值）
+	var effective_speed: float = base_speed * speed_mult * (1.0 - _stack_slow_amount)
+	effective_speed = max(base_speed * 0.15, effective_speed) # 限制最少保留 15% 基礎跑速
 	
 	# 偵錯記錄：這會在瀏覽器控制台 (F12) 顯示
 	if _wp_index == 1 and Engine.get_process_frames() % 60 == 0:
@@ -122,12 +141,26 @@ func take_damage(amount: float) -> void:
 		_die()
 	queue_redraw()
 
-## 減速（speed_mult < 1.0）；持續時間結束後還原
+## 減速光環（speed_mult < 1.0）
 func apply_slow(mult: float, _duration: float) -> void:
 	speed_mult = mult
 
 func clear_slow() -> void:
 	speed_mult = 1.0
+
+## 疊加減速（文士塔用）
+func apply_stackable_slow(amount: float, duration: float) -> void:
+	_stack_slow_amount += amount
+	if _stack_slow_amount > 0.85:
+		_stack_slow_amount = 0.85  # 最多減少 85%
+	_stack_slow_timer = duration   # 每次被打中都會刷新持續時間
+	
+	# 顯示「減速」提示字
+	var ft = load("res://ui/FloatingText.gd").new()
+	get_parent().add_child(ft)
+	ft.setup("緩", Color(0.2, 0.6, 0.9), global_position + Vector2(0, -10))
+	
+	queue_redraw()
 
 func _die() -> void:
 	_is_dead = true
@@ -146,8 +179,12 @@ func _draw() -> void:
 	var r: float = float(enemy_radius)
 	var sprite_rect: Rect2 = Rect2(Vector2(-r, -r), Vector2(r * 2.0, r * 2.0))
 
-	if _texture != null:
-		draw_texture_rect(_texture, sprite_rect, false)
+	# 如果被武將大幅減速（speed_mult <= 0.5），視為正在交戰，顯示攻擊圖片
+	var is_fighting: bool = (speed_mult <= 0.5)
+	var current_tex: Texture2D = _texture_atk if (is_fighting and _texture_atk != null) else _texture
+
+	if current_tex != null:
+		draw_texture_rect(current_tex, sprite_rect, false)
 		if _flash_timer > 0.0:
 			draw_rect(sprite_rect, Color(1.0, 0.2, 0.2, 0.45))
 	else:

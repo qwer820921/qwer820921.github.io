@@ -10,7 +10,7 @@ signal tower_clicked(tower: Node)
 signal upgrade_requested(tower: Node, cost: int)
 
 # ── 職業常數 ──────────────────────────────────────────────────
-enum TowerType { ARCHER, INFANTRY, ARTILLERY, CAVALRY }
+enum TowerType { ARCHER, INFANTRY, ARTILLERY, CAVALRY, SCHOLAR }
 
 const TOWER_CONFIGS: Dictionary = {
 	"archer": {
@@ -67,6 +67,20 @@ const TOWER_CONFIGS: Dictionary = {
 		"image":       "tower_cavalry.webp",
 		"scale":       1.2,
 	},
+	"scholar": {
+		"type":        TowerType.SCHOLAR,
+		"name":        "文士塔",
+		"atk":         0.0,
+		"atk_spd":     1.20,
+		"range":       2.5,
+		"cost":        80,
+		"upgrade_base": 75,
+		"color":       Color(0.20, 0.50, 0.65, 1),
+		"aoe":         false,
+		"stack_slow_amount": 0.05,
+		"image":       "tower_scholar.webp",
+		"scale":       1.0,
+	},
 }
 
 # ── 實例屬性 ──────────────────────────────────────────────────
@@ -79,6 +93,7 @@ var upgrade_cost_base: int = 50
 var is_aoe: bool           = false
 var aoe_radius: float      = 0.0
 var slow_mult: float       = 1.0       # < 1.0 表示有緩速
+var stack_slow_amount: float = 0.0     # 疊加減速量 (文士塔)
 var body_color: Color      = Color.GREEN
 var tower_name: String     = "弓兵塔"
 
@@ -112,13 +127,14 @@ func setup(type_key: String, cell: Vector2i, wave_mgr: Node) -> void:
 	is_aoe           = bool(cfg.get("aoe", false))
 	aoe_radius       = float(cfg.get("aoe_radius", 0.0))
 	slow_mult        = float(cfg.get("slow_mult", 1.0))
+	stack_slow_amount = float(cfg.get("stack_slow_amount", 0.0))
 	body_color       = cfg["color"]
 	tower_name       = str(cfg["name"])
 	tower_w = max(20, int(tile_size * cfg.get("scale", 0.88)))
 	tower_h = tower_w
 	var img_name: String = str(cfg.get("image", ""))
 	if img_name != "":
-		var path: String = "res://assets/" + img_name
+		var path: String = "res://assets/units/" + img_name
 		if ResourceLoader.exists(path):
 			_texture = load(path) as Texture2D
 		
@@ -160,6 +176,8 @@ func _process(delta: float) -> void:
 
 	if is_aoe:
 		_attack_aoe(target, enemies)
+	elif tower_type_key == "scholar":
+		target.apply_stackable_slow(stack_slow_amount, 3.5) # 減速持續 3.5 秒
 	else:
 		target.take_damage(atk)
 
@@ -211,9 +229,14 @@ func can_upgrade() -> bool:
 
 func apply_upgrade() -> void:
 	tower_level   += 1
-	atk           *= 1.20       # 攻擊力 +20%
-	atk_spd       *= 0.92       # 攻速提升（間隔縮短 8%）
-	range_tiles   += 0.20       # 射程 +0.2 格
+	if tower_type_key == "scholar":
+		stack_slow_amount += 0.02   # 升級增加 2% 緩速幅度
+		atk_spd *= 0.95             # 攻速稍微提升
+		range_tiles += 0.20
+	else:
+		atk           *= 1.20       # 攻擊力 +20%
+		atk_spd       *= 0.92       # 攻速提升（間隔縮短 8%）
+		range_tiles   += 0.20       # 射程 +0.2 格
 	queue_redraw()
 
 func request_upgrade() -> void:

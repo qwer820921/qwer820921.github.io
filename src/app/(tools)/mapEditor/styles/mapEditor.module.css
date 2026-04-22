@@ -142,6 +142,139 @@
   flex-wrap: wrap;
 }
 
+/* ── 格子貼圖選取列 ── */
+.cellTextureBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 0.5rem 1rem;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+}
+
+/* ── 地圖背景選取列 ── */
+.bgTextureBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 0.5rem 1rem;
+  background: #f0f9ff;
+  border: 1px solid #7dd3fc;
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+}
+
+/* ── 上傳圖片區（統一入口）── */
+.uploadBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0.5rem 1rem;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+}
+
+.uploadTypeGroup {
+  display: flex;
+  gap: 4px;
+}
+
+.uploadTypeBtn {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  font-size: 0.78rem;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #fff;
+  color: #475569;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+  user-select: none;
+}
+.uploadTypeBtn:hover {
+  background: #f1f5f9;
+}
+.uploadTypeBtnActive {
+  background: #dbeafe;
+  border-color: #3b82f6;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.uploadFileBtn {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 12px;
+  font-size: 0.78rem;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.uploadFileBtn:hover {
+  background: #2563eb;
+}
+
+.uploadHint {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+/* ── 格子點擊材質選擇器 ── */
+.cellPicker {
+  position: absolute;
+  z-index: 200;
+  background: #fff;
+  border: 2px solid #3b82f6;
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+  max-width: 260px;
+}
+
+.cellPickerTitle {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  margin-bottom: 2px;
+}
+
+.cellPickerGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cellPickerClose {
+  align-self: flex-end;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+.cellPickerClose:hover {
+  color: #ef4444;
+}
+
 /* ── 格子欄（格子 + 波次垂直排列）── */
 .gridCol {
   display: flex;
@@ -154,6 +287,7 @@
 /* ── 格子區 ── */
 .gridWrap {
   overflow: auto;
+  position: relative;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #f3f4f6;
@@ -167,8 +301,8 @@
 .grid {
   display: inline-grid;
   gap: 1px;
-  padding: 1px;
-  background: #d1d5db;
+  padding: 10px;
+  background: transparent;
 }
 
 .cell {
@@ -679,4 +813,97 @@
 
 .toolbarRight {
   margin-left: auto;
+}
+
+/* ── Split Button（左：縮圖展開貼圖列 / 右：切換工具）── */
+.splitBtn {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+  transition: border-color 0.15s;
+}
+
+.splitBtn:hover {
+  border-color: #93c5fd;
+}
+
+.splitBtnActive {
+  border-color: #1e40af;
+}
+
+/* 左半：材質縮圖按鈕 */
+.splitBtnTex {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  padding: 3px 4px;
+  background: #f3f4f6;
+  border: none;
+  border-right: 1px solid #d1d5db;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.splitBtnTex:hover {
+  background: #dbeafe;
+}
+
+/* 右半：工具名稱按鈕 */
+.splitBtnMain {
+  padding: 0.3rem 0.65rem;
+  border: none;
+  background: transparent;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.splitBtnMain:hover {
+  background: #f3f4f6;
+}
+
+.splitBtnMainActive {
+  background: #1e40af;
+  color: #fff;
+}
+
+.splitBtnMainActive:hover {
+  background: #1d3a9e;
+}
+
+/* ── 格子貼圖列關閉按鈕 ── */
+.cellTextureBarClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 4px;
+  padding: 0;
+  border: 1px solid #fcd34d;
+  border-radius: 4px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.cellTextureBarClose:hover {
+  background: #fef3c7;
+  color: #ef4444;
+  border-color: #ef4444;
 }

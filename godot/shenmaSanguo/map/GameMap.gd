@@ -42,8 +42,9 @@ var _json_rows: int         = 0    # 從 path_json 讀取的精確列數
 var _hl_cell: Vector2i = Vector2i(-99, -99)
 var _hl_valid: bool    = false
 
-# ── 格子貼圖（tile_textures from path_json）─────────────────
-var _tile_textures: Dictionary = {}   # type_name → Texture2D
+# ── 格子貼圖（cell_textures from path_json）─────────────────
+var _cell_textures: Dictionary = {}   # Vector2i → Texture2D
+var _bg_texture: Texture2D = null     # viewport 外圍背景貼圖
 
 signal map_ready()
 
@@ -55,7 +56,7 @@ func setup(path_json: Dictionary) -> void:
 	_compute_map_size()
 	_compute_tile_size()
 	_center_map()
-	_load_tile_textures(path_json)
+	_load_textures(path_json)
 	queue_redraw()
 	map_ready.emit()
 
@@ -131,34 +132,29 @@ func _fill_segment(from: Vector2i, to: Vector2i, type: TileType) -> void:
 		_grid[cur] = type
 		cur += Vector2i(dc, dr)
 
-const _DEFAULT_TILE_TEXTURES: Dictionary = {
-	"road":     "tile_stone.webp",
-	"build":    "tile_grass.webp",
-	"empty":    "tile_empty.webp",
-	"base":     "tile_fortress.webp",
-	"spawn":    "tile_gate.webp",
-	"obstacle": "tile_dirt.webp",
-}
-
-func _load_tile_textures(pj: Dictionary) -> void:
-	_tile_textures.clear()
-	# 以 DEFAULT 為底，再用 path_json 的值覆蓋，確保 obstacle 等缺失 key 也能載入
-	var tex_map: Dictionary = _DEFAULT_TILE_TEXTURES.duplicate()
-	tex_map.merge(pj.get("tile_textures", {}), true)
-	for type_key: String in tex_map:
-		var img_name: String = str(tex_map[type_key])
+func _load_textures(pj: Dictionary) -> void:
+	_cell_textures.clear()
+	_bg_texture = null
+	var bg_name: String = str(pj.get("background_texture", ""))
+	if bg_name != "":
+		var bg_path: String = "res://assets/" + bg_name
+		var tex = load(bg_path) as Texture2D
+		if tex:
+			_bg_texture = tex
+	var raw: Dictionary = pj.get("cell_textures", {})
+	for key: String in raw:
+		var parts: PackedStringArray = key.split(",")
+		if parts.size() != 2:
+			continue
+		var cell: Vector2i = Vector2i(int(parts[0]), int(parts[1]))
+		var img_name: String = str(raw[key])
 		var path: String = "res://assets/" + img_name
-		if ResourceLoader.exists(path):
-			_tile_textures[type_key] = load(path) as Texture2D
-
-func _tile_type_name(t: TileType) -> String:
-	match t:
-		TileType.ROAD:     return "road"
-		TileType.BUILD:    return "build"
-		TileType.BASE:     return "base"
-		TileType.SPAWN:    return "spawn"
-		TileType.OBSTACLE: return "obstacle"
-		_:                 return "empty"
+		if not img_name.contains("/"):
+			path = "res://assets/tiles/" + img_name
+		
+		var tex = load(path) as Texture2D
+		if tex:
+			_cell_textures[cell] = tex
 
 func _compute_tile_size() -> void:
 	var vp: Vector2 = get_viewport_rect().size
@@ -196,59 +192,35 @@ func _center_map() -> void:
 # ═══════════════════════════════════════════
 func _draw() -> void:
 	var vp: Vector2 = get_viewport_rect().size
-	# 背景：用 empty 貼圖鋪滿整個視口；無貼圖時用純色，需要對齊 _map_offset
-	if _tile_textures.has("empty"):
-		var bg_tex: Texture2D = _tile_textures["empty"]
-		var ts: float = float(tile_size)
-		var start_x: float = fmod(_map_offset.x, ts) - ts
-		var start_y: float = fmod(_map_offset.y, ts) - ts
-		var max_c: int = int(ceil(vp.x / ts)) + 2
-		var max_r: int = int(ceil(vp.y / ts)) + 2
-		for col in range(max_c):
-			for row in range(max_r):
-				draw_texture_rect(bg_tex,
-					Rect2(Vector2(start_x + col * ts, start_y + row * ts), Vector2(ts, ts)), false)
+	# 背景：依據視窗寬度等比例縮放，若下方有空隙則向下平鋪
+	if _bg_texture != null:
+		var tex_size: Vector2 = _bg_texture.get_size()
+		if tex_size.x > 0 and tex_size.y > 0:
+			var scale_factor: float = vp.x / tex_size.x
+			var scaled_w: float = vp.x
+			var scaled_h: float = tex_size.y * scale_factor
+			
+			var draw_y: float = 0.0
+			while draw_y < vp.y:
+				draw_texture_rect(_bg_texture, Rect2(0, draw_y, scaled_w, scaled_h), false)
+				draw_y += scaled_h
 	else:
 		draw_rect(Rect2(Vector2.ZERO, vp), COLOR_BG)
-
-	var use_textures: bool = not _tile_textures.is_empty()
 
 	# 繪製每個格子
 	for col in range(_map_cols):
 		for row in range(_map_rows):
 			var cell: Vector2i = Vector2i(col, row)
-			var type_name: String = _tile_type_name(_grid.get(cell, TileType.EMPTY))
-			if use_textures:
-				# 貼圖模式：先墊底色再疊貼圖，透明區域顯示底色而非背景
-				var rect: Rect2 = Rect2(
-					_map_offset + Vector2(col * tile_size, row * tile_size),
-					Vector2(tile_size, tile_size)
-				)
-				draw_rect(rect, _tile_color(cell))
-				if _tile_textures.has(type_name):
-					draw_texture_rect(_tile_textures[type_name], rect, false)
-				_draw_tile_icon(rect, cell)
+			var rect: Rect2 = Rect2(
+				_map_offset + Vector2(col * tile_size, row * tile_size),
+				Vector2(tile_size, tile_size)
+			)
+			var cell_tex: Texture2D = _cell_textures.get(cell, null)
+			if cell_tex != null:
+				draw_texture_rect(cell_tex, rect, false)
 			else:
-				# 純色模式：留 1px 縫顯示格線
-				var rect: Rect2 = Rect2(
-					_map_offset + Vector2(col * tile_size, row * tile_size),
-					Vector2(tile_size - 1, tile_size - 1)
-				)
 				draw_rect(rect, _tile_color(cell))
-				_draw_tile_icon(rect, cell)
-
-	# 格線（僅純色模式顯示）
-	if not use_textures:
-		for col in range(_map_cols + 1):
-			var x: float = _map_offset.x + col * tile_size
-			draw_line(Vector2(x, _map_offset.y),
-					  Vector2(x, _map_offset.y + _map_rows * tile_size),
-					  COLOR_GRID, 1.0)
-		for row in range(_map_rows + 1):
-			var y: float = _map_offset.y + row * tile_size
-			draw_line(Vector2(_map_offset.x, y),
-					  Vector2(_map_offset.x + _map_cols * tile_size, y),
-					  COLOR_GRID, 1.0)
+			_draw_tile_icon(rect, cell)
 
 	# 高亮
 	if _hl_cell.x >= 0:

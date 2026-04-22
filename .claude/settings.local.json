@@ -1,5 +1,13 @@
 {
   "permissions": {
-    "allow": ["Bash(npm run:*)", "Bash(npx tsc *)"]
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(npx tsc *)",
+      "Bash(mkdir -p tiles units)",
+      "Bash(mv tile_*.webp tile_*.webp.import tiles/)",
+      "Bash(mv enemy_*.webp enemy_*.webp.import hero_*.webp hero_*.webp.import tower_*.webp tower_*.webp.import icon_*.webp icon_*.webp.import units/)",
+      "Bash(xargs -n1 basename)",
+      "Bash(python3 -c ' *)"
+    ]
   }
 }

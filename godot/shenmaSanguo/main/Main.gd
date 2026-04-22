@@ -432,49 +432,8 @@ func _inject_test_payload() -> void:
 			#
 			# base 終點：[13,9]
 			# ─────────────────────────────────────────────────────
-			"path_json": {
-				"cols": 14,
-				"rows": 11,
-				"paths": {
-					"path_a": [
-						[0,2],[1,2],[2,2],[3,2],[4,2],[5,2],[6,2],
-						[6,3],[6,4],[6,5],[6,6],[6,7],[6,8],[6,9],
-						[7,9],[8,9],[9,9],[10,9],[11,9],[12,9],[13,9]
-					],
-					"path_b": [
-						[0,7],[1,7],[2,7],[3,7],[4,7],
-						[4,6],[4,5],[4,4],
-						[5,4],[6,4],[7,4],[8,4],[9,4],[10,4],
-						[10,5],[10,6],[10,7],[10,8],[10,9],
-						[11,9],[12,9],[13,9]
-					]
-				},
-				"base": [13,9],
-				"build_zones": [
-					[2,0],[3,0],[4,0],[5,0],[6,0],[7,0],[8,0],[9,0],[10,0],[11,0],
-					[0,1],[1,1],[2,1],[3,1],[4,1],[5,1],[6,1],[7,1],[8,1],[9,1],[10,1],[11,1],[12,1],[13,1],
-					[12,2],[13,2],
-					[0,3],[1,3],[2,3],[3,3],[4,3],[5,3],[6,3],[7,3],[8,3],[9,3],[10,3],[12,3],[13,3],
-					[0,4],[1,4],[2,4],[3,4],[4,4],[5,4],[6,4],[7,4],[8,4],[9,4],[10,4],[12,4],[13,4],
-					[0,5],[1,5],[2,5],[3,5],[4,5],[5,5],[6,5],[7,5],[8,5],[9,5],[10,5],[12,5],[13,5],
-					[0,6],[1,6],[12,6],[13,6],
-					[0,7],[1,7],[3,7],[4,7],[5,7],[6,7],[7,7],[8,7],[9,7],[10,7],[11,7],[12,7],[13,7],
-					[0,8],[1,8],[3,8],[4,8],[5,8],[6,8],[7,8],[8,8],[9,8],[10,8],[11,8],[12,8],[13,8],
-					[0,9],[1,9],
-					[2,10],[3,10],[4,10],[5,10],[6,10],[7,10],[8,10],[9,10],[10,10],[11,10]
-				],
-				"obstacles": [
-					[0,0],[1,0],[12,0],[13,0],
-					[0,10],[1,10],[12,10],[13,10]
-				],
-				"tile_textures": {
-					"road":  "tile_stone.webp",
-					"build": "tile_grass.webp",
-					"empty": "tile_dirt.webp",
-					"base":  "tile_fortress.webp",
-					"spawn": "tile_gate.webp"
-				}
-			},
+			"path_json": JSON.parse_string(r'{"map_id":"chapter1_1","name":"黃巾起義","chapter":1,"unlock_stage":"chapter1_1","cols":14,"rows":11,"paths":{"path_a":[[0,8],[0,8],[1,8],[1,8],[2,8],[2,8],[3,8],[3,8],[4,8],[4,8],[5,8],[5,8],[5,7],[5,7],[5,6],[5,6],[5,5],[5,5],[5,4],[5,4],[5,3],[5,3],[5,2],[5,2],[5,1],[5,1],[6,1],[6,1],[7,1],[7,1],[8,1],[8,1],[9,1],[9,1],[10,1],[10,1],[10,2],[10,2],[10,3],[10,3],[10,4],[10,4],[10,5],[10,5],[11,5],[11,5],[12,5],[12,5],[13,5],[13,5]]},"waypoints":[[0,8],[0,8],[1,8],[1,8],[2,8],[2,8],[3,8],[3,8],[4,8],[4,8],[5,8],[5,8],[5,7],[5,7],[5,6],[5,6],[5,5],[5,5],[5,4],[5,4],[5,3],[5,3],[5,2],[5,2],[5,1],[5,1],[6,1],[6,1],[7,1],[7,1],[8,1],[8,1],[9,1],[9,1],[10,1],[10,1],[10,2],[10,2],[10,3],[10,3],[10,4],[10,4],[10,5],[10,5],[11,5],[11,5],[12,5],[12,5],[13,5],[13,5]],"spawn":[0,8],"base":[13,5],"build_zones":[[4,0],[5,0],[6,0],[7,0],[8,0],[9,0],[10,0],[11,0],[4,1],[11,1],[4,2],[6,2],[7,2],[8,2],[9,2],[11,2],[4,3],[6,3],[9,3],[11,3],[4,4],[6,4],[9,4],[11,4],[4,5],[6,5],[9,5],[4,6],[6,6],[9,6],[10,6],[11,6],[2,7],[3,7],[4,7],[6,7],[6,8],[2,9],[3,9],[4,9],[5,9],[6,9]],"obstacles":[[0,0],[1,0],[2,0],[3,0],[12,0],[13,0],[0,1],[1,1],[2,1],[3,1],[12,1],[13,1],[0,2],[1,2],[2,2],[3,2],[12,2],[13,2],[0,3],[1,3],[2,3],[3,3],[7,3],[8,3],[12,3],[13,3],[0,4],[1,4],[2,4],[3,4],[7,4],[8,4],[12,4],[13,4],[0,5],[1,5],[2,5],[3,5],[7,5],[8,5],[0,6],[1,6],[2,6],[3,6],[7,6],[8,6],[12,6],[13,6],[0,7],[1,7],[7,7],[8,7],[9,7],[10,7],[11,7],[12,7],[13,7],[7,8],[8,8],[9,8],[10,8],[11,8],[12,8],[13,8],[0,9],[1,9],[7,9],[8,9],[9,9],[10,9],[11,9],[12,9],[13,9],[0,10],[1,10],[2,10],[3,10],[4,10],[5,10],[6,10],[7,10],[8,10],[9,10],[10,10],[11,10],[12,10],[13,10]],"background_texture":"maps/bg_forest.webp","cell_textures":{"0,0":"tiles/tile_dirt4.webp","1,0":"tiles/tile_dirt.webp","2,0":"tiles/tile_dirt.webp","3,0":"tiles/tile_dirt2.webp","4,0":"tiles/tile_grass.webp","5,0":"tiles/tile_grass.webp","6,0":"tiles/tile_grass.webp","7,0":"tiles/tile_grass.webp","8,0":"tiles/tile_grass.webp","9,0":"tiles/tile_grass.webp","10,0":"tiles/tile_grass.webp","11,0":"tiles/tile_grass.webp","12,0":"tiles/tile_dirt.webp","13,0":"tiles/tile_dirt.webp","0,1":"tiles/tile_dirt4.webp","1,1":"tiles/tile_dirt.webp","2,1":"tiles/tile_dirt.webp","3,1":"tiles/tile_dirt2.webp","4,1":"tiles/tile_grass.webp","5,1":"tiles/tile_stone.webp","6,1":"tiles/tile_stone.webp","7,1":"tiles/tile_stone.webp","8,1":"tiles/tile_stone.webp","9,1":"tiles/tile_stone.webp","10,1":"tiles/tile_stone.webp","11,1":"tiles/tile_grass.webp","12,1":"tiles/tile_dirt.webp","13,1":"tiles/tile_dirt.webp","0,2":"tiles/tile_dirt4.webp","1,2":"tiles/tile_dirt.webp","2,2":"tiles/tile_dirt.webp","3,2":"tiles/tile_dirt6.webp","4,2":"tiles/tile_grass.webp","5,2":"tiles/tile_stone.webp","6,2":"tiles/tile_grass.webp","7,2":"tiles/tile_grass.webp","8,2":"tiles/tile_grass.webp","9,2":"tiles/tile_grass.webp","10,2":"tiles/tile_stone.webp","11,2":"tiles/tile_grass.webp","12,2":"tiles/tile_dirt.webp","13,2":"tiles/tile_dirt.webp","0,3":"tiles/tile_dirt4.webp","1,3":"tiles/tile_dirt.webp","2,3":"tiles/tile_dirt.webp","3,3":"tiles/tile_dirt2.webp","4,3":"tiles/tile_grass.webp","5,3":"tiles/tile_stone.webp","6,3":"tiles/tile_grass.webp","7,3":"tiles/tile_dirt3.webp","8,3":"tiles/tile_dirt3.webp","9,3":"tiles/tile_grass.webp","10,3":"tiles/tile_stone.webp","11,3":"tiles/tile_grass.webp","12,3":"tiles/tile_dirt.webp","13,3":"tiles/tile_dirt.webp","0,4":"tiles/tile_dirt4.webp","1,4":"tiles/tile_dirt.webp","2,4":"tiles/tile_dirt.webp","3,4":"tiles/tile_dirt2.webp","4,4":"tiles/tile_grass.webp","5,4":"tiles/tile_stone.webp","6,4":"tiles/tile_grass.webp","7,4":"tiles/tile_dirt.webp","8,4":"tiles/tile_dirt.webp","9,4":"tiles/tile_grass.webp","10,4":"tiles/tile_stone.webp","11,4":"tiles/tile_grass.webp","12,4":"tiles/tile_dirt3.webp","13,4":"tiles/tile_dirt.webp","0,5":"tiles/tile_dirt4.webp","1,5":"tiles/tile_dirt.webp","2,5":"tiles/tile_dirt.webp","3,5":"tiles/tile_dirt6.webp","4,5":"tiles/tile_grass.webp","5,5":"tiles/tile_stone.webp","6,5":"tiles/tile_grass.webp","7,5":"tiles/tile_dirt.webp","8,5":"tiles/tile_dirt3.webp","9,5":"tiles/tile_grass.webp","10,5":"tiles/tile_stone.webp","11,5":"tiles/tile_stone.webp","12,5":"tiles/tile_stone.webp","13,5":"tiles/tile_fortress.webp","0,6":"tiles/tile_dirt4.webp","1,6":"tiles/tile_dirt.webp","2,6":"tiles/tile_dirt.webp","3,6":"tiles/tile_dirt6.webp","4,6":"tiles/tile_grass.webp","5,6":"tiles/tile_stone.webp","6,6":"tiles/tile_grass.webp","7,6":"tiles/tile_dirt.webp","8,6":"tiles/tile_dirt3.webp","9,6":"tiles/tile_grass.webp","10,6":"tiles/tile_grass.webp","11,6":"tiles/tile_grass.webp","12,6":"tiles/tile_dirt3.webp","13,6":"tiles/tile_dirt.webp","0,7":"tiles/tile_dirt4.webp","1,7":"tiles/tile_dirt3.webp","2,7":"tiles/tile_grass.webp","3,7":"tiles/tile_grass.webp","4,7":"tiles/tile_grass.webp","5,7":"tiles/tile_stone.webp","6,7":"tiles/tile_grass.webp","7,7":"tiles/tile_dirt.webp","8,7":"tiles/tile_dirt.webp","9,7":"tiles/tile_dirt.webp","10,7":"tiles/tile_dirt6.webp","11,7":"tiles/tile_dirt6.webp","12,7":"tiles/tile_dirt.webp","13,7":"tiles/tile_dirt.webp","0,8":"tiles/tile_stone.webp","1,8":"tiles/tile_stone.webp","2,8":"tiles/tile_stone.webp","3,8":"tiles/tile_stone.webp","4,8":"tiles/tile_stone.webp","5,8":"tiles/tile_stone.webp","6,8":"tiles/tile_grass.webp","7,8":"tiles/tile_dirt.webp","8,8":"tiles/tile_dirt.webp","9,8":"tiles/tile_dirt.webp","10,8":"tiles/tile_dirt.webp","11,8":"tiles/tile_dirt.webp","12,8":"tiles/tile_dirt.webp","13,8":"tiles/tile_dirt.webp","0,9":"tiles/tile_dirt.webp","1,9":"tiles/tile_dirt3.webp","2,9":"tiles/tile_grass.webp","3,9":"tiles/tile_grass.webp","4,9":"tiles/tile_grass.webp","5,9":"tiles/tile_grass.webp","6,9":"tiles/tile_grass.webp","7,9":"tiles/tile_dirt.webp","8,9":"tiles/tile_dirt.webp","9,9":"tiles/tile_dirt.webp","10,9":"tiles/tile_dirt.webp","11,9":"tiles/tile_dirt.webp","12,9":"tiles/tile_dirt.webp","13,9":"tiles/tile_dirt.webp","0,10":"tiles/tile_dirt.webp","1,10":"tiles/tile_dirt.webp","2,10":"tiles/tile_dirt.webp","3,10":"tiles/tile_dirt.webp","4,10":"tiles/tile_dirt.webp","5,10":"tiles/tile_dirt.webp","6,10":"tiles/tile_dirt.webp","7,10":"tiles/tile_dirt.webp","8,10":"tiles/tile_dirt.webp","9,10":"tiles/tile_dirt.webp","10,10":"tiles/tile_dirt.webp","11,10":"tiles/tile_dirt.webp","12,10":"tiles/tile_dirt.webp","13,10":"tiles/tile_dirt.webp"}}'),
+			
 			"waves": [
 				# 波次 1 ── path_a 步兵、path_b 騎兵（同時衝鋒）
 				{ "wave": 1, "enemies": [

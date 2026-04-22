@@ -44,6 +44,7 @@ export default function BattlePageContent() {
     null
   );
   const [battleStats, setBattleStats] = useState<BattleStats | null>(null);
+  const [godotReady, setGodotReady] = useState(false);
 
   const sendPayload = useCallback(() => {
     if (payloadSent || !player || !staticConfig || !mapId) return;
@@ -86,35 +87,39 @@ export default function BattlePageContent() {
     setPayloadSent(true);
   }, [mapId, payloadSent, player, staticConfig]);
 
-  const handleMessage = useCallback(
-    (event: MessageEvent) => {
-      if (!event.data || typeof event.data !== "object") return;
-      if (event.data.__godot_bridge !== true) return;
+  const handleMessage = useCallback((event: MessageEvent) => {
+    if (!event.data || typeof event.data !== "object") return;
+    if (event.data.__godot_bridge !== true) return;
 
-      // 收到 Godot 的 Ready 訊號，立即隱藏載入遮罩並傳送資料
-      if (event.data.type === "game_ready") {
-        console.log(
-          "[React] Godot is ready, hiding loading overlay and sending payload."
-        );
-        setIframeLoading(false);
-        sendPayload(); // 核心修復：在此處觸發資料傳送
-        return;
-      }
+    // 收到 Godot 的 Ready 訊號，標記 Godot 已準備好
+    if (event.data.type === "game_ready") {
+      console.log(
+        "[React] Godot is ready, waiting for player data to send payload."
+      );
+      setIframeLoading(false);
+      setGodotReady(true);
+      return;
+    }
 
-      if (event.data.type === "update_stats") {
-        setBattleStats(event.data as BattleStats);
-        return;
-      }
+    if (event.data.type === "update_stats") {
+      setBattleStats(event.data as BattleStats);
+      return;
+    }
 
-      setBattleResult(event.data as BattleResultPayload);
-    },
-    [sendPayload]
-  );
+    setBattleResult(event.data as BattleResultPayload);
+  }, []);
 
   useEffect(() => {
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
   }, [handleMessage]);
+
+  // 當 Godot 準備好，且 React 端的資料（player, staticConfig）也載入完成時，發送 payload
+  useEffect(() => {
+    if (godotReady && player && staticConfig && mapId && !payloadSent) {
+      sendPayload();
+    }
+  }, [godotReady, player, staticConfig, mapId, payloadSent, sendPayload]);
 
   const handleIframeLoad = () => {
     setIframeLoading(false);
@@ -176,7 +181,7 @@ export default function BattlePageContent() {
       : "準備中...";
 
   return (
-    <Container className={styles.battleContainer}>
+    <Container fluid className={styles.battleContainer}>
       <div className={styles.battleLayout}>
         {/* 頂部狀態列 */}
         <div className={styles.battleTopBar}>

@@ -159,7 +159,7 @@ export default function MainMenuContent() {
 
   if (error) {
     return (
-      <Container className={styles.pageContainer} style={{ maxWidth: 480 }}>
+      <Container fluid className={styles.pageContainer}>
         <div className={styles.header}>
           <h1 className={styles.gameTitle}>神馬三國</h1>
         </div>
@@ -192,7 +192,7 @@ export default function MainMenuContent() {
         : styles.syncSyncing;
 
   return (
-    <Container className={styles.pageContainer} style={{ maxWidth: 560 }}>
+    <Container className={styles.pageContainer}>
       {/* 標題 */}
       <div className={styles.header}>
         <h1 className={styles.gameTitle}>神馬三國</h1>

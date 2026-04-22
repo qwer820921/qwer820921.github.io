@@ -199,6 +199,27 @@ function UpgradeModal({
               { label: "ATK", value: hero.atk, c: C.red },
               { label: "DEF", value: hero.def, c: C.blue },
               { label: "HP", value: hero.hp, c: C.green },
+              {
+                label: "範圍",
+                value: Number(
+                  (
+                    config.attack_range +
+                    (hero.level - 1) * config.range_growth
+                  ).toFixed(2)
+                ),
+                c: C.gold,
+              },
+              {
+                label: "攻速",
+                value: Number(
+                  Math.max(
+                    0.1,
+                    config.attack_speed *
+                      (1.0 - (hero.level - 1) * config.atk_spd_growth)
+                  ).toFixed(2)
+                ),
+                c: C.muted,
+              },
             ].map(({ label, value, c }) => (
               <div key={label}>
                 <div
@@ -239,9 +260,9 @@ function UpgradeModal({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(3,1fr)",
+                gridTemplateColumns: "repeat(5,1fr)",
                 textAlign: "center",
-                gap: "0.5rem",
+                gap: "0.2rem",
               }}
             >
               {[
@@ -263,6 +284,40 @@ function UpgradeModal({
                   next: hero.hp + config.hp_growth,
                   c: C.green,
                 },
+                {
+                  label: "範圍",
+                  cur: Number(
+                    (
+                      config.attack_range +
+                      (hero.level - 1) * config.range_growth
+                    ).toFixed(2)
+                  ),
+                  next: Number(
+                    (
+                      config.attack_range +
+                      hero.level * config.range_growth
+                    ).toFixed(2)
+                  ),
+                  c: C.gold,
+                },
+                {
+                  label: "攻速",
+                  cur: Number(
+                    Math.max(
+                      0.1,
+                      config.attack_speed *
+                        (1.0 - (hero.level - 1) * config.atk_spd_growth)
+                    ).toFixed(2)
+                  ),
+                  next: Number(
+                    Math.max(
+                      0.1,
+                      config.attack_speed *
+                        (1.0 - hero.level * config.atk_spd_growth)
+                    ).toFixed(2)
+                  ),
+                  c: C.text,
+                },
               ].map(({ label, cur, next, c }) => (
                 <div key={label}>
                   <div style={{ color: C.muted, fontSize: "0.62rem" }}>
@@ -273,8 +328,12 @@ function UpgradeModal({
                   >
                     {cur} → {next}
                   </div>
-                  <div style={{ color: C.green, fontSize: "0.62rem" }}>
-                    +{next - cur}
+                  <div style={{ color: C.green, fontSize: "0.55rem" }}>
+                    {next !== cur
+                      ? next > cur
+                        ? `+${Number((next - cur).toFixed(2))}`
+                        : Number((next - cur).toFixed(2))
+                      : ""}
                   </div>
                 </div>
               ))}
@@ -484,7 +543,7 @@ export default function HeroesPageContent() {
     : null;
 
   return (
-    <Container className={styles.pageContainer} style={{ maxWidth: 720 }}>
+    <Container fluid className={styles.pageContainer}>
       <div className={styles.header}>
         <h2 className={styles.pageTitle}>武將列表</h2>
         <p className={styles.subtitle}>

@@ -85,14 +85,14 @@ func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: boo
 					body_color = Color(0.20, 0.40, 0.80, 1)
 			var img_name: String = str(cfg.get("image", ""))
 			if img_name != "":
-				var path: String = "res://assets/" + img_name
+				var path: String = "res://assets/units/" + img_name
 				if ResourceLoader.exists(path):
 					_texture = load(path) as Texture2D
-				
+
 				# 優先從 config 讀取 attack_image，或動態搜尋 _atk.webp / _attack.webp
 				var atk_img_name: String = str(cfg.get("attack_image", ""))
 				if atk_img_name != "":
-					var atk_path: String = "res://assets/" + atk_img_name
+					var atk_path: String = "res://assets/units/" + atk_img_name
 					if ResourceLoader.exists(atk_path):
 						_texture_atk = load(atk_path) as Texture2D
 				

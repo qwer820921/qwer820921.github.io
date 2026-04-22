@@ -30,15 +30,23 @@ export const metadata = {
   },
 };
 
-export default function Page() {
-  let tileImages: string[] = [];
-  try {
-    const imgDir = path.join(process.cwd(), "public/images/shenmaSanguo");
-    tileImages = fs
-      .readdirSync(imgDir)
-      .filter((f) => /\.(webp|png|jpg|jpeg|gif)$/i.test(f))
-      .sort();
-  } catch {}
+const IMAGE_EXT = /\.(webp|png|jpg|jpeg|gif)$/i;
 
-  return <MapEditorPage tileImages={tileImages} />;
+function readImages(sub: string): string[] {
+  try {
+    const dir = path.join(process.cwd(), "public/images/shenmaSanguo", sub);
+    return fs
+      .readdirSync(dir)
+      .filter((f) => IMAGE_EXT.test(f))
+      .sort()
+      .map((f) => `${sub}/${f}`);
+  } catch {
+    return [];
+  }
+}
+
+export default function Page() {
+  const tileImages = readImages("tiles");
+  const mapImages = readImages("maps");
+  return <MapEditorPage tileImages={tileImages} mapImages={mapImages} />;
 }
