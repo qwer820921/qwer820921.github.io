@@ -8,12 +8,13 @@ extends Node2D
 
 # ── Signals ───────────────────────────────────────────────────
 signal hero_clicked(hero: Node)
+signal hero_died(hero: Node)
 
 # ── 武將屬性（由外部 setup 傳入） ────────────────────────────
 var hero_id: String       = ""
 var hero_name: String     = "武將"
+var hero_level: int       = 1
 var atk: float            = 100.0
-var def: float            = 50.0
 var max_hp: float         = 1000.0
 var current_hp: float     = 1000.0
 var attack_range: float   = 2.0    # 格子數
@@ -50,10 +51,10 @@ func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: boo
 	grid_cell  = cell
 	is_on_road = on_road
 	_wave_mgr  = wave_mgr
-	hero_half  = max(10, int(tile_size * 0.66))  # 進一步放大武將 (從 0.46 提升至 0.66)
+	hero_half  = max(10, int(tile_size * 0.46))  # 不超過格子邊界（< tile_size/2）
 
 	# 取得當前等級 (用於計算成長)
-	var hero_level: int = int(state.get("level", 1))
+	hero_level = int(state.get("level", 1))
 
 	# 從 heroes_config 取得靜態屬性
 	for cfg in heroes_config:
@@ -110,7 +111,6 @@ func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: boo
 
 	queue_redraw()
 
-# 修正 def 命名（def 是 GDScript 保留字型）
 var def_stat: float = 50.0
 
 # ═══════════════════════════════════════════
@@ -173,17 +173,23 @@ func _clear_all_slows(enemies: Array) -> void:
 #  受傷（目前武將無法被敵人傷害——保留介面）
 # ═══════════════════════════════════════════
 func take_damage(amount: float) -> void:
+	if current_hp <= 0.0:
+		return
+
 	var actual_dmg: float = amount * (1.0 - def_stat / (def_stat + 100.0))
 	current_hp -= actual_dmg
-	if current_hp <= 0.0:
-		current_hp = 0.0
 	
 	# 顯示傷害數字 (深紅色代表英雄受傷)
 	var ft = load("res://ui/FloatingText.gd").new()
 	get_parent().add_child(ft)
 	ft.setup("%.0f" % actual_dmg, Color(1.0, 0.2, 0.2), global_position)
 	
-	queue_redraw()
+	if current_hp <= 0.0:
+		current_hp = 0.0
+		hero_died.emit(self)
+		queue_free()
+	else:
+		queue_redraw()
 
 # ═══════════════════════════════════════════
 #  選取狀態

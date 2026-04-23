@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dqaagoovqnsg5"
+uid="uid://blwkdb4fdqosi"
 path="res://.godot/imported/tile_dirt2.webp-d73e8fb0485307e8493b32f4f316b2fa.ctex"
 metadata={
 "vram_texture": false
@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/tile_dirt2.webp-d73e8fb0485307e8493b32f4f316b
 
 [params]
 
-compress/mode=4
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -114,6 +114,7 @@ func _create_enemy(cfg: Dictionary, waypoints: Array) -> Node:
 	var enemy: Node = _enemy_scene.instantiate()
 	_units_layer.add_child(enemy)
 	enemy.tile_size = _tile_size
+	enemy._game_map = _game_map
 	enemy.setup(cfg, waypoints)
 	enemy.died.connect(_on_enemy_died)
 	enemy.reached_base.connect(_on_enemy_reached_base)
@@ -148,7 +149,5 @@ func is_wave_clear() -> bool:
 		if not is_instance_valid(_active_enemies[i]):
 			_active_enemies.remove_at(i)
 		i -= 1
-	
-	var all_clear = _active_enemies.is_empty() and _active_spawning_groups <= 0
 	
 	return _active_enemies.is_empty() and _active_spawning_groups <= 0

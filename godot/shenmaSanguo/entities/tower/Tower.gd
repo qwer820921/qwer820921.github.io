@@ -130,7 +130,7 @@ func setup(type_key: String, cell: Vector2i, wave_mgr: Node) -> void:
 	stack_slow_amount = float(cfg.get("stack_slow_amount", 0.0))
 	body_color       = cfg["color"]
 	tower_name       = str(cfg["name"])
-	tower_w = max(20, int(tile_size * cfg.get("scale", 0.88)))
+	tower_w = max(20, min(tile_size, int(tile_size * float(cfg.get("scale", 0.88)))))
 	tower_h = tower_w
 	var img_name: String = str(cfg.get("image", ""))
 	if img_name != "":

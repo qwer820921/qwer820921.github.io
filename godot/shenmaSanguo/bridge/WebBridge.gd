@@ -7,6 +7,11 @@ extends Node
 signal payload_received(data: Dictionary)
 signal start_battle_requested()
 signal auto_toggle_requested()
+signal resume_game_requested()
+signal move_unit_requested()
+signal deselect_unit_requested()
+signal upgrade_unit_requested()
+
 
 var _msg_callback: JavaScriptObject
 
@@ -56,8 +61,17 @@ func _on_js_message(args: Array) -> void:
 		start_battle_requested.emit()
 	elif payload.get("type") == "toggle_auto":
 		auto_toggle_requested.emit()
+	elif payload.get("type") == "resume_game":
+		resume_game_requested.emit()
+	elif payload.get("type") == "request_move":
+		move_unit_requested.emit()
+	elif payload.get("type") == "deselect_unit":
+		deselect_unit_requested.emit()
+	elif payload.get("type") == "request_upgrade":
+		upgrade_unit_requested.emit()
 	else:
 		payload_received.emit(payload)
+
 
 ## 戰鬥結束後，呼叫此函式將結算結果傳回 Web
 func send_result(result: Dictionary) -> void:
@@ -84,3 +98,29 @@ func send_stats(stats: Dictionary) -> void:
 		return
 	var json = JSON.stringify(stats)
 	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
+
+## 當玩家點擊地圖空地時，通知 Web 彈出選單
+func send_click_cell(data: Dictionary) -> void:
+	data["__godot_bridge"] = true
+	data["type"] = "click_cell"
+	if OS.get_name() != "Web":
+		print("[WebBridge] (非 Web) 點擊格子：", data)
+		return
+	var json = JSON.stringify(data)
+	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
+
+func send_show_upgrade_panel(data: Dictionary) -> void:
+	data["__godot_bridge"] = true
+	data["type"] = "show_upgrade_panel"
+	if OS.get_name() != "Web":
+		print("[WebBridge] (非 Web) 顯示升級面板：", data)
+		return
+	var json = JSON.stringify(data)
+	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
+
+func send_hide_upgrade_panel() -> void:
+	var data = { "__godot_bridge": true, "type": "hide_upgrade_panel" }
+	if OS.get_name() != "Web": return
+	var json = JSON.stringify(data)
+	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
+

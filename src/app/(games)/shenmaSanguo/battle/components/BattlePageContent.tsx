@@ -11,6 +11,8 @@ import {
   ExpeditionPayload,
 } from "../../types";
 import styles from "../../styles/shenmaSanguo.module.css";
+import PlacementMenu from "./PlacementMenu";
+import UpgradePanel from "./UpgradePanel";
 
 interface BattleStats {
   gold: number;
@@ -45,6 +47,13 @@ export default function BattlePageContent() {
   );
   const [battleStats, setBattleStats] = useState<BattleStats | null>(null);
   const [godotReady, setGodotReady] = useState(false);
+  const [placementMenu, setPlacementMenu] = useState<{
+    type: "road" | "build";
+    pos: { x: number; y: number };
+    cell: { x: number; y: number };
+  } | null>(null);
+  const [upgradePanel, setUpgradePanel] = useState<any | null>(null);
+  const [placedHeroIds, setPlacedHeroIds] = useState<string[]>([]);
 
   const sendPayload = useCallback(() => {
     if (payloadSent || !player || !staticConfig || !mapId) return;
@@ -54,6 +63,22 @@ export default function BattlePageContent() {
     if (!iframe?.contentWindow) return;
 
     const heroesConfig = staticConfig.heroesConfig;
+    const team_list = (player.team || []).map((slot) => {
+      const heroState = (player.heroes || []).find(
+        (h) => h.hero_id === slot.hero_id
+      );
+      const heroConfig = heroesConfig.find((c) => c.hero_id === slot.hero_id)!;
+      const state = heroState ?? {
+        hero_id: slot.hero_id,
+        level: 1,
+        star: 0,
+        atk: heroConfig?.base_atk ?? 0,
+        def: heroConfig?.base_def ?? 0,
+        hp: heroConfig?.base_hp ?? 0,
+      };
+      return { ...state, slot: slot.slot };
+    });
+
     const payload: ExpeditionPayload = {
       stage_id: mapId,
       player: {
@@ -62,27 +87,12 @@ export default function BattlePageContent() {
         level: player.level,
         gold: player.gold,
       },
-      team_list: (player.team || []).map((slot) => {
-        const heroState = (player.heroes || []).find(
-          (h) => h.hero_id === slot.hero_id
-        );
-        const heroConfig = heroesConfig.find(
-          (c) => c.hero_id === slot.hero_id
-        )!;
-        const state = heroState ?? {
-          hero_id: slot.hero_id,
-          level: 1,
-          star: 0,
-          atk: heroConfig?.base_atk ?? 0,
-          def: heroConfig?.base_def ?? 0,
-          hp: heroConfig?.base_hp ?? 0,
-        };
-        return { ...state, slot: slot.slot };
-      }),
+      team_list,
       heroes_config: heroesConfig,
       enemies_config: staticConfig.enemiesConfig,
       map,
     };
+
     iframe.contentWindow.postMessage(payload, "*");
     setPayloadSent(true);
   }, [mapId, payloadSent, player, staticConfig]);
@@ -103,6 +113,30 @@ export default function BattlePageContent() {
 
     if (event.data.type === "update_stats") {
       setBattleStats(event.data as BattleStats);
+      return;
+    }
+
+    if (event.data.type === "click_cell") {
+      setPlacementMenu({
+        type: event.data.tile_type,
+        pos: event.data.screen_pos,
+        cell: { x: event.data.cell_x, y: event.data.cell_y },
+      });
+      return;
+    }
+
+    if (event.data.type === "hide_placement_menu") {
+      setPlacementMenu(null);
+      return;
+    }
+
+    if (event.data.type === "show_upgrade_panel") {
+      setUpgradePanel(event.data);
+      return;
+    }
+
+    if (event.data.type === "hide_upgrade_panel") {
+      setUpgradePanel(null);
       return;
     }
 
@@ -145,6 +179,81 @@ export default function BattlePageContent() {
     if (iframeRef.current?.contentWindow) {
       iframeRef.current.contentWindow.postMessage(
         { __godot_bridge: true, type: "toggle_auto" },
+        "*"
+      );
+    }
+  };
+
+  const handleSelectUnit = (id: string, category: "hero" | "tower") => {
+    if (!placementMenu || !iframeRef.current?.contentWindow) return;
+
+    if (category === "hero") {
+      // 放置武將 (不論是在 road 還是 build)
+      iframeRef.current.contentWindow.postMessage(
+        {
+          __godot_bridge: true,
+          type: "place_hero",
+          hero_id: id,
+          cell_x: placementMenu.cell.x,
+          cell_y: placementMenu.cell.y,
+        },
+        "*"
+      );
+      setPlacedHeroIds((prev) => [...prev, id]);
+    } else {
+      // 放置防禦塔
+      iframeRef.current.contentWindow.postMessage(
+        {
+          __godot_bridge: true,
+          type: "place_tower",
+          tower_type: id,
+          cell_x: placementMenu.cell.x,
+          cell_y: placementMenu.cell.y,
+        },
+        "*"
+      );
+    }
+
+    handleCloseMenu();
+  };
+
+  const enrichedTeamList = (player?.team || []).map((slot) => {
+    const heroState = (player?.heroes || []).find(
+      (h) => h.hero_id === slot.hero_id
+    );
+    const heroConfig = (staticConfig?.heroesConfig || []).find(
+      (c) => c.hero_id === slot.hero_id
+    );
+    return {
+      ...(heroState || { hero_id: slot.hero_id, level: 1 }),
+      name: heroConfig?.name,
+      image: heroConfig?.image,
+    };
+  });
+
+  const handleUpgradeUnit = () => {
+    if (!upgradePanel || !iframeRef.current?.contentWindow) return;
+    iframeRef.current.contentWindow.postMessage(
+      { __godot_bridge: true, type: "request_upgrade" },
+      "*"
+    );
+  };
+
+  const handleCloseUpgradePanel = () => {
+    setUpgradePanel(null);
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage(
+        { __godot_bridge: true, type: "deselect_unit" },
+        "*"
+      );
+    }
+  };
+
+  const handleCloseMenu = () => {
+    setPlacementMenu(null);
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage(
+        { __godot_bridge: true, type: "resume_game" },
         "*"
       );
     }
@@ -297,6 +406,26 @@ export default function BattlePageContent() {
               allow="autoplay; fullscreen"
               title="Shenma Sanguo Battle"
             />
+            {placementMenu && (
+              <PlacementMenu
+                type={placementMenu.type}
+                pos={placementMenu.pos}
+                onSelect={handleSelectUnit}
+                onClose={handleCloseMenu}
+                playerGold={battleStats?.gold || 0}
+                teamList={enrichedTeamList}
+                heroesConfig={staticConfig?.heroesConfig || []}
+                placedHeroIds={placedHeroIds}
+              />
+            )}
+
+            {upgradePanel && (
+              <UpgradePanel
+                data={upgradePanel}
+                onUpgrade={handleUpgradeUnit}
+                onClose={handleCloseUpgradePanel}
+              />
+            )}
           </div>
         </div>
 

@@ -12,7 +12,7 @@ signal reached_base(enemy: Node)
 var enemy_id: String  = "soldier"
 var max_hp: float     = 100.0
 var current_hp: float = 100.0
-var base_speed: float = 1.5        # 格子/秒
+var base_speed: float = 1.5        # 像素/秒
 var speed_mult: float = 1.0        # 速度乘數（被減速時 < 1.0，通常為光環）
 var _stack_slow_amount: float = 0.0 # 疊加的減速量（來自文士塔）
 var _stack_slow_timer: float = 0.0  # 疊加減速持續時間
@@ -33,6 +33,14 @@ var _flash_timer: float = 0.0
 var _is_dead: bool      = false
 var _texture: Texture2D = null
 var _texture_atk: Texture2D = null
+
+# ── 武將阻路 ──────────────────────────────────────────────────
+var _game_map: Node        = null
+var _blocker: Node         = null   # 正在阻擋路徑的武將
+var _blocked_cell: Vector2i = Vector2i(-1, -1)
+var _blocker_atk_timer: float = 0.0
+const BLOCKER_ATK: float   = 20.0  # 敵人對武將的攻擊力
+const BLOCKER_ATK_SPD: float = 1.0 # 攻擊間隔（秒）
 
 # ── 顏色（依 enemy_id 可設不同顏色，預設灰） ──────────────
 var body_color: Color   = Color(0.55, 0.20, 0.20, 1)  # 深紅兵
@@ -103,14 +111,37 @@ func _physics_process(delta: float) -> void:
 		_on_reached_base()
 		return
 
+	# ── 武將阻路處理 ──────────────────────────────────────────
+	if _blocker != null:
+		# 如果武將失效、死亡，或者已經不在原本阻擋的格子（被玩家移走）
+		if not is_instance_valid(_blocker) or _blocker.current_hp <= 0.0 or _blocker.get_cell() != _blocked_cell:
+			_blocker = null
+			_blocked_cell = Vector2i(-1, -1)
+		else:
+			_blocker_atk_timer -= delta
+			if _blocker_atk_timer <= 0.0:
+				_blocker.take_damage(BLOCKER_ATK)
+				_blocker_atk_timer = BLOCKER_ATK_SPD
+			queue_redraw()
+			return  # 停下來等武將死亡或移開
+
+	# 檢查前方格子是否有武將阻路
+	if _game_map != null:
+		var cur_cell: Vector2i  = _game_map.world_to_grid(position)
+		var next_cell: Vector2i = _game_map.world_to_grid(_waypoints[_wp_index])
+		for check_cell in [cur_cell, next_cell]:
+			var occ: Node = _game_map.get_occupant(check_cell)
+			if occ != null and occ is Hero:
+				_blocker = occ
+				_blocked_cell = check_cell
+				_blocker_atk_timer = 0.0
+				queue_redraw()
+				return
+
 	# 移動
 	var target: Vector2        = _waypoints[_wp_index]
 	var effective_speed: float = base_speed * speed_mult * (1.0 - _stack_slow_amount)
 	effective_speed = max(base_speed * 0.15, effective_speed) # 限制最少保留 15% 基礎跑速
-	
-	# 偵錯記錄：這會在瀏覽器控制台 (F12) 顯示
-	if _wp_index == 1 and Engine.get_process_frames() % 60 == 0:
-		print("[Enemy Debug] ID: %s, BaseSpeed: %f, FINAL SPEED (px/s): %f" % [enemy_id, base_speed, effective_speed])
 	
 	var direction: Vector2     = (target - position).normalized()
 	var move_dist: float       = effective_speed * delta

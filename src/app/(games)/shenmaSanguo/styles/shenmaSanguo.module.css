@@ -22,7 +22,8 @@
 
   min-height: 100vh;
   color: var(--sg-text);
-  padding-top: 60px;
+  max-width: 1080px;
+  margin: 0 auto;
 }
 
 /* ── Page container ─────────────────────────────────────── */
@@ -596,10 +597,10 @@
   flex-direction: column;
   align-items: center;
   width: 100%;
-  min-height: 100vh;
+  height: 100vh; /* 固定為視窗高度 */
+  overflow: hidden; /* 防止出現滾動條 */
   padding: 0;
   gap: 0;
-  /* 寬度完全跟隨 Bootstrap Container */
   --battle-max-w: 100%;
 }
 
@@ -622,8 +623,16 @@
 
 .battleTopBarTitle {
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 0.95rem;
   color: var(--sg-text);
+  white-space: nowrap;
+}
+
+.statsRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: nowrap; /* 強制不換行 */
 }
 
 .battleTopBarStatus {
@@ -634,20 +643,29 @@
 /* 直式遊戲框 */
 .gamePortraitWrap {
   width: 100%;
-  max-width: var(--battle-max-w);
+  flex: 1; /* 佔據剩餘高度 */
   display: flex;
   justify-content: center;
+  align-items: flex-start; /* 改為靠頂對齊 */
+  overflow: hidden;
+  padding: 0; /* 移除間隙，確保緊貼頂部 */
 }
 
 .gameWrapper {
   position: relative;
   width: 100%;
-  aspect-ratio: 540 / 800;
+  /* 使用 padding-top 鎖定 540:600 (9:10) 的比例 */
+  padding-top: calc(100% * 600 / 540);
   background: #1a1a2e;
-  overflow: hidden;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+  /* 限制最大寬度，避免在電腦螢幕上過大 */
+  max-width: 1080px;
 }
+
 .gameIframe {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   border: none;
@@ -945,4 +963,270 @@
   color: #94a3b8;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+/* ── Placement Menu ─────────────────────────────────────── */
+.placementOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  backdrop-filter: blur(2px);
+}
+
+.placementMenu {
+  position: absolute;
+  width: 220px;
+  background: #1a1f36;
+  border: 2px solid #f59e0b;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: scaleIn 0.15s ease-out;
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.placementHeader {
+  background: rgba(245, 158, 11, 0.15);
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #f59e0b;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: #f59e0b;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.placementContent {
+  padding: 0.75rem;
+  max-height: 480px; /* 增加高度 */
+  overflow-y: visible; /* 盡量不顯示滾動條 */
+}
+
+.heroGrid,
+.towerGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem;
+}
+
+.menuCard {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #fff;
+  text-align: center;
+}
+
+.menuCard:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: #f59e0b;
+  transform: translateY(-2px);
+}
+
+.cardDisabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: grayscale(0.8);
+}
+
+.cardIcon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.cardName {
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.cardStatus,
+.cardCost {
+  font-size: 0.65rem;
+  color: #9ca3af;
+}
+
+.emptyMsg {
+  grid-column: span 2;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 0.8rem;
+  padding: 1rem 0;
+}
+
+.tabSwitcher {
+  display: flex;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 4px;
+  gap: 4px;
+}
+
+.tabBtn {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #9ca3af;
+  padding: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.tabBtn:hover {
+  color: #fff;
+}
+
+.tabActive {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+/* ── Upgrade Panel ───────────────────────────────────────── */
+.upgradePanel {
+  background: rgba(15, 23, 42, 0.95);
+  border: 2px solid var(--sg-primary);
+  border-radius: 12px;
+  padding: 12px;
+  min-width: 200px;
+  box-shadow:
+    0 10px 25px -5px rgba(0, 0, 0, 0.5),
+    0 8px 10px -6px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  color: white;
+}
+
+.upgradeHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 6px;
+}
+
+.unitName {
+  font-weight: 700;
+  color: var(--sg-primary);
+  font-size: 1.1rem;
+}
+
+.unitName small {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin-left: 6px;
+  font-weight: 400;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.upgStatItem {
+  display: flex;
+  flex-direction: column;
+}
+
+.upgStatLabel {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.upgStatValue {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.upgradeActions {
+  display: flex;
+  gap: 8px;
+}
+
+.actionBtn {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.85rem;
+}
+
+.upgradeBtn {
+  background: var(--sg-primary);
+  color: #fff;
+}
+
+.upgradeBtn:hover:not(.btnDisabled) {
+  background: #4f46e5;
+}
+
+.moveBtn {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.moveBtn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.maxLevelTag {
+  flex: 1;
+  text-align: center;
+  color: var(--sg-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 8px;
+}
+
+.btnDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.5);
 }

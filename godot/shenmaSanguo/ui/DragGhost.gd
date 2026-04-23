@@ -10,7 +10,7 @@ var _active: bool     = false
 var _label_text: String = "?"
 var _color: Color       = Color(0.5, 0.5, 0.5, 0.7)
 
-func start_drag(type: String, label: String, color: Color) -> void:
+func start_drag(_type: String, label: String, color: Color) -> void:
 	_active     = true
 	_label_text = label.left(3)
 	_color      = color

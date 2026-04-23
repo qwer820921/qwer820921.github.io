@@ -52,6 +52,7 @@ export interface HeroConfig {
   atk_growth: number;
   def_growth: number;
   hp_growth: number;
+  image?: string;
   attack_image?: string;
   range_growth: number;
   atk_spd_growth: number;

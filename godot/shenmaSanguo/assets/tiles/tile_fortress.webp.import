@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c2wa8baqesm36"
+uid="uid://cc833hhw8f7eg"
 path="res://.godot/imported/tile_fortress.webp-faed69d7980d5387e54ef95d2d0fdd20.ctex"
 metadata={
 "vram_texture": false
@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/tile_fortress.webp-faed69d7980d5387e54ef95d2d
 
 [params]
 
-compress/mode=4
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

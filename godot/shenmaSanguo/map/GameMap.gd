@@ -11,7 +11,7 @@ enum TileType { EMPTY, ROAD, BUILD, OBSTACLE, BASE, SPAWN }
 var tile_size: int      = 48   # min(_tile_w, _tile_h)，供 entity 大小使用
 var _tile_w: int        = 48   # 每格寬度（填滿 viewport 寬）
 var _tile_h: int        = 48   # 每格高度（填滿 viewport 高）
-const TOP_UI_H: int  = 160   # 頂部 UI 高度（留空給 BattleHUD）
+const TOP_UI_H: int  = 0     # 頂部 UI 高度（已移除留白，地圖置頂）
 const MAP_PADDING: int  = 1     # 地圖四周格子邊距
 
 # ── 顏色 ──────────────────────────────────────────────────────
@@ -157,11 +157,15 @@ func _load_textures(pj: Dictionary) -> void:
 			_cell_textures[cell] = tex
 
 func _compute_tile_size() -> void:
-	var vp: Vector2 = get_viewport_rect().size
+	var vp: Vector2    = get_viewport_rect().size
 	var avail_h: float = vp.y - float(TOP_UI_H)
-	_tile_w   = max(16, int(vp.x / max(1, _map_cols)))
-	_tile_h   = max(16, int(avail_h / max(1, _map_rows)))
-	tile_size = min(_tile_w, _tile_h)   # entity 大小仍用較小值避免超出格子
+	# 正方形格子：取寬/高方向能放下的最小格子尺寸
+	tile_size = max(16, min(
+		int(vp.x    / max(1, _map_cols)),
+		int(avail_h / max(1, _map_rows))
+	))
+	_tile_w = tile_size
+	_tile_h = tile_size
 
 func _compute_map_size() -> void:
 	if _json_cols > 0 and _json_rows > 0:
@@ -178,13 +182,11 @@ func _compute_map_size() -> void:
 	_map_rows = max_r + MAP_PADDING + 2
 
 func _center_map() -> void:
-	var vp: Vector2    = get_viewport_rect().size
-	var map_w: float   = _map_cols * _tile_w
-	var map_h: float   = _map_rows * _tile_h
-	var avail_h: float = vp.y - float(TOP_UI_H)
+	var vp: Vector2  = get_viewport_rect().size
+	var map_w: float = _map_cols * _tile_w
 	_map_offset = Vector2(
 		(vp.x - map_w) * 0.5,
-		TOP_UI_H + max(0.0, (avail_h - map_h) * 0.5)
+		float(TOP_UI_H)
 	)
 
 # ═══════════════════════════════════════════
@@ -207,13 +209,13 @@ func _draw() -> void:
 	else:
 		draw_rect(Rect2(Vector2.ZERO, vp), COLOR_BG)
 
-	# 繪製每個格子
+	# 繪製每個格子（用 _tile_w/_tile_h 確保與座標轉換函式一致）
 	for col in range(_map_cols):
 		for row in range(_map_rows):
 			var cell: Vector2i = Vector2i(col, row)
 			var rect: Rect2 = Rect2(
-				_map_offset + Vector2(col * tile_size, row * tile_size),
-				Vector2(tile_size, tile_size)
+				_map_offset + Vector2(col * _tile_w, row * _tile_h),
+				Vector2(_tile_w, _tile_h)
 			)
 			var cell_tex: Texture2D = _cell_textures.get(cell, null)
 			if cell_tex != null:
@@ -225,8 +227,8 @@ func _draw() -> void:
 	# 高亮
 	if _hl_cell.x >= 0:
 		var hl_rect: Rect2 = Rect2(
-			_map_offset + Vector2(_hl_cell.x * tile_size, _hl_cell.y * tile_size),
-			Vector2(tile_size, tile_size)
+			_map_offset + Vector2(_hl_cell.x * _tile_w, _hl_cell.y * _tile_h),
+			Vector2(_tile_w, _tile_h)
 		)
 		draw_rect(hl_rect, COLOR_HL_OK if _hl_valid else COLOR_HL_NO)
 
@@ -240,15 +242,15 @@ func _tile_color(cell: Vector2i) -> Color:
 		_:                 return COLOR_EMPTY
 
 func _draw_tile_icon(rect: Rect2, cell: Vector2i) -> void:
-	var fs: int = max(10, tile_size - 30)
+	var fs: int = max(10, int(rect.size.y) - 30)
 	match _grid.get(cell, TileType.EMPTY):
 		TileType.BASE:
 			draw_string(ThemeDB.fallback_font,
-				rect.position + Vector2(4, tile_size - 4),
+				rect.position + Vector2(4, rect.size.y - 4),
 				"⚔", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
 		TileType.SPAWN:
 			draw_string(ThemeDB.fallback_font,
-				rect.position + Vector2(4, tile_size - 4),
+				rect.position + Vector2(4, rect.size.y - 4),
 				"▶", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
 
 # ═══════════════════════════════════════════
@@ -256,13 +258,13 @@ func _draw_tile_icon(rect: Rect2, cell: Vector2i) -> void:
 # ═══════════════════════════════════════════
 func grid_to_world(cell: Vector2i) -> Vector2:
 	return _map_offset + Vector2(
-		cell.x * tile_size + tile_size * 0.5,
-		cell.y * tile_size + tile_size * 0.5
+		cell.x * _tile_w + _tile_w * 0.5,
+		cell.y * _tile_h + _tile_h * 0.5
 	)
 
 func world_to_grid(world_pos: Vector2) -> Vector2i:
 	var local: Vector2 = world_pos - _map_offset
-	return Vector2i(int(local.x / tile_size), int(local.y / tile_size))
+	return Vector2i(int(local.x / _tile_w), int(local.y / _tile_h))
 
 func is_valid_cell(cell: Vector2i) -> bool:
 	return cell.x >= 0 and cell.y >= 0 and cell.x < _map_cols and cell.y < _map_rows

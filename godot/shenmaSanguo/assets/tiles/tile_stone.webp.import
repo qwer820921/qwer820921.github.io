@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://crd1qv2hd51aw"
+uid="uid://cd0khnj0lslpg"
 path="res://.godot/imported/tile_stone.webp-957792726bd23429d856400f950322f3.ctex"
 metadata={
 "vram_texture": false
@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/tile_stone.webp-957792726bd23429d856400f95032
 
 [params]
 
-compress/mode=4
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

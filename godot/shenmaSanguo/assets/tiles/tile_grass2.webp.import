@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ffb5kf657egs"
+uid="uid://dlu4jcfh3sydo"
 path="res://.godot/imported/tile_grass2.webp-d0187c2c343951bc0eb90a2cebb1692d.ctex"
 metadata={
 "vram_texture": false
@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/tile_grass2.webp-d0187c2c343951bc0eb90a2cebb1
 
 [params]
 
-compress/mode=4
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

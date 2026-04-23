@@ -31,6 +31,9 @@ var _drag_type: int          = DragType.NONE
 var _drag_hero_data: Dictionary = {}
 var _drag_tower_type: String = ""
 var _is_dragging: bool       = false
+var _pressed_unit: Node      = null   # 等待拖曳閾值判斷（PREP 點擊）
+var _press_pos: Vector2      = Vector2.ZERO
+const DRAG_THRESHOLD: float  = 8.0
 
 # ── 已放置的武將（避免同一英雄放多次）────────────────────────
 var _tile_size: int            = 48    # 從 GameMap 取得，傳給 Entity
@@ -46,6 +49,11 @@ func _ready() -> void:
 	web_bridge.payload_received.connect(_on_payload_received)
 	web_bridge.start_battle_requested.connect(_on_start_btn_pressed)
 	web_bridge.auto_toggle_requested.connect(_on_auto_btn_pressed)
+	web_bridge.resume_game_requested.connect(_on_resume_game)
+	web_bridge.move_unit_requested.connect(_on_web_move_unit)
+	web_bridge.deselect_unit_requested.connect(_deselect_unit)
+	web_bridge.upgrade_unit_requested.connect(_on_web_upgrade_unit)
+
 
 	# BattleHUD signals
 	battle_hud.start_btn_pressed.connect(_on_start_btn_pressed)
@@ -78,6 +86,16 @@ func _ready() -> void:
 #  Payload 處理
 # ═══════════════════════════════════════════
 func _on_payload_received(payload: Dictionary) -> void:
+	var type = payload.get("type", "")
+	if type == "place_hero":
+		_on_web_place_hero(payload)
+	elif type == "place_tower":
+		_on_web_place_tower(payload)
+	elif payload.has("stage_id"):
+		# 初始初始化
+		_do_initial_setup(payload)
+
+func _do_initial_setup(payload: Dictionary) -> void:
 	_payload        = payload
 	_team_list      = payload.get("team_list", [])
 	_heroes_config  = payload.get("heroes_config", [])
@@ -111,6 +129,7 @@ func _on_payload_received(payload: Dictionary) -> void:
 	battle_hud.update_wave(0, total_waves)
 	battle_hud.update_base_hp(20, 20)
 	battle_hud.update_gold(500)
+
 
 func _count_waves(waves: Array) -> int:
 	var max_wave: int = 0
@@ -243,28 +262,76 @@ func _unhandled_input(event: InputEvent) -> void:
 		if game_map.is_valid_cell(cell):
 			var unit: Node = game_map.get_occupant(cell)
 			if unit != null:
-				# 點擊既有單位
 				if battle_manager.game_state == BattleManager.GameState.PREP:
-					_deselect_unit() 
-					_on_unit_move_requested(unit)
+					# 備戰期：先記錄按下，等移動距離超過閾值再開始拖曳
+					_pressed_unit = unit
+					_press_pos    = event.position
 				else:
-					# 戰鬥期間只做選取
+					# 戰鬥中：顯示升級面板
 					if unit is Hero: _on_hero_clicked(unit)
 					elif unit is Tower: _on_tower_clicked(unit)
 				get_viewport().set_input_as_handled()
 				return
 			else:
-				# 點擊草地 -> 取消選取並收起面板
-				_deselect_unit()
-				battle_hud.hide_upgrade_panel()
+				# 點擊空地 -> 觸發 Web 彈窗
+				var tile_type = game_map.get_tile_type(cell)
+				var can_place: bool = false
+				var type_name: String = ""
+				
+				if tile_type == game_map.TileType.ROAD:
+					can_place = true
+					type_name = "road"
+				elif tile_type == game_map.TileType.BUILD:
+					can_place = true
+					type_name = "build"
+				
+				if can_place:
+					_deselect_unit()
+					battle_hud.hide_upgrade_panel()
+					
+					# 進入「子彈時間」
+					Engine.time_scale = 0.1
+					
+					# 取得螢幕位置傳給 Web
+					var pos_screen: Vector2 = get_viewport().get_mouse_position()
+					web_bridge.send_click_cell({
+						"cell_x": cell.x,
+						"cell_y": cell.y,
+						"tile_type": type_name,
+						"screen_pos": {"x": pos_screen.x, "y": pos_screen.y}
+					})
+				else:
+					# 點擊其他（裝飾、障礙物）-> 僅取消選取
+					_deselect_unit()
+					battle_hud.hide_upgrade_panel()
+
 
 func _input(event: InputEvent) -> void:
+	# ── PREP 拖曳閾值判斷 ──────────────────────────────────────
+	if _pressed_unit != null and not _is_dragging:
+		if event is InputEventMouseMotion:
+			if event.position.distance_to(_press_pos) > DRAG_THRESHOLD:
+				_deselect_unit()
+				_on_unit_move_requested(_pressed_unit)
+				_pressed_unit = null
+			return
+		elif event is InputEventMouseButton and not event.pressed:
+			# 放開前未超過閾值 → 視為點擊，顯示升級面板
+			if _pressed_unit is Hero:
+				_on_hero_clicked(_pressed_unit)
+			elif _pressed_unit is Tower:
+				_on_tower_clicked(_pressed_unit)
+			_pressed_unit = null
+			get_viewport().set_input_as_handled()
+			return
+
 	if not _is_dragging:
 		return
 
 	if event is InputEventMouseMotion:
 		drag_ghost.update_pos(event.position)
-		var cell: Vector2i = game_map.world_to_grid(event.position)
+		# world_to_grid 需要世界座標，不可使用螢幕空間的 event.position
+		var cell: Vector2i = game_map.world_to_grid(get_global_mouse_position())
 		if game_map.is_valid_cell(cell):
 			var valid: bool = _is_valid_placement(cell)
 			game_map.highlight_cell(cell, valid)
@@ -273,7 +340,7 @@ func _input(event: InputEvent) -> void:
 
 	elif event is InputEventMouseButton and not event.pressed:
 		# 放開滑鼠 → 嘗試放置
-		var cell: Vector2i = game_map.world_to_grid(event.position)
+		var cell: Vector2i = game_map.world_to_grid(get_global_mouse_position())
 		if game_map.is_valid_cell(cell) and _is_valid_placement(cell):
 			_place_unit(cell)
 		_end_drag()
@@ -321,7 +388,8 @@ func _place_hero(cell: Vector2i, world_pos: Vector2) -> void:
 
 	var on_road: bool = game_map.get_tile_type(cell) == game_map.TileType.ROAD
 	hero.setup(_drag_hero_data, _heroes_config, cell, on_road, wave_manager)
-	hero.hero_clicked.connect(_on_hero_clicked.bind(hero))
+	hero.hero_clicked.connect(_on_hero_clicked)
+	hero.hero_died.connect(_on_hero_died)
 
 	game_map.set_occupied(cell, hero)
 	_placed_heroes[str(_drag_hero_data.get("hero_id", ""))] = hero
@@ -338,7 +406,7 @@ func _place_tower(cell: Vector2i, world_pos: Vector2) -> void:
 	tower.position = world_pos
 	tower.tile_size = _tile_size
 	tower.setup(_drag_tower_type, cell, wave_manager)
-	tower.tower_clicked.connect(_on_tower_clicked.bind(tower))
+	tower.tower_clicked.connect(_on_tower_clicked)
 	tower.upgrade_requested.connect(_on_upgrade_requested)
 
 	game_map.set_occupied(cell, tower)
@@ -346,21 +414,42 @@ func _place_tower(cell: Vector2i, world_pos: Vector2) -> void:
 func _end_drag() -> void:
 	_is_dragging    = false
 	_moving_unit    = null
+	_pressed_unit   = null
 	drag_ghost.end_drag()
 	game_map.clear_highlight()
 
 # ═══════════════════════════════════════════
 #  選取 & 升級
 # ═══════════════════════════════════════════
+func _on_hero_died(hero: Node) -> void:
+	var hid: String = hero.hero_id
+	if _placed_heroes.has(hid):
+		_placed_heroes.erase(hid)
+	
+	var cell: Vector2i = hero.get_cell()
+	game_map.clear_occupied(cell)
+	
+	if _selected_unit == hero:
+		_deselect_unit()
+
 func _on_hero_clicked(hero: Node) -> void:
 	_deselect_unit()
 	_selected_unit = hero
 	hero.set_selected(true)
-	battle_hud.show_hero_panel(hero, hero.get_global_transform_with_canvas().origin)
 	
-	# 直接進入移動模式（僅限備戰期間）
-	if battle_manager.game_state == BattleManager.GameState.PREP:
-		_on_unit_move_requested(hero)
+	# 取得螢幕位置傳給 Web
+	var pos_screen: Vector2 = hero.get_global_transform_with_canvas().origin
+	web_bridge.send_show_upgrade_panel({
+		"unit_type": "hero",
+		"hero_id": hero.hero_id,
+		"name": hero.hero_name,
+		"level": hero.hero_level,
+		"atk": hero.atk,
+		"atk_spd": 1.0 / hero.attack_speed,
+		"range": hero.attack_range,
+		"hp": hero.current_hp,
+		"screen_pos": {"x": pos_screen.x, "y": pos_screen.y},
+	})
 
 func _on_tower_clicked(tower: Node) -> void:
 	_deselect_unit()
@@ -368,23 +457,96 @@ func _on_tower_clicked(tower: Node) -> void:
 	tower.set_selected(true)
 	
 	var pos_screen: Vector2 = tower.get_global_transform_with_canvas().origin
-	var can_afford: bool    = battle_manager.can_spend_gold(tower.get_upgrade_cost())
-	battle_hud.show_upgrade_panel(tower, pos_screen, can_afford)
+	var cost: int = tower.get_upgrade_cost()
+	var can_afford: bool = battle_manager.can_spend_gold(cost)
 	
-	# 直接進入移動模式（僅限備戰期間）
-	if battle_manager.game_state == BattleManager.GameState.PREP:
-		_on_unit_move_requested(tower)
+	web_bridge.send_show_upgrade_panel({
+		"unit_type": "tower",
+		"tower_type": tower.tower_type_key,
+		"name": tower.tower_name,
+		"level": tower.tower_level,
+		"atk": tower.atk,
+		"atk_spd": 1.0 / tower.atk_spd,
+		"range": tower.range_tiles,
+		"upgrade_cost": cost,
+		"max_level": (tower.tower_level >= 5),
+		"can_afford": can_afford,
+		"screen_pos": {"x": pos_screen.x, "y": pos_screen.y},
+	})
 
 func _on_upgrade_requested(tower: Node, cost: int) -> void:
 	if battle_manager.spend_gold(cost):
 		tower.apply_upgrade()
-		# 更新升級面板顯示
-		battle_hud.show_upgrade_panel(tower, tower.get_global_transform_with_canvas().origin, battle_manager.can_spend_gold(tower.get_upgrade_cost()))
+		# 重新發送更新後的資訊給 Web
+		_on_tower_clicked(tower)
 
 func _deselect_unit() -> void:
 	if _selected_unit and is_instance_valid(_selected_unit):
 		_selected_unit.set_selected(false)
 	_selected_unit = null
+	web_bridge.send_hide_upgrade_panel()
+
+func _on_resume_game() -> void:
+	Engine.time_scale = 1.0
+
+func _on_web_move_unit() -> void:
+	if _selected_unit == null or not is_instance_valid(_selected_unit):
+		return
+	_on_unit_move_requested(_selected_unit)
+
+func _on_web_upgrade_unit() -> void:
+	if _selected_unit == null or not is_instance_valid(_selected_unit):
+		return
+	if not (_selected_unit is Tower):
+		return
+	var tower: Tower = _selected_unit as Tower
+	var cost: int = tower.get_upgrade_cost()
+	if battle_manager.spend_gold(cost):
+		tower.apply_upgrade()
+		_on_tower_clicked(tower)  # 重新發送更新後的資訊給 Web
+
+# ── Web 遠端放置處理 ──────────────────────────────────────────
+func _on_web_place_hero(data: Dictionary) -> void:
+	var hid: String = str(data.get("hero_id", ""))
+	var cell: Vector2i = Vector2i(int(data.get("cell_x", 0)), int(data.get("cell_y", 0)))
+	
+	# 尋找武將資料
+	var hdata: Dictionary = {}
+	for h in _team_list:
+		if str(h.get("hero_id", "")) == hid:
+			hdata = h
+			break
+	
+	if hdata.is_empty():
+		print("[Main] Web 放置失敗：找不到武將資料 ", hid)
+		return
+		
+	# 模擬拖曳狀態以復用放置邏輯
+	_drag_type = DragType.HERO
+	_drag_hero_data = hdata
+	
+	if _is_valid_placement(cell):
+		var world_pos = game_map.grid_to_world(cell)
+		_place_hero(cell, world_pos)
+		print("[Main] Web 成功部署武將：", hid, " 於 ", cell)
+	else:
+		print("[Main] Web 部署失敗：位置無效或已重複部署")
+
+func _on_web_place_tower(data: Dictionary) -> void:
+	var type_key: String = str(data.get("tower_type", ""))
+	var cell: Vector2i = Vector2i(int(data.get("cell_x", 0)), int(data.get("cell_y", 0)))
+	
+	# 模擬拖曳狀態以復用放置邏輯
+	_drag_type = DragType.TOWER
+	_drag_tower_type = type_key
+	
+	if _is_valid_placement(cell):
+		var world_pos = game_map.grid_to_world(cell)
+		_place_tower(cell, world_pos)
+		print("[Main] Web 成功建造防禦塔：", type_key, " 於 ", cell)
+	else:
+		print("[Main] Web 建造失敗：位置無效或金幣不足")
+
 
 # ═══════════════════════════════════════════
 #  測試用假 payload（非 Web 環境）
