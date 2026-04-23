@@ -389,7 +389,7 @@ export default function MapTab({
         fd.append("type", type);
         fd.append("name", baseName);
 
-        const resp = await fetch("/api/mapEditor/upload", {
+        const resp = await fetch("/mapEditor/api/upload", {
           method: "POST",
           body: fd,
         });
