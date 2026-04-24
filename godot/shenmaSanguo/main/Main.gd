@@ -91,17 +91,43 @@ func _on_payload_received(payload: Dictionary) -> void:
 		_on_web_place_hero(payload)
 	elif type == "place_tower":
 		_on_web_place_tower(payload)
-	elif payload.has("stage_id"):
-		# 初始初始化
+	elif type == "load_stage" or payload.has("stage_id"):
+		# 初始初始化 或 切換關卡
 		_do_initial_setup(payload)
 
+func _cleanup_current_stage() -> void:
+	print("[Main] 清除當前關卡狀態...")
+	# 1. 刪除所有單位節點
+	for child in units_layer.get_children():
+		child.queue_free()
+	
+	# 2. 清除追蹤狀態
+	_placed_heroes.clear()
+	_selected_unit = null
+	_moving_unit = null
+	_is_dragging = false
+	_pressed_unit = null
+	
+	# 3. 停止所有計時器或波次
+	wave_manager.stop_all()
+
 func _do_initial_setup(payload: Dictionary) -> void:
+	_cleanup_current_stage()
+	
 	_payload        = payload
 	_team_list      = payload.get("team_list", [])
 	_heroes_config  = payload.get("heroes_config", [])
 
 	var map_data: Dictionary  = payload.get("map", {})
-	var path_json: Dictionary = map_data.get("path_json", {})
+	var path_json = map_data.get("path_json", {})
+	if path_json is String:
+		print("[Main] path_json is String, parsing...")
+		path_json = JSON.parse_string(path_json)
+	
+	if not path_json is Dictionary:
+		print("[Main] Warning: path_json is not a Dictionary! value:", path_json)
+		path_json = {}
+
 	_waves = map_data.get("waves", [])
 	if _waves.is_empty():
 		_waves = _build_default_waves()
@@ -113,6 +139,7 @@ func _do_initial_setup(payload: Dictionary) -> void:
 	var stage_id: String = str(payload.get("stage_id", "chapter1_1"))
 
 	# 初始化地圖
+	print("[Main] Setting up game_map with stage_id:", stage_id)
 	game_map.setup(path_json)
 	_tile_size = game_map.get_tile_size()
 

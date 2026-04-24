@@ -22,7 +22,8 @@
 
   min-height: 100vh;
   color: var(--sg-text);
-  max-width: 1080px;
+  width: 100%;
+  max-width: 700px;
   margin: 0 auto;
 }
 
@@ -394,7 +395,7 @@
 }
 .slotFilled:hover {
   border-color: #ef4444;
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.15);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.05);
 }
 .slotName {
   font-size: 0.72rem;
@@ -642,24 +643,22 @@
 
 /* 直式遊戲框 */
 .gamePortraitWrap {
-  width: 100%;
-  flex: 1; /* 佔據剩餘高度 */
+  flex: 1;
+  min-height: 0; /* 允許 flex 收縮 */
   display: flex;
   justify-content: center;
-  align-items: flex-start; /* 改為靠頂對齊 */
+  align-items: flex-start;
   overflow: hidden;
-  padding: 0; /* 移除間隙，確保緊貼頂部 */
+  position: relative;
 }
 
 .gameWrapper {
   position: relative;
+  height: 100%; /* 填滿可用高度 */
+  aspect-ratio: 9 / 10; /* 540:600 直式比例 */
   width: 100%;
-  /* 使用 padding-top 鎖定 540:600 (9:10) 的比例 */
-  padding-top: calc(100% * 600 / 540);
   background: #1a1a2e;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
-  /* 限制最大寬度，避免在電腦螢幕上過大 */
-  max-width: 1080px;
 }
 
 .gameIframe {
@@ -1229,4 +1228,418 @@
   opacity: 0.5;
   cursor: not-allowed;
   filter: grayscale(0.5);
+}
+
+/* ── SinglePage 單頁版面 ────────────────────────────────────── */
+.singlePage {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #1a1a2e;
+  background-image: url("/images/shenmaSanguo/tiles/tile_grass.webp");
+  background-repeat: repeat;
+  background-size: 64px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── HUD 疊加層 ──────────────────────────────────────────────── */
+.hudTopBar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(10, 15, 35, 0.72);
+  backdrop-filter: blur(6px);
+  min-height: 36px;
+}
+
+.hudAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  font-size: 0.9rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 0.15s;
+}
+
+.hudAvatar:hover {
+  background: rgba(99, 102, 241, 0.4);
+}
+
+.hudCenter {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.hudStageBtn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 0.9rem;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.hudStageBtn:hover {
+  background: rgba(99, 102, 241, 0.4);
+  border-color: rgba(99, 102, 241, 0.55);
+}
+
+.hudMapName {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hudWave {
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.hudRight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.hudStat {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.88);
+  white-space: nowrap;
+}
+
+.hudRightBtns {
+  position: absolute;
+  right: 4px;
+  top: 55%;
+  transform: translateY(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hudLeftBtns {
+  position: absolute;
+  left: 4px;
+  top: 55%;
+  transform: translateY(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hudSideBtn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(10, 15, 35, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  transition: background 0.15s;
+}
+
+.hudSideBtn:hover {
+  background: rgba(99, 102, 241, 0.4);
+  border-color: rgba(99, 102, 241, 0.55);
+}
+
+.hudSideBtnTall {
+  width: 38px;
+  height: 64px; /* 加高以容納兩個字 */
+  border-radius: 10px;
+  background: rgba(10, 15, 35, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  transition: background 0.15s;
+  writing-mode: vertical-rl; /* 垂直排版 */
+  text-orientation: upright;
+  letter-spacing: 0.1em;
+}
+
+.hudSideBtnTall:hover {
+  background: rgba(99, 102, 241, 0.4);
+  border-color: rgba(99, 102, 241, 0.55);
+}
+
+.hudBottomRight {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 10;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.hudActionBtn {
+  background: rgba(10, 15, 35, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.85);
+  border-radius: 7px;
+  padding: 5px 9px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: all 0.15s;
+}
+
+.hudActionBtn:hover {
+  background: rgba(99, 102, 241, 0.4);
+  border-color: rgba(99, 102, 241, 0.55);
+}
+
+.hudActionBtnActive {
+  background: rgba(99, 102, 241, 0.55) !important;
+  border-color: rgba(99, 102, 241, 0.85) !important;
+  color: #fff !important;
+}
+
+.hudActionBtnPrimary {
+  background: linear-gradient(135deg, #6366f1, #818cf8);
+  border: none;
+  color: #fff;
+  border-radius: 7px;
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+  transition: all 0.15s;
+}
+
+.hudActionBtnPrimary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.55);
+}
+
+.hudActionBtnPrimary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── KeySetup 全螢幕遮罩 ─────────────────────────────────────── */
+.keySetupOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(10, 15, 35, 0.96);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.keySetupCard {
+  background: var(--sg-surface);
+  border-radius: 16px;
+  padding: 2rem 1.75rem;
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+.keySetupHint {
+  font-size: 0.8rem;
+  color: var(--sg-muted);
+  margin-bottom: 1.25rem;
+  line-height: 1.7;
+}
+
+.keyInput {
+  background: var(--sg-surface2) !important;
+  border: 1px solid var(--sg-border) !important;
+  color: var(--sg-text) !important;
+  border-radius: 8px !important;
+  text-align: center !important;
+  font-size: 1rem !important;
+  padding: 0.55rem 1rem !important;
+}
+
+/* ── 結算 Modal ──────────────────────────────────────────────── */
+.resultOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  background: rgba(0, 0, 0, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.resultCard {
+  border-radius: 16px;
+  padding: 2rem 1.75rem;
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
+.resultWin {
+  background: linear-gradient(160deg, #0f172a 0%, #1e3a2f 100%);
+  border: 2px solid rgba(16, 185, 129, 0.45);
+}
+
+.resultLose {
+  background: linear-gradient(160deg, #0f172a 0%, #3a1e1e 100%);
+  border: 2px solid rgba(239, 68, 68, 0.35);
+}
+
+.resultTitle {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  color: #fff;
+  margin-bottom: 0.75rem;
+}
+
+.resultStars {
+  font-size: 1.8rem;
+  color: #f59e0b;
+  margin-bottom: 1rem;
+  letter-spacing: 4px;
+}
+
+.resultLoots {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.resultLootItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.2rem 0;
+}
+
+.resultLootName {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.resultLootCount {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #f59e0b;
+}
+
+/* ── Modal 通用容器 ──────────────────────────────────────────── */
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.78);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 1rem;
+  backdrop-filter: blur(3px);
+}
+
+.modalPanel {
+  background: var(--sg-surface);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 540px;
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  margin: auto;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--sg-border);
+  flex-shrink: 0;
+}
+
+.modalTitle {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--sg-text);
+  flex: 1;
+}
+
+.modalClose {
+  background: none;
+  border: none;
+  color: var(--sg-muted);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  transition: color 0.15s;
+}
+
+.modalClose:hover {
+  color: var(--sg-text);
+}
+
+.modalBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
 }

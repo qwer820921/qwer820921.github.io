@@ -1,6 +1,6 @@
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
-import MainMenuContent from "./components/MainMenuContent";
+import SinglePageContent from "./components/SinglePageContent";
 
 const seo = seoMap[ROUTES.SHENMA_SANGUO];
 
@@ -29,5 +29,5 @@ export const metadata = {
 };
 
 export default function Page() {
-  return <MainMenuContent />;
+  return <SinglePageContent />;
 }

@@ -20,6 +20,7 @@ var _waves_data: Array = []
 var _tile_size: int = 48
 var _active_enemies: Array = []
 var _current_wave_num: int = 0
+var _is_stopping: bool = false
 var _active_spawning_groups: int = 0
 
 # ── 初始化 ────────────────────────────────────────────────────
@@ -30,9 +31,16 @@ func setup(waves: Array, enemies_config: Array, game_map: Node, units_layer: Nod
 	_units_layer    = units_layer
 	_enemy_scene    = enemy_scene
 	_tile_size      = tile_size
+	_is_stopping    = false
+
+func stop_all() -> void:
+	_is_stopping = true
+	_active_enemies.clear()
+	_active_spawning_groups = 0
 
 # ── 啟動指定波次 ──────────────────────────────────────────────
 func start_wave(wave_num: int) -> void:
+	_is_stopping = false
 	_current_wave_num = wave_num
 	_active_spawning_groups = 0
 
@@ -96,6 +104,8 @@ func _spawn_group(group: Dictionary) -> void:
 			enemy_spawned.emit(enemy)
 		if i < count - 1:
 			await get_tree().create_timer(interval).timeout
+			if _is_stopping:
+				return
 
 	_active_spawning_groups -= 1
 	if _active_spawning_groups <= 0:

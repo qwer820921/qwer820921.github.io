@@ -11,7 +11,7 @@ enum TileType { EMPTY, ROAD, BUILD, OBSTACLE, BASE, SPAWN }
 var tile_size: int      = 48   # min(_tile_w, _tile_h)，供 entity 大小使用
 var _tile_w: int        = 48   # 每格寬度（填滿 viewport 寬）
 var _tile_h: int        = 48   # 每格高度（填滿 viewport 高）
-const TOP_UI_H: int  = 0     # 頂部 UI 高度（已移除留白，地圖置頂）
+const TOP_UI_H: int  = 42     # 頂部 UI 高度（預留給 React Top Bar）
 const MAP_PADDING: int  = 1     # 地圖四周格子邊距
 
 # ── 顏色 ──────────────────────────────────────────────────────
@@ -64,32 +64,51 @@ func _parse_path_json(pj: Dictionary) -> void:
 	_json_cols = int(pj.get("cols", 0))
 	_json_rows = int(pj.get("rows", 0))
 	
+	_grid.clear()
+	_occupied.clear()
 	_paths.clear()
 	_spawn_points.clear()
+	_cell_textures.clear()
 
 	# 1. 優先處理新版多路徑格式 (paths: { "path_a": [...], "path_b": [...] })
 	if pj.has("paths"):
-		var pths: Dictionary = pj["paths"]
-		for pid in pths:
-			var raw_pts: Array = pths[pid]
+		var pths = pj["paths"]
+		if pths is Dictionary:
+			for pid in pths:
+				var raw_pts: Array = pths[pid]
+				var wps: Array[Vector2i] = []
+				for wp in raw_pts:
+					wps.append(Vector2i(int(wp[0]), int(wp[1])))
+				
+				_paths[pid] = wps
+				
+				# 標記格子為 ROAD 並填充路徑
+				for i in range(wps.size() - 1):
+					_fill_segment(wps[i], wps[i + 1], TileType.ROAD)
+				if not wps.is_empty():
+					_grid[wps[-1]] = TileType.ROAD
+					
+				# 設定生成點 (該路徑的第一個點)
+				if not wps.is_empty():
+					_spawn_points[pid] = wps[0]
+					# 標記為 SPAWN (如果還沒被標記)
+					if not _grid.has(wps[0]) or _grid[wps[0]] == TileType.ROAD:
+						_grid[wps[0]] = TileType.SPAWN
+		elif pths is Array:
+			# 相容舊版或格式錯誤：若 paths 是 Array，視為單一連結路徑
+			var pid: String = "path_a"
 			var wps: Array[Vector2i] = []
-			for wp in raw_pts:
-				wps.append(Vector2i(int(wp[0]), int(wp[1])))
+			for wp in pths:
+				if wp is Array and wp.size() >= 2:
+					wps.append(Vector2i(int(wp[0]), int(wp[1])))
 			
 			_paths[pid] = wps
-			
-			# 標記格子為 ROAD 並填充路徑
 			for i in range(wps.size() - 1):
 				_fill_segment(wps[i], wps[i + 1], TileType.ROAD)
 			if not wps.is_empty():
 				_grid[wps[-1]] = TileType.ROAD
-				
-			# 設定生成點 (該路徑的第一個點)
-			if not wps.is_empty():
 				_spawn_points[pid] = wps[0]
-				# 標記為 SPAWN (如果還沒被標記)
-				if not _grid.has(wps[0]) or _grid[wps[0]] == TileType.ROAD:
-					_grid[wps[0]] = TileType.SPAWN
+				_grid[wps[0]] = TileType.SPAWN
 
 	# 2. 如果沒有 paths 但有 waypoints (舊版相容)
 	elif pj.has("waypoints"):
@@ -108,21 +127,24 @@ func _parse_path_json(pj: Dictionary) -> void:
 			_grid[wps[0]] = TileType.SPAWN
 
 	# 3. 基地 (由 JSON 明確指定)
-	var base_arr: Array = pj.get("base", [0, 0])
-	_base_pos = Vector2i(int(base_arr[0]), int(base_arr[1]))
-	_grid[_base_pos] = TileType.BASE
+	var base_arr = pj.get("base", [0, 0])
+	if base_arr is Array and base_arr.size() >= 2:
+		_base_pos = Vector2i(int(base_arr[0]), int(base_arr[1]))
+		_grid[_base_pos] = TileType.BASE
 
 	# 4. 建築區 (不覆蓋 ROAD / BASE / SPAWN)
 	for bz in pj.get("build_zones", []):
-		var bpos: Vector2i = Vector2i(int(bz[0]), int(bz[1]))
-		if not _grid.has(bpos):
-			_grid[bpos] = TileType.BUILD
+		if bz is Array and bz.size() >= 2:
+			var bpos: Vector2i = Vector2i(int(bz[0]), int(bz[1]))
+			if not _grid.has(bpos):
+				_grid[bpos] = TileType.BUILD
 
 	# 5. 障礙物 (不覆蓋 ROAD / BASE / SPAWN)
 	for ob in pj.get("obstacles", []):
-		var opos: Vector2i = Vector2i(int(ob[0]), int(ob[1]))
-		if not _grid.has(opos):
-			_grid[opos] = TileType.OBSTACLE
+		if ob is Array and ob.size() >= 2:
+			var opos: Vector2i = Vector2i(int(ob[0]), int(ob[1]))
+			if not _grid.has(opos):
+				_grid[opos] = TileType.OBSTACLE
 
 func _fill_segment(from: Vector2i, to: Vector2i, type: TileType) -> void:
 	var dc: int = sign(to.x - from.x)
@@ -193,6 +215,10 @@ func _center_map() -> void:
 #  繪製
 # ═══════════════════════════════════════════
 func _draw() -> void:
+	# 每次繪製前重新計算尺寸與偏移，確保響應式縮放正確
+	_compute_tile_size()
+	_center_map()
+
 	var vp: Vector2 = get_viewport_rect().size
 	# 背景：依據視窗寬度等比例縮放，若下方有空隙則向下平鋪
 	if _bg_texture != null:
