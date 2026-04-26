@@ -164,6 +164,12 @@ export default function SinglePageContent() {
   // ── Godot 狀態 ─────────────────────────────────────────────
   const [godotReady, setGodotReady] = useState(false);
   const [iframeLoading, setIframeLoading] = useState(true);
+  const iframeLoadingRef = useRef(true);
+
+  // ── 載入狀態 ───────────────────────────────────────────────
+  const [loadElapsed, setLoadElapsed] = useState(0);
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
+  const [swUpdateReady, setSwUpdateReady] = useState(false);
   const [payloadSent, setPayloadSent] = useState(false);
   const [currentMapId, setCurrentMapId] = useState<string>("");
   const [battleStats, setBattleStats] = useState<BattleStats | null>(null);
@@ -187,6 +193,59 @@ export default function SinglePageContent() {
   // ── 初始化 ─────────────────────────────────────────────────
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // 同步 ref，讓 SW callback 讀到最新值
+  useEffect(() => {
+    iframeLoadingRef.current = iframeLoading;
+  }, [iframeLoading]);
+
+  // SW 更新偵測：載入中 → 直接強制更新；遊戲已啟動 → 顯示 banner
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const handleWaiting = (reg: ServiceWorkerRegistration) => {
+      if (!reg.waiting) return;
+      if (iframeLoadingRef.current) {
+        reg.waiting.postMessage("update"); // 強制新 SW 接管，頁面自動重載
+      } else {
+        setSwUpdateReady(true);
+      }
+    };
+    navigator.serviceWorker.ready
+      .then((reg) => {
+        handleWaiting(reg);
+        reg.addEventListener("updatefound", () => {
+          const nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener("statechange", () => {
+            if (
+              nw.state === "installed" &&
+              navigator.serviceWorker.controller
+            ) {
+              handleWaiting(reg);
+            }
+          });
+        });
+      })
+      .catch(() => {});
+  }, []);
+
+  // 載入計時器
+  useEffect(() => {
+    if (!iframeLoading) {
+      setLoadElapsed(0);
+      setLoadTimedOut(false);
+      return;
+    }
+    const interval = setInterval(
+      () => setLoadElapsed((prev) => prev + 1),
+      1000
+    );
+    return () => clearInterval(interval);
+  }, [iframeLoading]);
+
+  useEffect(() => {
+    if (loadElapsed >= 120) setLoadTimedOut(true);
+  }, [loadElapsed]);
 
   const hasKey = mounted ? getPlayerKey() !== null : false;
 
@@ -432,8 +491,25 @@ export default function SinglePageContent() {
         <div className={styles.gameWrapper}>
           {iframeLoading && (
             <div className={styles.loadingOverlay}>
-              <Spinner animation="border" variant="light" />
-              <p className={styles.loadingText}>載入戰場中...</p>
+              {!loadTimedOut && <Spinner animation="border" variant="light" />}
+              <p className={styles.loadingText}>
+                {loadTimedOut
+                  ? "載入逾時，請重新整理頁面"
+                  : loadElapsed >= 30
+                    ? "首次載入資源較大，請耐心等候…"
+                    : loadElapsed >= 5
+                      ? `下載遊戲資源中… (${loadElapsed}s)`
+                      : "載入戰場中..."}
+              </p>
+              {loadTimedOut && (
+                <button
+                  className={styles.btnGold}
+                  style={{ marginTop: "0.5rem" }}
+                  onClick={() => window.location.reload()}
+                >
+                  重新載入
+                </button>
+              )}
             </div>
           )}
           <iframe
@@ -607,6 +683,27 @@ export default function SinglePageContent() {
             setShowStageModal(true);
           }}
         />
+      )}
+
+      {/* 遊戲版本更新 banner（遊戲已啟動時顯示） */}
+      {swUpdateReady && (
+        <div className={styles.swUpdateBanner}>
+          <span>遊戲新版本已就緒</span>
+          <button
+            className={styles.btnGold}
+            style={{ fontSize: "0.72rem", padding: "3px 14px" }}
+            onClick={async () => {
+              const reg = await navigator.serviceWorker.ready;
+              if (reg.waiting) {
+                reg.waiting.postMessage("update");
+              } else {
+                window.location.reload();
+              }
+            }}
+          >
+            立即更新
+          </button>
+        </div>
       )}
     </div>
   );
