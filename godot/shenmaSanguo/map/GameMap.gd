@@ -179,12 +179,11 @@ func _load_textures(pj: Dictionary) -> void:
 			_cell_textures[cell] = tex
 
 func _compute_tile_size() -> void:
-	var vp: Vector2    = get_viewport_rect().size
-	var avail_h: float = vp.y - float(TOP_UI_H)
-	# 正方形格子：取寬/高方向能放下的最小格子尺寸
+	var vp: Vector2 = get_viewport_rect().size
+	# React 頂欄已在 iframe 外部，使用完整 viewport 高度
 	tile_size = max(16, min(
-		int(vp.x    / max(1, _map_cols)),
-		int(avail_h / max(1, _map_rows))
+		int(vp.x / max(1, _map_cols)),
+		int(vp.y / max(1, _map_rows))
 	))
 	_tile_w = tile_size
 	_tile_h = tile_size
@@ -206,9 +205,10 @@ func _compute_map_size() -> void:
 func _center_map() -> void:
 	var vp: Vector2  = get_viewport_rect().size
 	var map_w: float = _map_cols * _tile_w
+	var map_h: float = _map_rows * _tile_h
 	_map_offset = Vector2(
 		(vp.x - map_w) * 0.5,
-		float(TOP_UI_H)
+		(vp.y - map_h) * 0.5
 	)
 
 # ═══════════════════════════════════════════
