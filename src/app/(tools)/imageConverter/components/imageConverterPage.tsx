@@ -13,6 +13,7 @@ import {
 import styles from "../styles/imageConverter.module.css";
 import {
   OutputFormat,
+  ResizeMode,
   UploadItem,
   ConvertedItem,
   ConvertSettings,
@@ -35,6 +36,9 @@ const ImageConverterPage: React.FC = () => {
   const [settings, setSettings] = useState<ConvertSettings>({
     targetFormat: "image/webp",
     quality: 0.85,
+    resizeMode: "none",
+    resizeWidth: 128,
+    pixelArt: false,
   });
 
   // AVIF 支援
@@ -229,6 +233,16 @@ const ImageConverterPage: React.FC = () => {
         let targetWidth = img.naturalWidth;
         let targetHeight = img.naturalHeight;
 
+        if (!isIco && settings.resizeMode === "width") {
+          targetWidth = settings.resizeWidth;
+          targetHeight = Math.round(
+            img.naturalHeight * (settings.resizeWidth / img.naturalWidth)
+          );
+        } else if (!isIco && settings.resizeMode === "square") {
+          targetWidth = settings.resizeWidth;
+          targetHeight = settings.resizeWidth;
+        }
+
         if (isIco) {
           const icoSize = getIcoTargetSize(targetWidth, targetHeight);
           targetWidth = icoSize.width;
@@ -241,6 +255,8 @@ const ImageConverterPage: React.FC = () => {
         if (!ctx) continue;
 
         ctx.clearRect(0, 0, targetWidth, targetHeight);
+        ctx.imageSmoothingEnabled = !settings.pixelArt;
+        if (!settings.pixelArt) ctx.imageSmoothingQuality = "high";
         ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
         let blob: Blob | null = null;
@@ -615,6 +631,93 @@ const ImageConverterPage: React.FC = () => {
                 </Form.Group>
               )}
 
+              {/* 縮放設定 */}
+              <Form.Group className="mb-3">
+                <Form.Label className="fw-semibold">縮放</Form.Label>
+                {(["none", "width", "square"] as ResizeMode[]).map((mode) => (
+                  <Form.Check
+                    key={mode}
+                    type="radio"
+                    id={`resize-${mode}`}
+                    name="resizeMode"
+                    label={
+                      mode === "none"
+                        ? "不縮放"
+                        : mode === "width"
+                          ? "依寬縮放（維持比例）"
+                          : "固定正方形（Tile 用）"
+                    }
+                    checked={settings.resizeMode === mode}
+                    onChange={() =>
+                      setSettings((prev) => ({ ...prev, resizeMode: mode }))
+                    }
+                  />
+                ))}
+                {settings.resizeMode !== "none" && (
+                  <div className="mt-2">
+                    <div className="d-flex align-items-center gap-2 mb-2">
+                      <Form.Control
+                        type="number"
+                        size="sm"
+                        value={settings.resizeWidth}
+                        min={8}
+                        max={4096}
+                        onChange={(e) =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            resizeWidth: parseInt(e.target.value) || 128,
+                          }))
+                        }
+                        style={{ width: "80px" }}
+                      />
+                      <span className="text-muted small">px</span>
+                    </div>
+                    <div className="d-flex gap-1 flex-wrap">
+                      {[64, 128, 256, 512].map((size) => (
+                        <Button
+                          key={size}
+                          variant={
+                            settings.resizeWidth === size
+                              ? "primary"
+                              : "outline-secondary"
+                          }
+                          size="sm"
+                          className="py-0"
+                          style={{ fontSize: "0.75rem" }}
+                          onClick={() =>
+                            setSettings((prev) => ({
+                              ...prev,
+                              resizeWidth: size,
+                            }))
+                          }
+                        >
+                          {size}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </Form.Group>
+
+              {/* 像素模式 */}
+              <Form.Group className="mb-3">
+                <Form.Check
+                  type="checkbox"
+                  id="pixelArt"
+                  label="像素模式（Nearest-neighbor）"
+                  checked={settings.pixelArt}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      pixelArt: e.target.checked,
+                    }))
+                  }
+                />
+                <Form.Text className="text-muted">
+                  縮放時保留像素硬邊，適合像素風格圖
+                </Form.Text>
+              </Form.Group>
+
               {/* 開始轉換按鈕 */}
               <div className="d-grid">
                 <Button
@@ -696,6 +799,18 @@ const ImageConverterPage: React.FC = () => {
                     <Card.Body className="p-2">
                       {/* 箭頭對比 */}
                       <div className={styles.compareContainer}>
+                        {(item.resultWidth !== item.sourceWidth ||
+                          item.resultHeight !== item.sourceHeight) && (
+                          <>
+                            <span className={styles.compareLeft}>
+                              {item.sourceWidth}×{item.sourceHeight}
+                            </span>
+                            <span className={styles.compareArrow}>→</span>
+                            <span className={styles.compareRight}>
+                              {item.resultWidth}×{item.resultHeight}
+                            </span>
+                          </>
+                        )}
                         <span className={styles.compareLeft}>
                           {formatFileSize(item.sourceSize)}
                         </span>

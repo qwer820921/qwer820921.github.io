@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://76v4ul63ap13"
+uid="uid://bt78gm3jiwck4"
 path="res://.godot/imported/tower_infantry.webp-950f6c11b85e012ec55ce17891bb866b.ctex"
 metadata={
 "vram_texture": false
@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/tower_infantry.webp-950f6c11b85e012ec55ce1789
 
 [params]
 
-compress/mode=4
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

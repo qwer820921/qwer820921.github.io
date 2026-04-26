@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c8iphxyt71v4h"
+uid="uid://1rn3alor76vh"
 path="res://.godot/imported/enemy_cavalry1_atk.webp-fe575c3cfe92a3f80ca8af571eb2cedf.ctex"
 metadata={
 "vram_texture": false
@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/enemy_cavalry1_atk.webp-fe575c3cfe92a3f80ca8a
 
 [params]
 
-compress/mode=4
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

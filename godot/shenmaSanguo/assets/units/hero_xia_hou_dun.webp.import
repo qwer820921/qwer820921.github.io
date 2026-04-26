@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c3uv53x2ri5qi"
+uid="uid://bie2amdqvu0ea"
 path="res://.godot/imported/hero_xia_hou_dun.webp-3677026cb8f7078a4309fa5e20b2345a.ctex"
 metadata={
 "vram_texture": false
@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/hero_xia_hou_dun.webp-3677026cb8f7078a4309fa5
 
 [params]
 
-compress/mode=4
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -85,10 +85,15 @@ export interface ConvertedItem {
   resultHeight: number;
 }
 
+export type ResizeMode = "none" | "width" | "square";
+
 /** 轉換設定 */
 export interface ConvertSettings {
   targetFormat: OutputFormat;
   quality: number;
+  resizeMode: ResizeMode;
+  resizeWidth: number;
+  pixelArt: boolean;
 }
 
 /**

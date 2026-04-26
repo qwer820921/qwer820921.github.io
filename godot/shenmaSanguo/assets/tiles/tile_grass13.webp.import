@@ -2,20 +2,20 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dsk3vty1mh6yj"
-path="res://.godot/imported/icon_hp.webp-97c0fe062a1e54672c8ba45650e4081d.ctex"
+uid="uid://dl3noymcu4ty4"
+path="res://.godot/imported/tile_grass13.webp-466b885d3ea32d46090f8836c97441cb.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/units/icon_hp.webp"
-dest_files=["res://.godot/imported/icon_hp.webp-97c0fe062a1e54672c8ba45650e4081d.ctex"]
+source_file="res://assets/tiles/tile_grass13.webp"
+dest_files=["res://.godot/imported/tile_grass13.webp-466b885d3ea32d46090f8836c97441cb.ctex"]
 
 [params]
 
-compress/mode=4
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

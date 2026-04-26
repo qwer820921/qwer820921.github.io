@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://y6ujsnws07xy"
+uid="uid://defp06glrquw7"
 path="res://.godot/imported/hero_sun_shang_xiang.webp-95c5ea02ba6c9ac968222f9c1547f967.ctex"
 metadata={
 "vram_texture": false
@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/hero_sun_shang_xiang.webp-95c5ea02ba6c9ac9682
 
 [params]
 
-compress/mode=4
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

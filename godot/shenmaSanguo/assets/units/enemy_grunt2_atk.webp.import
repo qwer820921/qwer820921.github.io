@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dg0ly4lig4m03"
+uid="uid://d0i4vgxccxiwk"
 path="res://.godot/imported/enemy_grunt2_atk.webp-d18129fc0a09065a5d25600d439c8144.ctex"
 metadata={
 "vram_texture": false
@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/enemy_grunt2_atk.webp-d18129fc0a09065a5d25600
 
 [params]
 
-compress/mode=4
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
