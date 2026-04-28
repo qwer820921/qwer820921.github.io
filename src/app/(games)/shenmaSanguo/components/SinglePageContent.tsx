@@ -2,9 +2,10 @@
 
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Spinner, Form, Alert } from "react-bootstrap";
-import { Coin, Trophy, ShieldFill } from "react-bootstrap-icons";
+import { Coin, Trophy, ShieldFill, GearFill } from "react-bootstrap-icons";
 import { usePlayerStore } from "../store/playerStore";
 import { useStaticConfigStore } from "../store/staticConfigStore";
+import { useSoundSettingsStore } from "../store/soundSettingsStore";
 import { BattleResultPayload, BattleResult, ExpeditionPayload } from "../types";
 import { getPlayerKey, setPlayerKey } from "../api/gameApi";
 import { isStageUnlocked } from "../utils/stageUtils";
@@ -15,6 +16,7 @@ import StageSelectModal from "./modals/StageSelectModal";
 import TeamEditModal from "./modals/TeamEditModal";
 import HeroListModal from "./modals/HeroListModal";
 import PlayerInfoModal from "./modals/PlayerInfoModal";
+import SettingsModal from "./modals/SettingsModal";
 
 interface BattleStats {
   gold: number;
@@ -90,6 +92,54 @@ function KeySetupView() {
   );
 }
 
+// ── 三國載入動畫 ──────────────────────────────────────────────
+const KINGDOMS = [
+  { char: "魏", color: "#6b9fd4" },
+  { char: "蜀", color: "#e57373" },
+  { char: "吳", color: "#66bb6a" },
+] as const;
+
+function ThreeKingdomsLoader({ progress }: { progress: number }) {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setIdx((p) => (p + 1) % 3), 900);
+    return () => clearInterval(t);
+  }, []);
+  const kingdom = KINGDOMS[idx];
+  return (
+    <div className={styles.tkLoadingOverlay}>
+      <div className={styles.tkLoaderInner}>
+        <div className={styles.tkRingWrap}>
+          <div className={styles.tkRing} />
+          <span
+            key={idx}
+            className={styles.tkChar}
+            style={{ color: kingdom.color }}
+          >
+            {kingdom.char}
+          </span>
+        </div>
+        <p className={styles.tkLoadingLabel}>調兵遣將中</p>
+        <div className={styles.tkProgressWrap}>
+          <div
+            className={styles.tkProgressFill}
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <div className={styles.tkDots}>
+          {KINGDOMS.map((k, i) => (
+            <span
+              key={k.char}
+              className={styles.tkDot}
+              style={{ background: k.color, opacity: i === idx ? 1 : 0.25 }}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── 結算 Modal ────────────────────────────────────────────────
 function BattleResultModal({
   result,
@@ -159,7 +209,8 @@ function BattleResultModal({
 export default function SinglePageContent() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { player, applyBattleResult } = usePlayerStore();
-  const { config: staticConfig } = useStaticConfigStore();
+  const { config: staticConfig, fetchProgress } = useStaticConfigStore();
+  const { sfxEnabled, sfxPolyphony } = useSoundSettingsStore();
 
   // ── Godot 狀態 ─────────────────────────────────────────────
   const [godotReady, setGodotReady] = useState(false);
@@ -189,10 +240,42 @@ export default function SinglePageContent() {
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [showHeroModal, setShowHeroModal] = useState(false);
   const [showPlayerModal, setShowPlayerModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   // ── 初始化 ─────────────────────────────────────────────────
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // ── 全局解鎖 Godot Web AudioContext ───────────────────────
+  useEffect(() => {
+    const resumeAudio = () => {
+      try {
+        const iframeWin = iframeRef.current?.contentWindow as any;
+        if (iframeWin && iframeWin._my_godot_audio_ctx) {
+          const ctx = iframeWin._my_godot_audio_ctx;
+          if (ctx.state === "suspended") {
+            ctx
+              .resume()
+              .then(() =>
+                console.log("[WebBridge] React resumed Godot AudioContext")
+              );
+          }
+        }
+      } catch {
+        // 忽略跨域等錯誤
+      }
+    };
+
+    window.addEventListener("pointerdown", resumeAudio, true);
+    window.addEventListener("touchstart", resumeAudio, true);
+    window.addEventListener("click", resumeAudio, true);
+
+    return () => {
+      window.removeEventListener("pointerdown", resumeAudio, true);
+      window.removeEventListener("touchstart", resumeAudio, true);
+      window.removeEventListener("click", resumeAudio, true);
+    };
+  }, []);
 
   // 同步 ref，讓 SW callback 讀到最新值
   useEffect(() => {
@@ -339,11 +422,22 @@ export default function SinglePageContent() {
       heroes_config: heroesConfig,
       enemies_config: staticConfig.enemiesConfig,
       map,
+      sound_settings: {
+        sfx_enabled: sfxEnabled,
+        sfx_polyphony: sfxPolyphony,
+      },
     };
 
     iframe.contentWindow.postMessage(payload, "*");
     setPayloadSent(true);
-  }, [currentMapId, payloadSent, player, staticConfig]);
+  }, [
+    currentMapId,
+    payloadSent,
+    player,
+    sfxEnabled,
+    sfxPolyphony,
+    staticConfig,
+  ]);
 
   useEffect(() => {
     if (godotReady && player && staticConfig && currentMapId && !payloadSent) {
@@ -414,6 +508,10 @@ export default function SinglePageContent() {
         heroes_config: heroesConfig,
         enemies_config: staticConfig.enemiesConfig,
         map,
+        sound_settings: {
+          sfx_enabled: sfxEnabled,
+          sfx_polyphony: sfxPolyphony,
+        },
       };
       iframeRef.current?.contentWindow?.postMessage(payload, "*");
       setPayloadSent(true);
@@ -489,27 +587,26 @@ export default function SinglePageContent() {
       {/* Godot iframe — 永遠不卸載 */}
       <div className={styles.gamePortraitWrap}>
         <div className={styles.gameWrapper}>
-          {iframeLoading && (
+          {/* 進場動畫：payload 送出前全程顯示（含 Godot 載入階段） */}
+          {!payloadSent && hasKey && !loadTimedOut && (
+            <ThreeKingdomsLoader
+              progress={
+                Math.round((fetchProgress / 3) * 50) + (player ? 50 : 0)
+              }
+            />
+          )}
+
+          {/* 逾時錯誤畫面（120s 後） */}
+          {iframeLoading && loadTimedOut && (
             <div className={styles.loadingOverlay}>
-              {!loadTimedOut && <Spinner animation="border" variant="light" />}
-              <p className={styles.loadingText}>
-                {loadTimedOut
-                  ? "載入逾時，請重新整理頁面"
-                  : loadElapsed >= 30
-                    ? "首次載入資源較大，請耐心等候…"
-                    : loadElapsed >= 5
-                      ? `下載遊戲資源中… (${loadElapsed}s)`
-                      : "載入戰場中..."}
-              </p>
-              {loadTimedOut && (
-                <button
-                  className={styles.btnGold}
-                  style={{ marginTop: "0.5rem" }}
-                  onClick={() => window.location.reload()}
-                >
-                  重新載入
-                </button>
-              )}
+              <p className={styles.loadingText}>載入逾時，請重新整理頁面</p>
+              <button
+                className={styles.btnGold}
+                style={{ marginTop: "0.5rem" }}
+                onClick={() => window.location.reload()}
+              >
+                重新載入
+              </button>
             </div>
           )}
           <iframe
@@ -604,49 +701,57 @@ export default function SinglePageContent() {
                 </>
               )}
             </div>
+            <button
+              className={styles.hudStageBtn}
+              onClick={() => setShowSettingsModal(true)}
+              title="設定"
+            >
+              <GearFill size={13} />
+            </button>
           </div>
 
-          {/* 左側按鈕 (迎戰、自動) */}
-          {battleStats && battleStats.game_state !== GameState.RESULT && (
-            <div className={styles.hudLeftBtns}>
+          {/* 操作按鈕列（top bar 下方，左右分組） */}
+          <div className={styles.hudActionBar}>
+            <div className={styles.hudActionBarLeft}>
+              {battleStats && battleStats.game_state !== GameState.RESULT && (
+                <>
+                  <button
+                    className={styles.hudBarBtn}
+                    onClick={handleStartBattle}
+                    disabled={battleStats.game_state !== GameState.PREP}
+                    style={
+                      battleStats.game_state === GameState.BATTLE
+                        ? { background: "rgba(99, 102, 241, 0.6)" }
+                        : undefined
+                    }
+                  >
+                    {battleStats.game_state === GameState.BATTLE
+                      ? "戰鬥中"
+                      : "迎戰"}
+                  </button>
+                  <button
+                    className={`${styles.hudBarBtn} ${battleStats.auto_mode ? styles.hudActionBtnActive : ""}`}
+                    onClick={handleToggleAuto}
+                  >
+                    自動
+                  </button>
+                </>
+              )}
+            </div>
+            <div className={styles.hudActionBarRight}>
               <button
-                className={styles.hudSideBtnTall}
-                onClick={handleStartBattle}
-                disabled={battleStats.game_state !== GameState.PREP}
-                style={{
-                  background:
-                    battleStats.game_state === GameState.BATTLE
-                      ? "rgba(99, 102, 241, 0.6)"
-                      : "rgba(10, 15, 35, 0.72)",
-                }}
+                className={styles.hudBarBtn}
+                onClick={() => setShowHeroModal(true)}
               >
-                {battleStats.game_state === GameState.BATTLE
-                  ? "戰鬥中"
-                  : "迎戰"}
+                武將
               </button>
               <button
-                className={`${styles.hudSideBtnTall} ${battleStats.auto_mode ? styles.hudActionBtnActive : ""}`}
-                onClick={handleToggleAuto}
+                className={styles.hudBarBtn}
+                onClick={() => setShowTeamModal(true)}
               >
-                自動
+                隊伍
               </button>
             </div>
-          )}
-
-          {/* 右側按鈕 (武將、隊伍) */}
-          <div className={styles.hudRightBtns}>
-            <button
-              className={styles.hudSideBtnTall}
-              onClick={() => setShowHeroModal(true)}
-            >
-              武將
-            </button>
-            <button
-              className={styles.hudSideBtnTall}
-              onClick={() => setShowTeamModal(true)}
-            >
-              隊伍
-            </button>
           </div>
         </>
       )}
@@ -683,6 +788,9 @@ export default function SinglePageContent() {
             setShowStageModal(true);
           }}
         />
+      )}
+      {showSettingsModal && (
+        <SettingsModal onClose={() => setShowSettingsModal(false)} />
       )}
 
       {/* 遊戲版本更新 banner（遊戲已啟動時顯示） */}

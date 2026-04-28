@@ -15,7 +15,8 @@ export default function GameInitializer() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const { player, loadFromSession, initFromGAS } = usePlayerStore();
+  const { player, loadFromSession, initFromGAS, backgroundRefresh } =
+    usePlayerStore();
   const {
     config,
     loadConfig,
@@ -37,11 +38,15 @@ export default function GameInitializer() {
 
     if (!player) {
       const hasSession = loadFromSession();
-      if (!hasSession) initFromGAS(key);
+      if (hasSession) {
+        void backgroundRefresh(key); // 有快取 → 背景靜默刷新
+      } else {
+        void initFromGAS(key); // 無快取 → 阻塞式載入
+      }
     }
 
     if (!config || config.heroesConfig.length === 0) {
-      loadConfig();
+      void loadConfig();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);

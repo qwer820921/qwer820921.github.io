@@ -60,14 +60,27 @@ func start_wave(wave_num: int) -> void:
 		push_warning("[WaveManager] 波次 %d 無敵人組" % wave_num)
 		return
 
+	# 過濾 GAS 空白列（enemy_id 為空的 group）
+	var valid_groups: Array = []
+	for g in enemy_groups:
+		var eid: String = str(g.get("enemy_id", "")).strip_edges()
+		if not eid.is_empty():
+			valid_groups.append(g)
+		else:
+			print("[WaveManager] 跳過空白敵人組: ", g)
+
+	if valid_groups.is_empty():
+		push_warning("[WaveManager] 波次 %d 過濾後無有效敵人組" % wave_num)
+		return
+
 	# 每組敵人用獨立 coroutine 生成（並行）
-	for group in enemy_groups:
+	for group in valid_groups:
 		_active_spawning_groups += 1
 		_spawn_group(group)
 
 # ── 生成單個敵人組（coroutine）────────────────────────────────
 func _spawn_group(group: Dictionary) -> void:
-	var enemy_id: String = group.get("enemy_id", "")
+	var enemy_id: String = str(group.get("enemy_id", "")).strip_edges()
 	var count: int       = int(group.get("count", 1))
 	var interval: float  = float(group.get("interval", 1.0))
 	var path_id: String  = group.get("path", "path_a")
@@ -80,7 +93,7 @@ func _spawn_group(group: Dictionary) -> void:
 			break
 	
 	if enemy_cfg.is_empty():
-		push_error("[WaveManager] 找不到敵人設定 ID: %s。請檢查 Google Sheet 設定。" % enemy_id)
+		push_warning("[WaveManager] 找不到敵人設定 ID: '%s'，跳過此組" % enemy_id)
 		_active_spawning_groups -= 1
 		if _active_spawning_groups <= 0:
 			wave_all_spawned.emit(_current_wave_num)

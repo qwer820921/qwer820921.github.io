@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Spinner, Modal, Container } from "react-bootstrap";
 import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
+import { useSoundSettingsStore } from "../../store/soundSettingsStore";
 import {
   BattleResultPayload,
   BattleResult,
@@ -39,6 +40,7 @@ export default function BattlePageContent() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { player, applyBattleResult } = usePlayerStore();
   const { config: staticConfig } = useStaticConfigStore();
+  const { sfxEnabled, sfxPolyphony } = useSoundSettingsStore();
 
   const [iframeLoading, setIframeLoading] = useState(true);
   const [payloadSent, setPayloadSent] = useState(false);
@@ -91,11 +93,15 @@ export default function BattlePageContent() {
       heroes_config: heroesConfig,
       enemies_config: staticConfig.enemiesConfig,
       map,
+      sound_settings: {
+        sfx_enabled: sfxEnabled,
+        sfx_polyphony: sfxPolyphony,
+      },
     };
 
     iframe.contentWindow.postMessage(payload, "*");
     setPayloadSent(true);
-  }, [mapId, payloadSent, player, staticConfig]);
+  }, [mapId, payloadSent, player, staticConfig, sfxEnabled, sfxPolyphony]);
 
   const handleMessage = useCallback((event: MessageEvent) => {
     if (!event.data || typeof event.data !== "object") return;

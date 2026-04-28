@@ -151,6 +151,16 @@ func _do_initial_setup(payload: Dictionary) -> void:
 	var total_waves: int = _count_waves(_waves)
 	battle_manager.initialize(total_waves, stage_id, wave_manager, web_bridge)
 
+	# 音效設定（從 payload 的 sound_settings 欄位讀取）
+	var snd: Dictionary = payload.get("sound_settings", {})
+	if get_tree() and get_tree().root.has_node("SFXManager"):
+		var sfx_mgr = get_tree().root.get_node("SFXManager")
+		sfx_mgr.configure(
+			bool(snd.get("sfx_enabled", true)),
+			str(snd.get("sfx_polyphony", "single"))
+		)
+		sfx_mgr.play_bgm()
+
 	# 初始化 HUD
 	battle_hud.setup_heroes(_team_list, _heroes_config)
 	battle_hud.update_wave(0, total_waves)
@@ -420,6 +430,7 @@ func _place_hero(cell: Vector2i, world_pos: Vector2) -> void:
 
 	game_map.set_occupied(cell, hero)
 	_placed_heroes[str(_drag_hero_data.get("hero_id", ""))] = hero
+	_sfx("hero_place")
 
 func _place_tower(cell: Vector2i, world_pos: Vector2) -> void:
 	# 檢查金幣
@@ -437,6 +448,7 @@ func _place_tower(cell: Vector2i, world_pos: Vector2) -> void:
 	tower.upgrade_requested.connect(_on_upgrade_requested)
 
 	game_map.set_occupied(cell, tower)
+	_sfx("tower_place")
 
 func _end_drag() -> void:
 	_is_dragging    = false
@@ -654,3 +666,10 @@ func _build_default_enemies() -> Array:
 		{ "enemy_id": "soldier", "name": "步兵", "hp": 100.0, "speed": 1.2 },
 		{ "enemy_id": "cavalry", "name": "騎兵", "hp": 200.0, "speed": 2.5 },
 	]
+
+# ═══════════════════════════════════════════
+#  內部：安全音效呼叫
+# ═══════════════════════════════════════════
+func _sfx(key: String) -> void:
+	if get_tree() and get_tree().root.has_node("SFXManager"):
+		get_tree().root.get_node("SFXManager").play(key)

@@ -58,6 +58,8 @@ interface PlayerStore {
   initFromGAS: (key: string) => Promise<void>;
   /** 強制清除快取並重新與伺服器同步存檔 */
   refreshProfile: () => Promise<void>;
+  /** 背景靜默刷新（只在 syncStatus=Idle 時執行，不影響進行中的同步） */
+  backgroundRefresh: (key: string) => Promise<void>;
 
   /** 暱稱變更 → 30s debounce 同步 */
   updateNickname: (nickname: string) => void;
@@ -276,6 +278,27 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       sessionStorage.removeItem(PLAYER_SESSION_KEY);
     }
     await initFromGAS(player.key);
+  },
+
+  backgroundRefresh: async (key: string) => {
+    const { player } = get();
+    // 有本地未同步變更時跳過，避免覆蓋
+    if (!player || player.syncStatus !== SyncStatus.Idle) return;
+    try {
+      const res = await gameApi.getProfile(key);
+      if (!res.data) return;
+      const updated: SessionPlayerState = {
+        ...res.data,
+        key,
+        syncStatus: SyncStatus.Idle,
+        team: res.data.team || [],
+        heroes: res.data.heroes || [],
+      };
+      writeSession(updated);
+      set({ player: updated });
+    } catch {
+      // 背景刷新失敗靜默忽略
+    }
   },
 
   applyBattleResult: (result: BattleResultPayload) => {

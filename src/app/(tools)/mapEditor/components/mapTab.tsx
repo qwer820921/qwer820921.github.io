@@ -18,7 +18,7 @@ const DEFAULT_COLS = 14;
 const DEFAULT_ROWS = 11;
 const DEFAULT_TEXTURES: TileTextures = {
   road: "tiles/tile_stone.webp",
-  build: "tiles/tile_grass.webp",
+  build: "tiles/tile_grass1.webp",
   empty: "tiles/tile_empty.webp",
   base: "tiles/tile_fortress.webp",
   spawn: "tiles/tile_gate.webp",
@@ -27,7 +27,7 @@ const DEFAULT_TEXTURES: TileTextures = {
 
 const DEFAULT_TILE_IMAGE_OPTIONS = [
   "tiles/tile_stone.webp",
-  "tiles/tile_grass.webp",
+  "tiles/tile_grass1.webp",
   "tiles/tile_dirt.webp",
   "tiles/tile_empty.webp",
   "tiles/tile_fortress.webp",
@@ -599,9 +599,17 @@ export default function MapTab({
     setWaveStatus("saving");
     setWaveMsg("儲存中...");
     try {
+      // 過濾掉 enemy_id 為空的群組，以及過濾後 enemies 為空的波次
+      const cleanWaves = waves
+        .map((w) => ({
+          ...w,
+          enemies: w.enemies.filter((e) => e.enemy_id.trim() !== ""),
+        }))
+        .filter((w) => w.enemies.length > 0);
+
       const data = await gasCall("save_waves_config", {
         map_id: mapId,
-        waves,
+        waves: cleanWaves,
       });
       if (data.status !== 200) throw new Error(data.error || "儲存失敗");
       setWaveStatus("ok");

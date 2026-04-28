@@ -179,6 +179,8 @@ func _end_battle(is_win: bool) -> void:
 	battle_ended.emit(result)
 	if _web_bridge:
 		_web_bridge.send_result(result)
+	_sfx_stop_bgm()
+	_sfx("battle_win" if is_win else "battle_lose")
 
 func _sync_stats_to_web() -> void:
 	if _web_bridge == null:
@@ -193,3 +195,14 @@ func _sync_stats_to_web() -> void:
 		"auto_mode": auto_mode
 	}
 	_web_bridge.send_stats(stats)
+
+# ═══════════════════════════════════════════
+#  內部：安全音效呼叫
+# ═══════════════════════════════════════════
+func _sfx(key: String) -> void:
+	if get_tree() and get_tree().root.has_node("SFXManager"):
+		get_tree().root.get_node("SFXManager").play(key)
+
+func _sfx_stop_bgm() -> void:
+	if get_tree() and get_tree().root.has_node("SFXManager"):
+		get_tree().root.get_node("SFXManager").stop_bgm()

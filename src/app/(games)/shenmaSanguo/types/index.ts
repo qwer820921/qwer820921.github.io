@@ -164,6 +164,10 @@ export interface ExpeditionPayload {
   heroes_config: HeroConfig[];
   enemies_config: EnemyConfig[];
   map: MapConfig;
+  sound_settings: {
+    sfx_enabled: boolean;
+    sfx_polyphony: "single" | "faithful";
+  };
 }
 
 /**

@@ -3,9 +3,9 @@ import { StaticConfig, MapConfig } from "../types";
 import { gameApi } from "../api/gameApi";
 
 const STATIC_LOCAL_KEY = "shenma_static_config";
-const STATIC_VERSION_KEY = "shenma_static_version";
+const STATIC_TS_KEY = "shenma_static_ts";
+const CACHE_TTL_MS = 60_000; // 60 秒內不重新打 GAS
 
-// ── localStorage helpers ─────────────────────────────────────
 function readStaticLocal(): StaticConfig | null {
   if (typeof window === "undefined") return null;
   try {
@@ -16,63 +16,49 @@ function readStaticLocal(): StaticConfig | null {
   }
 }
 
-// ── Store 型別 ─────────────────────────────────────────────────
+function readTimestamp(): number {
+  if (typeof window === "undefined") return 0;
+  return Number(localStorage.getItem(STATIC_TS_KEY) || "0");
+}
+
+function writeCache(config: StaticConfig) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(STATIC_LOCAL_KEY, JSON.stringify(config));
+  localStorage.setItem(STATIC_TS_KEY, String(Date.now()));
+}
+
 interface StaticConfigStore {
   config: StaticConfig | null;
   isLoading: boolean;
+  /** 0–3：已完成的 API 數（有快取時直接為 3） */
+  fetchProgress: number;
   error: string | null;
-  /**
-   * 載入靜態設定：先查 sessionStorage 快取，無則從 GAS 抓取並快取
-   * 包含：heroesConfig、enemiesConfig、所有地圖完整設定（含 path_json + waves）
-   */
   loadConfig: () => Promise<void>;
   refreshConfig: () => Promise<void>;
   clearError: () => void;
 }
 
-// ── Zustand Store ──────────────────────────────────────────────
-export const useStaticConfigStore = create<StaticConfigStore>((set, get) => ({
-  config: null,
-  isLoading: false,
-  error: null,
-
-  loadConfig: async () => {
-    set({ isLoading: true, error: null });
+export const useStaticConfigStore = create<StaticConfigStore>((set, get) => {
+  /**
+   * 實際呼叫 3 支 GAS API。
+   * blocking=true  → 更新 fetchProgress + isLoading（首次無快取時）
+   * blocking=false → 靜默背景刷新，不動 fetchProgress / isLoading
+   */
+  const fetchAll = async (blocking: boolean) => {
     try {
-      // 1. 抓取遠端版本號
-      const settingsRes = await gameApi.getSettings();
-      // 我們預期遠端回傳的格式為： { status: 200, settings: { version: "V1.0.1", ... } }
-      const remoteVersion = settingsRes?.settings?.version || "unknown";
-
-      // 2. 取得本地快取與版本號
-      let localVersion = null;
-      if (typeof window !== "undefined") {
-        localVersion = localStorage.getItem(STATIC_VERSION_KEY);
-      }
-      const cached = readStaticLocal();
-
-      // 如果版本一致，且快取有效，直接使用快取
-      if (
-        localVersion === remoteVersion &&
-        cached &&
-        cached.heroesConfig?.length > 0
-      ) {
-        console.log(
-          `[StaticConfig] Version match (${remoteVersion}). Using local cache.`
-        );
-        set({ config: cached, isLoading: false });
-        return;
-      }
-
-      console.log(
-        `[StaticConfig] Version mismatch or missing cache (Local: ${localVersion}, Remote: ${remoteVersion}). Fetching new data...`
-      );
-
-      // 3. 版本不同或無快取，並行拉取所有資料
       const [heroesRes, enemiesRes, allMapsRes] = await Promise.all([
-        gameApi.getHeroesConfig(),
-        gameApi.getEnemiesConfig(),
-        gameApi.getAllMaps(),
+        gameApi.getHeroesConfig().then((r) => {
+          if (blocking) set((s) => ({ fetchProgress: s.fetchProgress + 1 }));
+          return r;
+        }),
+        gameApi.getEnemiesConfig().then((r) => {
+          if (blocking) set((s) => ({ fetchProgress: s.fetchProgress + 1 }));
+          return r;
+        }),
+        gameApi.getAllMaps().then((r) => {
+          if (blocking) set((s) => ({ fetchProgress: s.fetchProgress + 1 }));
+          return r;
+        }),
       ]);
 
       const config: StaticConfig = {
@@ -81,26 +67,59 @@ export const useStaticConfigStore = create<StaticConfigStore>((set, get) => ({
         maps: allMapsRes.maps as MapConfig[],
       };
 
-      if (typeof window !== "undefined") {
-        localStorage.setItem(STATIC_LOCAL_KEY, JSON.stringify(config));
-        localStorage.setItem(STATIC_VERSION_KEY, remoteVersion);
+      writeCache(config);
+      set({ config, ...(blocking ? { isLoading: false } : {}) });
+    } catch (e: unknown) {
+      if (blocking) {
+        const msg = e instanceof Error ? e.message : "GAS_ERROR";
+        set({ error: msg, isLoading: false });
+      }
+      // 背景刷新失敗靜默忽略
+    }
+  };
+
+  return {
+    config: null,
+    isLoading: false,
+    fetchProgress: 0,
+    error: null,
+
+    loadConfig: async () => {
+      // 防止重複呼叫
+      if (get().isLoading) return;
+
+      const cached = readStaticLocal();
+      const hasCachedConfig = !!cached?.heroesConfig?.length;
+
+      if (hasCachedConfig) {
+        const isExpired = Date.now() - readTimestamp() >= CACHE_TTL_MS;
+
+        if (!isExpired) {
+          // 快取新鮮：直接用，不打 GAS
+          set({ config: cached, fetchProgress: 3 });
+          return;
+        }
+
+        // 快取過期：立即用快取顯示（不卡 game start），同時打 API 更新進度條
+        set({ config: cached, fetchProgress: 0 });
+        await fetchAll(true);
+        return;
       }
 
-      set({ config, isLoading: false });
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "GAS_ERROR";
-      console.error("[StaticConfig] Error loading config:", msg);
-      set({ error: msg, isLoading: false });
-    }
-  },
+      // 無快取：阻塞式載入（顯示進度）
+      set({ isLoading: true, fetchProgress: 0, error: null });
+      await fetchAll(true);
+    },
 
-  refreshConfig: async () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem(STATIC_LOCAL_KEY);
-      localStorage.removeItem(STATIC_VERSION_KEY);
-    }
-    await get().loadConfig();
-  },
+    refreshConfig: async () => {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(STATIC_LOCAL_KEY);
+        localStorage.removeItem(STATIC_TS_KEY);
+      }
+      set({ config: null, fetchProgress: 0, isLoading: true, error: null });
+      await fetchAll(true);
+    },
 
-  clearError: () => set({ error: null }),
-}));
+    clearError: () => set({ error: null }),
+  };
+});

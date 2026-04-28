@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation";
 import { Container, Form, Spinner, Alert } from "react-bootstrap";
 import { gameApi, getPlayerKey, setPlayerKey } from "../../api/gameApi";
 import { usePlayerStore } from "../../store/playerStore";
+import { useSoundSettingsStore } from "../../store/soundSettingsStore";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 export default function SettingsPageContent() {
   const router = useRouter();
   const { initFromGAS, player } = usePlayerStore();
+  const { sfxEnabled, sfxPolyphony, setEnabled, setPolyphony } =
+    useSoundSettingsStore();
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -246,6 +249,117 @@ export default function SettingsPageContent() {
               )}
             </button>
           </div>
+
+          {/* 音效設定 */}
+          {mounted && (
+            <div
+              className={styles.sgCard}
+              style={{ width: "100%", padding: "1.25rem", marginTop: "1rem" }}
+            >
+              <div
+                style={{
+                  fontSize: "0.95rem",
+                  fontWeight: 700,
+                  color: "var(--sg-text)",
+                  marginBottom: "0.85rem",
+                }}
+              >
+                音效設定
+              </div>
+
+              {/* 開啟 / 關閉音效 */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: sfxEnabled ? "1rem" : 0,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: "0.85rem",
+                      fontWeight: 600,
+                      color: "var(--sg-text)",
+                    }}
+                  >
+                    開啟音效
+                  </div>
+                  <div style={{ fontSize: "0.7rem", color: "var(--sg-muted)" }}>
+                    攻擊、死亡、勝敗等遊戲音效
+                  </div>
+                </div>
+                <Form.Check
+                  type="switch"
+                  id="sfx-enabled"
+                  checked={sfxEnabled}
+                  onChange={(e) => setEnabled(e.target.checked)}
+                  style={{ fontSize: "1.25rem" }}
+                />
+              </div>
+
+              {/* 音效模式（只在音效開啟時顯示） */}
+              {sfxEnabled && (
+                <div>
+                  <div
+                    style={{
+                      fontSize: "0.72rem",
+                      color: "var(--sg-muted)",
+                      marginBottom: "0.45rem",
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    音效模式
+                  </div>
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <button
+                      className={
+                        sfxPolyphony === "single"
+                          ? styles.btnGold
+                          : styles.btnOutline
+                      }
+                      style={{
+                        flex: 1,
+                        padding: "0.45rem 0",
+                        fontSize: "0.82rem",
+                      }}
+                      onClick={() => setPolyphony("single")}
+                    >
+                      節省模式
+                    </button>
+                    <button
+                      className={
+                        sfxPolyphony === "faithful"
+                          ? styles.btnGold
+                          : styles.btnOutline
+                      }
+                      style={{
+                        flex: 1,
+                        padding: "0.45rem 0",
+                        fontSize: "0.82rem",
+                      }}
+                      onClick={() => setPolyphony("faithful")}
+                    >
+                      忠實模式
+                    </button>
+                  </div>
+                  <p
+                    style={{
+                      fontSize: "0.68rem",
+                      color: "var(--sg-muted)",
+                      marginTop: "0.4rem",
+                      marginBottom: 0,
+                    }}
+                  >
+                    {sfxPolyphony === "single"
+                      ? "多塔同幀攻擊只播一聲，效能較佳"
+                      : "忠實呈現每一聲音效，較為熱鬧"}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           <button
             className={styles.btnOutline}

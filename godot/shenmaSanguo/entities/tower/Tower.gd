@@ -185,6 +185,7 @@ func _process(delta: float) -> void:
 	_anim_timer   = 0.22  # 攻擊圖顯示時長
 	_atk_timer    = atk_spd
 	queue_redraw()
+	_sfx("tower_shoot")
 
 func _find_target(enemies: Array, range_px: float) -> Node:
 	# 選進度最靠近基地的敵人
@@ -238,6 +239,7 @@ func apply_upgrade() -> void:
 		atk_spd       *= 0.92       # 攻速提升（間隔縮短 8%）
 		range_tiles   += 0.20       # 射程 +0.2 格
 	queue_redraw()
+	_sfx("upgrade")
 
 func request_upgrade() -> void:
 	var cost: int = get_upgrade_cost()
@@ -307,3 +309,10 @@ func reposition(new_cell: Vector2i, world_pos: Vector2) -> void:
 	grid_cell = new_cell
 	position = world_pos
 	queue_redraw()
+
+# ═══════════════════════════════════════════
+#  內部：安全音效呼叫
+# ═══════════════════════════════════════════
+func _sfx(key: String) -> void:
+	if get_tree() and get_tree().root.has_node("SFXManager"):
+		get_tree().root.get_node("SFXManager").play(key)

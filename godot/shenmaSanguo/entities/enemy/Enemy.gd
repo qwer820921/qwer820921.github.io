@@ -161,7 +161,7 @@ func take_damage(amount: float) -> void:
 		return
 	current_hp -= amount
 	_flash_timer = FLASH_TIME
-	
+
 	# 顯示傷害數字
 	var ft = load("res://ui/FloatingText.gd").new()
 	get_parent().add_child(ft)
@@ -170,6 +170,8 @@ func take_damage(amount: float) -> void:
 	if current_hp <= 0.0:
 		current_hp = 0.0
 		_die()
+	else:
+		_sfx("enemy_hit")  # 死亡時由 _die() 播音，避免重疊
 	queue_redraw()
 
 ## 減速光環（speed_mult < 1.0）
@@ -196,6 +198,7 @@ func apply_stackable_slow(amount: float, duration: float) -> void:
 func _die() -> void:
 	_is_dead = true
 	died.emit(self)
+	_sfx("enemy_die")
 	queue_free()
 
 func _on_reached_base() -> void:
@@ -246,3 +249,10 @@ func get_progress_ratio() -> float:
 
 func is_dead() -> bool:
 	return _is_dead
+
+# ═══════════════════════════════════════════
+#  內部：安全音效呼叫
+# ═══════════════════════════════════════════
+func _sfx(key: String) -> void:
+	if get_tree() and get_tree().root.has_node("SFXManager"):
+		get_tree().root.get_node("SFXManager").play(key)
