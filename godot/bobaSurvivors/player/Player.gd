@@ -191,6 +191,9 @@ func shoot_closest_enemy() -> void:
 		if "bounce_count" in bullet:
 			bullet.bounce_count = bounce_count
 
+	if SFXManager:
+		SFXManager.play_sfx("shoot_pearl")
+
 func gain_xp(amount: int) -> void:
 	current_xp += amount
 	print("獲得經驗值！目前: ", current_xp, "/", xp_to_next_level)
@@ -371,6 +374,9 @@ func take_damage(amount: float):
 	get_parent().add_child(dmg_node)
 	dmg_node.global_position = global_position + Vector2(0, -80) # 在玩家頭頂稍高處彈出
 	dmg_node.set_values(amount, Color(1, 0.2, 0.2)) # 玩家受傷用鮮紅色
+	
+	if SFXManager:
+		SFXManager.play_sfx("player_hit")
 	
 	print("玩家受傷！剩餘血量: ", current_health)
 	

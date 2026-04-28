@@ -86,6 +86,8 @@ func _ready() -> void:
 	# 初始生成計時
 	spawn_timer = spawn_interval
 	add_to_group("main")
+	if SFXManager:
+		SFXManager.play_bgm("battle_bgm")
 
 func _process(delta: float) -> void:
 	game_time += delta
