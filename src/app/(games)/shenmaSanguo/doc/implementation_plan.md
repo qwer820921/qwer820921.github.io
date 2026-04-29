@@ -587,6 +587,15 @@ godot/shenmaSanguo/
 
 ---
 
+## 🚀 未來擴充計畫
+
+關於武將名單、技能系統的詳細評估與實作優先級，請參閱：
+- [武將與技能開發路線圖 (hero-skill-roadmap.md)](file:///c:/Users/2500804/Documents/qwer820921.github.io/src/app/(games)/shenmaSanguo/doc/hero-skill-roadmap.md)
+
+---
+
+---
+
 ## 已知問題 & 注意事項
 
 | 問題                  | 說明                                                          | 解法                                               |
