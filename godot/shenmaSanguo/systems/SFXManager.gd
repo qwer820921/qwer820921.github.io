@@ -108,11 +108,16 @@ func _input(event: InputEvent) -> void:
 
 ## 由 Main 在 payload 解析後呼叫，套用玩家偏好設定
 func configure(p_sfx_enabled: bool, p_sfx_polyphony: String) -> void:
+	var prev_enabled := sfx_enabled
 	sfx_enabled   = p_sfx_enabled
 	sfx_polyphony = p_sfx_polyphony
 	print("[SFXManager] configure: enabled=", sfx_enabled, " polyphony=", sfx_polyphony)
 	if not sfx_enabled:
 		stop_bgm()
+		for p in _players:
+			p.stop()
+	elif not _bgm_player.playing:
+		play_bgm()
 
 func play(sfx_key: String) -> void:
 	if not sfx_enabled or _players.is_empty():

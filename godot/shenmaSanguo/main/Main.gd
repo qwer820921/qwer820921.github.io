@@ -91,6 +91,11 @@ func _on_payload_received(payload: Dictionary) -> void:
 		_on_web_place_hero(payload)
 	elif type == "place_tower":
 		_on_web_place_tower(payload)
+	elif type == "update_team":
+		_team_list = payload.get("team_list", _team_list)
+		print("[Main] 隊伍已更新，武將數：", _team_list.size())
+		_sync_placed_heroes_stats(_team_list)
+		_remove_heroes_not_in_team(_team_list)
 	elif type == "load_stage" or payload.has("stage_id"):
 		# 初始初始化 或 切換關卡
 		_do_initial_setup(payload)
@@ -159,13 +164,18 @@ func _do_initial_setup(payload: Dictionary) -> void:
 			bool(snd.get("sfx_enabled", true)),
 			str(snd.get("sfx_polyphony", "single"))
 		)
-		sfx_mgr.play_bgm()
 
 	# 初始化 HUD
 	battle_hud.setup_heroes(_team_list, _heroes_config)
 	battle_hud.update_wave(0, total_waves)
 	battle_hud.update_base_hp(20, 20)
 	battle_hud.update_gold(500)
+
+	# 顯示進入戰場 splash（用戶點擊後解鎖 AudioContext 並開始 PREP）
+	var map_name: String = map_data.get("name", "出征")
+	if not battle_hud.splash_dismissed.is_connected(_on_splash_dismissed):
+		battle_hud.splash_dismissed.connect(_on_splash_dismissed)
+	battle_hud.show_enter_splash(map_name)
 
 
 func _count_waves(waves: Array) -> int:
@@ -661,6 +671,41 @@ func _inject_test_payload() -> void:
 # ═══════════════════════════════════════════
 #  Helpers
 # ═══════════════════════════════════════════
+func _sync_placed_heroes_stats(new_team: Array) -> void:
+	for hero_id in _placed_heroes:
+		var hero: Node = _placed_heroes[hero_id]
+		if not is_instance_valid(hero):
+			continue
+		for h in new_team:
+			if str(h.get("hero_id", "")) == hero_id:
+				hero.apply_stat_update(h, _heroes_config)
+				print("[Main] 同步武將數值：", hero_id, " Lv.", h.get("level", 1))
+				break
+
+func _remove_heroes_not_in_team(new_team: Array) -> void:
+	var valid_ids: Array = new_team.map(func(h): return str(h.get("hero_id", "")))
+	var to_remove: Array = []
+	for hero_id in _placed_heroes:
+		if hero_id not in valid_ids:
+			to_remove.append(hero_id)
+	for hero_id in to_remove:
+		var hero: Node = _placed_heroes[hero_id]
+		if is_instance_valid(hero):
+			if _selected_unit == hero:
+				_deselect_unit()
+			if _moving_unit == hero:
+				_end_drag()
+			var cell: Vector2i = hero.get_cell()
+			game_map.clear_occupied(cell)
+			hero.queue_free()
+		_placed_heroes.erase(hero_id)
+	if not to_remove.is_empty():
+		print("[Main] 移除不在隊伍中的武將：", to_remove)
+
+func _on_splash_dismissed() -> void:
+	# 用戶點擊 splash → AudioContext 已解鎖，BGM 此時可正常播放
+	SFXManager.play_bgm()
+
 func _build_default_enemies() -> Array:
 	return [
 		{ "enemy_id": "soldier", "name": "步兵", "hp": 100.0, "speed": 1.2 },

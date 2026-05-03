@@ -12,6 +12,7 @@ signal drag_hero_started(hero_data: Dictionary)
 signal drag_tower_started(tower_type: String)
 signal upgrade_panel_closed()
 signal unit_move_requested(unit: Node)
+signal splash_dismissed()
 
 # ── Layout 常數 ──────────────────────────────────────────────
 const PANEL_H:   int = 100
@@ -78,6 +79,40 @@ func hide_upgrade_panel() -> void:
 
 func show_battle_result(_result: Dictionary) -> void:
 	pass
+
+# ═══════════════════════════════════════════
+#  進入戰場 Splash
+# ═══════════════════════════════════════════
+var _splash: Control = null
+
+func show_enter_splash(map_name: String) -> void:
+	if _splash:
+		return
+
+	# 全屏遮罩（直接掛在 BattleHUD CanvasLayer 下）
+	_splash = ColorRect.new()
+	(_splash as ColorRect).color = Color(0.05, 0.03, 0.02, 0.88)
+	_splash.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_splash)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_splash.add_child(center)
+
+	var tex := load("res://assets/gameStart.webp") as Texture2D
+	var btn := TextureButton.new()
+	btn.texture_normal = tex
+	btn.ignore_texture_size = true
+	btn.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	btn.custom_minimum_size = Vector2(240, 120)
+	btn.pressed.connect(_on_enter_splash_pressed)
+	center.add_child(btn)
+
+func _on_enter_splash_pressed() -> void:
+	if _splash:
+		_splash.queue_free()
+		_splash = null
+	splash_dismissed.emit()
 
 func _mk_label(text: String, color: Color) -> Label:
 	var lbl: Label = Label.new()

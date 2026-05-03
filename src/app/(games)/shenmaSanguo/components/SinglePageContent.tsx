@@ -452,6 +452,20 @@ export default function SinglePageContent() {
     sendPayload,
   ]);
 
+  // 音效設定變更時，即時通知 Godot
+  useEffect(() => {
+    if (!payloadSent || !iframeRef.current?.contentWindow) return;
+    iframeRef.current.contentWindow.postMessage(
+      {
+        __godot_bridge: true,
+        type: "update_sound_settings",
+        sfx_enabled: sfxEnabled,
+        sfx_polyphony: sfxPolyphony,
+      },
+      "*"
+    );
+  }, [sfxEnabled, sfxPolyphony, payloadSent]);
+
   // ── Godot 通訊 helper ──────────────────────────────────────
   const sendToGodot = (msg: object) => {
     iframeRef.current?.contentWindow?.postMessage(
@@ -459,6 +473,33 @@ export default function SinglePageContent() {
       "*"
     );
   };
+
+  // 隊伍更新後同步給 Godot
+  const sendTeamUpdate = useCallback(() => {
+    const latestPlayer = usePlayerStore.getState().player;
+    if (!latestPlayer || !staticConfig || !iframeRef.current?.contentWindow)
+      return;
+    const heroesConfig = staticConfig.heroesConfig;
+    const team_list = (latestPlayer.team || []).map((slot) => {
+      const heroState = (latestPlayer.heroes || []).find(
+        (h) => h.hero_id === slot.hero_id
+      );
+      const heroConfig = heroesConfig.find((c) => c.hero_id === slot.hero_id)!;
+      const state = heroState ?? {
+        hero_id: slot.hero_id,
+        level: 1,
+        star: 0,
+        atk: heroConfig?.base_atk ?? 0,
+        def: heroConfig?.base_def ?? 0,
+        hp: heroConfig?.base_hp ?? 0,
+      };
+      return { ...state, slot: slot.slot };
+    });
+    iframeRef.current.contentWindow.postMessage(
+      { __godot_bridge: true, type: "update_team", team_list },
+      "*"
+    );
+  }, [staticConfig]);
 
   // ── 按鈕處理 ────────────────────────────────────────────────
   const handleStartBattle = () => sendToGodot({ type: "start_battle" });
@@ -775,10 +816,16 @@ export default function SinglePageContent() {
         />
       )}
       {showTeamModal && (
-        <TeamEditModal onClose={() => setShowTeamModal(false)} />
+        <TeamEditModal
+          onClose={() => setShowTeamModal(false)}
+          onTeamSaved={sendTeamUpdate}
+        />
       )}
       {showHeroModal && (
-        <HeroListModal onClose={() => setShowHeroModal(false)} />
+        <HeroListModal
+          onClose={() => setShowHeroModal(false)}
+          onHeroUpgraded={sendTeamUpdate}
+        />
       )}
       {showPlayerModal && (
         <PlayerInfoModal

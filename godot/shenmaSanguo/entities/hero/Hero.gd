@@ -252,6 +252,28 @@ func _draw() -> void:
 # ═══════════════════════════════════════════
 #  查詢
 # ═══════════════════════════════════════════
+func apply_stat_update(new_state: Dictionary, heroes_config: Array) -> void:
+	var new_max_hp: float = float(new_state.get("hp", max_hp))
+	var hp_ratio: float   = current_hp / max_hp if max_hp > 0.0 else 1.0
+
+	hero_level = int(new_state.get("level", hero_level))
+	atk        = float(new_state.get("atk", atk))
+	def_stat   = float(new_state.get("def", def_stat))
+	max_hp     = new_max_hp
+	current_hp = new_max_hp * hp_ratio
+
+	for cfg in heroes_config:
+		if cfg.get("hero_id", "") == hero_id:
+			var base_range: float   = float(cfg.get("attack_range", 2.0))
+			var base_spd: float     = float(cfg.get("attack_speed", 1.0))
+			var range_growth: float = float(cfg.get("range_growth", 0.0))
+			var spd_growth: float   = float(cfg.get("atk_spd_growth", 0.0))
+			attack_range = base_range + (hero_level - 1) * range_growth
+			attack_speed = max(0.1, base_spd * (1.0 - (hero_level - 1) * spd_growth))
+			break
+
+	queue_redraw()
+
 func get_cell() -> Vector2i:
 	return grid_cell
 

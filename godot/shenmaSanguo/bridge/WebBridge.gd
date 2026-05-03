@@ -69,6 +69,11 @@ func _on_js_message(args: Array) -> void:
 		deselect_unit_requested.emit()
 	elif payload.get("type") == "request_upgrade":
 		upgrade_unit_requested.emit()
+	elif payload.get("type") == "update_sound_settings":
+		SFXManager.configure(
+			payload.get("sfx_enabled", true),
+			payload.get("sfx_polyphony", "single")
+		)
 	else:
 		payload_received.emit(payload)
 

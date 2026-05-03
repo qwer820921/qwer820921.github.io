@@ -19,11 +19,17 @@ const jobLabel: Record<JobClass, string> = {
   [JobClass.Artillery]: "砲",
   [JobClass.Cavalry]: "騎",
 };
-const jobBarClass: Record<JobClass, string> = {
-  [JobClass.Infantry]: styles.jobInfantry,
-  [JobClass.Archer]: styles.jobArcher,
-  [JobClass.Artillery]: styles.jobArtillery,
-  [JobClass.Cavalry]: styles.jobCavalry,
+const jobLabelFull: Record<JobClass, string> = {
+  [JobClass.Infantry]: "步兵",
+  [JobClass.Archer]: "弓兵",
+  [JobClass.Artillery]: "砲兵",
+  [JobClass.Cavalry]: "騎兵",
+};
+const jobColor: Record<JobClass, string> = {
+  [JobClass.Infantry]: "#ef4444",
+  [JobClass.Archer]: "#10b981",
+  [JobClass.Artillery]: "#3b82f6",
+  [JobClass.Cavalry]: "#8b5cf6",
 };
 
 function resolveHeroState(
@@ -46,13 +52,15 @@ const MAX_SLOTS = 5;
 
 interface Props {
   onClose: () => void;
+  onTeamSaved?: () => void;
 }
 
-export default function TeamEditModal({ onClose }: Props) {
+export default function TeamEditModal({ onClose, onTeamSaved }: Props) {
   const { player, updateTeam } = usePlayerStore();
   const { config: staticConfig } = useStaticConfigStore();
   const [selected, setSelected] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
+  const [filterJob, setFilterJob] = useState<JobClass | null>(null);
 
   useEffect(() => {
     if (player) {
@@ -80,6 +88,18 @@ export default function TeamEditModal({ onClose }: Props) {
     );
   };
 
+  // Plan C: 左右移動槽位順序
+  const moveHero = (idx: number, dir: -1 | 1) => {
+    setSaved(false);
+    setSelected((prev) => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  };
+
   const handleSave = () => {
     const newTeam: TeamSlot[] = selected.map((heroId, idx) => ({
       hero_id: heroId,
@@ -87,6 +107,7 @@ export default function TeamEditModal({ onClose }: Props) {
     }));
     updateTeam(newTeam);
     setSaved(true);
+    onTeamSaved?.();
   };
 
   const isDirty =
@@ -108,6 +129,11 @@ export default function TeamEditModal({ onClose }: Props) {
       return { heroId, config, hero };
     }
   );
+
+  // Plan B: 職業篩選
+  const poolHeroes = filterJob
+    ? staticConfig.heroesConfig.filter((c) => c.job === filterJob)
+    : staticConfig.heroesConfig;
 
   return (
     <div className={styles.modalBackdrop} onClick={onClose}>
@@ -167,31 +193,61 @@ export default function TeamEditModal({ onClose }: Props) {
           <div style={{ marginBottom: "1.25rem" }}>
             <div className={styles.sectionLabel}>出陣隊伍</div>
             <div className={styles.slotsRow}>
-              {displaySlots.map((slot, i) => (
+              {displaySlots.map(({ heroId, config, hero }, i) => (
                 <div
                   key={i}
                   className={
-                    slot.heroId
-                      ? `${styles.slot} ${styles.slotFilled}`
-                      : styles.slot
+                    heroId ? `${styles.slot} ${styles.slotFilled}` : styles.slot
                   }
-                  onClick={() => slot.heroId && toggleHero(slot.heroId)}
-                  title={slot.heroId ? "點擊移除" : undefined}
+                  onClick={() => heroId && toggleHero(heroId)}
+                  title={heroId ? "點擊移除" : undefined}
                 >
                   <span className={styles.slotNum}>#{i + 1}</span>
-                  {slot.config && slot.hero ? (
+                  {config && hero ? (
                     <>
-                      <span
+                      {/* Plan D: 職業色點 */}
+                      <div
                         style={{
-                          fontSize: "0.55rem",
-                          color: rarityColor[slot.config.rarity as Rarity],
-                          fontWeight: 600,
+                          width: 7,
+                          height: 7,
+                          borderRadius: "50%",
+                          background: jobColor[config.job as JobClass],
+                          marginTop: "0.15rem",
+                          flexShrink: 0,
+                        }}
+                      />
+                      <div className={styles.slotName}>{config.name}</div>
+                      <div className={styles.slotLv}>Lv.{hero.level}</div>
+                      {/* Plan D: cost chip */}
+                      <div
+                        style={{
+                          fontSize: "0.5rem",
+                          color: "var(--sg-gold)",
+                          marginTop: "1px",
                         }}
                       >
-                        {jobLabel[slot.config.job as JobClass]}
-                      </span>
-                      <div className={styles.slotName}>{slot.config.name}</div>
-                      <div className={styles.slotLv}>Lv.{slot.hero.level}</div>
+                        Cost {config.cost}
+                      </div>
+                      {/* Plan C: 排序箭頭 */}
+                      <div
+                        className={styles.slotArrows}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          className={styles.slotArrowBtn}
+                          onClick={() => moveHero(i, -1)}
+                          disabled={i === 0}
+                        >
+                          ‹
+                        </button>
+                        <button
+                          className={styles.slotArrowBtn}
+                          onClick={() => moveHero(i, 1)}
+                          disabled={i === selected.length - 1}
+                        >
+                          ›
+                        </button>
+                      </div>
                     </>
                   ) : (
                     <div className={styles.slotEmpty}>空</div>
@@ -206,37 +262,81 @@ export default function TeamEditModal({ onClose }: Props) {
                 marginTop: "0.3rem",
               }}
             >
-              點擊槽位移除武將
+              點擊槽位移除　‹ › 調整順序
             </p>
           </div>
 
           {/* 武將池 */}
           <div style={{ marginBottom: "1rem" }}>
             <div className={styles.sectionLabel}>選擇武將</div>
+
+            {/* Plan B: 職業篩選 bar */}
+            <div className={styles.heroFilterBar}>
+              <div className={styles.heroFilterGroup}>
+                <button
+                  className={`${styles.heroFilterBtn} ${filterJob === null ? styles.heroFilterBtnActive : ""}`}
+                  onClick={() => setFilterJob(null)}
+                >
+                  全部
+                </button>
+                {(Object.values(JobClass) as JobClass[]).map((job) => (
+                  <button
+                    key={job}
+                    className={`${styles.heroFilterBtn} ${filterJob === job ? styles.heroFilterBtnActive : ""}`}
+                    style={
+                      filterJob === job
+                        ? { borderColor: jobColor[job], color: jobColor[job] }
+                        : undefined
+                    }
+                    onClick={() => setFilterJob(filterJob === job ? null : job)}
+                  >
+                    {jobLabel[job]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <Row className="g-2">
-              {staticConfig.heroesConfig.map((config) => {
+              {poolHeroes.map((config) => {
                 const hero = resolveHeroState(config, player.heroes);
                 const isSelected = selected.includes(config.hero_id);
                 const color = rarityColor[config.rarity as Rarity];
+                const jColor = jobColor[config.job as JobClass];
                 return (
                   <Col xs={6} sm={4} key={config.hero_id}>
+                    {/* Plan A + E: 圖片 + 稀有度頂部色框 */}
                     <div
                       className={`${styles.poolCard} ${isSelected ? styles.poolCardActive : ""}`}
                       style={{
-                        borderColor: isSelected ? `${color}80` : undefined,
+                        flexDirection: "column",
+                        borderTopColor: color,
+                        borderTopWidth: "3px",
                       }}
                       onClick={() => toggleHero(config.hero_id)}
                     >
-                      <div
-                        className={`${styles.heroJobBar} ${jobBarClass[config.job as JobClass]}`}
-                      />
-                      <div style={{ padding: "0.45rem 0.55rem", flex: 1 }}>
+                      <div className={styles.heroCardImg}>
+                        {config.image ? (
+                          <img
+                            src={`/images/shenmaSanguo/units/${config.image}`}
+                            alt={config.name}
+                            className={styles.heroCardImgEl}
+                          />
+                        ) : (
+                          <div className={styles.heroCardImgPlaceholder}>
+                            {config.name[0]}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ padding: "0.4rem 0.5rem", flex: 1 }}>
                         <div
                           style={{
                             fontWeight: 700,
                             fontSize: "0.82rem",
                             color: "var(--sg-text)",
-                            marginBottom: "0.15rem",
+                            marginBottom: "0.08rem",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
                           }}
                         >
                           {config.name}
@@ -247,7 +347,10 @@ export default function TeamEditModal({ onClose }: Props) {
                             color: "var(--sg-muted)",
                           }}
                         >
-                          Lv.{hero.level}　Cost{" "}
+                          <span style={{ color: jColor, fontWeight: 600 }}>
+                            {jobLabelFull[config.job as JobClass]}
+                          </span>
+                          　Lv.{hero.level}　Cost{" "}
                           <span style={{ color: "var(--sg-gold)" }}>
                             {config.cost}
                           </span>
@@ -258,7 +361,7 @@ export default function TeamEditModal({ onClose }: Props) {
                               fontSize: "0.58rem",
                               color,
                               fontWeight: 600,
-                              marginTop: "0.15rem",
+                              marginTop: "0.1rem",
                             }}
                           >
                             出陣 #{selected.indexOf(config.hero_id) + 1}
