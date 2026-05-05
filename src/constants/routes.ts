@@ -29,4 +29,5 @@ export const ROUTES = {
   BOBA_SURVIVORS: "/bobaSurvivors", // 重裝全糖珍奶
   SHENMA_SANGUO: "/shenmaSanguo", // 神馬三國
   MAP_EDITOR: "/mapEditor", // 地圖編輯器
+  LINE_TEST: "/lineTest", // 測試 LINE 串接
 };

@@ -1,0 +1,44 @@
+"use client";
+import React, { useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+import { Container, Spinner } from "react-bootstrap";
+import { useLineTestStore } from "../store/useLineTestStore";
+import LandingPage from "./LandingPage";
+import TokenErrorPage from "./TokenErrorPage";
+import BindingForm from "./BindingForm";
+import FriendInvitePage from "./FriendInvitePage";
+import BookingPage from "./BookingPage";
+import BookingSuccessPage from "./BookingSuccessPage";
+import FriendCheckLoader from "./FriendCheckLoader";
+
+const LineTestPage: React.FC = () => {
+  const searchParams = useSearchParams();
+  const { step, tokenError, setRawToken } = useLineTestStore();
+
+  useEffect(() => {
+    setRawToken(searchParams.get("token"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (step === "landing") return <LandingPage />;
+
+  if (step === "validating") {
+    return (
+      <Container className="mt-5 py-5 text-center">
+        <Spinner variant="success" />
+        <p className="mt-3 text-muted">驗證中...</p>
+      </Container>
+    );
+  }
+
+  if (step === "token_error") return <TokenErrorPage reason={tokenError} />;
+  if (step === "binding") return <BindingForm />;
+  if (step === "friend_check") return <FriendCheckLoader />;
+  if (step === "friend_invite") return <FriendInvitePage />;
+  if (step === "booking") return <BookingPage />;
+  if (step === "booking_success") return <BookingSuccessPage />;
+
+  return null;
+};
+
+export default LineTestPage;

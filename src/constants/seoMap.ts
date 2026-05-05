@@ -177,6 +177,13 @@ export const seoMap: {
     keywords:
       "地圖編輯器, 塔防地圖, 路徑設計, JSON 輸出, 障礙物設計, 防禦卡, 子yee 萬事屋, 神馬三國",
   },
+  [ROUTES.LINE_TEST]: {
+    title: "子yee 萬事屋 | 測試 LINE 串接 - LINE Messaging API 整合測試工具",
+    description:
+      "LINE Messaging API 串接測試工具，提供 Webhook 驗證、訊息發送測試與 LINE Bot 功能整合驗證，協助開發者快速完成 LINE 功能串接與偵錯。",
+    keywords:
+      "子yee 萬事屋, LINE 串接, LINE Bot, Messaging API, Webhook, LINE 測試工具",
+  },
   [ROUTES.BOBA_SURVIVORS]: {
     title: "子yee 萬事屋 | 重裝全糖珍奶 - 珍奶主題自動戰鬥生存遊戲",
     description:

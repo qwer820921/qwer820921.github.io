@@ -70,6 +70,7 @@ const routes: RouteGroup[] = [
         showInNavbar: true,
         protected: true,
       },
+      { path: ROUTES.LINE_TEST, name: "測試 LINE 串接", showInNavbar: true },
     ],
   },
   {
