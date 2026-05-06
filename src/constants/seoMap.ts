@@ -184,6 +184,12 @@ export const seoMap: {
     keywords:
       "子yee 萬事屋, LINE 串接, LINE Bot, Messaging API, Webhook, LINE 測試工具",
   },
+  [ROUTES.BOOKING_ENGINE]: {
+    title: "子yee 萬事屋 | 即時預約測試 - 預約引擎核心邏輯驗證工具",
+    description:
+      "即時預約引擎測試工具，驗證可用時段動態運算、防衝突機制與業務規則，確保預約系統核心邏輯正確運作。",
+    keywords: "子yee 萬事屋, 預約引擎, 即時預約, 可用時段, 防衝突, 預約測試",
+  },
   [ROUTES.BOBA_SURVIVORS]: {
     title: "子yee 萬事屋 | 重裝全糖珍奶 - 珍奶主題自動戰鬥生存遊戲",
     description:

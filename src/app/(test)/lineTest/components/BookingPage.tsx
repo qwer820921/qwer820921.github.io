@@ -68,9 +68,9 @@ const BookingPage: React.FC = () => {
             variant="link"
             size="sm"
             className="text-muted p-0 mb-3"
-            onClick={() => setStep("landing")}
+            onClick={() => setStep("dashboard")}
           >
-            ← 返回
+            ← 返回我的預約
           </Button>
           <h4 className="mb-1">線上預約</h4>
           <p className="text-muted small mb-4">會員：{session?.email}</p>

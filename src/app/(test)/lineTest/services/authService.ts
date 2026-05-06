@@ -20,3 +20,23 @@ export async function checkFriendship(
 ): Promise<{ isFriend: boolean }> {
   return gasCall("checkFriendship", { lineUserId });
 }
+
+export async function loginWithEmail(
+  email: string,
+  password: string
+): Promise<{ success: boolean; session: AuthSession | null; error?: string }> {
+  return gasCall("loginWithEmail", { email, password });
+}
+
+export async function sendResetEmail(
+  email: string
+): Promise<{ success: boolean; error?: string }> {
+  return gasCall("sendResetEmail", { email });
+}
+
+export async function resetPassword(
+  token: string,
+  newPassword: string
+): Promise<{ success: boolean; error?: string }> {
+  return gasCall("resetPassword", { token, newPassword });
+}

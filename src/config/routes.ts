@@ -70,7 +70,6 @@ const routes: RouteGroup[] = [
         showInNavbar: true,
         protected: true,
       },
-      { path: ROUTES.LINE_TEST, name: "測試 LINE 串接", showInNavbar: true },
     ],
   },
   {
@@ -97,6 +96,14 @@ const routes: RouteGroup[] = [
         name: "SoundCloud 播放器",
         showInNavbar: true,
       },
+    ],
+  },
+  {
+    type: "測試",
+    icon: "/images/icon/test_icon.webp",
+    routeConfig: [
+      { path: ROUTES.LINE_TEST, name: "測試 LINE 串接", showInNavbar: true },
+      { path: ROUTES.BOOKING_ENGINE, name: "即時預約測試", showInNavbar: true },
     ],
   },
   {

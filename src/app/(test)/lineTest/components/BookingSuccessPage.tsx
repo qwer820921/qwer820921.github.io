@@ -12,7 +12,7 @@ import { notificationService } from "../services/notificationService";
 import { useLineTestStore } from "../store/useLineTestStore";
 
 const BookingSuccessPage: React.FC = () => {
-  const { session, currentBooking } = useLineTestStore();
+  const { session, currentBooking, setStep } = useLineTestStore();
   const [sending, setSending] = useState<string | null>(null);
 
   if (!currentBooking || !session) return null;
@@ -41,6 +41,16 @@ const BookingSuccessPage: React.FC = () => {
     <Container className="py-5" style={{ maxWidth: 520 }}>
       <Card className="shadow-sm">
         <Card.Body className="p-4 text-center">
+          <div className="text-start mb-1">
+            <Button
+              variant="link"
+              size="sm"
+              className="text-muted p-0"
+              onClick={() => setStep("dashboard")}
+            >
+              ← 返回我的預約
+            </Button>
+          </div>
           <div style={{ fontSize: 56 }}>✅</div>
           <h4 className="mt-2 mb-1">預約成功！</h4>
           <p className="text-muted small mb-4">

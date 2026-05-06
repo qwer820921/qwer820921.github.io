@@ -7,7 +7,8 @@ export type LineTestStep =
   | "friend_invite"
   | "dashboard"
   | "booking"
-  | "booking_success";
+  | "booking_success"
+  | "reset_password";
 
 export type TokenValidationResult =
   | { valid: true; lineUserId: string }

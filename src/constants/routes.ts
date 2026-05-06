@@ -30,4 +30,5 @@ export const ROUTES = {
   SHENMA_SANGUO: "/shenmaSanguo", // 神馬三國
   MAP_EDITOR: "/mapEditor", // 地圖編輯器
   LINE_TEST: "/lineTest", // 測試 LINE 串接
+  BOOKING_ENGINE: "/bookingEngine", // 即時預約測試
 };

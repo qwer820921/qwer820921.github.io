@@ -11,14 +11,23 @@ import BookingPage from "./BookingPage";
 import BookingSuccessPage from "./BookingSuccessPage";
 import FriendCheckLoader from "./FriendCheckLoader";
 import DashboardPage from "./DashboardPage";
+import ResetPasswordConfirmPage from "./ResetPasswordConfirmPage";
 import styles from "../styles/lineTest.module.css";
 
 const LineTestPage: React.FC = () => {
   const searchParams = useSearchParams();
-  const { step, tokenError, setRawToken } = useLineTestStore();
+  const { step, tokenError, setRawToken, setStep } = useLineTestStore();
 
   useEffect(() => {
-    setRawToken(searchParams.get("token"));
+    const token = searchParams.get("token");
+    const resetToken = searchParams.get("resetToken");
+
+    if (resetToken) {
+      // 密碼重設連結優先處理
+      setStep("reset_password");
+    } else {
+      setRawToken(token);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -38,6 +47,7 @@ const LineTestPage: React.FC = () => {
     if (step === "dashboard") return <DashboardPage />;
     if (step === "booking") return <BookingPage />;
     if (step === "booking_success") return <BookingSuccessPage />;
+    if (step === "reset_password") return <ResetPasswordConfirmPage />;
     return null;
   };
 
