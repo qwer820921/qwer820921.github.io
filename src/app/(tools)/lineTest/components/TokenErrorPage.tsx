@@ -16,7 +16,7 @@ interface Props {
 const TokenErrorPage: React.FC<Props> = ({ reason }) => {
   const { setStep } = useLineTestStore();
   return (
-    <Container className="mt-5 py-5" style={{ maxWidth: 480 }}>
+    <Container className="py-5" style={{ maxWidth: 480 }}>
       <Alert variant="danger">
         <Alert.Heading>無法進入預約頁面</Alert.Heading>
         <p className="mb-3">{reasonMap[reason ?? "invalid"]}</p>

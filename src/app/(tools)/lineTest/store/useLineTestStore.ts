@@ -74,6 +74,7 @@ export const useLineTestStore = create<LineTestState>((set) => ({
       const session: AuthSession = {
         memberId: member.id,
         email: member.email,
+        name: member.name,
         lineUserId,
         expiresAt: Date.now() + 24 * 60 * 60 * 1000,
       };

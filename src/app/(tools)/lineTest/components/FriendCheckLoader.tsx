@@ -12,7 +12,7 @@ const FriendCheckLoader: React.FC = () => {
     checkFriendship(lineUserId)
       .then(({ isFriend }) => {
         setIsFriend(isFriend);
-        setStep(isFriend ? "booking" : "friend_invite");
+        setStep(isFriend ? "dashboard" : "friend_invite");
       })
       .catch(() => setStep("friend_invite"));
     // eslint-disable-next-line react-hooks/exhaustive-deps

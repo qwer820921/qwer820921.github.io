@@ -5,6 +5,7 @@ export type LineTestStep =
   | "binding"
   | "friend_check"
   | "friend_invite"
+  | "dashboard"
   | "booking"
   | "booking_success";
 
@@ -24,6 +25,7 @@ export interface Member {
 export interface AuthSession {
   memberId: string;
   email: string;
+  name?: string;
   lineUserId: string;
   expiresAt: number;
 }

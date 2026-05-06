@@ -22,7 +22,7 @@ const FriendInvitePage: React.FC = () => {
 
     if (isFriend) {
       setIsFriend(true);
-      setStep("booking");
+      setStep("dashboard");
     } else {
       setFailed(true);
       setChecking(false);

@@ -9,7 +9,11 @@ const LandingPage: React.FC = () => {
   const { rawToken, initialize } = useLineTestStore();
 
   const handleBook = () => {
-    initialize(rawToken);
+    if (rawToken) {
+      initialize(rawToken);
+    } else {
+      window.open(LINE_FRIEND_URL, "_blank");
+    }
   };
 
   return (
@@ -24,21 +28,11 @@ const LandingPage: React.FC = () => {
           <Button
             variant="success"
             size="lg"
-            className="w-100 mb-3"
+            className="w-100"
             onClick={handleBook}
           >
             立即預約
           </Button>
-          <p className="text-muted small">
-            尚未加入官方帳號？
-            <a
-              href={LINE_FRIEND_URL}
-              target="_blank"
-              className="ms-1 text-success"
-            >
-              點此加入好友
-            </a>
-          </p>
         </Card.Body>
       </Card>
     </Container>

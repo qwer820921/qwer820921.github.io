@@ -10,6 +10,8 @@ import FriendInvitePage from "./FriendInvitePage";
 import BookingPage from "./BookingPage";
 import BookingSuccessPage from "./BookingSuccessPage";
 import FriendCheckLoader from "./FriendCheckLoader";
+import DashboardPage from "./DashboardPage";
+import styles from "../styles/lineTest.module.css";
 
 const LineTestPage: React.FC = () => {
   const searchParams = useSearchParams();
@@ -20,25 +22,26 @@ const LineTestPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (step === "landing") return <LandingPage />;
+  const renderStep = () => {
+    if (step === "landing") return <LandingPage />;
+    if (step === "validating")
+      return (
+        <Container className="py-5 text-center">
+          <Spinner variant="success" />
+          <p className="mt-3 text-muted">驗證中...</p>
+        </Container>
+      );
+    if (step === "token_error") return <TokenErrorPage reason={tokenError} />;
+    if (step === "binding") return <BindingForm />;
+    if (step === "friend_check") return <FriendCheckLoader />;
+    if (step === "friend_invite") return <FriendInvitePage />;
+    if (step === "dashboard") return <DashboardPage />;
+    if (step === "booking") return <BookingPage />;
+    if (step === "booking_success") return <BookingSuccessPage />;
+    return null;
+  };
 
-  if (step === "validating") {
-    return (
-      <Container className="mt-5 py-5 text-center">
-        <Spinner variant="success" />
-        <p className="mt-3 text-muted">驗證中...</p>
-      </Container>
-    );
-  }
-
-  if (step === "token_error") return <TokenErrorPage reason={tokenError} />;
-  if (step === "binding") return <BindingForm />;
-  if (step === "friend_check") return <FriendCheckLoader />;
-  if (step === "friend_invite") return <FriendInvitePage />;
-  if (step === "booking") return <BookingPage />;
-  if (step === "booking_success") return <BookingSuccessPage />;
-
-  return null;
+  return <div className={styles.pageWrapper}>{renderStep()}</div>;
 };
 
 export default LineTestPage;
