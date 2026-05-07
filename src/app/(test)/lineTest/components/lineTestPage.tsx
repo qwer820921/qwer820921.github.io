@@ -16,7 +16,8 @@ import styles from "../styles/lineTest.module.css";
 
 const LineTestPage: React.FC = () => {
   const searchParams = useSearchParams();
-  const { step, tokenError, setRawToken, setStep, setSession } = useLineTestStore();
+  const { step, tokenError, setRawToken, setStep, setSession, initialize } =
+    useLineTestStore();
 
   useEffect(() => {
     const token = searchParams.get("token");
@@ -43,9 +44,13 @@ const LineTestPage: React.FC = () => {
       } catch {
         // localStorage 不可用或資料損毀，繼續正常流程
       }
+      setRawToken(null);
+      return;
     }
 
+    // URL 帶 token：直接驗證，不顯示登陸頁
     setRawToken(token);
+    initialize(token);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
