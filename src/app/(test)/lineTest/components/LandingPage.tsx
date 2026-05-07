@@ -15,7 +15,14 @@ import { loginWithEmail, sendResetEmail } from "../services/authService";
 type ModalView = "login" | "forgot" | "sent";
 
 const LandingPage: React.FC = () => {
-  const { rawToken, initialize, setSession, setStep, autoOpenWebLogin, setAutoOpenWebLogin } = useLineTestStore();
+  const {
+    rawToken,
+    initialize,
+    setSession,
+    setStep,
+    autoOpenWebLogin,
+    setAutoOpenWebLogin,
+  } = useLineTestStore();
 
   // Modal 狀態
   const [showModal, setShowModal] = useState(false);
@@ -108,8 +115,11 @@ const LandingPage: React.FC = () => {
               className="w-100 mb-3"
               {...(rawToken
                 ? { onClick: () => initialize(rawToken) }
-                : { href: "https://lin.ee/TLI3p5l", target: "_blank", rel: "noreferrer" }
-              )}
+                : {
+                    href: "https://lin.ee/p3V3qdH",
+                    target: "_blank",
+                    rel: "noreferrer",
+                  })}
             >
               立即預約
             </Button>
