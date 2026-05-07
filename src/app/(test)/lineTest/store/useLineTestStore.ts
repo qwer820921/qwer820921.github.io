@@ -28,6 +28,9 @@ interface LineTestState {
   currentBooking: Booking | null;
   setCurrentBooking: (booking: Booking | null) => void;
 
+  autoOpenWebLogin: boolean;
+  setAutoOpenWebLogin: (val: boolean) => void;
+
   initialize: (token: string | null) => Promise<void>;
 }
 
@@ -51,6 +54,9 @@ export const useLineTestStore = create<LineTestState>()(
 
       currentBooking: null,
       setCurrentBooking: (currentBooking) => set({ currentBooking }),
+
+      autoOpenWebLogin: false,
+      setAutoOpenWebLogin: (autoOpenWebLogin) => set({ autoOpenWebLogin }),
 
       initialize: async (token) => {
         set({ step: "validating", tokenError: null });

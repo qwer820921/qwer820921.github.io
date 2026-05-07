@@ -19,6 +19,7 @@ const BookingEnginePage: React.FC = () => {
   const isReschedule = !!rescheduleBookingId;
 
   useEffect(() => {
+    if (isReschedule) return;
     setLoading(true);
     fetchServices()
       .then(setServices)

@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Container,
   Card,
@@ -15,7 +15,7 @@ import { loginWithEmail, sendResetEmail } from "../services/authService";
 type ModalView = "login" | "forgot" | "sent";
 
 const LandingPage: React.FC = () => {
-  const { rawToken, initialize, setSession, setStep } = useLineTestStore();
+  const { rawToken, initialize, setSession, setStep, autoOpenWebLogin, setAutoOpenWebLogin } = useLineTestStore();
 
   // Modal 狀態
   const [showModal, setShowModal] = useState(false);
@@ -37,6 +37,14 @@ const LandingPage: React.FC = () => {
     resetModal();
     setShowModal(true);
   };
+
+  useEffect(() => {
+    if (autoOpenWebLogin) {
+      setAutoOpenWebLogin(false);
+      openModal();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenWebLogin]);
 
   const closeModal = () => {
     setShowModal(false);
@@ -98,7 +106,10 @@ const LandingPage: React.FC = () => {
               variant="success"
               size="lg"
               className="w-100 mb-3"
-              onClick={() => initialize(rawToken)}
+              {...(rawToken
+                ? { onClick: () => initialize(rawToken) }
+                : { href: "https://lin.ee/TLI3p5l", target: "_blank", rel: "noreferrer" }
+              )}
             >
               立即預約
             </Button>

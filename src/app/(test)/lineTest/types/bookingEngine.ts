@@ -78,6 +78,8 @@ export interface BookingEngineState {
   closeConfirmModal: () => void;
   rescheduleBookingId: string | null;
   setRescheduleBookingId: (id: string | null) => void;
+  lastCreatedBookingId: string | null;
+  setLastCreatedBookingId: (id: string | null) => void;
   startReschedule: (
     bookingId: string,
     beautician: Beautician,

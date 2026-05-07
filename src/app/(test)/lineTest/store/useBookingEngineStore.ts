@@ -21,6 +21,7 @@ const initialState = {
   loading: false,
   error: null,
   rescheduleBookingId: null,
+  lastCreatedBookingId: null,
 };
 
 export const useBookingEngineStore = create<BookingEngineState>((set) => ({
@@ -60,6 +61,8 @@ export const useBookingEngineStore = create<BookingEngineState>((set) => ({
   setError: (error) => set({ error }),
   rescheduleBookingId: null,
   setRescheduleBookingId: (rescheduleBookingId) => set({ rescheduleBookingId }),
+  lastCreatedBookingId: null,
+  setLastCreatedBookingId: (lastCreatedBookingId) => set({ lastCreatedBookingId }),
   startReschedule: (bookingId, beautician, service, store) =>
     set({
       rescheduleBookingId: bookingId,
@@ -68,6 +71,7 @@ export const useBookingEngineStore = create<BookingEngineState>((set) => ({
       selectedStore: store,
       step: "calendar",
       schedule: [],
+      loading: true,
       selectedDate: null,
       selectedSegment: null,
       showSlotModal: false,

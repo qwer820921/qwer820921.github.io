@@ -3,7 +3,7 @@ import React from "react";
 import { Container, Card, Button, ListGroup } from "react-bootstrap";
 import { useBookingEngineStore } from "../store/useBookingEngineStore";
 import { useLineTestStore } from "../store/useLineTestStore";
-import { addMinutes, fetchSchedule } from "../services/bookingService";
+import { addMinutes } from "../services/bookingService";
 
 function getDayLabel(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -14,7 +14,7 @@ const BookingEngineSuccessPage: React.FC = () => {
   const {
     selectedService, selectedStore, selectedBeautician,
     selectedDate, selectedSegment, note,
-    setStep, setSchedule, reset,
+    reset, lastCreatedBookingId, startReschedule,
   } = useBookingEngineStore();
   const { setStep: setLineStep } = useLineTestStore();
 
@@ -36,8 +36,8 @@ const BookingEngineSuccessPage: React.FC = () => {
   ];
 
   const handleEditBack = () => {
-    fetchSchedule(selectedBeautician.beauticianId).then(setSchedule);
-    setStep("calendar");
+    if (!lastCreatedBookingId || !selectedBeautician || !selectedService || !selectedStore) return;
+    startReschedule(lastCreatedBookingId, selectedBeautician, selectedService, selectedStore);
   };
 
   const handleGoHome = () => {
@@ -66,9 +66,11 @@ const BookingEngineSuccessPage: React.FC = () => {
           </ListGroup>
 
           <div className="d-flex gap-2">
-            <Button variant="outline-secondary" className="w-100" onClick={handleEditBack}>
-              返回編輯
-            </Button>
+            {lastCreatedBookingId && (
+              <Button variant="outline-secondary" className="w-100" onClick={handleEditBack}>
+                返回編輯
+              </Button>
+            )}
             <Button variant="success" className="w-100" onClick={handleGoHome}>
               回到預約首頁
             </Button>

@@ -41,7 +41,7 @@ const statusVariant: Record<string, string> = {
 };
 
 const DashboardPage: React.FC = () => {
-  const { session, setStep } = useLineTestStore();
+  const { session, setStep, setSession, setAutoOpenWebLogin } = useLineTestStore();
   const { startReschedule } = useBookingEngineStore();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,9 +107,21 @@ const DashboardPage: React.FC = () => {
   };
 
   const handleCancel = async () => {
-    if (!selected) return;
+    if (!selected || !session) return;
     setActionLoading(true);
-    await gasCall("cancelBooking", { bookingId: selected.id }).catch(() => null);
+    const result = await gasCall<{ success: boolean }>("cancelBooking", { bookingId: selected.id }).catch(() => ({ success: false }));
+    if (result.success) {
+      notificationService.notifyBookingCancelled({
+        memberId: session.memberId,
+        lineUserId: session.lineUserId,
+        email: session.email,
+        booking: {
+          ...selected,
+          date: fmtDate(selected.date),
+          time: fmtTime(selected.time),
+        },
+      }).catch(() => null);
+    }
     setActionLoading(false);
     setShowModal(false);
     fetchBookings();
@@ -182,9 +194,14 @@ const DashboardPage: React.FC = () => {
             {session?.name || session?.email || "LINE 用戶"}
           </small>
         </div>
-        <Button variant="success" onClick={() => setStep("booking")}>
-          立即預約
-        </Button>
+        <div className="d-flex gap-2">
+          <Button variant="outline-secondary" size="sm" onClick={() => { setSession(null); setAutoOpenWebLogin(true); setStep("landing"); }}>
+            登出
+          </Button>
+          <Button variant="success" onClick={() => setStep("booking")}>
+            立即預約
+          </Button>
+        </div>
       </div>
 
       {/* 內容 */}

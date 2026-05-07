@@ -4,6 +4,7 @@ import { Modal, Button, ListGroup, Form, Alert, Spinner } from "react-bootstrap"
 import { useBookingEngineStore } from "../store/useBookingEngineStore";
 import { useLineTestStore } from "../store/useLineTestStore";
 import { submitBooking, rescheduleBooking, addMinutes, fetchSchedule } from "../services/bookingService";
+import { notificationService } from "../services/notificationService";
 
 function getDayLabel(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -15,7 +16,7 @@ const ConfirmModal: React.FC = () => {
     showConfirmModal, closeConfirmModal, openSlotModal,
     selectedService, selectedStore, selectedBeautician,
     selectedDate, selectedSegment, note, setNote,
-    setStep, setSchedule, rescheduleBookingId, reset,
+    setStep, setSchedule, rescheduleBookingId, reset, setLastCreatedBookingId,
   } = useBookingEngineStore();
   const { session, setStep: setLineStep } = useLineTestStore();
 
@@ -59,6 +60,26 @@ const ConfirmModal: React.FC = () => {
         return;
       }
 
+      notificationService.notifyBookingRescheduled(
+        {
+          memberId: session.memberId,
+          lineUserId: session.lineUserId,
+          email: session.email,
+          booking: {
+            id: rescheduleBookingId!,
+            memberId: session.memberId,
+            date: selectedDate,
+            time: selectedSegment.startTime,
+            service: selectedService.name,
+            note,
+            status: "confirmed",
+            createdAt: "",
+          },
+        },
+        selectedDate,
+        selectedSegment.startTime
+      ).catch(() => null);
+
       closeConfirmModal();
       reset();
       setLineStep("dashboard");
@@ -84,6 +105,7 @@ const ConfirmModal: React.FC = () => {
       return;
     }
 
+    if (result.bookingId) setLastCreatedBookingId(result.bookingId);
     closeConfirmModal();
     setStep("success");
   };
