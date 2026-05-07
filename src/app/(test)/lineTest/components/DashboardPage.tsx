@@ -7,13 +7,14 @@ import {
   Spinner,
   ListGroup,
   Modal,
-  Form,
   Alert,
 } from "react-bootstrap";
 import { useLineTestStore } from "../store/useLineTestStore";
+import { useBookingEngineStore } from "../store/useBookingEngineStore";
 import { gasCall } from "../services/gasClient";
 import { notificationService } from "../services/notificationService";
 import type { Booking } from "../types";
+import type { Beautician, Service, Store } from "../types/bookingEngine";
 
 // Google Sheets 有時會把日期存成 ISO datetime，取前10碼即可
 const fmtDate = (v: string) => (v ? String(v).substring(0, 10) : "");
@@ -41,26 +42,22 @@ const statusVariant: Record<string, string> = {
 
 const DashboardPage: React.FC = () => {
   const { session, setStep } = useLineTestStore();
+  const { startReschedule } = useBookingEngineStore();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [selected, setSelected] = useState<Booking | null>(null);
   const [showModal, setShowModal] = useState(false);
 
-  // 改期表單
-  const [rescheduleMode, setRescheduleMode] = useState(false);
-  const [newDate, setNewDate] = useState("");
-  const [newTime, setNewTime] = useState("");
-
   const [actionLoading, setActionLoading] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [notifySending, setNotifySending] = useState<string | null>(null);
 
   const fetchBookings = () => {
-    if (!session?.memberId) return;
+    if (!session?.lineUserId) return;
     setLoading(true);
     gasCall<{ bookings: Booking[] }>("getBookings", {
-      memberId: session.memberId,
+      lineUserId: session.lineUserId,
     })
       .then(({ bookings }) => setBookings(bookings ?? []))
       .catch(() => setBookings([]))
@@ -70,13 +67,10 @@ const DashboardPage: React.FC = () => {
   useEffect(() => {
     fetchBookings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.memberId]);
+  }, [session?.lineUserId]);
 
   const openDetail = (b: Booking) => {
     setSelected(b);
-    setRescheduleMode(false);
-    setNewDate(fmtDate(b.date));
-    setNewTime(fmtTime(b.time));
     setActionMsg(null);
     setNotifySending(null);
     setShowModal(true);
@@ -115,25 +109,38 @@ const DashboardPage: React.FC = () => {
   const handleCancel = async () => {
     if (!selected) return;
     setActionLoading(true);
-    await gasCall("cancelBooking", { bookingId: selected.id }).catch(
-      () => null
-    );
+    await gasCall("cancelBooking", { bookingId: selected.id }).catch(() => null);
     setActionLoading(false);
     setShowModal(false);
     fetchBookings();
   };
 
-  const handleReschedule = async () => {
-    if (!selected || !newDate || !newTime) return;
-    setActionLoading(true);
-    await gasCall("rescheduleBooking", {
-      bookingId: selected.id,
-      newDate,
-      newTime,
-    }).catch(() => null);
-    setActionLoading(false);
+  const handleStartReschedule = () => {
+    if (!selected) return;
+    const beautician: Beautician = {
+      beauticianId: selected.beauticianId ?? "",
+      name: selected.beauticianName ?? selected.beauticianId ?? "",
+      storeId: selected.storeId ?? "",
+      skillServiceIds: selected.serviceId ?? "",
+      bio: "",
+    };
+    const service: Service = {
+      serviceId: selected.serviceId ?? "",
+      name: selected.service ?? "",
+      duration: selected.serviceDuration ?? 60,
+      buffer: selected.serviceBuffer ?? 0,
+      price: selected.servicePrice ?? 0,
+      description: "",
+    };
+    const store: Store = {
+      storeId: selected.storeId ?? "",
+      name: selected.storeName ?? "",
+      address: "",
+      phone: "",
+    };
     setShowModal(false);
-    fetchBookings();
+    startReschedule(selected.id, beautician, service, store);
+    setStep("booking");
   };
 
   const upcoming = bookings.filter(
@@ -275,65 +282,23 @@ const DashboardPage: React.FC = () => {
             ))}
           </div>
 
-          {/* 改期表單 */}
-          {rescheduleMode && (
-            <>
-              <Form.Group className="mb-2">
-                <Form.Label>新日期</Form.Label>
-                <Form.Control
-                  type="date"
-                  value={newDate}
-                  min={today()}
-                  onChange={(e) => setNewDate(e.target.value)}
-                />
-              </Form.Group>
-              <Form.Group className="mb-3">
-                <Form.Label>新時間</Form.Label>
-                <Form.Control
-                  type="time"
-                  value={newTime}
-                  onChange={(e) => setNewTime(e.target.value)}
-                />
-              </Form.Group>
-            </>
-          )}
         </Modal.Body>
 
         {selected && isUpcoming(selected) && (
           <Modal.Footer className="d-flex gap-2">
-            {rescheduleMode ? (
-              <>
-                <Button
-                  variant="outline-secondary"
-                  onClick={() => setRescheduleMode(false)}
-                >
-                  取消
-                </Button>
-                <Button
-                  variant="success"
-                  disabled={actionLoading || !newDate || !newTime}
-                  onClick={handleReschedule}
-                >
-                  {actionLoading ? "處理中…" : "確認改期"}
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  variant="outline-danger"
-                  disabled={actionLoading}
-                  onClick={handleCancel}
-                >
-                  取消預約
-                </Button>
-                <Button
-                  variant="outline-primary"
-                  onClick={() => setRescheduleMode(true)}
-                >
-                  更改時間
-                </Button>
-              </>
-            )}
+            <Button
+              variant="outline-danger"
+              disabled={actionLoading}
+              onClick={handleCancel}
+            >
+              取消預約
+            </Button>
+            <Button
+              variant="outline-primary"
+              onClick={handleStartReschedule}
+            >
+              更改時間
+            </Button>
           </Modal.Footer>
         )}
       </Modal>

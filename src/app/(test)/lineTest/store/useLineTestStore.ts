@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import { validateToken } from "../services/tokenGuard";
 import { findMemberByLineUserId } from "../services/authService";
 import type {
@@ -30,57 +31,63 @@ interface LineTestState {
   initialize: (token: string | null) => Promise<void>;
 }
 
-export const useLineTestStore = create<LineTestState>((set) => ({
-  step: "landing",
-  setStep: (step) => set({ step }),
+export const useLineTestStore = create<LineTestState>()(
+  persist(
+    (set) => ({
+      step: "landing",
+      setStep: (step) => set({ step }),
 
-  rawToken: null,
-  setRawToken: (rawToken) => set({ rawToken }),
+      rawToken: null,
+      setRawToken: (rawToken) => set({ rawToken }),
 
-  tokenError: null,
-  lineUserId: null,
+      tokenError: null,
+      lineUserId: null,
 
-  session: null,
-  setSession: (session) => set({ session }),
+      session: null,
+      setSession: (session) => set({ session }),
 
-  isFriend: false,
-  setIsFriend: (isFriend) => set({ isFriend }),
+      isFriend: false,
+      setIsFriend: (isFriend) => set({ isFriend }),
 
-  currentBooking: null,
-  setCurrentBooking: (currentBooking) => set({ currentBooking }),
+      currentBooking: null,
+      setCurrentBooking: (currentBooking) => set({ currentBooking }),
 
-  initialize: async (token) => {
-    set({ step: "validating", tokenError: null });
+      initialize: async (token) => {
+        set({ step: "validating", tokenError: null });
 
-    // Step 1：驗證 token
-    const tokenResult = await validateToken(token).catch(
-      (): TokenValidationResult => ({ valid: false, reason: "invalid" })
-    );
+        const tokenResult = await validateToken(token).catch(
+          (): TokenValidationResult => ({ valid: false, reason: "invalid" })
+        );
 
-    if (!tokenResult.valid) {
-      set({ step: "token_error", tokenError: tokenResult.reason });
-      return;
+        if (!tokenResult.valid) {
+          set({ step: "token_error", tokenError: tokenResult.reason });
+          return;
+        }
+
+        const lineUserId = tokenResult.lineUserId;
+        set({ lineUserId });
+
+        const { member } = await findMemberByLineUserId(lineUserId).catch(
+          () => ({ member: null })
+        );
+
+        if (member) {
+          const session: AuthSession = {
+            memberId: member.id,
+            email: member.email,
+            name: member.name,
+            lineUserId,
+            expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+          };
+          set({ session, step: "friend_check" });
+        } else {
+          set({ step: "binding" });
+        }
+      },
+    }),
+    {
+      name: "linetest-session",
+      partialize: (state) => ({ session: state.session }), // 只持久化 session
     }
-
-    const lineUserId = tokenResult.lineUserId;
-    set({ lineUserId });
-
-    // Step 2：查詢是否已綁定會員
-    const { member } = await findMemberByLineUserId(lineUserId).catch(() => ({
-      member: null,
-    }));
-
-    if (member) {
-      const session: AuthSession = {
-        memberId: member.id,
-        email: member.email,
-        name: member.name,
-        lineUserId,
-        expiresAt: Date.now() + 24 * 60 * 60 * 1000,
-      };
-      set({ session, step: "friend_check" });
-    } else {
-      set({ step: "binding" });
-    }
-  },
-}));
+  )
+);

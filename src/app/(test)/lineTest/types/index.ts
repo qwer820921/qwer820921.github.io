@@ -43,6 +43,15 @@ export interface Booking extends BookingForm {
   memberId: string;
   status: "confirmed" | "cancelled" | "rescheduled";
   createdAt: string;
+  // from new booking engine schema (optional, returned by updated getBookings GAS)
+  beauticianId?: string;
+  beauticianName?: string;
+  serviceId?: string;
+  serviceDuration?: number;
+  serviceBuffer?: number;
+  servicePrice?: number;
+  storeId?: string;
+  storeName?: string;
 }
 
 export interface NotifyPayload {
