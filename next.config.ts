@@ -1,14 +1,14 @@
-/** @type {import('next').NextConfig} */
-
-const isProd = process.env.NODE_ENV === "production";
+const isVercel = process.env.VERCEL === "1";
 
 const nextConfig = {
-  output: "export",
+  // isVercel 時不做 static export
+  ...(isVercel ? {} : { output: "export" }),
   reactStrictMode: true,
   images: {
     unoptimized: true,
   },
-  assetPrefix: isProd ? "https://qwer820921.github.io/" : undefined,
+  // isVercel 時不需要 assetPrefix
+  assetPrefix: isVercel ? undefined : "https://qwer820921.github.io/",
 };
 
 export default nextConfig;
