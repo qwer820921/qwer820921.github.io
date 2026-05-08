@@ -40,7 +40,7 @@
     "jszip": "^3.10.1",
     "lightweight-charts": "^4.1.6",
     "next": "^15.5.18",
-    "next-mdx-remote": "^5.0.0",
+    "next-mdx-remote": "^6.0.0",
     "qr-code-styling": "^1.9.2",
     "react": "^19.0.0",
     "react-bootstrap": "^2.10.10",
