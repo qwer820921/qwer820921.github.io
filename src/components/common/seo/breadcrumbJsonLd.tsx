@@ -1,10 +1,8 @@
-import Head from "next/head";
 import routeGroups from "@/config/routes";
 
 const BASE_URL = "https://qwer820921.github.io";
 
 const BreadcrumbJsonLd = () => {
-  // 先展平，取得所有 routeConfig，然後篩選 showInNavbar
   const routes = routeGroups.flatMap((group) => group.routeConfig);
 
   const breadcrumbItems = routes
@@ -23,11 +21,10 @@ const BreadcrumbJsonLd = () => {
   };
 
   return (
-    <Head>
-      <script type="application/ld+json">
-        {JSON.stringify(breadcrumbJsonLd)}
-      </script>
-    </Head>
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+    />
   );
 };
 

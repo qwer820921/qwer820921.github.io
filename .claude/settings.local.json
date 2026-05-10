@@ -9,7 +9,11 @@
       "Bash(xargs -n1 basename)",
       "Bash(python3 -c ' *)",
       "Bash(mkdir \"D:\\\\code\\\\GitHub\\\\qwer820921.github.io\\\\.claude\\\\md\")",
-      "Bash(Move-Item \"D:\\\\code\\\\GitHub\\\\qwer820921.github.io\\\\SA_work_items.md\" \"D:\\\\code\\\\GitHub\\\\qwer820921.github.io\\\\.claude\\\\md\\\\SA_work_items.md\")"
+      "Bash(Move-Item \"D:\\\\code\\\\GitHub\\\\qwer820921.github.io\\\\SA_work_items.md\" \"D:\\\\code\\\\GitHub\\\\qwer820921.github.io\\\\.claude\\\\md\\\\SA_work_items.md\")",
+      "WebSearch",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\code\\\\GitHub\\\\qwer820921.github.io\" -Depth 0 | Select-Object Name | Where-Object { $_.Name -match \"eslint|prettier|tsconfig\" })",
+      "Bash(npx @next/codemod@canary upgrade latest --yes)",
+      "Bash(npx @next/codemod@canary upgrade latest)"
     ]
   }
 }
