@@ -1,0 +1,7 @@
+1:"$Sreact.fragment"
+2:I[855017,["https://qwer820921.github.io/_next/static/chunks/11te43u.mwp0q.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js","https://qwer820921.github.io/_next/static/chunks/0~65k0g~_rulg.js","https://qwer820921.github.io/_next/static/chunks/0194_2.je4z4r.js"],"default"]
+3:I[897367,["https://qwer820921.github.io/_next/static/chunks/11te43u.mwp0q.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js"],"OutletBoundary"]
+4:"$Sreact.suspense"
+:HL["https://qwer820921.github.io/_next/static/chunks/0rxegynz~ln7y.css","style"]
+0:{"rsc":["$","$1","c",{"children":[["$","$L2",null,{}],[["$","link","0",{"rel":"stylesheet","href":"https://qwer820921.github.io/_next/static/chunks/0rxegynz~ln7y.css","precedence":"next"}],["$","script","script-0",{"src":"https://qwer820921.github.io/_next/static/chunks/0~65k0g~_rulg.js","async":true}],["$","script","script-1",{"src":"https://qwer820921.github.io/_next/static/chunks/0194_2.je4z4r.js","async":true}]],["$","$L3",null,{"children":["$","$4",null,{"name":"Next.MetadataOutlet","children":"$@5"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"9icG_bhqhIqN40E2GZepa"}
+5:null
