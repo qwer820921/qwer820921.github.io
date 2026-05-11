@@ -1,5 +1,5 @@
 const GAS_URL =
-  "https://script.google.com/macros/s/AKfycbyz4nQOG0shS-9jm4bnfuc8clxrZFRxf-g6BBddZ5IIclxXD8hWGaUTRKE9r70UJ9OHOw/exec";
+  "https://script.google.com/macros/s/AKfycbyZcWxbvwXR-acGCDXFiEuU4DcbdsZnKZX7F9Po4cBXnbMXTEb8c5840hJPG51rzE-AxQ/exec";
 
 export async function gasCall<T>(
   action: string,

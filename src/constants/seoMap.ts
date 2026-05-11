@@ -184,17 +184,17 @@ export const seoMap: {
     keywords:
       "子yee 萬事屋, LINE 串接, LINE Bot, Messaging API, Webhook, LINE 測試工具",
   },
-  [ROUTES.BOOKING_ENGINE]: {
-    title: "子yee 萬事屋 | 即時預約測試 - 預約引擎核心邏輯驗證工具",
-    description:
-      "即時預約引擎測試工具，驗證可用時段動態運算、防衝突機制與業務規則，確保預約系統核心邏輯正確運作。",
-    keywords: "子yee 萬事屋, 預約引擎, 即時預約, 可用時段, 防衝突, 預約測試",
-  },
   [ROUTES.BOBA_SURVIVORS]: {
     title: "子yee 萬事屋 | 重裝全糖珍奶 - 珍奶主題自動戰鬥生存遊戲",
     description:
       "化身奶茶師傅，用珍珠彈、芋泥旋風、黑糖護盾等配料武器迎戰無盡汙染體大軍！自動攻擊、無限升級、存活到最後一刻。基於 Godot 引擎的 Vampire Survivors 風格網頁遊戲。",
     keywords:
       "重裝全糖珍奶, Boba Survivors, 生存遊戲, Vampire Survivors, 自動戰鬥, 珍珠奶茶遊戲, 線上遊戲, 子yee 萬事屋, Godot, 網頁遊戲",
+  },
+  [ROUTES.WORK_PLAN]: {
+    title: "子yee 萬事屋 | 工時計畫 - 預約平台開發進度與時程規劃",
+    description:
+      "詳細列出品牌官網與 LINE 自助預約平台的開發工項、預估工時與階段性目標。透過 NoSQL 結構化管理，透明化呈現系統分析與開發計畫。",
+    keywords: "子yee 萬事屋, 工時計畫, 預約平台, 專案管理, 開發進度, 時程規劃",
   },
 };

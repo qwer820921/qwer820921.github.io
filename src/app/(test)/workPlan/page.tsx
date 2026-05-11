@@ -1,8 +1,9 @@
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
-import BookingEnginePage from "./components/bookingEnginePage";
+import WorkPlanPage from "./components/workPlanPage";
 
-const seo = seoMap[ROUTES.BOOKING_ENGINE];
+// 抓取頁面的 SEO 設定
+const seo = seoMap[ROUTES.WORK_PLAN];
 
 export const metadata = {
   title: seo.title,
@@ -11,7 +12,7 @@ export const metadata = {
   openGraph: {
     title: seo.title,
     description: seo.description,
-    url: `https://qwer820921.github.io${ROUTES.BOOKING_ENGINE}`,
+    url: `https://qwer820921.github.io${ROUTES.WORK_PLAN}`,
     images: [
       {
         url: "https://qwer820921.github.io/images/img11.jpg",
@@ -29,5 +30,5 @@ export const metadata = {
 };
 
 export default function Page() {
-  return <BookingEnginePage />;
+  return <WorkPlanPage />;
 }
