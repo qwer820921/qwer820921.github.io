@@ -1,7 +1,7 @@
 1:"$Sreact.fragment"
-2:I[122796,["https://qwer820921.github.io/_next/static/chunks/11te43u.mwp0q.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js","https://qwer820921.github.io/_next/static/chunks/0iwn9wl1xnzlp.js"],"QrCodeGeneratorPage"]
-3:I[897367,["https://qwer820921.github.io/_next/static/chunks/11te43u.mwp0q.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js"],"OutletBoundary"]
+2:I[122796,["https://qwer820921.github.io/_next/static/chunks/04aopfnak-397.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js","https://qwer820921.github.io/_next/static/chunks/0-ilwem17apxl.js"],"QrCodeGeneratorPage"]
+3:I[897367,["https://qwer820921.github.io/_next/static/chunks/04aopfnak-397.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js"],"OutletBoundary"]
 4:"$Sreact.suspense"
 :HL["https://qwer820921.github.io/_next/static/chunks/0e9gz.6~c416l.css","style"]
-0:{"rsc":["$","$1","c",{"children":[["$","$L2",null,{}],[["$","link","0",{"rel":"stylesheet","href":"https://qwer820921.github.io/_next/static/chunks/0e9gz.6~c416l.css","precedence":"next"}],["$","script","script-0",{"src":"https://qwer820921.github.io/_next/static/chunks/0iwn9wl1xnzlp.js","async":true}]],["$","$L3",null,{"children":["$","$4",null,{"name":"Next.MetadataOutlet","children":"$@5"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"9icG_bhqhIqN40E2GZepa"}
+0:{"rsc":["$","$1","c",{"children":[["$","$L2",null,{}],[["$","link","0",{"rel":"stylesheet","href":"https://qwer820921.github.io/_next/static/chunks/0e9gz.6~c416l.css","precedence":"next"}],["$","script","script-0",{"src":"https://qwer820921.github.io/_next/static/chunks/0-ilwem17apxl.js","async":true}]],["$","$L3",null,{"children":["$","$4",null,{"name":"Next.MetadataOutlet","children":"$@5"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"t9x-NXZcccqydr8ZdW5TA"}
 5:null
