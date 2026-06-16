@@ -333,6 +333,14 @@ export default function Home() {
 4.  **輕量與高效能**：相較於一些功能更為龐大的圖表庫，ApexCharts 在保持豐富功能的同時，也注重性能優化。它能夠處理相當大的數據量，並透過優化的渲染機制確保儀表板的響應速度。
 5.  **客製化與主題**：ApexCharts 提供了極高的客製化彈性，開發者可以根據品牌指南或 UI/UX 設計稿，精確調整圖表的每一個視覺元素，從顏色、字體到網格線和 Tooltips，打造獨一無二的儀表板風格。
 
+## 實作心得
+
+ApexCharts 的動態更新看起來簡單，但在 React 裡做實時資料儀表板時，記憶體洩漏是個需要認真處理的問題。用 `setInterval` 每 5 秒更新一次資料，如果元件被卸載時沒有 `clearInterval`，就會持續有多個 interval 在背景跑，瀏覽器開久了記憶體會一直爬升。在 `useEffect` 的 cleanup function 裡加 return 清除 interval 是基本，但每次更新大量數據點時，也要注意只更新變動的部分，而不是替換整個 `series` 陣列，否則圖表會重新渲染整個動畫，視覺上會有明顯的閃爍感。
+
+時間序列圖的 x 軸格式是另一個踩坑點。把 Unix timestamp（毫秒）傳給 ApexCharts 時，預設的時間格式顯示不一定符合在地化需求，台灣使用者看到的是 UTC 時間而不是 UTC+8。需要在 `xaxis.labels.formatter` 裡手動加上時區偏移，或者在資料來源就處理好時區問題。
+
+Tooltip 的客製化功能非常強大，但文件有時候給的範例不完整。最省力的方式是直接在 `tooltip.custom` 裡用函數返回 HTML 字串，比用 `tooltip.y.formatter` 更彈性，可以完整控制整個 Tooltip 的排版和內容。
+
 ---
 
 **參考資料**

@@ -166,3 +166,13 @@ export class UserListComponent
 1.  **整合方便**：封裝後，子組件只需關注業務邏輯，無需處理重複的 `try-catch`。
 2.  **靈活度高**：完全掌控 RxJS Operator 的串接，易於擴展如 `retry` 或 `debounce` 等功能。
 3.  **效能不錯**：基於 RxJS 的推播機制，能與 Angular 的響應式系統完美結合。
+
+---
+
+## 實作心得
+
+RxJS 讓我踩得最深的坑是 `switchMap` 和 `mergeMap` 的選擇。在做搜尋框的 autocomplete 功能時，我最初用了 `mergeMap`，結果發現當使用者快速輸入時，多個 API 請求會同時飛出去，最後先發出的請求如果比後發的慢，回傳時會覆蓋掉「正確」的結果，出現搜尋結果閃跳的問題（race condition）。換成 `switchMap` 之後，每次有新的輸入值，舊的請求就會被自動取消，永遠只保留最新一次的回應。現在我的原則是：只要是「使用者觸發的即時搜尋或篩選」，一定用 `switchMap`；「需要全部結果的批次操作」才用 `mergeMap`。
+
+`AsyncPipe` 讓我從一個很實際的 bug 中學到它的價值。早期在元件的 `ngOnDestroy` 中手動呼叫 `unsubscribe`，有幾次忘記加，造成元件被銷毀後 Observable 還在繼續發送值並更新 DOM，在 DevTools 裡看到 `ExpressionChangedAfterItHasBeenCheckedError`。改用 `AsyncPipe` 之後，Angular 自動管理訂閱和取消訂閱，這類錯誤完全消失。現在凡是 Template 中需要顯示 Observable 的值，一律不手動 subscribe，全部交給 `AsyncPipe`。
+
+`combineLatest` 和 `forkJoin` 的差異在實作中有實際意義。`forkJoin` 等到所有 Observable 都 complete 才發出值，適合一次性的 API 批次請求；`combineLatest` 則是任何一個 Observable 發出新值時就重新組合，適合多個狀態流的持續同步。把分頁參數（頁碼）和篩選條件（分類、排序）合流時用 `combineLatest`，載入完就結束的並行 API 請求用 `forkJoin`——搞清楚這個區別之後，很多原本複雜的狀態管理邏輯都變簡單了。

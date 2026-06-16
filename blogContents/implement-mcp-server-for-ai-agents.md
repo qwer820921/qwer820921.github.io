@@ -353,6 +353,14 @@ MCP Server 的 API 參考主要體現在其暴露的 Tools 定義上。這些 To
 4.  **消除手動操作，提升效率**：MCP 讓 AI 代理能夠自動執行查詢、分析和操作本地數據，從而消除了開發者手動複製貼上、切換應用程式的繁瑣步驟。這將顯著提升開發、數據分析和日常工作的效率。
 5.  **Agentic AI 的基石**：MCP 是構建真正 Agentic AI 的關鍵基礎設施之一。它賦予 AI 代理「行動」的能力，使其不僅能理解和生成文本，還能與真實世界的工具和數據進行有意義的互動，開啟了 AI 應用程式的全新可能性。
 
+## 實作心得
+
+實際把 MCP Server 接上 Claude Desktop 時，踩到的第一個坑是 `@modelcontextprotocol/sdk` 的版本問題。早期版本的 `Tool` 型別定義和最新規格有落差，照著官方文件寫卻一直拿到 schema validation error，後來才發現要明確指定 npm 套件版本。
+
+另一個意想不到的問題是本地 SQL Server 的防火牆設定。MCP Server 跑在 localhost，Claude Desktop 連過來時走的是同一台機器的 loopback，但如果 SQL Server 的 TCP/IP 協定沒有明確啟用，仍然會連線失敗，訊息還很難排查。建議在開始整合前，先用 `sqlcmd` 確認連線正常再開始寫 MCP 程式碼。
+
+最讓我印象深刻的是 `query_database` 這個 Tool 的安全設計決策。文章中提到只允許 SELECT，但在實際使用時，AI 有時候會嘗試用 subquery 或 CTE 做複雜查詢，結果超出了 `TOP 100` 的限制或讓查詢計畫變得很差。後來改成在 Tool 層面直接加上 `SET ROWCOUNT 200` 的前綴，並且限制查詢時間，才真正把「AI 能做什麼」的邊界控制好。整體來說，MCP 是目前最乾淨的 AI 與本地工具整合方式，值得投入時間建立自己的 Tool 庫。
+
 ---
 
 **參考資料**

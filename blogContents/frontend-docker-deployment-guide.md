@@ -273,6 +273,14 @@ services:
 4.  **簡化部署與擴展**：容器化的應用程式易於部署到任何支援 Docker 的環境，無論是本地開發、測試伺服器還是雲端平台（如 Kubernetes, AWS ECS）。Docker Compose 進一步簡化了本地多服務應用程式的啟動和管理，為未來的水平擴展奠定了基礎。
 5.  **標準化工作流**：這種模式提供了一個清晰、可重複的部署工作流，有助於團隊成員之間的協作，並能輕鬆整合到 CI/CD 流水線中，實現自動化測試和部署。
 
+## 實作心得
+
+多階段 Docker build 是這整套流程中收益最高的優化。第一次直接用 `node:lts` 打包 Next.js 應用，image 大小衝到 1.2GB；改成多階段（build stage 用 node，final stage 用 nginx:alpine）之後，直接降到 68MB。這個大小差距在每次 CI 推 image 到 registry 時省了非常多時間，CI pipeline 跑完的速度也快了一倍。
+
+Nginx 的 SPA routing 設定是另一個常見的坑。`try_files $uri $uri/ /index.html;` 這行設定一定要加，否則使用者直接進入深層路由（例如 `/blog/my-post`）會拿到 404，而不是讓前端 router 接管。第一次部署時忘了加，測試首頁沒問題，結果 PM 直接分享文章連結給客戶，點進去全是 404，場面很尷尬。
+
+`.dockerignore` 也是不能忽略的細節。如果沒有設定，`node_modules`（可能有 500MB+）會被複製進 build context，build 速度奇慢無比。把 `node_modules`、`.next`、`.git` 加進去之後，build context 從 600MB 降到不到 5MB，速度差了十倍。
+
 ---
 
 **參考資料**

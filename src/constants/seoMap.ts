@@ -197,4 +197,16 @@ export const seoMap: {
       "詳細列出品牌官網與 LINE 自助預約平台的開發工項、預估工時與階段性目標。透過 NoSQL 結構化管理，透明化呈現系統分析與開發計畫。",
     keywords: "子yee 萬事屋, 工時計畫, 預約平台, 專案管理, 開發進度, 時程規劃",
   },
+  [ROUTES.PRIVACY]: {
+    title: "隱私權政策 | 子yee 萬事屋",
+    description:
+      "子yee 萬事屋隱私權政策，說明本網站如何收集、使用及保護您的個人資料，以及 Google AdSense 廣告服務的 Cookie 使用方式。",
+    keywords: "隱私政策, 個人資料保護, Cookie, Google AdSense, 萬事屋",
+  },
+  [ROUTES.CONTACT]: {
+    title: "聯絡我們 | 子yee 萬事屋",
+    description:
+      "聯絡子yee 萬事屋，無論是技術合作、文章授權、工具建議或任何問題，歡迎透過 Email 與我們聯繫。",
+    keywords: "聯絡我們, 技術合作, 合作邀約, 聯繫, 萬事屋",
+  },
 };

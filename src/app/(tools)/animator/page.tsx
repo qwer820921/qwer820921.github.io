@@ -1,5 +1,6 @@
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
+import PageInfoButton from "@/components/PageInfoButton";
 import AnimatorPage from "./components/animatorPage";
 
 // 正確抓取 animator 對應的 SEO 資訊
@@ -30,5 +31,18 @@ export const metadata = {
 };
 
 export default function Page() {
-  return <AnimatorPage />;
+  return (
+    <>
+      <PageInfoButton
+        title="微動畫展示"
+        description={
+          <p>
+            探索以 CSS 與 JavaScript
+            打造的創意微動畫作品，展示流暢的視覺效果與互動設計，每一個動畫都是前端技術的具體實踐。
+          </p>
+        }
+      />
+      <AnimatorPage />
+    </>
+  );
 }

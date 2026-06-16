@@ -154,6 +154,14 @@ OpenClaw 採用了 **`MEMORY.md`** 和 **`SOUL.md`** 等本地文件來管理 AI
 
 告別網頁視窗的束縛，迎接一個由你完全掌控的 AI 助理時代。OpenClaw 讓 AI 不再遙不可及，而是成為你指尖上的強大工具。
 
+## 實作心得
+
+本地開發階段最依賴的工具是 ngrok——沒有它，LINE Bot 的 Webhook 就無法接到本機。但 ngrok 免費版每次重啟都會換 URL，表示每次開發時都要去 LINE Developer Console 手動更新 Webhook URL，這個流程非常打斷思路。後來改用 ngrok 的 fixed domain 方案，才讓開發體驗流暢很多。
+
+LINE 和 Telegram 的 Webhook 格式差異比想像中大。LINE 用的是 `events` 陣列，每個 event 有 `replyToken`，回覆時要帶這個 token；Telegram 則是 `update` 物件，回覆時直接用 `chat_id`。兩套格式在同一個 MCP 工具集中並存時，需要在接收層做好格式標準化，否則邏輯層會充斥大量 if-else 判斷。抽象出一個統一的 `IncomingMessage` 格式之後，工具函數的程式碼量減少了將近一半。
+
+「靈魂檔案」的設計很有吸引力，但也帶來一個安全問題：如果 soul.md 的內容被惡意注入，AI 就可能以錯誤的身份運作。實作時加了一個簡單的 hash 比對機制——每次載入 soul.md 前先驗證 SHA-256，只有雜湊值符合預期才允許讀取，防止被竄改的檔案悄悄影響 AI 行為。
+
 ---
 
 **參考資料**

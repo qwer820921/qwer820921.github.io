@@ -1,5 +1,6 @@
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
+import PageInfoButton from "@/components/PageInfoButton";
 import NovelsPage from "./components/NovelPage";
 
 // 抓取萬事屋藏書閣頁面的 SEO 設定
@@ -30,5 +31,17 @@ export const metadata = {
 };
 
 export default function Page() {
-  return <NovelsPage />;
+  return (
+    <>
+      <PageInfoButton
+        title="萬事屋藏書閣"
+        description={
+          <p>
+            提供海量小說免費線上閱讀，支援繁體中文，涵蓋玄幻、武俠、都市、言情等多種題材，隨時隨地沉浸在精彩故事中。
+          </p>
+        }
+      />
+      <NovelsPage />
+    </>
+  );
 }

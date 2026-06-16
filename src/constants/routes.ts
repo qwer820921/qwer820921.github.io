@@ -31,4 +31,6 @@ export const ROUTES = {
   MAP_EDITOR: "/mapEditor", // 地圖編輯器
   LINE_TEST: "/lineTest", // 測試 LINE 串接
   WORK_PLAN: "/workPlan", // 工時計畫
+  PRIVACY: "/privacy", // 隱私權政策
+  CONTACT: "/contact", // 聯絡我們
 };

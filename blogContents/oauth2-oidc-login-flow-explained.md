@@ -167,6 +167,14 @@ Client 會從授權伺服器的 `jwks_uri` 端點獲取公鑰清單，並根據 
 
 在現代分散式架構中，OAuth 2.0 + OIDC 解決的不僅是「登入」，更是**「跨系統信任」**的問題。透過標準化的協議，我們能夠在不共享密碼的前提下，安全地在不同服務間傳遞信任與權限。
 
+## 實作心得
+
+在實際整合 OAuth 2.0 之前，我對「Resource Server」和「Authorization Server」的職責分離一直是模糊的。以 Google 登入為例：Google 的 OAuth 服務是 Authorization Server，而 Google API（如 Gmail API、Calendar API）是 Resource Server。這兩者在技術上可以是同一個組織，但角色完全不同。理解這個分離之後，自建 OAuth 服務時就能更清楚地知道哪些邏輯應該在哪裡：token 簽發和驗證是 Authorization Server 的責任，業務邏輯和資源保護是 Resource Server 的責任。
+
+`scope` 的設計是 OAuth 中最容易被過度簡化的部分。很多實作直接把 scope 當成 role（`scope=admin`）或 permission（`scope=delete`），但 OAuth 規範中 scope 的語義更接近「使用者同意授予的能力範圍」，而不是「系統給予的權限」。把 scope 設計成 `read:profile` 和 `write:posts` 這類動詞+名詞格式，比直接用 role 要靈活得多，也更符合 OAuth 的設計初衷。
+
+Refresh Token 在 SPA 中的處理策略是一個長期讓我困擾的問題。SPA 沒有安全的地方儲存 Refresh Token（localStorage 不安全，記憶體會因頁面重整而消失）。目前採用的方案是配合 BFF（Backend For Frontend）——前端只持有短期 Access Token，Refresh Token 存在 BFF 的 httpOnly Cookie 中，由 BFF 負責刷新。這個架構複雜一點，但安全性比直接在前端操作 Refresh Token 高出很多。
+
 ### 參考資料
 
 - [OAuth 2.0 Official Website](https://oauth.net/2/)

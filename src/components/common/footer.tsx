@@ -11,8 +11,12 @@ const Footer: React.FC = () => {
           台股分析 · 技術筆記 · 小工具鍛造 · 遊戲開發
         </p>
         <p style={{ opacity: 0.6, fontSize: "0.85rem" }}>
-          &copy; 2024 – {new Date().getFullYear()} 子yee 萬事屋 |{" "}
-          <a href="/protected" className="text-white text-decoration-underline">
+          &copy; 2024 – 2026 子yee 萬事屋 |{" "}
+          <a href="/contact" className="text-white text-decoration-underline">
+            聯絡我們
+          </a>{" "}
+          |{" "}
+          <a href="/privacy" className="text-white text-decoration-underline">
             隱私政策
           </a>
         </p>

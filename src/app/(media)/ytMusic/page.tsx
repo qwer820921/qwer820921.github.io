@@ -4,6 +4,7 @@
 // import { useRouter } from "next/navigation";
 // import { useAuth } from "@/contexts/AuthContext";
 import dynamic from "next/dynamic";
+import PageInfoButton from "@/components/PageInfoButton";
 
 // 使用 dynamic 導入 YtMusicPage 組件，禁用 SSR
 const YtMusicPlayer = dynamic(() => import("./components/ytMusicPage"), {
@@ -31,5 +32,18 @@ export default function YtMusicPage() {
   //   return <div>加載中...</div>;
   // }
 
-  return <YtMusicPlayer />;
+  return (
+    <>
+      <PageInfoButton
+        title="YouTube 音樂"
+        description={
+          <p>
+            個人化 YouTube
+            音樂播放體驗，建立並管理專屬播放清單，支援播放佇列與自動切歌，讓你的音樂收藏更有條理。
+          </p>
+        }
+      />
+      <YtMusicPlayer />
+    </>
+  );
 }

@@ -265,6 +265,14 @@ data: [DONE]
 
 > **最後的架構師提醒**：LLM 的輸出永遠是「機率性 (Probabilistic)」的，而非「決定性 (Deterministic)」的。在設計系統時，永遠不要假設 LLM 的輸出是 100% 可靠的——加上驗證層（Output Validation）、設計降級方案（Fallback），才是穩健的工程實踐。
 
+## 實作心得
+
+理解 LLM 訓練流程後，最直接影響我日常工作的是對「temperature」的重新認識。以前只知道把它調低可以讓輸出更穩定，調高可以更有創意，但不知道背後是機率分佈的 softmax scaling。理解了這點之後，當我需要程式碼生成時自動設 temperature=0.1，寫作任務設 0.7，這個直覺判斷就有了理論依據，而不只是試出來的經驗值。
+
+SFT → RLHF 的兩階段流程讓我理解了為什麼「基礎模型」和「指令微調模型」的使用體驗差這麼多。純粹的 Pretraining 只教會模型「下一個 token 長什麼樣子」，它不知道要怎麼回答問題、也沒有格式概念。SFT 才是讓模型「學會對話」的關鍵，而 RLHF 則是讓回答品質進一步貼近人類偏好。當我在評估一個開源模型時，現在會先確認它到哪個階段——只有 Pretraining 的模型用起來跟 instruction-tuned 版本是天壤之別。
+
+「LLM 輸出永遠是機率性的」這個認知在工程設計上有很實際的影響。一個不理解這點的開發者很容易把 LLM 當成確定性的函數來呼叫——相同的 prompt 應該給相同的答案。這個假設在生產環境下一定會出問題。我現在的習慣是：任何依賴 LLM 輸出的關鍵路徑，都要加上 schema 驗證和 fallback，並且預設 temperature=0 來最小化隨機性，而不是假設輸出一定可靠。
+
 ### 參考資料
 
 - [Vaswani et al.: Attention Is All You Need (Transformer 原始論文)](https://arxiv.org/abs/1706.03762)

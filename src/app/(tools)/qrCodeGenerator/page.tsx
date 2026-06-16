@@ -1,6 +1,7 @@
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
 import { QrCodeGeneratorPage } from "./components/qrCodeGeneratorPage";
+import PageInfoButton from "@/components/PageInfoButton";
 
 const seo = seoMap[ROUTES.QR_CODE_GENERATOR];
 
@@ -29,5 +30,19 @@ export const metadata = {
 };
 
 export default function Page() {
-  return <QrCodeGeneratorPage />;
+  return (
+    <>
+      <PageInfoButton
+        title="QR Code 產生器"
+        description={
+          <p>
+            免費線上 QR Code
+            產生工具，支援網址、文字、聯絡資訊等多種內容，可自訂顏色、背景 GIF
+            融合與動態追蹤碼。完全在瀏覽器中運作，即時產生、一鍵下載 PNG。
+          </p>
+        }
+      />
+      <QrCodeGeneratorPage />
+    </>
+  );
 }

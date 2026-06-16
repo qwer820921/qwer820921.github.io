@@ -167,6 +167,14 @@ Client 會從授權伺服器的 `jwks_uri` 端點獲取公鑰清單，並根據 
 
 在現代分散式架構中，OAuth 2.0 + OIDC 解決的不僅是「登入」，更是**「跨系統信任」**的問題。透過標準化的協議，我們能夠在不共享密碼的前提下，安全地在不同服務間傳遞信任與權限。
 
+## 實作心得
+
+PKCE 的實作讓我第一次真正理解「為什麼 Authorization Code Flow 需要再加一層保護」。純粹的 Authorization Code 在 SPA 環境下有一個問題：code 會出現在 URL 中，如果此時有惡意的瀏覽器擴充功能或第三方 script 讀到這個 URL，code 就可能被竊取。PKCE 的 `code_verifier`/`code_challenge` 機制讓 code 本身變得無用，因為沒有對應的 verifier 就無法換取 Access Token。理解這個設計後，我把所有前端 OAuth 整合都強制要求 PKCE，即使 Authorization Server 說它是可選的。
+
+`state` 參數是我最初實作時忽略的東西，後來也是因為「咦，這個參數到底有什麼用」才去深究。它的用途是防止 CSRF：在發起授權請求時生成一個隨機值存在 session 中，回調時驗證 URL 裡的 `state` 與 session 中的值是否一致。如果攻擊者偽造一個授權回調 URL，沒有對應的 `state` 就會被擋下。跳過這步驟的實作等於開了一個 CSRF 漏洞。
+
+除錯 OAuth 流程時最有用的工具是 Chrome DevTools 的 Network 面板加上 URL 解碼。每一次跳轉都把 URL 貼到解碼工具裡，把 `scope`、`state`、`code_challenge` 等參數一一確認是否符合預期，比看錯誤訊息要直觀得多。Authorization Server 回傳的錯誤通常是 `invalid_client` 或 `invalid_grant` 這類不夠具體的訊息，能直接觀察請求參數才是除錯的核心。
+
 ### 參考資料
 
 - [OAuth 2.0 Official Website](https://oauth.net/2/)

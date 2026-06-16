@@ -1,5 +1,6 @@
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
+import PageInfoButton from "@/components/PageInfoButton";
 import JsonFormatPage from "./components/jsonFormatPage";
 
 const seo = seoMap[ROUTES.JSON_FORMAT];
@@ -29,5 +30,19 @@ export const metadata = {
 };
 
 export default function Page() {
-  return <JsonFormatPage />;
+  return (
+    <>
+      <PageInfoButton
+        title="JSON 格式化工具"
+        description={
+          <p>
+            免費線上 JSON
+            格式化、美化與壓縮工具，支援語法錯誤提示與一鍵複製功能，讓開發者處理
+            JSON 資料更有效率。純前端執行，資料不會離開你的瀏覽器。
+          </p>
+        }
+      />
+      <JsonFormatPage />
+    </>
+  );
 }

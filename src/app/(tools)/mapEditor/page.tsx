@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
+import PageInfoButton from "@/components/PageInfoButton";
 import MapEditorPage from "./components/mapEditorPage";
 
 const seo = seoMap[ROUTES.MAP_EDITOR];
@@ -48,5 +49,18 @@ function readImages(sub: string): string[] {
 export default function Page() {
   const tileImages = readImages("tiles");
   const mapImages = readImages("maps");
-  return <MapEditorPage tileImages={tileImages} mapImages={mapImages} />;
+  return (
+    <>
+      <PageInfoButton
+        title="地圖編輯器"
+        description={
+          <p>
+            可視化塔防地圖編輯器，自訂格子尺寸、繪製路徑航點、標記障礙物與防禦卡放置區，一鍵輸出標準
+            JSON 與 Google Sheets 格式，讓地圖設計更直覺高效。
+          </p>
+        }
+      />
+      <MapEditorPage tileImages={tileImages} mapImages={mapImages} />
+    </>
+  );
 }

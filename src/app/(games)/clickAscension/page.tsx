@@ -1,5 +1,6 @@
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
+import PageInfoButton from "@/components/PageInfoButton";
 import ClickAscensionPage from "./components/ClickAscensionGame";
 
 // 抓取 CLICK_ASCENSION 頁面的 SEO 設定
@@ -30,5 +31,18 @@ export const metadata = {
 };
 
 export default function Page() {
-  return <ClickAscensionPage />;
+  return (
+    <>
+      <PageInfoButton
+        title="Click Ascension — 點擊飛昇"
+        description={
+          <p>
+            Tap into the Void.
+            從微小存在到掌控虛空的無限進化旅程，不斷點擊積累力量，解鎖升級與技能，挑戰更高層次的飛昇境界。
+          </p>
+        }
+      />
+      <ClickAscensionPage />
+    </>
+  );
 }

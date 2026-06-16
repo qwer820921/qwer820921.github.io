@@ -11,6 +11,7 @@ const routes: RouteGroup[] = [
       { path: ROUTES.ABOUT, name: "關於我們", showInNavbar: true },
       { path: ROUTES.BLOG, name: "部落格", showInNavbar: true },
       { path: ROUTES.NOVELS, name: "萬事屋藏書閣", showInNavbar: true },
+      { path: ROUTES.CONTACT, name: "聯絡我們", showInNavbar: true },
     ],
   },
   {

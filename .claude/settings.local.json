@@ -13,7 +13,11 @@
       "WebSearch",
       "PowerShell(Get-ChildItem -Path \"d:\\\\code\\\\GitHub\\\\qwer820921.github.io\" -Depth 0 | Select-Object Name | Where-Object { $_.Name -match \"eslint|prettier|tsconfig\" })",
       "Bash(npx @next/codemod@canary upgrade latest --yes)",
-      "Bash(npx @next/codemod@canary upgrade latest)"
+      "Bash(npx @next/codemod@canary upgrade latest)",
+      "Bash(Get-ChildItem -Path \"d:\\\\code\\\\GitHub\\\\qwer820921.github.io\\\\blogContents\\\\\" -Filter \"*.md\" | Select-Object Name | Sort-Object Name)",
+      "PowerShell(ls -Path \"d:\\\\code\\\\GitHub\\\\qwer820921.github.io\\\\blogContents\\\\\" -Recurse | Where-Object {$_.Extension -eq \".md\"} | Select-Object Name)",
+      "Bash(dir \"d:\\\\code\\\\GitHub\\\\qwer820921.github.io\\\\src\\\\app\" -Recurse)",
+      "Bash(dir \"d:\\\\code\\\\GitHub\\\\qwer820921.github.io\\\\src\\\\app\\\\\\(tools\\)\\\\instaStoryEditor\")"
     ]
   }
 }

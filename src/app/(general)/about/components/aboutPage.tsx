@@ -237,7 +237,9 @@ const AboutPage: React.FC = () => {
           <div className={styles.ctaCard}>
             <h2>準備好開始您的數位轉型了嗎？</h2>
             <p>聯絡我們的專業團隊，讓我們為您量身打造最佳方案</p>
-            <button className={styles.ctaButton}>立即聯繫我們</button>
+            <a href="/contact" className={styles.ctaButton}>
+              立即聯繫我們
+            </a>
           </div>
         </Container>
       </section>

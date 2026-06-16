@@ -1,5 +1,6 @@
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
+import PageInfoButton from "@/components/PageInfoButton";
 import StockInfoPage from "./components/stockInfoPage";
 
 // 抓取 stockInfo 頁面的 SEO 設定
@@ -30,5 +31,17 @@ export const metadata = {
 };
 
 export default function Page() {
-  return <StockInfoPage />;
+  return (
+    <>
+      <PageInfoButton
+        title="台股資訊"
+        description={
+          <p>
+            查詢台灣上市上市即時股價、K線圖與基本面資訊，支援自選股管理。本工具僅供資訊參考，不構成任何投資建議，投資請自行評估風險。
+          </p>
+        }
+      />
+      <StockInfoPage />
+    </>
+  );
 }

@@ -1,5 +1,6 @@
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
+import PageInfoButton from "@/components/PageInfoButton";
 import TowerDefenseGame from "./components/TowerDefenseGame";
 
 // 抓取 towerDefense 頁面的 SEO 設定
@@ -30,5 +31,17 @@ export const metadata = {
 };
 
 export default function Page() {
-  return <TowerDefenseGame />;
+  return (
+    <>
+      <PageInfoButton
+        title="塔防守衛戰"
+        description={
+          <p>
+            建造防禦塔、升級武器、抵禦敵人一波波入侵！多種塔類型策略搭配，豐富關卡設計，考驗你的戰術部署與即時反應能力。
+          </p>
+        }
+      />
+      <TowerDefenseGame />
+    </>
+  );
 }

@@ -1,5 +1,6 @@
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
+import PageInfoButton from "@/components/PageInfoButton";
 import BobaSurvivorsPage from "./components/bobaSurvivorsPage";
 
 // 抓取頁面的 SEO 設定
@@ -30,5 +31,18 @@ export const metadata = {
 };
 
 export default function Page() {
-  return <BobaSurvivorsPage />;
+  return (
+    <>
+      <PageInfoButton
+        title="重裝全糖珍奶"
+        description={
+          <p>
+            化身奶茶師傅，以珍珠彈、芋泥旋風、黑糖護盾迎戰無盡敵軍！自動攻擊、無限升級，存活到最後一刻。基於
+            Godot 引擎的 Vampire Survivors 風格網頁遊戲。
+          </p>
+        }
+      />
+      <BobaSurvivorsPage />
+    </>
+  );
 }

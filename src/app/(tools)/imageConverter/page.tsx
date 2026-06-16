@@ -1,5 +1,6 @@
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
+import PageInfoButton from "@/components/PageInfoButton";
 import ImageConverterPage from "./components/imageConverterPage";
 
 // 抓取圖檔轉檔頁面的 SEO 設定
@@ -30,5 +31,18 @@ export const metadata = {
 };
 
 export default function Page() {
-  return <ImageConverterPage />;
+  return (
+    <>
+      <PageInfoButton
+        title="圖檔格式轉換"
+        description={
+          <p>
+            免費線上圖片格式轉換工具，支援 PNG、JPEG、WebP
+            互轉，可調整輸出品質與預覽對比。純瀏覽器端處理，圖片不會上傳至伺服器，安全又快速。
+          </p>
+        }
+      />
+      <ImageConverterPage />
+    </>
+  );
 }

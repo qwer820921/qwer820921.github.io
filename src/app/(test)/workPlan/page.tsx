@@ -9,6 +9,7 @@ export const metadata = {
   title: seo.title,
   description: seo.description,
   keywords: seo.keywords,
+  robots: { index: false, follow: false },
   openGraph: {
     title: seo.title,
     description: seo.description,

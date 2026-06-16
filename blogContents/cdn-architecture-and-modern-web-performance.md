@@ -135,6 +135,14 @@ export default {
 
 透過引入 CDN 與邊緣運算，我們不僅實現了系統的解耦與靜態資源的極速載入，更獲得了將 API 防護防線前推至海外邊緣節點的強大能力。無論是架設個人技術部落格，還是開發乘載龐大流量的應用程式，掌握 CDN 的進階架構，絕對是現代開發者脫穎而出的核心技能。
 
+## 實作心得
+
+設置 CDN 最難的部分不是配置，而是決定**什麼不應該快取**。靜態資源（JS、CSS、圖片）很容易判斷，但 API 回應就複雜多了。我在初次設定時太過激進地快取了用戶個人化資料的 API，結果不同使用者看到彼此的快取回應，造成了嚴重的資料外洩問題。後來的原則變成：凡是帶有 `Authorization` Header 或 Cookie 的請求，CDN 層完全不快取，一律直接穿透到 Origin。
+
+Cache-Control Header 和 CDN Dashboard 設定的優先順序讓我混淆過一次。Cloudflare 的行為是：如果 Origin 回傳 `Cache-Control: no-store`，CDN 會尊重這個指令不快取，即使你在 Dashboard 設了快取規則。但某些特殊情況下 Dashboard 規則可以覆蓋 Header——這個行為因 CDN 廠商而異，踩坑之前最好先測試確認。後來我養成習慣：以 Origin 的 Cache-Control Header 為主要控制機制，CDN 設定只做補充，這樣邏輯更清晰可控。
+
+Cloudflare Workers 的地理路由功能在台灣市場有意想不到的效果。把靜態資源 CDN 接上之後，台灣用戶的 TTFB 從平均 280ms 降到 40ms 以內，因為最近的 Cloudflare PoP 就在台灣。這個改善不需要改任何應用程式碼，純粹是架構層的調整。對個人部落格或中小型應用而言，CDN 帶來的效能提升通常比優化前端 bundle 更顯著、更省力。
+
 ### 參考資料
 
 - [Cloudflare Workers Documentation](https://developers.cloudflare.com/workers/)
