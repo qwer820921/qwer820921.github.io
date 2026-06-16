@@ -1,7 +1,8 @@
 1:"$Sreact.fragment"
-2:I[338654,["https://qwer820921.github.io/_next/static/chunks/04aopfnak-397.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js","https://qwer820921.github.io/_next/static/chunks/12elq1eovb4sv.js","https://qwer820921.github.io/_next/static/chunks/103.3uw1a28dg.js"],"default"]
-3:I[897367,["https://qwer820921.github.io/_next/static/chunks/04aopfnak-397.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js"],"OutletBoundary"]
-4:"$Sreact.suspense"
+2:I[708032,["https://qwer820921.github.io/_next/static/chunks/0z7jb94wgfi76.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js","https://qwer820921.github.io/_next/static/chunks/06vy1owguja1y.js","https://qwer820921.github.io/_next/static/chunks/103.3uw1a28dg.js"],"default"]
+3:I[338654,["https://qwer820921.github.io/_next/static/chunks/0z7jb94wgfi76.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js","https://qwer820921.github.io/_next/static/chunks/06vy1owguja1y.js","https://qwer820921.github.io/_next/static/chunks/103.3uw1a28dg.js"],"default"]
+4:I[897367,["https://qwer820921.github.io/_next/static/chunks/0z7jb94wgfi76.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js"],"OutletBoundary"]
+5:"$Sreact.suspense"
 :HL["https://qwer820921.github.io/_next/static/chunks/09dvf333h8.g4.css","style"]
-0:{"rsc":["$","$1","c",{"children":[["$","$L2",null,{}],[["$","link","0",{"rel":"stylesheet","href":"https://qwer820921.github.io/_next/static/chunks/09dvf333h8.g4.css","precedence":"next"}],["$","script","script-0",{"src":"https://qwer820921.github.io/_next/static/chunks/12elq1eovb4sv.js","async":true}],["$","script","script-1",{"src":"https://qwer820921.github.io/_next/static/chunks/103.3uw1a28dg.js","async":true}]],["$","$L3",null,{"children":["$","$4",null,{"name":"Next.MetadataOutlet","children":"$@5"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"t9x-NXZcccqydr8ZdW5TA"}
-5:null
+0:{"rsc":["$","$1","c",{"children":[[["$","$L2",null,{"title":"塔防守衛戰","description":["$","p",null,{"children":"建造防禦塔、升級武器、抵禦敵人一波波入侵！多種塔類型策略搭配，豐富關卡設計，考驗你的戰術部署與即時反應能力。"}]}],["$","$L3",null,{}]],[["$","link","0",{"rel":"stylesheet","href":"https://qwer820921.github.io/_next/static/chunks/09dvf333h8.g4.css","precedence":"next"}],["$","script","script-0",{"src":"https://qwer820921.github.io/_next/static/chunks/06vy1owguja1y.js","async":true}],["$","script","script-1",{"src":"https://qwer820921.github.io/_next/static/chunks/103.3uw1a28dg.js","async":true}]],["$","$L4",null,{"children":["$","$5",null,{"name":"Next.MetadataOutlet","children":"$@6"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"dMHnZ0pFTJkXpV6yxGMqn"}
+6:null

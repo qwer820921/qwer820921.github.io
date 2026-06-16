@@ -1,7 +1,8 @@
 1:"$Sreact.fragment"
-2:I[336856,["https://qwer820921.github.io/_next/static/chunks/04aopfnak-397.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js","https://qwer820921.github.io/_next/static/chunks/0tmgcq4r541wd.js"],"default"]
-3:I[897367,["https://qwer820921.github.io/_next/static/chunks/04aopfnak-397.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js"],"OutletBoundary"]
-4:"$Sreact.suspense"
+2:I[708032,["https://qwer820921.github.io/_next/static/chunks/0z7jb94wgfi76.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js","https://qwer820921.github.io/_next/static/chunks/0667k.swh9mtd.js"],"default"]
+3:I[336856,["https://qwer820921.github.io/_next/static/chunks/0z7jb94wgfi76.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js","https://qwer820921.github.io/_next/static/chunks/0667k.swh9mtd.js"],"default"]
+4:I[897367,["https://qwer820921.github.io/_next/static/chunks/0z7jb94wgfi76.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js"],"OutletBoundary"]
+5:"$Sreact.suspense"
 :HL["https://qwer820921.github.io/_next/static/chunks/0z6z5tjbeelhj.css","style"]
-0:{"rsc":["$","$1","c",{"children":[["$","$L2",null,{}],[["$","link","0",{"rel":"stylesheet","href":"https://qwer820921.github.io/_next/static/chunks/0z6z5tjbeelhj.css","precedence":"next"}],["$","script","script-0",{"src":"https://qwer820921.github.io/_next/static/chunks/0tmgcq4r541wd.js","async":true}]],["$","$L3",null,{"children":["$","$4",null,{"name":"Next.MetadataOutlet","children":"$@5"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"t9x-NXZcccqydr8ZdW5TA"}
-5:null
+0:{"rsc":["$","$1","c",{"children":[[["$","$L2",null,{"title":"重裝全糖珍奶","description":["$","p",null,{"children":"化身奶茶師傅，以珍珠彈、芋泥旋風、黑糖護盾迎戰無盡敵軍！自動攻擊、無限升級，存活到最後一刻。基於 Godot 引擎的 Vampire Survivors 風格網頁遊戲。"}]}],["$","$L3",null,{}]],[["$","link","0",{"rel":"stylesheet","href":"https://qwer820921.github.io/_next/static/chunks/0z6z5tjbeelhj.css","precedence":"next"}],["$","script","script-0",{"src":"https://qwer820921.github.io/_next/static/chunks/0667k.swh9mtd.js","async":true}]],["$","$L4",null,{"children":["$","$5",null,{"name":"Next.MetadataOutlet","children":"$@6"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"dMHnZ0pFTJkXpV6yxGMqn"}
+6:null
