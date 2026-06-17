@@ -3,4 +3,4 @@
 :HL["https://qwer820921.github.io/_next/static/chunks/15t0lxygv4.fb.css","style"]
 :HL["https://qwer820921.github.io/_next/static/chunks/0e9gz.6~c416l.css","style"]
 :HL["/logo192.png","image"]
-0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"(tools)","param":null,"prefetchHints":0,"slots":{"children":{"name":"qrCodeGenerator","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}},"staleTime":300,"buildId":"dMHnZ0pFTJkXpV6yxGMqn"}
+0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"(tools)","param":null,"prefetchHints":0,"slots":{"children":{"name":"qrCodeGenerator","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}},"staleTime":300,"buildId":"zddJra5yrkfSlq5MZUnzv"}
