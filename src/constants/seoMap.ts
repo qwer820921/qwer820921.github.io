@@ -163,6 +163,13 @@ export const seoMap: {
     keywords:
       "QRCode產生器, 動態二維碼, QR Code 背景, 短網址, vCard, Wi-Fi QRcode, 萬事屋",
   },
+  [ROUTES.MONSTER_TIDE]: {
+    title: "子yee 萬事屋 | 怪物洪流 - 生存策略防禦遊戲",
+    description:
+      "怪物洪流來襲！在無盡的怪物浪潮中建立防線、升級英雄、部署陷阱，以策略與反應力抵禦一波又一波的怪物攻勢，看你能撐過幾關！",
+    keywords:
+      "怪物洪流, Monster Tide, 防禦遊戲, 生存遊戲, 策略遊戲, 線上遊戲, 休閒遊戲, 子yee 萬事屋",
+  },
   [ROUTES.SHENMA_SANGUO]: {
     title: "子yee 萬事屋 | 神馬三國 - 三國主題策略塔防遊戲",
     description:

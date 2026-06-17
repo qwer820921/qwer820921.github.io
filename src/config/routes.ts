@@ -34,6 +34,11 @@ const routes: RouteGroup[] = [
         name: "神馬三國",
         showInNavbar: true,
       },
+      {
+        path: ROUTES.MONSTER_TIDE,
+        name: "怪物洪流",
+        showInNavbar: true,
+      },
     ],
   },
   {
