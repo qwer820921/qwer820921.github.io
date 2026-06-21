@@ -6,6 +6,7 @@ import { getStorage } from "../../utils";
 import NovelCard from "../../components/NovelCard";
 import BottomTabs from "../../components/BottomTabs";
 import styles from "../../styles/novels.module.css";
+import PageWrapper from "@/components/common/PageWrapper";
 
 export default function CollectionPage() {
   const { novels, novelsLoading, novelsError, fetchLibrary } = useNovelStore();
@@ -23,18 +24,18 @@ export default function CollectionPage() {
 
   if (novelsLoading && novels.length === 0) {
     return (
-      <div className={styles.pageContainer}>
+      <PageWrapper className={styles.pageContainer}>
         <div className={styles.loadingState}>
           <p>正在打開你的書櫃...</p>
         </div>
         <BottomTabs />
-      </div>
+      </PageWrapper>
     );
   }
 
   if (novelsError) {
     return (
-      <div className={styles.pageContainer}>
+      <PageWrapper className={styles.pageContainer}>
         <div className={styles.errorState}>
           <h2>讀取失敗</h2>
           <p>{novelsError}</p>
@@ -46,12 +47,12 @@ export default function CollectionPage() {
           </button>
         </div>
         <BottomTabs />
-      </div>
+      </PageWrapper>
     );
   }
 
   return (
-    <div className={styles.pageContainer}>
+    <PageWrapper className={styles.pageContainer}>
       <header className={styles.pageHeader}>
         <h1>我的書櫃</h1>
         <p>你收藏了 {collectedNovels.length} 部作品</p>
@@ -69,6 +70,6 @@ export default function CollectionPage() {
         )}
       </div>
       <BottomTabs />
-    </div>
+    </PageWrapper>
   );
 }

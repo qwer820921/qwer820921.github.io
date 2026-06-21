@@ -40,7 +40,7 @@ export default function PageInfoButton({
       ref={containerRef}
       style={{
         position: "fixed",
-        top: "calc(var(--navbar-height, 60px) + 0.5rem)",
+        top: "calc(var(--navbar-height, 70px) + 0.5rem)",
         left: "1rem",
         zIndex: 9999,
         display: "flex",

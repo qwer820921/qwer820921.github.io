@@ -7,6 +7,7 @@ import { useReadingStore } from "../../store/readingStore";
 import { getStorage, setStorage, fixDriveCoverUrl } from "../../utils";
 import BottomTabs from "../../components/BottomTabs";
 import styles from "../../styles/novels.module.css";
+import PageWrapper from "@/components/common/PageWrapper";
 
 interface Props {
   bookId: string;
@@ -70,21 +71,21 @@ export default function NovelDetailPage({ bookId }: Props) {
 
   if (isLoading)
     return (
-      <div className={styles.pageContainer}>
+      <PageWrapper className={styles.pageContainer}>
         <div className={styles.loadingState}>正在整理書頁...</div>
         <BottomTabs />
-      </div>
+      </PageWrapper>
     );
   if (error || !novel)
     return (
-      <div className={styles.pageContainer}>
+      <PageWrapper className={styles.pageContainer}>
         <div className={styles.errorState}>{error}</div>
         <BottomTabs />
-      </div>
+      </PageWrapper>
     );
 
   return (
-    <div className={styles.pageContainer}>
+    <PageWrapper className={styles.pageContainer}>
       {/* 返回上一頁 */}
       <div className={styles.backNav}>
         <Link href="/novels">← 返回藏書閣</Link>
@@ -178,6 +179,6 @@ export default function NovelDetailPage({ bookId }: Props) {
         </div>
       </div>
       <BottomTabs />
-    </div>
+    </PageWrapper>
   );
 }

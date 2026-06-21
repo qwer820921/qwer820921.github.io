@@ -30,6 +30,7 @@ const HIDE_FOOTER_PAGES = [
   "/towerDefense",
   "/novels",
   "/shenmaSanguo",
+  "/monsterTide",
 ];
 
 // 不顯示 Navbar 的頁面路徑
@@ -37,6 +38,7 @@ const HIDE_NAVBAR_PAGES = [
   "/clickAscension",
   "/novels/reader",
   "/shenmaSanguo",
+  "/monsterTide",
 ];
 
 export default function ClientLayout({ children }: { children: ReactNode }) {

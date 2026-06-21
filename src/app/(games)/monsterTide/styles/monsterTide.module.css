@@ -1,6 +1,347 @@
 /* 怪物洪流 頁面樣式 */
 
 .container {
-  padding-top: 2rem;
-  padding-bottom: 2rem;
+  padding: 1rem;
+}
+
+.gameCanvas {
+  display: block;
+  /* 寬度 = min(480px, 60dvh)，確保高度永遠 ≤ 100dvh */
+  width: min(480px, calc(100dvh * 0.6));
+  height: auto;
+  aspect-ratio: 480 / 800;
+  margin: 0 auto;
+  touch-action: none;
+  image-rendering: pixelated;
+}
+
+/* ===== 結算畫面 ===== */
+.resultOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 10;
+}
+
+.resultPanel {
+  background: #1a1a2e;
+  border: 2px solid #4a6fa5;
+  border-radius: 8px;
+  padding: 2rem 2.5rem;
+  text-align: center;
+  min-width: 240px;
+  color: #e0e0e0;
+  font-family: monospace;
+}
+
+.resultTitle {
+  font-size: 1.4rem;
+  margin-bottom: 1.2rem;
+  color: #f0e040;
+}
+
+.resultRow {
+  font-size: 0.95rem;
+  margin: 0.4rem 0;
+}
+
+.soulsValue {
+  color: #a070f0;
+  font-weight: bold;
+}
+
+.resultBtn {
+  margin-top: 1.5rem;
+  padding: 0.6rem 1.8rem;
+  background: #3a5a8a;
+  border: 1px solid #4a8ac4;
+  border-radius: 4px;
+  color: #ffffff;
+  font-family: monospace;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.resultBtn:hover {
+  background: #4a6fa5;
+}
+
+/* ===== 通用 ===== */
+.backLink {
+  color: #80b4e0;
+  text-decoration: none;
+  font-size: 0.9rem;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+
+.backLink:hover {
+  opacity: 1;
+}
+
+.soulsDisplay {
+  color: #c09af0;
+  font-weight: bold;
+  font-size: 0.95rem;
+}
+
+/* ===== 關卡選擇 ===== */
+.stageSelectPage {
+  min-height: 100vh;
+  background: #0d0d1a;
+  color: #e0e0e0;
+  font-family: monospace;
+  padding: 1.5rem 1rem 3rem;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.stageSelectHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.stageSelectTitle {
+  font-size: 1.3rem;
+  color: #f0e040;
+  margin: 0;
+}
+
+.stageList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.stageCard {
+  background: #1a1a2e;
+  border: 1.5px solid #3a4a6a;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: border-color 0.15s;
+}
+
+.stageCard:hover {
+  border-color: #4a6fa5;
+}
+
+.stageLocked {
+  opacity: 0.5;
+}
+
+.stageCardLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.stageNum {
+  font-size: 0.8rem;
+  color: #7090b0;
+}
+
+.stageName {
+  font-size: 1.05rem;
+  color: #e0e0e0;
+  font-weight: bold;
+}
+
+.stageMeta {
+  font-size: 0.82rem;
+  color: #8090a8;
+}
+
+.stageClearedBadge {
+  font-size: 0.8rem;
+  color: #50d090;
+  margin-top: 0.2rem;
+}
+
+.stageLockMsg {
+  font-size: 0.8rem;
+  color: #a07050;
+  margin-top: 0.2rem;
+}
+
+.stageCardRight {
+  display: flex;
+  align-items: center;
+}
+
+.startBtn {
+  padding: 0.5rem 1.2rem;
+  background: #2a5a8a;
+  border: 1px solid #4a8ac4;
+  border-radius: 6px;
+  color: #ffffff;
+  font-family: monospace;
+  font-size: 0.9rem;
+  text-decoration: none;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.startBtn:hover {
+  background: #3a6aa0;
+}
+
+.lockIcon {
+  font-size: 1.4rem;
+  opacity: 0.6;
+}
+
+.stageSelectFooter {
+  margin-top: 2rem;
+  text-align: center;
+}
+
+.forgeLink {
+  display: inline-block;
+  padding: 0.6rem 1.8rem;
+  background: #3a2a5a;
+  border: 1px solid #6a4ac4;
+  border-radius: 6px;
+  color: #c09af0;
+  font-family: monospace;
+  font-size: 0.9rem;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.forgeLink:hover {
+  background: #4a3a7a;
+}
+
+/* ===== 鐵匠鋪 ===== */
+.forgePage {
+  min-height: 100vh;
+  background: #0d0d1a;
+  color: #e0e0e0;
+  font-family: monospace;
+  padding: 1.5rem 1rem 3rem;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.forgeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.forgeTitle {
+  font-size: 1.3rem;
+  color: #f0c040;
+  margin: 0;
+}
+
+.forgeSubtitle {
+  font-size: 0.85rem;
+  color: #8090a8;
+  margin-bottom: 1.5rem;
+}
+
+.upgradeList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.upgradeCard {
+  background: #1a1a2e;
+  border: 1.5px solid #3a4a6a;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.upgradeInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.upgradeName {
+  font-size: 1rem;
+  font-weight: bold;
+  color: #e0e0e0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.upgradeLevel {
+  font-size: 0.78rem;
+  color: #f0c040;
+  font-weight: normal;
+}
+
+.upgradeDesc {
+  font-size: 0.82rem;
+  color: #8090a8;
+}
+
+.upgradeEffect {
+  font-size: 0.85rem;
+  color: #80d0c0;
+}
+
+.upgradeBuyArea {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 72px;
+}
+
+.upgradeMaxed {
+  font-size: 0.85rem;
+  color: #50d090;
+}
+
+.upgradeCost {
+  font-size: 0.9rem;
+  color: #c09af0;
+}
+
+.buyBtn {
+  padding: 0.4rem 1rem;
+  border-radius: 5px;
+  font-family: monospace;
+  font-size: 0.88rem;
+  cursor: pointer;
+  border: 1px solid;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.buyBtnActive {
+  background: #3a2a5a;
+  border-color: #8060d0;
+  color: #ffffff;
+}
+
+.buyBtnActive:hover {
+  background: #4a3a7a;
+}
+
+.buyBtnDisabled {
+  background: #1a1a2e;
+  border-color: #3a3a5a;
+  color: #505070;
+  cursor: not-allowed;
 }
