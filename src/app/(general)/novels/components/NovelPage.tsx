@@ -9,6 +9,7 @@ import BottomTabs from "./BottomTabs";
 import NovelSearchPanel from "./NovelSearchPanel";
 import NovelNoResult from "./NovelNoResult";
 import styles from "../styles/novels.module.css";
+import PageWrapper from "@/components/common/PageWrapper";
 
 export default function NovelsPage() {
   const { novels, novelsLoading, novelsError, fetchLibrary } = useNovelStore();
@@ -77,19 +78,19 @@ export default function NovelsPage() {
   // 狀態 1: 載入中
   if (novelsLoading) {
     return (
-      <div className={styles.pageContainer}>
+      <PageWrapper className={styles.pageContainer}>
         <div className={styles.loadingState}>
           <p>正在從藏書閣讀取卷宗...</p>
         </div>
         <BottomTabs />
-      </div>
+      </PageWrapper>
     );
   }
 
   // 狀態 2: 發生錯誤
   if (novelsError) {
     return (
-      <div className={styles.pageContainer}>
+      <PageWrapper className={styles.pageContainer}>
         <div className={styles.errorState}>
           <h2>讀取失敗</h2>
           <p>{novelsError}</p>
@@ -101,13 +102,13 @@ export default function NovelsPage() {
           </button>
         </div>
         <BottomTabs />
-      </div>
+      </PageWrapper>
     );
   }
 
   // 狀態 3: 成功取得資料並渲染
   return (
-    <div className={styles.pageContainer}>
+    <PageWrapper className={styles.pageContainer}>
       <header className={styles.pageHeader}>
         {/* Dashboard 卡片列 */}
         <div className={styles.headerDashboard}>
@@ -204,6 +205,6 @@ export default function NovelsPage() {
         </div>
       )}
       <BottomTabs />
-    </div>
+    </PageWrapper>
   );
 }

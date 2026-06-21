@@ -3,14 +3,14 @@
 /* ===== 基礎容器 ===== */
 .pageContainer {
   min-height: 100vh;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-  padding: 70px 1rem;
+  padding: 0 1rem 2rem;
   color: #fff;
 }
 
 .contentWrapper {
   max-width: 800px;
   margin: 0 auto;
+  background: rgba(0, 0, 0, 0.3);
 }
 
 /* ===== 頁面標題 ===== */

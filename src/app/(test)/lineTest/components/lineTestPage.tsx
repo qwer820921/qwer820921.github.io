@@ -13,6 +13,7 @@ import FriendCheckLoader from "./FriendCheckLoader";
 import DashboardPage from "./DashboardPage";
 import ResetPasswordConfirmPage from "./ResetPasswordConfirmPage";
 import styles from "../styles/lineTest.module.css";
+import PageWrapper from "@/components/common/PageWrapper";
 
 const LineTestPage: React.FC = () => {
   const searchParams = useSearchParams();
@@ -74,7 +75,11 @@ const LineTestPage: React.FC = () => {
     return null;
   };
 
-  return <div className={styles.pageWrapper}>{renderStep()}</div>;
+  return (
+    <PageWrapper>
+      <div className={styles.pageWrapper}>{renderStep()}</div>
+    </PageWrapper>
+  );
 };
 
 export default LineTestPage;

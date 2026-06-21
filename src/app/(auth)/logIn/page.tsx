@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { loginUser } from "@/app/(media)/ytMusic/api/ytMusicApi";
+import PageWrapper from "@/components/common/PageWrapper";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -44,50 +45,49 @@ export default function LoginPage() {
   };
 
   return (
-    <div
-      className="container"
-      style={{ maxWidth: "400px", paddingTop: "120px" }}
-    >
-      <h2 className="mb-4 text-center">登入</h2>
-      <form onSubmit={handleLogin}>
-        <div className="mb-3">
-          <label htmlFor="username" className="form-label">
-            帳號
-          </label>
-          <input
-            type="text"
-            className="form-control"
-            id="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-          />
-        </div>
+    <PageWrapper>
+      <div className="container" style={{ maxWidth: "400px" }}>
+        <h2 className="mb-4 text-center">登入</h2>
+        <form onSubmit={handleLogin}>
+          <div className="mb-3">
+            <label htmlFor="username" className="form-label">
+              帳號
+            </label>
+            <input
+              type="text"
+              className="form-control"
+              id="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+            />
+          </div>
 
-        <div className="mb-3">
-          <label htmlFor="password" className="form-label">
-            密碼
-          </label>
-          <input
-            type="password"
-            className="form-control"
-            id="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </div>
+          <div className="mb-3">
+            <label htmlFor="password" className="form-label">
+              密碼
+            </label>
+            <input
+              type="password"
+              className="form-control"
+              id="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
 
-        {error && <div className="alert alert-danger">{error}</div>}
+          {error && <div className="alert alert-danger">{error}</div>}
 
-        <button
-          type="submit"
-          className="btn btn-primary w-100"
-          disabled={isLoading}
-        >
-          {isLoading ? "登入中..." : "登入"}
-        </button>
-      </form>
-    </div>
+          <button
+            type="submit"
+            className="btn btn-primary w-100"
+            disabled={isLoading}
+          >
+            {isLoading ? "登入中..." : "登入"}
+          </button>
+        </form>
+      </div>
+    </PageWrapper>
   );
 }

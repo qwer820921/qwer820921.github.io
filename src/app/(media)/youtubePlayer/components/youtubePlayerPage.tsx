@@ -20,6 +20,7 @@ import {
   VolumeUpFill,
   VolumeDownFill,
 } from "react-bootstrap-icons";
+import PageWrapper from "@/components/common/PageWrapper";
 
 // 讓播放器控制列的圓形按鈕 icon 完全置中
 // 建議放在全域 CSS，但這裡用 style jsx 方便快速覆蓋
@@ -329,302 +330,310 @@ export default function YouTubePlayerPage() {
 
   /****************** 主 UI ***************/
   return (
-    <QueueContext.Provider value={queueValue}>
-      <BtnCircleStyle />
-      {/* 編輯清單 Modal */}
-      <EditPlaylistModal
-        show={showModal}
-        onClose={() => setShowModal(false)}
-        searchInput={searchInput}
-        onSearchInputChange={setSearchInput}
-        onSearch={handleSearch}
-        isSearching={isSearching}
-        searchResults={searchResults}
-        playlist={list}
-        onAddTrack={handleAddTrack}
-        onDeleteTrack={handleDeleteTrack}
-        selectedIndex={index}
-        onSelectTrack={setIndex}
-      />
-      <main className="container pb-4" style={{ paddingTop: "70px" }}>
-        <div className="d-flex justify-content-between align-items-center mb-2">
-          <h1 className="h5 fw-bold mb-0">YouTube Player</h1>
-          <button
-            className="btn btn-sm btn-outline-primary ms-2"
-            onClick={() => setShowModal(true)}
-          >
-            編輯清單
-          </button>
-        </div>
-
-        {/* YouTube IFrame */}
-        {list.length > 0 && list[index] && (
-          <YouTube
-            ref={playerRef}
-            videoId={list[index].id}
-            opts={{
-              height: "0",
-              width: "0",
-              playerVars: {
-                controls: 0,
-                autoplay: 1,
-                mute: 1, // 預設靜音以確保能自動播放
-              },
-            }}
-            onReady={onReady}
-            onStateChange={onStateChange}
-          />
-        )}
-
-        {!userInteracted && list.length > 0 && (
-          <div className="alert alert-info py-2 mb-2 d-flex align-items-center justify-content-between">
-            <span className="small">點擊播放以開啟聲音（瀏覽器限制）</span>
+    <PageWrapper>
+      <QueueContext.Provider value={queueValue}>
+        <BtnCircleStyle />
+        {/* 編輯清單 Modal */}
+        <EditPlaylistModal
+          show={showModal}
+          onClose={() => setShowModal(false)}
+          searchInput={searchInput}
+          onSearchInputChange={setSearchInput}
+          onSearch={handleSearch}
+          isSearching={isSearching}
+          searchResults={searchResults}
+          playlist={list}
+          onAddTrack={handleAddTrack}
+          onDeleteTrack={handleDeleteTrack}
+          selectedIndex={index}
+          onSelectTrack={setIndex}
+        />
+        <main className="container pb-4">
+          <div className="d-flex justify-content-between align-items-center mb-2">
+            <h1 className="h5 fw-bold mb-0">YouTube Player</h1>
             <button
-              className="btn btn-sm btn-primary"
-              onClick={() => {
-                setUserInteracted(true);
-                playerRef.current?.internalPlayer.playVideo();
-              }}
+              className="btn btn-sm btn-outline-primary ms-2"
+              onClick={() => setShowModal(true)}
             >
-              點我開啟
+              編輯清單
             </button>
           </div>
-        )}
 
-        {/* Cover & Share */}
-        <div className="d-flex flex-column align-items-center mb-2">
+          {/* YouTube IFrame */}
           {list.length > 0 && list[index] && (
-            <img
-              src={`https://i.ytimg.com/vi/${list[index].id}/hqdefault.jpg`}
-              className="rounded-4 shadow w-75"
-              alt={title}
+            <YouTube
+              ref={playerRef}
+              videoId={list[index].id}
+              opts={{
+                height: "0",
+                width: "0",
+                playerVars: {
+                  controls: 0,
+                  autoplay: 1,
+                  mute: 1, // 預設靜音以確保能自動播放
+                },
+              }}
+              onReady={onReady}
+              onStateChange={onStateChange}
             />
           )}
-          <p className="fw-medium mt-2 text-center px-2">
-            {title || "載入中…"}
-          </p>
-        </div>
 
-        {/* 進度 */}
-        <div className="d-flex align-items-center gap-2 mb-2">
-          <span className="small" style={{ width: 40 }}>
-            {format(current)}
-          </span>
-          <input
-            type="range"
-            className="form-range flex-grow-1"
-            min={0}
-            max={Number.isFinite(duration) && duration > 0 ? duration : 1}
-            value={Number.isFinite(current) ? current : 0}
-            onChange={(e) =>
-              playerRef.current?.internalPlayer.seekTo(
-                Number(e.target.value),
-                true
-              )
-            }
-          />
-          <span className="small" style={{ width: 40 }}>
-            {format(duration)}
-          </span>
-        </div>
+          {!userInteracted && list.length > 0 && (
+            <div className="alert alert-info py-2 mb-2 d-flex align-items-center justify-content-between">
+              <span className="small">點擊播放以開啟聲音（瀏覽器限制）</span>
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={() => {
+                  setUserInteracted(true);
+                  playerRef.current?.internalPlayer.playVideo();
+                }}
+              >
+                點我開啟
+              </button>
+            </div>
+          )}
 
-        {/* 歌詞 */}
-        <div
-          className="border rounded p-3 mb-2"
-          style={{ maxHeight: 150, overflowY: "auto", whiteSpace: "pre-wrap" }}
-        >
-          {lyrics}
-        </div>
+          {/* Cover & Share */}
+          <div className="d-flex flex-column align-items-center mb-2">
+            {list.length > 0 && list[index] && (
+              <img
+                src={`https://i.ytimg.com/vi/${list[index].id}/hqdefault.jpg`}
+                className="rounded-4 shadow w-75"
+                alt={title}
+              />
+            )}
+            <p className="fw-medium mt-2 text-center px-2">
+              {title || "載入中…"}
+            </p>
+          </div>
 
-        {/* Controls（循環、快退、播放/暫停、快進、循環） */}
-        <div className="d-flex justify-content-center align-items-center gap-2 mb-3">
-          {/* 循環按鈕（最左） */}
-          <button
-            className={`btn btn-circle btn-outline-secondary${repeatMode !== "off" ? " active" : ""}`}
-            title={
-              repeatMode === "all"
-                ? "全部循環"
-                : repeatMode === "one"
-                  ? "單曲循環"
-                  : "無循環"
-            }
-            style={{ width: 40, height: 40, borderRadius: "50%" }}
-            onClick={() => {
-              setRepeatMode((mode) =>
-                mode === "off" ? "all" : mode === "all" ? "one" : "off"
-              );
+          {/* 進度 */}
+          <div className="d-flex align-items-center gap-2 mb-2">
+            <span className="small" style={{ width: 40 }}>
+              {format(current)}
+            </span>
+            <input
+              type="range"
+              className="form-range flex-grow-1"
+              min={0}
+              max={Number.isFinite(duration) && duration > 0 ? duration : 1}
+              value={Number.isFinite(current) ? current : 0}
+              onChange={(e) =>
+                playerRef.current?.internalPlayer.seekTo(
+                  Number(e.target.value),
+                  true
+                )
+              }
+            />
+            <span className="small" style={{ width: 40 }}>
+              {format(duration)}
+            </span>
+          </div>
+
+          {/* 歌詞 */}
+          <div
+            className="border rounded p-3 mb-2"
+            style={{
+              maxHeight: 150,
+              overflowY: "auto",
+              whiteSpace: "pre-wrap",
             }}
           >
-            {repeatMode === "all" && (
-              <ArrowRepeat style={{ color: "#0d6efd" }} />
-            )}
-            {repeatMode === "one" && (
-              <span style={{ position: "relative", display: "inline-block" }}>
+            {lyrics}
+          </div>
+
+          {/* Controls（循環、快退、播放/暫停、快進、循環） */}
+          <div className="d-flex justify-content-center align-items-center gap-2 mb-3">
+            {/* 循環按鈕（最左） */}
+            <button
+              className={`btn btn-circle btn-outline-secondary${repeatMode !== "off" ? " active" : ""}`}
+              title={
+                repeatMode === "all"
+                  ? "全部循環"
+                  : repeatMode === "one"
+                    ? "單曲循環"
+                    : "無循環"
+              }
+              style={{ width: 40, height: 40, borderRadius: "50%" }}
+              onClick={() => {
+                setRepeatMode((mode) =>
+                  mode === "off" ? "all" : mode === "all" ? "one" : "off"
+                );
+              }}
+            >
+              {repeatMode === "all" && (
                 <ArrowRepeat style={{ color: "#0d6efd" }} />
+              )}
+              {repeatMode === "one" && (
+                <span style={{ position: "relative", display: "inline-block" }}>
+                  <ArrowRepeat style={{ color: "#0d6efd" }} />
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: "45%",
+                      left: "50%",
+                      transform: "translate(-50%, -50%)",
+                      fontSize: "0.7em",
+                      color: "#0d6efd",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    1
+                  </span>
+                </span>
+              )}
+              {repeatMode === "off" && (
+                <ArrowRepeat style={{ color: "#aaa" }} />
+              )}
+            </button>
+            {/* 向後X秒 */}
+            <button
+              className="btn btn-circle btn-outline-secondary px-2"
+              style={{
+                minWidth: 40,
+                height: 44,
+                borderRadius: "50%",
+                padding: "0 6px",
+                fontSize: "1rem",
+              }}
+              onClick={() =>
+                playerRef.current?.internalPlayer.seekTo(
+                  Math.max(0, current - seekStep),
+                  true
+                )
+              }
+              title={`快退${seekStep}秒`}
+            >
+              <div
+                className="d-flex align-items-center justify-content-center gap-1"
+                style={{ width: "100%" }}
+              >
+                <ChevronLeft style={{ fontSize: "1.2em", flexShrink: 0 }} />
                 <span
+                  className="fw-bold text-muted"
                   style={{
-                    position: "absolute",
-                    top: "45%",
-                    left: "50%",
-                    transform: "translate(-50%, -50%)",
-                    fontSize: "0.7em",
-                    color: "#0d6efd",
-                    fontWeight: "bold",
+                    fontSize: "1em",
+                    minWidth: "1.5em",
+                    textAlign: "center",
                   }}
                 >
-                  1
+                  {seekStep}s
                 </span>
-              </span>
-            )}
-            {repeatMode === "off" && <ArrowRepeat style={{ color: "#aaa" }} />}
-          </button>
-          {/* 向後X秒 */}
-          <button
-            className="btn btn-circle btn-outline-secondary px-2"
-            style={{
-              minWidth: 40,
-              height: 44,
-              borderRadius: "50%",
-              padding: "0 6px",
-              fontSize: "1rem",
-            }}
-            onClick={() =>
-              playerRef.current?.internalPlayer.seekTo(
-                Math.max(0, current - seekStep),
-                true
-              )
-            }
-            title={`快退${seekStep}秒`}
-          >
-            <div
-              className="d-flex align-items-center justify-content-center gap-1"
-              style={{ width: "100%" }}
+              </div>
+            </button>
+            {/* 上一首 */}
+            <button
+              className="btn btn-circle btn-outline-primary"
+              style={{ width: 40, height: 40, borderRadius: "50%" }}
+              onClick={prev}
+              title="上一首"
             >
-              <ChevronLeft style={{ fontSize: "1.2em", flexShrink: 0 }} />
-              <span
-                className="fw-bold text-muted"
-                style={{
-                  fontSize: "1em",
-                  minWidth: "1.5em",
-                  textAlign: "center",
-                }}
-              >
-                {seekStep}s
-              </span>
-            </div>
-          </button>
-          {/* 上一首 */}
-          <button
-            className="btn btn-circle btn-outline-primary"
-            style={{ width: 40, height: 40, borderRadius: "50%" }}
-            onClick={prev}
-            title="上一首"
-          >
-            <ChevronBarLeft />
-          </button>
-          {/* 播放/暫停 */}
-          <button
-            className="btn btn-circle btn-primary"
-            style={{
-              width: 50,
-              height: 50,
-              borderRadius: "50%",
-              fontSize: "1.5rem",
-            }}
-            onClick={toggle}
-            title={isPlaying ? "暫停" : "播放"}
-          >
-            {isPlaying ? <PauseFill /> : <PlayFill />}
-          </button>
-          {/* 下一首 */}
-          <button
-            className="btn btn-circle btn-outline-primary"
-            style={{ width: 40, height: 40, borderRadius: "50%" }}
-            onClick={next}
-            title="下一首"
-          >
-            <ChevronBarRight />
-          </button>
-          {/* 向前X秒 */}
-          <button
-            className="btn btn-circle btn-outline-secondary px-2"
-            style={{
-              minWidth: 40,
-              height: 44,
-              borderRadius: "50%",
-              padding: "0 6px",
-              fontSize: "1rem",
-            }}
-            onClick={() =>
-              playerRef.current?.internalPlayer.seekTo(
-                Math.min(duration, current + seekStep),
-                true
-              )
-            }
-            title={`快進${seekStep}秒`}
-          >
-            <div
-              className="d-flex align-items-center justify-content-center gap-1"
-              style={{ width: "100%" }}
+              <ChevronBarLeft />
+            </button>
+            {/* 播放/暫停 */}
+            <button
+              className="btn btn-circle btn-primary"
+              style={{
+                width: 50,
+                height: 50,
+                borderRadius: "50%",
+                fontSize: "1.5rem",
+              }}
+              onClick={toggle}
+              title={isPlaying ? "暫停" : "播放"}
             >
-              <span
-                className="fw-bold text-muted"
-                style={{
-                  fontSize: "1em",
-                  minWidth: "1.5em",
-                  textAlign: "center",
-                }}
+              {isPlaying ? <PauseFill /> : <PlayFill />}
+            </button>
+            {/* 下一首 */}
+            <button
+              className="btn btn-circle btn-outline-primary"
+              style={{ width: 40, height: 40, borderRadius: "50%" }}
+              onClick={next}
+              title="下一首"
+            >
+              <ChevronBarRight />
+            </button>
+            {/* 向前X秒 */}
+            <button
+              className="btn btn-circle btn-outline-secondary px-2"
+              style={{
+                minWidth: 40,
+                height: 44,
+                borderRadius: "50%",
+                padding: "0 6px",
+                fontSize: "1rem",
+              }}
+              onClick={() =>
+                playerRef.current?.internalPlayer.seekTo(
+                  Math.min(duration, current + seekStep),
+                  true
+                )
+              }
+              title={`快進${seekStep}秒`}
+            >
+              <div
+                className="d-flex align-items-center justify-content-center gap-1"
+                style={{ width: "100%" }}
               >
-                {seekStep}s
-              </span>
-              <ChevronRight style={{ fontSize: "1.2em", flexShrink: 0 }} />
-            </div>
-          </button>
-          {/* 隨機按鈕（最右） */}
-          <button
-            className={`btn btn-circle ${shuffle ? "btn-info" : "btn-outline-info"}`}
-            style={{ width: 40, height: 40, borderRadius: "50%" }}
-            onClick={() => setShuffle(!shuffle)}
-            title="隨機播放"
-          >
-            <Shuffle />
-          </button>
-        </div>
+                <span
+                  className="fw-bold text-muted"
+                  style={{
+                    fontSize: "1em",
+                    minWidth: "1.5em",
+                    textAlign: "center",
+                  }}
+                >
+                  {seekStep}s
+                </span>
+                <ChevronRight style={{ fontSize: "1.2em", flexShrink: 0 }} />
+              </div>
+            </button>
+            {/* 隨機按鈕（最右） */}
+            <button
+              className={`btn btn-circle ${shuffle ? "btn-info" : "btn-outline-info"}`}
+              style={{ width: 40, height: 40, borderRadius: "50%" }}
+              onClick={() => setShuffle(!shuffle)}
+              title="隨機播放"
+            >
+              <Shuffle />
+            </button>
+          </div>
 
-        {/* 秒數設定 */}
-        <div className="d-flex justify-content-center align-items-center gap-2 mb-3">
-          <label className="form-label mb-0 me-2">快進/快退秒數</label>
-          <input
-            type="number"
-            min={1}
-            max={30}
-            value={seekStep}
-            onChange={(e) => setSeekStep(Number(e.target.value))}
-            style={{ width: 60 }}
-            className="form-control form-control-sm"
-          />
-          <span className="small text-muted">秒</span>
-        </div>
+          {/* 秒數設定 */}
+          <div className="d-flex justify-content-center align-items-center gap-2 mb-3">
+            <label className="form-label mb-0 me-2">快進/快退秒數</label>
+            <input
+              type="number"
+              min={1}
+              max={30}
+              value={seekStep}
+              onChange={(e) => setSeekStep(Number(e.target.value))}
+              style={{ width: 60 }}
+              className="form-control form-control-sm"
+            />
+            <span className="small text-muted">秒</span>
+          </div>
 
-        {/* 音量控制單獨一行 */}
-        <div className="d-flex justify-content-center align-items-center gap-2 mb-4">
-          <VolumeDownFill />
-          <input
-            type="range"
-            className="form-range"
-            style={{ maxWidth: 120 }}
-            min={0}
-            max={100}
-            value={volume}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              setVolume(v);
-              playerRef.current?.internalPlayer.setVolume(v);
-            }}
-          />
-          <VolumeUpFill />
-        </div>
-      </main>
-    </QueueContext.Provider>
+          {/* 音量控制單獨一行 */}
+          <div className="d-flex justify-content-center align-items-center gap-2 mb-4">
+            <VolumeDownFill />
+            <input
+              type="range"
+              className="form-range"
+              style={{ maxWidth: 120 }}
+              min={0}
+              max={100}
+              value={volume}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setVolume(v);
+                playerRef.current?.internalPlayer.setVolume(v);
+              }}
+            />
+            <VolumeUpFill />
+          </div>
+        </main>
+      </QueueContext.Provider>
+    </PageWrapper>
   );
 }

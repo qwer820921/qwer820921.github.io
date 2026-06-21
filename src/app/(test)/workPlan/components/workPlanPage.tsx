@@ -13,6 +13,7 @@ import {
 } from "react-bootstrap";
 import { gasCall } from "../../lineTest/services/gasClient";
 import styles from "../styles/workPlan.module.css";
+import PageWrapper from "@/components/common/PageWrapper";
 
 interface OutlineModule {
   key: string;
@@ -1633,101 +1634,103 @@ const WorkPlanPage: React.FC = () => {
   };
 
   return (
-    <Container className={styles.container}>
-      <Row>
-        <Col xs={12}>
-          <div className="mb-5 d-flex justify-content-between align-items-end flex-wrap gap-3 border-bottom pb-4">
-            <div>
-              <h1 className="fw-bold mb-1 text-gradient">
-                預約平台工時計畫 (66 節點還原)
-              </h1>
-              <p className="text-muted mb-0 lead">
-                對齊「品牌官網＋LINE 自助預約平台」章節
-              </p>
+    <PageWrapper>
+      <Container className={styles.container}>
+        <Row>
+          <Col xs={12}>
+            <div className="mb-5 d-flex justify-content-between align-items-end flex-wrap gap-3 border-bottom pb-4">
+              <div>
+                <h1 className="fw-bold mb-1 text-gradient">
+                  預約平台工時計畫 (66 節點還原)
+                </h1>
+                <p className="text-muted mb-0 lead">
+                  對齊「品牌官網＋LINE 自助預約平台」章節
+                </p>
+              </div>
+              <div className="d-flex gap-2">
+                <Button
+                  variant="success"
+                  className="shadow-sm"
+                  onClick={handleInitAll}
+                  disabled={initializing || loading}
+                >
+                  {initializing ? "搬運中..." : "🚀 還原 66 個原子標題"}
+                </Button>
+                <Button
+                  variant="outline-primary"
+                  className="shadow-sm"
+                  onClick={fetchData}
+                  disabled={loading}
+                >
+                  🔄 重新整理
+                </Button>
+              </div>
             </div>
-            <div className="d-flex gap-2">
-              <Button
-                variant="success"
-                className="shadow-sm"
-                onClick={handleInitAll}
-                disabled={initializing || loading}
-              >
-                {initializing ? "搬運中..." : "🚀 還原 66 個原子標題"}
-              </Button>
-              <Button
-                variant="outline-primary"
-                className="shadow-sm"
-                onClick={fetchData}
-                disabled={loading}
-              >
-                🔄 重新整理
-              </Button>
-            </div>
-          </div>
 
-          {loading && data.length === 0 ? (
-            <div className="text-center p-5">
-              <Spinner animation="border" variant="primary" />
-              <p className="mt-2 text-primary">正在同步資料...</p>
-            </div>
-          ) : (
-            <div className={styles.masonryGrid}>
-              {data.map((mod) => (
-                <div key={mod.key} className={styles.moduleCard}>
-                  <div className="d-flex justify-content-between align-items-center mb-0 px-3 pt-3">
-                    <span className="badge bg-light text-dark border">
-                      STEP {mod.order}
-                    </span>
-                    <Button
-                      variant="link"
-                      size="sm"
-                      className="text-decoration-none text-muted p-0"
-                      onClick={() => handleEdit(mod)}
-                    >
-                      ⚙ 編輯
-                    </Button>
+            {loading && data.length === 0 ? (
+              <div className="text-center p-5">
+                <Spinner animation="border" variant="primary" />
+                <p className="mt-2 text-primary">正在同步資料...</p>
+              </div>
+            ) : (
+              <div className={styles.masonryGrid}>
+                {data.map((mod) => (
+                  <div key={mod.key} className={styles.moduleCard}>
+                    <div className="d-flex justify-content-between align-items-center mb-0 px-3 pt-3">
+                      <span className="badge bg-light text-dark border">
+                        STEP {mod.order}
+                      </span>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="text-decoration-none text-muted p-0"
+                        onClick={() => handleEdit(mod)}
+                      >
+                        ⚙ 編輯
+                      </Button>
+                    </div>
+                    <div className="px-3 pb-3">
+                      <ModuleRenderer mod={mod} />
+                    </div>
                   </div>
-                  <div className="px-3 pb-3">
-                    <ModuleRenderer mod={mod} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Col>
-      </Row>
+                ))}
+              </div>
+            )}
+          </Col>
+        </Row>
 
-      <Modal
-        show={showEdit}
-        onHide={() => setShowEdit(false)}
-        size="lg"
-        centered
-      >
-        <Modal.Header closeButton className="bg-dark text-white">
-          <Modal.Title>編輯：{editingModule?.key}</Modal.Title>
-        </Modal.Header>
-        <Modal.Body className="bg-light">
-          <Form.Group>
-            <Form.Control
-              as="textarea"
-              rows={20}
-              className="font-monospace"
-              style={{ fontSize: "0.8rem" }}
-              value={editJson}
-              onChange={(e) => setEditJson(e.target.value)}
-            />
-          </Form.Group>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowEdit(false)}>
-            取消
-          </Button>
-          <Button variant="primary" onClick={handleSave} disabled={saving}>
-            {saving ? "儲存中..." : "確認儲存"}
-          </Button>
-        </Modal.Footer>
-      </Modal>
-    </Container>
+        <Modal
+          show={showEdit}
+          onHide={() => setShowEdit(false)}
+          size="lg"
+          centered
+        >
+          <Modal.Header closeButton className="bg-dark text-white">
+            <Modal.Title>編輯：{editingModule?.key}</Modal.Title>
+          </Modal.Header>
+          <Modal.Body className="bg-light">
+            <Form.Group>
+              <Form.Control
+                as="textarea"
+                rows={20}
+                className="font-monospace"
+                style={{ fontSize: "0.8rem" }}
+                value={editJson}
+                onChange={(e) => setEditJson(e.target.value)}
+              />
+            </Form.Group>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowEdit(false)}>
+              取消
+            </Button>
+            <Button variant="primary" onClick={handleSave} disabled={saving}>
+              {saving ? "儲存中..." : "確認儲存"}
+            </Button>
+          </Modal.Footer>
+        </Modal>
+      </Container>
+    </PageWrapper>
   );
 };
 

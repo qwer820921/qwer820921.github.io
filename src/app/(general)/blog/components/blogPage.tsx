@@ -7,6 +7,7 @@ import type { BlogPost } from "@/types/blog";
 import styles from "./blogPage.module.css";
 import BlogSearchPanel from "./BlogSearchPanel";
 import BlogNoResult from "./BlogNoResult";
+import PageWrapper from "@/components/common/PageWrapper";
 
 interface BlogPageProps {
   posts: Omit<BlogPost, "content">[];
@@ -63,82 +64,84 @@ export default function BlogPage({ posts }: BlogPageProps) {
   };
 
   return (
-    <Container style={{ paddingTop: "70px", paddingBottom: "70px" }}>
-      {/* Header Row：標題 + 放大鏡 */}
-      <div className={styles.pageTitleRow}>
-        <h1 className={styles.pageTitle}>文章列表</h1>
+    <PageWrapper>
+      <Container style={{ paddingBottom: "70px" }}>
+        {/* Header Row：標題 + 放大鏡 */}
+        <div className={styles.pageTitleRow}>
+          <h1 className={styles.pageTitle}>文章列表</h1>
 
-        {/* 放大鏡 + 浮動面板錨點 */}
-        <div className={styles.searchAnchor}>
-          <button
-            className={`${styles.searchIconBtn} ${isSearchOpen || searchText || selectedTags.length > 0 ? styles.searchIconBtnActive : ""}`}
-            onClick={() => setIsSearchOpen((prev) => !prev)}
-            aria-label="搜尋文章"
-            aria-expanded={isSearchOpen}
-          >
-            🔍
-          </button>
+          {/* 放大鏡 + 浮動面板錨點 */}
+          <div className={styles.searchAnchor}>
+            <button
+              className={`${styles.searchIconBtn} ${isSearchOpen || searchText || selectedTags.length > 0 ? styles.searchIconBtnActive : ""}`}
+              onClick={() => setIsSearchOpen((prev) => !prev)}
+              aria-label="搜尋文章"
+              aria-expanded={isSearchOpen}
+            >
+              🔍
+            </button>
 
-          <BlogSearchPanel
-            isOpen={isSearchOpen}
-            onClose={() => setIsSearchOpen(false)}
-            searchText={searchText}
-            onSearchChange={handleSearchChange}
-            allTags={allTags}
-            selectedTags={selectedTags}
-            onTagToggle={toggleTag}
-            onClearAll={clearAll}
-            totalCount={posts.length}
-            filteredCount={filteredPosts.length}
-          />
+            <BlogSearchPanel
+              isOpen={isSearchOpen}
+              onClose={() => setIsSearchOpen(false)}
+              searchText={searchText}
+              onSearchChange={handleSearchChange}
+              allTags={allTags}
+              selectedTags={selectedTags}
+              onTagToggle={toggleTag}
+              onClearAll={clearAll}
+              totalCount={posts.length}
+              filteredCount={filteredPosts.length}
+            />
+          </div>
         </div>
-      </div>
 
-      {/* 文章列表 */}
-      {filteredPosts.length === 0 ? (
-        <BlogNoResult searchText={searchText} selectedTags={selectedTags} />
-      ) : (
-        <Row xs={1} md={2} lg={3} className="g-4">
-          {filteredPosts.map((post) => (
-            <Col key={post.slug}>
-              <div className={`card h-100 ${styles.postCard}`}>
-                <div className={`card-body ${styles.postCardBody}`}>
-                  <div className={styles.postDate}>{post.date}</div>
-                  <Link
-                    href={`${ROUTES.BLOG}/${post.slug}`}
-                    className="text-decoration-none text-dark stretched-link"
-                  >
-                    <h3 className={`h5 fw-bold ${styles.postTitle}`}>
-                      {post.title}
-                    </h3>
-                  </Link>
-                  {post.description && (
-                    <p
-                      className={`card-text text-muted ${styles.postDescription}`}
+        {/* 文章列表 */}
+        {filteredPosts.length === 0 ? (
+          <BlogNoResult searchText={searchText} selectedTags={selectedTags} />
+        ) : (
+          <Row xs={1} md={2} lg={3} className="g-4">
+            {filteredPosts.map((post) => (
+              <Col key={post.slug}>
+                <div className={`card h-100 ${styles.postCard}`}>
+                  <div className={`card-body ${styles.postCardBody}`}>
+                    <div className={styles.postDate}>{post.date}</div>
+                    <Link
+                      href={`${ROUTES.BLOG}/${post.slug}`}
+                      className="text-decoration-none text-dark stretched-link"
                     >
-                      {post.description}
-                    </p>
+                      <h3 className={`h5 fw-bold ${styles.postTitle}`}>
+                        {post.title}
+                      </h3>
+                    </Link>
+                    {post.description && (
+                      <p
+                        className={`card-text text-muted ${styles.postDescription}`}
+                      >
+                        {post.description}
+                      </p>
+                    )}
+                  </div>
+                  {post.tags && post.tags.length > 0 && (
+                    <div className={`card-footer ${styles.postFooter}`}>
+                      <div className={styles.tagContainer}>
+                        {post.tags.slice(0, 3).map((tag) => (
+                          <span
+                            key={tag}
+                            className={`badge rounded-pill ${styles.tag}`}
+                          >
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
-                {post.tags && post.tags.length > 0 && (
-                  <div className={`card-footer ${styles.postFooter}`}>
-                    <div className={styles.tagContainer}>
-                      {post.tags.slice(0, 3).map((tag) => (
-                        <span
-                          key={tag}
-                          className={`badge rounded-pill ${styles.tag}`}
-                        >
-                          #{tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </Col>
-          ))}
-        </Row>
-      )}
-    </Container>
+              </Col>
+            ))}
+          </Row>
+        )}
+      </Container>
+    </PageWrapper>
   );
 }

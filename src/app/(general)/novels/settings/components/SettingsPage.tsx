@@ -10,6 +10,7 @@ import {
 } from "../../constants/themeConfig";
 import BottomTabs from "../../components/BottomTabs";
 import styles from "../../styles/novels.module.css";
+import PageWrapper from "@/components/common/PageWrapper";
 
 const PREVIEW_TEXT =
   "道可道，非常道；名可名，非常名。無名天地之始，有名萬物之母。故常無欲以觀其妙，常有欲以觀其徼。此兩者同出而異名，同謂之玄，玄之又玄，眾妙之門。";
@@ -60,7 +61,7 @@ export default function SettingsPage() {
   const currentTheme = THEME_COLORS[settings.theme];
 
   return (
-    <div className={styles.pageContainer}>
+    <PageWrapper className={styles.pageContainer}>
       <header className={styles.pageHeader}>
         <h1>偏好設定</h1>
         <p>打造你最舒適的閱讀環境</p>
@@ -180,6 +181,6 @@ export default function SettingsPage() {
         </button>
       </section>
       <BottomTabs />
-    </div>
+    </PageWrapper>
   );
 }

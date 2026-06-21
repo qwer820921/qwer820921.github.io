@@ -3,7 +3,7 @@
 .pageContainer {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 70px 1rem 80px; /* 上70 左右1rem 下80(預留 BottomTabs) */
+  padding: 0 1rem 80px; /* 下80 預留 BottomTabs；上方由 PageWrapper 處理 */
 }
 
 .pageHeader {

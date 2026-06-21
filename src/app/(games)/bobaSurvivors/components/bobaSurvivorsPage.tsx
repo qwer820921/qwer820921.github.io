@@ -2,6 +2,7 @@
 import React, { useState, useRef } from "react";
 import { Container, Spinner, Button } from "react-bootstrap";
 import styles from "../styles/bobaSurvivors.module.css";
+import PageWrapper from "@/components/common/PageWrapper";
 
 const BobaSurvivorsPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -97,71 +98,73 @@ const BobaSurvivorsPage: React.FC = () => {
   const isAnyFullscreen = isFullscreen || isPseudoFullscreen;
 
   return (
-    <Container fluid className={styles.pageContainer}>
-      <div className={styles.header}>
-        <h1 className="mb-0">重裝全糖珍奶</h1>
-        <p className="text-muted mb-0">Boba Survivors</p>
-      </div>
-
-      <div
-        className={`${styles.gameWrapper} ${isPseudoFullscreen ? styles.pseudoFullscreen : ""}`}
-        ref={containerRef}
-      >
-        {/* 工具列 */}
-        <div className={styles.toolbar}>
-          <Button
-            variant="dark"
-            size="sm"
-            className={styles.fullscreenBtn}
-            onClick={toggleFullscreen}
-          >
-            {isAnyFullscreen ? "🗗 退出全螢幕" : "⛶ 全螢幕"}
-          </Button>
+    <PageWrapper>
+      <Container fluid className={styles.pageContainer}>
+        <div className={styles.header}>
+          <h1 className="mb-0">重裝全糖珍奶</h1>
+          <p className="text-muted mb-0">Boba Survivors</p>
         </div>
 
-        {/* 載入畫面 */}
-        {isLoading && (
-          <div className={styles.loadingOverlay}>
-            <div className={styles.loadingContent}>
-              <h3 className={styles.loadingTitle}>煮珍珠中...</h3>
-              <Spinner
-                animation="border"
-                variant="warning"
-                className={styles.spinner}
-              />
-              <p className={styles.loadingSub}>首次載入可能需要稍等一下</p>
-            </div>
+        <div
+          className={`${styles.gameWrapper} ${isPseudoFullscreen ? styles.pseudoFullscreen : ""}`}
+          ref={containerRef}
+        >
+          {/* 工具列 */}
+          <div className={styles.toolbar}>
+            <Button
+              variant="dark"
+              size="sm"
+              className={styles.fullscreenBtn}
+              onClick={toggleFullscreen}
+            >
+              {isAnyFullscreen ? "🗗 退出全螢幕" : "⛶ 全螢幕"}
+            </Button>
           </div>
-        )}
 
-        {/* Godot 遊戲 iframe */}
-        <iframe
-          ref={iframeRef}
-          src="/games/bobaSurvivors/index.html"
-          className={styles.gameIframe}
-          onLoad={handleIframeLoad}
-          allow="autoplay; fullscreen"
-          title="Boba Survivors Game"
-        />
-      </div>
+          {/* 載入畫面 */}
+          {isLoading && (
+            <div className={styles.loadingOverlay}>
+              <div className={styles.loadingContent}>
+                <h3 className={styles.loadingTitle}>煮珍珠中...</h3>
+                <Spinner
+                  animation="border"
+                  variant="warning"
+                  className={styles.spinner}
+                />
+                <p className={styles.loadingSub}>首次載入可能需要稍等一下</p>
+              </div>
+            </div>
+          )}
 
-      <div className={styles.gameInfo}>
-        <h4>遊戲說明</h4>
-        <ul>
-          <li>
-            <strong>電腦操作：</strong>使用 <code>W</code> <code>A</code>{" "}
-            <code>S</code> <code>D</code> 或 方向鍵移動。
-          </li>
-          <li>
-            <strong>手機操作：</strong>在畫面上滑動使用虛擬搖桿移動。
-          </li>
-          <li>
-            <strong>自動戰鬥：</strong>
-            角色會自動攻擊範圍內的敵人，請專注於走位與躲避！
-          </li>
-        </ul>
-      </div>
-    </Container>
+          {/* Godot 遊戲 iframe */}
+          <iframe
+            ref={iframeRef}
+            src="/games/bobaSurvivors/index.html"
+            className={styles.gameIframe}
+            onLoad={handleIframeLoad}
+            allow="autoplay; fullscreen"
+            title="Boba Survivors Game"
+          />
+        </div>
+
+        <div className={styles.gameInfo}>
+          <h4>遊戲說明</h4>
+          <ul>
+            <li>
+              <strong>電腦操作：</strong>使用 <code>W</code> <code>A</code>{" "}
+              <code>S</code> <code>D</code> 或 方向鍵移動。
+            </li>
+            <li>
+              <strong>手機操作：</strong>在畫面上滑動使用虛擬搖桿移動。
+            </li>
+            <li>
+              <strong>自動戰鬥：</strong>
+              角色會自動攻擊範圍內的敵人，請專注於走位與躲避！
+            </li>
+          </ul>
+        </div>
+      </Container>
+    </PageWrapper>
   );
 };
 

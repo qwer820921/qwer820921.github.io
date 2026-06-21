@@ -11,6 +11,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import BackToListButton from "../components/BackToListButton";
+import PageWrapper from "@/components/common/PageWrapper";
 
 export async function generateMetadata({
   params,
@@ -61,48 +62,52 @@ export default async function Post({
   const postData = await getPostData(slug);
 
   return (
-    <article className="container py-5">
-      <div className="row justify-content-center">
-        <div className="col-12 col-lg-8">
-          <div className={`card ${cardStyles.articleCard}`}>
-            <div className={`card-body ${cardStyles.cardBody}`}>
-              <header className={cardStyles.articleHeader}>
-                <BackToListButton mode="static" id="static-back-btn" />
-                <h1 className={cardStyles.articleTitle}>{postData.title}</h1>
-                <div className={cardStyles.articleMeta}>
-                  {postData.author && (
+    <PageWrapper>
+      <article className="container pb-5">
+        <div className="row justify-content-center">
+          <div className="col-12 col-lg-8">
+            <div className={`card ${cardStyles.articleCard}`}>
+              <div className={`card-body ${cardStyles.cardBody}`}>
+                <header className={cardStyles.articleHeader}>
+                  <BackToListButton mode="static" id="static-back-btn" />
+                  <h1 className={cardStyles.articleTitle}>{postData.title}</h1>
+                  <div className={cardStyles.articleMeta}>
+                    {postData.author && (
+                      <div className={cardStyles.metaItem}>
+                        <i
+                          className={`bi bi-person-fill ${cardStyles.metaIcon}`}
+                        ></i>
+                        <span className={cardStyles.metaLabel}>作者:</span>
+                        {postData.author}
+                      </div>
+                    )}
                     <div className={cardStyles.metaItem}>
                       <i
-                        className={`bi bi-person-fill ${cardStyles.metaIcon}`}
+                        className={`bi bi-calendar3 ${cardStyles.metaIcon}`}
                       ></i>
-                      <span className={cardStyles.metaLabel}>作者:</span>
-                      {postData.author}
+                      <span className={cardStyles.metaLabel}>日期:</span>
+                      {postData.date}
                     </div>
-                  )}
-                  <div className={cardStyles.metaItem}>
-                    <i className={`bi bi-calendar3 ${cardStyles.metaIcon}`}></i>
-                    <span className={cardStyles.metaLabel}>日期:</span>
-                    {postData.date}
                   </div>
-                </div>
-              </header>
+                </header>
 
-              <div className={contentStyles.blogContent}>
-                <MDXRemote
-                  source={postData.content}
-                  options={{
-                    mdxOptions: {
-                      remarkPlugins: [remarkGfm, remarkMath],
-                      rehypePlugins: [rehypeKatex],
-                    },
-                  }}
-                />
+                <div className={contentStyles.blogContent}>
+                  <MDXRemote
+                    source={postData.content}
+                    options={{
+                      mdxOptions: {
+                        remarkPlugins: [remarkGfm, remarkMath],
+                        rehypePlugins: [rehypeKatex],
+                      },
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-      <BackToListButton mode="floating" targetId="static-back-btn" />
-    </article>
+        <BackToListButton mode="floating" targetId="static-back-btn" />
+      </article>
+    </PageWrapper>
   );
 }

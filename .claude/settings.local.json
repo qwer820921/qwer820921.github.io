@@ -19,7 +19,12 @@
       "Bash(dir \"d:\\\\code\\\\GitHub\\\\qwer820921.github.io\\\\src\\\\app\" -Recurse)",
       "Bash(dir \"d:\\\\code\\\\GitHub\\\\qwer820921.github.io\\\\src\\\\app\\\\\\(tools\\)\\\\instaStoryEditor\")",
       "WebFetch(domain:qwer820921.github.io)",
-      "PowerShell(cd \"d:\\\\code\\\\GitHub\\\\qwer820921.github.io\"; Select-String -Path \"public/sitemap.xml\" -Pattern \"/blog/\" | ForEach-Object { $_.Line.Trim\\(\\) } | Sort-Object)"
+      "PowerShell(cd \"d:\\\\code\\\\GitHub\\\\qwer820921.github.io\"; Select-String -Path \"public/sitemap.xml\" -Pattern \"/blog/\" | ForEach-Object { $_.Line.Trim\\(\\) } | Sort-Object)",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\code\\\\GitHub\\\\qwer820921.github.io\\\\src\\\\app\" -Recurse | Where-Object {$_.Name -match '\\(page|layout\\)\\\\.tsx$'} | ForEach-Object {$_.FullName.Replace\\('d:\\\\code\\\\GitHub\\\\qwer820921.github.io\\\\', ''\\)} | Sort-Object)",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\code\\\\GitHub\\\\qwer820921.github.io\\\\src\\\\components\\\\common\" | Where-Object {$_.PSIsContainer -eq $false} | ForEach-Object {$_.Name})",
+      "Bash(find d:\\\\\\\\code\\\\\\\\GitHub\\\\\\\\qwer820921.github.io\\\\\\\\src\\\\\\\\components\\\\\\\\common -maxdepth 1 -type f -name \"*.tsx\" -o -name \"*.ts\")",
+      "Bash(grep -v \"^$\")",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

@@ -12,6 +12,7 @@ import {
 import { useTenMinEmailStore } from "../store/useTenMinEmailStore";
 import { EmailMessage, EmailParticipant } from "../types";
 import styles from "../styles/tenMinEmail.module.css";
+import PageWrapper from "@/components/common/PageWrapper";
 
 const TenMinEmailPage: React.FC = () => {
   const {
@@ -139,261 +140,263 @@ const TenMinEmailPage: React.FC = () => {
   const isWarning = timeLeft < 60; // Less than 1 minute
 
   return (
-    <Container className={styles.container}>
-      {/* Background Animation Overlay */}
-      <div className={styles.bgAnimation}></div>
+    <PageWrapper>
+      <Container className={styles.container}>
+        {/* Background Animation Overlay */}
+        <div className={styles.bgAnimation}></div>
 
-      {/* Header Section */}
-      {/* Main Layout Row: Split on Desktop, Stacked on Mobile */}
-      <Row className="g-4">
-        {/* Left Column: Email Info & Timer (Sticky on Desktop) */}
-        <Col lg={6}>
-          <div className={styles.stickyWrapper}>
-            <div className={styles.emailCard}>
-              <h5
-                className="text-uppercase text-white mb-3"
-                style={{
-                  letterSpacing: "2px",
-                  textShadow: "0 2px 4px rgba(0,0,0,0.5)",
-                }}
-              >
-                您的臨時信箱地址
-              </h5>
+        {/* Header Section */}
+        {/* Main Layout Row: Split on Desktop, Stacked on Mobile */}
+        <Row className="g-4">
+          {/* Left Column: Email Info & Timer (Sticky on Desktop) */}
+          <Col lg={6}>
+            <div className={styles.stickyWrapper}>
+              <div className={styles.emailCard}>
+                <h5
+                  className="text-uppercase text-white mb-3"
+                  style={{
+                    letterSpacing: "2px",
+                    textShadow: "0 2px 4px rgba(0,0,0,0.5)",
+                  }}
+                >
+                  您的臨時信箱地址
+                </h5>
 
-              {isLoading ? (
-                <div className="py-4">
-                  <Spinner animation="border" variant="info" />
+                {isLoading ? (
+                  <div className="py-4">
+                    <Spinner animation="border" variant="info" />
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      className={
+                        currentEmail
+                          ? styles.emailDisplay
+                          : styles.emailPlaceholder
+                      }
+                    >
+                      {currentEmail || "產生中..."}
+                    </div>
+
+                    <div className="d-flex flex-column gap-2 mt-4">
+                      <Button
+                        variant={copySuccess ? "success" : "info"}
+                        onClick={handleCopy}
+                        disabled={!currentEmail || timeLeft <= 0}
+                        className="w-100 py-2 rounded-pill shadow-lg border-0 fw-bold"
+                      >
+                        {copySuccess ? "已複製！ ✓" : "複製信箱地址"}
+                      </Button>
+                      <div className="d-flex gap-2">
+                        <Button
+                          variant="primary"
+                          onClick={() => createMail()}
+                          className="flex-grow-1 py-2 rounded-pill shadow-lg border-0 fw-bold"
+                        >
+                          更換信箱
+                        </Button>
+                        <Button
+                          variant="outline-info"
+                          onClick={() => extendMail()}
+                          disabled={!currentEmail || timeLeft <= 0}
+                          className="flex-grow-1 py-2 rounded-pill shadow-lg fw-bold"
+                          style={{
+                            backdropFilter: "blur(4px)",
+                            color: "#00f2fe",
+                            borderColor: "#00f2fe",
+                          }}
+                        >
+                          延長 10 分
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {expiresAt && timeLeft > 0 && (
+                  <div className={styles.timerWrapper}>
+                    <div className={styles.timerText}>
+                      剩餘時間：{formatTime(timeLeft)}
+                    </div>
+                    <div className={styles.progressBar}>
+                      <div
+                        className={`${styles.progressFill} ${isWarning ? styles.progressWarning : ""}`}
+                        style={{ width: `${progress}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                )}
+
+                {expiresAt && timeLeft <= 0 && (
+                  <Badge bg="danger" className="mt-3 p-2">
+                    信箱已過期
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </Col>
+
+          {/* Right Column: Inbox Section */}
+          <Col lg={6}>
+            <div className={styles.inboxHeader}>
+              <h4 className="m-0 fw-bold">收件匣</h4>
+              <Badge pill bg="info" className="px-3 py-2 shadow-sm">
+                {inbox.length} 封信件
+              </Badge>
+            </div>
+
+            {inbox.length === 0 ? (
+              <div className={styles.emptyInbox}>
+                <div className="mb-3">
+                  <Spinner
+                    animation="grow"
+                    size="sm"
+                    variant="primary"
+                    className="me-2"
+                  />
+                  正在等待新信件...
+                </div>
+                <small className="text-secondary">
+                  信件發出後可能需要幾秒鐘才會顯示。
+                </small>
+              </div>
+            ) : (
+              inbox.map((mail, idx) => (
+                <div
+                  key={mail.id || idx}
+                  className={styles.inboxCard}
+                  onClick={() => handleOpenMail(mail)}
+                >
+                  <Row className="align-items-center">
+                    <Col xs={8} md={9}>
+                      <div className={styles.mailSubject}>
+                        {mail.subject || "(無主旨)"}
+                      </div>
+                      <div className={styles.mailFrom}>
+                        來自：{renderFrom(mail.from)}
+                      </div>
+                    </Col>
+                    <Col xs={4} md={3}>
+                      <div className={styles.mailTime}>
+                        {mail.date || mail.createdAt
+                          ? new Date(
+                              mail.date || mail.createdAt!
+                            ).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "剛才"}
+                      </div>
+                    </Col>
+                  </Row>
+                </div>
+              ))
+            )}
+          </Col>
+        </Row>
+
+        {/* Email View Modal */}
+        <Modal
+          show={showModal}
+          onHide={() => {
+            setShowModal(false);
+            setSelectedMailId(null);
+          }}
+          size="lg"
+          centered
+          dialogClassName={styles.modalDialog}
+          contentClassName={styles.modalContent}
+        >
+          <Modal.Header closeButton className={styles.modalHeader}>
+            <Modal.Title>{selectedMail?.subject || "無主旨"}</Modal.Title>
+          </Modal.Header>
+          <Modal.Body className={styles.modalBody}>
+            {/* 固定資訊區 */}
+            {/* 固定頂部：資訊區 */}
+            <div className={styles.modalInfoSection}>
+              <Row className="g-3">
+                <Col md={6}>
+                  <div className={styles.infoBadge}>
+                    <div className={styles.infoLabel}>發件人</div>
+                    <div className={styles.infoValue}>
+                      {selectedMail ? renderFrom(selectedMail.from) : "未知"}
+                    </div>
+                  </div>
+                </Col>
+                <Col md={6}>
+                  <div className={styles.infoBadge}>
+                    <div className={styles.infoLabel}>收件時間</div>
+                    <div className={styles.infoValue}>
+                      {selectedMail?.date || selectedMail?.createdAt
+                        ? new Date(
+                            selectedMail.date || selectedMail!.createdAt!
+                          ).toLocaleString()
+                        : "近期"}
+                    </div>
+                  </div>
+                </Col>
+              </Row>
+            </div>
+
+            {/* 可捲動內容區 */}
+            <div className={styles.mailContent}>
+              {isMessageLoading ? (
+                <div className="text-center py-5">
+                  <Spinner animation="border" variant="info" className="mb-3" />
+                  <div className="text-secondary opacity-75">
+                    正在努力載入正文中...
+                  </div>
                 </div>
               ) : (
                 <>
-                  <div
-                    className={
-                      currentEmail
-                        ? styles.emailDisplay
-                        : styles.emailPlaceholder
-                    }
-                  >
-                    {currentEmail || "產生中..."}
-                  </div>
-
-                  <div className="d-flex flex-column gap-2 mt-4">
-                    <Button
-                      variant={copySuccess ? "success" : "info"}
-                      onClick={handleCopy}
-                      disabled={!currentEmail || timeLeft <= 0}
-                      className="w-100 py-2 rounded-pill shadow-lg border-0 fw-bold"
-                    >
-                      {copySuccess ? "已複製！ ✓" : "複製信箱地址"}
-                    </Button>
-                    <div className="d-flex gap-2">
-                      <Button
-                        variant="primary"
-                        onClick={() => createMail()}
-                        className="flex-grow-1 py-2 rounded-pill shadow-lg border-0 fw-bold"
-                      >
-                        更換信箱
-                      </Button>
-                      <Button
-                        variant="outline-info"
-                        onClick={() => extendMail()}
-                        disabled={!currentEmail || timeLeft <= 0}
-                        className="flex-grow-1 py-2 rounded-pill shadow-lg fw-bold"
-                        style={{
-                          backdropFilter: "blur(4px)",
-                          color: "#00f2fe",
-                          borderColor: "#00f2fe",
-                        }}
-                      >
-                        延長 10 分
-                      </Button>
+                  {selectedMail?.html ? (
+                    <div
+                      dangerouslySetInnerHTML={{ __html: selectedMail.html }}
+                    />
+                  ) : selectedMail?.text ? (
+                    <div style={{ whiteSpace: "pre-wrap" }}>
+                      {selectedMail.text}
                     </div>
-                  </div>
+                  ) : selectedMail?.body ? (
+                    <div style={{ whiteSpace: "pre-wrap" }}>
+                      {selectedMail.body}
+                    </div>
+                  ) : selectedMail?.intro ? (
+                    <div className="text-secondary italic">
+                      <div className="text-primary mb-3">
+                        <span className="fw-bold">提示：目前的內容為摘要</span>
+                      </div>
+                      <p>{selectedMail.intro}</p>
+                    </div>
+                  ) : (
+                    <div className="text-muted text-center py-5 opacity-50">
+                      (此信件目前無內文資料)
+                    </div>
+                  )}
                 </>
               )}
-
-              {expiresAt && timeLeft > 0 && (
-                <div className={styles.timerWrapper}>
-                  <div className={styles.timerText}>
-                    剩餘時間：{formatTime(timeLeft)}
-                  </div>
-                  <div className={styles.progressBar}>
-                    <div
-                      className={`${styles.progressFill} ${isWarning ? styles.progressWarning : ""}`}
-                      style={{ width: `${progress}%` }}
-                    ></div>
-                  </div>
-                </div>
-              )}
-
-              {expiresAt && timeLeft <= 0 && (
-                <Badge bg="danger" className="mt-3 p-2">
-                  信箱已過期
-                </Badge>
-              )}
             </div>
-          </div>
-        </Col>
+          </Modal.Body>
+          <Modal.Footer className={styles.modalFooter}>
+            <Button
+              variant="outline-secondary"
+              onClick={() => setShowModal(false)}
+              className="px-3 rounded-pill"
+            >
+              關閉視窗
+            </Button>
+          </Modal.Footer>
+        </Modal>
 
-        {/* Right Column: Inbox Section */}
-        <Col lg={6}>
-          <div className={styles.inboxHeader}>
-            <h4 className="m-0 fw-bold">收件匣</h4>
-            <Badge pill bg="info" className="px-3 py-2 shadow-sm">
-              {inbox.length} 封信件
+        {error && (
+          <div className="position-fixed bottom-0 start-50 translate-middle-x mb-4">
+            <Badge bg="danger" className="p-3 shadow-lg">
+              {error}
             </Badge>
           </div>
-
-          {inbox.length === 0 ? (
-            <div className={styles.emptyInbox}>
-              <div className="mb-3">
-                <Spinner
-                  animation="grow"
-                  size="sm"
-                  variant="primary"
-                  className="me-2"
-                />
-                正在等待新信件...
-              </div>
-              <small className="text-secondary">
-                信件發出後可能需要幾秒鐘才會顯示。
-              </small>
-            </div>
-          ) : (
-            inbox.map((mail, idx) => (
-              <div
-                key={mail.id || idx}
-                className={styles.inboxCard}
-                onClick={() => handleOpenMail(mail)}
-              >
-                <Row className="align-items-center">
-                  <Col xs={8} md={9}>
-                    <div className={styles.mailSubject}>
-                      {mail.subject || "(無主旨)"}
-                    </div>
-                    <div className={styles.mailFrom}>
-                      來自：{renderFrom(mail.from)}
-                    </div>
-                  </Col>
-                  <Col xs={4} md={3}>
-                    <div className={styles.mailTime}>
-                      {mail.date || mail.createdAt
-                        ? new Date(
-                            mail.date || mail.createdAt!
-                          ).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : "剛才"}
-                    </div>
-                  </Col>
-                </Row>
-              </div>
-            ))
-          )}
-        </Col>
-      </Row>
-
-      {/* Email View Modal */}
-      <Modal
-        show={showModal}
-        onHide={() => {
-          setShowModal(false);
-          setSelectedMailId(null);
-        }}
-        size="lg"
-        centered
-        dialogClassName={styles.modalDialog}
-        contentClassName={styles.modalContent}
-      >
-        <Modal.Header closeButton className={styles.modalHeader}>
-          <Modal.Title>{selectedMail?.subject || "無主旨"}</Modal.Title>
-        </Modal.Header>
-        <Modal.Body className={styles.modalBody}>
-          {/* 固定資訊區 */}
-          {/* 固定頂部：資訊區 */}
-          <div className={styles.modalInfoSection}>
-            <Row className="g-3">
-              <Col md={6}>
-                <div className={styles.infoBadge}>
-                  <div className={styles.infoLabel}>發件人</div>
-                  <div className={styles.infoValue}>
-                    {selectedMail ? renderFrom(selectedMail.from) : "未知"}
-                  </div>
-                </div>
-              </Col>
-              <Col md={6}>
-                <div className={styles.infoBadge}>
-                  <div className={styles.infoLabel}>收件時間</div>
-                  <div className={styles.infoValue}>
-                    {selectedMail?.date || selectedMail?.createdAt
-                      ? new Date(
-                          selectedMail.date || selectedMail!.createdAt!
-                        ).toLocaleString()
-                      : "近期"}
-                  </div>
-                </div>
-              </Col>
-            </Row>
-          </div>
-
-          {/* 可捲動內容區 */}
-          <div className={styles.mailContent}>
-            {isMessageLoading ? (
-              <div className="text-center py-5">
-                <Spinner animation="border" variant="info" className="mb-3" />
-                <div className="text-secondary opacity-75">
-                  正在努力載入正文中...
-                </div>
-              </div>
-            ) : (
-              <>
-                {selectedMail?.html ? (
-                  <div
-                    dangerouslySetInnerHTML={{ __html: selectedMail.html }}
-                  />
-                ) : selectedMail?.text ? (
-                  <div style={{ whiteSpace: "pre-wrap" }}>
-                    {selectedMail.text}
-                  </div>
-                ) : selectedMail?.body ? (
-                  <div style={{ whiteSpace: "pre-wrap" }}>
-                    {selectedMail.body}
-                  </div>
-                ) : selectedMail?.intro ? (
-                  <div className="text-secondary italic">
-                    <div className="text-primary mb-3">
-                      <span className="fw-bold">提示：目前的內容為摘要</span>
-                    </div>
-                    <p>{selectedMail.intro}</p>
-                  </div>
-                ) : (
-                  <div className="text-muted text-center py-5 opacity-50">
-                    (此信件目前無內文資料)
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </Modal.Body>
-        <Modal.Footer className={styles.modalFooter}>
-          <Button
-            variant="outline-secondary"
-            onClick={() => setShowModal(false)}
-            className="px-3 rounded-pill"
-          >
-            關閉視窗
-          </Button>
-        </Modal.Footer>
-      </Modal>
-
-      {error && (
-        <div className="position-fixed bottom-0 start-50 translate-middle-x mb-4">
-          <Badge bg="danger" className="p-3 shadow-lg">
-            {error}
-          </Badge>
-        </div>
-      )}
-    </Container>
+        )}
+      </Container>
+    </PageWrapper>
   );
 };
 

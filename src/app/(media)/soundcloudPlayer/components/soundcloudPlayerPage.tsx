@@ -34,6 +34,7 @@ declare global {
 import PlaylistModal from "./playlistModal";
 import { getPlaylist } from "../api/soundcloudPlaylistApi";
 import { PlaylistTrack } from "../types/soundcloud";
+import PageWrapper from "@/components/common/PageWrapper";
 
 type Track = {
   title: string;
@@ -199,183 +200,184 @@ const SoundCloudPlayerPage: React.FC = () => {
   );
 
   return (
-    <main style={{ padding: 32, paddingTop: "120px" }}>
-      {/* 播放區塊 */}
-      {currentTrack ? (
-        <>
-          <div className="player-card">
-            {/* 專輯圖片上浮效果 */}
-            <div className="player-album-art">
-              <img
-                src={currentTrack.artworkUrl || "/images/maple/img14.webp"}
-                alt={currentTrack.title}
-                className="player-album-img"
-                onError={(e) =>
-                  (e.currentTarget.src = "/images/maple/img14.webp")
-                }
-              />
-            </div>
-            {/* 播放控制列（橫向） */}
-            <div className="player-controls-row">
-              <div className="player-controls-left">
-                <div className="player-chevron-group">
-                  <button
-                    className="chevron-btn chevron-left"
-                    onClick={() =>
-                      playTrack(
-                        (currentIndex - 1 + playlist.length) % playlist.length
-                      )
-                    }
-                    disabled={playlist.length <= 1}
-                    title="上一首"
-                  >
-                    <ChevronBarLeft size={28} />
-                  </button>
-                  <button
-                    className="chevron-btn chevron-right"
-                    onClick={() =>
-                      playTrack((currentIndex + 1) % playlist.length)
-                    }
-                    disabled={playlist.length <= 1}
-                    title="下一首"
-                  >
-                    <ChevronBarRight size={28} />
-                  </button>
+    <PageWrapper>
+      <main style={{ padding: 32, paddingTop: 0 }}>
+        {/* 播放區塊 */}
+        {currentTrack ? (
+          <>
+            <div className="player-card">
+              {/* 專輯圖片上浮效果 */}
+              <div className="player-album-art">
+                <img
+                  src={currentTrack.artworkUrl || "/images/maple/img14.webp"}
+                  alt={currentTrack.title}
+                  className="player-album-img"
+                  onError={(e) =>
+                    (e.currentTarget.src = "/images/maple/img14.webp")
+                  }
+                />
+              </div>
+              {/* 播放控制列（橫向） */}
+              <div className="player-controls-row">
+                <div className="player-controls-left">
+                  <div className="player-chevron-group">
+                    <button
+                      className="chevron-btn chevron-left"
+                      onClick={() =>
+                        playTrack(
+                          (currentIndex - 1 + playlist.length) % playlist.length
+                        )
+                      }
+                      disabled={playlist.length <= 1}
+                      title="上一首"
+                    >
+                      <ChevronBarLeft size={28} />
+                    </button>
+                    <button
+                      className="chevron-btn chevron-right"
+                      onClick={() =>
+                        playTrack((currentIndex + 1) % playlist.length)
+                      }
+                      disabled={playlist.length <= 1}
+                      title="下一首"
+                    >
+                      <ChevronBarRight size={28} />
+                    </button>
+                  </div>
+                  <div className="player-title-group">
+                    <div className="player-title player-title-multiline">
+                      {currentTrack.title}
+                    </div>
+                    <div className="player-artist">
+                      {currentTrack.artist || ""}
+                    </div>
+                  </div>
                 </div>
-                <div className="player-title-group">
-                  <div className="player-title player-title-multiline">
-                    {currentTrack.title}
-                  </div>
-                  <div className="player-artist">
-                    {currentTrack.artist || ""}
-                  </div>
+                <div className="player-controls-play">
+                  <button
+                    style={{
+                      border: isPlaying
+                        ? "8px solid #ffb300"
+                        : "8px solid #00e5ff",
+                      width: 80,
+                      height: 80,
+                      borderRadius: "50%",
+                      background: "#f0f2f5",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxShadow: "0 2px 12px rgba(60,80,120,0.10)",
+                      padding: 0,
+                      outline: "none",
+                      cursor: "pointer",
+                    }}
+                    onClick={() => setIsPlaying((p) => !p)}
+                    title={isPlaying ? "暫停" : "播放"}
+                  >
+                    {isPlaying ? <PauseSVG size={48} /> : <PlaySVG size={48} />}
+                  </button>
                 </div>
               </div>
-              <div className="player-controls-play">
-                <button
-                  style={{
-                    border: isPlaying
-                      ? "8px solid #ffb300"
-                      : "8px solid #00e5ff",
-                    width: 80,
-                    height: 80,
-                    borderRadius: "50%",
-                    background: "#f0f2f5",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    boxShadow: "0 2px 12px rgba(60,80,120,0.10)",
-                    padding: 0,
-                    outline: "none",
-                    cursor: "pointer",
+
+              {/* 進度條與時間 */}
+              <div className="player-progress-row">
+                <span className="player-time">{formatTime(currentTime)}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={duration || 1}
+                  value={Math.min(currentTime, duration)}
+                  step={1000}
+                  className="player-progress-bar"
+                  onChange={(e) => {
+                    setSeeking(true);
+                    setCurrentTime(Number(e.target.value));
                   }}
-                  onClick={() => setIsPlaying((p) => !p)}
-                  title={isPlaying ? "暫停" : "播放"}
-                >
-                  {isPlaying ? <PauseSVG size={48} /> : <PlaySVG size={48} />}
-                </button>
+                  onMouseUp={(e) => {
+                    setSeeking(false);
+                    widgetRef.current?.seekTo(Number(e.currentTarget.value));
+                  }}
+                  onTouchEnd={(e) => {
+                    setSeeking(false);
+                    widgetRef.current?.seekTo(
+                      Number((e.target as HTMLInputElement).value)
+                    );
+                  }}
+                />
+                <span className="player-time">{formatTime(duration)}</span>
               </div>
             </div>
+          </>
+        ) : (
+          <div>無播放清單</div>
+        )}
+        {currentTrack && (
+          <iframe
+            ref={iframeRef}
+            title="soundcloud-widget"
+            style={{ display: "none" }}
+            width="100%"
+            height="80"
+            allow="autoplay"
+            src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(currentTrack.url)}&color=%23ff5500&auto_play=${isPlaying ? "true" : "false"}`}
+          />
+        )}
+        <button
+          style={{
+            position: "fixed",
+            bottom: 32,
+            right: 32,
+            zIndex: 999,
+            borderRadius: "50%",
+            width: 60,
+            height: 60,
+            fontSize: 32, // 稍微大一點
+            background: "#ff5500",
+            color: "#fff",
+            border: "none",
+            boxShadow: "0 2px 8px rgba(0,0,0,.2)",
+            display: "flex", // 新增
+            alignItems: "center", // 新增
+            justifyContent: "center", // 新增
+            padding: 0, // 新增，避免預設 padding 影響
+          }}
+          onClick={() => setShowModal(true)}
+          title="管理播放清單與查詢"
+        >
+          <MusicNoteBeamed size={32} />
+        </button>
 
-            {/* 進度條與時間 */}
-            <div className="player-progress-row">
-              <span className="player-time">{formatTime(currentTime)}</span>
-              <input
-                type="range"
-                min={0}
-                max={duration || 1}
-                value={Math.min(currentTime, duration)}
-                step={1000}
-                className="player-progress-bar"
-                onChange={(e) => {
-                  setSeeking(true);
-                  setCurrentTime(Number(e.target.value));
-                }}
-                onMouseUp={(e) => {
-                  setSeeking(false);
-                  widgetRef.current?.seekTo(Number(e.currentTarget.value));
-                }}
-                onTouchEnd={(e) => {
-                  setSeeking(false);
-                  widgetRef.current?.seekTo(
-                    Number((e.target as HTMLInputElement).value)
-                  );
-                }}
-              />
-              <span className="player-time">{formatTime(duration)}</span>
-            </div>
-          </div>
-        </>
-      ) : (
-        <div>無播放清單</div>
-      )}
-      {currentTrack && (
-        <iframe
-          ref={iframeRef}
-          title="soundcloud-widget"
-          style={{ display: "none" }}
-          width="100%"
-          height="80"
-          allow="autoplay"
-          src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(currentTrack.url)}&color=%23ff5500&auto_play=${isPlaying ? "true" : "false"}`}
+        {/* Modal */}
+        <PlaylistModal
+          show={showModal}
+          onClose={() => setShowModal(false)}
+          playlist={playlist.map((track) => ({
+            id: track.url,
+            title: track.title,
+            artist: "",
+            url: track.url,
+            added_at: "",
+            embed_html: track.embedHtml,
+          }))}
+          currentTrackId={playlist[currentIndex]?.url || null}
+          onPlay={(url) => {
+            const idx = playlist.findIndex((t) => t.url === url);
+            if (idx >= 0) playTrack(idx);
+          }}
+          onDelete={(url) => setPlaylist(playlist.filter((t) => t.url !== url))}
+          onEdit={() => {}}
+          onAddTrack={async () => {
+            const data = await getPlaylist();
+            setPlaylist(
+              data.map((item) => ({
+                title: item.title,
+                url: item.url,
+                embedHtml: item.embed_html || "",
+              }))
+            );
+          }}
         />
-      )}
-      <button
-        style={{
-          position: "fixed",
-          bottom: 32,
-          right: 32,
-          zIndex: 999,
-          borderRadius: "50%",
-          width: 60,
-          height: 60,
-          fontSize: 32, // 稍微大一點
-          background: "#ff5500",
-          color: "#fff",
-          border: "none",
-          boxShadow: "0 2px 8px rgba(0,0,0,.2)",
-          display: "flex", // 新增
-          alignItems: "center", // 新增
-          justifyContent: "center", // 新增
-          padding: 0, // 新增，避免預設 padding 影響
-        }}
-        onClick={() => setShowModal(true)}
-        title="管理播放清單與查詢"
-      >
-        <MusicNoteBeamed size={32} />
-      </button>
-
-      {/* Modal */}
-      <PlaylistModal
-        show={showModal}
-        onClose={() => setShowModal(false)}
-        playlist={playlist.map((track) => ({
-          id: track.url,
-          title: track.title,
-          artist: "",
-          url: track.url,
-          added_at: "",
-          embed_html: track.embedHtml,
-        }))}
-        currentTrackId={playlist[currentIndex]?.url || null}
-        onPlay={(url) => {
-          const idx = playlist.findIndex((t) => t.url === url);
-          if (idx >= 0) playTrack(idx);
-        }}
-        onDelete={(url) => setPlaylist(playlist.filter((t) => t.url !== url))}
-        onEdit={() => {}}
-        onAddTrack={async () => {
-          const data = await getPlaylist();
-          setPlaylist(
-            data.map((item) => ({
-              title: item.title,
-              url: item.url,
-              embedHtml: item.embed_html || "",
-            }))
-          );
-        }}
-      />
-      <style>{`
+        <style>{`
 .player-card {
   width: 100%;
   max-width: 340px;
@@ -586,7 +588,8 @@ const SoundCloudPlayerPage: React.FC = () => {
   color: #1976d2;
 }
 `}</style>
-    </main>
+      </main>
+    </PageWrapper>
   );
 };
 

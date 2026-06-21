@@ -9,6 +9,7 @@ import ColorSelector from "./colorSelector";
 import PixelCanvas from "./pixelCanvas";
 import { CanvasList, PixelMap } from "../types";
 import styles from "../styles/animator.module.css";
+import PageWrapper from "@/components/common/PageWrapper";
 
 const AnimatorPage: React.FC = () => {
   // 🎨 設定目前選擇的顏色，預設為黑色
@@ -334,239 +335,242 @@ const AnimatorPage: React.FC = () => {
 
   return (
     <>
-      <div className="container py-5" style={{ marginTop: "30px" }}>
-        {/* SEO 隱藏區 */}
-        <div
-          style={{
-            position: "absolute",
-            width: 1,
-            height: 1,
-            overflow: "hidden",
-            opacity: 0,
-          }}
-        >
-          <h1>像素動畫編輯器</h1>
-          <p>製作屬於你的像素動畫...</p>
-        </div>
+      <PageWrapper>
+        <div className="container pb-5">
+          {/* SEO 隱藏區 */}
+          <div
+            style={{
+              position: "absolute",
+              width: 1,
+              height: 1,
+              overflow: "hidden",
+              opacity: 0,
+            }}
+          >
+            <h1>像素動畫編輯器</h1>
+            <p>製作屬於你的像素動畫...</p>
+          </div>
 
-        {/* 頂部全域工具列 */}
-        <div className="d-flex justify-content-center mb-4">
-          <div className={styles.toolbarActions}>
-            <button
-              className="btn btn-primary px-4"
-              onClick={() => setIsImageUploadModalOpen(true)}
-            >
-              匯入圖片
-            </button>
-            <button
-              className="btn btn-outline-secondary px-4 me-2"
-              onClick={resetCanvas}
-            >
-              全新重置
-            </button>
-
-            {/* 互動模式切換 (手機優化) */}
-            <div className="btn-group me-3 shadow-sm">
+          {/* 頂部全域工具列 */}
+          <div className="d-flex justify-content-center mb-4">
+            <div className={styles.toolbarActions}>
               <button
-                className={`btn btn-sm ${
-                  interactionMode === "pencil"
-                    ? "btn-primary"
-                    : "btn-outline-primary"
-                }`}
-                onClick={() => setInteractionMode("pencil")}
-                title="繪圖模式 (禁用捲動)"
+                className="btn btn-primary px-4"
+                onClick={() => setIsImageUploadModalOpen(true)}
               >
-                <i className="bi bi-pencil-fill me-1"></i> 繪圖
+                匯入圖片
               </button>
               <button
-                className={`btn btn-sm ${
-                  interactionMode === "hand"
-                    ? "btn-primary"
-                    : "btn-outline-primary"
-                }`}
-                onClick={() => setInteractionMode("hand")}
-                title="移動模式 (允許捲動)"
+                className="btn btn-outline-secondary px-4 me-2"
+                onClick={resetCanvas}
               >
-                <i className="bi bi-hand-index-thumb me-1"></i> 移動
-              </button>
-            </div>
-            <div className="position-relative">
-              <button
-                type="button"
-                className="btn btn-outline-primary dropdown-toggle px-4"
-                onClick={() => {
-                  setTempPixelSize(pixelSizeInput);
-                  setIsDropdownOpen(!isDropdownOpen);
-                }}
-              >
-                解析度: {pixelSizeInput}x{pixelSizeInput}
+                全新重置
               </button>
 
-              {isDropdownOpen && (
-                <form
-                  className="p-3 shadow border position-absolute bg-white rounded-3"
-                  style={{
-                    zIndex: 1000,
-                    width: "220px",
-                    top: "110%",
-                    left: "50%",
-                    transform: "translateX(-50%)",
-                  }}
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (tempPixelSize <= 0 || tempPixelSize > 100) {
-                      alert("請輸入有效的數字（1 - 100）");
-                    } else {
-                      setPixelSizeInput(tempPixelSize);
-                      setIsDropdownOpen(false);
-                    }
+              {/* 互動模式切換 (手機優化) */}
+              <div className="btn-group me-3 shadow-sm">
+                <button
+                  className={`btn btn-sm ${
+                    interactionMode === "pencil"
+                      ? "btn-primary"
+                      : "btn-outline-primary"
+                  }`}
+                  onClick={() => setInteractionMode("pencil")}
+                  title="繪圖模式 (禁用捲動)"
+                >
+                  <i className="bi bi-pencil-fill me-1"></i> 繪圖
+                </button>
+                <button
+                  className={`btn btn-sm ${
+                    interactionMode === "hand"
+                      ? "btn-primary"
+                      : "btn-outline-primary"
+                  }`}
+                  onClick={() => setInteractionMode("hand")}
+                  title="移動模式 (允許捲動)"
+                >
+                  <i className="bi bi-hand-index-thumb me-1"></i> 移動
+                </button>
+              </div>
+              <div className="position-relative">
+                <button
+                  type="button"
+                  className="btn btn-outline-primary dropdown-toggle px-4"
+                  onClick={() => {
+                    setTempPixelSize(pixelSizeInput);
+                    setIsDropdownOpen(!isDropdownOpen);
                   }}
                 >
-                  <div className="mb-3 text-start">
-                    <label className="form-label" htmlFor="pixelInput">
-                      像素格數 (1-100)
-                    </label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      id="pixelInput"
-                      value={tempPixelSize}
-                      onChange={(e) =>
-                        setTempPixelSize(parseInt(e.target.value, 10) || 1)
+                  解析度: {pixelSizeInput}x{pixelSizeInput}
+                </button>
+
+                {isDropdownOpen && (
+                  <form
+                    className="p-3 shadow border position-absolute bg-white rounded-3"
+                    style={{
+                      zIndex: 1000,
+                      width: "220px",
+                      top: "110%",
+                      left: "50%",
+                      transform: "translateX(-50%)",
+                    }}
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (tempPixelSize <= 0 || tempPixelSize > 100) {
+                        alert("請輸入有效的數字（1 - 100）");
+                      } else {
+                        setPixelSizeInput(tempPixelSize);
+                        setIsDropdownOpen(false);
                       }
-                    />
-                  </div>
-                  <button type="submit" className="btn btn-primary w-100">
-                    套用設定
-                  </button>
-                </form>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="row g-4">
-          {/* 左側 - 畫布主區域 */}
-          <div className="col-lg-9 col-md-12">
-            <div className={styles.glassCard}>
-              <h5 className="w-100 text-start mb-3 fw-bold">編輯畫布</h5>
-              <div className={styles.cardBody}>
-                <div className={styles.canvasWrapper}>
-                  <PixelCanvas
-                    canvasRef={canvasRef}
-                    handleCanvasClick={handleMousePixelUpdate}
-                    handleMouseDown={handleMouseDown}
-                    handleMouseMove={handleMouseMove}
-                    handleMouseUp={handleMouseUp}
-                    handleTouchStart={handleTouchStart}
-                    handleTouchMove={handleTouchMove}
-                    handleTouchEnd={handleTouchEnd}
-                    className={`${styles.responsiveCanvas} ${
-                      interactionMode === "pencil"
-                        ? styles.canvasPencil
-                        : styles.canvasHand
-                    }`}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 右側 - 控制與預覽區域 */}
-          <div className="col-lg-3 col-md-12">
-            <div className="d-flex flex-column gap-4 h-100">
-              {/* 預覽卡片 */}
-              <div className={styles.glassCard}>
-                <h5 className="w-100 text-start mb-3 fw-bold">動畫預覽</h5>
-                <div className={styles.cardBody}>
-                  <PreviewCanvas
-                    canvasList={canvasList}
-                    pixelSizeInput={pixelSizeInput}
-                    className={styles.previewCanvas}
-                  />
-                </div>
-              </div>
-
-              {/* 色彩卡片 */}
-              <div className={styles.glassCard}>
-                <h5 className="w-100 text-start mb-3 fw-bold">調色盤</h5>
-                <div className={styles.cardBody}>
-                  <ColorSelector
-                    value={selectedColor}
-                    onChange={setSelectedColor}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 下方 - 影格時間軸區域 */}
-          <div className="col-12 mt-4">
-            <div className={styles.timelineCard}>
-              <div className={styles.timelineHeader}>
-                <h5 className="mb-0 fw-bold">影格序列</h5>
-                <div className="d-flex gap-2">
-                  <button
-                    className="btn btn-sm btn-primary px-3"
-                    onClick={addNewCanvas}
+                    }}
                   >
-                    新增影格
-                  </button>
-                  <button
-                    className="btn btn-sm btn-outline-danger px-3"
-                    onClick={deleteCanvas}
-                    disabled={canvasList.length <= 1}
-                  >
-                    刪除
-                  </button>
-                  <button
-                    className="btn btn-sm btn-outline-warning px-3"
-                    onClick={copyCanvas}
-                  >
-                    複製
-                  </button>
-                  <button
-                    className="btn btn-sm btn-outline-success px-3"
-                    onClick={pasteCanvas}
-                    disabled={!copiedCanvas}
-                  >
-                    貼上
-                  </button>
-                </div>
-              </div>
-              <div className={styles.timelineContent}>
-                {canvasList?.map((canvas, index) => (
-                  <div
-                    key={index}
-                    className={`${styles.frameItem} ${
-                      activeCanvasIndex === index ? styles.frameActive : ""
-                    }`}
-                    onClick={() => handleCanvasSwitch(index)}
-                  >
-                    <canvas
-                      ref={(el) => thumbnailRefManager.set(index, el)}
-                      width={previewSize}
-                      height={previewSize}
-                      style={{ display: "block", borderRadius: "4px" }}
-                    />
-                    <div
-                      className="text-center mt-1"
-                      style={{
-                        fontSize: "11px",
-                        fontWeight: activeCanvasIndex === index ? "700" : "400",
-                        color:
-                          activeCanvasIndex === index ? "#007bff" : "#6c757d",
-                      }}
-                    >
-                      #{index + 1}
+                    <div className="mb-3 text-start">
+                      <label className="form-label" htmlFor="pixelInput">
+                        像素格數 (1-100)
+                      </label>
+                      <input
+                        type="number"
+                        className="form-control"
+                        id="pixelInput"
+                        value={tempPixelSize}
+                        onChange={(e) =>
+                          setTempPixelSize(parseInt(e.target.value, 10) || 1)
+                        }
+                      />
                     </div>
+                    <button type="submit" className="btn btn-primary w-100">
+                      套用設定
+                    </button>
+                  </form>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="row g-4">
+            {/* 左側 - 畫布主區域 */}
+            <div className="col-lg-9 col-md-12">
+              <div className={styles.glassCard}>
+                <h5 className="w-100 text-start mb-3 fw-bold">編輯畫布</h5>
+                <div className={styles.cardBody}>
+                  <div className={styles.canvasWrapper}>
+                    <PixelCanvas
+                      canvasRef={canvasRef}
+                      handleCanvasClick={handleMousePixelUpdate}
+                      handleMouseDown={handleMouseDown}
+                      handleMouseMove={handleMouseMove}
+                      handleMouseUp={handleMouseUp}
+                      handleTouchStart={handleTouchStart}
+                      handleTouchMove={handleTouchMove}
+                      handleTouchEnd={handleTouchEnd}
+                      className={`${styles.responsiveCanvas} ${
+                        interactionMode === "pencil"
+                          ? styles.canvasPencil
+                          : styles.canvasHand
+                      }`}
+                    />
                   </div>
-                ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 右側 - 控制與預覽區域 */}
+            <div className="col-lg-3 col-md-12">
+              <div className="d-flex flex-column gap-4 h-100">
+                {/* 預覽卡片 */}
+                <div className={styles.glassCard}>
+                  <h5 className="w-100 text-start mb-3 fw-bold">動畫預覽</h5>
+                  <div className={styles.cardBody}>
+                    <PreviewCanvas
+                      canvasList={canvasList}
+                      pixelSizeInput={pixelSizeInput}
+                      className={styles.previewCanvas}
+                    />
+                  </div>
+                </div>
+
+                {/* 色彩卡片 */}
+                <div className={styles.glassCard}>
+                  <h5 className="w-100 text-start mb-3 fw-bold">調色盤</h5>
+                  <div className={styles.cardBody}>
+                    <ColorSelector
+                      value={selectedColor}
+                      onChange={setSelectedColor}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 下方 - 影格時間軸區域 */}
+            <div className="col-12 mt-4">
+              <div className={styles.timelineCard}>
+                <div className={styles.timelineHeader}>
+                  <h5 className="mb-0 fw-bold">影格序列</h5>
+                  <div className="d-flex gap-2">
+                    <button
+                      className="btn btn-sm btn-primary px-3"
+                      onClick={addNewCanvas}
+                    >
+                      新增影格
+                    </button>
+                    <button
+                      className="btn btn-sm btn-outline-danger px-3"
+                      onClick={deleteCanvas}
+                      disabled={canvasList.length <= 1}
+                    >
+                      刪除
+                    </button>
+                    <button
+                      className="btn btn-sm btn-outline-warning px-3"
+                      onClick={copyCanvas}
+                    >
+                      複製
+                    </button>
+                    <button
+                      className="btn btn-sm btn-outline-success px-3"
+                      onClick={pasteCanvas}
+                      disabled={!copiedCanvas}
+                    >
+                      貼上
+                    </button>
+                  </div>
+                </div>
+                <div className={styles.timelineContent}>
+                  {canvasList?.map((canvas, index) => (
+                    <div
+                      key={index}
+                      className={`${styles.frameItem} ${
+                        activeCanvasIndex === index ? styles.frameActive : ""
+                      }`}
+                      onClick={() => handleCanvasSwitch(index)}
+                    >
+                      <canvas
+                        ref={(el) => thumbnailRefManager.set(index, el)}
+                        width={previewSize}
+                        height={previewSize}
+                        style={{ display: "block", borderRadius: "4px" }}
+                      />
+                      <div
+                        className="text-center mt-1"
+                        style={{
+                          fontSize: "11px",
+                          fontWeight:
+                            activeCanvasIndex === index ? "700" : "400",
+                          color:
+                            activeCanvasIndex === index ? "#007bff" : "#6c757d",
+                        }}
+                      >
+                        #{index + 1}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </PageWrapper>
 
       <ImageCropModal
         isOpen={isImageUploadModalOpen}

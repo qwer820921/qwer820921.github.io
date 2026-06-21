@@ -12,6 +12,7 @@ import dynamic from "next/dynamic";
 import { Rule } from "@/types";
 import LoadingOverlay from "@/components/common/loadingOverlay";
 import CustomDatePicker from "@/components/formItems/customDatePicker";
+import PageWrapper from "@/components/common/PageWrapper";
 const ReactSelect = dynamic(
   () => import("@/components/formItems/reactSelect"),
   { ssr: false }
@@ -109,109 +110,113 @@ const CryptoPage: React.FC = () => {
   };
 
   return (
-    <div className="container" style={{ paddingTop: "70px" }}>
-      <LoadingOverlay isLoading={isLoading} />
-      <h1 className="mb-4 text-center">加密貨幣資訊</h1>
+    <PageWrapper>
+      <div className="container">
+        <LoadingOverlay isLoading={isLoading} />
+        <h1 className="mb-4 text-center">加密貨幣資訊</h1>
 
-      <form className="row g-3 align-items-end">
-        <div className="col-xl-3 col-lg-6">
-          <div className="input-group">
-            <span className="input-group-text">幣種</span>
-            <div className="flex-grow-1">
-              <ReactSelect
-                id="symbol-select"
-                isMulti={false}
-                value={selectedSymbol}
-                onValueChange={(value) => setSelectedSymbol(value as string)}
-                items={symbolOptions}
-              />
+        <form className="row g-3 align-items-end">
+          <div className="col-xl-3 col-lg-6">
+            <div className="input-group">
+              <span className="input-group-text">幣種</span>
+              <div className="flex-grow-1">
+                <ReactSelect
+                  id="symbol-select"
+                  isMulti={false}
+                  value={selectedSymbol}
+                  onValueChange={(value) => setSelectedSymbol(value as string)}
+                  items={symbolOptions}
+                />
+              </div>
             </div>
+          </div>
+
+          <div className="col-xl-3 col-lg-6">
+            <div className="input-group">
+              <span className="input-group-text">K棒週期</span>
+              <div className="flex-grow-1">
+                <ReactSelect
+                  id="interval-select"
+                  isMulti={false}
+                  value={selectedInterval}
+                  onValueChange={(value) =>
+                    setSelectedInterval(value as string)
+                  }
+                  items={intervalOptions}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="col-xl-3 col-lg-6">
+            <div className="input-group w-100">
+              <span className="input-group-text">開始日期</span>
+              <div className="flex-grow-1">
+                <CustomDatePicker
+                  selectedDate={startDate}
+                  onDateChange={setStartDate}
+                  selectsStart
+                  startDate={startDate || undefined}
+                  endDate={endDate || undefined}
+                  showTimeSelect
+                  maxDate={endDate || undefined}
+                  className="w-100"
+                  timeIntervals={30}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="col-xl-3 col-lg-6">
+            <div className="input-group w-100">
+              <span className="input-group-text">結束日期</span>
+              <div className="flex-grow-1">
+                <CustomDatePicker
+                  selectedDate={endDate}
+                  onDateChange={setEndDate}
+                  selectsEnd
+                  startDate={startDate || undefined}
+                  endDate={endDate || undefined}
+                  showTimeSelect
+                  minDate={startDate || undefined}
+                  className="w-100"
+                  timeIntervals={30}
+                />
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <div className="mt-4">
+          <button
+            className="btn btn-primary"
+            onClick={handleQuery}
+            disabled={!selectedSymbol || !selectedInterval}
+          >
+            查詢 K 線圖
+          </button>
+        </div>
+
+        <div className="mt-4">
+          <h5>快速查詢</h5>
+          <div className="d-flex flex-wrap gap-2">
+            {quickOptions.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className="btn btn-outline-secondary btn-sm"
+                onClick={() => handleQuickSelect(opt)}
+              >
+                {opt.value}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="col-xl-3 col-lg-6">
-          <div className="input-group">
-            <span className="input-group-text">K棒週期</span>
-            <div className="flex-grow-1">
-              <ReactSelect
-                id="interval-select"
-                isMulti={false}
-                value={selectedInterval}
-                onValueChange={(value) => setSelectedInterval(value as string)}
-                items={intervalOptions}
-              />
-            </div>
-          </div>
+        <div className="mt-5">
+          <div ref={chartContainerRef} style={{ height: "400px" }} />
         </div>
-
-        <div className="col-xl-3 col-lg-6">
-          <div className="input-group w-100">
-            <span className="input-group-text">開始日期</span>
-            <div className="flex-grow-1">
-              <CustomDatePicker
-                selectedDate={startDate}
-                onDateChange={setStartDate}
-                selectsStart
-                startDate={startDate || undefined}
-                endDate={endDate || undefined}
-                showTimeSelect
-                maxDate={endDate || undefined}
-                className="w-100"
-                timeIntervals={30}
-              />
-            </div>
-          </div>
-        </div>
-        <div className="col-xl-3 col-lg-6">
-          <div className="input-group w-100">
-            <span className="input-group-text">結束日期</span>
-            <div className="flex-grow-1">
-              <CustomDatePicker
-                selectedDate={endDate}
-                onDateChange={setEndDate}
-                selectsEnd
-                startDate={startDate || undefined}
-                endDate={endDate || undefined}
-                showTimeSelect
-                minDate={startDate || undefined}
-                className="w-100"
-                timeIntervals={30}
-              />
-            </div>
-          </div>
-        </div>
-      </form>
-
-      <div className="mt-4">
-        <button
-          className="btn btn-primary"
-          onClick={handleQuery}
-          disabled={!selectedSymbol || !selectedInterval}
-        >
-          查詢 K 線圖
-        </button>
       </div>
-
-      <div className="mt-4">
-        <h5>快速查詢</h5>
-        <div className="d-flex flex-wrap gap-2">
-          {quickOptions.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              className="btn btn-outline-secondary btn-sm"
-              onClick={() => handleQuickSelect(opt)}
-            >
-              {opt.value}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <div ref={chartContainerRef} style={{ height: "400px" }} />
-      </div>
-    </div>
+    </PageWrapper>
   );
 };
 

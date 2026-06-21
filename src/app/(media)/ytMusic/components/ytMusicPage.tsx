@@ -22,6 +22,7 @@ import {
 } from "react-bootstrap-icons"; // 圖標組件，用於播放器控制按鈕
 import { formatTime } from "@/utils/format"; // 格式化時間
 import { Spinner } from "react-bootstrap";
+import PageWrapper from "@/components/common/PageWrapper";
 // import { printValue } from "@/utils/createElement";
 
 // 定義播放模式的型別：順序播放、隨機播放、單曲循環
@@ -699,301 +700,303 @@ export default function YtMusicPage() {
 
   // 渲染播放器 UI
   return (
-    <main style={{ padding: "90px 32px 32px 32px" }}>
-      {currentTrack ? (
-        <>
-          <div className={styles["player-card"]}>
-            <div className={styles["player-album-art"]}>
-              <img
-                src={thumbnailUrl}
-                alt="cover"
-                className={styles["player-album-img"]}
-              />
-            </div>
+    <PageWrapper>
+      <main style={{ padding: "0 32px 32px 32px" }}>
+        {currentTrack ? (
+          <>
+            <div className={styles["player-card"]}>
+              <div className={styles["player-album-art"]}>
+                <img
+                  src={thumbnailUrl}
+                  alt="cover"
+                  className={styles["player-album-img"]}
+                />
+              </div>
 
-            <div className={styles["player-controls-row"]}>
-              <div className={styles["player-controls-left"]}>
-                <div className={styles["player-chevron-group"]}>
-                  {/* 播放模式切換按鈕 */}
+              <div className={styles["player-controls-row"]}>
+                <div className={styles["player-controls-left"]}>
+                  <div className={styles["player-chevron-group"]}>
+                    {/* 播放模式切換按鈕 */}
+                    <button
+                      className={styles["control-button"]}
+                      onClick={togglePlayMode}
+                      title={
+                        playMode === "sequential"
+                          ? "順序播放"
+                          : playMode === "shuffle"
+                            ? "隨機播放"
+                            : "單曲循環"
+                      }
+                      style={{
+                        color: playMode === "repeat" ? "#ff5500" : "inherit",
+                        marginLeft: "8px",
+                      }}
+                    >
+                      <div className="d-flex align-items-center">
+                        {playMode === "sequential" && (
+                          <ArrowRepeat className={styles["control-icon"]} />
+                        )}
+                        {playMode === "shuffle" && (
+                          <Shuffle className={styles["control-icon"]} />
+                        )}
+                        {playMode === "repeat" && (
+                          <Repeat1 className={styles["control-icon"]} />
+                        )}
+                      </div>
+                    </button>
+
+                    {/* 快退 5 秒按鈕 */}
+                    <button
+                      className={styles["control-button"]}
+                      onClick={seekBackward}
+                      title="快退 5 秒"
+                    >
+                      <div className="d-flex align-items-center">
+                        <ChevronLeft className={styles["control-icon"]} />
+                        <span style={{ fontSize: "0.9rem", color: "#666" }}>
+                          5s
+                        </span>
+                      </div>
+                    </button>
+
+                    {/* 上一首按鈕 */}
+                    <button
+                      className={styles["control-button"]}
+                      onClick={playPrev}
+                      title="上一首"
+                    >
+                      <div className="d-flex align-items-center">
+                        <ChevronBarLeft className={styles["control-icon"]} />
+                      </div>
+                    </button>
+
+                    {/* 下一首按鈕 */}
+                    <button
+                      className={styles["control-button"]}
+                      onClick={playNext}
+                      title="下一首"
+                    >
+                      <div className="d-flex align-items-center">
+                        <ChevronBarRight className={styles["control-icon"]} />
+                      </div>
+                    </button>
+
+                    {/* 快進 5 秒按鈕 */}
+                    <button
+                      className={styles["control-button"]}
+                      onClick={seekForward}
+                      title="快進 5 秒"
+                    >
+                      <div className="d-flex align-items-center">
+                        <span style={{ fontSize: "0.9rem", color: "#666" }}>
+                          5s
+                        </span>
+                        <ChevronRight className={styles["control-icon"]} />
+                      </div>
+                    </button>
+                  </div>
+
+                  <div className={styles["player-title-group"]}>
+                    <div
+                      className={`${styles["player-title"]} ${styles["player-title-multiline"]}`}
+                    >
+                      {currentTrack.title}
+                    </div>
+                    <div className={styles["player-artist"]}>
+                      {currentTrack.artist || ""}
+                    </div>
+                  </div>
+                </div>
+
+                <div className={styles["player-controls-play"]}>
+                  {/* 播放/暫停按鈕 */}
                   <button
-                    className={styles["control-button"]}
-                    onClick={togglePlayMode}
-                    title={
-                      playMode === "sequential"
-                        ? "順序播放"
-                        : playMode === "shuffle"
-                          ? "隨機播放"
-                          : "單曲循環"
-                    }
                     style={{
-                      color: playMode === "repeat" ? "#ff5500" : "inherit",
-                      marginLeft: "8px",
+                      border: "8px solid #fff",
+                      width: 80,
+                      height: 80,
+                      borderRadius: "50%",
+                      background: "#e0e3e8",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxShadow: "0 2px 12px rgba(60,80,120,0.10)",
+                      padding: 0,
+                      outline: "none",
+                      cursor: "pointer",
                     }}
+                    onClick={() => {
+                      if (isPlaying) {
+                        handlePause();
+                      } else {
+                        handlePlay();
+                      }
+                    }}
+                    title={isPlaying ? "暫停" : "播放"}
+                    disabled={
+                      currentTrack && loadingTracks.has(currentTrack.key_id)
+                    } // 🔐 防止點擊
                   >
-                    <div className="d-flex align-items-center">
-                      {playMode === "sequential" && (
-                        <ArrowRepeat className={styles["control-icon"]} />
-                      )}
-                      {playMode === "shuffle" && (
-                        <Shuffle className={styles["control-icon"]} />
-                      )}
-                      {playMode === "repeat" && (
-                        <Repeat1 className={styles["control-icon"]} />
-                      )}
-                    </div>
+                    {currentTrack && loadingTracks.has(currentTrack.key_id) ? (
+                      <Spinner
+                        animation="border"
+                        variant="secondary"
+                        style={{ width: 36, height: 36 }}
+                      />
+                    ) : isPlaying ? (
+                      <PauseFill size={48} color="#fff" />
+                    ) : (
+                      <CaretRightFill size={48} color="#fff" />
+                    )}
                   </button>
-
-                  {/* 快退 5 秒按鈕 */}
-                  <button
-                    className={styles["control-button"]}
-                    onClick={seekBackward}
-                    title="快退 5 秒"
-                  >
-                    <div className="d-flex align-items-center">
-                      <ChevronLeft className={styles["control-icon"]} />
-                      <span style={{ fontSize: "0.9rem", color: "#666" }}>
-                        5s
-                      </span>
-                    </div>
-                  </button>
-
-                  {/* 上一首按鈕 */}
-                  <button
-                    className={styles["control-button"]}
-                    onClick={playPrev}
-                    title="上一首"
-                  >
-                    <div className="d-flex align-items-center">
-                      <ChevronBarLeft className={styles["control-icon"]} />
-                    </div>
-                  </button>
-
-                  {/* 下一首按鈕 */}
-                  <button
-                    className={styles["control-button"]}
-                    onClick={playNext}
-                    title="下一首"
-                  >
-                    <div className="d-flex align-items-center">
-                      <ChevronBarRight className={styles["control-icon"]} />
-                    </div>
-                  </button>
-
-                  {/* 快進 5 秒按鈕 */}
-                  <button
-                    className={styles["control-button"]}
-                    onClick={seekForward}
-                    title="快進 5 秒"
-                  >
-                    <div className="d-flex align-items-center">
-                      <span style={{ fontSize: "0.9rem", color: "#666" }}>
-                        5s
-                      </span>
-                      <ChevronRight className={styles["control-icon"]} />
-                    </div>
-                  </button>
-                </div>
-
-                <div className={styles["player-title-group"]}>
-                  <div
-                    className={`${styles["player-title"]} ${styles["player-title-multiline"]}`}
-                  >
-                    {currentTrack.title}
-                  </div>
-                  <div className={styles["player-artist"]}>
-                    {currentTrack.artist || ""}
-                  </div>
                 </div>
               </div>
 
-              <div className={styles["player-controls-play"]}>
-                {/* 播放/暫停按鈕 */}
-                <button
-                  style={{
-                    border: "8px solid #fff",
-                    width: 80,
-                    height: 80,
-                    borderRadius: "50%",
-                    background: "#e0e3e8",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    boxShadow: "0 2px 12px rgba(60,80,120,0.10)",
-                    padding: 0,
-                    outline: "none",
-                    cursor: "pointer",
-                  }}
-                  onClick={() => {
-                    if (isPlaying) {
-                      handlePause();
-                    } else {
-                      handlePlay();
-                    }
-                  }}
-                  title={isPlaying ? "暫停" : "播放"}
-                  disabled={
-                    currentTrack && loadingTracks.has(currentTrack.key_id)
-                  } // 🔐 防止點擊
-                >
-                  {currentTrack && loadingTracks.has(currentTrack.key_id) ? (
-                    <Spinner
-                      animation="border"
-                      variant="secondary"
-                      style={{ width: 36, height: 36 }}
-                    />
-                  ) : isPlaying ? (
-                    <PauseFill size={48} color="#fff" />
-                  ) : (
-                    <CaretRightFill size={48} color="#fff" />
-                  )}
-                </button>
+              <div className={styles["player-progress-row"]}>
+                <span className={styles["player-time"]}>
+                  {formatTime(currentTime)}
+                </span>
+                <input
+                  type="range"
+                  className={styles["player-progress-bar"]}
+                  min={0}
+                  max={duration || 100}
+                  value={currentTime}
+                  onChange={(e) => handleSeek(Number(e.target.value))}
+                />
+                <span className={styles["player-time"]}>
+                  {formatTime(duration)}
+                </span>
               </div>
             </div>
 
-            <div className={styles["player-progress-row"]}>
-              <span className={styles["player-time"]}>
-                {formatTime(currentTime)}
-              </span>
-              <input
-                type="range"
-                className={styles["player-progress-bar"]}
-                min={0}
-                max={duration || 100}
-                value={currentTime}
-                onChange={(e) => handleSeek(Number(e.target.value))}
-              />
-              <span className={styles["player-time"]}>
-                {formatTime(duration)}
-              </span>
-            </div>
-          </div>
+            <audio
+              ref={audioRef}
+              onTimeUpdate={handleTimeUpdate}
+              onEnded={playNext}
+              onPause={() => setIsPlaying(false)}
+              onPlay={() => setIsPlaying(true)}
+              style={{ display: "none" }}
+            />
+          </>
+        ) : (
+          <div>載入中...</div>
+        )}
 
-          <audio
-            ref={audioRef}
-            onTimeUpdate={handleTimeUpdate}
-            onEnded={playNext}
-            onPause={() => setIsPlaying(false)}
-            onPlay={() => setIsPlaying(true)}
-            style={{ display: "none" }}
-          />
-        </>
-      ) : (
-        <div>載入中...</div>
-      )}
+        {/* 釋放記憶體按鈕 (左下) */}
+        <button
+          style={{
+            position: "fixed",
+            left: `${btnPositions.memory.x}px`,
+            top: `${btnPositions.memory.y}px`,
+            zIndex: 999,
+            borderRadius: "50%",
+            width: 60,
+            height: 60,
+            fontSize: 28,
+            background: "#0066cc",
+            color: "#fff",
+            border: "none",
+            boxShadow: "0 2px 8px rgba(0,0,0,.2)",
+            display: btnPositions.memory.y < 0 ? "none" : "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 0,
+            cursor: "grab",
+            touchAction: "none",
+          }}
+          onMouseDown={(e) => handleBtnDragStart(e, "memory")}
+          onTouchStart={(e) => handleBtnDragStart(e, "memory")}
+          onClick={() => {
+            if (!isDraggingRef.current) releaseMemory();
+          }}
+          title="釋放音檔記憶體"
+        >
+          🧹
+        </button>
 
-      {/* 釋放記憶體按鈕 (左下) */}
-      <button
-        style={{
-          position: "fixed",
-          left: `${btnPositions.memory.x}px`,
-          top: `${btnPositions.memory.y}px`,
-          zIndex: 999,
-          borderRadius: "50%",
-          width: 60,
-          height: 60,
-          fontSize: 28,
-          background: "#0066cc",
-          color: "#fff",
-          border: "none",
-          boxShadow: "0 2px 8px rgba(0,0,0,.2)",
-          display: btnPositions.memory.y < 0 ? "none" : "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 0,
-          cursor: "grab",
-          touchAction: "none",
-        }}
-        onMouseDown={(e) => handleBtnDragStart(e, "memory")}
-        onTouchStart={(e) => handleBtnDragStart(e, "memory")}
-        onClick={() => {
-          if (!isDraggingRef.current) releaseMemory();
-        }}
-        title="釋放音檔記憶體"
-      >
-        🧹
-      </button>
+        {/* 管理播放列表按鈕 (左上) */}
+        <button
+          style={{
+            position: "fixed",
+            left: `${btnPositions.playlist.x}px`,
+            top: `${btnPositions.playlist.y}px`,
+            zIndex: 999,
+            borderRadius: "50%",
+            width: 60,
+            height: 60,
+            fontSize: 32,
+            background: "#ff5500",
+            color: "#fff",
+            border: "none",
+            boxShadow: "0 2px 8px rgba(0,0,0,.2)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 0,
+            cursor: "grab",
+            touchAction: "none",
+          }}
+          onMouseDown={(e) => handleBtnDragStart(e, "playlist")}
+          onTouchStart={(e) => handleBtnDragStart(e, "playlist")}
+          onClick={() => {
+            if (!isDraggingRef.current) setShowModal(true);
+          }}
+          title="管理播放清單與查詢"
+        >
+          <MusicNoteBeamed size={32} />
+        </button>
 
-      {/* 管理播放列表按鈕 (左上) */}
-      <button
-        style={{
-          position: "fixed",
-          left: `${btnPositions.playlist.x}px`,
-          top: `${btnPositions.playlist.y}px`,
-          zIndex: 999,
-          borderRadius: "50%",
-          width: 60,
-          height: 60,
-          fontSize: 32,
-          background: "#ff5500",
-          color: "#fff",
-          border: "none",
-          boxShadow: "0 2px 8px rgba(0,0,0,.2)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 0,
-          cursor: "grab",
-          touchAction: "none",
-        }}
-        onMouseDown={(e) => handleBtnDragStart(e, "playlist")}
-        onTouchStart={(e) => handleBtnDragStart(e, "playlist")}
-        onClick={() => {
-          if (!isDraggingRef.current) setShowModal(true);
-        }}
-        title="管理播放清單與查詢"
-      >
-        <MusicNoteBeamed size={32} />
-      </button>
+        {/* 播放列表管理模態框 */}
+        <YtMusicPlaylistModal
+          showModal={showModal}
+          onClose={() => setShowModal(false)}
+          playlist={playlist}
+          currentTrackId={currentTrack?.key_id}
+          onPlay={(trackId) => {
+            const index = playlist.findIndex(
+              (track) => track.youtube_id === trackId
+            );
+            if (index !== -1) {
+              setCurrentTrackIndex(index);
+              handlePlay();
+            }
+          }}
+          onDelete={handleDeleteTrack}
+          onAddTrack={async () => {
+            if (!userId) {
+              console.error("用戶未登入，無法添加歌曲");
+              return;
+            }
 
-      {/* 播放列表管理模態框 */}
-      <YtMusicPlaylistModal
-        showModal={showModal}
-        onClose={() => setShowModal(false)}
-        playlist={playlist}
-        currentTrackId={currentTrack?.key_id}
-        onPlay={(trackId) => {
-          const index = playlist.findIndex(
-            (track) => track.youtube_id === trackId
-          );
-          if (index !== -1) {
-            setCurrentTrackIndex(index);
-            handlePlay();
-          }
-        }}
-        onDelete={handleDeleteTrack}
-        onAddTrack={async () => {
-          if (!userId) {
-            console.error("用戶未登入，無法添加歌曲");
-            return;
-          }
+            try {
+              const newTracks = await getUserYtMusicTracks(userId);
 
-          try {
-            const newTracks = await getUserYtMusicTracks(userId);
+              setPlaylist((prevPlaylist) => {
+                // 建立現有曲目的映射表，保留額外欄位
+                const existingTracks = new Map(
+                  prevPlaylist.map((track) => [track.key_id, track])
+                );
 
-            setPlaylist((prevPlaylist) => {
-              // 建立現有曲目的映射表，保留額外欄位
-              const existingTracks = new Map(
-                prevPlaylist.map((track) => [track.key_id, track])
-              );
-
-              // 合併新舊數據
-              return newTracks.map((track) => {
-                const existingTrack = existingTracks.get(track.key_id);
-                return existingTrack
-                  ? { ...track, ...existingTrack } // 保留現有曲目的所有欄位
-                  : track; // 新曲目直接使用
+                // 合併新舊數據
+                return newTracks.map((track) => {
+                  const existingTrack = existingTracks.get(track.key_id);
+                  return existingTrack
+                    ? { ...track, ...existingTrack } // 保留現有曲目的所有欄位
+                    : track; // 新曲目直接使用
+                });
               });
-            });
-          } catch (error) {
-            console.error("更新播放列表失敗:", error);
-          }
-        }}
-        setPlaylist={setPlaylist}
-      />
-      {/* <div className="text-start">{printValue({ playIndices })}</div>
+            } catch (error) {
+              console.error("更新播放列表失敗:", error);
+            }
+          }}
+          setPlaylist={setPlaylist}
+        />
+        {/* <div className="text-start">{printValue({ playIndices })}</div>
       <div className="text-start">{printValue({ currentTrackIndex })}</div>
       <div className="text-start">{printValue({ currentTrack })}</div>
       <div className="text-start">{printValue({ playlist })}</div> */}
-    </main>
+      </main>
+    </PageWrapper>
   );
 }

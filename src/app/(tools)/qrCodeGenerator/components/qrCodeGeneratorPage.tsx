@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import styles from "../styles/qrCodeGenerator.module.css";
 import { QRControlPanel } from "./qrControlPanel";
 import { useQRStore } from "../store/useQRStore";
+import PageWrapper from "@/components/common/PageWrapper";
 
 const QRPreview = dynamic(
   () => import("./qrPreview").then((mod) => mod.QRPreview),
@@ -69,33 +70,35 @@ export const QrCodeGeneratorPage: React.FC = () => {
   ]);
 
   return (
-    <Container className={styles.container}>
-      <Row className="mb-4 text-center">
-        <Col>
-          <h1 className="fw-bold" style={{ color: "#1e293b" }}>
-            QRCode 旗艦產生器
-          </h1>
-          <p className="text-muted">支援背景融合、無限色板與動態追蹤短網址</p>
-        </Col>
-      </Row>
-      <Row>
-        {/* Left Settings Panel */}
-        <Col lg={6}>
-          <div className={styles.glassCard}>
-            <QRControlPanel />
-          </div>
-        </Col>
+    <PageWrapper>
+      <Container className={styles.container}>
+        <Row className="mb-4 text-center">
+          <Col>
+            <h1 className="fw-bold" style={{ color: "#1e293b" }}>
+              QRCode 旗艦產生器
+            </h1>
+            <p className="text-muted">支援背景融合、無限色板與動態追蹤短網址</p>
+          </Col>
+        </Row>
+        <Row>
+          {/* Left Settings Panel */}
+          <Col lg={6}>
+            <div className={styles.glassCard}>
+              <QRControlPanel />
+            </div>
+          </Col>
 
-        {/* Right Preview Panel */}
-        <Col lg={6}>
-          <div
-            className={styles.glassCard}
-            style={{ position: "sticky", top: "100px" }}
-          >
-            <QRPreview />
-          </div>
-        </Col>
-      </Row>
-    </Container>
+          {/* Right Preview Panel */}
+          <Col lg={6}>
+            <div
+              className={styles.glassCard}
+              style={{ position: "sticky", top: "100px" }}
+            >
+              <QRPreview />
+            </div>
+          </Col>
+        </Row>
+      </Container>
+    </PageWrapper>
   );
 };

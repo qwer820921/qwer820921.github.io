@@ -27,6 +27,7 @@ import {
   isHeicFile,
 } from "../types";
 import { wrapPngToIco, getIcoTargetSize } from "../utils/icoUtils";
+import PageWrapper from "@/components/common/PageWrapper";
 
 const ImageConverterPage: React.FC = () => {
   // 上傳列表
@@ -399,484 +400,486 @@ const ImageConverterPage: React.FC = () => {
   const readyCount = uploads.filter((u) => !u.isLoading && u.previewUrl).length;
 
   return (
-    <Container className={styles.container}>
-      {/* 標題區 */}
-      <Row className="mb-4">
-        <Col xs={12}>
-          <h1 className="mb-2">圖檔轉檔</h1>
-          <p className="text-muted mb-0">
-            線上批次圖片格式轉換工具，支援
-            PNG、JPEG、WebP、AVIF、HEIC、SVG、ICO、BMP
-          </p>
-          <div className="d-flex flex-wrap gap-2 mt-2">
-            <Badge bg="success" className={styles.privacyBadge}>
-              純瀏覽器端處理，圖片不會上傳至伺服器
-            </Badge>
-            {avifSupported && (
-              <Badge bg="info" className={styles.privacyBadge}>
-                此瀏覽器支援 AVIF 輸出
+    <PageWrapper>
+      <Container className={styles.container}>
+        {/* 標題區 */}
+        <Row className="mb-4">
+          <Col xs={12}>
+            <h1 className="mb-2">圖檔轉檔</h1>
+            <p className="text-muted mb-0">
+              線上批次圖片格式轉換工具，支援
+              PNG、JPEG、WebP、AVIF、HEIC、SVG、ICO、BMP
+            </p>
+            <div className="d-flex flex-wrap gap-2 mt-2">
+              <Badge bg="success" className={styles.privacyBadge}>
+                純瀏覽器端處理，圖片不會上傳至伺服器
               </Badge>
-            )}
-          </div>
-        </Col>
-      </Row>
+              {avifSupported && (
+                <Badge bg="info" className={styles.privacyBadge}>
+                  此瀏覽器支援 AVIF 輸出
+                </Badge>
+              )}
+            </div>
+          </Col>
+        </Row>
 
-      {/* ===== 區塊一：上傳 + 設定 ===== */}
-      <Row className="mb-4 align-items-stretch">
-        {/* 左側：整合上傳區 + 縮圖網格 */}
-        <Col xs={12} md={8} className="mb-3 mb-md-0 d-flex flex-column">
-          <div
-            className={`${styles.dropZone} ${
-              hasUploads ? styles.dropZoneHasContent : styles.dropZoneEmpty
-            } ${isDragging ? styles.dropZoneDragging : ""}`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {/* 隱藏的 Input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={ACCEPTED_INPUT_TYPES}
-              className={styles.hiddenInput}
-              onChange={handleFileInputChange}
-              multiple
-            />
+        {/* ===== 區塊一：上傳 + 設定 ===== */}
+        <Row className="mb-4 align-items-stretch">
+          {/* 左側：整合上傳區 + 縮圖網格 */}
+          <Col xs={12} md={8} className="mb-3 mb-md-0 d-flex flex-column">
+            <div
+              className={`${styles.dropZone} ${
+                hasUploads ? styles.dropZoneHasContent : styles.dropZoneEmpty
+              } ${isDragging ? styles.dropZoneDragging : ""}`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {/* 隱藏的 Input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ACCEPTED_INPUT_TYPES}
+                className={styles.hiddenInput}
+                onChange={handleFileInputChange}
+                multiple
+              />
 
-            {!hasUploads ? (
-              /* 空白狀態 */
-              <div className={styles.dropZoneContent}>
-                <div className={styles.dropZoneIcon}>📁</div>
-                <div className={styles.dropZoneText}>
-                  拖曳圖片到此處，或點擊選擇檔案
-                </div>
-                <div className={styles.dropZoneSubText}>
-                  支援多選 · PNG、JPEG、WebP、AVIF、HEIC、SVG、ICO、BMP
-                </div>
-              </div>
-            ) : (
-              /* 已有圖片狀態：顯示網格 */
-              <div className="w-100">
-                <div className="d-flex justify-content-between align-items-center mb-3">
-                  <Badge bg="primary">已選擇 {uploads.length} 張圖片</Badge>
-                  <Button
-                    variant="link"
-                    size="sm"
-                    className="text-danger p-0 text-decoration-none"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      clearAllUploads();
-                    }}
-                  >
-                    全部清除
-                  </Button>
-                </div>
-
-                <div className={styles.thumbnailGrid}>
-                  {uploads.map((item) => (
-                    <div
-                      key={item.id}
-                      className={styles.thumbnailCard}
-                      onClick={(e) => e.stopPropagation()} // 防止點擊卡片觸發上傳
-                    >
-                      {/* 刪除按鈕 */}
-                      <button
-                        className={styles.thumbnailRemove}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeUpload(item.id);
-                        }}
-                        title="移除"
-                      >
-                        ×
-                      </button>
-
-                      {/* 預覽圖 */}
-                      <div className={styles.thumbnailImageWrapper}>
-                        {item.isLoading || !item.previewUrl ? (
-                          <div className="spinner-border spinner-border-sm text-primary" />
-                        ) : (
-                          <img
-                            src={item.previewUrl}
-                            alt={item.file.name}
-                            className={styles.thumbnailImage}
-                          />
-                        )}
-                      </div>
-
-                      {/* 檔案資訊 */}
-                      <div className={styles.thumbnailInfo}>
-                        <span className={styles.thumbnailSize}>
-                          {formatFileSize(item.size)}
-                        </span>
-                        {item.width > 0 && (
-                          <span className={styles.thumbnailDim}>
-                            {item.width}x{item.height}
-                          </span>
-                        )}
-                      </div>
-                      <div className={styles.thumbnailMeta}>
-                        <span
-                          className={styles.thumbnailName}
-                          title={item.file.name}
-                        >
-                          {item.file.name}
-                        </span>
-                        <Badge
-                          bg={
-                            item.format === "HEIC" || item.format === "SVG"
-                              ? "warning"
-                              : "secondary"
-                          }
-                          text={
-                            item.format === "HEIC" || item.format === "SVG"
-                              ? "dark"
-                              : undefined
-                          }
-                          className={styles.thumbnailFormatBadge}
-                        >
-                          {item.format}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* 新增圖片按鈕卡片 */}
-                  <div
-                    className={`${styles.thumbnailCard} d-flex flex-column align-items-center justify-content-center border-dashed`}
-                    style={{
-                      minHeight: "160px",
-                      borderStyle: "dashed",
-                      cursor: "pointer",
-                      backgroundColor: "#fcfcfc",
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      fileInputRef.current?.click();
-                    }}
-                  >
-                    <div className="fs-2 text-primary">+</div>
-                    <div className="small text-muted">新增圖片</div>
+              {!hasUploads ? (
+                /* 空白狀態 */
+                <div className={styles.dropZoneContent}>
+                  <div className={styles.dropZoneIcon}>📁</div>
+                  <div className={styles.dropZoneText}>
+                    拖曳圖片到此處，或點擊選擇檔案
+                  </div>
+                  <div className={styles.dropZoneSubText}>
+                    支援多選 · PNG、JPEG、WebP、AVIF、HEIC、SVG、ICO、BMP
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-        </Col>
+              ) : (
+                /* 已有圖片狀態：顯示網格 */
+                <div className="w-100">
+                  <div className="d-flex justify-content-between align-items-center mb-3">
+                    <Badge bg="primary">已選擇 {uploads.length} 張圖片</Badge>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="text-danger p-0 text-decoration-none"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        clearAllUploads();
+                      }}
+                    >
+                      全部清除
+                    </Button>
+                  </div>
 
-        {/* 右側：設定面板 */}
-        <Col xs={12} md={4} className="d-flex flex-column">
-          <Card className={`${styles.settingsCard} h-100`}>
-            <Card.Header as="h6" className="fw-bold">
-              匯出設定
-            </Card.Header>
-            <Card.Body>
-              {/* 目標格式 */}
-              <Form.Group className="mb-3">
-                <Form.Label className="fw-semibold">匯出格式</Form.Label>
-                {availableOutputFormats.map(([value, label]) => (
-                  <Form.Check
-                    key={value}
-                    type="radio"
-                    id={`format-${label}`}
-                    name="targetFormat"
-                    label={
-                      <span>
-                        {label}
-                        {value === "image/avif" && (
-                          <Badge
-                            bg="info"
-                            className="ms-2"
-                            style={{ fontSize: "0.7rem" }}
+                  <div className={styles.thumbnailGrid}>
+                    {uploads.map((item) => (
+                      <div
+                        key={item.id}
+                        className={styles.thumbnailCard}
+                        onClick={(e) => e.stopPropagation()} // 防止點擊卡片觸發上傳
+                      >
+                        {/* 刪除按鈕 */}
+                        <button
+                          className={styles.thumbnailRemove}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeUpload(item.id);
+                          }}
+                          title="移除"
+                        >
+                          ×
+                        </button>
+
+                        {/* 預覽圖 */}
+                        <div className={styles.thumbnailImageWrapper}>
+                          {item.isLoading || !item.previewUrl ? (
+                            <div className="spinner-border spinner-border-sm text-primary" />
+                          ) : (
+                            <img
+                              src={item.previewUrl}
+                              alt={item.file.name}
+                              className={styles.thumbnailImage}
+                            />
+                          )}
+                        </div>
+
+                        {/* 檔案資訊 */}
+                        <div className={styles.thumbnailInfo}>
+                          <span className={styles.thumbnailSize}>
+                            {formatFileSize(item.size)}
+                          </span>
+                          {item.width > 0 && (
+                            <span className={styles.thumbnailDim}>
+                              {item.width}x{item.height}
+                            </span>
+                          )}
+                        </div>
+                        <div className={styles.thumbnailMeta}>
+                          <span
+                            className={styles.thumbnailName}
+                            title={item.file.name}
                           >
-                            新一代
+                            {item.file.name}
+                          </span>
+                          <Badge
+                            bg={
+                              item.format === "HEIC" || item.format === "SVG"
+                                ? "warning"
+                                : "secondary"
+                            }
+                            text={
+                              item.format === "HEIC" || item.format === "SVG"
+                                ? "dark"
+                                : undefined
+                            }
+                            className={styles.thumbnailFormatBadge}
+                          >
+                            {item.format}
                           </Badge>
-                        )}
-                      </span>
-                    }
-                    value={value}
-                    checked={settings.targetFormat === value}
-                    onChange={(e) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        targetFormat: e.target.value as OutputFormat,
-                      }))
-                    }
-                  />
-                ))}
-              </Form.Group>
+                        </div>
+                      </div>
+                    ))}
 
-              {/* 品質滑桿 */}
-              {showQuality && (
+                    {/* 新增圖片按鈕卡片 */}
+                    <div
+                      className={`${styles.thumbnailCard} d-flex flex-column align-items-center justify-content-center border-dashed`}
+                      style={{
+                        minHeight: "160px",
+                        borderStyle: "dashed",
+                        cursor: "pointer",
+                        backgroundColor: "#fcfcfc",
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                      }}
+                    >
+                      <div className="fs-2 text-primary">+</div>
+                      <div className="small text-muted">新增圖片</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Col>
+
+          {/* 右側：設定面板 */}
+          <Col xs={12} md={4} className="d-flex flex-column">
+            <Card className={`${styles.settingsCard} h-100`}>
+              <Card.Header as="h6" className="fw-bold">
+                匯出設定
+              </Card.Header>
+              <Card.Body>
+                {/* 目標格式 */}
                 <Form.Group className="mb-3">
-                  <Form.Label className="fw-semibold">輸出品質</Form.Label>
-                  <div className="d-flex align-items-center gap-2">
-                    <Form.Range
-                      min={0.1}
-                      max={1}
-                      step={0.05}
-                      value={settings.quality}
+                  <Form.Label className="fw-semibold">匯出格式</Form.Label>
+                  {availableOutputFormats.map(([value, label]) => (
+                    <Form.Check
+                      key={value}
+                      type="radio"
+                      id={`format-${label}`}
+                      name="targetFormat"
+                      label={
+                        <span>
+                          {label}
+                          {value === "image/avif" && (
+                            <Badge
+                              bg="info"
+                              className="ms-2"
+                              style={{ fontSize: "0.7rem" }}
+                            >
+                              新一代
+                            </Badge>
+                          )}
+                        </span>
+                      }
+                      value={value}
+                      checked={settings.targetFormat === value}
                       onChange={(e) =>
                         setSettings((prev) => ({
                           ...prev,
-                          quality: parseFloat(e.target.value),
+                          targetFormat: e.target.value as OutputFormat,
                         }))
                       }
                     />
-                    <span className={styles.qualityValue}>
-                      {Math.round(settings.quality * 100)}%
-                    </span>
-                  </div>
+                  ))}
                 </Form.Group>
-              )}
 
-              {/* 縮放設定 */}
-              <Form.Group className="mb-3">
-                <Form.Label className="fw-semibold">縮放</Form.Label>
-                {(["none", "width", "square"] as ResizeMode[]).map((mode) => (
-                  <Form.Check
-                    key={mode}
-                    type="radio"
-                    id={`resize-${mode}`}
-                    name="resizeMode"
-                    label={
-                      mode === "none"
-                        ? "不縮放"
-                        : mode === "width"
-                          ? "依寬縮放（維持比例）"
-                          : "固定正方形（Tile 用）"
-                    }
-                    checked={settings.resizeMode === mode}
-                    onChange={() =>
-                      setSettings((prev) => ({ ...prev, resizeMode: mode }))
-                    }
-                  />
-                ))}
-                {settings.resizeMode !== "none" && (
-                  <div className="mt-2">
-                    <div className="d-flex align-items-center gap-2 mb-2">
-                      <Form.Control
-                        type="number"
-                        size="sm"
-                        value={settings.resizeWidth}
-                        min={8}
-                        max={4096}
+                {/* 品質滑桿 */}
+                {showQuality && (
+                  <Form.Group className="mb-3">
+                    <Form.Label className="fw-semibold">輸出品質</Form.Label>
+                    <div className="d-flex align-items-center gap-2">
+                      <Form.Range
+                        min={0.1}
+                        max={1}
+                        step={0.05}
+                        value={settings.quality}
                         onChange={(e) =>
                           setSettings((prev) => ({
                             ...prev,
-                            resizeWidth: parseInt(e.target.value) || 128,
+                            quality: parseFloat(e.target.value),
                           }))
                         }
-                        style={{ width: "80px" }}
                       />
-                      <span className="text-muted small">px</span>
+                      <span className={styles.qualityValue}>
+                        {Math.round(settings.quality * 100)}%
+                      </span>
                     </div>
-                    <div className="d-flex gap-1 flex-wrap">
-                      {[64, 128, 256, 512].map((size) => (
-                        <Button
-                          key={size}
-                          variant={
-                            settings.resizeWidth === size
-                              ? "primary"
-                              : "outline-secondary"
-                          }
+                  </Form.Group>
+                )}
+
+                {/* 縮放設定 */}
+                <Form.Group className="mb-3">
+                  <Form.Label className="fw-semibold">縮放</Form.Label>
+                  {(["none", "width", "square"] as ResizeMode[]).map((mode) => (
+                    <Form.Check
+                      key={mode}
+                      type="radio"
+                      id={`resize-${mode}`}
+                      name="resizeMode"
+                      label={
+                        mode === "none"
+                          ? "不縮放"
+                          : mode === "width"
+                            ? "依寬縮放（維持比例）"
+                            : "固定正方形（Tile 用）"
+                      }
+                      checked={settings.resizeMode === mode}
+                      onChange={() =>
+                        setSettings((prev) => ({ ...prev, resizeMode: mode }))
+                      }
+                    />
+                  ))}
+                  {settings.resizeMode !== "none" && (
+                    <div className="mt-2">
+                      <div className="d-flex align-items-center gap-2 mb-2">
+                        <Form.Control
+                          type="number"
                           size="sm"
-                          className="py-0"
-                          style={{ fontSize: "0.75rem" }}
-                          onClick={() =>
+                          value={settings.resizeWidth}
+                          min={8}
+                          max={4096}
+                          onChange={(e) =>
                             setSettings((prev) => ({
                               ...prev,
-                              resizeWidth: size,
+                              resizeWidth: parseInt(e.target.value) || 128,
                             }))
                           }
-                        >
-                          {size}
-                        </Button>
-                      ))}
+                          style={{ width: "80px" }}
+                        />
+                        <span className="text-muted small">px</span>
+                      </div>
+                      <div className="d-flex gap-1 flex-wrap">
+                        {[64, 128, 256, 512].map((size) => (
+                          <Button
+                            key={size}
+                            variant={
+                              settings.resizeWidth === size
+                                ? "primary"
+                                : "outline-secondary"
+                            }
+                            size="sm"
+                            className="py-0"
+                            style={{ fontSize: "0.75rem" }}
+                            onClick={() =>
+                              setSettings((prev) => ({
+                                ...prev,
+                                resizeWidth: size,
+                              }))
+                            }
+                          >
+                            {size}
+                          </Button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
+                </Form.Group>
+
+                {/* 像素模式 */}
+                <Form.Group className="mb-3">
+                  <Form.Check
+                    type="checkbox"
+                    id="pixelArt"
+                    label="像素模式（Nearest-neighbor）"
+                    checked={settings.pixelArt}
+                    onChange={(e) =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        pixelArt: e.target.checked,
+                      }))
+                    }
+                  />
+                  <Form.Text className="text-muted">
+                    縮放時保留像素硬邊，適合像素風格圖
+                  </Form.Text>
+                </Form.Group>
+
+                {/* 開始轉換按鈕 */}
+                <div className="d-grid">
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    onClick={handleConvertAll}
+                    disabled={isConverting || readyCount === 0}
+                  >
+                    {isConverting ? "轉換中..." : `開始轉換 (${readyCount} 張)`}
+                  </Button>
+                </div>
+
+                {/* 轉換進度 */}
+                {isConverting && (
+                  <ProgressBar
+                    now={convertProgress}
+                    label={`${convertProgress}%`}
+                    animated
+                    className="mt-3"
+                  />
                 )}
-              </Form.Group>
+              </Card.Body>
+            </Card>
+          </Col>
+        </Row>
 
-              {/* 像素模式 */}
-              <Form.Group className="mb-3">
-                <Form.Check
-                  type="checkbox"
-                  id="pixelArt"
-                  label="像素模式（Nearest-neighbor）"
-                  checked={settings.pixelArt}
-                  onChange={(e) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      pixelArt: e.target.checked,
-                    }))
-                  }
-                />
-                <Form.Text className="text-muted">
-                  縮放時保留像素硬邊，適合像素風格圖
-                </Form.Text>
-              </Form.Group>
-
-              {/* 開始轉換按鈕 */}
-              <div className="d-grid">
-                <Button
-                  variant="primary"
-                  size="lg"
-                  onClick={handleConvertAll}
-                  disabled={isConverting || readyCount === 0}
-                >
-                  {isConverting ? "轉換中..." : `開始轉換 (${readyCount} 張)`}
-                </Button>
-              </div>
-
-              {/* 轉換進度 */}
-              {isConverting && (
-                <ProgressBar
-                  now={convertProgress}
-                  label={`${convertProgress}%`}
-                  animated
-                  className="mt-3"
-                />
-              )}
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* ===== 區塊二：轉換結果 ===== */}
-      {results.length > 0 && (
-        <div className={styles.fadeIn}>
-          <Row className="mb-3">
-            <Col
-              xs={12}
-              className="d-flex justify-content-between align-items-center"
-            >
-              <h5 className="mb-0">
-                轉換結果
-                <Badge bg="secondary" className="ms-2">
-                  {results.length}
-                </Badge>
-              </h5>
-              <Button
-                variant="success"
-                onClick={handleDownloadAll}
-                disabled={isZipping}
+        {/* ===== 區塊二：轉換結果 ===== */}
+        {results.length > 0 && (
+          <div className={styles.fadeIn}>
+            <Row className="mb-3">
+              <Col
+                xs={12}
+                className="d-flex justify-content-between align-items-center"
               >
-                {isZipping ? (
-                  <>
-                    <span
-                      className="spinner-border spinner-border-sm me-2"
-                      role="status"
-                      aria-hidden="true"
-                    ></span>
-                    打包中...
-                  </>
-                ) : (
-                  "⬇ 全部下載 (ZIP)"
-                )}
-              </Button>
-            </Col>
-          </Row>
+                <h5 className="mb-0">
+                  轉換結果
+                  <Badge bg="secondary" className="ms-2">
+                    {results.length}
+                  </Badge>
+                </h5>
+                <Button
+                  variant="success"
+                  onClick={handleDownloadAll}
+                  disabled={isZipping}
+                >
+                  {isZipping ? (
+                    <>
+                      <span
+                        className="spinner-border spinner-border-sm me-2"
+                        role="status"
+                        aria-hidden="true"
+                      ></span>
+                      打包中...
+                    </>
+                  ) : (
+                    "⬇ 全部下載 (ZIP)"
+                  )}
+                </Button>
+              </Col>
+            </Row>
 
-          <Row className="g-3 mb-4">
-            {results.map((item) => {
-              const diff = item.resultSize - item.sourceSize;
-              const percent = Math.round((diff / item.sourceSize) * 100);
+            <Row className="g-3 mb-4">
+              {results.map((item) => {
+                const diff = item.resultSize - item.sourceSize;
+                const percent = Math.round((diff / item.sourceSize) * 100);
 
-              return (
-                <Col xs={12} sm={6} lg={4} key={item.sourceId}>
-                  <Card className={styles.resultCard}>
-                    {/* 預覽圖 */}
-                    <div className={styles.resultImageWrapper}>
-                      <img
-                        src={item.resultUrl}
-                        alt={item.resultName}
-                        className={styles.resultImage}
-                      />
-                    </div>
+                return (
+                  <Col xs={12} sm={6} lg={4} key={item.sourceId}>
+                    <Card className={styles.resultCard}>
+                      {/* 預覽圖 */}
+                      <div className={styles.resultImageWrapper}>
+                        <img
+                          src={item.resultUrl}
+                          alt={item.resultName}
+                          className={styles.resultImage}
+                        />
+                      </div>
 
-                    <Card.Body className="p-2">
-                      {/* 箭頭對比 */}
-                      <div className={styles.compareContainer}>
-                        {(item.resultWidth !== item.sourceWidth ||
-                          item.resultHeight !== item.sourceHeight) && (
-                          <>
-                            <span className={styles.compareLeft}>
-                              {item.sourceWidth}×{item.sourceHeight}
-                            </span>
-                            <span className={styles.compareArrow}>→</span>
-                            <span className={styles.compareRight}>
-                              {item.resultWidth}×{item.resultHeight}
-                            </span>
-                          </>
-                        )}
-                        <span className={styles.compareLeft}>
-                          {formatFileSize(item.sourceSize)}
-                        </span>
-                        <span className={styles.compareArrow}>→</span>
-                        <span className={styles.compareRight}>
-                          {formatFileSize(item.resultSize)}
-                        </span>
-
-                        <span className={styles.compareLeft}>
-                          {item.sourceFormat}
-                        </span>
-                        <span className={styles.compareArrow}>→</span>
-                        <span className={styles.compareRight}>
-                          <span className={styles.compareFormatBadge}>
-                            {item.resultFormat}
+                      <Card.Body className="p-2">
+                        {/* 箭頭對比 */}
+                        <div className={styles.compareContainer}>
+                          {(item.resultWidth !== item.sourceWidth ||
+                            item.resultHeight !== item.sourceHeight) && (
+                            <>
+                              <span className={styles.compareLeft}>
+                                {item.sourceWidth}×{item.sourceHeight}
+                              </span>
+                              <span className={styles.compareArrow}>→</span>
+                              <span className={styles.compareRight}>
+                                {item.resultWidth}×{item.resultHeight}
+                              </span>
+                            </>
+                          )}
+                          <span className={styles.compareLeft}>
+                            {formatFileSize(item.sourceSize)}
                           </span>
-                        </span>
-                      </div>
+                          <span className={styles.compareArrow}>→</span>
+                          <span className={styles.compareRight}>
+                            {formatFileSize(item.resultSize)}
+                          </span>
 
-                      {/* 百分比 */}
-                      <div className="text-center mb-2">
-                        <span
-                          className={
-                            diff < 0
-                              ? styles.fileSizeReduced
-                              : diff > 0
-                                ? styles.fileSizeIncreased
-                                : ""
-                          }
-                          style={{ fontSize: "0.85rem" }}
+                          <span className={styles.compareLeft}>
+                            {item.sourceFormat}
+                          </span>
+                          <span className={styles.compareArrow}>→</span>
+                          <span className={styles.compareRight}>
+                            <span className={styles.compareFormatBadge}>
+                              {item.resultFormat}
+                            </span>
+                          </span>
+                        </div>
+
+                        {/* 百分比 */}
+                        <div className="text-center mb-2">
+                          <span
+                            className={
+                              diff < 0
+                                ? styles.fileSizeReduced
+                                : diff > 0
+                                  ? styles.fileSizeIncreased
+                                  : ""
+                            }
+                            style={{ fontSize: "0.85rem" }}
+                          >
+                            {percent > 0 ? "+" : ""}
+                            {percent}%
+                          </span>
+                        </div>
+
+                        {/* 檔名 */}
+                        <div
+                          className={styles.resultFileName}
+                          title={item.resultName}
                         >
-                          {percent > 0 ? "+" : ""}
-                          {percent}%
-                        </span>
-                      </div>
+                          {item.resultName}
+                        </div>
 
-                      {/* 檔名 */}
-                      <div
-                        className={styles.resultFileName}
-                        title={item.resultName}
-                      >
-                        {item.resultName}
-                      </div>
+                        {/* 下載 */}
+                        <div className="d-grid mt-2">
+                          <Button
+                            variant="outline-success"
+                            size="sm"
+                            onClick={() => handleDownloadOne(item)}
+                          >
+                            ⬇ 下載
+                          </Button>
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                );
+              })}
+            </Row>
+          </div>
+        )}
 
-                      {/* 下載 */}
-                      <div className="d-grid mt-2">
-                        <Button
-                          variant="outline-success"
-                          size="sm"
-                          onClick={() => handleDownloadOne(item)}
-                        >
-                          ⬇ 下載
-                        </Button>
-                      </div>
-                    </Card.Body>
-                  </Card>
-                </Col>
-              );
-            })}
-          </Row>
-        </div>
-      )}
-
-      {/* 隱藏 Canvas */}
-      <canvas ref={canvasRef} style={{ display: "none" }} />
-    </Container>
+        {/* 隱藏 Canvas */}
+        <canvas ref={canvasRef} style={{ display: "none" }} />
+      </Container>
+    </PageWrapper>
   );
 };
 

@@ -17,6 +17,7 @@ import RefreshControl from "./RefreshControl";
 import StockTable from "./StockTable";
 import StockCardList from "./StockCardList";
 import StockSkeleton from "./StockSkeleton";
+import PageWrapper from "@/components/common/PageWrapper";
 
 const StockInfoPage: React.FC = () => {
   const [windowWidth, setWindowWidth] = useState(0);
@@ -188,120 +189,123 @@ const StockInfoPage: React.FC = () => {
   const isDesktop = useMemo(() => windowWidth >= 992, [windowWidth]);
 
   return (
-    <div
-      className="container"
-      style={{ paddingTop: "70px", minHeight: "100vh" }}
-    >
-      {/* SEO 隱藏元件 */}
-      <h1 className="visually-hidden">台股資訊 - 即時報價系統</h1>
+    <PageWrapper>
+      <div className="container" style={{ minHeight: "100vh" }}>
+        {/* SEO 隱藏元件 */}
+        <h1 className="visually-hidden">台股資訊 - 即時報價系統</h1>
 
-      <div className="row justify-content-center mb-4">
-        <div className="col-12 col-lg-10">
-          <h1 className="mb-4 text-center fw-bold text-primary">台股資訊</h1>
+        <div className="row justify-content-center mb-4">
+          <div className="col-12 col-lg-10">
+            <h1 className="mb-4 text-center fw-bold text-primary">台股資訊</h1>
 
-          {/* 刷新控制 */}
-          <RefreshControl
-            isAutoRefresh={isAutoRefresh}
-            setIsAutoRefresh={setIsAutoRefresh}
-            isLoading={isLoading}
-            onRefresh={handleManualRefresh}
-          />
+            {/* 刷新控制 */}
+            <RefreshControl
+              isAutoRefresh={isAutoRefresh}
+              setIsAutoRefresh={setIsAutoRefresh}
+              isLoading={isLoading}
+              onRefresh={handleManualRefresh}
+            />
 
-          {/* 錯誤提示 */}
-          {error && (
-            <div className="alert alert-danger d-flex justify-content-between align-items-center mb-4 shadow-sm">
-              <span>{error}</span>
-              <Button
-                variant="outline-danger"
-                size="sm"
-                onClick={getStockListOnly}
-              >
-                重試
-              </Button>
-            </div>
-          )}
-
-          {/* 新增股票表單 */}
-          <AddStockForm
-            newStockCode={newStockCode}
-            setNewStockCode={setNewStockCode}
-            isAddLoading={isAddLoading}
-            onAdd={handleAddStock}
-          />
-
-          {/* 數據內容 */}
-          <div className="mt-4">
-            {isFirstLoad ? (
-              <StockSkeleton />
-            ) : (
-              <>
-                {isDesktop ? (
-                  <StockTable
-                    stockData={stockData}
-                    isRemoveLoading={isRemoveLoading}
-                    onRemove={(id) => {
-                      setRemoveId(id);
-                      setShowDelModal(true);
-                    }}
-                  />
-                ) : (
-                  <StockCardList
-                    stockData={stockData}
-                    isRemoveLoading={isRemoveLoading}
-                    onRemove={(id) => {
-                      setRemoveId(id);
-                      setShowDelModal(true);
-                    }}
-                  />
-                )}
-              </>
+            {/* 錯誤提示 */}
+            {error && (
+              <div className="alert alert-danger d-flex justify-content-between align-items-center mb-4 shadow-sm">
+                <span>{error}</span>
+                <Button
+                  variant="outline-danger"
+                  size="sm"
+                  onClick={getStockListOnly}
+                >
+                  重試
+                </Button>
+              </div>
             )}
+
+            {/* 新增股票表單 */}
+            <AddStockForm
+              newStockCode={newStockCode}
+              setNewStockCode={setNewStockCode}
+              isAddLoading={isAddLoading}
+              onAdd={handleAddStock}
+            />
+
+            {/* 數據內容 */}
+            <div className="mt-4">
+              {isFirstLoad ? (
+                <StockSkeleton />
+              ) : (
+                <>
+                  {isDesktop ? (
+                    <StockTable
+                      stockData={stockData}
+                      isRemoveLoading={isRemoveLoading}
+                      onRemove={(id) => {
+                        setRemoveId(id);
+                        setShowDelModal(true);
+                      }}
+                    />
+                  ) : (
+                    <StockCardList
+                      stockData={stockData}
+                      isRemoveLoading={isRemoveLoading}
+                      onRemove={(id) => {
+                        setRemoveId(id);
+                        setShowDelModal(true);
+                      }}
+                    />
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
+
+        {/* 確認刪除對話框 */}
+        <Modal
+          show={showDelModal}
+          onHide={() => setShowDelModal(false)}
+          centered
+        >
+          <Modal.Header closeButton className="border-0 pb-0">
+            <Modal.Title className="fw-bold">確認刪除</Modal.Title>
+          </Modal.Header>
+          <Modal.Body className="py-4">
+            您確定要將這隻股票從清單中移除嗎？此動作將無法復原。
+          </Modal.Body>
+          <Modal.Footer className="border-0 pt-0">
+            <Button variant="light" onClick={() => setShowDelModal(false)}>
+              按錯了
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleRemoveStock}
+              disabled={isRemoveLoading}
+            >
+              {isRemoveLoading ? "處理中..." : "確定刪除"}
+            </Button>
+          </Modal.Footer>
+        </Modal>
+
+        {/* 錯誤提示對話框 */}
+        <Modal
+          show={showErrorModal}
+          onHide={() => setShowErrorModal(false)}
+          centered
+        >
+          <Modal.Header closeButton className="border-0 pb-0 text-danger">
+            <Modal.Title className="fw-bold">
+              <i className="bi bi-exclamation-triangle-fill me-2"></i>
+              發生錯誤
+            </Modal.Title>
+          </Modal.Header>
+          <Modal.Body className="py-4">{errorModalMsg}</Modal.Body>
+          <Modal.Footer className="border-0 pt-0">
+            <Button variant="primary" onClick={() => setShowErrorModal(false)}>
+              我知道了
+            </Button>
+          </Modal.Footer>
+        </Modal>
       </div>
-
-      {/* 確認刪除對話框 */}
-      <Modal show={showDelModal} onHide={() => setShowDelModal(false)} centered>
-        <Modal.Header closeButton className="border-0 pb-0">
-          <Modal.Title className="fw-bold">確認刪除</Modal.Title>
-        </Modal.Header>
-        <Modal.Body className="py-4">
-          您確定要將這隻股票從清單中移除嗎？此動作將無法復原。
-        </Modal.Body>
-        <Modal.Footer className="border-0 pt-0">
-          <Button variant="light" onClick={() => setShowDelModal(false)}>
-            按錯了
-          </Button>
-          <Button
-            variant="danger"
-            onClick={handleRemoveStock}
-            disabled={isRemoveLoading}
-          >
-            {isRemoveLoading ? "處理中..." : "確定刪除"}
-          </Button>
-        </Modal.Footer>
-      </Modal>
-
-      {/* 錯誤提示對話框 */}
-      <Modal
-        show={showErrorModal}
-        onHide={() => setShowErrorModal(false)}
-        centered
-      >
-        <Modal.Header closeButton className="border-0 pb-0 text-danger">
-          <Modal.Title className="fw-bold">
-            <i className="bi bi-exclamation-triangle-fill me-2"></i>
-            發生錯誤
-          </Modal.Title>
-        </Modal.Header>
-        <Modal.Body className="py-4">{errorModalMsg}</Modal.Body>
-        <Modal.Footer className="border-0 pt-0">
-          <Button variant="primary" onClick={() => setShowErrorModal(false)}>
-            我知道了
-          </Button>
-        </Modal.Footer>
-      </Modal>
-    </div>
+    </PageWrapper>
   );
 };
 

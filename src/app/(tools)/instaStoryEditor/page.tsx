@@ -16,6 +16,7 @@ import { Modal, ButtonGroup, Button, Form, Dropdown } from "react-bootstrap";
 import toast from "react-hot-toast";
 import ColorSelectorChrome from "../animator/components/colorSelector";
 import PageInfoButton from "@/components/PageInfoButton";
+import PageWrapper from "@/components/common/PageWrapper";
 
 type CanvasObject = {
   id: string;
@@ -753,407 +754,414 @@ export default function VideoEditor() {
           </p>
         }
       />
-      <div className="container-fluid">
-        <div
-          className="row justify-content-center"
-          style={{ paddingTop: "70px" }}
-        >
-          <div className="col-12 col-lg-10">
-            <div className="card mb-4">
-              <div className="card-body">
-                <div className="d-flex justify-content-between align-items-start mb-3 w-100">
-                  <div
-                    className="d-flex flex-wrap gap-2 me-2"
-                    style={{ maxWidth: "calc(100% - 100px)" }}
-                  >
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="btn btn-outline-primary text-nowrap"
+      <PageWrapper>
+        <div className="container-fluid">
+          <div className="row justify-content-center">
+            <div className="col-12 col-lg-10">
+              <div className="card mb-4">
+                <div className="card-body">
+                  <div className="d-flex justify-content-between align-items-start mb-3 w-100">
+                    <div
+                      className="d-flex flex-wrap gap-2 me-2"
+                      style={{ maxWidth: "calc(100% - 100px)" }}
                     >
-                      <Upload size={16} className="me-1" />
-                      上傳
-                    </button>
-                    <button
-                      className="btn btn-outline-success text-nowrap"
-                      disabled={canvasObjects.length === 0 || isProcessing}
-                      onClick={handleDownloadClick}
-                    >
-                      <Download size={16} className="me-1" />
-                      下載
-                    </button>
-                    <Dropdown as={ButtonGroup} className="text-nowrap">
-                      <Button
-                        variant="outline-secondary"
-                        className="text-nowrap"
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="btn btn-outline-primary text-nowrap"
                       >
-                        <ArrowsAngleExpand size={16} className="me-1" />
-                        尺寸
-                      </Button>
-                      <Dropdown.Toggle
-                        split
-                        variant="outline-secondary"
-                        id="canvas-size-dropdown"
-                      />
-                      <Dropdown.Menu>
-                        <Dropdown.Header>常用尺寸</Dropdown.Header>
-                        <Dropdown.Item
-                          onClick={() => handleCanvasSizeChange(1080, 1920)}
-                        >
-                          Instagram 動態 (1080x1920)
-                        </Dropdown.Item>
-                        <Dropdown.Item
-                          onClick={() => handleCanvasSizeChange(1080, 1350)}
-                        >
-                          Instagram 貼文 (1080x1350)
-                        </Dropdown.Item>
-                        <Dropdown.Item
-                          onClick={() => handleCanvasSizeChange(1080, 1080)}
-                        >
-                          Instagram 方形 (1080x1080)
-                        </Dropdown.Item>
-                        <Dropdown.Item
-                          onClick={() =>
-                            handleCanvasSizeChange(
-                              getInitialCanvasSize().width,
-                              getInitialCanvasSize().height
-                            )
-                          }
-                        >
-                          初始化尺寸
-                        </Dropdown.Item>
-                        <Dropdown.Divider />
-                        <Dropdown.Header>自訂</Dropdown.Header>
-                        <div className="px-3 py-2">
-                          <Form.Group className="mb-2">
-                            <Form.Label className="small mb-1">
-                              寬度 (px)
-                            </Form.Label>
-                            <Form.Control
-                              type="number"
-                              size="sm"
-                              value={canvasSize.width}
-                              onChange={(e) =>
-                                handleCanvasSizeChange(
-                                  Number(e.target.value),
-                                  canvasSize.height
-                                )
-                              }
-                            />
-                          </Form.Group>
-                          <Form.Group>
-                            <Form.Label className="small mb-1">
-                              高度 (px)
-                            </Form.Label>
-                            <Form.Control
-                              type="number"
-                              size="sm"
-                              value={canvasSize.height}
-                              onChange={(e) =>
-                                handleCanvasSizeChange(
-                                  canvasSize.width,
-                                  Number(e.target.value)
-                                )
-                              }
-                            />
-                          </Form.Group>
-                        </div>
-                      </Dropdown.Menu>
-                    </Dropdown>
-                    {/* 在按鈕組中添加文字下拉按鈕 */}
-                    <Dropdown as={ButtonGroup} className="text-nowrap">
-                      <Button
-                        variant="outline-secondary"
-                        className="text-nowrap"
+                        <Upload size={16} className="me-1" />
+                        上傳
+                      </button>
+                      <button
+                        className="btn btn-outline-success text-nowrap"
+                        disabled={canvasObjects.length === 0 || isProcessing}
+                        onClick={handleDownloadClick}
                       >
-                        <Type size={16} className="me-1" /> 文字
-                      </Button>
-                      <Dropdown.Toggle
-                        split
-                        variant="outline-secondary"
-                        id="text-dropdown"
-                      />
-                      <Dropdown.Menu className="p-3" style={{ width: "250px" }}>
-                        <Form.Group>
-                          <Form.Label className="small mb-2">
-                            輸入文字
-                          </Form.Label>
-                          <Form.Control
-                            as="textarea"
-                            rows={3}
-                            value={textInput}
-                            onChange={(e) => setTextInput(e.target.value)}
-                            placeholder="輸入要顯示的文字..."
-                            className="mb-2"
-                          />
-                          <div className="d-grid">
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={handleAddText}
-                              disabled={!textInput.trim()}
-                            >
-                              確認
-                            </Button>
+                        <Download size={16} className="me-1" />
+                        下載
+                      </button>
+                      <Dropdown as={ButtonGroup} className="text-nowrap">
+                        <Button
+                          variant="outline-secondary"
+                          className="text-nowrap"
+                        >
+                          <ArrowsAngleExpand size={16} className="me-1" />
+                          尺寸
+                        </Button>
+                        <Dropdown.Toggle
+                          split
+                          variant="outline-secondary"
+                          id="canvas-size-dropdown"
+                        />
+                        <Dropdown.Menu>
+                          <Dropdown.Header>常用尺寸</Dropdown.Header>
+                          <Dropdown.Item
+                            onClick={() => handleCanvasSizeChange(1080, 1920)}
+                          >
+                            Instagram 動態 (1080x1920)
+                          </Dropdown.Item>
+                          <Dropdown.Item
+                            onClick={() => handleCanvasSizeChange(1080, 1350)}
+                          >
+                            Instagram 貼文 (1080x1350)
+                          </Dropdown.Item>
+                          <Dropdown.Item
+                            onClick={() => handleCanvasSizeChange(1080, 1080)}
+                          >
+                            Instagram 方形 (1080x1080)
+                          </Dropdown.Item>
+                          <Dropdown.Item
+                            onClick={() =>
+                              handleCanvasSizeChange(
+                                getInitialCanvasSize().width,
+                                getInitialCanvasSize().height
+                              )
+                            }
+                          >
+                            初始化尺寸
+                          </Dropdown.Item>
+                          <Dropdown.Divider />
+                          <Dropdown.Header>自訂</Dropdown.Header>
+                          <div className="px-3 py-2">
+                            <Form.Group className="mb-2">
+                              <Form.Label className="small mb-1">
+                                寬度 (px)
+                              </Form.Label>
+                              <Form.Control
+                                type="number"
+                                size="sm"
+                                value={canvasSize.width}
+                                onChange={(e) =>
+                                  handleCanvasSizeChange(
+                                    Number(e.target.value),
+                                    canvasSize.height
+                                  )
+                                }
+                              />
+                            </Form.Group>
+                            <Form.Group>
+                              <Form.Label className="small mb-1">
+                                高度 (px)
+                              </Form.Label>
+                              <Form.Control
+                                type="number"
+                                size="sm"
+                                value={canvasSize.height}
+                                onChange={(e) =>
+                                  handleCanvasSizeChange(
+                                    canvasSize.width,
+                                    Number(e.target.value)
+                                  )
+                                }
+                              />
+                            </Form.Group>
                           </div>
-                        </Form.Group>
-                      </Dropdown.Menu>
-                    </Dropdown>
+                        </Dropdown.Menu>
+                      </Dropdown>
+                      {/* 在按鈕組中添加文字下拉按鈕 */}
+                      <Dropdown as={ButtonGroup} className="text-nowrap">
+                        <Button
+                          variant="outline-secondary"
+                          className="text-nowrap"
+                        >
+                          <Type size={16} className="me-1" /> 文字
+                        </Button>
+                        <Dropdown.Toggle
+                          split
+                          variant="outline-secondary"
+                          id="text-dropdown"
+                        />
+                        <Dropdown.Menu
+                          className="p-3"
+                          style={{ width: "250px" }}
+                        >
+                          <Form.Group>
+                            <Form.Label className="small mb-2">
+                              輸入文字
+                            </Form.Label>
+                            <Form.Control
+                              as="textarea"
+                              rows={3}
+                              value={textInput}
+                              onChange={(e) => setTextInput(e.target.value)}
+                              placeholder="輸入要顯示的文字..."
+                              className="mb-2"
+                            />
+                            <div className="d-grid">
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={handleAddText}
+                                disabled={!textInput.trim()}
+                              >
+                                確認
+                              </Button>
+                            </div>
+                          </Form.Group>
+                        </Dropdown.Menu>
+                      </Dropdown>
+                    </div>
+                    <div className="flex-shrink-0">
+                      <button
+                        onClick={handleDelete}
+                        disabled={!videoUrl}
+                        className="btn btn-outline-danger text-nowrap"
+                      >
+                        <Trash size={16} className="me-1" />
+                        清除
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex-shrink-0">
-                    <button
-                      onClick={handleDelete}
-                      disabled={!videoUrl}
-                      className="btn btn-outline-danger text-nowrap"
-                    >
-                      <Trash size={16} className="me-1" />
-                      清除
-                    </button>
-                  </div>
-                </div>
 
-                <div className="d-flex justify-content-center">
-                  <div
-                    ref={containerRef}
-                    className="border rounded overflow-hidden d-inline-flex justify-content-center align-items-center"
-                  >
-                    <canvas id="video-canvas"></canvas>
+                  <div className="d-flex justify-content-center">
+                    <div
+                      ref={containerRef}
+                      className="border rounded overflow-hidden d-inline-flex justify-content-center align-items-center"
+                    >
+                      <canvas id="video-canvas"></canvas>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            accept="image/*,video/*"
-            className="d-none"
-          />
-        </div>
-
-        {/* 下載 Modal */}
-        <Modal show={showModal} onHide={() => setShowModal(false)}>
-          <Modal.Header closeButton>
-            <Modal.Title>
-              {canvasObjects.some((obj) => obj.type === "video")
-                ? "下載影片"
-                : "下載圖片"}
-            </Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            {canvasObjects.some((obj) => obj.type === "video") ? (
-              <Form>
-                <Form.Group className="mb-3">
-                  <Form.Label>影片格式</Form.Label>
-                  <Form.Select
-                    value={downloadFormat}
-                    onChange={(e) => setDownloadFormat(e.target.value)}
-                  >
-                    <option value="webm">WebM</option>
-                    {/* MP4 需要外部編碼，暫時禁用 */}
-                    {/* <option value="mp4">MP4</option> */}
-                  </Form.Select>
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label>錄製幀率 (FPS)</Form.Label>
-                  <Form.Select
-                    value={downloadFps}
-                    onChange={(e) => setDownloadFps(e.target.value)}
-                  >
-                    <option value="24">24 FPS</option>
-                    <option value="30">30 FPS</option>
-                    <option value="60">60 FPS</option>
-                  </Form.Select>
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label>錄製時長 (秒)</Form.Label>
-                  <Form.Range
-                    min="1"
-                    max="30"
-                    value={downloadDuration}
-                    onChange={(e) => setDownloadDuration(e.target.value)}
-                  />
-                  <div className="text-center mt-2">{downloadDuration} 秒</div>
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label>檔案名稱</Form.Label>
-                  <Form.Control
-                    type="text"
-                    value={downloadFileName}
-                    onChange={(e) => setDownloadFileName(e.target.value)}
-                  />
-                </Form.Group>
-              </Form>
-            ) : (
-              <Form>
-                <Form.Group className="mb-3">
-                  <Form.Label>圖片格式</Form.Label>
-                  <Form.Select
-                    value={downloadImageFormat}
-                    onChange={(e) => setDownloadImageFormat(e.target.value)}
-                  >
-                    <option value="png">PNG</option>
-                    <option value="jpeg">JPEG</option>
-                  </Form.Select>
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label>檔案名稱</Form.Label>
-                  <Form.Control
-                    type="text"
-                    value={downloadImageFileName}
-                    onChange={(e) => setDownloadImageFileName(e.target.value)}
-                  />
-                </Form.Group>
-              </Form>
-            )}
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="secondary" onClick={() => setShowModal(false)}>
-              取消
-            </Button>
-            <Button
-              variant="primary"
-              onClick={validateAndDownload}
-              disabled={isProcessing}
-            >
-              確認下載
-            </Button>
-          </Modal.Footer>
-        </Modal>
-
-        {/* 顏色選擇器 Modal */}
-        <Modal show={showColorPicker} onHide={() => setShowColorPicker(false)}>
-          <Modal.Header closeButton>
-            <Modal.Title>調整顏色</Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            <ColorSelectorChrome
-              value={selectedObject?.color || "#000000"}
-              onChange={handleColorChange}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept="image/*,video/*"
+              className="d-none"
             />
-          </Modal.Body>
-        </Modal>
+          </div>
 
-        {/* 浮動物件列表按鈕 */}
-        <button
-          style={{
-            position: "fixed",
-            left: `${floatingBtnPos.x}px`,
-            top: `${floatingBtnPos.y}px`,
-            zIndex: 999,
-            borderRadius: "50%",
-            width: "60px",
-            height: "60px",
-            fontSize: "24px",
-            background: "#0d6efd",
-            color: "#fff",
-            border: "none",
-            boxShadow: "0 2px 8px rgba(0,0,0,.2)",
-            display: floatingBtnPos.x === -1000 ? "none" : "flex", // 初始定位前隱藏
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 0,
-            cursor: "grab",
-            touchAction: "none", // 防止觸控時捲動頁面
-          }}
-          onMouseDown={handleFloatingBtnDown}
-          onTouchStart={handleFloatingBtnDown}
-          onClick={() => {
-            if (!isDraggingRef.current) {
-              setShowObjectsModal(true);
-            }
-          }}
-          title="物件列表"
-        >
-          <Kanban />
-        </button>
+          {/* 下載 Modal */}
+          <Modal show={showModal} onHide={() => setShowModal(false)}>
+            <Modal.Header closeButton>
+              <Modal.Title>
+                {canvasObjects.some((obj) => obj.type === "video")
+                  ? "下載影片"
+                  : "下載圖片"}
+              </Modal.Title>
+            </Modal.Header>
+            <Modal.Body>
+              {canvasObjects.some((obj) => obj.type === "video") ? (
+                <Form>
+                  <Form.Group className="mb-3">
+                    <Form.Label>影片格式</Form.Label>
+                    <Form.Select
+                      value={downloadFormat}
+                      onChange={(e) => setDownloadFormat(e.target.value)}
+                    >
+                      <option value="webm">WebM</option>
+                      {/* MP4 需要外部編碼，暫時禁用 */}
+                      {/* <option value="mp4">MP4</option> */}
+                    </Form.Select>
+                  </Form.Group>
+                  <Form.Group className="mb-3">
+                    <Form.Label>錄製幀率 (FPS)</Form.Label>
+                    <Form.Select
+                      value={downloadFps}
+                      onChange={(e) => setDownloadFps(e.target.value)}
+                    >
+                      <option value="24">24 FPS</option>
+                      <option value="30">30 FPS</option>
+                      <option value="60">60 FPS</option>
+                    </Form.Select>
+                  </Form.Group>
+                  <Form.Group className="mb-3">
+                    <Form.Label>錄製時長 (秒)</Form.Label>
+                    <Form.Range
+                      min="1"
+                      max="30"
+                      value={downloadDuration}
+                      onChange={(e) => setDownloadDuration(e.target.value)}
+                    />
+                    <div className="text-center mt-2">
+                      {downloadDuration} 秒
+                    </div>
+                  </Form.Group>
+                  <Form.Group className="mb-3">
+                    <Form.Label>檔案名稱</Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={downloadFileName}
+                      onChange={(e) => setDownloadFileName(e.target.value)}
+                    />
+                  </Form.Group>
+                </Form>
+              ) : (
+                <Form>
+                  <Form.Group className="mb-3">
+                    <Form.Label>圖片格式</Form.Label>
+                    <Form.Select
+                      value={downloadImageFormat}
+                      onChange={(e) => setDownloadImageFormat(e.target.value)}
+                    >
+                      <option value="png">PNG</option>
+                      <option value="jpeg">JPEG</option>
+                    </Form.Select>
+                  </Form.Group>
+                  <Form.Group className="mb-3">
+                    <Form.Label>檔案名稱</Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={downloadImageFileName}
+                      onChange={(e) => setDownloadImageFileName(e.target.value)}
+                    />
+                  </Form.Group>
+                </Form>
+              )}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="secondary" onClick={() => setShowModal(false)}>
+                取消
+              </Button>
+              <Button
+                variant="primary"
+                onClick={validateAndDownload}
+                disabled={isProcessing}
+              >
+                確認下載
+              </Button>
+            </Modal.Footer>
+          </Modal>
 
-        {/* 物件列表模態框 */}
-        <Modal
-          show={showObjectsModal}
-          onHide={() => setShowObjectsModal(false)}
-          size="lg"
-        >
-          <Modal.Header closeButton>
-            <Modal.Title>物件列表</Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            <div className="d-flex flex-wrap gap-3">
-              {canvasObjects.map((obj) => {
-                let icon;
-                let label;
-                const textColor = obj.color || "#000000"; // 預設黑色
+          {/* 顏色選擇器 Modal */}
+          <Modal
+            show={showColorPicker}
+            onHide={() => setShowColorPicker(false)}
+          >
+            <Modal.Header closeButton>
+              <Modal.Title>調整顏色</Modal.Title>
+            </Modal.Header>
+            <Modal.Body>
+              <ColorSelectorChrome
+                value={selectedObject?.color || "#000000"}
+                onChange={handleColorChange}
+              />
+            </Modal.Body>
+          </Modal>
 
-                switch (obj.type) {
-                  case "image":
-                    icon = <Upload size={24} className="mb-2" />;
-                    label = "圖片";
-                    break;
-                  case "video":
-                    icon = <Trash size={24} className="mb-2" />;
-                    label = "影片";
-                    break;
-                  case "text":
-                    icon = <Type size={24} className="mb-2" />;
-                    label = obj.textContent || "文字";
-                    break;
-                  default:
-                    icon = null;
-                    label = "未知";
-                }
+          {/* 浮動物件列表按鈕 */}
+          <button
+            style={{
+              position: "fixed",
+              left: `${floatingBtnPos.x}px`,
+              top: `${floatingBtnPos.y}px`,
+              zIndex: 999,
+              borderRadius: "50%",
+              width: "60px",
+              height: "60px",
+              fontSize: "24px",
+              background: "#0d6efd",
+              color: "#fff",
+              border: "none",
+              boxShadow: "0 2px 8px rgba(0,0,0,.2)",
+              display: floatingBtnPos.x === -1000 ? "none" : "flex", // 初始定位前隱藏
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0,
+              cursor: "grab",
+              touchAction: "none", // 防止觸控時捲動頁面
+            }}
+            onMouseDown={handleFloatingBtnDown}
+            onTouchStart={handleFloatingBtnDown}
+            onClick={() => {
+              if (!isDraggingRef.current) {
+                setShowObjectsModal(true);
+              }
+            }}
+            title="物件列表"
+          >
+            <Kanban />
+          </button>
 
-                return (
-                  <div
-                    key={obj.id}
-                    className="position-relative"
-                    style={{ width: "100px", cursor: "pointer" }}
-                    onClick={() => handleObjectClick(obj)}
-                  >
+          {/* 物件列表模態框 */}
+          <Modal
+            show={showObjectsModal}
+            onHide={() => setShowObjectsModal(false)}
+            size="lg"
+          >
+            <Modal.Header closeButton>
+              <Modal.Title>物件列表</Modal.Title>
+            </Modal.Header>
+            <Modal.Body>
+              <div className="d-flex flex-wrap gap-3">
+                {canvasObjects.map((obj) => {
+                  let icon;
+                  let label;
+                  const textColor = obj.color || "#000000"; // 預設黑色
+
+                  switch (obj.type) {
+                    case "image":
+                      icon = <Upload size={24} className="mb-2" />;
+                      label = "圖片";
+                      break;
+                    case "video":
+                      icon = <Trash size={24} className="mb-2" />;
+                      label = "影片";
+                      break;
+                    case "text":
+                      icon = <Type size={24} className="mb-2" />;
+                      label = obj.textContent || "文字";
+                      break;
+                    default:
+                      icon = null;
+                      label = "未知";
+                  }
+
+                  return (
                     <div
-                      className="card h-100"
-                      style={{
-                        borderColor: obj.color || "transparent",
-                        borderWidth: "2px",
-                        transition: "all 0.2s",
-                      }}
+                      key={obj.id}
+                      className="position-relative"
+                      style={{ width: "100px", cursor: "pointer" }}
+                      onClick={() => handleObjectClick(obj)}
                     >
                       <div
-                        className="card-body p-2 text-center"
-                        style={{ color: textColor }}
+                        className="card h-100"
+                        style={{
+                          borderColor: obj.color || "transparent",
+                          borderWidth: "2px",
+                          transition: "all 0.2s",
+                        }}
                       >
-                        {icon}
                         <div
-                          className="small text-truncate"
-                          style={{
-                            color: textColor,
-                            fontWeight: "bold",
-                          }}
+                          className="card-body p-2 text-center"
+                          style={{ color: textColor }}
                         >
-                          {label}
+                          {icon}
+                          <div
+                            className="small text-truncate"
+                            style={{
+                              color: textColor,
+                              fontWeight: "bold",
+                            }}
+                          >
+                            {label}
+                          </div>
                         </div>
                       </div>
+                      <button
+                        className="position-absolute top-0 end-0 btn btn-sm btn-outline-danger p-0"
+                        style={{
+                          width: "24px",
+                          height: "24px",
+                          zIndex: 10,
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveObject(obj.id);
+                        }}
+                      >
+                        <XLg size={12} />
+                      </button>
                     </div>
-                    <button
-                      className="position-absolute top-0 end-0 btn btn-sm btn-outline-danger p-0"
-                      style={{
-                        width: "24px",
-                        height: "24px",
-                        zIndex: 10,
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveObject(obj.id);
-                      }}
-                    >
-                      <XLg size={12} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </Modal.Body>
-        </Modal>
-      </div>
+                  );
+                })}
+              </div>
+            </Modal.Body>
+          </Modal>
+        </div>
+      </PageWrapper>
     </>
   );
 }
