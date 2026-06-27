@@ -23,7 +23,7 @@ const TEMPLATES: Record<EnemyType, EnemyTemplate> = {
     speed: 80,
     damageToBase: 15,
     souls: 1,
-    exp: 3,
+    exp: 4,
   },
   goblin: {
     width: 24,
@@ -33,7 +33,7 @@ const TEMPLATES: Record<EnemyType, EnemyTemplate> = {
     speed: 120,
     damageToBase: 10,
     souls: 1,
-    exp: 2,
+    exp: 3,
   },
   slime: {
     width: 32,
@@ -51,7 +51,7 @@ const TEMPLATES: Record<EnemyType, EnemyTemplate> = {
     hp: 80,
     armor: 30,
     speed: 55,
-    damageToBase: 30,
+    damageToBase: 20,
     souls: 4,
     exp: 8,
   },
@@ -73,7 +73,7 @@ const TEMPLATES: Record<EnemyType, EnemyTemplate> = {
     speed: 100,
     damageToBase: 12,
     souls: 2,
-    exp: 5,
+    exp: 6,
   },
 };
 

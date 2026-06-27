@@ -38,7 +38,6 @@ import type {
   ActiveWeapon,
   GamePhase,
   GameEvent,
-  ResultScreenData,
   StageConfig,
   SkillOption,
 } from "../types";
@@ -280,53 +279,50 @@ export class GameEngine {
     }
   }
 
+  /** 鎖定目標：Boss 戰時鎖 Boss，否則鎖最靠近基地（Y 最大）的活著敵人 */
+  private findPriorityTarget(): { x: number; y: number } | null {
+    if (this.phase === "BOSS_FIGHT" && this.boss?.isAlive) {
+      return { x: this.boss.x, y: this.boss.y };
+    }
+    let best: Enemy | null = null;
+    for (const enemy of this.enemies) {
+      if (!enemy.isAlive) continue;
+      if (!best || enemy.y > best.y) best = enemy;
+    }
+    return best ? { x: best.x, y: best.y } : null;
+  }
+
   private fireWeapon(weapon: ActiveWeapon): void {
     const { x, y, height, passiveStack } = this.player;
     const muzzleY = y - height / 2;
     const piercing = weapon.level >= 5;
 
+    // 計算瞄準角度：有目標就朝目標，否則正上方
+    const target = this.findPriorityTarget();
+    const aimAngle = target
+      ? Math.atan2(target.y - muzzleY, target.x - x)
+      : -Math.PI / 2;
+
     if (weapon.type === "basic_shot") {
+      const vx = Math.cos(aimAngle) * BULLET_SPEED;
+      const vy = Math.sin(aimAngle) * BULLET_SPEED;
       if (weapon.level >= 4) {
         this.bullets.push(
-          makeBullet(
-            weapon,
-            passiveStack,
-            x - 8,
-            muzzleY,
-            0,
-            -BULLET_SPEED,
-            piercing
-          )
+          makeBullet(weapon, passiveStack, x - 8, muzzleY, vx, vy, piercing)
         );
         this.bullets.push(
-          makeBullet(
-            weapon,
-            passiveStack,
-            x + 8,
-            muzzleY,
-            0,
-            -BULLET_SPEED,
-            piercing
-          )
+          makeBullet(weapon, passiveStack, x + 8, muzzleY, vx, vy, piercing)
         );
       } else {
         this.bullets.push(
-          makeBullet(
-            weapon,
-            passiveStack,
-            x,
-            muzzleY,
-            0,
-            -BULLET_SPEED,
-            piercing
-          )
+          makeBullet(weapon, passiveStack, x, muzzleY, vx, vy, piercing)
         );
       }
     } else if (weapon.type === "multi_arrow") {
       const dirCount = getMultiArrowDirCount(weapon.level);
       const spread = 30 * (Math.PI / 180);
       for (let i = 0; i < dirCount; i++) {
-        const angle = -Math.PI / 2 + (i - (dirCount - 1) / 2) * spread;
+        const angle = aimAngle + (i - (dirCount - 1) / 2) * spread;
         this.bullets.push(
           makeBullet(
             weapon,
@@ -383,7 +379,7 @@ export class GameEngine {
             continue;
           const dist = Math.hypot(bx - enemy.x, by - enemy.y);
           if (dist >= 13 + Math.max(enemy.width, enemy.height) / 2) continue;
-          this.applyDamageToEnemy(enemy, dmg, true);
+          this.applyDamageToEnemy(enemy, dmg);
           this.orbitBladeCooldowns.set(enemy.id, ORBIT_HIT_COOLDOWN);
         }
 
@@ -470,7 +466,7 @@ export class GameEngine {
           flower.y,
           Math.cos(a) * speed,
           Math.sin(a) * speed,
-          8
+          5
         )
       );
     }
@@ -634,11 +630,7 @@ export class GameEngine {
     }
   }
 
-  private applyDamageToEnemy(
-    enemy: Enemy,
-    dmg: number,
-    isOrbitBlade = false
-  ): void {
+  private applyDamageToEnemy(enemy: Enemy, dmg: number): void {
     if (!enemy.isAlive) return;
     if (enemy.armor > 0) {
       enemy.armor = Math.max(0, enemy.armor - dmg);
@@ -716,10 +708,10 @@ export class GameEngine {
   private computeLevel(exp: number): number {
     let level = 0,
       cumulative = 0,
-      cost = 15;
+      cost = 8;
     while (exp >= cumulative + cost) {
       cumulative += cost;
-      cost += 10;
+      cost += 3;
       level++;
     }
     return level;
@@ -727,10 +719,10 @@ export class GameEngine {
 
   private getExpBarProgress(): { current: number; max: number } {
     let cumulative = 0,
-      cost = 15;
+      cost = 8;
     while (this.totalExp >= cumulative + cost) {
       cumulative += cost;
-      cost += 10;
+      cost += 3;
     }
     return { current: this.totalExp - cumulative, max: cost };
   }

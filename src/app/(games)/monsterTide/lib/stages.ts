@@ -16,8 +16,8 @@ export const STAGES: StageConfig[] = [
         enemies: [
           {
             type: "skeleton",
-            count: 5,
-            spawnInterval: 800,
+            count: 12,
+            spawnInterval: 900,
             spawnPattern: "random_x",
           },
         ],
@@ -29,33 +29,33 @@ export const STAGES: StageConfig[] = [
         enemies: [
           {
             type: "skeleton",
-            count: 4,
-            spawnInterval: 800,
+            count: 8,
+            spawnInterval: 700,
             spawnPattern: "random_x",
           },
           {
             type: "goblin",
-            count: 3,
+            count: 6,
             spawnInterval: 600,
-            spawnPattern: "sides",
+            spawnPattern: "random_x",
           },
         ],
       },
       {
         waveIndex: 3,
         isBossWave: false,
-        preWaveMessage: "Wave 3",
+        preWaveMessage: "Wave 3 — 注意史萊姆會分裂！",
         enemies: [
           {
             type: "slime",
-            count: 3,
-            spawnInterval: 1000,
+            count: 4,
+            spawnInterval: 1200,
             spawnPattern: "random_x",
           },
           {
             type: "skeleton",
-            count: 4,
-            spawnInterval: 800,
+            count: 8,
+            spawnInterval: 700,
             spawnPattern: "random_x",
           },
         ],
@@ -63,18 +63,18 @@ export const STAGES: StageConfig[] = [
       {
         waveIndex: 4,
         isBossWave: false,
-        preWaveMessage: "Wave 4",
+        preWaveMessage: "Wave 4 — 鐵甲騎士！",
         enemies: [
           {
             type: "goblin",
-            count: 6,
-            spawnInterval: 500,
+            count: 10,
+            spawnInterval: 550,
             spawnPattern: "random_x",
           },
           {
             type: "armored_knight",
             count: 2,
-            spawnInterval: 1500,
+            spawnInterval: 2500,
             spawnPattern: "sides",
           },
         ],
@@ -87,19 +87,19 @@ export const STAGES: StageConfig[] = [
           {
             type: "man_eater_flower",
             count: 2,
-            spawnInterval: 1200,
+            spawnInterval: 2500,
             spawnPattern: "sides",
           },
           {
             type: "bat",
-            count: 4,
-            spawnInterval: 700,
+            count: 8,
+            spawnInterval: 600,
             spawnPattern: "random_x",
           },
           {
             type: "goblin",
-            count: 3,
-            spawnInterval: 500,
+            count: 8,
+            spawnInterval: 550,
             spawnPattern: "random_x",
           },
         ],
@@ -129,14 +129,14 @@ export const STAGES: StageConfig[] = [
         enemies: [
           {
             type: "goblin",
-            count: 6,
-            spawnInterval: 650,
+            count: 14,
+            spawnInterval: 550,
             spawnPattern: "random_x",
           },
           {
             type: "skeleton",
-            count: 3,
-            spawnInterval: 900,
+            count: 8,
+            spawnInterval: 700,
             spawnPattern: "sides",
           },
         ],
@@ -148,14 +148,14 @@ export const STAGES: StageConfig[] = [
         enemies: [
           {
             type: "bat",
-            count: 5,
-            spawnInterval: 600,
+            count: 12,
+            spawnInterval: 500,
             spawnPattern: "random_x",
           },
           {
             type: "armored_knight",
-            count: 2,
-            spawnInterval: 1500,
+            count: 3,
+            spawnInterval: 2000,
             spawnPattern: "sides",
           },
         ],
@@ -167,14 +167,14 @@ export const STAGES: StageConfig[] = [
         enemies: [
           {
             type: "slime",
-            count: 4,
+            count: 6,
             spawnInterval: 900,
             spawnPattern: "random_x",
           },
           {
             type: "goblin",
-            count: 4,
-            spawnInterval: 550,
+            count: 12,
+            spawnInterval: 500,
             spawnPattern: "random_x",
           },
         ],
@@ -186,14 +186,14 @@ export const STAGES: StageConfig[] = [
         enemies: [
           {
             type: "armored_knight",
-            count: 3,
-            spawnInterval: 1300,
+            count: 4,
+            spawnInterval: 1800,
             spawnPattern: "sides",
           },
           {
             type: "bat",
-            count: 6,
-            spawnInterval: 500,
+            count: 14,
+            spawnInterval: 450,
             spawnPattern: "random_x",
           },
         ],
@@ -206,19 +206,19 @@ export const STAGES: StageConfig[] = [
           {
             type: "man_eater_flower",
             count: 3,
-            spawnInterval: 1000,
+            spawnInterval: 2000,
             spawnPattern: "sides",
           },
           {
             type: "skeleton",
-            count: 5,
-            spawnInterval: 700,
+            count: 12,
+            spawnInterval: 600,
             spawnPattern: "random_x",
           },
           {
             type: "bat",
-            count: 4,
-            spawnInterval: 600,
+            count: 10,
+            spawnInterval: 500,
             spawnPattern: "random_x",
           },
         ],
