@@ -4,4 +4,4 @@
 :HL["https://qwer820921.github.io/_next/static/chunks/02l38z7s0.-m~.css","style"]
 :HL["https://qwer820921.github.io/_next/static/chunks/13cndfr2vyzsi.css","style"]
 :HL["/logo192.png","image"]
-0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"(general)","param":null,"prefetchHints":0,"slots":{"children":{"name":"novels","param":null,"prefetchHints":0,"slots":{"children":{"name":"id","param":{"type":"d","key":"2","siblings":null},"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}}}},"staleTime":300,"buildId":"fH4PcSn75gLNMG66FYt5R"}
+0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"(general)","param":null,"prefetchHints":0,"slots":{"children":{"name":"novels","param":null,"prefetchHints":0,"slots":{"children":{"name":"id","param":{"type":"d","key":"2","siblings":null},"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}}}},"staleTime":300,"buildId":"hc_y5_DywKn1fjG-NlRjC"}

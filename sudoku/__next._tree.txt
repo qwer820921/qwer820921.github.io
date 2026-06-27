@@ -3,4 +3,4 @@
 :HL["https://qwer820921.github.io/_next/static/chunks/16mfisom4_k2d.css","style"]
 :HL["https://qwer820921.github.io/_next/static/chunks/0h-gvyqbor0_p.css","style"]
 :HL["/logo192.png","image"]
-0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"(games)","param":null,"prefetchHints":0,"slots":{"children":{"name":"sudoku","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}},"staleTime":300,"buildId":"fH4PcSn75gLNMG66FYt5R"}
+0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"(games)","param":null,"prefetchHints":0,"slots":{"children":{"name":"sudoku","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}},"staleTime":300,"buildId":"hc_y5_DywKn1fjG-NlRjC"}

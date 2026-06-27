@@ -2,5 +2,5 @@
 2:"$Sreact.suspense"
 3:I[87690,["https://qwer820921.github.io/_next/static/chunks/0jqra.aqb.0va.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js","https://qwer820921.github.io/_next/static/chunks/0ccc5niq8u0_1.js","https://qwer820921.github.io/_next/static/chunks/0cnmkhamcbfvb.js"],"default"]
 4:I[897367,["https://qwer820921.github.io/_next/static/chunks/0jqra.aqb.0va.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js"],"OutletBoundary"]
-0:{"rsc":["$","$1","c",{"children":[["$","$2",null,{"fallback":null,"children":["$","$L3",null,{}]}],[["$","script","script-0",{"src":"https://qwer820921.github.io/_next/static/chunks/0cnmkhamcbfvb.js","async":true}]],["$","$L4",null,{"children":["$","$2",null,{"name":"Next.MetadataOutlet","children":"$@5"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"fH4PcSn75gLNMG66FYt5R"}
+0:{"rsc":["$","$1","c",{"children":[["$","$2",null,{"fallback":null,"children":["$","$L3",null,{}]}],[["$","script","script-0",{"src":"https://qwer820921.github.io/_next/static/chunks/0cnmkhamcbfvb.js","async":true}]],["$","$L4",null,{"children":["$","$2",null,{"name":"Next.MetadataOutlet","children":"$@5"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"hc_y5_DywKn1fjG-NlRjC"}
 5:null
