@@ -1,0 +1,8 @@
+1:"$Sreact.fragment"
+2:I[355310,["https://qwer820921.github.io/_next/static/chunks/0t9lfn4ntr0k1.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js","https://qwer820921.github.io/_next/static/chunks/039w-g8eb90kw.js"],"default"]
+3:I[897367,["https://qwer820921.github.io/_next/static/chunks/0t9lfn4ntr0k1.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js"],"OutletBoundary"]
+4:"$Sreact.suspense"
+:HL["https://qwer820921.github.io/_next/static/chunks/03bt~250bt43z.css","style"]
+:HL["https://qwer820921.github.io/_next/static/chunks/13cndfr2vyzsi.css","style"]
+0:{"rsc":["$","$1","c",{"children":[["$","$L2",null,{}],[["$","link","0",{"rel":"stylesheet","href":"https://qwer820921.github.io/_next/static/chunks/03bt~250bt43z.css","precedence":"next"}],["$","link","1",{"rel":"stylesheet","href":"https://qwer820921.github.io/_next/static/chunks/13cndfr2vyzsi.css","precedence":"next"}],["$","script","script-0",{"src":"https://qwer820921.github.io/_next/static/chunks/039w-g8eb90kw.js","async":true}]],["$","$L3",null,{"children":["$","$4",null,{"name":"Next.MetadataOutlet","children":"$@5"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"kvfD8xvVqvAFVmAZPilKe"}
+5:null
