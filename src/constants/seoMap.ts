@@ -163,6 +163,13 @@ export const seoMap: {
     keywords:
       "QRCode產生器, 動態二維碼, QR Code 背景, 短網址, vCard, Wi-Fi QRcode, 萬事屋",
   },
+  [ROUTES.CLOCK_OUT]: {
+    title: "子yee 萬事屋 | 下班倒數 - 遊戲化下班時間倒數計時器",
+    description:
+      "設定你的預計下班時間，用 RPG 練等般的 EXP 進度條即時追蹤距離下班還有多久！時間自動記憶於瀏覽器，每天開啟即用，讓上班的每一刻都充滿盼頭。",
+    keywords:
+      "下班倒數, 下班時間, 倒數計時器, 上班倒數, 下班倒數進度條, Clock Out, 子yee 萬事屋, 上班族工具",
+  },
   [ROUTES.MONSTER_TIDE]: {
     title: "子yee 萬事屋 | 怪物洪流 - 生存策略防禦遊戲",
     description:

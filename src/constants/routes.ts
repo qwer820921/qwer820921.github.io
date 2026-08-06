@@ -26,6 +26,7 @@ export const ROUTES = {
   JSON_FORMAT: "/jsonFormat", // JSON格式化工具
   TEN_MIN_EMAIL: "/tenMinEmail", // 10分鐘信箱
   QR_CODE_GENERATOR: "/qrCodeGenerator", // QRCode產生器
+  CLOCK_OUT: "/clockOut", // 下班倒數
   BOBA_SURVIVORS: "/bobaSurvivors", // 重裝全糖珍奶
   SHENMA_SANGUO: "/shenmaSanguo", // 神馬三國
   MONSTER_TIDE: "/monsterTide", // 怪物洪流

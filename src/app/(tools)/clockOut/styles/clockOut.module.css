@@ -1,0 +1,600 @@
+/* 下班倒數 頁面樣式 — 復古電玩像素風 */
+
+.container {
+  --bg2: #0a0d18;
+  --panel: #1a2136;
+  --panel-2: #141a2b;
+  --ink: #eaf0ff;
+  --muted: #8b95b5;
+  --exp-hi: #ccff4d;
+  --exp-top: #a4e800;
+  --exp-mid: #7dc400;
+  --exp-bot: #3f8300;
+  --exp-trough: #0a1005;
+  --amber: #ffb02e;
+  --amber-dk: #b96f00;
+  --mono: "Courier New", ui-monospace, "Cascadia Mono", monospace;
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 24px 16px 48px;
+  font-family: var(--mono);
+  color: var(--ink);
+}
+
+/* ===== 上班時間快速設定（左上角） ===== */
+.clockInCorner {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 30;
+}
+.clockInBtn {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--exp-hi);
+  background: #26305a;
+  border: 2px solid #000;
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.15),
+    2px 2px 0 #000;
+  padding: 10px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.clockInBtn:hover {
+  color: #fff;
+}
+.clockInBtn:active {
+  transform: translate(1px, 1px);
+}
+.clockInBtn:focus-visible {
+  outline: 3px solid var(--amber);
+  outline-offset: 2px;
+}
+.clickCatcher {
+  position: fixed;
+  inset: 0;
+  z-index: 29;
+  background: transparent;
+}
+.clockInPop {
+  position: absolute;
+  top: 48px;
+  left: 0;
+  width: min(320px, calc(100vw - 32px));
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  z-index: 31;
+  background: linear-gradient(180deg, #202844, #171d31);
+  border: 3px solid #000;
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.06),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.5),
+    4px 8px 0 rgba(0, 0, 0, 0.5);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: dropin 0.2s ease;
+}
+
+/* 窄螢幕：改為置中在螢幕上方，避免蓋到主畫面 */
+@media (max-width: 640px) {
+  .clockInCorner {
+    position: static;
+    align-self: center;
+    z-index: 30;
+  }
+  .clockInPop {
+    left: 50%;
+    transform: translateX(-50%);
+  }
+}
+
+.kicker {
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  font-size: 11px;
+  color: var(--amber);
+  text-shadow: 2px 2px 0 #000;
+}
+.kicker b {
+  color: var(--exp-top);
+}
+
+.console {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ===== screen ===== */
+.screen {
+  position: relative;
+  background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+  border: 3px solid #000;
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.08),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.55),
+    0 0 0 3px #263056,
+    0 10px 0 rgba(0, 0, 0, 0.45),
+    0 22px 40px rgba(0, 0, 0, 0.55);
+  padding: 22px 20px 24px;
+  overflow: hidden;
+}
+.screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.16) 0 2px,
+    transparent 2px 4px
+  );
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+.screenTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.nowWrap {
+  flex: 1;
+  min-width: 0;
+}
+.nowLabel {
+  font-size: 10px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.nowClock {
+  font-size: 26px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  text-shadow: 2px 2px 0 #000;
+}
+.statusPill {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 5px 8px;
+  border: 2px solid #000;
+  background: #26305a;
+  color: var(--exp-hi);
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.15),
+    2px 2px 0 #000;
+  white-space: nowrap;
+}
+
+/* ===== countdown (hero) ===== */
+.countBlock {
+  margin: 18px 0 22px;
+  text-align: center;
+}
+.countCap {
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: var(--amber);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  text-shadow: 2px 2px 0 #000;
+}
+.countMain {
+  font-weight: 700;
+  line-height: 0.92;
+  text-shadow:
+    4px 4px 0 #000,
+    0 0 26px rgba(164, 232, 0, 0.35);
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0 2px;
+}
+.countMain .n {
+  color: var(--exp-hi);
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(72px, 26vw, 128px);
+}
+.countMain .u {
+  color: var(--amber);
+  font-size: clamp(22px, 7vw, 34px);
+  margin: 0 4px 0 6px;
+}
+/* 達成狀態「自由了！」：不換行，字級略縮以容納四字 */
+.doneText {
+  white-space: nowrap;
+  font-size: clamp(52px, 17vw, 92px) !important;
+}
+
+/* ===== EXP bar ===== */
+.expWrap {
+  margin-top: 4px;
+}
+.expMeta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.expbar {
+  position: relative;
+  height: 30px;
+  background: var(--exp-trough);
+  border: 3px solid #000;
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.8),
+    inset -1px -1px 0 rgba(255, 255, 255, 0.06),
+    0 0 0 2px #2a3560;
+  overflow: hidden;
+  image-rendering: pixelated;
+}
+.expFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  background: linear-gradient(
+    180deg,
+    var(--exp-hi) 0%,
+    var(--exp-top) 42%,
+    var(--exp-mid) 60%,
+    var(--exp-bot) 100%
+  );
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.28);
+  transition: width 0.35s cubic-bezier(0.4, 1.4, 0.5, 1);
+}
+.expFill::before {
+  content: "";
+  position: absolute;
+  inset: 2px 2px auto 2px;
+  height: 8px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.7),
+    rgba(255, 255, 255, 0)
+  );
+  border-radius: 2px;
+}
+.expFill::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 26px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.45),
+    transparent
+  );
+  animation: shine 2.6s linear infinite;
+}
+@keyframes shine {
+  0% {
+    left: -30px;
+  }
+  100% {
+    left: 110%;
+  }
+}
+.expText {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  text-shadow:
+    1px 1px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+  pointer-events: none;
+}
+.expK {
+  color: var(--exp-hi);
+}
+
+/* cheer */
+.cheerRow {
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+}
+.cheer {
+  font-size: 15px;
+  color: var(--ink);
+  line-height: 1.5;
+  text-align: center;
+  text-shadow: 1px 1px 0 #000;
+  min-height: 1.5em;
+}
+
+/* inline capy when done */
+.doneInline {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 2px dashed var(--amber-dk);
+  background: rgba(255, 176, 46, 0.06);
+}
+.doneInline img {
+  width: 64px;
+  height: 64px;
+}
+.doneInline b {
+  color: var(--amber);
+  font-size: 15px;
+}
+.doneSub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ===== settings popover content ===== */
+.settingsTitle {
+  font-size: 12px;
+  letter-spacing: 2px;
+  font-weight: 700;
+  color: var(--exp-hi);
+  text-shadow: 1px 1px 0 #000;
+}
+@keyframes dropin {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fixedBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 2px dashed #3a4468;
+  background: rgba(255, 255, 255, 0.02);
+}
+.fixedLabel {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.times {
+  display: flex;
+  gap: 12px;
+}
+.field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field label {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--ink);
+}
+.dot {
+  color: var(--exp-top);
+}
+.overrideTag {
+  color: var(--amber);
+  margin-left: 6px;
+}
+.timeInput,
+.numInput {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--bg2);
+  border: 2px solid #000;
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.6);
+  padding: 8px 10px;
+  color-scheme: dark;
+  width: 100%;
+}
+.inlineRow {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.inlineRow .timeInput {
+  flex: 1;
+}
+.rowBtn {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  padding: 8px 10px;
+  border: 2px solid #000;
+  background: #26305a;
+  color: var(--ink);
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.15),
+    2px 2px 0 #000;
+  cursor: pointer;
+}
+.rowBtn:hover {
+  color: var(--exp-hi);
+}
+.rowBtn:focus-visible {
+  outline: 3px solid var(--amber);
+  outline-offset: 2px;
+}
+.hint {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.settingsActions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.saveBtn {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 10px 12px;
+  border: 2px solid #000;
+  background: linear-gradient(180deg, var(--exp-top), var(--exp-bot));
+  color: #06210a;
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.25),
+    2px 2px 0 #000;
+  cursor: pointer;
+}
+.saveBtn:focus-visible {
+  outline: 3px solid var(--amber);
+  outline-offset: 2px;
+}
+.resetBtn {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  padding: 7px 10px;
+  border: 2px solid #000;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.resetBtn:hover {
+  color: var(--amber);
+}
+
+.legend {
+  max-width: 460px;
+  width: 100%;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.7;
+  text-align: center;
+}
+
+/* ===== celebration ===== */
+.celebrate {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 14px;
+  background: rgba(5, 7, 14, 0.86);
+  z-index: 1080;
+  cursor: pointer;
+  text-align: center;
+  padding: 20px;
+  animation: fadein 0.3s ease;
+}
+.confetti {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.capy {
+  width: min(240px, 62vw);
+  height: auto;
+  filter: drop-shadow(0 8px 0 rgba(0, 0, 0, 0.4));
+  animation: bounce 1s ease-in-out infinite;
+  position: relative;
+  z-index: 2;
+}
+.celebrateTitle {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 34px;
+  letter-spacing: 3px;
+  color: var(--exp-hi);
+  text-shadow:
+    3px 3px 0 #000,
+    0 0 20px rgba(164, 232, 0, 0.5);
+  position: relative;
+  z-index: 2;
+}
+.celebrateCheer {
+  margin: 0;
+  color: var(--amber);
+  font-size: 14px;
+  letter-spacing: 2px;
+  position: relative;
+  z-index: 2;
+}
+.celebrateHint {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 2px;
+  position: relative;
+  z-index: 2;
+}
+@keyframes bounce {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-16px) rotate(2deg);
+  }
+}
+@keyframes fadein {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .expFill,
+  .expFill::after,
+  .capy,
+  .celebrate,
+  .settingsPanel,
+  .backdrop,
+  .clockInPop {
+    animation: none;
+  }
+  .expFill {
+    transition: none;
+  }
+}
