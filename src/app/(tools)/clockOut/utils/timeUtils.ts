@@ -23,6 +23,12 @@ export const computeEndTime = (
 export const todayStr = (d: Date = new Date()): string =>
   `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
+/** 把分鐘數拆成 {h, m}；先四捨五入到整分鐘再拆，避免分鐘進位到 60 卻不進位小時 */
+export const splitDuration = (mins: number): { h: number; m: number } => {
+  const totalM = Math.round(mins);
+  return { h: Math.floor(totalM / 60), m: totalM % 60 };
+};
+
 /** 由現在時間、上班、下班計算狀態、進度、剩餘時間（支援跨午夜） */
 export function computeClockState(
   nowMin: number,
@@ -34,29 +40,39 @@ export function computeClockState(
   let cur = nowMin;
 
   const cross = end <= start; // 下班 <= 上班 視為跨午夜（大夜班）
+  const endBeforeWrap = end; // 跨日前的原始下班時間，用來判斷「凌晨仍屬於昨晚班次」
   if (cross) end += 1440;
-  if (cross && cur < start) cur += 1440;
 
   let status: ClockState["status"];
   let pct: number;
   let remainingMin: number;
   let cap: string;
 
-  if (cur < start) {
-    status = "before";
-    pct = 0;
-    remainingMin = start - cur;
-    cap = "距離上班還有";
-  } else if (cur >= end) {
+  if (cross && cur > endBeforeWrap && cur < start) {
+    // 大夜班休息區間：今早已下班、下一班還沒開始 → 持續顯示已下班，直到下一班開始
     status = "done";
     pct = 100;
     remainingMin = 0;
     cap = "狀態";
   } else {
-    status = "work";
-    pct = ((cur - start) / (end - start)) * 100;
-    remainingMin = end - cur;
-    cap = "距離下班還有";
+    if (cross && cur <= endBeforeWrap) cur += 1440;
+
+    if (cur < start) {
+      status = "before";
+      pct = 0;
+      remainingMin = start - cur;
+      cap = "距離上班還有";
+    } else if (cur >= end) {
+      status = "done";
+      pct = 100;
+      remainingMin = 0;
+      cap = "狀態";
+    } else {
+      status = "work";
+      pct = ((cur - start) / (end - start)) * 100;
+      remainingMin = end - cur;
+      cap = "距離下班還有";
+    }
   }
 
   const totalSec = Math.max(1, end - start) * 60;

@@ -8,18 +8,22 @@ import {
   computeClockState,
   computeEndTime,
   fmtHM,
+  splitDuration,
   todayStr,
 } from "../utils/timeUtils";
 import { cheerFor, BEFORE_CHEER } from "../utils/cheers";
 import ExpBar from "./ExpBar";
 import SettingsControl from "./SettingsControl";
 import ClockOutCelebration from "./ClockOutCelebration";
+import ShareControls from "./ShareControls";
+import { buildShareText } from "../utils/shareText";
 
 const ClockOutPage: React.FC = () => {
   const [isMounted, setIsMounted] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const [celebrate, setCelebrate] = useState(false);
   const prevDone = useRef(false);
+  const screenRef = useRef<HTMLDivElement>(null);
 
   const {
     workMinutes,
@@ -55,6 +59,7 @@ const ClockOutPage: React.FC = () => {
   const state = computeClockState(nowMin, clockInTime, effectiveEnd);
 
   const cheer = state.status === "before" ? BEFORE_CHEER : cheerFor(state.pct);
+  const shareText = buildShareText(state, nowMin, clockInTime, effectiveEnd, cheer);
 
   // 進度首次達到 100% 時觸發慶祝
   useEffect(() => {
@@ -66,17 +71,19 @@ const ClockOutPage: React.FC = () => {
 
   if (!isMounted) return null; // 避免 Zustand persist 造成的 hydration mismatch
 
-  const h = Math.floor(state.remainingMin / 60);
-  const m = Math.round(state.remainingMin % 60);
+  const { h, m } = splitDuration(state.remainingMin);
 
   return (
     <PageWrapper>
       <Container className={styles.container}>
-        <SettingsControl />
+        <div className={styles.topControls}>
+          <SettingsControl />
+          <ShareControls screenRef={screenRef} shareText={shareText} />
+        </div>
 
         <div className={styles.console}>
           {/* SCREEN */}
-          <div className={styles.screen}>
+          <div className={styles.screen} ref={screenRef}>
             <div className={styles.screenTop}>
               <div className={styles.nowWrap}>
                 <div className={styles.nowLabel}>現在時間</div>

@@ -37,10 +37,13 @@ const SettingsControl: React.FC = () => {
   const workHours = workMinutes / 60;
 
   return (
+    // .clockInCorner 只負責 position:relative（給內部彈窗定位用）；
+    // 實際的絕對定位/置中由父層 clockOutPage.tsx 的 .topControls 容器決定，
+    // 必須渲染在該容器內才會正確定位。
     <div className={styles.clockInCorner}>
       <button
         type="button"
-        className={styles.clockInBtn}
+        className={styles.pixelBtn}
         aria-label="上班時間設定"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
