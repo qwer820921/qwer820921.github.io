@@ -59,7 +59,13 @@ const ClockOutPage: React.FC = () => {
   const state = computeClockState(nowMin, clockInTime, effectiveEnd);
 
   const cheer = state.status === "before" ? BEFORE_CHEER : cheerFor(state.pct);
-  const shareText = buildShareText(state, nowMin, clockInTime, effectiveEnd, cheer);
+  const shareText = buildShareText(
+    state,
+    nowMin,
+    clockInTime,
+    effectiveEnd,
+    cheer
+  );
 
   // 進度首次達到 100% 時觸發慶祝
   useEffect(() => {
@@ -72,6 +78,9 @@ const ClockOutPage: React.FC = () => {
   if (!isMounted) return null; // 避免 Zustand persist 造成的 hydration mismatch
 
   const { h, m } = splitDuration(state.remainingMin);
+  // 最後一分鐘內（不足 1 分）改以「秒」顯示，避免出現「0 分」
+  const showSeconds = state.status === "work" && state.remainingMin < 1;
+  const remainingSec = Math.max(1, Math.floor(state.remainingMin * 60));
 
   return (
     <PageWrapper>
@@ -105,6 +114,11 @@ const ClockOutPage: React.FC = () => {
                   <span className={`${styles.n} ${styles.doneText}`}>
                     自由了！
                   </span>
+                ) : showSeconds ? (
+                  <>
+                    <span className={styles.n}>{remainingSec}</span>
+                    <span className={styles.u}>秒</span>
+                  </>
                 ) : (
                   <>
                     {h > 0 && (
