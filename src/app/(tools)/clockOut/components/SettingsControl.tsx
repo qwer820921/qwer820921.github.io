@@ -12,11 +12,15 @@ const SettingsControl: React.FC = () => {
     overrideEndTime,
     overrideDate,
     configured,
+    showClockIn,
+    showClockOut,
     setWorkMinutes,
     setLunchMinutes,
     setClockIn,
     setEndOverride,
     resetEnd,
+    setShowClockIn,
+    setShowClockOut,
     reset,
   } = useClockOutStore();
 
@@ -63,9 +67,20 @@ const SettingsControl: React.FC = () => {
 
             {/* 每日：上班時間（主要） */}
             <div className={styles.field}>
-              <label>
-                <span className={styles.dot}>▸</span> 上班時間
-              </label>
+              <div className={styles.fieldHead}>
+                <span>
+                  <span className={styles.dot}>▸</span> 上班時間
+                </span>
+                <label className={styles.showToggle}>
+                  <input
+                    type="checkbox"
+                    className={styles.toggleInput}
+                    checked={showClockIn}
+                    onChange={(e) => setShowClockIn(e.target.checked)}
+                  />
+                  顯示
+                </label>
+              </div>
               <input
                 type="time"
                 className={styles.timeInput}
@@ -77,12 +92,23 @@ const SettingsControl: React.FC = () => {
 
             {/* 下班時間：自動算出，可手動調整（加班） */}
             <div className={styles.field}>
-              <label>
-                <span className={styles.dot}>▸</span> 下班時間
-                {isOverride && (
-                  <span className={styles.overrideTag}>（今日手動）</span>
-                )}
-              </label>
+              <div className={styles.fieldHead}>
+                <span>
+                  <span className={styles.dot}>▸</span> 下班時間
+                  {isOverride && (
+                    <span className={styles.overrideTag}>（今日手動）</span>
+                  )}
+                </span>
+                <label className={styles.showToggle}>
+                  <input
+                    type="checkbox"
+                    className={styles.toggleInput}
+                    checked={showClockOut}
+                    onChange={(e) => setShowClockOut(e.target.checked)}
+                  />
+                  顯示
+                </label>
+              </div>
               <div className={styles.inlineRow}>
                 <input
                   type="time"
@@ -100,9 +126,6 @@ const SettingsControl: React.FC = () => {
                   </button>
                 )}
               </div>
-              <span className={styles.hint}>
-                下班 = 上班 + 工時 + 午休，可手動調整（如加班），隔天自動歸位。
-              </span>
             </div>
 
             {/* 固定設定：設定一次即可 */}

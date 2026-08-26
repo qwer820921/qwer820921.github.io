@@ -199,6 +199,14 @@
   color: var(--muted);
   text-shadow: 2px 2px 0 #000;
 }
+.clockInLine {
+  margin-top: 6px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+  color: var(--exp-top);
+  text-shadow: 1px 1px 0 #000;
+}
 .statusPill {
   font-size: 10px;
   letter-spacing: 2px;
@@ -484,10 +492,34 @@
   outline: 3px solid var(--amber);
   outline-offset: 2px;
 }
-.hint {
+.fieldHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
   font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--ink);
+}
+.showToggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  letter-spacing: 0;
   color: var(--muted);
-  line-height: 1.5;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.toggleInput {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--exp-top);
+  cursor: pointer;
+}
+.toggleInput:focus-visible {
+  outline: 3px solid var(--amber);
+  outline-offset: 2px;
 }
 
 .settingsActions {

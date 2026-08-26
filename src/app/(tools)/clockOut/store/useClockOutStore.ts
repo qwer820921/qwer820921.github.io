@@ -9,12 +9,16 @@ interface ClockOutStore {
   overrideEndTime: string | null; // 今日手動下班時間
   overrideDate: string | null; // override 對應日期
   configured: boolean; // 是否已完成首次設定
+  showClockIn: boolean; // 是否在主畫面顯示上班時間
+  showClockOut: boolean; // 是否在主畫面顯示下班時間
 
   setWorkMinutes: (n: number) => void;
   setLunchMinutes: (n: number) => void;
   setClockIn: (hm: string) => void;
   setEndOverride: (hm: string) => void;
   resetEnd: () => void;
+  setShowClockIn: (v: boolean) => void;
+  setShowClockOut: (v: boolean) => void;
   reset: () => void;
 }
 
@@ -25,6 +29,8 @@ const DEFAULTS = {
   overrideEndTime: null,
   overrideDate: null,
   configured: false,
+  showClockIn: false,
+  showClockOut: false,
 };
 
 export const useClockOutStore = create<ClockOutStore>()(
@@ -64,6 +70,10 @@ export const useClockOutStore = create<ClockOutStore>()(
         }),
 
       resetEnd: () => set({ overrideEndTime: null, overrideDate: null }),
+
+      setShowClockIn: (v) => set({ showClockIn: v }),
+
+      setShowClockOut: (v) => set({ showClockOut: v }),
 
       reset: () => set({ ...DEFAULTS }),
     }),

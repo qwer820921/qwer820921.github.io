@@ -31,6 +31,8 @@ const ClockOutPage: React.FC = () => {
     clockInTime,
     overrideEndTime,
     overrideDate,
+    showClockIn,
+    showClockOut,
   } = useClockOutStore();
 
   useEffect(() => {
@@ -97,6 +99,12 @@ const ClockOutPage: React.FC = () => {
               <div className={styles.nowWrap}>
                 <div className={styles.nowLabel}>現在時間</div>
                 <div className={styles.nowClock}>{fmtHM(nowMin)}</div>
+                {showClockIn && (
+                  <div className={styles.clockInLine}>上班 {clockInTime}</div>
+                )}
+                {showClockOut && (
+                  <div className={styles.clockInLine}>下班 {effectiveEnd}</div>
+                )}
               </div>
               <div className={styles.statusPill}>
                 {state.status === "before"
