@@ -88,6 +88,8 @@ function HeroDetailContent({
         GOLD_NOT_ENOUGH: "戰場點數不足",
         NOT_LOADED: "玩家資料尚未載入",
         HERO_NOT_FOUND: "武將資料異常",
+        UPGRADE_IN_PROGRESS: "上一次升級還在處理中，請稍候",
+        ACCOUNT_CHANGED: "存檔已切換，這次升級沒有套用",
       };
       setFeedback({
         type: "danger",

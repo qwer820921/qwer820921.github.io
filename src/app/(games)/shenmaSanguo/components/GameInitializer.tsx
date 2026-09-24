@@ -46,11 +46,12 @@ export default function GameInitializer() {
 
     // 讀 store 當下值，不訂閱整個 player，避免每次升級都重新初始化
     if (!usePlayerStore.getState().player) {
-      const hasSession = loadFromSession();
+      // session 必須屬於目前的 key；有未同步修改時 loadFromSession 會自動補送
+      const hasSession = loadFromSession(key);
       if (hasSession) {
-        void backgroundRefresh(key); // 有快取 → 背景靜默刷新
+        void backgroundRefresh(key); // 有快取 → 背景靜默刷新（有未同步修改時會自動略過）
       } else {
-        void initFromGAS(key); // 無快取 → 阻塞式載入
+        void initFromGAS(key); // 無快取 → 阻塞式載入；失敗時主畫面顯示錯誤與重試
       }
     }
   }, [pathname, router, loadFromSession, initFromGAS, backgroundRefresh]);
@@ -123,5 +124,10 @@ export default function GameInitializer() {
         ? styles.syncBarPending
         : styles.syncBarIdle;
 
-  return <div className={`${styles.syncBar} ${barClass}`} />;
+  return (
+    <div
+      className={`${styles.syncBar} ${barClass}`}
+      data-sync-status={syncStatus}
+    />
+  );
 }

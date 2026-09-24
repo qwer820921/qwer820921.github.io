@@ -6,7 +6,7 @@ import { Container, Row, Col, Spinner, Form, Alert } from "react-bootstrap";
 import { usePlayerStore } from "../store/playerStore";
 import { useStaticConfigStore } from "../store/staticConfigStore";
 import { SyncStatus, Rarity } from "../types";
-import { getPlayerKey, setPlayerKey } from "../api/gameApi";
+import { getPlayerKey } from "../api/gameApi";
 import styles from "../styles/shenmaSanguo.module.css";
 
 const rarityColor: Record<Rarity, string> = {
@@ -26,7 +26,7 @@ function KeySetupView() {
     const trimmed = inputKey.trim();
     if (!trimmed) return;
     clearError();
-    setPlayerKey(trimmed);
+    // 讀取成功後 store 才會寫入金鑰；失敗時留在此畫面顯示錯誤
     await initFromGAS(trimmed);
   };
 

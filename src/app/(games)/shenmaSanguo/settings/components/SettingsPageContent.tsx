@@ -3,14 +3,16 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Container, Form, Spinner, Alert } from "react-bootstrap";
-import { gameApi, getPlayerKey, setPlayerKey } from "../../api/gameApi";
+import { getPlayerKey } from "../../api/gameApi";
 import { usePlayerStore } from "../../store/playerStore";
+import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { useSoundSettingsStore } from "../../store/soundSettingsStore";
+import { describePlayerError } from "../../utils/playerErrors";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 export default function SettingsPageContent() {
   const router = useRouter();
-  const { initFromGAS, player } = usePlayerStore();
+  const { initFromGAS, refreshProfile, player } = usePlayerStore();
   const { sfxEnabled, sfxPolyphony, setEnabled, setPolyphony } =
     useSoundSettingsStore();
 
@@ -34,31 +36,50 @@ export default function SettingsPageContent() {
     setIsLoading(true);
     setFeedback(null);
 
-    try {
-      let isNewPlayer = false;
-      try {
-        await gameApi.getProfile(trimmed);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "";
-        if (msg === "PROFILE_NOT_FOUND") isNewPlayer = true;
-        else throw err;
-      }
-
-      setPlayerKey(trimmed);
-      await initFromGAS(trimmed);
-
+    // 目前存檔的未同步修改會先保存；保存或讀取失敗時維持原帳號與資料
+    const result = await initFromGAS(trimmed);
+    setIsLoading(false);
+    if (result.ok) {
       setFeedback({
         type: "success",
-        msg: isNewPlayer
+        msg: result.created
           ? "新存檔建立成功！歡迎來到神馬三國。"
           : "存檔讀取成功！歡迎回來。",
       });
       setTimeout(() => router.replace("/shenmaSanguo"), 800);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "發生錯誤，請稍後再試";
-      setFeedback({ type: "danger", msg });
-    } finally {
-      setIsLoading(false);
+    } else if (!result.superseded) {
+      setFeedback({
+        type: "danger",
+        msg: `${describePlayerError(result.error)}（代碼：${result.error}）`,
+      });
+    }
+  };
+
+  const handleSync = async () => {
+    setIsLoading(true);
+    setFeedback(null);
+    const { refreshConfig } = useStaticConfigStore.getState();
+    // 先保存本機未同步的修改，成功後才讀取雲端資料；失敗時保留本機資料
+    const [, profile] = await Promise.all([refreshConfig(), refreshProfile()]);
+    const configError = useStaticConfigStore.getState().error;
+    setIsLoading(false);
+    if (!profile.ok) {
+      if (!profile.superseded) {
+        setFeedback({
+          type: "danger",
+          msg: `同步失敗：${describePlayerError(profile.error)}（代碼：${profile.error}）`,
+        });
+      }
+    } else if (configError) {
+      setFeedback({
+        type: "danger",
+        msg: `存檔已同步，但遊戲設定載入失敗（代碼：${configError}）`,
+      });
+    } else {
+      setFeedback({
+        type: "success",
+        msg: "資料同步成功！已獲取最新雲端設定。",
+      });
     }
   };
 
@@ -217,30 +238,7 @@ export default function SettingsPageContent() {
                 borderColor: "var(--sg-border-hi)",
               }}
               disabled={isLoading}
-              onClick={async () => {
-                setIsLoading(true);
-                setFeedback(null);
-                try {
-                  const { refreshConfig } = (
-                    await import("../../store/staticConfigStore")
-                  ).useStaticConfigStore.getState();
-                  const { refreshProfile } = (
-                    await import("../../store/playerStore")
-                  ).usePlayerStore.getState();
-
-                  await Promise.all([refreshConfig(), refreshProfile()]);
-
-                  setFeedback({
-                    type: "success",
-                    msg: "資料同步成功！已獲取最新雲端設定。",
-                  });
-                } catch (err: unknown) {
-                  const msg = err instanceof Error ? err.message : "同步失敗";
-                  setFeedback({ type: "danger", msg });
-                } finally {
-                  setIsLoading(false);
-                }
-              }}
+              onClick={handleSync}
             >
               {isLoading ? (
                 <Spinner animation="border" size="sm" className="me-2" />

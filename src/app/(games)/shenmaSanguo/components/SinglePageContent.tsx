@@ -7,8 +7,9 @@ import { usePlayerStore } from "../store/playerStore";
 import { useStaticConfigStore } from "../store/staticConfigStore";
 import { useSoundSettingsStore } from "../store/soundSettingsStore";
 import { BattleResultPayload, BattleResult, ExpeditionPayload } from "../types";
-import { getPlayerKey, setPlayerKey } from "../api/gameApi";
+import { getPlayerKey } from "../api/gameApi";
 import { isStageUnlocked } from "../utils/stageUtils";
+import { describePlayerError } from "../utils/playerErrors";
 import styles from "../styles/shenmaSanguo.module.css";
 import PlacementMenu from "../battle/components/PlacementMenu";
 import UpgradePanel from "../battle/components/UpgradePanel";
@@ -30,18 +31,28 @@ interface BattleStats {
 
 const GameState = { WAITING: 0, PREP: 1, BATTLE: 2, RESULT: 3 };
 
-// ── 首次登入畫面 ─────────────────────────────────────────────
-function KeySetupView() {
-  const { initFromGAS, isLoading, error, clearError } = usePlayerStore();
-  const [inputKey, setInputKey] = useState("");
+// ── 首次登入／更換金鑰畫面 ───────────────────────────────────
+// 讀取成功後 store 才會寫入金鑰；失敗時留在此畫面顯示原因，可以直接再試或改用其他金鑰
+function KeySetupView({
+  initialKey = "",
+  onCancel,
+}: {
+  initialKey?: string;
+  onCancel?: () => void;
+}) {
+  const { initFromGAS, isLoading } = usePlayerStore();
+  const [inputKey, setInputKey] = useState(initialKey);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = inputKey.trim();
     if (!trimmed) return;
-    clearError();
-    setPlayerKey(trimmed);
-    await initFromGAS(trimmed);
+    setError(null);
+    const result = await initFromGAS(trimmed);
+    if (!result.ok && !result.superseded) {
+      setError(`${describePlayerError(result.error)}（代碼：${result.error}）`);
+    }
   };
 
   return (
@@ -86,7 +97,55 @@ function KeySetupView() {
               "進入遊戲"
             )}
           </button>
+          {onCancel && (
+            <button
+              type="button"
+              className={`${styles.btnOutline} w-100 mt-2`}
+              onClick={onCancel}
+              disabled={isLoading}
+            >
+              返回
+            </button>
+          )}
         </Form>
+      </div>
+    </div>
+  );
+}
+
+// ── 已有金鑰但讀不到存檔：顯示原因，可重試或更換金鑰 ─────────
+function PlayerLoadError({
+  code,
+  onRetry,
+  onChangeKey,
+}: {
+  code: string;
+  onRetry: () => void;
+  onChangeKey: () => void;
+}) {
+  return (
+    <div className={styles.keySetupOverlay} data-testid="player-load-error">
+      <div className={styles.keySetupCard}>
+        <h1 className={styles.gameTitle}>神馬三國</h1>
+        <p className={styles.subtitle}>無法讀取存檔</p>
+        <Alert variant="danger" className="py-2 small mt-2 mb-0">
+          {describePlayerError(code)}
+        </Alert>
+        <p className={`${styles.keySetupHint} mt-2 mb-0`}>錯誤代碼：{code}</p>
+        <button
+          type="button"
+          className={`${styles.btnGold} w-100 mt-3`}
+          onClick={onRetry}
+        >
+          重試
+        </button>
+        <button
+          type="button"
+          className={`${styles.btnOutline} w-100 mt-2`}
+          onClick={onChangeKey}
+        >
+          更換金鑰
+        </button>
       </div>
     </div>
   );
@@ -208,8 +267,16 @@ function BattleResultModal({
 // ── 主元件 ────────────────────────────────────────────────────
 export default function SinglePageContent() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const { player, applyBattleResult } = usePlayerStore();
+  const {
+    player,
+    applyBattleResult,
+    initFromGAS,
+    isLoading: playerLoading,
+    error: playerError,
+  } = usePlayerStore();
   const { config: staticConfig, fetchProgress } = useStaticConfigStore();
+  // 讀不到存檔時由錯誤面板切換到金鑰輸入畫面
+  const [showKeyEntry, setShowKeyEntry] = useState(false);
   const { sfxEnabled, sfxPolyphony } = useSoundSettingsStore();
 
   // ── Godot 狀態 ─────────────────────────────────────────────
@@ -331,6 +398,10 @@ export default function SinglePageContent() {
   }, [loadElapsed]);
 
   const hasKey = mounted ? getPlayerKey() !== null : false;
+  // 已有金鑰、讀取結束但沒有玩家資料：顯示錯誤面板，而不是一直停在載入動畫
+  const playerLoadFailed = hasKey && !player && !playerLoading && !!playerError;
+  // 更換金鑰成功（載入了玩家資料）後關閉金鑰輸入畫面
+  const keyEntryVisible = showKeyEntry && !player;
 
   // 設定初始地圖
   useEffect(() => {
@@ -629,13 +700,17 @@ export default function SinglePageContent() {
       <div className={styles.gamePortraitWrap}>
         <div className={styles.gameWrapper}>
           {/* 進場動畫：payload 送出前全程顯示（含 Godot 載入階段） */}
-          {!payloadSent && hasKey && !loadTimedOut && (
-            <ThreeKingdomsLoader
-              progress={
-                Math.round((fetchProgress / 3) * 50) + (player ? 50 : 0)
-              }
-            />
-          )}
+          {!payloadSent &&
+            hasKey &&
+            !loadTimedOut &&
+            !playerLoadFailed &&
+            !keyEntryVisible && (
+              <ThreeKingdomsLoader
+                progress={
+                  Math.round((fetchProgress / 3) * 50) + (player ? 50 : 0)
+                }
+              />
+            )}
 
           {/* 逾時錯誤畫面（120s 後） */}
           {iframeLoading && loadTimedOut && (
@@ -805,8 +880,26 @@ export default function SinglePageContent() {
         />
       )}
 
-      {/* 金鑰設定（無帳號時全屏擋住） */}
+      {/* 已有金鑰但讀不到存檔：錯誤原因、重試、更換金鑰 */}
+      {playerLoadFailed && !keyEntryVisible && playerError && (
+        <PlayerLoadError
+          code={playerError}
+          onRetry={() => {
+            const key = getPlayerKey();
+            if (key) void initFromGAS(key);
+          }}
+          onChangeKey={() => setShowKeyEntry(true)}
+        />
+      )}
+
+      {/* 金鑰設定（無帳號，或從錯誤面板選擇更換金鑰時全屏擋住） */}
       {!hasKey && <KeySetupView />}
+      {hasKey && keyEntryVisible && (
+        <KeySetupView
+          initialKey={getPlayerKey() ?? ""}
+          onCancel={() => setShowKeyEntry(false)}
+        />
+      )}
 
       {/* Modals */}
       {showStageModal && (

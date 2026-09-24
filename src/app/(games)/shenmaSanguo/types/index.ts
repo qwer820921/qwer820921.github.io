@@ -144,6 +144,10 @@ export interface PlayerState {
 export interface SessionPlayerState extends PlayerState {
   key: string; // 玩家自訂 key（與 localStorage 同步）
   syncStatus: SyncStatus;
+  /** 本機版本：每次本機修改 +1（只存在本機，不送到伺服器；舊版 session 沒有） */
+  rev?: number;
+  /** 伺服器已確認保存的本機版本；與 rev 不同代表有未同步的修改 */
+  syncedRev?: number;
 }
 
 // ── 通訊協議（Web ↔ Godot）──────────────────────────────────

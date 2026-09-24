@@ -3,9 +3,10 @@
 import React, { useState, useEffect } from "react";
 import { Form, Spinner, Alert } from "react-bootstrap";
 import { Trophy, Inboxes } from "react-bootstrap-icons";
-import { gameApi, getPlayerKey, setPlayerKey } from "../../api/gameApi";
+import { getPlayerKey } from "../../api/gameApi";
 import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
+import { describePlayerError } from "../../utils/playerErrors";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 interface Props {
@@ -14,7 +15,7 @@ interface Props {
 }
 
 export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
-  const { player, initFromGAS } = usePlayerStore();
+  const { player, initFromGAS, refreshProfile, syncError } = usePlayerStore();
   const { config: staticConfig } = useStaticConfigStore();
 
   const [mounted, setMounted] = useState(false);
@@ -36,48 +37,46 @@ export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
     if (!trimmed) return;
     setIsLoading(true);
     setFeedback(null);
-    try {
-      let isNewPlayer = false;
-      try {
-        await gameApi.getProfile(trimmed);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "";
-        if (msg === "PROFILE_NOT_FOUND") isNewPlayer = true;
-        else throw err;
-      }
-      setPlayerKey(trimmed);
-      await initFromGAS(trimmed);
+    // 目前存檔的未同步修改會先保存；保存或讀取失敗時維持原帳號與資料
+    const result = await initFromGAS(trimmed);
+    setIsLoading(false);
+    if (result.ok) {
       setFeedback({
         type: "success",
-        msg: isNewPlayer ? "新存檔建立成功！" : "存檔讀取成功！歡迎回來。",
+        msg: result.created ? "新存檔建立成功！" : "存檔讀取成功！歡迎回來。",
       });
       setInputKey("");
       setShowKeySwitch(false);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "發生錯誤，請稍後再試";
-      setFeedback({ type: "danger", msg });
-    } finally {
-      setIsLoading(false);
+    } else if (!result.superseded) {
+      setFeedback({
+        type: "danger",
+        msg: `切換失敗：${describePlayerError(result.error)}（代碼：${result.error}）`,
+      });
     }
   };
 
   const handleSync = async () => {
     setIsLoading(true);
     setFeedback(null);
-    try {
-      const { refreshConfig } = (
-        await import("../../store/staticConfigStore")
-      ).useStaticConfigStore.getState();
-      const { refreshProfile } = (
-        await import("../../store/playerStore")
-      ).usePlayerStore.getState();
-      await Promise.all([refreshConfig(), refreshProfile()]);
+    const { refreshConfig } = useStaticConfigStore.getState();
+    // 先保存本機未同步的修改，成功後才讀取雲端資料；失敗時保留本機資料
+    const [, profile] = await Promise.all([refreshConfig(), refreshProfile()]);
+    const configError = useStaticConfigStore.getState().error;
+    setIsLoading(false);
+    if (!profile.ok) {
+      if (!profile.superseded) {
+        setFeedback({
+          type: "danger",
+          msg: `同步失敗：${describePlayerError(profile.error)}（代碼：${profile.error}）`,
+        });
+      }
+    } else if (configError) {
+      setFeedback({
+        type: "danger",
+        msg: `存檔已同步，但遊戲設定載入失敗（代碼：${configError}）`,
+      });
+    } else {
       setFeedback({ type: "success", msg: "資料同步成功！" });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "同步失敗";
-      setFeedback({ type: "danger", msg });
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -264,6 +263,11 @@ export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
           {feedback && (
             <Alert variant={feedback.type} className="py-2 small mb-3">
               {feedback.msg}
+            </Alert>
+          )}
+          {syncError && !feedback && (
+            <Alert variant="warning" className="py-2 small mb-3">
+              上次存檔同步失敗，會自動重試；本機資料都還在。
             </Alert>
           )}
 
