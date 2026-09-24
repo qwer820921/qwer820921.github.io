@@ -10,7 +10,7 @@
 | ------------ | ---------------------------------------------------------------- |
 | **專案名稱** | 子yee 萬事屋                                                     |
 | **類型**     | 個人多功能平台（工具、遊戲、投資、媒體、部落格）                 |
-| **框架**     | Next.js 15 (App Router, Static Export)                           |
+| **框架**     | Next.js 16 (App Router, Static Export)                           |
 | **語言**     | TypeScript (strict mode)                                         |
 | **UI 框架**  | React 19 + **Bootstrap 5.3** + **react-bootstrap 2.x**           |
 | **狀態管理** | Zustand（各功能模組內 co-located stores）                        |
@@ -151,14 +151,16 @@ npm run lint         # ESLint 檢查
 - `next.config.ts` 設定 `output: "export"`（靜態匯出，無 SSR）
 - 生產環境 `assetPrefix` 指向 `https://qwer820921.github.io/`
 - **所有頁面必須是可靜態匯出的**，不可使用 `getServerSideProps` 或 API Routes
+- `public/games/*` 的 Godot 遊戲是**手動匯出的產物**：`npm run build` 與 GitHub Actions 只會原樣複製，不會重新匯出。改了 GDScript 必須自己匯出並提交產物（神馬三國見 `scripts/shenma-regression/README.md`）
+- `npm run dev` 執行中不要同時跑 `npm run build`。若 `tsc` 回報 `.next/dev/types` 的錯誤，先停掉 dev、刪除 `.next/dev` 再重跑；本機驗證請用 dev，直接開 `out/` 會載入正式站的 `_next` 資源
 
 ---
 
 ## 6. 程式碼風格與 ESLint 規範
 
-此專案設計有嚴格的靜態檢查，且 Next.js 在 `npm run build` 時會將所有 ESLint Error 視為 Fatal Error 並中斷建置。所有 AI 在撰寫程式碼時請嚴格遵守以下約定：
+此專案設計有嚴格的靜態檢查。Next.js 16 的 `npm run build` **不會**執行 ESLint，ESLint error 由 `npm run lint` 與 commit 時的 lint-staged（`eslint --fix`）攔下。所有 AI 在撰寫程式碼時請嚴格遵守以下約定：
 
-- **JSX 字元跳脫 (Escaping)**：在 React JSX 中輸出字串時，若包含 `>`、`"`、`'`、`}` 等特殊符號，請務必使用 HTML Entity（如 `&quot;`）。嚴禁直接寫出未跳脫的字元（如 `<span>"</span>`），否則會觸發 `react/no-unescaped-entities` 導致無法編譯。
+- **JSX 字元跳脫 (Escaping)**：在 React JSX 中輸出字串時，若包含 `>`、`"`、`'`、`}` 等特殊符號，請務必使用 HTML Entity（如 `&quot;`）。嚴禁直接寫出未跳脫的字元（如 `<span>"</span>`），否則會觸發 `react/no-unescaped-entities`，lint 失敗、無法 commit。
 - **嚴禁手動隨意加上 `eslint-disable`**：專案全局已設定好合適的規則放寬（例如針對 `any` 的放寬），切勿預設插入 `// eslint-disable-next-line` 註解，以免反而觸發 `Unused eslint-disable directive` 警告。請信任專案預設的 linter 設定。
 - **未使用的 Catch 變數**：在 `try-catch` 中若不需要使用 Error 物件，必須使用 TypeScript 現代語法 `catch { ... }`，不准寫成 `catch (e)` 但卻沒用到，以免觸發 `no-unused-vars`。
 - **TypeScript 嚴格模式**：遵循 TS strict mode，盡量定義明確型別，減少 `any` 的直接使用（除非是動態資料如 JSON 處理）。

@@ -4,6 +4,10 @@
 > 基準 commit：`a1579e33`（branch `master`）
 > 目的：記錄神馬三國（網頁 + Godot 戰鬥）目前可重現的建置、啟動、驗證方式與實測結果，作為後續開發與 Codex 驗證的起點。
 > 本輪**沒有修改任何程式碼**，也沒有新增遊戲功能。
+>
+> **Round 2 更新（2026-09-24）**：已補齊 Godot 4.6.2 匯出環境、修正 I1～I3 並重新匯出，另建立可重跑的回歸腳本 `scripts/shenma-regression/`，結果見 **§10**。§0～§9 保留 Round 1 當時的紀錄，未改寫。
+>
+> **Round 3 更新（2026-09-24）**：修正「混合敵人組提前勝利」（R3-1），整波無效時改為拒絕開戰；回歸工具改為任何錯誤都回傳非零、不刪除目錄，並改成核對工作區交付產物（R3-2）。結果見 **§11**。§10 保留 Round 2 當時的紀錄，未改寫。
 
 ---
 
@@ -641,3 +645,204 @@ offset = ((vp.x - cols*tile)/2, (vp.y - rows*tile)/2)
 4. 決定正式後端的驗證方式：取得 GAS 原始碼或建立**隔離的測試用 GAS 部署 + 測試 Sheets**，讓 R1～R3 可以在不碰正式資料的前提下驗證；可考慮讓 GAS URL 可由環境變數覆寫（目前寫死在 `gameApi.ts`）。
 5. 把 §4.1 的 mock 與 §4.3 的流程整理成可重複執行的腳本（並攔截 GA／AdSense），作為後續每次修改的回歸測試；同時在有前景視窗或實機上量測一次真實幀率與載入時間。
 6. 清理 `godot/shenmaSanguo/` 內的舊匯出檔（I6），並更新 `AGENTS.md` 中過時的 Next.js 版本與 build-lint 描述。
+
+---
+
+## 10. Round 2（2026-09-24）：修正 I1～I3、補齊匯出環境與回歸腳本
+
+驗證方式標示沿用 §6：**實測**、**mock**、**headless**（Godot 無頭測試）；**靜態**＝只讀程式碼，不算通過。
+
+### 10.1 環境變更
+
+| 項目                                        | 內容                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Godot 編輯器                                | 官方 GitHub Release `4.6.2-stable`（2026-04-01）的 `Godot_v4.6.2-stable_win64.exe.zip`，SHA512 與官方 `SHA512-SUMS.txt` 相符。解壓到**倉庫外**的 `work/tools/godot-4.6.2/editor/`，以 `_sc_` 啟用 self-contained 模式（設定與模板都在 `editor_data/`，沒有動到 `%APPDATA%`，也沒改 PATH）。`--version` 為 `4.6.2.stable.official.71f334935`，與正式產物的引擎 commit 相同                                                                                                                                        |
+| Web 匯出模板                                | 官方 tpz 有 1.25 GB，下載速度約 40～160 KB/s。改用 `scripts/shenma-regression/tools/extract-web-templates.mjs` 以 HTTP Range 只取出 `web_nothreads_release.zip`、`web_nothreads_debug.zip`、`version.txt`（`4.6.2.stable`），每個都以 zip 中央目錄的 CRC32 驗證通過。**完整 tpz 的官方 SHA512 尚未驗證**（背景續傳中）                                                                                                                                                                                           |
+| `.next` 型別異常（Codex 回報的 `tsc` 失敗） | `.next/dev/types/validator.ts` 第 476 行有孤立的 `e.tsx`，並引用未定義的 `RouteHandlerConfig`；該檔的寫入時間正好是 Round 1 最後一次啟動 dev 後立刻強制結束的時段（證據在 `.handoff/evidence/round-02/A-tsc/`）。確認沒有本專案的 Node 程序在寫 `.next` 後，把 `.next` 移到 `%TEMP%`，接著 `npm run build` 通過、`tsc` 0 錯誤。之後完整跑一輪 dev 與瀏覽器測試：dev 閒置時 `validator.ts` 正常，停止前後雜湊不變，`tsc` 仍為 0 錯誤。**根因未能確認**（推測是寫到一半被強制結束，或 dev 與 tsc／build 同時存取） |
+
+**操作原則**：`npm run dev` 執行中不要同時跑 `npm run build`；要跑 `tsc` 請等 dev 編譯完成、處於閒置狀態。若再出現 `.next/dev/types` 相關錯誤，先停掉 dev，移除 `.next/dev` 再重跑。
+
+### 10.2 Godot 產物關係的新發現
+
+1. **正式產物用的是 debug 模板**：`public/index.wasm` 與官方 `web_nothreads_debug` 的 wasm 逐位元組相同（release 版 wasm 是 37,695,054 bytes，內容不同）。Godot 匯出對話框的「Export With Debug」預設為勾選。本輪沿用 `--export-debug`，**沒有更換引擎版本**；是否改用 release 見 §10.7。
+2. **HEAD 原始碼可以重現正式產物**：用 HEAD 的 `godot/shenmaSanguo/` 以 debug 模板匯出後，15 個檔案中有 13 個與 `public/` 的 git blob 逐位元組相同。`index.pck` 內 310 個檔案有 303 個相同，**包含全部 12 支編譯後腳本**；不同的只有 6 個場景的 `node_ids` 與 `uid_cache.bin`（`.tscn` 沒有 uid，每次在全新 `.godot` 匯入時都會隨機產生）。`index.service.worker.js` 只差 `CACHE_VERSION`。
+3. 匯入不會改寫任何原始檔（310 個檔案匯入前後的雜湊相同），沒有 `.import`／`.uid` 變更。
+4. 現有產物沒有自訂的 HTML、SW 或音訊整合，`index.html` 與 SW 都是模板原樣輸出。React 端 `SinglePageContent` 嘗試 resume 的 `window._my_godot_audio_ctx` 在任何產物中都不存在（**靜態**觀察）；實際的音訊解鎖由 `SFXManager.gd` 在第一次點擊時處理。
+5. `public/` 的文字檔在工作區是 CRLF（`core.autocrlf=true`），比對時要用 git blob 或先正規化換行。
+
+### 10.3 修正內容與根因
+
+| 編號             | 修改檔案                                                      | 根因                                                                                                                      | 修正方式                                                                                                                                                                                                                                                                      |
+| ---------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| I1               | `src/app/(games)/shenmaSanguo/components/GameInitializer.tsx` | effect 只依賴 `[pathname]`，無金鑰時提前 return；在金鑰畫面輸入後 pathname 不變，靜態設定永遠不會載入                     | 拆成兩個 effect：①玩家初始化與路由守門（依 pathname，讀 `getState()`，不訂閱整個 player）；②靜態設定載入，只訂閱穩定的 `player?.key`，條件是「有 key、尚無設定、沒有錯誤」。失敗時停在既有的錯誤提示，由使用者按「重試」，不會自動重打。移除原本的 `eslint-disable`           |
+| I2（出兵）       | `godot/shenmaSanguo/systems/WaveManager.gd`、`main/Main.gd`   | `setup()` 把共用的 `_is_stopping` 設回 false，舊出兵協程在 await 後誤以為仍然有效                                         | 以只增不減的 `_generation` 取代布林值。協程帶著建立時的世代，每次 await 後、生成前、修改計數與發信號前都要檢查；敵人以 meta 記錄世代，死亡／抵達事件先經 `owns_enemy()` 過濾。每波只發一次清波通知。切關時先把舊單位移出場景樹                                                |
+| I2（自動下一波） | `godot/shenmaSanguo/systems/BattleManager.gd`                 | 1.5 秒計時器回呼只檢查狀態是否為 PREP／BATTLE，切關或重開後的新關卡同樣符合；重複清波會重複排程；等待中關閉自動也不會取消 | `_lifecycle`（每次 initialize 遞增）加上 `_auto_wave_token`（每次排程或取消都遞增）。回呼只接受「同一生命週期、同一次排程」，並要求仍為自動、仍在 BATTLE、仍在同一波。`_auto_wave_pending` 防止重複排程；initialize、結算、等待中關閉自動都會取消排程，最後一種情況會回到備戰 |
+| I3               | `godot/shenmaSanguo/main/Main.gd`、`systems/BattleManager.gd` | `Main.gd` 呼叫 `BattleHUD` 上不存在的 `set_auto_active`（HUD 已搬到 React）                                               | 移除錯誤的連線與呼叫；`toggle_auto_mode()` 立即把狀態同步給 Web，React 的自動按鈕會即時更新                                                                                                                                                                                   |
+| 附帶修正         | `WaveManager.gd`、`Main.gd`、`BattleManager.gd`               | 清波判定早於擊殺與扣血：最後一隻被擊殺的敵人不計殺，最後一隻漏怪不扣血（最後一波 20 隻全漏時判定為**勝利**，HP 1）        | WaveManager 先發 `enemy_killed`／`enemy_leaked`，再做清波判定。狀態轉換統一由 `_set_state()` 同步給 Web（原本 React 得知回到 PREP，是靠之後偶然觸發的同步）                                                                                                                   |
+| 測試輔助         | `bridge/WebBridge.gd`、`main/Main.gd`                         | —                                                                                                                         | 新增唯讀的 `debug_snapshot` 訊息（回傳關卡、狀態、波次、HP、擊殺、世代、場上敵人、遊戲時間）。回應不含 `stage_id`／`result`，React 會忽略。`update_stats` 新增 `auto_next_wave_pending` 欄位                                                                                  |
+
+**為什麼舊協程與舊計時器不能再修改新關卡**：
+
+- 世代與權杖都只增不減、不會重用。切關或重開時，WaveManager 會先進入新世代，BattleManager 進入新生命週期並作廢權杖。
+- 舊協程醒來後第一步就比對自己記住的世代，不符合就直接 return：不生成敵人、不扣 `_active_spawning_groups`、不發出 `wave_cleared`。
+- 舊計時器觸發時，權杖或生命週期對不上，一樣直接 return。
+- 舊敵人即使在被釋放前發出信號，也會被 `owns_enemy()` 擋下。
+
+整個修正沒有使用固定延遲、隱藏按鈕或單一布林值，正常的波次規則也沒有改變。
+
+### 10.4 匯出與更新的產物
+
+- 以修改後的原始碼（工作區內容，覆蓋在 HEAD 已匯入的暫存專案上）用 debug 模板匯出。和 HEAD 的匯出相比，`index.pck` 只有 `WebBridge.gdc`、`Main.gdc`、`BattleManager.gdc`、`WaveManager.gdc` 不同（其餘 306 個檔案相同）；`index.wasm`、`index.js` 等引擎檔完全相同。
+- `public/games/shenmaSanguo/` 只更新 3 個檔案：
+  - `index.pck`：4,703,824 → 4,706,592 bytes。
+  - `index.html`：只改 `GODOT_CONFIG.fileSizes["index.pck"]`。
+  - `index.service.worker.js`：只改 `CACHE_VERSION`，讓已安裝 PWA 的玩家丟掉舊快取。
+- 用 `godot-check.sh` 從頭再匯出一次比對：與 `public/` 的新 pck 相比 304／310 相同，差異只有隨機的場景 `node_ids` 與 `uid_cache.bin`。
+
+### 10.5 回歸腳本（`scripts/shenma-regression/`，用法見該目錄的 README）
+
+- `godot-check.sh` 加上 `godot/lifecycle_test.gd`：暫存匯入 → debug 匯出 → 與 `public/` 比對 → headless 生命週期測試。測試在 `wave_cleared` 信號發出的當下操作，能精準命中出兵間隔與 1.5 秒自動窗口。
+- `harness.js` 加上 5 支瀏覽器情境腳本（Playwright MCP）：
+  - 導覽前安裝網路防線：GAS 寫入一律 abort，GA／AdSense 一律 abort；context 層級，涵蓋 iframe 與 SW 轉發的請求。
+  - 頁面內 mock（可注入失敗）與 Godot 訊息紀錄。
+  - 開始前清除 Service Worker 與 Cache Storage。
+- 設定變更：
+  - `eslint.config.mjs`：忽略 `scripts/shenma-regression/**`（MCP 程式片段不是模組），以及本機暫存的 `.handoff/**`、`.playwright-mcp/**`。
+  - `.prettierignore`：忽略 `scripts/shenma-regression/*.js`（Prettier 會補上結尾分號，破壞 MCP 的包裝方式）。
+  - `.gitignore`：新增 `.handoff/`、`.playwright-mcp/`。
+
+### 10.6 Round 2 檢查結果
+
+| #      | 項目                                        | 結果            | 驗證方式       | 依據                                                                                                                                                                             |
+| ------ | ------------------------------------------- | --------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R2-A1  | `.next` 異常後的 build／tsc                 | 通過            | 實測           | 移開 `.next` 後 build 45 秒通過、tsc 0 錯誤；dev 測試結束後 tsc 仍為 0 錯誤                                                                                                      |
+| R2-A2  | 修改後 `npm run build`                      | 通過            | 實測           | 53 秒，84 頁，無 warning／error                                                                                                                                                  |
+| R2-A3  | 修改後 `tsc --noEmit`                       | 通過            | 實測           | 0 錯誤                                                                                                                                                                           |
+| R2-A4  | 神馬三國範圍 ESLint                         | 通過            | 實測           | 0 error、9 warning，與 Round 1 是同一組既有的 `set-state-in-effect`；`GameInitializer.tsx` 沒有 warning                                                                          |
+| R2-A5  | 全站 `npm run lint`                         | 通過（0 error） | 實測           | 81 個 warning，都在本輪沒改過的檔案（Round 1 沒跑全站，沒有基準）；設定變更只新增忽略路徑，不會增加問題                                                                          |
+| R2-G1  | Godot 匯入                                  | 通過            | 實測           | HEAD 與修改版都沒有錯誤，也不改寫原始檔                                                                                                                                          |
+| R2-G2  | GDScript 解析（`--check-only`）             | 部分            | 實測           | 10／12 通過。`Main.gd`、`WebBridge.gd` 回報 `Identifier not found: SFXManager`，HEAD 版本也一樣，原因是 check-only 不註冊 autoload（工具限制）；這兩支改由 headless 實際載入驗證 |
+| R2-G3  | Web 匯出（debug）                           | 通過            | 實測           | 在暫存目錄匯出，產物差異見 §10.4                                                                                                                                                 |
+| R2-G4  | headless 生命週期測試                       | 通過            | headless       | 修正後 30／30 PASS、0 次 SCRIPT ERROR。同一測試跑 HEAD：14 項 FAIL、6 次 `set_auto_active` SCRIPT ERROR（log 在 `.handoff/evidence/round-02/godot/`）                            |
+| R2-B1  | I1：全新玩家（新金鑰 → 建檔 → 設定 → 備戰） | 通過            | mock           | 4.9 秒、不需重新整理；`get_profile`×2、`create_profile`×1、設定 3 支各 1 次                                                                                                      |
+| R2-B2  | I1：後端已有金鑰、本機無快取                | 通過            | mock           | 5.3 秒；`get_profile`×1、沒有建檔、設定 3 支各 1 次                                                                                                                              |
+| R2-B3  | I1：已有 session（移除設定快取）            | 通過            | mock           | `get_profile`×1（背景刷新）、設定 3 支各 1 次                                                                                                                                    |
+| R2-B4  | I1：設定失敗 → 重試                         | 通過            | mock           | 失敗後 15 秒內沒有自動重打；按重試 0.9 秒後進入備戰，不需重新整理                                                                                                                |
+| R2-B5  | I2：出兵間隔中切到 B                        | 通過            | mock           | 切換前 A 有 1 隻兵、1 組正在出兵；等遊戲時間 9 秒後 B 為備戰、HP 20、無敵人、出兵組 0                                                                                            |
+| R2-B6  | I2：A→B→A、同關重開                         | 通過            | mock           | 判定條件同上                                                                                                                                                                     |
+| R2-B7  | 自動窗口內切 B／同關重開                    | 通過            | mock           | 確認操作前沒有開出第 2 波（命中窗口）；等 4 秒遊戲時間後仍為備戰、HP 20、無敵人                                                                                                  |
+| R2-B8  | 自動窗口內關閉自動                          | 通過            | mock           | Godot 立即回到備戰；React 的自動按鈕熄滅、迎戰可按；4 秒後仍在第 1 波；手動迎戰可開第 2 波                                                                                       |
+| R2-B9  | 多次切換自動的同步                          | 通過            | mock           | 切換 6 次，Godot 回報值、React 按鈕、Godot 實際值都一致；`set_auto_active` 錯誤 0 次                                                                                             |
+| R2-B10 | 手動兩波勝利（兩座塔）                      | 通過            | mock           | 結算 1 次、★★★、擊殺 6（Round 1 同情境只算 5）；確認後 `save_result`、`save_profile` 各 1 次，並重開同關                                                                         |
+| R2-B11 | 自動兩波勝利、落敗                          | 通過            | mock           | 各結算 1 次；自動關漏 6 隻、HP 14；落敗關 HP 0                                                                                                                                   |
+| R2-B12 | 產物版本                                    | 通過            | 實測           | 瀏覽器取得的 pck、wasm、js、html、SW 的 SHA-256 與本機 `public/` 一致；iframe 讀到新的 pck 大小；Godot SW 快取名稱為新版                                                         |
+| R2-B13 | 正式 GAS 寫入零筆                           | 通過            | 實測（網路層） | 網路層 GAS 請求 0 筆；GA／AdSense 擋下 16 筆；mock 紀錄全部為 `mode: mock`                                                                                                       |
+
+證據（截圖、JSON、log）在 `.handoff/evidence/round-02/`（本機，不進版控）。
+
+### 10.7 問題狀態與未驗證項目
+
+| 編號                               | 狀態                                                                                                                                                                                     |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| I1～I3                             | 已修正，驗證見 §10.6                                                                                                                                                                     |
+| I4～I6                             | 未處理（依 Round 2 指示延後）                                                                                                                                                            |
+| I7（新發現，**靜態**觀察，未實測） | 已有金鑰但 `initFromGAS` 失敗時（例如網路錯誤），`SinglePageContent` 會因為 `hasKey` 為真而隱藏金鑰畫面，錯誤訊息沒有地方顯示；iframe 早已載入，所以也不會出現逾時畫面，可能停在載入動畫 |
+| 待決定                             | 正式產物是否從 debug 模板改為 release（會換掉 wasm 與 js，行為與效能都需要重新驗證）                                                                                                     |
+| 待決定                             | `debug_snapshot` 測試輔助要保留在正式產物，或改成只在特定條件下啟用                                                                                                                      |
+
+尚未驗證：
+
+1. 完整 tpz 的官方 SHA512（已驗證編輯器的 SHA512 與模板內各項目的 CRC32）。
+2. 真實後端的讀寫（R1～R3）。本輪也沒有再做正式設定的唯讀讀取。
+3. 真實地圖的完整通關、行動裝置觸控、效能與載入時間。
+4. 舊路由 `/shenmaSanguo/battle` 搭配新產物的戰鬥流程。
+5. 塔／武將升級面板與拖曳移動（Round 1 的 B22）。
+6. I7 的實際重現。
+
+## 11. Round 3（2026-09-24）：混合敵人組提前勝利、回歸工具收尾
+
+驗證方式標示沿用 §6 與 §10：**實測**、**mock**、**headless**、**靜態**。本輪沿用 debug 模板（Codex 決定：release 另立驗證輪次），`debug_snapshot` 暫時保留為唯讀測試介面（不含玩家金鑰或存檔，也不接受修改指令）。
+
+### 11.1 R3-1：混合敵人組會提前勝利
+
+**根因**：`WaveManager.start_wave` 在迴圈中每次只把 `_active_spawning_groups` 加 1，接著立刻呼叫 `_spawn_group`。如果第一組在生成前就失敗（例如 `enemy_id` 找不到設定、路徑沒有路點、`count=0`），`_finish_group` 會把計數減回 0、發出 `wave_cleared`，但後面的有效組這時還沒登記。最後一波因此提前判勝，迴圈卻仍繼續生成後面的敵人。Round 1 的原始版本就有相同的呼叫順序，不是 Round 2 新引入的問題，但它和 Round 2 修改的波次計數與清波判定直接相關，所以本輪一起修正。
+
+**修正**（`systems/WaveManager.gd`、`systems/BattleManager.gd`）：
+
+- 新增 `WaveManager.plan_wave(wave)`：在生成任何敵人之前，先驗證每一組的敵人設定、路徑與數量，只回傳確定能生成的組。空白列（GAS 空行）照舊略過；缺設定、沒有路點、`count<=0` 的組會輸出警告後略過。
+- `start_wave(wave, plans)` 先把所有組一次登記進 `_active_spawning_groups`，才開始逐組生成。任何一組同步完成，都不會讓計數提前歸零；每組只完成一次，整波也只清一次。
+- 世代防護維持不變：迴圈每次呼叫下一組前都會比對世代。同步的信號回呼即使已經切關，剩下的組也不會再生成，也不會改動新世代的計數。`_finish_group` 若發現計數小於 0，會輸出錯誤而且不當成清波。
+- `BattleManager._spawn_next_wave` 先呼叫 `plan_wave`，確認有敵人可生成才進入戰鬥；波次號碼也改成確認後才遞增。
+
+### 11.2 整波無效：拒絕開戰
+
+整波沒有任何可生成的敵人時（全部組無效、完全空波、波次缺號，或自動模式打到無效的下一波），`BattleManager._reject_wave` 會：
+
+- 以 `push_error` 輸出 `[BattleManager] 拒絕開始第 N 波：…（關卡 X）`；
+- 發出新的 `wave_start_rejected(wave, reason)` 信號；
+- 取消自動排程、關閉自動模式，回到備戰並同步給 React；
+- 不前進波次、不結算，所以不會發放勝利獎勵。
+
+之後切換到有效關卡就能恢復正常。依 Codex 指示，本輪沒有新增設定管理 UI。目前玩家畫面上**看不到拒絕原因**，只能從主控台看到錯誤；是否要在 React 顯示提示，留給之後決定。
+
+### 11.3 R3-2：回歸工具
+
+| 項目                      | 內容                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `godot-check.sh`          | 移除 `rm -rf`，整支腳本不刪除任何檔案或目錄。省略工作目錄時用 `mktemp -d` 建立新目錄；指定時必須不存在或是空目錄，而且不能是倉庫本身、倉庫上層或倉庫內的目錄（`C:/…` 與 `/c/…`、大小寫差異都會先正規化），否則以結束碼 2 拒絕。匯入或匯出的結束碼非 0、逾時、log 出現錯誤、產物核對失敗、測試失敗，都會讓最後的結束碼為 1，並列出失敗項目                                               |
+| `tools/check-log.mjs`     | 匯入與匯出 log 出現任何 `ERROR`／`SCRIPT ERROR`／`Parse Error` 就失敗。測試 log 只允許兩種已知 ERROR（Main 在非 Web 平台自動注入的測試 payload 引用了不存在的貼圖、R3-E 刻意觸發的拒絕開戰）；另外要求剛好一行 `RESULT_JSON`、`failed=0`、`total>0`、`PASS` 行數等於 `total`，而且沒有 `FAIL` 行                                                                                        |
+| `tools/verify-export.mjs` | 驗收改為比對「本次原始碼匯出」與「工作區交付產物」。只允許兩種差異：`.scn` 內的 `node_ids` 陣列內容（工具會在二進位資源中找到這段資料並清零後再比對），以及 SW 的 `CACHE_VERSION` 那一行。`.gdc`、`uid_cache.bin`、`index.html` 等其他內容都必須逐位元組相同。與 HEAD 的比較改成可選的診斷（`COMPARE_HEAD=1`），不影響結果                                                              |
+| `tools/selftest.mjs`      | 不需要 Godot。用 21 個 fixture 確認上面兩支工具「該失敗時一定失敗」，並確認每個 fixture 都真的改到了檔案                                                                                                                                                                                                                                                                                |
+| Godot 失敗 fixture        | `godot/fixtures/` 內 5 支腳本：有 FAIL、有 FAIL 但結束碼 0、SCRIPT ERROR、不在允許清單的 ERROR、沒有輸出結果。每一支都必須讓 runner 以結束碼 1 結束                                                                                                                                                                                                                                     |
+| 瀏覽器腳本                | `harness.js` 提供 `H.begin()`／`check()`／`finish()`：每支腳本都回傳 `allPass`、`failures`、`assertions`。`finish()` 會自動加上共通防線：SCRIPT ERROR、非預期的 console error、pageerror、GAS 被放行（外洩），以及 mock 模式下 GAS 出現在網路層，任何一項都會失敗。已知雜訊逐項列在 `KNOWN_CONSOLE_NOISE`，並回報次數。新增 `r3-mixed.js`，以及刻意失敗的 `fixtures/deliberate-fail.js` |
+| ESLint／Prettier          | 忽略範圍縮小為 `scripts/shenma-regression/*.js` 與 `fixtures/*.js`（MCP 片段，整個檔案是一個函式運算式）；`tools/*.mjs` 照常 lint 與格式化                                                                                                                                                                                                                                              |
+
+### 11.4 匯出與更新的產物
+
+- 從工作區原始碼以 debug 模板重新匯出，`public/games/shenmaSanguo/` 同樣只更新 3 個檔案：
+  - `index.pck`：4,706,592 → 4,707,520 bytes，只有 `BattleManager.gdc`、`WaveManager.gdc` 不同。
+  - `index.html`：`fileSizes["index.pck"]` 隨 pck 大小更新。
+  - `index.service.worker.js`：只改 `CACHE_VERSION`。
+- 更新後用**新的工作目錄**從頭重跑 `godot-check.sh`：匯入與匯出都沒有錯誤；產物核對只剩 6 個 `.scn` 的 `node_ids` 與 `CACHE_VERSION` 差異；測試 76／76 通過；結束碼 0。
+
+### 11.5 Round 3 檢查結果
+
+| #     | 項目                       | 結果       | 驗證方式 | 依據                                                                                                                                                               |
+| ----- | -------------------------- | ---------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| R3-G1 | 修正前跑新測試             | 如預期失敗 | headless | 總數 76、失敗 22，全部是 R3 新案例（Codex 的重現案例兩項都 FAIL）；原有 30 項照常通過；runner 結束碼 1                                                             |
+| R3-G2 | 修正後、`public/` 尚未更新 | 如預期失敗 | headless | 測試 76／76 通過，但產物核對抓到 `BattleManager.gdc`、`WaveManager.gdc` 仍是舊版，runner 結束碼 1                                                                  |
+| R3-G3 | 更新 `public/` 後完整重跑  | 通過       | headless | 匯入、匯出、產物核對、測試 76／76 全部通過，結束碼 0                                                                                                               |
+| R3-G4 | 5 支 Godot 失敗 fixture    | 通過       | headless | 5 支都讓 runner 以結束碼 1 結束，失敗原因各自正確。其中一次匯入時 Godot 發生 Segmentation fault（見 §11.6），重跑該 fixture 後，只靠測試檢查也能判定失敗           |
+| R3-G5 | 目錄防護                   | 通過       | 實測     | 倉庫本身、倉庫上層、倉庫內（含尚未建立的子目錄）、`/c/…` 與大寫路徑、非空目錄、檔案、`/`、`C:/`、`C:`、空字串，共 13 種都被拒絕；git status 與上層目錄內容前後相同 |
+| R3-T1 | 工具自我測試               | 通過       | 實測     | 21／21 個 fixture 的結果都符合預期                                                                                                                                 |
+| R3-W1 | `npm run build`            | 通過       | 實測     | 72 秒，84 頁                                                                                                                                                       |
+| R3-W2 | `tsc --noEmit`             | 通過       | 實測     | build 後、dev 停止後各跑一次，都是 0 錯誤；dev 停止前後 `validator.ts` 的雜湊相同                                                                                  |
+| R3-W3 | 神馬三國 ESLint／全站 lint | 通過       | 實測     | 遊戲 0 error、9 warning；全站 0 error、81 warning，都與 Round 2 相同；`tools/*.mjs` 已納入檢查，0 問題                                                             |
+| R3-B1 | I1 四種情境                | 通過       | mock     | 13／13；呼叫次數與 Round 2 相同                                                                                                                                    |
+| R3-B2 | I2 切關三種情境            | 通過       | mock     | 8／8                                                                                                                                                               |
+| R3-B3 | 自動窗口與自動同步         | 通過       | mock     | 9／9；三個窗口測試都確認命中窗口                                                                                                                                   |
+| R3-B4 | 正常流程：手動、自動、落敗 | 通過       | mock     | 9／9；每場只結算 1 次；手動關擊殺 6、自動關漏怪 6                                                                                                                  |
+| R3-B5 | 混合組不提前結算           | 通過       | mock     | 開戰 1.5 秒時仍在戰鬥（場上 2 隻、1 組出兵中、0 次結算）；結算前最後一筆同步已是 HP 17（3 隻都漏完），最後只結算 1 次                                              |
+| R3-B6 | 無效波拒絕開戰、拒絕後恢復 | 通過       | mock     | 按迎戰、按自動都停在備戰、波次 0、自動關閉（React 同步）、0 次結算，主控台有 2 次拒絕錯誤；切到有效關卡後正常結算 1 次                                             |
+| R3-B7 | 產物版本與網路防線         | 通過       | 實測     | 瀏覽器取得的 5 個檔案 SHA-256 與本機 `public/` 完全一致；iframe 載入新的 pck；SW 快取只有新版本；整段期間 GAS 網路請求 0 筆、SCRIPT ERROR 0、pageerror 0           |
+| R3-B8 | 刻意失敗的瀏覽器 fixture   | 通過       | mock     | `allPass=false`，5 種問題都被抓到。iframe 發出的 GAS 探測請求經 coi-serviceworker 轉發（`fromServiceWorker=true`）後被防線 abort                                   |
+| R3-E1 | 完整 tpz 官方 SHA512       | 通過       | 實測     | 1,251,900,388 bytes，SHA512 與官方 `SHA512-SUMS.txt` 相符；目前使用的 3 個模板檔與 tpz 內同名檔逐位元組相同                                                        |
+
+證據在 `.handoff/evidence/round-03/`（本機，不進版控）。
+
+### 11.6 新發現與未驗證項目
+
+新發現（本輪只記錄）：
+
+1. **Godot 4.6.2 headless 匯入偶爾崩潰**：本輪共跑 9 次匯入，其中 1 次發生 Segmentation fault（重新匯入音效時）。runner 以「匯入結束碼非 0」正確判為失敗；遇到時重跑即可。
+2. **`next dev` 頁面引用不存在的 chunk**（`src_components_common_*`，404）。Round 1 修改前的 console 就有，只在 dev 出現；harness 以網址限定範圍後列為已知雜訊。
+3. **Godot Web 產物的 `push_warning` 也走 `console.error`**：刻意放入無效敵人組的情境，腳本必須用 `expectedConsole` 逐條宣告這些預期內的警告。
+4. **Round 2 說「網路防線涵蓋 SW 轉發」時沒有直接證據**；本輪的刻意失敗 fixture 已實測確認。
+
+尚未驗證（延續 §10.7）：
+
+1. 真實後端的讀寫（需要 GAS 原始碼、試算表副本與測試部署）。
+2. 真實地圖的完整通關、行動裝置觸控、效能與載入時間。
+3. 舊路由 `/shenmaSanguo/battle` 搭配新產物的戰鬥流程。
+4. 塔／武將升級面板與拖曳移動。
+5. I7 的實際重現（依 Codex 安排，與 I4 一起在下一輪規劃）。
