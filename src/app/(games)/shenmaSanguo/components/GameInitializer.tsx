@@ -15,17 +15,25 @@ export default function GameInitializer() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const { player, loadFromSession, initFromGAS, backgroundRefresh } =
-    usePlayerStore();
-  const {
-    config,
-    loadConfig,
-    error: configError,
-    clearError: clearConfigError,
-  } = useStaticConfigStore();
+  const loadFromSession = usePlayerStore((s) => s.loadFromSession);
+  const initFromGAS = usePlayerStore((s) => s.initFromGAS);
+  const backgroundRefresh = usePlayerStore((s) => s.backgroundRefresh);
+  // 只訂閱 key：玩家載入成功後才出現，之後升級／改隊伍都不會改變它
+  const playerKey = usePlayerStore((s) => s.player?.key ?? null);
+  const syncStatus = usePlayerStore(
+    (s) => s.player?.syncStatus ?? SyncStatus.Idle
+  );
+
+  const hasConfig = useStaticConfigStore(
+    (s) => (s.config?.heroesConfig?.length ?? 0) > 0
+  );
+  const loadConfig = useStaticConfigStore((s) => s.loadConfig);
+  const configError = useStaticConfigStore((s) => s.error);
+  const clearConfigError = useStaticConfigStore((s) => s.clearError);
 
   const [retrying, setRetrying] = useState(false);
 
+  // ── 玩家初始化與路由守門（切換頁面時檢查）──
   useEffect(() => {
     const isMainPage = pathname === MAIN_PATH;
     const isSettingsPage = pathname === SETTINGS_PATH;
@@ -36,7 +44,8 @@ export default function GameInitializer() {
       return;
     }
 
-    if (!player) {
+    // 讀 store 當下值，不訂閱整個 player，避免每次升級都重新初始化
+    if (!usePlayerStore.getState().player) {
       const hasSession = loadFromSession();
       if (hasSession) {
         void backgroundRefresh(key); // 有快取 → 背景靜默刷新
@@ -44,12 +53,15 @@ export default function GameInitializer() {
         void initFromGAS(key); // 無快取 → 阻塞式載入
       }
     }
+  }, [pathname, router, loadFromSession, initFromGAS, backgroundRefresh]);
 
-    if (!config || config.heroesConfig.length === 0) {
-      void loadConfig();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
+  // ── 靜態設定：玩家載入成功後初始化 ──
+  // 依賴 playerKey 而非 localStorage，首次輸入金鑰（pathname 不變）也會觸發；
+  // 失敗時停在錯誤提示等使用者按「重試」，不自動重打
+  useEffect(() => {
+    if (!playerKey || hasConfig || configError) return;
+    void loadConfig();
+  }, [playerKey, hasConfig, configError, loadConfig]);
 
   const handleRetry = async () => {
     clearConfigError();
@@ -104,7 +116,6 @@ export default function GameInitializer() {
   }
 
   // ── 全域同步狀態細條 ──
-  const syncStatus = player?.syncStatus ?? SyncStatus.Idle;
   const barClass =
     syncStatus === SyncStatus.Syncing
       ? styles.syncBarSyncing

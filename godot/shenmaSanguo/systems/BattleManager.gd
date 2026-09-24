@@ -13,11 +13,12 @@ signal battle_gold_changed(gold: int)
 signal wave_changed(current: int, total: int)
 signal battle_ended(result: Dictionary)
 signal auto_mode_changed(enabled: bool)
+signal wave_start_rejected(wave_num: int, reason: String)  # 波次沒有可生成的敵人，拒絕開戰
 
 # ── 常數 ──────────────────────────────────────────────────────
 const INITIAL_GOLD: int        = 5000
 const GOLD_PER_KILL: int       = 5
-const AUTO_WAVE_INTERVAL: float  = 30.0
+const AUTO_NEXT_WAVE_DELAY: float = 1.5  # 自動模式清波後到下一波的等待時間
 const MAX_BASE_HP: int         = 20
 
 # ── 狀態變數 ─────────────────────────────────────────────────
@@ -32,12 +33,22 @@ var total_waves: int = 0
 var current_wave: int = 0
 var stage_id: String = ""
 
+# ── 延遲自動下一波的失效化 ────────────────────────────────────
+# _lifecycle：每次 initialize（切關／同關重開）遞增，只增不減。
+# _auto_wave_token：每次排程或取消都遞增；計時器回呼只認建立當下的 token。
+# 舊關卡或已取消的計時器即使稍後觸發，也因為號碼對不上而不做任何事。
+var _lifecycle: int = 0
+var _auto_wave_token: int = 0
+var _auto_wave_pending: bool = false
+
 # ── 外部引用（由 Main.gd 初始化後傳入）──────────────────────
 var _wave_manager: Node = null
 var _web_bridge: Node = null
 
 # ── 初始化 ────────────────────────────────────────────────────
 func initialize(p_total_waves: int, p_stage_id: String, wave_mgr: Node, bridge: Node) -> void:
+	_lifecycle += 1
+	_cancel_auto_wave()
 	total_waves    = p_total_waves
 	stage_id       = p_stage_id
 	_wave_manager  = wave_mgr
@@ -72,8 +83,15 @@ func toggle_auto_mode() -> void:
 	auto_mode = !auto_mode
 	auto_mode_changed.emit(auto_mode)
 	if auto_mode and game_state == GameState.PREP:
-		# 立即切換到戰鬥並開始第一波
+		# 立即切換到戰鬥並開始第一波（_spawn_next_wave 會同步給 Web）
 		_spawn_next_wave()
+		return
+	if not auto_mode and _auto_wave_pending:
+		# 清波後等待自動下一波時關閉自動：取消排程並回到備戰，改由玩家手動迎戰
+		_cancel_auto_wave()
+		_set_state(GameState.PREP)
+		return
+	_sync_stats_to_web()
 
 # ── 金幣操作 ─────────────────────────────────────────────────
 func can_spend_gold(amount: int) -> bool:
@@ -115,30 +133,70 @@ func on_wave_all_enemies_dead() -> void:
 	
 	if current_wave >= total_waves:
 		_end_battle(true)
+	elif auto_mode:
+		# 自動模式：短暫停頓後自動進入下一波
+		_schedule_auto_wave()
 	else:
-		if auto_mode:
-			# 自動模式：短暫停頓後自動進入下一波
-			get_tree().create_timer(1.5).timeout.connect(func():
-				if game_state == GameState.BATTLE or game_state == GameState.PREP:
-					_spawn_next_wave()
-			)
-		else:
-			# 手動模式：秒回準備階段
-			game_state = GameState.PREP
-			state_changed.emit(game_state)
+		# 手動模式：秒回準備階段
+		_set_state(GameState.PREP)
 
 # ── 內部 ─────────────────────────────────────────────────────
+func _set_state(new_state: int) -> void:
+	game_state = new_state
+	state_changed.emit(game_state)
+	_sync_stats_to_web()
+
+func _schedule_auto_wave() -> void:
+	if _auto_wave_pending:
+		return  # 同一波的清波通知只排程一次
+	_auto_wave_pending = true
+	_auto_wave_token += 1
+	var token: int     = _auto_wave_token
+	var life: int      = _lifecycle
+	var from_wave: int = current_wave
+	_sync_stats_to_web()
+	get_tree().create_timer(AUTO_NEXT_WAVE_DELAY).timeout.connect(func():
+		# 只接受「同一個關卡生命週期、同一次排程」的計時器
+		if token != _auto_wave_token or life != _lifecycle:
+			return
+		_auto_wave_pending = false
+		if not auto_mode or game_state != GameState.BATTLE or current_wave != from_wave:
+			_sync_stats_to_web()
+			return
+		_spawn_next_wave()
+	)
+
+func _cancel_auto_wave() -> void:
+	_auto_wave_token += 1
+	_auto_wave_pending = false
+
 func _spawn_next_wave() -> void:
-	current_wave += 1
-	if current_wave > total_waves:
+	var next_wave: int = current_wave + 1
+	if next_wave > total_waves:
 		return
+	# 先確認這一波至少有一組敵人能生成，才進入戰鬥
+	var plans: Array = _wave_manager.plan_wave(next_wave) if _wave_manager else []
+	if plans.is_empty():
+		_reject_wave(next_wave, "沒有可生成的敵人（缺少波次資料，或敵人組的設定、路徑、數量全部無效）")
+		return
+	current_wave = next_wave
 	game_state = GameState.BATTLE
 	state_changed.emit(game_state)
 	wave_changed.emit(current_wave, total_waves)
 	_sync_stats_to_web()
 	auto_timer = 0.0
-	if _wave_manager:
-		_wave_manager.start_wave(current_wave)
+	_wave_manager.start_wave(current_wave, plans)
+
+## 波次無法生成任何敵人時拒絕開戰：波次不前進、不結算，關閉自動並回到備戰。
+## 避免無效設定被當成「清波」而直接給勝利獎勵；切換到有效關卡即可恢復。
+func _reject_wave(wave_num: int, reason: String) -> void:
+	push_error("[BattleManager] 拒絕開始第 %d 波：%s（關卡 %s）" % [wave_num, reason, stage_id])
+	_cancel_auto_wave()
+	if auto_mode:
+		auto_mode = false
+		auto_mode_changed.emit(auto_mode)
+	wave_start_rejected.emit(wave_num, reason)
+	_set_state(GameState.PREP)
 
 func _calc_stars() -> int:
 	if base_hp <= 0:
@@ -166,6 +224,7 @@ func _calc_battle_points() -> int:
 func _end_battle(is_win: bool) -> void:
 	if game_state == GameState.RESULT:
 		return
+	_cancel_auto_wave()
 	game_state = GameState.RESULT
 	state_changed.emit(game_state)
 	var result: Dictionary = {
@@ -192,9 +251,18 @@ func _sync_stats_to_web() -> void:
 		"hp": base_hp,
 		"max_hp": MAX_BASE_HP,
 		"game_state": game_state,
-		"auto_mode": auto_mode
+		"auto_mode": auto_mode,
+		"auto_next_wave_pending": _auto_wave_pending
 	}
 	_web_bridge.send_stats(stats)
+
+## 測試用唯讀狀態（debug_snapshot）
+func get_debug_state() -> Dictionary:
+	return {
+		"lifecycle": _lifecycle,
+		"auto_wave_token": _auto_wave_token,
+		"auto_next_wave_pending": _auto_wave_pending,
+	}
 
 # ═══════════════════════════════════════════
 #  內部：安全音效呼叫

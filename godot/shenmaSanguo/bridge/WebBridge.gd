@@ -11,6 +11,7 @@ signal resume_game_requested()
 signal move_unit_requested()
 signal deselect_unit_requested()
 signal upgrade_unit_requested()
+signal debug_snapshot_requested(request_id: String)
 
 
 var _msg_callback: JavaScriptObject
@@ -55,6 +56,10 @@ func _on_js_message(args: Array) -> void:
 	var payload = JSON.parse_string(json_str)
 	if payload == null:
 		push_error("[WebBridge] JSON 解析失敗：" + json_str)
+		return
+	if payload.get("type") == "debug_snapshot":
+		# 測試用唯讀查詢，頻繁輪詢時不印 log
+		debug_snapshot_requested.emit(str(payload.get("request_id", "")))
 		return
 	print("[WebBridge] 收到訊號:", payload.get("type", "payload"))
 	if payload.get("type") == "start_battle":
@@ -119,6 +124,16 @@ func send_show_upgrade_panel(data: Dictionary) -> void:
 	data["type"] = "show_upgrade_panel"
 	if OS.get_name() != "Web":
 		print("[WebBridge] (非 Web) 顯示升級面板：", data)
+		return
+	var json = JSON.stringify(data)
+	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
+
+## 測試用：回傳 debug_snapshot 查詢結果
+func send_debug_snapshot(data: Dictionary) -> void:
+	data["__godot_bridge"] = true
+	data["type"] = "debug_snapshot"
+	if OS.get_name() != "Web":
+		print("[WebBridge] (非 Web) 快照：", data)
 		return
 	var json = JSON.stringify(data)
 	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)

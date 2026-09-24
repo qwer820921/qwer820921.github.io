@@ -40,6 +40,7 @@ var _tile_size: int            = 48    # 從 GameMap 取得，傳給 Entity
 var _placed_heroes: Dictionary = {}   # hero_id → Hero node
 var _selected_unit: Node       = null  # 選中的塔/武將
 var _moving_unit: Node         = null  # 正在重新佈置的單位
+var _game_time: float          = 0.0   # 累計遊戲時間（受 time_scale 影響），供測試快照比對計時器
 
 # ═══════════════════════════════════════════
 #  _ready
@@ -53,6 +54,7 @@ func _ready() -> void:
 	web_bridge.move_unit_requested.connect(_on_web_move_unit)
 	web_bridge.deselect_unit_requested.connect(_deselect_unit)
 	web_bridge.upgrade_unit_requested.connect(_on_web_upgrade_unit)
+	web_bridge.debug_snapshot_requested.connect(_on_debug_snapshot_requested)
 
 
 	# BattleHUD signals
@@ -68,11 +70,11 @@ func _ready() -> void:
 	battle_manager.base_hp_changed.connect(_on_base_hp_changed)
 	battle_manager.battle_gold_changed.connect(_on_battle_gold_changed)
 	battle_manager.wave_changed.connect(_on_wave_changed)
-	battle_manager.auto_mode_changed.connect(_on_auto_mode_changed)
 	battle_manager.battle_ended.connect(_on_battle_ended)
 
-	# WaveManager signals
-	wave_manager.enemy_spawned.connect(_on_enemy_spawned)
+	# WaveManager signals（只會收到目前關卡世代的敵人事件）
+	wave_manager.enemy_killed.connect(_on_enemy_killed)
+	wave_manager.enemy_leaked.connect(_on_enemy_leaked)
 	wave_manager.wave_cleared.connect(_on_wave_cleared) # 使用新信號
 
 	# 告訴網頁端：Godot 已準備就緒
@@ -102,8 +104,9 @@ func _on_payload_received(payload: Dictionary) -> void:
 
 func _cleanup_current_stage() -> void:
 	print("[Main] 清除當前關卡狀態...")
-	# 1. 刪除所有單位節點
+	# 1. 刪除所有單位節點（先移出場景樹，避免本幀結束前舊敵人繼續移動或發出信號）
 	for child in units_layer.get_children():
+		units_layer.remove_child(child)
 		child.queue_free()
 	
 	# 2. 清除追蹤狀態
@@ -208,9 +211,6 @@ func _on_battle_gold_changed(gold: int) -> void:
 func _on_wave_changed(current: int, total: int) -> void:
 	battle_hud.update_wave(current, total)
 
-func _on_auto_mode_changed(enabled: bool) -> void:
-	battle_hud.set_auto_active(enabled)
-
 func _on_battle_ended(result: Dictionary) -> void:
 	battle_hud.show_battle_result(result)
 
@@ -226,14 +226,10 @@ func _on_auto_btn_pressed() -> void:
 # ═══════════════════════════════════════════
 #  敵人事件：WaveManager → BattleManager
 # ═══════════════════════════════════════════
-func _on_enemy_spawned(enemy: Node) -> void:
-	enemy.died.connect(_on_enemy_died)
-	enemy.reached_base.connect(_on_enemy_reached_base)
-
-func _on_enemy_died(_enemy: Node) -> void:
+func _on_enemy_killed(_enemy: Node) -> void:
 	battle_manager.on_enemy_killed()
 
-func _on_enemy_reached_base(_enemy: Node) -> void:
+func _on_enemy_leaked(_enemy: Node) -> void:
 	battle_manager.on_enemy_reached_base()
 
 func _on_wave_cleared(_wave_num: int) -> void:
@@ -667,6 +663,39 @@ func _inject_test_payload() -> void:
 	# 延遲 0.5 秒模擬網路延遲後注入
 	await get_tree().create_timer(0.5).timeout
 	_on_payload_received(test_payload)
+
+# ═══════════════════════════════════════════
+#  測試用唯讀快照（Web 送 debug_snapshot → 回傳目前狀態，不改變任何遊戲狀態）
+# ═══════════════════════════════════════════
+func _process(delta: float) -> void:
+	_game_time += delta
+
+func _on_debug_snapshot_requested(request_id: String) -> void:
+	# 依 enemy_id 統計仍在場上的敵人節點
+	var enemy_nodes: Dictionary = {}
+	for child in units_layer.get_children():
+		if child is Enemy and not child.is_queued_for_deletion():
+			var eid: String = child.enemy_id
+			enemy_nodes[eid] = int(enemy_nodes.get(eid, 0)) + 1
+	var snapshot: Dictionary = {
+		"request_id":        request_id,
+		# 刻意不用 stage_id / result 欄位名稱，避免 Web 端誤判為結算訊息
+		"stage":             battle_manager.stage_id,
+		"game_state":        battle_manager.game_state,
+		"wave":              battle_manager.current_wave,
+		"total_waves":       battle_manager.total_waves,
+		"hp":                battle_manager.base_hp,
+		"kills":             battle_manager.kills,
+		"auto_mode":         battle_manager.auto_mode,
+		"wave_generation":   wave_manager.get_generation(),
+		"active_enemies":    wave_manager.get_active_enemy_count(),
+		"spawning_groups":   wave_manager.get_spawning_group_count(),
+		"enemy_nodes":       enemy_nodes,
+		"game_time":         _game_time,
+		"time_scale":        Engine.time_scale,
+	}
+	snapshot.merge(battle_manager.get_debug_state())
+	web_bridge.send_debug_snapshot(snapshot)
 
 # ═══════════════════════════════════════════
 #  Helpers
