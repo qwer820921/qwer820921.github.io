@@ -19,7 +19,7 @@ async (page) => {
       ? ["get_heroes_config", "get_enemies_config", "get_all_maps"]
       : [];
   const BASE = "http://localhost:3000";
-  const EVIDENCE = ".handoff/evidence/round-03";
+  const EVIDENCE = ".handoff/evidence/round-04";
 
   // ── mock 靜態設定：14×11 地圖，第 5 列直線道路，上下兩列建築格 ──
   const ROW = 5;
@@ -129,7 +129,23 @@ async (page) => {
     const GAS_PREFIX = "https://script.google.com/";
     const DB_KEY = "__shenma_mock_gas_db";
     const LOG_KEY = "__shenma_mock_gas_log";
-    const FAIL_KEY = "__shenma_mock_fail"; // {action: 剩餘失敗次數}，用於注入失敗
+    const FAIL_KEY = "__shenma_mock_fail"; // {action: 剩餘失敗次數}：回應 status 500
+    const NETFAIL_KEY = "__shenma_mock_netfail"; // {action: 剩餘次數}：模擬網路錯誤（fetch 拋出 TypeError）
+    // 暫停指定 action：請求停在待回應，直到測試呼叫 __shenmaMock.release(action, "ok" | "fail" | "network")
+    // 只存在記憶體，重新整理後自動清除；讓測試控制回應順序，不靠固定等待
+    const held = { actions: new Set(), queue: [] };
+    window.__shenmaMock = {
+      hold: (action) => held.actions.add(action),
+      unhold: (action) => held.actions.delete(action),
+      pending: (action) => held.queue.filter((q) => !action || q.action === action).map((q) => ({ action: q.action, key: q.key })),
+      release: (action, outcome = "ok") => {
+        const i = held.queue.findIndex((q) => q.action === action);
+        if (i < 0) return false;
+        const [q] = held.queue.splice(i, 1);
+        q.resolve(outcome);
+        return true;
+      },
+    };
     const readJson = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch { return d; } };
     const log = (e) => {
       const l = readJson(LOG_KEY, []);
@@ -152,10 +168,25 @@ async (page) => {
         log({ t: Date.now(), action, mode: "real-readonly" });
         return origFetch(input, init);
       }
+      let outcome = "ok";
+      if (held.actions.has(action)) {
+        outcome = await new Promise((resolve) => held.queue.push({ action, key, resolve }));
+      }
+      const netfail = readJson(NETFAIL_KEY, {});
+      if (outcome === "network" || netfail[action] > 0) {
+        if (outcome !== "network") {
+          netfail[action] -= 1;
+          localStorage.setItem(NETFAIL_KEY, JSON.stringify(netfail));
+        }
+        log({ t: Date.now(), action, key, mode: "mock", status: "network-error" });
+        throw new TypeError("Failed to fetch");
+      }
       const db = readJson(DB_KEY, { profiles: {}, battle_logs: [] });
       const fail = readJson(FAIL_KEY, {});
       let res;
-      if (fail[action] > 0) {
+      if (outcome === "fail") {
+        res = { status: 500, error: "MOCK_HELD_FAILURE" };
+      } else if (fail[action] > 0) {
         fail[action] -= 1;
         localStorage.setItem(FAIL_KEY, JSON.stringify(fail));
         res = { status: 500, error: "MOCK_INJECTED_FAILURE" };
@@ -173,11 +204,27 @@ async (page) => {
             break;
           case "save_profile": db.profiles[key] = payload.data; res = { status: 200 }; break;
           case "save_result": db.battle_logs.push({ key, ...payload, t: Date.now() }); res = { status: 200 }; break;
+          case "upgrade_hero": {
+            // 仿照後端：伺服器計算費用、扣點數並回傳升級後的武將
+            const p = db.profiles[key];
+            const cfg = config.heroes.find((h) => h.hero_id === (payload && payload.hero_id));
+            if (!p || !cfg) { res = { status: 400, error: "HERO_NOT_FOUND" }; break; }
+            const cur = p.heroes.find((h) => h.hero_id === cfg.hero_id) || { hero_id: cfg.hero_id, level: 1, star: 0, atk: cfg.base_atk, def: cfg.base_def, hp: cfg.base_hp };
+            const cost = cfg.upgrade_cost_base * cur.level;
+            if (p.gold < cost) { res = { status: 400, error: "GOLD_NOT_ENOUGH" }; break; }
+            const hero = { ...cur, level: cur.level + 1, atk: cur.atk + cfg.atk_growth, def: cur.def + cfg.def_growth, hp: cur.hp + cfg.hp_growth };
+            p.gold -= cost;
+            p.heroes = [...p.heroes.filter((h) => h.hero_id !== hero.hero_id), hero];
+            res = { status: 200, hero, gold_remaining: p.gold };
+            break;
+          }
           default: res = { status: 400, error: "MOCK_UNSUPPORTED_" + action };
         }
       }
       localStorage.setItem(DB_KEY, JSON.stringify(db)); // 同步寫入：beforeunload keepalive 也會記錄
-      log({ t: Date.now(), action, key, mode: "mock", status: res.status });
+      // 記錄後端實際收到的資料摘要，供測試斷言（不只看 UI）
+      const data = action === "save_profile" && payload && payload.data;
+      log({ t: Date.now(), action, key, mode: "mock", status: res.status, ...(data ? { saved: { nickname: data.nickname, team: (data.team || []).map((x) => x.hero_id), gold: data.gold } } : {}) });
       await new Promise((r) => setTimeout(r, 150));
       return new Response(JSON.stringify(res), { status: 200, headers: { "Content-Type": "application/json" } });
     };

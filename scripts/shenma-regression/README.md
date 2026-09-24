@@ -1,10 +1,11 @@
 # 神馬三國回歸測試
 
-兩層測試，外加一組工具自我測試：
+三層測試，外加一組工具自我測試：
 
 1. **Godot headless 測試**（`godot-check.sh`）：在暫存目錄匯入 → debug 匯出 → 與交付產物核對 → 執行 `godot/lifecycle_test.gd`。任何一步失敗都以非零結束。
 2. **瀏覽器回歸**（Playwright MCP 的 `browser_run_code_unsafe`，`filename` 參數）：跑本機 `next dev` 與 `public/games/shenmaSanguo/` 的實際產物，後端全部 mock。
 3. **工具自我測試**（`tools/selftest.mjs`）：用刻意製造的 fixture 確認產物核對與 log 檢查「該失敗時一定失敗」。
+4. **玩家存檔 store 測試**（`web/player-store.test.mjs`）：在 Node 內執行 `playerStore.ts`，每個 GAS 請求的成功／失敗與回應順序、以及計時器都由測試控制，驗證登入、切換帳號與同步的非同步規則。
 
 所有寫入都不會送到正式 GAS／Sheets。截圖與結果 JSON 的證據放在 `.handoff/evidence/`（已 gitignore）。
 
@@ -101,23 +102,35 @@ node scripts/shenma-regression/tools/selftest.mjs public/games/shenmaSanguo
 
 複製交付產物到系統暫存目錄後逐一製造差異，確認 `verify-export.mjs` 只放行「node_ids、CACHE_VERSION、換行」三種差異，`.gdc`、`.scn` 其他位元組、`uid_cache.bin`、SW 其他內容、`index.html`、多出檔案都會失敗；並用合成 log 確認 `check-log.mjs` 對 ERROR／SCRIPT ERROR／Parse Error／FAIL／缺 RESULT_JSON／total=0 都會失敗。每個 fixture 也會檢查「確實改到了檔案」，避免允許差異的案例空過。不會修改傳入的目錄。
 
-## 3. 瀏覽器回歸
+## 3. 玩家存檔 store 測試（不需要瀏覽器）
+
+```bash
+node scripts/shenma-regression/web/player-store.test.mjs
+```
+
+- 用專案內的 `typescript` 即時轉譯 `playerStore.ts` 與相依模組（不需要額外套件），並提供假的 `localStorage`／`sessionStorage`、`fetch` 與計時器。
+- mock 後端的每個請求都可以停在「待回應」，由測試決定何時成功、回傳後端錯誤或網路錯誤；30 秒 debounce 等計時器只在測試推進時間時才會觸發，不靠固定等待。
+- 涵蓋 Round 4 驗收案例 1～8：登入失敗不建檔、建檔失敗不報成功、連按不重複建檔、A 慢 B 快不互相覆蓋、切換前先保存、重新整理後補送（Pending／Syncing／舊版 session）、Idle 不補送、session key 不符不跨帳號寫入、在途保存與背景讀取不覆蓋新修改、手動同步失敗保留資料、升級與戰鬥結算的相容修正。
+- 輸出 PASS／FAIL 各行與一行 `RESULT_JSON`；有任何失敗時結束碼為 1。
+
+## 4. 瀏覽器回歸
 
 前置：`npm run dev`（`http://localhost:3000`）。**同一時間不要跑 `npm run build` 或 `tsc`**，避免 `.next` 被同時寫入。
 
 依序在 Playwright MCP 執行（`browser_run_code_unsafe`，`filename` 為倉庫相對路徑）：
 
-| 順序 | 檔案                          | 內容                                                                                                                                             |
-| ---- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 0    | （先 `browser_close`）        | 確保是全新的 browser context                                                                                                                     |
-| 1    | `harness.js`                  | **導覽前**安裝網路防線（GAS 寫入一律 abort、GA／AdSense 一律 abort）、頁面內 mock、Godot 訊息紀錄；清掉 Service Worker、Cache Storage 與 storage |
-| 2    | `i1-init.js`                  | I1：全新玩家、後端已有金鑰但本機無快取、已有 session、設定失敗後重試（全程不重新整理）                                                           |
-| 3    | `i2-lifecycle.js`             | I2：出兵間隔中切關、A→B→A、同關重開                                                                                                              |
-| 4    | `auto-timer.js`               | 自動下一波 1.5 秒窗口內切關／關閉自動／同關重開、多次切換自動的 React 同步                                                                       |
-| 5    | `normal-flows.js`             | 手動兩波勝利（蓋塔）、自動勝利、落敗；每場只結算一次、擊殺＋漏怪計數一致、結算寫回 mock                                                          |
-| 6    | `r3-mixed.js`                 | R3：混合組不提前結算、無效波拒絕開戰（迎戰與自動）且不給獎勵、拒絕後切到有效關卡恢復                                                             |
-| 7    | `artifacts-and-network.js`    | 瀏覽器實際取得的產物 SHA-256、iframe 載入的大小、SW 快取版本，以及整段期間的 GAS／SCRIPT ERROR／pageerror 統計                                   |
-| 8    | `fixtures/deliberate-fail.js` | 刻意失敗的 fixture（見下方）；會汙染錯誤紀錄，所以放在最後或另開 context                                                                         |
+| 順序 | 檔案                          | 內容                                                                                                                                                                       |
+| ---- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | （先 `browser_close`）        | 確保是全新的 browser context                                                                                                                                               |
+| 1    | `harness.js`                  | **導覽前**安裝網路防線（GAS 寫入一律 abort、GA／AdSense 一律 abort）、頁面內 mock、Godot 訊息紀錄；清掉 Service Worker、Cache Storage 與 storage                           |
+| 2    | `i1-init.js`                  | I1：全新玩家、後端已有金鑰但本機無快取、已有 session、設定失敗後重試（全程不重新整理）                                                                                     |
+| 3    | `i2-lifecycle.js`             | I2：出兵間隔中切關、A→B→A、同關重開                                                                                                                                        |
+| 4    | `auto-timer.js`               | 自動下一波 1.5 秒窗口內切關／關閉自動／同關重開、多次切換自動的 React 同步                                                                                                 |
+| 5    | `normal-flows.js`             | 手動兩波勝利（蓋塔）、自動勝利、落敗；每場只結算一次、擊殺＋漏怪計數一致、結算寫回 mock                                                                                    |
+| 6    | `r3-mixed.js`                 | R3：混合組不提前結算、無效波拒絕開戰（迎戰與自動）且不給獎勵、拒絕後切到有效關卡恢復                                                                                       |
+| 7    | `artifacts-and-network.js`    | 瀏覽器實際取得的產物 SHA-256、iframe 載入的大小、SW 快取版本，以及整段期間的 GAS／SCRIPT ERROR／pageerror 統計                                                             |
+| 7b   | `r4-web.js`                   | R4：登入失敗顯示原因並可重試／更換金鑰、建檔失敗不報成功、切換帳號前先保存（失敗就擋下）、Pending 與 Syncing 重新整理後補送、Idle 不補送、手動同步失敗保留資料、升級 smoke |
+| 8    | `fixtures/deliberate-fail.js` | 刻意失敗的 fixture（見下方）；會汙染錯誤紀錄，所以放在最後或另開 context                                                                                                   |
 
 **判定方式**：每支情境腳本都用 `H.begin()` 建立判定、`run.check()` 累積斷言，最後 `run.finish()` 回傳：
 
@@ -126,6 +139,13 @@ node scripts/shenma-regression/tools/selftest.mjs public/games/shenmaSanguo
 - 執行者必須檢查每支腳本回傳的 `allPass`，不能只看腳本有沒有跑完。
 
 **刻意失敗的 fixture**：`fixtures/deliberate-fail.js` 會製造一個不成立的斷言、一行 SCRIPT ERROR、一個非預期 console error、一個 pageerror，並從 iframe 對 GAS 網址（不存在的部署 ID）發出請求。預期回傳 `fixtureWorks: true`（`allPass=false` 且上述 5 項都列在 `failures`）；`probe` 會記錄這個請求是否被網路防線看到、是否經由 Service Worker 轉發。
+
+**控制 mock 回應**（`r4-web.js` 使用）：
+
+- `localStorage.__shenma_mock_fail` = `{ action: 次數 }`：接下來幾次回應 `status 500`。
+- `localStorage.__shenma_mock_netfail` = `{ action: 次數 }`：接下來幾次模擬網路錯誤（`fetch` 拋出 `TypeError`）。
+- `window.__shenmaMock.hold(action)`：之後的請求停在待回應，直到 `window.__shenmaMock.release(action, "ok" | "fail" | "network")`；只存在記憶體，重新整理後自動清除。用它讓 beforeunload 的 keepalive 請求卡住並隨頁面消失，就能確定後端資料來自重新整理後的補送。
+- mock 紀錄會附上 `save_profile` 實際收到的暱稱、隊伍與點數，測試據此斷言後端資料，而不只看 UI。
 
 注意事項：
 
