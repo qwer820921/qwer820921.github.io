@@ -180,7 +180,8 @@ async (page) => {
     // 接續 C：目前是 test_r4_other（剛建立，隊伍為關羽＋趙雲）
     await changeTeam();
     const pending = await session();
-    // 暫停 save_profile：beforeunload 的 keepalive 請求會卡住並隨頁面消失，確保後端資料只可能來自重新整理後的補送
+    // 暫停 save_profile：舊頁面若有保存請求會卡住並隨頁面消失，確保後端資料只可能來自重新整理後的補送
+    // （Round 5 起卸載時已不送 keepalive 保存，見 r5-web.js E）
     await page.evaluate(() => window.__shenmaMock.hold("save_profile"));
     const tReload = Date.now();
     await page.reload();

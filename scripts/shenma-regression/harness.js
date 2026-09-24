@@ -19,7 +19,7 @@ async (page) => {
       ? ["get_heroes_config", "get_enemies_config", "get_all_maps"]
       : [];
   const BASE = "http://localhost:3000";
-  const EVIDENCE = ".handoff/evidence/round-04";
+  const EVIDENCE = ".handoff/evidence/round-06";
 
   // ── mock 靜態設定：14×11 地圖，第 5 列直線道路，上下兩列建築格 ──
   const ROW = 5;
@@ -131,9 +131,17 @@ async (page) => {
     const LOG_KEY = "__shenma_mock_gas_log";
     const FAIL_KEY = "__shenma_mock_fail"; // {action: 剩餘失敗次數}：回應 status 500
     const NETFAIL_KEY = "__shenma_mock_netfail"; // {action: 剩餘次數}：模擬網路錯誤（fetch 拋出 TypeError）
-    // 暫停指定 action：請求停在待回應，直到測試呼叫 __shenmaMock.release(action, "ok" | "fail" | "network")
-    // 只存在記憶體，重新整理後自動清除；讓測試控制回應順序，不靠固定等待
+    // 暫停指定 action：請求停在待回應，直到測試呼叫 __shenmaMock.release(action, outcome)
+    //   "ok"／"fail"（500）／"network"（網路錯誤，伺服器沒處理）
+    //   "lost"：伺服器照常處理並寫入 mock 資料庫，但回應永遠不會送回頁面（模擬回應遺失）
+    //   "applied-network"：伺服器照常處理並寫入，但頁面收到網路錯誤
+    //   "stale"：用請求「送達當下」的資料庫內容回應，不寫回（模擬較早送出、較晚回來的讀取）
+    // 只存在記憶體，重新整理後自動清除（仍在暫停中的請求會隨頁面消失，等於沒有送到伺服器）；讓測試控制回應順序，不靠固定等待
+    // localStorage.__shenma_mock_hold = [action, ...]：頁面載入時就先暫停這些 action（用來攔住重新整理當下的請求）
     const held = { actions: new Set(), queue: [] };
+    // 每次載入頁面的識別碼：紀錄中可分辨請求來自重新整理前或後的頁面
+    const PAGE_ID = Math.random().toString(36).slice(2, 8);
+    window.__shenmaPageId = PAGE_ID;
     window.__shenmaMock = {
       hold: (action) => held.actions.add(action),
       unhold: (action) => held.actions.delete(action),
@@ -147,6 +155,7 @@ async (page) => {
       },
     };
     const readJson = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch { return d; } };
+    for (const a of readJson("__shenma_mock_hold", [])) held.actions.add(a);
     const log = (e) => {
       const l = readJson(LOG_KEY, []);
       l.push(e);
@@ -165,10 +174,11 @@ async (page) => {
       try { body = JSON.parse((init && init.body) || "{}"); } catch {}
       const { action, key, payload } = body;
       if (passthrough.includes(action)) {
-        log({ t: Date.now(), action, mode: "real-readonly" });
+        log({ t: Date.now(), page: PAGE_ID, action, mode: "real-readonly" });
         return origFetch(input, init);
       }
       let outcome = "ok";
+      const dbAtArrival = localStorage.getItem(DB_KEY);
       if (held.actions.has(action)) {
         outcome = await new Promise((resolve) => held.queue.push({ action, key, resolve }));
       }
@@ -178,10 +188,11 @@ async (page) => {
           netfail[action] -= 1;
           localStorage.setItem(NETFAIL_KEY, JSON.stringify(netfail));
         }
-        log({ t: Date.now(), action, key, mode: "mock", status: "network-error" });
+        log({ t: Date.now(), page: PAGE_ID, action, key, mode: "mock", status: "network-error" });
         throw new TypeError("Failed to fetch");
       }
-      const db = readJson(DB_KEY, { profiles: {}, battle_logs: [] });
+      const stale = outcome === "stale";
+      const db = stale ? JSON.parse(dbAtArrival || '{"profiles":{},"battle_logs":[]}') : readJson(DB_KEY, { profiles: {}, battle_logs: [] });
       const fail = readJson(FAIL_KEY, {});
       let res;
       if (outcome === "fail") {
@@ -221,10 +232,20 @@ async (page) => {
           default: res = { status: 400, error: "MOCK_UNSUPPORTED_" + action };
         }
       }
-      localStorage.setItem(DB_KEY, JSON.stringify(db)); // 同步寫入：beforeunload keepalive 也會記錄
+      if (!stale) localStorage.setItem(DB_KEY, JSON.stringify(db)); // 同步寫入
       // 記錄後端實際收到的資料摘要，供測試斷言（不只看 UI）
       const data = action === "save_profile" && payload && payload.data;
-      log({ t: Date.now(), action, key, mode: "mock", status: res.status, ...(data ? { saved: { nickname: data.nickname, team: (data.team || []).map((x) => x.hero_id), gold: data.gold } } : {}) });
+      const heroesOf = (list) => (list || []).map((h) => h.hero_id + ":" + h.level);
+      log({
+        t: Date.now(), page: PAGE_ID, action, key, mode: "mock", status: res.status,
+        keepalive: !!(init && init.keepalive),
+        ...(outcome === "lost" ? { responseLost: true } : {}),
+        ...(outcome === "applied-network" ? { responseNetworkError: true } : {}),
+        ...(stale ? { stale: true } : {}),
+        ...(data ? { saved: { nickname: data.nickname, team: (data.team || []).map((x) => x.hero_id), gold: data.gold, heroes: heroesOf(data.heroes) } } : {}),
+      });
+      if (outcome === "lost") return new Promise(() => {}); // 伺服器已處理，但回應送不回頁面
+      if (outcome === "applied-network") throw new TypeError("Failed to fetch"); // 伺服器已處理，頁面收到網路錯誤
       await new Promise((r) => setTimeout(r, 150));
       return new Response(JSON.stringify(res), { status: 200, headers: { "Content-Type": "application/json" } });
     };
@@ -278,6 +299,28 @@ async (page) => {
         if (keep && db) localStorage.setItem("__shenma_mock_gas_db", db);
         return { unregistered: regs.map((r) => r.scope), cachesDeleted: keys };
       }, keepMockDb);
+    },
+    // 把物件存成證據目錄下的 JSON 檔（run_code 環境不能直接寫檔：透過頁面下載再存到指定路徑）
+    async saveJson(p, name, obj) {
+      const text = JSON.stringify(obj, null, 2) + String.fromCharCode(10);
+      const [download] = await Promise.all([
+        p.waitForEvent("download"),
+        p.evaluate((t) => {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob([t], { type: "application/json" }));
+          a.download = "result.json";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        }, text),
+      ]);
+      await download.saveAs(`${EVIDENCE}/${name}`);
+      return `${EVIDENCE}/${name}`;
+    },
+    // 存下最近一次 run.finish() 的原始回傳（和工具回傳的內容相同）
+    async saveLast(p, name) {
+      if (!state.lastResult) throw new Error("還沒有任何 run.finish() 結果");
+      return H.saveJson(p, name, state.lastResult);
     },
     async gasLog(p) {
       return p.evaluate(() => JSON.parse(localStorage.getItem("__shenma_mock_gas_log") || "[]"));
@@ -426,7 +469,7 @@ async (page) => {
         check("GAS 沒有外洩（放行的請求只限唯讀白名單）", leaked.length === 0, leaked);
         if (MODE === "mock") check("mock 模式下 GAS 沒有打到網路層", gasNetwork.length === 0, gasNetwork);
         const failures = assertions.filter((a) => !a.pass).map((a) => a.name);
-        return {
+        const result = {
           allPass: failures.length === 0,
           failures,
           assertions,
@@ -436,6 +479,8 @@ async (page) => {
           gasNetwork,
           elapsedSec: Math.round((Date.now() - t0) / 1000),
         };
+        state.lastResult = result; // 供 H.saveLast() 原封不動存檔
+        return result;
       };
       return { t0, check, finish };
     },

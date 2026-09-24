@@ -203,12 +203,59 @@ const SESSION_KEY = "shenma_player_state";
 const readSession = (env) =>
   JSON.parse(env.session.getItem(SESSION_KEY) || "null");
 
+// 模擬同一分頁重新整理：舊頁面的計時器與事件監聽都消失，舊頁面還在等的請求，回應也不會再被處理。
+// 伺服器仍可能處理這些請求：之後用 env.server.handle(call) 讓伺服器處理，但回應送不到任何頁面。
+// sessionStorage／localStorage 保留（同一分頁）。回傳新頁面的 store getter。
+function reloadPage(env) {
+  env.clock.timers.clear();
+  for (const k of Object.keys(env.listeners)) delete env.listeners[k];
+  for (const c of env.server.calls) {
+    if (c.settled) continue;
+    c.orphaned = true;
+    c.respond = () => {
+      c.settled = true;
+    };
+    c.networkError = () => {
+      c.settled = true;
+    };
+  }
+  const store = freshStore();
+  return () => store.getState();
+}
+/** 觸發頁面卸載（beforeunload）時註冊的所有監聽 */
+const unload = (env) => {
+  for (const fn of env.listeners.beforeunload || []) fn();
+};
+/** 讓伺服器處理請求，但回應在途中遺失（頁面收不到） */
+const serverAppliesButResponseLost = (env, call) => {
+  call.respond = () => {
+    call.settled = true;
+  };
+  env.server.handle(call);
+};
+/** 送出順序：key 的 action 請求在 calls 中的位置（從 from 開始） */
+const indexesOf = (env, action, key, from = 0) =>
+  env.server.calls
+    .map((c, i) => ({ c, i }))
+    .filter(({ c, i }) => i >= from && c.action === action && c.key === key)
+    .map(({ i }) => i);
+
 // ── 測試框架 ───────────────────────────────────────────────────
 const results = [];
+const limitations = [];
 function check(name, ok, detail = "") {
   results.push({ name, ok: !!ok, detail });
   const d = typeof detail === "string" ? detail : JSON.stringify(detail);
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}  ${d}`.slice(0, 400));
+}
+// 已知限制的 fixture：記錄「目前的行為仍會出現這個限制」，不計入 PASS／FAIL。
+// reproduced=false 代表行為改變了（例如後端加了版本號），需要更新文件與這個 fixture。
+function limitation(name, reproduced, detail = "") {
+  limitations.push({ name, reproduced: !!reproduced, detail });
+  const d = typeof detail === "string" ? detail : JSON.stringify(detail);
+  console.log(
+    `${reproduced ? "LIMIT" : "LIMIT-CHANGED"}  ${name}  ${d}`.slice(0, 400)
+  );
 }
 async function test(id, fn) {
   const env = makeEnv();
@@ -745,6 +792,629 @@ await test("W8b", async ({ env, S }) => {
   );
 });
 
+// ══════════════════════════════════════════════════════════════
+//  Round 5：伺服器操作結果不確定時的恢復（C1）、卸載時的盲寫（C2）
+// ══════════════════════════════════════════════════════════════
+const heroOf = (p, id = "guan_yu") => p?.heroes?.find((h) => h.hero_id === id);
+const brief = (p) =>
+  p && {
+    nickname: p.nickname,
+    gold: p.gold,
+    heroes: (p.heroes || []).map((h) => `${h.hero_id}:${h.level}`),
+    team: (p.team || []).map((t) => t.hero_id),
+    status: p.syncStatus,
+    pendingUpgrade: p.pendingUpgrade
+      ? `${p.pendingUpgrade.hero_id}/${p.pendingUpgrade.state}`
+      : null,
+  };
+
+// ── C1（Codex 重現）：升級已在伺服器完成、回應遺失，本機又改了暱稱 → 重新整理 ──
+await test("C1", async ({ env, S }) => {
+  await loaded(env, S, "test_c1");
+  env.server.held.add("upgrade_hero");
+  void S().upgradeHero("guan_yu", heroCfg);
+  const call = await env.server.waitFor("upgrade_hero", "test_c1");
+  serverAppliesButResponseLost(env, call);
+  check(
+    "C1-0 前置：伺服器已完成升級（關羽 Lv2、點數 900）",
+    heroOf(env.server.profiles.get("test_c1"))?.level === 2 &&
+      env.server.profiles.get("test_c1").gold === 900
+  );
+  S().updateNickname("preserve-this-edit");
+  S().updateTeam([{ hero_id: "zhao_yun", slot: 1 }]);
+  const mark = env.server.calls.length;
+  const S2 = reloadPage(env);
+  env.server.held.delete("upgrade_hero");
+  S2().loadFromSession("test_c1");
+  await env.clock.advance(0);
+  await settle(60);
+  const backend = env.server.profiles.get("test_c1");
+  check(
+    "C1-1 重新整理後：已完成的升級與扣款沒有被還原",
+    heroOf(backend)?.level === 2 && backend.gold === 900,
+    brief(backend)
+  );
+  check(
+    "C1-2 本機暱稱與隊伍修改沒有遺失（已寫入後端）",
+    backend.nickname === "preserve-this-edit" &&
+      backend.team[0]?.hero_id === "zhao_yun",
+    brief(backend)
+  );
+  check(
+    "C1-3 已確認成功：UI、session 與後端一致且為 Idle，待確認紀錄已清除",
+    status(S2) === "idle" &&
+      readSession(env)?.syncStatus === "idle" &&
+      !readSession(env)?.pendingUpgrade &&
+      heroOf(S2().player)?.level === 2 &&
+      S2().player?.gold === 900 &&
+      S2().player?.nickname === "preserve-this-edit",
+    brief(S2().player)
+  );
+  const gets = indexesOf(env, "get_profile", "test_c1", mark);
+  const saves = indexesOf(env, "save_profile", "test_c1", mark);
+  check(
+    "C1-4 恢復時不重播 upgrade_hero；先讀取伺服器，再保存",
+    env.server.count("upgrade_hero") === 1 &&
+      gets.length >= 1 &&
+      saves.length >= 1 &&
+      gets[0] < saves[0],
+    { upgrades: env.server.count("upgrade_hero"), gets, saves }
+  );
+});
+
+// ── 升級回應持有超過 debounce：同頁的 profile 保存不能先送過時的 heroes／gold ──
+await test("R5-H", async ({ env, S }) => {
+  await loaded(env, S, "test_hold");
+  env.server.held.add("upgrade_hero");
+  const p = S().upgradeHero("guan_yu", heroCfg);
+  const call = await env.server.waitFor("upgrade_hero", "test_hold");
+  S().updateNickname("升級期間的修改");
+  await env.clock.advance(35_000);
+  check(
+    "R5-H1 升級回應未到、debounce 已到期：沒有送出 save_profile",
+    env.server.count("save_profile") === 0,
+    env.server.calls
+      .filter((c) => c.action === "save_profile")
+      .map((c) => brief(c.payload.data))
+  );
+  env.server.handle(call);
+  const r = await p;
+  await env.clock.advance(35_000);
+  const backend = env.server.profiles.get("test_hold");
+  check(
+    "R5-H2 升級回應後才保存：後端保有升級、扣款與暱稱，狀態 Idle",
+    r?.success === true &&
+      heroOf(backend)?.level === 2 &&
+      backend.gold === 900 &&
+      backend.nickname === "升級期間的修改" &&
+      status(S) === "idle",
+    brief(backend)
+  );
+  const sent = env.server.calls.filter((c) => c.action === "save_profile");
+  check(
+    "R5-H3 每一次 save_profile 都已包含升級結果",
+    sent.length >= 1 &&
+      sent.every(
+        (c) =>
+          heroOf(c.payload.data)?.level === 2 && c.payload.data.gold === 900
+      ),
+    sent.map((c) => brief(c.payload.data))
+  );
+});
+
+// ── C2（Codex 重現，改為新預期）：卸載不再盲寫；重新整理後由恢復流程保存 ──
+await test("C2", async ({ env, S }) => {
+  await loaded(env, S, "test_c2");
+  env.server.held.add("save_profile");
+  S().updateNickname("old-edit");
+  unload(env);
+  await settle();
+  check(
+    "C2-1 卸載（beforeunload）不再產生額外的 save_profile",
+    env.server.count("save_profile") === 0,
+    env.server.calls
+      .filter((c) => c.action === "save_profile")
+      .map((c) => ({
+        keepalive: c.keepalive,
+        nickname: c.payload.data.nickname,
+      }))
+  );
+  const S2 = reloadPage(env);
+  env.server.held.delete("save_profile");
+  S2().loadFromSession("test_c2");
+  await env.clock.advance(0);
+  await settle();
+  check(
+    "C2-2 重新整理後由恢復流程保存本機修改（普通 Pending 補送）",
+    env.server.profiles.get("test_c2").nickname === "old-edit" &&
+      status(S2) === "idle",
+    { backend: env.server.profiles.get("test_c2").nickname, status: status(S2) }
+  );
+  S2().updateNickname("new-edit");
+  await env.clock.advance(30_000);
+  // 舊頁面如果送過 keepalive（修正前），讓它最後才到伺服器
+  for (const c of env.server.calls.filter(
+    (c) => c.orphaned && !c.settled && c.action === "save_profile"
+  ))
+    env.server.handle(c);
+  await settle();
+  check(
+    "C2-3 後端最後是 new-edit，與 UI、session 一致",
+    env.server.profiles.get("test_c2").nickname === "new-edit" &&
+      S2().player?.nickname === "new-edit" &&
+      readSession(env)?.nickname === "new-edit" &&
+      status(S2) === "idle",
+    {
+      backend: env.server.profiles.get("test_c2").nickname,
+      local: S2().player?.nickname,
+      status: status(S2),
+    }
+  );
+});
+
+// ── 已知限制 L1：舊頁面「正常排程」的 save_profile 在途時重新整理，晚到伺服器 ──
+await test("R5-L1", async ({ env, S }) => {
+  await loaded(env, S, "test_l1");
+  S().updateNickname("old-edit");
+  env.server.held.add("save_profile");
+  await env.clock.advance(30_000);
+  const old = await env.server.waitFor("save_profile", "test_l1");
+  const S2 = reloadPage(env);
+  env.server.held.delete("save_profile");
+  S2().loadFromSession("test_l1");
+  await env.clock.advance(0);
+  await settle();
+  S2().updateNickname("new-edit");
+  await env.clock.advance(30_000);
+  env.server.handle(old); // 舊請求最後才被伺服器處理
+  await settle();
+  const backend = env.server.profiles.get("test_l1");
+  limitation(
+    "L1 重新整理前已送出的 save_profile 晚到伺服器，會把之後保存的 new-edit 蓋回 old-edit（前端無法得知舊請求何時被處理；需要後端版本號／條件寫入）",
+    backend.nickname === "old-edit" && S2().player?.nickname === "new-edit",
+    {
+      backend: backend.nickname,
+      local: S2().player?.nickname,
+      status: status(S2),
+    }
+  );
+});
+
+// ── U1：升級還沒在伺服器完成就重新整理（之後才完成）──
+await test("R5-U1", async ({ env, S }) => {
+  await loaded(env, S, "test_u1");
+  env.server.held.add("upgrade_hero");
+  void S().upgradeHero("guan_yu", heroCfg);
+  const call = await env.server.waitFor("upgrade_hero", "test_u1");
+  S().updateNickname("本機暱稱");
+  const S2 = reloadPage(env);
+  env.server.held.delete("upgrade_hero");
+  S2().loadFromSession("test_u1");
+  await env.clock.advance(0);
+  await settle();
+  check(
+    "R5-U1-1 伺服器還沒完成升級：恢復後標示結果待確認，沒有送出 save_profile",
+    status(S2) === "unconfirmed" &&
+      readSession(env)?.syncStatus === "unconfirmed" &&
+      env.server.count("save_profile") === 0,
+    {
+      status: status(S2),
+      session: readSession(env)?.syncStatus,
+      saves: env.server.count("save_profile"),
+    }
+  );
+  check(
+    "R5-U1-2 本機暱稱與待確認的升級紀錄都保留在 session；沒有重播 upgrade_hero",
+    readSession(env)?.nickname === "本機暱稱" &&
+      readSession(env)?.pendingUpgrade?.hero_id === "guan_yu" &&
+      env.server.count("upgrade_hero") === 1,
+    brief(readSession(env))
+  );
+  // 舊請求之後才在伺服器完成（回應送不到任何頁面）
+  env.server.handle(call);
+  await env.clock.advance(30_000);
+  await settle(60);
+  const backend = env.server.profiles.get("test_u1");
+  check(
+    "R5-U1-3 之後自動重新確認看到升級：保留升級與扣款並保存暱稱，狀態 Idle",
+    heroOf(backend)?.level === 2 &&
+      backend.gold === 900 &&
+      backend.nickname === "本機暱稱" &&
+      status(S2) === "idle" &&
+      !readSession(env)?.pendingUpgrade,
+    { backend: brief(backend), local: brief(S2().player) }
+  );
+});
+
+// ── U2：升級請求沒有到伺服器（永遠不會完成）──
+await test("R5-U2", async ({ env, S }) => {
+  await loaded(env, S, "test_u2");
+  env.server.held.add("upgrade_hero");
+  void S().upgradeHero("guan_yu", heroCfg);
+  await env.server.waitFor("upgrade_hero", "test_u2");
+  S().updateTeam([{ hero_id: "zhao_yun", slot: 1 }]);
+  const mark = env.server.calls.length;
+  const S2 = reloadPage(env);
+  env.server.held.delete("upgrade_hero");
+  S2().loadFromSession("test_u2");
+  await env.clock.advance(0);
+  await env.clock.advance(10 * 60_000);
+  const gets = indexesOf(env, "get_profile", "test_u2", mark).length;
+  check(
+    "R5-U2-1 一直看不到升級：維持待確認，不保存、不猜測成功或失敗，本機隊伍保留",
+    status(S2) === "unconfirmed" &&
+      env.server.count("save_profile") === 0 &&
+      S2().player?.team?.[0]?.hero_id === "zhao_yun" &&
+      readSession(env)?.team?.[0]?.hero_id === "zhao_yun",
+    { status: status(S2), saves: env.server.count("save_profile") }
+  );
+  check(
+    "R5-U2-2 自動重新確認有次數上限（不會無限讀取）",
+    gets >= 2 && gets <= 6,
+    { gets }
+  );
+  // Round 6 規則變更：原本的 R5-U2-3 驗證「以雲端目前資料為準」會保存並解除待確認。
+  // 看不到升級不代表確定沒套用，強制保存可能蓋掉晚到的升級（C4），所以這個能力已移除；
+  // 改為驗證：手動重新確認、再重新整理一次都仍是待確認，資料與紀錄持續保留，也沒有任何保存
+  const r = await S2().recheckPendingUpgrade();
+  const S3 = reloadPage(env);
+  S3().loadFromSession("test_u2");
+  await env.clock.advance(10 * 60_000);
+  const backend = env.server.profiles.get("test_u2");
+  check(
+    "R5-U2-3 看不到升級時沒有強制解除的方式：手動確認與再次重新整理後仍待確認，本機隊伍與紀錄保留、後端不變",
+    r?.ok === false &&
+      r?.error === "UPGRADE_UNCONFIRMED" &&
+      typeof S3().resolvePendingUpgradeFromServer === "undefined" &&
+      status(S3) === "unconfirmed" &&
+      readSession(env)?.team?.[0]?.hero_id === "zhao_yun" &&
+      readSession(env)?.pendingUpgrade?.hero_id === "guan_yu" &&
+      env.server.count("save_profile") === 0 &&
+      backend.team.length === 1 &&
+      backend.team[0].hero_id === "guan_yu",
+    { r, status: status(S3), backend: brief(backend) }
+  );
+});
+
+// ── U3：升級明確失敗（伺服器回傳錯誤）──
+await test("R5-U3", async ({ env, S }) => {
+  await loaded(env, S, "test_u3");
+  env.server.held.add("upgrade_hero");
+  const p = S().upgradeHero("guan_yu", heroCfg);
+  const call = await env.server.waitFor("upgrade_hero", "test_u3");
+  S().updateTeam([{ hero_id: "zhao_yun", slot: 1 }]);
+  call.respond({ status: 400, error: "GOLD_NOT_ENOUGH" });
+  const r = await p;
+  await settle();
+  const statusAfter = status(S);
+  await env.clock.advance(35_000);
+  const backend = env.server.profiles.get("test_u3");
+  check(
+    "R5-U3-1 升級明確失敗：回傳失敗原因，不進入待確認",
+    r?.success === false &&
+      r?.error === "GOLD_NOT_ENOUGH" &&
+      statusAfter !== "unconfirmed" &&
+      !S().player?.pendingUpgrade,
+    { r, statusAfter }
+  );
+  check(
+    "R5-U3-2 期間的隊伍修改照常保存，武將與點數維持原值，狀態 Idle",
+    backend.team[0]?.hero_id === "zhao_yun" &&
+      backend.heroes.length === 0 &&
+      backend.gold === 1000 &&
+      status(S) === "idle",
+    brief(backend)
+  );
+});
+
+// ── U4：同一頁升級回應遺失（網路錯誤）──
+await test("R5-U4", async ({ env, S }) => {
+  await loaded(env, S, "test_u4");
+  env.server.held.add("upgrade_hero");
+  const p = S().upgradeHero("guan_yu", heroCfg);
+  const call = await env.server.waitFor("upgrade_hero", "test_u4");
+  S().updateNickname("連線中斷期間的修改");
+  env.server.held.add("get_profile"); // 讓重新確認停在讀取中，先觀察待確認的行為
+  const lost = call.networkError;
+  serverAppliesButResponseLost(env, call);
+  lost();
+  const r = await p;
+  await settle();
+  const again = await S().upgradeHero("guan_yu", heroCfg);
+  await env.clock.advance(35_000);
+  check(
+    "R5-U4-1 回應遺失：回報結果待確認（不當作失敗），不能再升級，也不保存",
+    r?.success === false &&
+      r?.error === "UPGRADE_UNCONFIRMED" &&
+      again?.success === false &&
+      again?.error === "UPGRADE_UNCONFIRMED" &&
+      status(S) === "unconfirmed" &&
+      env.server.count("save_profile") === 0 &&
+      env.server.count("upgrade_hero") === 1,
+    { r, again, status: status(S), saves: env.server.count("save_profile") }
+  );
+  env.server.held.delete("get_profile");
+  for (const c of env.server.calls.filter(
+    (c) => c.action === "get_profile" && !c.settled
+  ))
+    env.server.handle(c);
+  await settle(60);
+  const backend = env.server.profiles.get("test_u4");
+  check(
+    "R5-U4-2 重新確認看到升級：本機採用升級結果並保存暱稱，後端一致",
+    heroOf(backend)?.level === 2 &&
+      backend.gold === 900 &&
+      backend.nickname === "連線中斷期間的修改" &&
+      heroOf(S().player)?.level === 2 &&
+      S().player?.gold === 900 &&
+      status(S) === "idle",
+    { backend: brief(backend), local: brief(S().player) }
+  );
+});
+
+// ── U5：只有升級、沒有其他修改就重新整理 ──
+await test("R5-U5", async ({ env, S }) => {
+  await loaded(env, S, "test_u5");
+  env.server.held.add("upgrade_hero");
+  void S().upgradeHero("guan_yu", heroCfg);
+  const call = await env.server.waitFor("upgrade_hero", "test_u5");
+  const S2 = reloadPage(env);
+  env.server.held.delete("upgrade_hero");
+  env.server.handle(call); // 伺服器完成，回應遺失
+  S2().loadFromSession("test_u5");
+  void S2().backgroundRefresh("test_u5"); // GameInitializer 有 session 時也會呼叫
+  await env.clock.advance(0);
+  await settle(60);
+  check(
+    "R5-U5-1 伺服器已完成：確認後直接採用伺服器資料，不需要 save_profile，狀態 Idle",
+    heroOf(S2().player)?.level === 2 &&
+      S2().player?.gold === 900 &&
+      status(S2) === "idle" &&
+      !readSession(env)?.pendingUpgrade &&
+      env.server.count("save_profile") === 0,
+    { local: brief(S2().player), saves: env.server.count("save_profile") }
+  );
+});
+await test("R5-U5b", async ({ env, S }) => {
+  await loaded(env, S, "test_u5b");
+  env.server.held.add("upgrade_hero");
+  void S().upgradeHero("guan_yu", heroCfg);
+  await env.server.waitFor("upgrade_hero", "test_u5b");
+  const S2 = reloadPage(env);
+  env.server.held.delete("upgrade_hero");
+  S2().loadFromSession("test_u5b");
+  await S2().backgroundRefresh("test_u5b");
+  await env.clock.advance(0);
+  await settle();
+  check(
+    "R5-U5-2 伺服器還沒完成：背景讀取不會清掉待確認紀錄，也不會標成 Idle",
+    status(S2) === "unconfirmed" &&
+      readSession(env)?.pendingUpgrade?.hero_id === "guan_yu" &&
+      env.server.count("save_profile") === 0,
+    brief(readSession(env))
+  );
+});
+
+// ── 待確認期間：切換帳號、手動同步、戰鬥結算 ──
+await test("R5-S", async ({ env, S }) => {
+  await loaded(env, S, "test_s1");
+  env.server.profiles.set("test_s2", baseProfile("另一個帳號"));
+  env.server.held.add("upgrade_hero");
+  const p = S().upgradeHero("guan_yu", heroCfg);
+  const call = await env.server.waitFor("upgrade_hero", "test_s1");
+  S().updateNickname("待確認期間的修改");
+  call.networkError(); // 請求沒有到伺服器
+  await p;
+  await env.clock.advance(0);
+  const r = await S().initFromGAS("test_s2");
+  check(
+    "R5-S1 有本機修改且升級待確認：切換帳號被擋下，資料與待確認紀錄保留",
+    r?.ok === false &&
+      r?.error === "UPGRADE_UNCONFIRMED" &&
+      S().player?.key === "test_s1" &&
+      S().player?.nickname === "待確認期間的修改" &&
+      readSession(env)?.pendingUpgrade?.hero_id === "guan_yu" &&
+      env.server.count("get_profile", "test_s2") === 0 &&
+      env.server.count("save_profile") === 0,
+    { r, player: brief(S().player) }
+  );
+  const r2 = await S().refreshProfile();
+  check(
+    "R5-S2 手動同步：重新確認仍看不到升級 → 回報待確認，不覆蓋本機、不清除紀錄",
+    r2?.ok === false &&
+      r2?.error === "UPGRADE_UNCONFIRMED" &&
+      S().player?.nickname === "待確認期間的修改" &&
+      status(S) === "unconfirmed" &&
+      env.server.count("save_profile") === 0,
+    { r2, player: brief(S().player) }
+  );
+});
+await test("R5-S0", async ({ env, S }) => {
+  await loaded(env, S, "test_s0");
+  env.server.profiles.set("test_s0b", baseProfile("另一個帳號"));
+  env.server.held.add("upgrade_hero");
+  const p = S().upgradeHero("guan_yu", heroCfg);
+  (await env.server.waitFor("upgrade_hero", "test_s0")).networkError();
+  await p;
+  await env.clock.advance(0);
+  const before = status(S);
+  const r = await S().initFromGAS("test_s0b");
+  await env.clock.advance(10 * 60_000);
+  check(
+    "R5-S3 升級待確認但沒有本機修改：可以切換帳號，不會對舊帳號送出任何保存",
+    before === "unconfirmed" &&
+      r?.ok === true &&
+      S().player?.key === "test_s0b" &&
+      status(S) === "idle" &&
+      !readSession(env)?.pendingUpgrade &&
+      env.server.count("save_profile") === 0,
+    { before, r, player: brief(S().player) }
+  );
+});
+await test("R5-B", async ({ env, S }) => {
+  await loaded(env, S, "test_b5");
+  env.server.held.add("upgrade_hero");
+  const p = S().upgradeHero("guan_yu", heroCfg);
+  const call = await env.server.waitFor("upgrade_hero", "test_b5");
+  call.networkError();
+  await p;
+  await env.clock.advance(0);
+  S().applyBattleResult({
+    result: "WIN",
+    stage_id: "chapter1_1",
+    stars_earned: 3,
+    kills: 5,
+    time_seconds: 30,
+    loots: [{ item: "battle_points", count: 500 }],
+  });
+  await env.clock.advance(35_000);
+  check(
+    "R5-B1 待確認期間的戰鬥獎勵：本機保留（1500），save_result 送 1 次，不送 save_profile",
+    S().player?.gold === 1500 &&
+      env.server.count("save_result") === 1 &&
+      env.server.count("save_profile") === 0 &&
+      status(S) === "unconfirmed",
+    brief(S().player)
+  );
+  env.server.handle(call); // 舊的升級請求之後才到伺服器
+  const r = await S().recheckPendingUpgrade();
+  await settle(60);
+  const backend = env.server.profiles.get("test_b5");
+  check(
+    "R5-B2 重新確認看到升級：點數＝伺服器扣款後 900＋本機獎勵 500，武將 Lv2",
+    r?.ok === true &&
+      backend.gold === 1400 &&
+      heroOf(backend)?.level === 2 &&
+      S().player?.gold === 1400 &&
+      status(S) === "idle",
+    { r, backend: brief(backend) }
+  );
+});
+
+// ══════════════════════════════════════════════════════════════
+//  Round 6：較早的背景讀取還原已確認的升級（C3）、強制採用雲端不能證明舊升級已結束（C4）
+// ══════════════════════════════════════════════════════════════
+
+// ── C3（Codex 重現）：升級前送出的背景讀取，在重新確認之後才回來 ──
+await test("C3", async ({ env, S }) => {
+  await loaded(env, S, "test_c3");
+  env.server.held.add("get_profile");
+  const bg = S().backgroundRefresh("test_c3");
+  const oldRead = await env.server.waitFor("get_profile", "test_c3", 2);
+  env.server.held.add("upgrade_hero");
+  const upgrade = S().upgradeHero("guan_yu", heroCfg);
+  const call = await env.server.waitFor("upgrade_hero", "test_c3");
+  const lost = call.networkError;
+  serverAppliesButResponseLost(env, call);
+  lost();
+  await upgrade;
+  env.server.held.delete("get_profile");
+  const r = await S().recheckPendingUpgrade();
+  await settle();
+  check(
+    "C3-0 前置：重新確認看到升級（Lv2、900）；沒有本機修改，所以沒有送 save_profile",
+    r?.ok === true &&
+      heroOf(S().player)?.level === 2 &&
+      S().player?.gold === 900 &&
+      status(S) === "idle" &&
+      env.server.count("save_profile") === 0,
+    { r, local: brief(S().player), saves: env.server.count("save_profile") }
+  );
+  oldRead.respond({ status: 200, data: baseProfile() }); // 升級前的舊資料最後才回來
+  await bg;
+  await settle();
+  check(
+    "C3-1 較早的背景讀取晚到：本機與 session 都不會被還原成升級前",
+    heroOf(S().player)?.level === 2 &&
+      S().player?.gold === 900 &&
+      heroOf(readSession(env))?.level === 2 &&
+      readSession(env)?.gold === 900,
+    { local: brief(S().player), session: brief(readSession(env)) }
+  );
+  S().updateNickname("after-confirmation");
+  await env.clock.advance(35_000);
+  const backend = env.server.profiles.get("test_c3");
+  check(
+    "C3-2 之後修改並保存：後端保有升級與扣款，也有新暱稱，狀態 Idle",
+    heroOf(backend)?.level === 2 &&
+      backend.gold === 900 &&
+      backend.nickname === "after-confirmation" &&
+      status(S) === "idle",
+    brief(backend)
+  );
+});
+
+// ── C4：升級網路錯誤、後端還沒處理 → 改暱稱 → 一直等到升級晚到 ──
+// 修正前的重現（強制採用雲端後，晚到的升級被蓋掉）見 round-06 的 store-test-before-fix.txt。
+// Round 6 起沒有強制採用雲端的能力，改驗：待確認期間不送任何盲寫，升級晚到後重新確認，兩者都保留
+await test("C4", async ({ env, S }) => {
+  await loaded(env, S, "test_c4");
+  env.server.held.add("upgrade_hero");
+  const upgrade = S().upgradeHero("guan_yu", heroCfg);
+  const oldUpgrade = await env.server.waitFor("upgrade_hero", "test_c4");
+  oldUpgrade.networkError(); // 後端還沒處理
+  await upgrade;
+  S().updateNickname("preserve-me");
+  await env.clock.advance(10 * 60_000); // 自動重新確認全部用完
+  check(
+    "C4-1 待確認期間：沒有強制採用雲端的能力，也沒有送出任何 save_profile；暱稱與待確認紀錄保留",
+    typeof S().resolvePendingUpgradeFromServer === "undefined" &&
+      env.server.count("save_profile") === 0 &&
+      status(S) === "unconfirmed" &&
+      readSession(env)?.nickname === "preserve-me" &&
+      readSession(env)?.pendingUpgrade?.hero_id === "guan_yu",
+    { status: status(S), saves: env.server.count("save_profile") }
+  );
+  env.server.handle(oldUpgrade); // 原升級這時才被後端處理
+  check(
+    "C4-0 前置：原升級晚到，後端變成 Lv2、900",
+    heroOf(env.server.profiles.get("test_c4"))?.level === 2 &&
+      env.server.profiles.get("test_c4").gold === 900
+  );
+  const r = await S().recheckPendingUpgrade();
+  await settle(60);
+  const backend = env.server.profiles.get("test_c4");
+  check(
+    "C4-2 重新確認看到升級：後端、本機與 session 都保有升級、扣款與暱稱，狀態 Idle",
+    r?.ok === true &&
+      heroOf(backend)?.level === 2 &&
+      backend.gold === 900 &&
+      backend.nickname === "preserve-me" &&
+      heroOf(S().player)?.level === 2 &&
+      S().player?.gold === 900 &&
+      readSession(env)?.nickname === "preserve-me" &&
+      !readSession(env)?.pendingUpgrade &&
+      status(S) === "idle",
+    { r, backend: brief(backend), local: brief(S().player) }
+  );
+});
+
+// ── 其他採用伺服器資料的路徑：手動同步之後，較早的背景讀取晚到也不能套用 ──
+await test("R6-G", async ({ env, S }) => {
+  await loaded(env, S, "test_g6");
+  env.server.held.add("get_profile");
+  const bg = S().backgroundRefresh("test_g6");
+  const oldRead = await env.server.waitFor("get_profile", "test_g6", 2);
+  // 其他裝置在這之後改了後端資料，手動同步讀到新資料
+  env.server.profiles.set("test_g6", {
+    ...baseProfile("其他裝置的新暱稱"),
+    gold: 777,
+  });
+  env.server.held.delete("get_profile");
+  const r = await S().refreshProfile();
+  oldRead.respond({ status: 200, data: baseProfile("舊暱稱") });
+  await bg;
+  await settle();
+  check(
+    "R6-G1 手動同步採用新資料後，較早的背景讀取晚到：不會把本機換回舊資料",
+    r?.ok === true &&
+      S().player?.nickname === "其他裝置的新暱稱" &&
+      S().player?.gold === 777 &&
+      readSession(env)?.gold === 777,
+    { r, local: brief(S().player) }
+  );
+});
+
 // ── 輸出 ───────────────────────────────────────────────────────
 const failed = results.filter((r) => !r.ok).length;
 console.log(
@@ -753,6 +1423,10 @@ console.log(
       total: results.length,
       failed,
       results: results.map(({ name, ok }) => ({ name, ok })),
+      limitations: limitations.map(({ name, reproduced }) => ({
+        name,
+        reproduced,
+      })),
     })
 );
 process.exit(failed ? 1 : 0);
