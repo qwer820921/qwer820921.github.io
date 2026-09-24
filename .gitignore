@@ -49,3 +49,9 @@ next-env.d.ts
 # Godot
 .godot/
 .gstack/
+
+# Codex ↔ Claude 溝通檔（本機協作用，不進版控）
+.handoff/
+
+# Playwright MCP 暫存（截圖、主控台紀錄）
+.playwright-mcp/

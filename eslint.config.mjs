@@ -15,6 +15,13 @@ const config = [
       "coverage/**",
       "public/**",
       "godot/**",
+      // Playwright MCP 執行用的程式片段（整個檔案是一個函式運算式，不是模組，無法以一般 JS 解析）；
+      // 只排除這兩個位置的 .js，同目錄 tools/*.mjs 等一般腳本照常檢查
+      "scripts/shenma-regression/*.js",
+      "scripts/shenma-regression/fixtures/*.js",
+      // 本機協作／測試暫存（已 gitignore，flat config 不會自動讀 .gitignore）
+      ".handoff/**",
+      ".playwright-mcp/**",
       ".claude/**",
       ".gemini/**",
     ],

@@ -4,3 +4,7 @@ node_modules
 .next
 .vscode
 public
+# Playwright MCP 程式片段：結尾不可有分號（MCP 以「(內容)(page)」執行），不交給 Prettier 格式化。
+# 只限這兩個位置的 .js；tools/*.mjs 等一般腳本照常格式化
+scripts/shenma-regression/*.js
+scripts/shenma-regression/fixtures/*.js
