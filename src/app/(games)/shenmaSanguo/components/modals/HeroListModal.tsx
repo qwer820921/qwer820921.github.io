@@ -90,6 +90,8 @@ function HeroDetailContent({
         HERO_NOT_FOUND: "武將資料異常",
         UPGRADE_IN_PROGRESS: "上一次升級還在處理中，請稍候",
         ACCOUNT_CHANGED: "存檔已切換，這次升級沒有套用",
+        UPGRADE_UNCONFIRMED:
+          "連線中斷，無法確定升級是否完成。請先用畫面下方的「重新確認」，不要重複升級",
       };
       setFeedback({
         type: "danger",

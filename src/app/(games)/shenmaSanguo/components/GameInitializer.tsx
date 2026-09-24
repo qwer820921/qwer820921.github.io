@@ -6,6 +6,7 @@ import { getPlayerKey } from "../api/gameApi";
 import { usePlayerStore } from "../store/playerStore";
 import { useStaticConfigStore } from "../store/staticConfigStore";
 import { SyncStatus } from "../types";
+import UpgradeUnconfirmedNotice from "./UpgradeUnconfirmedNotice";
 import styles from "../styles/shenmaSanguo.module.css";
 
 const MAIN_PATH = "/shenmaSanguo";
@@ -71,63 +72,46 @@ export default function GameInitializer() {
     setRetrying(false);
   };
 
-  // ── 靜態設定載入失敗提示（固定在頁面頂部）──
-  if (configError) {
-    return (
-      <div
-        style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: 9999,
-          background: "#fef2f2",
-          borderBottom: "1px solid #fecaca",
-          padding: "0.6rem 1rem",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "0.75rem",
-          fontSize: "0.8rem",
-        }}
-      >
-        <span style={{ color: "#b91c1c" }}>
-          ⚠ 遊戲設定載入失敗（{configError}）— 部分頁面功能暫時無法使用
-        </span>
-        <button
-          onClick={handleRetry}
-          disabled={retrying}
-          style={{
-            background: "#ef4444",
-            color: "#fff",
-            border: "none",
-            borderRadius: 6,
-            padding: "3px 12px",
-            cursor: "pointer",
-            fontSize: "0.78rem",
-            fontWeight: 600,
-            whiteSpace: "nowrap",
-            opacity: retrying ? 0.6 : 1,
-          }}
-        >
-          {retrying ? "重試中..." : "重試"}
-        </button>
-      </div>
-    );
-  }
-
   // ── 全域同步狀態細條 ──
   const barClass =
-    syncStatus === SyncStatus.Syncing
-      ? styles.syncBarSyncing
-      : syncStatus === SyncStatus.Pending
-        ? styles.syncBarPending
-        : styles.syncBarIdle;
+    syncStatus === SyncStatus.Unconfirmed
+      ? styles.syncBarUnconfirmed
+      : syncStatus === SyncStatus.Syncing
+        ? styles.syncBarSyncing
+        : syncStatus === SyncStatus.Pending
+          ? styles.syncBarPending
+          : styles.syncBarIdle;
+  const unconfirmed = syncStatus === SyncStatus.Unconfirmed;
 
   return (
-    <div
-      className={`${styles.syncBar} ${barClass}`}
-      data-sync-status={syncStatus}
-    />
+    <>
+      <div
+        className={`${styles.syncBar} ${barClass}`}
+        data-sync-status={syncStatus}
+      />
+      {/* 遊戲設定載入失敗：固定在頁面頂部 */}
+      {configError && (
+        <div className={styles.topNotices}>
+          <div className={`${styles.notice} ${styles.noticeDanger}`}>
+            <span className={styles.noticeText}>
+              ⚠ 遊戲設定載入失敗（{configError}）— 部分頁面功能暫時無法使用
+            </span>
+            <button
+              className={styles.noticeBtn}
+              onClick={handleRetry}
+              disabled={retrying}
+            >
+              {retrying ? "重試中..." : "重試"}
+            </button>
+          </div>
+        </div>
+      )}
+      {/* 武將升級結果待確認：固定在頁面底部，不擋住上方的 HUD 按鈕 */}
+      {unconfirmed && (
+        <div className={styles.bottomNotices}>
+          <UpgradeUnconfirmedNotice />
+        </div>
+      )}
+    </>
   );
 }

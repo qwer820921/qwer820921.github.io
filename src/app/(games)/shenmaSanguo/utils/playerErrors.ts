@@ -16,6 +16,14 @@ export function describePlayerError(code: string | null | undefined): string {
       return "目前的存檔還有尚未保存的進度，這次保存失敗，所以先不繼續。資料都還在，請確認網路後再試。";
     case "NOT_LOADED":
       return "玩家資料尚未載入。";
+    case "UPGRADE_UNCONFIRMED":
+      return "武將升級的結果還無法確認（連線中斷時，伺服器可能已完成，也可能沒有）。確認之前先不保存，以免蓋掉伺服器上的升級；本機的修改都還在。";
+    case "UPGRADE_IN_PROGRESS":
+      return "上一次升級還在處理中，請稍候。";
+    case "UPGRADE_MERGE_CONFLICT":
+      return "本機資料和待確認的升級無法自動合併，已保留本機資料，暫時不保存。";
+    case "ACCOUNT_CHANGED":
+      return "存檔已切換，這次操作沒有套用。";
     default:
       return "伺服器暫時無法處理，請稍後再試。";
   }

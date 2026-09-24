@@ -28,11 +28,13 @@ export enum BattleResult {
  * Idle    → 無待同步資料
  * Pending → 有待同步，30s debounce 計時中
  * Syncing → GAS 請求進行中
+ * Unconfirmed → 武將升級的結果無法確認（回應遺失）：暫停自動保存，等待重新確認
  */
 export enum SyncStatus {
   Idle = "idle",
   Pending = "pending",
   Syncing = "syncing",
+  Unconfirmed = "unconfirmed",
 }
 
 // ── 靜態設定（初始化時從 GAS 讀取，快取於 sessionStorage）────
@@ -148,6 +150,28 @@ export interface SessionPlayerState extends PlayerState {
   rev?: number;
   /** 伺服器已確認保存的本機版本；與 rev 不同代表有未同步的修改 */
   syncedRev?: number;
+  /** 已送出、還沒確認結果的伺服器升級（只存在本機，不送到伺服器） */
+  pendingUpgrade?: PendingUpgrade | null;
+}
+
+/**
+ * 送出 upgrade_hero 前先寫進 session 的紀錄。
+ * 重新整理或網路錯誤讓回應遺失時，靠它知道「有一個結果不明的升級」，
+ * 不會把送出前的 heroes／gold 當成最新版整份保存（會蓋掉伺服器上已完成的升級）。
+ */
+export interface PendingUpgrade {
+  /** 本機產生的識別碼；後端目前沒有 operation id，只用來對應本機的回應 */
+  id: string;
+  hero_id: string;
+  /** 送出前的伺服器資料（送出前要求沒有未同步修改，所以等於伺服器已確認的資料） */
+  base: PlayerState;
+  /** 送出時間（毫秒） */
+  sent_at: number;
+  /**
+   * in_flight：送出請求的頁面還在等回應
+   * unknown：回應遺失（重新整理、網路錯誤、無法解析的回應），無法確定伺服器是否已完成
+   */
+  state: "in_flight" | "unknown";
 }
 
 // ── 通訊協議（Web ↔ Godot）──────────────────────────────────

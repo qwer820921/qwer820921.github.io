@@ -7,6 +7,7 @@ import { getPlayerKey } from "../../api/gameApi";
 import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { describePlayerError } from "../../utils/playerErrors";
+import { SyncStatus } from "../../types";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 interface Props {
@@ -265,11 +266,18 @@ export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
               {feedback.msg}
             </Alert>
           )}
-          {syncError && !feedback && (
+          {player?.syncStatus === SyncStatus.Unconfirmed && !feedback && (
             <Alert variant="warning" className="py-2 small mb-3">
-              上次存檔同步失敗，會自動重試；本機資料都還在。
+              武將升級的結果還無法確認，確認前先不自動保存；本機資料都還在。按「強制從雲端同步」會重新確認，也可以使用畫面下方的提示。
             </Alert>
           )}
+          {syncError &&
+            !feedback &&
+            player?.syncStatus !== SyncStatus.Unconfirmed && (
+              <Alert variant="warning" className="py-2 small mb-3">
+                上次存檔同步失敗，會自動重試；本機資料都還在。
+              </Alert>
+            )}
 
           {/* 操作按鈕 */}
           <div

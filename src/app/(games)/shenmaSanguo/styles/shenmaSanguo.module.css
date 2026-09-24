@@ -151,6 +151,10 @@
   background-size: 200% 100%;
   animation: syncSlide 1.4s linear infinite;
 }
+.syncBarUnconfirmed {
+  opacity: 1;
+  background: var(--sg-red);
+}
 @keyframes syncSlide {
   0% {
     background-position: 200% 0;
@@ -158,6 +162,76 @@
   100% {
     background-position: -200% 0;
   }
+}
+
+/* ── 固定在畫面上的提示 ─────────────────────────────────── */
+/* 上方：遊戲設定載入失敗（重試後就會消失） */
+.topNotices {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* 高於全站的頁面說明按鈕（PageInfoButton，z-index 9999），提示文字才不會被蓋住 */
+  z-index: 10000;
+}
+/* 下方：武將升級結果待確認（可能持續很久，不能蓋住上方的 HUD 按鈕） */
+.bottomNotices {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* 高於遊戲畫面與 HUD，低於全站的聊天按鈕（z-index 1050） */
+  z-index: 1040;
+}
+.notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  padding: 0.6rem 1rem;
+  font-size: 0.8rem;
+}
+/* 右下角是聊天按鈕（60px）：內容避開它 */
+.bottomNotices .notice {
+  padding-right: 96px;
+}
+.noticeDanger {
+  background: #fef2f2;
+  border-bottom: 1px solid #fecaca;
+  color: #b91c1c;
+}
+.noticeWarning {
+  background: #fffbeb;
+  border-top: 1px solid #fde68a;
+  color: #92400e;
+}
+.noticeText {
+  flex: 1 1 16rem;
+  line-height: 1.5;
+}
+.noticeActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.noticeBtn {
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 3px 12px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.noticeBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.noticeBtnWarning {
+  background: #d97706;
 }
 
 /* ── Nav cards ──────────────────────────────────────────── */

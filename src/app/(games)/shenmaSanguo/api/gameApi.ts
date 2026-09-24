@@ -7,6 +7,12 @@ export const SHENMA_SANGUO_GAS_URL =
 
 const GAS_URL = SHENMA_SANGUO_GAS_URL;
 
+/**
+ * GAS 已處理請求並回傳錯誤（status ≠ 200）。
+ * 和網路錯誤、無法解析的回應不同：這代表伺服器明確拒絕，而不是結果不明。
+ */
+export class GasError extends Error {}
+
 async function callGAS(action: string, key?: string, payload?: object) {
   const res = await fetch(GAS_URL, {
     method: "POST",
@@ -15,7 +21,7 @@ async function callGAS(action: string, key?: string, payload?: object) {
   });
   const data = await res.json();
   if (data.status !== 200) {
-    throw new Error(data.error || "GAS_ERROR");
+    throw new GasError(data.error || "GAS_ERROR");
   }
   return data;
 }
