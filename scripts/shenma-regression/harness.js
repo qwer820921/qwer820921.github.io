@@ -19,7 +19,7 @@ async (page) => {
       ? ["get_heroes_config", "get_enemies_config", "get_all_maps"]
       : [];
   const BASE = "http://localhost:3000";
-  const EVIDENCE = ".handoff/evidence/round-06";
+  const EVIDENCE = ".handoff/evidence/round-10";
 
   // ── mock 靜態設定：14×11 地圖，第 5 列直線道路，上下兩列建築格 ──
   const ROW = 5;
@@ -119,10 +119,18 @@ async (page) => {
     window.__SHENMA_MOCK_GAS__ = true;
 
     window.__bridgeLog = [];
+    // 測試用：__bridgeWithhold 設成陣列時，Godot 的結算訊息改存進這個陣列，不交給頁面
+    // （這個監聽比頁面早註冊，stopImmediatePropagation 讓頁面收不到）。之後把這筆由 Godot 實際產生的結算
+    // 原封不動重送，用來模擬「舊場次的結算晚到」，不需要自己組出一筆假的結算
+    window.__bridgeWithhold = null;
     window.addEventListener("message", (e) => {
       const d = e.data;
       if (d && typeof d === "object" && d.__godot_bridge === true) {
         window.__bridgeLog.push({ ...d, __t: performance.now() });
+        if (Array.isArray(window.__bridgeWithhold) && d.type === undefined && typeof d.result === "string") {
+          window.__bridgeWithhold.push(d);
+          e.stopImmediatePropagation();
+        }
       }
     });
 
@@ -286,19 +294,26 @@ async (page) => {
       return `${EVIDENCE}/${name}.png`;
     },
     // 回到不含 App 程式的靜態頁清空資料；keepMockDb=true 時保留 mock 後端資料
+    // sessionStorage 在跨來源隔離（COOP，Service Worker 加上的標頭）與非隔離的頁面各有一份，切換時互相複製：
+    // 只清其中一份，之後頁面在兩種狀態間切換時又會把沒清到的舊資料複製回來（Round 10 實測）。
+    // 所以清兩次：第一次在目前的狀態清除並移除 Service Worker，第二次在沒有 Service Worker 的（非隔離）頁面再清一次
     async resetOrigin(p, { keepMockDb = false } = {}) {
-      await p.goto(BASE + "/games/shenmaSanguo/index.offline.html");
-      return p.evaluate(async (keep) => {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map((r) => r.unregister()));
-        const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
-        const db = localStorage.getItem("__shenma_mock_gas_db");
-        localStorage.clear();
-        sessionStorage.clear();
-        if (keep && db) localStorage.setItem("__shenma_mock_gas_db", db);
-        return { unregistered: regs.map((r) => r.scope), cachesDeleted: keys };
-      }, keepMockDb);
+      const passes = [];
+      for (let i = 0; i < 2; i++) {
+        await p.goto(BASE + "/games/shenmaSanguo/index.offline.html");
+        passes.push(await p.evaluate(async (keep) => {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map((r) => r.unregister()));
+          const keys = await caches.keys();
+          await Promise.all(keys.map((k) => caches.delete(k)));
+          const db = localStorage.getItem("__shenma_mock_gas_db");
+          localStorage.clear();
+          sessionStorage.clear();
+          if (keep && db) localStorage.setItem("__shenma_mock_gas_db", db);
+          return { unregistered: regs.map((r) => r.scope), cachesDeleted: keys, isolated: window.crossOriginIsolated };
+        }, keepMockDb));
+      }
+      return { unregistered: passes[0].unregistered, cachesDeleted: passes[0].cachesDeleted, isolated: passes.map((x) => x.isolated) };
     },
     // 把物件存成證據目錄下的 JSON 檔（run_code 環境不能直接寫檔：透過頁面下載再存到指定路徑）
     async saveJson(p, name, obj) {

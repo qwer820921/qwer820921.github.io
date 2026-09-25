@@ -13,6 +13,11 @@ signal deselect_unit_requested()
 signal upgrade_unit_requested()
 signal debug_snapshot_requested(request_id: String)
 
+## Web ↔ Godot 橋接協定的版本：game_ready 帶給 Web，Web 只在版本和自己相同時才送出關卡資料。
+## 版本不同（例如瀏覽器還在用舊版遊戲的快取）時，Web 會提示更新，不會開戰。
+## 2：update_stats 與結算帶 battle_id（Round 9）
+const BRIDGE_PROTOCOL: int = 2
+
 
 var _msg_callback: JavaScriptObject
 
@@ -93,12 +98,15 @@ func send_result(result: Dictionary) -> void:
 	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
 	print("[WebBridge] 結算結果已傳回 Web")
 
+## 告知 Web 端的就緒訊息（帶協定版本）
+func ready_message() -> Dictionary:
+	return {"__godot_bridge": true, "type": "game_ready", "protocol": BRIDGE_PROTOCOL}
+
 ## 告知 Web 端：Godot 已啟動並準備就緒
 func send_ready() -> void:
 	if OS.get_name() != "Web":
 		return
-	var msg = {"__godot_bridge": true, "type": "game_ready"}
-	var json = JSON.stringify(msg)
+	var json = JSON.stringify(ready_message())
 	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
 ## 傳送即時戰鬥數據（金幣、波次、血量）給 Web
 func send_stats(stats: Dictionary) -> void:

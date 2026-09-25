@@ -145,6 +145,8 @@ func _do_initial_setup(payload: Dictionary) -> void:
 	_enemies_config = payload.get("enemies_config", _build_default_enemies())
 
 	var stage_id: String = str(payload.get("stage_id", "chapter1_1"))
+	# 這一場的識別碼：update_stats 與結算都會帶回給 Web（不含玩家金鑰）
+	var battle_id: String = str(payload.get("battle_id", ""))
 
 	# 初始化地圖
 	print("[Main] Setting up game_map with stage_id:", stage_id)
@@ -157,7 +159,7 @@ func _do_initial_setup(payload: Dictionary) -> void:
 
 	# 初始化 BattleManager
 	var total_waves: int = _count_waves(_waves)
-	battle_manager.initialize(total_waves, stage_id, wave_manager, web_bridge)
+	battle_manager.initialize(total_waves, stage_id, wave_manager, web_bridge, battle_id)
 
 	# 音效設定（從 payload 的 sound_settings 欄位讀取）
 	var snd: Dictionary = payload.get("sound_settings", {})
@@ -681,6 +683,7 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"request_id":        request_id,
 		# 刻意不用 stage_id / result 欄位名稱，避免 Web 端誤判為結算訊息
 		"stage":             battle_manager.stage_id,
+		"battle_id":         battle_manager.battle_id,
 		"game_state":        battle_manager.game_state,
 		"wave":              battle_manager.current_wave,
 		"total_waves":       battle_manager.total_waves,

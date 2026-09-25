@@ -7,6 +7,7 @@ import {
   HeroConfig,
   BattleResultPayload,
   BattleResult,
+  BattleTicket,
   PendingUpgrade,
 } from "../types";
 import { gameApi, setPlayerKey, GasError } from "../api/gameApi";
@@ -29,8 +30,9 @@ const AUTO_RECHECK_DELAYS_MS = [30_000, 60_000, 120_000, 240_000];
 // 帳號世代：提交不同帳號（或從 session 恢復）時 +1，舊帳號的在途回應一律忽略。
 // 讀取序號：每次 initFromGAS +1，只有最新一次讀取可以提交結果。
 // 資料世代：採用一份伺服器資料、或送出會改變伺服器資料的升級時 +1。
-//   背景讀取回應時世代變了就不套用：較早送出的讀取可能是舊資料，而採用新資料時 rev 不一定會變
-//   （例如重新確認升級時沒有本機修改），只比 rev 分不出來。
+//   所有會採用伺服器玩家資料的讀取（背景讀取、登入／切換／手動同步、重新確認升級）都在送出前
+//   記下世代（snapshotToken），回應時世代變了就不套用：較早送出的讀取可能是舊資料，
+//   而採用新資料時 rev 不一定會變（例如重新確認升級時沒有本機修改），只比 rev 分不出來。
 // 待確認的升級：player.pendingUpgrade（寫在 session）。結果不明時暫停整份保存，
 //   只有重新讀取伺服器、看到升級已完成後，才把本機修改套到伺服器的最新資料上再保存。
 //   看不到升級時一律維持待確認（沒有強制解除的方式）：看不到不代表舊請求不會再被處理。
@@ -47,6 +49,30 @@ let _battleInFlight: InFlight<void> | null = null; // 戰鬥結算整段（save_
 let _resultInFlight: InFlight<void> | null = null; // 只有 save_result 本身
 let _upgradeInFlight: InFlight<unknown> | null = null;
 let _checkInFlight: InFlight<UpgradeCheckResult> | null = null;
+// 戰鬥歸屬：目前有效的一場（送出關卡資料時建立）。開始新的一場、明確離開、結算、換帳號都會讓它失效，
+// 之後那張票不能再結算，也不能上鎖或解除。locked：已開打或有待確認的結算，這段期間不能切換到其他帳號。
+// 已結算的戰鬥記下識別碼，同一場只能結算一次
+let _activeBattle: { ticket: BattleTicket; locked: boolean } | null = null;
+const _settledBattles = new Set<string>();
+
+/** 這張票是不是目前有效的那一場（同一個帳號世代、而且還沒被新場次、離開或結算取代） */
+const isActiveBattle = (ticket: BattleTicket | null | undefined) =>
+  !!ticket &&
+  !!_activeBattle &&
+  _activeBattle.ticket.id === ticket.id &&
+  ticket.gen === _accountGen;
+/** 目前有效的那一場已開打或有待確認的結算：不能切換到其他帳號 */
+const battleLocked = () =>
+  !!_activeBattle?.locked && _activeBattle.ticket.gen === _accountGen;
+
+/**
+ * 切換到其他帳號失敗的原因（錯誤代碼）。玩家資訊視窗關閉後才失敗時（例如切換送出後才開打），
+ * 主畫面靠它顯示「未切換」。不記錄任何存檔金鑰
+ */
+export type SwitchNotice = { error: string };
+
+/** 戰鬥結算的結果：不屬於目前帳號、不是目前的場次或已經結算過時不套用 */
+export type BattleSettleResult = { ok: true } | { ok: false; error: string };
 
 export type LoadResult =
   | { ok: true; created: boolean; keptLocal?: boolean }
@@ -214,6 +240,15 @@ function clearDebounce() {
 const isCurrent = <T>(f: InFlight<T> | null): f is InFlight<T> =>
   !!f && f.gen === _accountGen;
 
+/** 讀取伺服器玩家資料前記下帳號世代與資料世代；回應時兩者都沒變，這份資料才可以採用 */
+type SnapshotToken = { gen: number; dataGen: number };
+const snapshotToken = (): SnapshotToken => ({
+  gen: _accountGen,
+  dataGen: _dataGen,
+});
+const isFreshSnapshot = (t: SnapshotToken) =>
+  t.gen === _accountGen && t.dataGen === _dataGen;
+
 /** 讀取存檔；只有 PROFILE_NOT_FOUND 才建檔，其他錯誤一律回報失敗 */
 async function fetchProfile(
   key: string
@@ -260,6 +295,11 @@ interface PlayerStore {
   syncError: string | null;
   /** 正在重新確認待確認的升級 */
   checkingUpgrade: boolean;
+  /**
+   * 最近一次切換到其他帳號失敗的原因（只有最新一次請求會寫入）。
+   * 開始新的切換、切換成功或玩家關閉提示時清除
+   */
+  switchNotice: SwitchNotice | null;
 
   /** 從 sessionStorage 載入指定 key 的存檔；key 不符或沒有資料時回傳 false */
   loadFromSession: (key: string) => boolean;
@@ -289,12 +329,31 @@ interface PlayerStore {
     heroId: string,
     heroConfig: HeroConfig
   ) => Promise<{ success: boolean; error?: string }>;
-  /** 戰鬥結算：本地先更新，接著送出 save_result（只送一次）並保存 profile */
-  applyBattleResult: (result: BattleResultPayload) => void;
+  /**
+   * 開始一場戰鬥（送出關卡資料時呼叫）：取得綁定目前帳號的戰鬥票，成為目前有效的一場。
+   * 之前的那一場（如果還在）就此失效，它的鎖也一起解除。票的 id 也是送進 Godot 的場次識別碼
+   */
+  beginBattle: () => BattleTicket | null;
+  /** 戰鬥票是否仍是目前有效的那一場（開始新的一場、離開、結算、切換帳號後就不是） */
+  isBattleTicketCurrent: (ticket: BattleTicket) => boolean;
+  /** 這一場已開打或有待確認的結算：上鎖（不能切換到其他帳號）。不是目前的場次時不做任何事 */
+  lockBattle: (ticket: BattleTicket | null | undefined) => void;
+  /** 明確離開這一場（切換關卡、離開頁面）：這一場失效並解除它的鎖。不是目前的場次時不做任何事 */
+  endBattle: (ticket: BattleTicket | null | undefined) => void;
+  /**
+   * 戰鬥結算：本地先更新，接著送出 save_result（只送一次）並保存 profile
+   * 戰鬥票必須是目前帳號、目前有效的那一場，而且還沒結算過；否則不套用任何獎勵、不送任何請求
+   */
+  applyBattleResult: (
+    result: BattleResultPayload,
+    ticket: BattleTicket | null | undefined
+  ) => BattleSettleResult;
   /** 重新讀取伺服器，確認待確認的升級是否已完成；看得到才採用並保存本機修改 */
   recheckPendingUpgrade: () => Promise<UpgradeCheckResult>;
 
   clearError: () => void;
+  /** 關閉切換失敗的提示 */
+  clearSwitchNotice: () => void;
 
   // 內部方法（以 _ 前綴標示，不應在 UI 直接呼叫）
   _scheduleSync: (delayMs?: number) => void;
@@ -341,8 +400,9 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     _accountGen += 1;
     _busy = 0;
     _autoRecheckStep = 0;
+    _activeBattle = null;
     clearDebounce();
-    set({ syncError: null, checkingUpgrade: false });
+    set({ syncError: null, checkingUpgrade: false, switchNotice: null });
   };
   /** 等目前帳號的在途寫入都結束 */
   const waitForWrites = async () => {
@@ -385,6 +445,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     };
     const run = async (): Promise<UpgradeCheckResult> => {
       let server: PlayerState;
+      const token = snapshotToken();
       try {
         const res = await gameApi.getProfile(key);
         if (!validateData(res.data))
@@ -402,6 +463,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       ) {
         return { ok: false, error: "ACCOUNT_CHANGED" };
       }
+      // 讀取期間已採用了其他伺服器資料：這份回應可能比較舊，不採用，之後再確認
+      if (!isFreshSnapshot(token)) return retryLater("STALE_READ");
       if (!upgradeVisible(server, op)) {
         return retryLater("UPGRADE_UNCONFIRMED");
       }
@@ -459,6 +522,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     error: null,
     syncError: null,
     checkingUpgrade: false,
+    switchNotice: null,
 
     // ── 初始化 ─────────────────────────────────────────────────
 
@@ -482,28 +546,44 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         return _loadInFlight.promise;
       }
       const seq = ++_loadSeq;
+      // 從目前的帳號切換到其他帳號（登入、同帳號同步不算）：開始時清掉上一次的切換提示
+      const switching = !!get().player && get().player?.key !== key;
+      if (switching) set({ switchNotice: null });
       const superseded = (): LoadResult => ({
         ok: false,
         error: "SUPERSEDED",
         superseded: true,
       });
       const fail = (error: string): LoadResult => {
+        // 已經有較新的請求：不回報、也不改提示（舊請求不能蓋掉較新的結果）
         if (seq !== _loadSeq) return superseded();
-        // 已有玩家資料（例如切換帳號失敗）時不蓋掉目前畫面，錯誤只回傳給呼叫端
+        // 已有玩家資料（例如切換帳號失敗）時不蓋掉目前畫面，錯誤只回傳給呼叫端；
+        // 切換失敗另外留下提示，玩家資訊視窗關閉後主畫面也看得到
         set({
           isLoading: false,
           loadingKey: null,
           error: get().player ? null : error,
+          ...(switching && get().player ? { switchNotice: { error } } : {}),
         });
         return { ok: false, error };
       };
 
+      // 戰鬥進行中或有待確認的結算：不能切換到其他帳號（同帳號同步不受影響）。
+      // 等待保存或讀取的期間也可能開打，所以每次 await 之後都要再檢查，最後一次在提交之前
+      const battleBlocks = () => {
+        const current = get().player;
+        return battleLocked() && !!current && current.key !== key;
+      };
+
       const run = async (): Promise<LoadResult> => {
+        if (battleBlocks()) return fail("BATTLE_IN_PROGRESS");
         set({ isLoading: true, loadingKey: key, error: null });
         // 1. 目前帳號的未同步修改要先保存成功（切換帳號、手動同步都適用）
         const flushError = await flushCurrent();
         if (flushError) return fail(flushError);
         if (seq !== _loadSeq) return superseded();
+        // 保存期間開打：不讀取（也不會建立）另一個帳號的存檔
+        if (battleBlocks()) return fail("BATTLE_IN_PROGRESS");
         const before = get().player;
         // 同一個帳號、升級結果待確認：不能直接用伺服器資料覆蓋（會清掉待確認紀錄），改成重新確認
         if (before && before.key === key && isUnconfirmed(before)) {
@@ -515,7 +595,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         }
         const baseRev = before && before.key === key ? revOf(before) : null;
 
-        // 2. 讀取存檔（找不到才建立）
+        // 2. 讀取存檔（找不到才建立）；送出前記下世代，提交前驗證
+        const token = snapshotToken();
         const r = await fetchProfile(key);
         if (seq !== _loadSeq) return superseded();
         if (!r.ok) return fail(r.error);
@@ -524,13 +605,18 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         const flushAgain = await flushCurrent();
         if (flushAgain) return fail(flushAgain);
         if (seq !== _loadSeq) return superseded();
+        // 讀取或再保存期間開打：這是提交前最後一次檢查，之後不再 await
+        if (battleBlocks()) return fail("BATTLE_IN_PROGRESS");
         const now = get().player;
         const sameAccount = !!now && now.key === key;
         if (
           sameAccount &&
-          ((baseRev !== null && revOf(now) !== baseRev) || now.pendingUpgrade)
+          ((baseRev !== null && revOf(now) !== baseRev) ||
+            now.pendingUpgrade ||
+            !isFreshSnapshot(token))
         ) {
-          // 同一帳號、讀取期間本機有更新的版本（剛才已保存）或新的升級：伺服器回應已過時，保留本機資料
+          // 同一帳號、讀取期間本機有更新的版本（剛才已保存）、新的升級，或已採用了其他伺服器資料
+          // （例如重新確認升級、背景讀取）：這次讀到的可能比較舊，保留本機資料，不回頭套用
           set({ isLoading: false, loadingKey: null, error: null });
           return { ok: true, created: r.created, keptLocal: true };
         }
@@ -582,8 +668,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       ) {
         return;
       }
-      const gen = _accountGen;
-      const dataGen = _dataGen;
+      const token = snapshotToken();
       const rev0 = revOf(player);
       try {
         const res = await gameApi.getProfile(key);
@@ -591,8 +676,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         const cur = get().player;
         // 回應時再檢查一次：帳號、資料世代、本機版本、未同步修改、在途寫入與待確認的升級都沒變才套用
         if (
-          gen !== _accountGen ||
-          dataGen !== _dataGen ||
+          !isFreshSnapshot(token) ||
           !cur ||
           cur.key !== key ||
           revOf(cur) !== rev0 ||
@@ -736,9 +820,43 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       return { success: true };
     },
 
-    applyBattleResult: (result: BattleResultPayload) => {
+    beginBattle: () => {
+      if (!get().player) return null;
+      const ticket = { id: newOpId(), gen: _accountGen };
+      _activeBattle = { ticket, locked: false };
+      return ticket;
+    },
+
+    isBattleTicketCurrent: (ticket: BattleTicket) => isActiveBattle(ticket),
+
+    lockBattle: (ticket) => {
+      if (_activeBattle && isActiveBattle(ticket)) _activeBattle.locked = true;
+    },
+
+    endBattle: (ticket) => {
+      if (isActiveBattle(ticket)) _activeBattle = null;
+    },
+
+    applyBattleResult: (
+      result: BattleResultPayload,
+      ticket: BattleTicket | null | undefined
+    ) => {
       const player = get().player;
-      if (!player) return;
+      if (!player) return { ok: false, error: "NOT_LOADED" };
+      // 這場戰鬥必須屬於目前帳號：開戰後切換過帳號（即使又切回來）都不套用
+      if (!ticket || ticket.gen !== _accountGen) {
+        return { ok: false, error: "BATTLE_ACCOUNT_CHANGED" };
+      }
+      // 同一場只結算一次（連按確認、重複送達的結算）
+      if (_settledBattles.has(ticket.id)) {
+        return { ok: false, error: "BATTLE_ALREADY_SETTLED" };
+      }
+      // 已經被新的一場取代、或已經明確離開的那一場：不是目前的場次，不結算
+      if (!isActiveBattle(ticket)) {
+        return { ok: false, error: "BATTLE_NOT_CURRENT" };
+      }
+      _settledBattles.add(ticket.id);
+      _activeBattle = null; // 這一場結束：解除鎖，這張票之後不能再使用
 
       clearDebounce(); // 取消 pending debounce，結算後統一處理
 
@@ -779,7 +897,10 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       const gen = _accountGen;
       const key = player.key;
       beginBusy(gen);
-      const resultPromise = gameApi.saveResult(key, result).then(
+      // 場次識別碼只用來在頁面比對歸屬，不送到後端（不改變 save_result 的契約）
+      const record: Partial<BattleResultPayload> = { ...result };
+      delete record.battle_id;
+      const resultPromise = gameApi.saveResult(key, record).then(
         () => undefined,
         (err: unknown) => {
           console.warn("[Background Sync] 戰鬥結算紀錄送出失敗:", err);
@@ -796,6 +917,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       void promise.finally(() => {
         if (_battleInFlight?.promise === promise) _battleInFlight = null;
       });
+      return { ok: true };
     },
 
     recheckPendingUpgrade: () => checkUpgrade("manual"),
@@ -878,6 +1000,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     },
 
     clearError: () => set({ error: null }),
+
+    clearSwitchNotice: () => set({ switchNotice: null }),
   };
 });
 

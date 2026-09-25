@@ -22,6 +22,16 @@ export function describePlayerError(code: string | null | undefined): string {
       return "上一次升級還在處理中，請稍候。";
     case "UPGRADE_MERGE_CONFLICT":
       return "本機資料和待確認的升級無法自動合併，已保留本機資料，暫時不保存。";
+    case "STALE_READ":
+      return "讀到的資料比畫面上的舊，已保留目前的資料，請再試一次。";
+    case "BATTLE_IN_PROGRESS":
+      return "請先結算或離開目前戰鬥，再切換存檔。";
+    case "BATTLE_ACCOUNT_CHANGED":
+      return "這場戰鬥屬於切換前的存檔，結果沒有套用。";
+    case "BATTLE_ALREADY_SETTLED":
+      return "這場戰鬥已經結算過了。";
+    case "BATTLE_NOT_CURRENT":
+      return "這場戰鬥已經結束或離開，結果沒有套用。";
     case "ACCOUNT_CHANGED":
       return "存檔已切換，這次操作沒有套用。";
     default:

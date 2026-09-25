@@ -247,6 +247,14 @@ func _run() -> void:
 	await _wait_until(func(): return _bm().game_state == 3, 15.0)
 	_check("R3-E5 拒絕後切到有效關卡可正常完成", last_result.get("result") == "WIN" and last_result.get("stage_id") == "stage_c" and battle_ended_count - before_ended == 1, last_result)
 
+	# ── R9：場次識別碼（battle_id）──
+	await _r9_battle_id_cases()
+
+	# ── R10：就緒訊息帶協定版本（Web 用來判斷遊戲版本是否相符）──
+	var bridge: Node = main.web_bridge
+	var ready: Dictionary = bridge.ready_message() if bridge.has_method("ready_message") else {}
+	_check("R10-1 game_ready 帶協定版本 2（Web 只在版本相同時送出關卡資料）", ready.get("type") == "game_ready" and ready.get("__godot_bridge") == true and typeof(ready.get("protocol")) == TYPE_INT and ready.get("protocol") == 2, ready)
+
 	# ── 輸出 ──
 	var failed: int = 0
 	for r in results:
@@ -345,3 +353,74 @@ func _r3_refuse_case(name: String, payload: Dictionary, auto: bool, expect_wave:
 	_check(name + "：拒絕開戰，停在備戰且波次不前進", s.state == 1 and s.wave == expect_wave and not s.auto and s.active == 0, s)
 	_check(name + "：沒有結算（不給勝利獎勵）", battle_ended_count == before_ended, {"ended": battle_ended_count - before_ended, "last": last_result.get("stage_id")})
 	_check(name + "：發出一次拒絕信號", rejected.size() == 1 and rejected[0][0] == expect_wave + 1, {"has_signal": has_sig, "rejected": rejected})
+
+# ── R9 輔助 ───────────────────────────────────────────────────
+## 依序列出訊息中出現過的 battle_id（去除重複）
+func _battle_ids(msgs: Array) -> Array:
+	var ids: Array = []
+	for m in msgs:
+		var id: Variant = m.get("battle_id", null)
+		if not ids.has(id):
+			ids.append(id)
+	return ids
+
+func _with_id(p: Dictionary, battle_id: String) -> Dictionary:
+	p["battle_id"] = battle_id
+	return p
+
+## R9：Web 送進來的 battle_id 會帶在 update_stats 與結算上；結算帶的是產生它的那一場的識別碼。
+## 暫時把 Main.web_bridge 換成 bridge_recorder.gd（繼承正式 WebBridge，只多記一份送出的訊息）
+func _r9_battle_id_cases() -> void:
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+
+	# R9-1：載入後（備戰）與開打後的 stats 都帶這一場的 battle_id
+	_load(_with_id(_stage_a(), "r9-a1"))
+	_bm().player_start_battle()
+	await _wait(0.5)
+	var states1: Array = rec.sent_stats.map(func(s): return int(s.get("game_state", -1)))
+	_check("R9-1 載入後與開打後的 update_stats 都帶這一場的 battle_id", _battle_ids(rec.sent_stats) == ["r9-a1"] and states1.has(1) and states1.has(2), {"ids": _battle_ids(rec.sent_stats), "states": states1})
+
+	# R9-2：同一關重來（出兵間隔中）：之後只有新的一場送出訊息，上一場不再送出 stats 或結算
+	var n_stats: int = rec.sent_stats.size()
+	_load(_with_id(_stage_a(), "r9-a2"))
+	await _wait(5.0)  # 超過 A 的 2 秒出兵間隔兩次以上
+	var ids2: Array = _battle_ids(rec.sent_stats.slice(n_stats))
+	_check("R9-2 同一關重來後：之後的 stats 都帶新的 battle_id，上一場沒有再送出 stats 或結算", ids2 == ["r9-a2"] and rec.sent_results.is_empty() and _bm().battle_id == "r9-a2", {"ids": ids2, "results": rec.sent_results.size()})
+
+	# R9-3：打完一場：結算只有一筆，帶這一場的 battle_id
+	n_stats = rec.sent_stats.size()
+	_load(_with_id(_stage_c(), "r9-c1"))
+	_bm().toggle_auto_mode()
+	await _wait_until(func(): return _bm().game_state == 3, 15.0)
+	await _wait(0.3)
+	_check("R9-3 結算只有一筆，帶這一場的 battle_id 與 stage_id", rec.sent_results.size() == 1 and rec.sent_results[0].get("battle_id") == "r9-c1" and rec.sent_results[0].get("stage_id") == "stage_c", rec.sent_results)
+	_check("R9-3 這一場的 stats 都帶這一場的 battle_id", _battle_ids(rec.sent_stats.slice(n_stats)) == ["r9-c1"], _battle_ids(rec.sent_stats.slice(n_stats)))
+
+	# R9-4：戰鬥結束時最早發出的信號（state_changed 進入 RESULT）當下就載入新關卡：
+	# 送出的結算仍是產生它的那一場（battle_id、stage_id 都不會變成新場次的）
+	_load(_with_id(_stage_c(), "r9-c2"))
+	var fired: Array = [false]
+	var reload_on_result := func(state: int):
+		if state == 3 and not fired[0]:
+			fired[0] = true
+			_load(_with_id(_stage_b(), "r9-b1"))
+	_bm().state_changed.connect(reload_on_result)
+	var n_results: int = rec.sent_results.size()
+	_bm().toggle_auto_mode()
+	await _wait_until(func(): return fired[0], 15.0)
+	await _wait(0.3)
+	_bm().state_changed.disconnect(reload_on_result)
+	var r4: Array = rec.sent_results.slice(n_results)
+	_check("R9-4 戰鬥結束的第一個信號中就載入新關卡：送出的結算仍帶產生它的那一場（r9-c2、stage_c）", fired[0] and r4.size() == 1 and r4[0].get("battle_id") == "r9-c2" and r4[0].get("stage_id") == "stage_c", r4)
+	var last4: Dictionary = rec.sent_stats[rec.sent_stats.size() - 1]
+	_check("R9-4 之後是新的一場：備戰中，stats 帶新的 battle_id", _bm().battle_id == "r9-b1" and _bm().game_state == 1 and last4.get("battle_id") == "r9-b1" and int(last4.get("game_state", -1)) == 1, {"bm": _bm().battle_id, "last": last4})
+
+	# R9-5：關卡資料沒有 battle_id：stats 帶空字串（Web 不會採用）
+	_load(_stage_b())
+	var last5: Dictionary = rec.sent_stats[rec.sent_stats.size() - 1]
+	_check("R9-5 關卡資料沒有 battle_id：stats 的 battle_id 是空字串", last5.has("battle_id") and last5.get("battle_id") == "", last5)
+
+	main.web_bridge = original
+	rec.free()

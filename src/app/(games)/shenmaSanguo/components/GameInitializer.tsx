@@ -7,6 +7,7 @@ import { usePlayerStore } from "../store/playerStore";
 import { useStaticConfigStore } from "../store/staticConfigStore";
 import { SyncStatus } from "../types";
 import UpgradeUnconfirmedNotice from "./UpgradeUnconfirmedNotice";
+import SwitchFailedNotice from "./SwitchFailedNotice";
 import styles from "../styles/shenmaSanguo.module.css";
 
 const MAIN_PATH = "/shenmaSanguo";
@@ -24,6 +25,8 @@ export default function GameInitializer() {
   const syncStatus = usePlayerStore(
     (s) => s.player?.syncStatus ?? SyncStatus.Idle
   );
+  // 切換存檔失敗（視窗關閉後才失敗時，主畫面靠這個提示）
+  const switchFailed = usePlayerStore((s) => s.switchNotice !== null);
 
   const hasConfig = useStaticConfigStore(
     (s) => (s.config?.heroesConfig?.length ?? 0) > 0
@@ -106,10 +109,11 @@ export default function GameInitializer() {
           </div>
         </div>
       )}
-      {/* 武將升級結果待確認：固定在頁面底部，不擋住上方的 HUD 按鈕 */}
-      {unconfirmed && (
+      {/* 固定在頁面底部，不擋住上方的 HUD 按鈕：切換存檔失敗、武將升級結果待確認 */}
+      {(unconfirmed || switchFailed) && (
         <div className={styles.bottomNotices}>
-          <UpgradeUnconfirmedNotice />
+          <SwitchFailedNotice />
+          {unconfirmed && <UpgradeUnconfirmedNotice />}
         </div>
       )}
     </>

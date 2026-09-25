@@ -74,7 +74,9 @@ GODOT="<編輯器目錄>/Godot_v4.6.2-stable_win64_console.exe" \
 - I2：出兵間隔中切關、A→B→A、同關重開、自動下一波等待窗口內切關／關閉自動／同關重開、重複清波通知。
 - N：自動三波、最後一隻漏怪判負、手動兩波蓋塔的擊殺與漏怪計數。
 - R3：混合敵人組（缺設定組在第一／中間／最後、無路徑組、`count=0`、空白列、正常多組、自動模式）在清波當下必須「有效敵人全部生成且處理完」，且每波只發一次 `wave_all_spawned`／`wave_cleared`；整波無效（全部組無效、空波、波次缺號、自動模式中途遇到無效波）必須拒絕開戰、不結算，並能切到有效關卡恢復。
-- 大部分案例只用公開行為判定，可以拿同一支測試對照修正前後；R3-E 的「拒絕信號」檢查需要新版的 `wave_start_rejected` 信號。
+- R9：場次識別碼。關卡資料的 `battle_id` 會帶在 `update_stats` 與結算上；同一關重來後只有新的一場送出訊息；在戰鬥結束最早發出的信號（`state_changed` 進入 RESULT）當下就載入新關卡，送出的結算仍帶產生它的那一場的 `battle_id` 與 `stage_id`（結算在發出任何信號前就建立好）；關卡資料沒有 `battle_id` 時送出空字串。測試暫時把 `Main.web_bridge` 換成 `bridge_recorder.gd`（繼承正式的 `WebBridge.gd`，只在送出前多記一份副本），因為非 Web 平台上訊息不會真的送出。
+- R10：`WebBridge.ready_message()`（`game_ready`）帶協定版本 `protocol: 2`；Web 只在版本相同時送出關卡資料（非 Web 平台不會真的送出，所以直接檢查訊息內容）。
+- 大部分案例只用公開行為判定，可以拿同一支測試對照修正前後；R3-E 的「拒絕信號」檢查需要新版的 `wave_start_rejected` 信號，R9 需要新版的 `battle_id`（修正前會 FAIL，並在讀取 `BattleManager.battle_id` 時出現 SCRIPT ERROR）。
 
 ### 失敗 fixture
 
@@ -113,6 +115,11 @@ node scripts/shenma-regression/web/player-store.test.mjs
 - 涵蓋 Round 4 驗收案例 1～8：登入失敗不建檔、建檔失敗不報成功、連按不重複建檔、A 慢 B 快不互相覆蓋、切換前先保存、重新整理後補送（Pending／Syncing／舊版 session）、Idle 不補送、session key 不符不跨帳號寫入、在途保存與背景讀取不覆蓋新修改、手動同步失敗保留資料、升級與戰鬥結算的相容修正。
 - Round 5 新增：升級回應遺失後重新整理（C1）、升級還沒完成／一直沒到伺服器／明確失敗／網路錯誤／只有升級沒有其他修改、升級在途時 debounce 不先保存、卸載不再盲寫（C2）、升級待確認時切換帳號／手動同步／戰鬥結算。`reloadPage(env)` 模擬同一分頁重新整理：舊頁面的計時器與監聽消失，舊請求的回應送不到新頁面，但仍可用 `env.server.handle(call)` 讓伺服器晚一點處理它。
 - Round 6 新增：較早送出的背景讀取在升級確認（或手動同步）之後才回來，不能還原本機資料（C3、R6-G）；待確認時沒有強制採用雲端的能力，升級晚到後重新確認，升級與本機修改都保留（C4）。原本驗證「以雲端資料為準」的 R5-U2-3 改成驗證「無法強制解除、再重新整理仍待確認」。
+- Round 7 新增：手動同步（`refreshProfile`／`initFromGAS`）的讀取在升級確認之後才回來，不能還原本機與後端（C5）；手動同步的讀取在途時背景讀取先採用了較新的資料，手動同步的舊讀取晚到也不能套用（R7-I）。
+- Round 8 新增：戰鬥與結算的帳號歸屬（R8-S1～S7）：開戰後換帳號（即使又切回來）結算不套用、戰鬥進行中不能切換到其他帳號（同帳號同步照常）、同一場只結算一次、結算後自動解除鎖定。`applyBattleResult` 改成要帶 `beginBattle()` 取得的戰鬥票，W8b 與 R5-B 只調整了呼叫方式，斷言沒有改。
+- Round 9 新增：場次隔離（R9-C6～C8）。C6：切換帳號的讀取、切換前的保存、讀取後的第二次保存在途時才開打，都不能切換。C7：用 `BattleSession` 驗證只接受目前這一場的 `battle_id`：另一個帳號的新場次開打後、同一關重來後，上一場的結算（帶上一場的 `battle_id`）不採用；舊關卡的 stats 晚到不算開打、不上鎖；缺少、錯誤、空白、非字串的 `battle_id` 一律不採用；送到後端的 `save_result` 不含 `battle_id`。C8：store 只接受目前有效那一場的票：開始新的一場、明確離開、換帳號後，舊票不能結算、上鎖或解除新場次的鎖。
+  - 切換鎖的 API 從 `setBattleLock(ticket | null)` 改成 `lockBattle(ticket)`／`endBattle(ticket)`（都比對擁有者）。R8-S2、S5 改用 `lock()`／`leave()` 兩個 helper（在舊版會退回 `setBattleLock`，所以同一支測試也能在修正前執行），斷言沒有改。
+- Round 10 新增：切換失敗的提示（R10-N1～N6）：切換送出後才開打、戰鬥中直接切換都會留下 `switchNotice`（不含存檔金鑰），之後合法切換成功或關閉提示就清除；較早的請求晚到（被較新的取代）不會覆蓋較新的提示，較新的切換成功後也不會產生提示；同帳號同步、首次登入失敗不產生切換提示。遊戲版本握手（R10-P1）：只有協定版本和網頁相同的 `game_ready` 才相容。
 - 輸出 PASS／FAIL 各行與一行 `RESULT_JSON`；有任何失敗時結束碼為 1。
 - **已知限制的 fixture** 另外輸出 `LIMIT` 行，列在 `RESULT_JSON.limitations`，不計入 PASS／FAIL：它記錄「目前仍會發生」的行為（例如 L1：重新整理前已送出的 `save_profile` 晚到伺服器，會蓋掉之後保存的新資料，需要後端版本號）。出現 `LIMIT-CHANGED` 代表行為改變了，要同步更新基準文件與 fixture。
 
@@ -122,27 +129,40 @@ node scripts/shenma-regression/web/player-store.test.mjs
 
 依序在 Playwright MCP 執行（`browser_run_code_unsafe`，`filename` 為倉庫相對路徑）：
 
-| 順序 | 檔案                          | 內容                                                                                                                                                                                                                                                        |
-| ---- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | （先 `browser_close`）        | 確保是全新的 browser context                                                                                                                                                                                                                                |
-| 1    | `harness.js`                  | **導覽前**安裝網路防線（GAS 寫入一律 abort、GA／AdSense 一律 abort）、頁面內 mock、Godot 訊息紀錄；清掉 Service Worker、Cache Storage 與 storage                                                                                                            |
-| 2    | `i1-init.js`                  | I1：全新玩家、後端已有金鑰但本機無快取、已有 session、設定失敗後重試（全程不重新整理）                                                                                                                                                                      |
-| 3    | `i2-lifecycle.js`             | I2：出兵間隔中切關、A→B→A、同關重開                                                                                                                                                                                                                         |
-| 4    | `auto-timer.js`               | 自動下一波 1.5 秒窗口內切關／關閉自動／同關重開、多次切換自動的 React 同步                                                                                                                                                                                  |
-| 5    | `normal-flows.js`             | 手動兩波勝利（蓋塔）、自動勝利、落敗；每場只結算一次、擊殺＋漏怪計數一致、結算寫回 mock                                                                                                                                                                     |
-| 6    | `r3-mixed.js`                 | R3：混合組不提前結算、無效波拒絕開戰（迎戰與自動）且不給獎勵、拒絕後切到有效關卡恢復                                                                                                                                                                        |
-| 7    | `artifacts-and-network.js`    | 瀏覽器實際取得的產物 SHA-256、iframe 載入的大小、SW 快取版本，以及整段期間的 GAS／SCRIPT ERROR／pageerror 統計                                                                                                                                              |
-| 7b   | `r4-web.js`                   | R4：登入失敗顯示原因並可重試／更換金鑰、建檔失敗不報成功、切換帳號前先保存（失敗就擋下）、Pending 與 Syncing 重新整理後補送、Idle 不補送、手動同步失敗保留資料、升級 smoke                                                                                  |
-| 7c   | `r5-web.js`                   | R5／R6：升級回應遺失後重新整理的恢復（先讀取再保存、不重播升級）、升級結果待確認的提示（只有重新確認、不擋 HUD）、沒有強制解除保護的入口（C4）、升級在途時 debounce 不先保存、卸載不再盲寫、普通 Pending 補送、較早的背景讀取晚到不會還原已確認的升級（C3） |
-| 8    | `fixtures/deliberate-fail.js` | 刻意失敗的 fixture（見下方）；會汙染錯誤紀錄，所以放在最後或另開 context                                                                                                                                                                                    |
+| 順序 | 檔案                          | 內容                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | （先 `browser_close`）        | 確保是全新的 browser context                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 1    | `harness.js`                  | **導覽前**安裝網路防線（GAS 寫入一律 abort、GA／AdSense 一律 abort）、頁面內 mock、Godot 訊息紀錄；清掉 Service Worker、Cache Storage 與 storage；測試用的 `__bridgeWithhold`（設成陣列時先攔住 Godot 的結算、不交給頁面，之後可原封不動重送）；`resetOrigin` 在跨來源隔離與非隔離的頁面各清一次儲存（兩者的 sessionStorage 各有一份，見注意事項）                                                                                                                                                          |
+| 2    | `i1-init.js`                  | I1：全新玩家、後端已有金鑰但本機無快取、已有 session、設定失敗後重試（全程不重新整理）                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 3    | `i2-lifecycle.js`             | I2：出兵間隔中切關、A→B→A、同關重開                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 4    | `auto-timer.js`               | 自動下一波 1.5 秒窗口內切關／關閉自動／同關重開、多次切換自動的 React 同步                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 5    | `normal-flows.js`             | 手動兩波勝利（蓋塔）、自動勝利、落敗；每場只結算一次、擊殺＋漏怪計數一致、結算寫回 mock                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 6    | `r3-mixed.js`                 | R3：混合組不提前結算、無效波拒絕開戰（迎戰與自動）且不給獎勵、拒絕後切到有效關卡恢復                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 7    | `artifacts-and-network.js`    | 瀏覽器實際取得的產物 SHA-256、iframe 載入的大小、SW 快取版本，以及整段期間的 GAS／SCRIPT ERROR／pageerror 統計                                                                                                                                                                                                                                                                                                                                                                                              |
+| 7b   | `r4-web.js`                   | R4：登入失敗顯示原因並可重試／更換金鑰、建檔失敗不報成功、切換帳號前先保存（失敗就擋下）、Pending 與 Syncing 重新整理後補送、Idle 不補送、手動同步失敗保留資料、升級 smoke                                                                                                                                                                                                                                                                                                                                  |
+| 7c   | `r5-web.js`                   | R5／R6：升級回應遺失後重新整理的恢復（先讀取再保存、不重播升級）、升級結果待確認的提示（只有重新確認、不擋 HUD）、沒有強制解除保護的入口（C4）、升級在途時 debounce 不先保存、卸載不再盲寫、普通 Pending 補送、較早的背景讀取晚到不會還原已確認的升級（C3）                                                                                                                                                                                                                                                 |
+| 7d   | `r7-web.js`                   | R7：玩家資訊的「強制從雲端同步」讀取被持有 → 關閉視窗 → 升級、回應遺失、自動重新確認 → 放回舊的同步回應；UI（武將等級）、session、後端要一致，之後的保存保留升級（C5）。也記錄實際 UI：同步進行中可以關閉視窗、可以升級                                                                                                                                                                                                                                                                                     |
+| 7e   | `r8-web.js`                   | R8：戰鬥中切換帳號被擋下、結算只算給開戰的帳號；正常結算後可切換且 Godot 重新載入新帳號的關卡；切換關卡（明確離開）後可切換，舊結算晚到不採用；連按確認與重複結算只結算一次；獨立戰鬥頁不把 debug_snapshot 當成結算、連按只結算一次                                                                                                                                                                                                                                                                         |
+| 7f   | `r9-web.js`                   | R9：場次隔離。舊場次的結算用 Godot 實際產生、先攔住的那一筆重送：另一個帳號的新場次開打後、同一關重來後才送達都不採用；錯誤／缺少 `battle_id` 的結算不採用、這一場的結算連按與重複送達只結算一次；舊關卡的 stats（Godot 實際送出）晚到不影響 HUD 也不上鎖；切換帳號的讀取或保存在途時才開打，不切換、結算只算給原帳號；獨立戰鬥頁的錯誤／缺少 `battle_id` stats 與結算；回到主頁開打後切換仍被擋下；後端的戰鬥紀錄不含 `battle_id`                                                                          |
+| 7g   | `r10-web.js`                  | R10：遊戲版本不相符與延遲切換失敗。用真實舊產物（`24b1315b` 的 Godot 檔案，需先準備，見下方）：主頁與獨立戰鬥頁都顯示版本提示、不送關卡資料、不開戰；換回新版後重試只重新載入遊戲（頁面不重新整理，未同步的暱稱／隊伍、待確認升級、在途的保存都保留），遊戲的 Service Worker 換成新版本；已移除的 iframe 晚到的訊息不採用；之後正常開戰、只結算一次。新版只是載入慢（`index.pck` 延遲 10 秒）不誤判。切換送出後才開打被擋：視窗先關閉／保持開啟，主畫面都有「未切換」提示且不含金鑰，之後合法切換成功就清除 |
+| 8    | `fixtures/deliberate-fail.js` | 刻意失敗的 fixture（見下方）；會汙染錯誤紀錄，所以放在最後或另開 context                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 **不經 MCP 執行**（MCP 無法使用，或需要把原始回傳存成檔案時）：
 
 ```bash
-PLAYWRIGHT_DIR=<含 playwright 套件的 node_modules>   node scripts/shenma-regression/tools/run-browser.mjs harness.js i1-init.js r4-web.js r5-web.js normal-flows.js artifacts-and-network.js
+PLAYWRIGHT_DIR=<含 playwright 套件的 node_modules>   node scripts/shenma-regression/tools/run-browser.mjs harness.js i1-init.js i2-lifecycle.js auto-timer.js normal-flows.js r3-mixed.js artifacts-and-network.js r4-web.js r5-web.js r7-web.js r8-web.js r9-web.js r10-web.js
 ```
 
 同一個 browser context 依序執行同一批腳本，每支的原始回傳寫成證據目錄下的 `<腳本名>.raw.json`；任何一支 `allPass` 不是 `true` 時結束碼為 1。預設使用系統的 Chrome（`BROWSER_CHANNEL=chrome`，和 MCP 相同）、無頭模式（`HEADED=1` 顯示視窗）。專案沒有安裝 playwright，需要用 `PLAYWRIGHT_DIR` 指向現有的套件（例如 Playwright MCP 在 npx 快取裡的 `node_modules`）。在 MCP 裡也可以用 `H.saveLast(page, "檔名.json")` 把最近一次 `run.finish()` 的結果原封不動存檔。
+
+**`r10-web.js` 的舊產物**：放在已 gitignore 的證據目錄，執行前先取出（`24b1315b` 是正式站目前部署的版本；`index.js`、`index.wasm` 與目前相同，不需要替換）：
+
+```bash
+mkdir -p .handoff/evidence/round-10/legacy-godot
+for f in index.html index.pck index.service.worker.js; do git show 24b1315b:public/games/shenmaSanguo/$f > .handoff/evidence/round-10/legacy-godot/$f; done
+```
+
+腳本用 browser context 的 route 回應這 3 個檔案（遊戲 Service Worker 發出的請求也會經過），`route.fulfill` 的 `path` 是相對於執行目錄（`run-browser.mjs` 會切到倉庫根目錄）。
 
 **判定方式**：每支情境腳本都用 `H.begin()` 建立判定、`run.check()` 累積斷言，最後 `run.finish()` 回傳：
 
@@ -168,5 +188,8 @@ PLAYWRIGHT_DIR=<含 playwright 套件的 node_modules>   node scripts/shenma-reg
 
 - MCP 的執行環境沒有 `URL`、`setTimeout` 等非 ECMAScript 全域物件，腳本內一律改用 `page.waitForTimeout` 與正規表示式。
 - 腳本檔是一個函式運算式，不是模組：ESLint 與 Prettier 只排除 `scripts/shenma-regression/*.js` 與 `scripts/shenma-regression/fixtures/*.js`（Prettier 會補上結尾分號，破壞 MCP 的包裝）；`tools/*.mjs` 照常檢查與格式化。
-- Godot 狀態透過唯讀的 `debug_snapshot` 訊息讀取（`Main.gd` 的 `_on_debug_snapshot_requested`）。回應不含玩家金鑰或存檔，也不接受修改遊戲狀態；刻意不含 `stage_id`／`result` 欄位，避免 React 誤判為結算訊息。
+- Round 10 起兩個戰鬥頁只接受目前遊戲 iframe 送來的訊息（`event.source`）：注入訊息要從遊戲 iframe 內送出（`iframe.contentWindow.eval("window.parent.postMessage(...)")`），從其他視窗送出的會被忽略。`game_ready` 帶協定版本 `protocol`，版本不同時頁面顯示版本提示、不送關卡資料。
+- sessionStorage 在跨來源隔離（COOP，Service Worker 加上的標頭）與非隔離的頁面各有一份，頁面在兩種狀態間切換時會互相複製：只在其中一種狀態清除，之後會把沒清到的舊 session 複製回來（Round 10 實測：前一段植入的待確認升級出現在下一段）。`resetOrigin` 因此清兩次。
+- Godot 送出的 `update_stats` 與結算都帶 `battle_id`（關卡資料送進去的場次識別碼，不含玩家金鑰），頁面只採用目前這一場的訊息；注入舊場次的訊息時要帶那一場實際的 `battle_id`，缺少 id 的訊息只能當成「格式錯誤」的案例。
+- Godot 狀態透過唯讀的 `debug_snapshot` 訊息讀取（`Main.gd` 的 `_on_debug_snapshot_requested`）。回應不含玩家金鑰或存檔（Round 9 起多了目前這一場的 `battle_id`），也不接受修改遊戲狀態；刻意不含 `stage_id`／`result` 欄位，避免 React 誤判為結算訊息。
 - Playwright MCP 會在倉庫根目錄產生 `.playwright-mcp/`（已 gitignore）。

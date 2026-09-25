@@ -759,6 +759,25 @@
   max-width: 220px;
   line-height: 1.5;
 }
+/* 遊戲版本和網頁不相符（舊版遊戲的快取）：疊在遊戲畫面上，高於進場動畫 */
+.engineNotice {
+  z-index: 20;
+  padding: 1.5rem;
+}
+.engineNoticeTitle {
+  margin: 0;
+  color: #f3f4f6;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.engineNoticeText {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  text-align: center;
+  max-width: 300px;
+}
 
 /* ── 三國載入動畫 ──────────────────────────────────────── */
 @keyframes tkRotate {

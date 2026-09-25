@@ -155,6 +155,21 @@ export interface SessionPlayerState extends PlayerState {
 }
 
 /**
+ * 一場戰鬥屬於哪個帳號：送出關卡資料時向 store 取得，結算時用來確認歸屬（只存在記憶體）
+ * 不含玩家金鑰：帳號世代判斷是不是同一個帳號（切換帳號後就會改變），
+ * id 判斷是不是目前這一場（store 只接受目前有效那一場的票）
+ */
+export interface BattleTicket {
+  /**
+   * 這一場戰鬥的識別碼（隨機產生，不含玩家金鑰）：同一場只能結算一次。
+   * 也以 battle_id 送進 Godot，Godot 的 stats 與結算會帶回產生它的那一場的 battle_id
+   */
+  id: string;
+  /** 取得時的帳號世代 */
+  gen: number;
+}
+
+/**
  * 送出 upgrade_hero 前先寫進 session 的紀錄。
  * 重新整理或網路錯誤讓回應遺失時，靠它知道「有一個結果不明的升級」，
  * 不會把送出前的 heroes／gold 當成最新版整份保存（會蓋掉伺服器上已完成的升級）。
@@ -187,6 +202,8 @@ export interface Loot {
  */
 export interface ExpeditionPayload {
   stage_id: string;
+  /** 這一場的識別碼（戰鬥票的 id）：Godot 的 update_stats 與結算都會帶回它 */
+  battle_id: string;
   player: Pick<PlayerState, "nickname" | "level" | "gold"> & { key: string };
   team_list: Array<HeroState & { slot: number }>;
   heroes_config: HeroConfig[];
@@ -209,5 +226,10 @@ export interface BattleResultPayload {
   kills: number;
   time_seconds: number;
   loots: Loot[];
+  /**
+   * 產生這筆結算的那一場（關卡資料送進 Godot 的 battle_id）。
+   * 頁面只採用目前這一場的結算；送到後端的 save_result 不含這個欄位
+   */
+  battle_id?: string;
   __godot_bridge: true;
 }

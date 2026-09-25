@@ -11,6 +11,16 @@ import {
   BattleResult,
   ExpeditionPayload,
 } from "../../types";
+import {
+  BattleSession,
+  isBattleResultMessage,
+} from "../../utils/battleSession";
+import {
+  EngineStatus,
+  activateLatestGameWorker,
+  isCompatibleEngine,
+} from "../../utils/gameEngine";
+import EngineUpdatePrompt from "../../components/EngineUpdatePrompt";
 import styles from "../../styles/shenmaSanguo.module.css";
 import PlacementMenu from "./PlacementMenu";
 import UpgradePanel from "./UpgradePanel";
@@ -32,6 +42,13 @@ const GameState = {
   RESULT: 3,
 };
 
+/**
+ * 這一場已開打或有待確認的結算：鎖住帳號切換
+ * （鎖屬於這一場，結算、離開頁面、換帳號時由 store 解除）
+ */
+const syncBattleLock = (session: BattleSession) =>
+  usePlayerStore.getState().lockBattle(session.lockTicket());
+
 export default function BattlePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -49,6 +66,12 @@ export default function BattlePageContent() {
   );
   const [battleStats, setBattleStats] = useState<BattleStats | null>(null);
   const [godotReady, setGodotReady] = useState(false);
+  // 遊戲版本：game_ready 的協定版本和網頁相同才送出關卡資料（見 utils/gameEngine）
+  const [engineStatus, setEngineStatus] = useState<EngineStatus>("loading");
+  // 重新載入遊戲時換一個新的 iframe（舊 iframe 之後送達的訊息一律不採用）
+  const [iframeKey, setIframeKey] = useState(0);
+  const [engineRetrying, setEngineRetrying] = useState(false);
+  const [engineRetried, setEngineRetried] = useState(false);
   const [placementMenu, setPlacementMenu] = useState<{
     type: "road" | "build";
     pos: { x: number; y: number };
@@ -56,6 +79,18 @@ export default function BattlePageContent() {
   } | null>(null);
   const [upgradePanel, setUpgradePanel] = useState<any | null>(null);
   const [placedHeroIds, setPlacedHeroIds] = useState<string[]>([]);
+  // 這一關的戰鬥：記下屬於哪個帳號、能不能採用結算（見 utils/battleSession）
+  const sessionRef = useRef(new BattleSession());
+
+  // 離開頁面：這一關作廢，只解除這一場自己的鎖（不影響之後新頁面的那一場）
+  useEffect(() => {
+    const session = sessionRef.current;
+    return () => {
+      const owner = session.owner;
+      session.end();
+      usePlayerStore.getState().endBattle(owner);
+    };
+  }, []);
 
   const sendPayload = useCallback(() => {
     if (payloadSent || !player || !staticConfig || !mapId) return;
@@ -81,8 +116,14 @@ export default function BattlePageContent() {
       return { ...state, slot: slot.slot };
     });
 
+    // 新的一場：綁定目前帳號，battle_id 送進 Godot
+    // （開頭已確認有玩家資料，beginBattle 一定會回傳戰鬥票）
+    const ticket = usePlayerStore.getState().beginBattle();
+    sessionRef.current.begin(ticket);
+
     const payload: ExpeditionPayload = {
       stage_id: mapId,
+      battle_id: ticket?.id ?? "",
       player: {
         key: player.key,
         nickname: player.nickname,
@@ -106,18 +147,29 @@ export default function BattlePageContent() {
   const handleMessage = useCallback((event: MessageEvent) => {
     if (!event.data || typeof event.data !== "object") return;
     if (event.data.__godot_bridge !== true) return;
+    // 只接受目前這個遊戲 iframe 送來的訊息（重新載入前的舊 iframe、其他視窗送來的都不採用）
+    if (event.source !== iframeRef.current?.contentWindow) return;
 
-    // 收到 Godot 的 Ready 訊號，標記 Godot 已準備好
+    // 收到 Godot 的 Ready 訊號：協定版本相同才標記 Godot 已準備好
     if (event.data.type === "game_ready") {
+      setIframeLoading(false);
+      // 協定版本不同（舊版遊戲）：不送出關卡資料、不開戰，顯示更新提示
+      if (!isCompatibleEngine(event.data)) {
+        setEngineStatus("incompatible");
+        return;
+      }
       console.log(
         "[React] Godot is ready, waiting for player data to send payload."
       );
-      setIframeLoading(false);
+      setEngineStatus("ready");
       setGodotReady(true);
       return;
     }
 
     if (event.data.type === "update_stats") {
+      // 只採用這一場的狀態（battle_id 不同或缺少的訊息不更新畫面，也不影響切換鎖）
+      if (!sessionRef.current.onStats(event.data as BattleStats)) return;
+      syncBattleLock(sessionRef.current);
       setBattleStats(event.data as BattleStats);
       return;
     }
@@ -146,7 +198,15 @@ export default function BattlePageContent() {
       return;
     }
 
-    setBattleResult(event.data as BattleResultPayload);
+    // 只有結算訊息才是結算（debug_snapshot 等其他訊息不是），
+    // 而且只採用這一場（battle_id 相同）開打後的第一筆
+    if (
+      isBattleResultMessage(event.data) &&
+      sessionRef.current.onResult(event.data)
+    ) {
+      syncBattleLock(sessionRef.current);
+      setBattleResult(event.data);
+    }
   }, []);
 
   useEffect(() => {
@@ -165,10 +225,40 @@ export default function BattlePageContent() {
     setIframeLoading(false);
   };
 
+  // 遊戲版本不相符：只換掉遊戲 iframe（先讓遊戲的 Service Worker 換成最新版本），不重新整理頁面，
+  // 玩家存檔與未同步的修改都留在 store。只有玩家按下時才執行，不會自動重試
+  const handleReloadEngine = async () => {
+    if (engineRetrying) return;
+    setEngineRetrying(true);
+    const owner = sessionRef.current.owner;
+    sessionRef.current.end();
+    usePlayerStore.getState().endBattle(owner);
+    setGodotReady(false);
+    setPayloadSent(false);
+    setBattleStats(null);
+    setBattleResult(null);
+    setPlacedHeroIds([]);
+    setPlacementMenu(null);
+    setUpgradePanel(null);
+    await activateLatestGameWorker();
+    setEngineStatus("loading");
+    setIframeLoading(true);
+    setEngineRetried(true);
+    setIframeKey((k) => k + 1);
+    setEngineRetrying(false);
+  };
+
   const handleConfirmResult = () => {
-    if (!battleResult) return;
+    // 同一場只確認一次（連按不會重複結算）；結算只算給開戰時的帳號
+    const taken = sessionRef.current.take();
+    if (!taken) return;
     // 樂觀更新：立即觸發同步（背景執行）並跳轉
-    applyBattleResult(battleResult);
+    // 結算後這一場由 store 解除鎖並作廢；沒有套用時也離開這一場，不留下鎖
+    const settled = applyBattleResult(taken.result, taken.ticket);
+    if (!settled.ok) {
+      console.warn("[Battle] 結算沒有套用：", settled.error);
+      usePlayerStore.getState().endBattle(taken.ticket);
+    }
     router.push("/shenmaSanguo");
   };
 
@@ -404,7 +494,16 @@ export default function BattlePageContent() {
                 <p className={styles.loadingText}>載入戰場中...</p>
               </div>
             )}
+            {/* 遊戲版本和網頁不相符：提示更新，不開戰 */}
+            {engineStatus === "incompatible" && (
+              <EngineUpdatePrompt
+                retrying={engineRetrying}
+                retried={engineRetried}
+                onRetry={handleReloadEngine}
+              />
+            )}
             <iframe
+              key={iframeKey}
               ref={iframeRef}
               src="/games/shenmaSanguo/index.html"
               className={styles.gameIframe}

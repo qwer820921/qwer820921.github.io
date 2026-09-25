@@ -1,0 +1,18 @@
+## bridge_recorder.gd
+## 測試用（不進正式產物）：記錄 BattleManager 交給 WebBridge 的 update_stats 與結算。
+## 非 Web 平台上 WebBridge 不會真的送出訊息，所以繼承正式的 WebBridge，
+## 只在呼叫原本的方法之前多記一份副本，其他行為完全不變。
+## 由 lifecycle_test.gd 暫時換掉 Main.web_bridge 使用（Main 每次載入關卡都會把它交給 BattleManager）。
+
+extends "res://bridge/WebBridge.gd"
+
+var sent_stats: Array = []
+var sent_results: Array = []
+
+func send_stats(stats: Dictionary) -> void:
+	sent_stats.append(stats.duplicate(true))
+	super.send_stats(stats)
+
+func send_result(result: Dictionary) -> void:
+	sent_results.append(result.duplicate(true))
+	super.send_result(result)

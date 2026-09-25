@@ -32,6 +32,9 @@ var auto_timer: float = 0.0
 var total_waves: int = 0
 var current_wave: int = 0
 var stage_id: String = ""
+## 這一場的識別碼（Web 送來的 battle_id，每次載入關卡都不同，同一關重來也不同）。
+## update_stats 與結算都帶上它，Web 只採用目前這一場的訊息；Web 沒有提供時是空字串（Web 不會採用）
+var battle_id: String = ""
 
 # ── 延遲自動下一波的失效化 ────────────────────────────────────
 # _lifecycle：每次 initialize（切關／同關重開）遞增，只增不減。
@@ -46,11 +49,12 @@ var _wave_manager: Node = null
 var _web_bridge: Node = null
 
 # ── 初始化 ────────────────────────────────────────────────────
-func initialize(p_total_waves: int, p_stage_id: String, wave_mgr: Node, bridge: Node) -> void:
+func initialize(p_total_waves: int, p_stage_id: String, wave_mgr: Node, bridge: Node, p_battle_id: String = "") -> void:
 	_lifecycle += 1
 	_cancel_auto_wave()
 	total_waves    = p_total_waves
 	stage_id       = p_stage_id
+	battle_id      = p_battle_id
 	_wave_manager  = wave_mgr
 	_web_bridge    = bridge
 	battle_gold    = INITIAL_GOLD
@@ -224,17 +228,20 @@ func _calc_battle_points() -> int:
 func _end_battle(is_win: bool) -> void:
 	if game_state == GameState.RESULT:
 		return
-	_cancel_auto_wave()
-	game_state = GameState.RESULT
-	state_changed.emit(game_state)
+	# 先建立結算，再發出任何信號：之後的信號處理即使載入了新關卡，
+	# 這筆結算仍是產生它的那一場的內容與 battle_id，不會改套新場次的識別碼
 	var result: Dictionary = {
 		"result":       "WIN" if is_win else "LOSE",
 		"stage_id":     stage_id,
+		"battle_id":    battle_id,
 		"stars_earned": _calc_stars() if is_win else 0,
 		"kills":        kills,
 		"time_seconds": int(battle_time),
 		"loots":        [{ "item": "battle_points", "count": _calc_battle_points() if is_win else 10 }]
 	}
+	_cancel_auto_wave()
+	game_state = GameState.RESULT
+	state_changed.emit(game_state)
 	battle_ended.emit(result)
 	if _web_bridge:
 		_web_bridge.send_result(result)
@@ -245,6 +252,7 @@ func _sync_stats_to_web() -> void:
 	if _web_bridge == null:
 		return
 	var stats = {
+		"battle_id": battle_id,
 		"gold": battle_gold,
 		"wave": current_wave,
 		"total_waves": total_waves,
