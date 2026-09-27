@@ -189,7 +189,7 @@ for f in index.html index.pck index.service.worker.js; do git show 24b1315b:publ
 - MCP 的執行環境沒有 `URL`、`setTimeout` 等非 ECMAScript 全域物件，腳本內一律改用 `page.waitForTimeout` 與正規表示式。
 - 腳本檔是一個函式運算式，不是模組：ESLint 與 Prettier 只排除 `scripts/shenma-regression/*.js` 與 `scripts/shenma-regression/fixtures/*.js`（Prettier 會補上結尾分號，破壞 MCP 的包裝）；`tools/*.mjs` 照常檢查與格式化。
 - Round 10 起兩個戰鬥頁只接受目前遊戲 iframe 送來的訊息（`event.source`）：注入訊息要從遊戲 iframe 內送出（`iframe.contentWindow.eval("window.parent.postMessage(...)")`），從其他視窗送出的會被忽略。`game_ready` 帶協定版本 `protocol`，版本不同時頁面顯示版本提示、不送關卡資料。
-- sessionStorage 在跨來源隔離（COOP，Service Worker 加上的標頭）與非隔離的頁面各有一份，頁面在兩種狀態間切換時會互相複製：只在其中一種狀態清除，之後會把沒清到的舊 session 複製回來（Round 10 實測：前一段植入的待確認升級出現在下一段）。`resetOrigin` 因此清兩次。
+- sessionStorage 在跨來源隔離（COOP，coi／遊戲 Service Worker 加上的標頭）與非隔離的頁面各有一份：從非隔離切到隔離（例如 coi 自動重新載入）時，非隔離那一份有資料就會帶過去、蓋掉隔離那一份；從隔離切到非隔離（強制重新整理、移除 SW 後再進入）時，看到的是非隔離自己那一份。只在其中一種狀態清除，之後會把沒清到的舊 session 帶回來（Round 10 實測：前一段植入的待確認升級出現在下一段；Round 11 的調查見基準文件 §19）。`resetOrigin` 因此清兩次。
 - Godot 送出的 `update_stats` 與結算都帶 `battle_id`（關卡資料送進去的場次識別碼，不含玩家金鑰），頁面只採用目前這一場的訊息；注入舊場次的訊息時要帶那一場實際的 `battle_id`，缺少 id 的訊息只能當成「格式錯誤」的案例。
 - Godot 狀態透過唯讀的 `debug_snapshot` 訊息讀取（`Main.gd` 的 `_on_debug_snapshot_requested`）。回應不含玩家金鑰或存檔（Round 9 起多了目前這一場的 `battle_id`），也不接受修改遊戲狀態；刻意不含 `stage_id`／`result` 欄位，避免 React 誤判為結算訊息。
 - Playwright MCP 會在倉庫根目錄產生 `.playwright-mcp/`（已 gitignore）。

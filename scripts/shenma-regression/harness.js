@@ -294,8 +294,9 @@ async (page) => {
       return `${EVIDENCE}/${name}.png`;
     },
     // 回到不含 App 程式的靜態頁清空資料；keepMockDb=true 時保留 mock 後端資料
-    // sessionStorage 在跨來源隔離（COOP，Service Worker 加上的標頭）與非隔離的頁面各有一份，切換時互相複製：
-    // 只清其中一份，之後頁面在兩種狀態間切換時又會把沒清到的舊資料複製回來（Round 10 實測）。
+    // sessionStorage 在跨來源隔離（COOP，Service Worker 加上的標頭）與非隔離的頁面各有一份：
+    // 從非隔離切到隔離（例如 coi 自動重新載入）時，非隔離那一份有資料就會帶過去、蓋掉隔離那一份。
+    // 只清其中一份，之後切換時又會把沒清到的舊資料帶回來（Round 10 實測，Round 11 調查見基準文件 §19）。
     // 所以清兩次：第一次在目前的狀態清除並移除 Service Worker，第二次在沒有 Service Worker 的（非隔離）頁面再清一次
     async resetOrigin(p, { keepMockDb = false } = {}) {
       const passes = [];
