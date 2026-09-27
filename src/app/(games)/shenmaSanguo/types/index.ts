@@ -200,12 +200,22 @@ export interface Loot {
  * Web → Godot：出征 payload（透過 postMessage 傳入 iframe）
  * team_list 的 atk/def/hp 取自 session（玩家升級後的實際數值）
  */
+/**
+ * Web → Godot：武將技能參數（隨出征資料的 team_list 送進去，定義在 utils/heroSkills）
+ * 只存在戰場，不寫進玩家存檔；Godot 不認得的 id 一律當作普通攻擊
+ */
+export interface HeroSkillPayload {
+  id: string;
+  /** first_strike：每場戰鬥首次有效普通攻擊的傷害倍率 */
+  first_attack_multiplier: number;
+}
+
 export interface ExpeditionPayload {
   stage_id: string;
   /** 這一場的識別碼（戰鬥票的 id）：Godot 的 update_stats 與結算都會帶回它 */
   battle_id: string;
   player: Pick<PlayerState, "nickname" | "level" | "gold"> & { key: string };
-  team_list: Array<HeroState & { slot: number }>;
+  team_list: Array<HeroState & { slot: number; skill?: HeroSkillPayload }>;
   heroes_config: HeroConfig[];
   enemies_config: EnemyConfig[];
   map: MapConfig;

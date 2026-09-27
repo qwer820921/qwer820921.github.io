@@ -20,6 +20,7 @@ import {
   activateLatestGameWorker,
   isCompatibleEngine,
 } from "../../utils/gameEngine";
+import { heroSkillPayload } from "../../utils/heroSkills";
 import EngineUpdatePrompt from "../../components/EngineUpdatePrompt";
 import styles from "../../styles/shenmaSanguo.module.css";
 import PlacementMenu from "./PlacementMenu";
@@ -113,7 +114,7 @@ export default function BattlePageContent() {
         def: heroConfig?.base_def ?? 0,
         hp: heroConfig?.base_hp ?? 0,
       };
-      return { ...state, slot: slot.slot };
+      return { ...state, slot: slot.slot, ...heroSkillPayload(slot.hero_id) };
     });
 
     // 新的一場：綁定目前帳號，battle_id 送進 Godot
@@ -211,6 +212,12 @@ export default function BattlePageContent() {
 
   useEffect(() => {
     window.addEventListener("message", handleMessage);
+    // 遊戲 iframe 在頁面程式載入前就開始載入，遊戲可能比頁面先準備好，game_ready 在監聽掛上之前送出就會漏掉：
+    // 掛上監聽後請遊戲再送一次就緒訊息（遊戲還沒啟動時會忽略，之後啟動照常送出；重複收到不影響）
+    iframeRef.current?.contentWindow?.postMessage(
+      { __godot_bridge: true, type: "request_ready" },
+      "*"
+    );
     return () => window.removeEventListener("message", handleMessage);
   }, [handleMessage]);
 

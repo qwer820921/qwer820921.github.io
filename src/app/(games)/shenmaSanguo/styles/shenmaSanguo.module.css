@@ -421,6 +421,36 @@
   color: var(--sg-muted);
   margin-top: 0.4rem;
 }
+/* 武將技能：列表卡片上的名稱、詳情裡的完整規則 */
+.heroSkillTag {
+  display: inline-block;
+  margin-top: 0.3rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+}
+.heroSkillBox {
+  margin-bottom: 0.85rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+}
+.heroSkillName {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #92400e;
+  margin-bottom: 0.2rem;
+}
+.heroSkillText {
+  font-size: 0.72rem;
+  line-height: 1.55;
+  color: var(--sg-text);
+}
 
 /* ── Team slots ─────────────────────────────────────────── */
 .slotsRow {

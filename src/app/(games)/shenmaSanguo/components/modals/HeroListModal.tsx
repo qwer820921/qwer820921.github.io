@@ -5,6 +5,7 @@ import { Row, Col, Spinner, Alert } from "react-bootstrap";
 import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { HeroState, HeroConfig, Rarity, JobClass } from "../../types";
+import HeroSkillInfo from "../HeroSkillInfo";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 const rarityColor: Record<Rarity, string> = {
@@ -479,6 +480,7 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                             ❤ {r(hero.hp)}
                           </span>
                         </div>
+                        <HeroSkillInfo heroId={config.hero_id} variant="tag" />
                         <div
                           className={
                             canAfford
@@ -589,8 +591,12 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                   </button>
                 </div>
 
-                {/* Body：升級詳情 */}
+                {/* Body：技能與升級詳情 */}
                 <div className={styles.modalBody}>
+                  <HeroSkillInfo
+                    heroId={selectedConfig.hero_id}
+                    variant="full"
+                  />
                   <HeroDetailContent
                     hero={selectedHero}
                     config={selectedConfig}

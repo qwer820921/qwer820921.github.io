@@ -44,6 +44,11 @@ var _lifecycle: int = 0
 var _auto_wave_token: int = 0
 var _auto_wave_pending: bool = false
 
+# ── 武將技能：奇襲（first_strike）──────────────────────────────
+## 這一場已用過奇襲的武將：hero_id → 那一擊的傷害。記在這裡而不是武將節點：
+## 跨波次、移位、更新隊伍、同場移除再放回都不會重新取得；initialize（新的一場、新的 battle_id）才清空
+var _first_strike_used: Dictionary = {}
+
 # ── 外部引用（由 Main.gd 初始化後傳入）──────────────────────
 var _wave_manager: Node = null
 var _web_bridge: Node = null
@@ -55,6 +60,7 @@ func initialize(p_total_waves: int, p_stage_id: String, wave_mgr: Node, bridge: 
 	total_waves    = p_total_waves
 	stage_id       = p_stage_id
 	battle_id      = p_battle_id
+	_first_strike_used.clear()
 	_wave_manager  = wave_mgr
 	_web_bridge    = bridge
 	battle_gold    = INITIAL_GOLD
@@ -264,9 +270,17 @@ func _sync_stats_to_web() -> void:
 	}
 	_web_bridge.send_stats(stats)
 
+## 奇襲：這位武將在這一場還沒用過就記下並回傳 true（武將真的攻擊到有效目標時才呼叫）
+func consume_first_strike(hero_id: String, damage: float) -> bool:
+	if hero_id == "" or _first_strike_used.has(hero_id):
+		return false
+	_first_strike_used[hero_id] = damage
+	return true
+
 ## 測試用唯讀狀態（debug_snapshot）
 func get_debug_state() -> Dictionary:
 	return {
+		"first_strike_used": _first_strike_used.duplicate(),
 		"lifecycle": _lifecycle,
 		"auto_wave_token": _auto_wave_token,
 		"auto_next_wave_pending": _auto_wave_pending,

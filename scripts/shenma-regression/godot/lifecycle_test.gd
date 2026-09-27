@@ -67,6 +67,9 @@ func _enemies_cfg() -> Array:
 		{"enemy_id": "b_grunt", "name": "B", "hp": 20.0, "speed": 60.0},
 		{"enemy_id": "c_fast", "name": "C", "hp": 99999.0, "speed": 2000.0},
 		{"enemy_id": "w_grunt", "name": "W", "hp": 20.0, "speed": 60.0},
+		# R12：極慢、血厚（量測每一擊的傷害）／血量 300（兩擊打倒，用來清波）
+		{"enemy_id": "tank", "name": "T", "hp": 99999.0, "speed": 4.0},
+		{"enemy_id": "soft", "name": "S", "hp": 300.0, "speed": 4.0},
 	]
 
 func _payload(stage_id: String, waves: Array) -> Dictionary:
@@ -255,6 +258,17 @@ func _run() -> void:
 	var ready: Dictionary = bridge.ready_message() if bridge.has_method("ready_message") else {}
 	_check("R10-1 game_ready 帶協定版本 2（Web 只在版本相同時送出關卡資料）", ready.get("type") == "game_ready" and ready.get("__godot_bridge") == true and typeof(ready.get("protocol")) == TYPE_INT and ready.get("protocol") == 2, ready)
 
+	# ── R12：趙雲「奇襲」（每場戰鬥首次有效普通攻擊 2 倍傷害）──
+	await _r12_first_strike_cases()
+
+	# R12-10：Web 請遊戲再送一次就緒訊息（request_ready）：只回覆 game_ready，不當成關卡資料
+	var rec_ready: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var payloads: Array = [0]
+	rec_ready.payload_received.connect(func(_p): payloads[0] += 1)
+	rec_ready._on_js_message([JSON.stringify({"__godot_bridge": true, "type": "request_ready"})])
+	_check("R12-10 收到 request_ready：再送一次 game_ready，不當成關卡資料", rec_ready.sent_ready == 1 and payloads[0] == 0, {"sent_ready": rec_ready.sent_ready, "payloads": payloads[0]})
+	rec_ready.free()
+
 	# ── 輸出 ──
 	var failed: int = 0
 	for r in results:
@@ -424,3 +438,130 @@ func _r9_battle_id_cases() -> void:
 
 	main.web_bridge = original
 	rec.free()
+
+# ── R12 輔助：趙雲「奇襲」 ─────────────────────────────────────
+func _r12_hero(hero_id: String, skill: Variant) -> Dictionary:
+	var h: Dictionary = {"hero_id": hero_id, "level": 1, "star": 0, "atk": 100.0, "def": 50.0, "hp": 1000.0, "slot": 1}
+	if skill != null:
+		h["skill"] = skill
+	return h
+
+func _r12_zhao(skill_id: String = "first_strike") -> Dictionary:
+	return _r12_hero("zhao_yun", {"id": skill_id, "first_attack_multiplier": 2})
+
+func _r12_payload(stage_id: String, waves: Array, battle_id: String, team: Array) -> Dictionary:
+	var p: Dictionary = _with_id(_payload(stage_id, waves), battle_id)
+	p["team_list"] = team
+	p["heroes_config"] = [
+		{"hero_id": "zhao_yun", "name": "趙雲", "job": "cavalry", "attack_range": 3.0, "attack_speed": 0.5},
+		{"hero_id": "guan_yu", "name": "關羽", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5},
+	]
+	return p
+
+func _r12_place(hero_id: String, cell: Vector2i = Vector2i(1, 4)) -> void:
+	main._on_web_place_hero({"hero_id": hero_id, "cell_x": cell.x, "cell_y": cell.y})
+
+## 在 sec 秒內，每一幀記錄場上敵人的血量下降量，也就是每一擊實際造成的傷害（同時只有一位武將攻擊時才準確）。
+## 開始時已在場上的敵人以當下血量為基準；記錄期間才出現的敵人用最大血量比較，避免漏掉出現當下的那一擊
+func _record_hits(sec: float) -> Array:
+	var hits: Array = []
+	var last: Dictionary = {}
+	for c in main.units_layer.get_children():
+		if c is Enemy and is_instance_valid(c):
+			last[c.get_instance_id()] = c.current_hp
+	var end_ms: int = Time.get_ticks_msec() + int(sec * 1000.0)
+	while Time.get_ticks_msec() < end_ms:
+		for c in main.units_layer.get_children():
+			if c is Enemy and is_instance_valid(c):
+				var id: int = c.get_instance_id()
+				var before: float = float(last.get(id, c.max_hp))
+				if c.current_hp < before - 0.001:
+					hits.append(snappedf(before - c.current_hp, 0.01))
+				last[id] = c.current_hp
+		await process_frame
+	return hits
+
+func _all_equal(hits: Array, value: float) -> bool:
+	for h in hits:
+		if h != value:
+			return false
+	return true
+
+func _r12_first_strike_cases() -> void:
+	var tank: Array = [_grp("tank", 1, 1.0)]
+
+	# R12-1、R12-2：放置後沒有敵人時不會用掉；開戰後第一擊 200（攻擊力 100 的 2 倍），之後恢復 100
+	_load(_r12_payload("r12_a", [tank], "r12-a1", [_r12_zhao()]))
+	_r12_place("zhao_yun")
+	await _wait(1.5)  # 超過 3 次攻擊間隔，場上沒有敵人
+	var unused: Dictionary = _bm().get_debug_state().get("first_strike_used", {})
+	_check("R12-2 放置後沒有目標（備戰中）：奇襲沒有被用掉", unused.is_empty(), unused)
+	# 記下這段期間出現的浮動文字（武將上方的技能標記、敵人的傷害數字）
+	var float_texts: Array = []
+	var on_child := func(n: Node) -> void:
+		if n is FloatingText:
+			create_timer(0.1).timeout.connect(func() -> void:
+				if is_instance_valid(n) and n._label != null:
+					float_texts.append(n._label.text)
+			)
+	main.units_layer.child_entered_tree.connect(on_child)
+	_bm().player_start_battle()
+	var hits1: Array = await _record_hits(2.2)
+	main.units_layer.child_entered_tree.disconnect(on_child)
+	_check("R12-1 觸發時武將上方出現「x2!」，整段只出現一次（第一擊）", float_texts.count("x2!") == 1, float_texts)
+	_check("R12-1 趙雲第一擊造成 200（攻擊力 100 的 2 倍），之後恢復 100", hits1.size() >= 3 and hits1[0] == 200.0 and _all_equal(hits1.slice(1), 100.0), hits1)
+	var used: Dictionary = _bm().get_debug_state().get("first_strike_used", {})
+	_check("R12-1 這一場只記下一次奇襲（趙雲，傷害 200）", used.size() == 1 and float(used.get("zhao_yun", 0)) == 200.0, used)
+
+	# R12-3：同一場的下一波不重置（第 1 波的敵人兩擊打倒後清波，第 2 波第一擊是 100）
+	_load(_r12_payload("r12_b", [[_grp("soft", 1, 1.0)], tank], "r12-b1", [_r12_zhao()]))
+	_r12_place("zhao_yun")
+	_bm().player_start_battle()
+	var w1: Array = await _record_hits(0.8)
+	await _wait_until(func(): return _bm().game_state == 1, 5.0)
+	_check("R12-3 前置：第 1 波第一擊 200，敵人被打倒後清波回到備戰", w1.size() >= 1 and w1[0] == 200.0 and _bm().kills == 1 and _bm().game_state == 1, {"hits": w1, "kills": _bm().kills, "state": _bm().game_state})
+	_bm().player_start_battle()
+	var w2: Array = await _record_hits(1.2)
+	_check("R12-3 同一場的第 2 波不重置：每一擊都是 100", w2.size() >= 2 and _all_equal(w2, 100.0), w2)
+
+	# R12-4：同一場移動位置不重置
+	var zhao: Node = main._placed_heroes.get("zhao_yun")
+	zhao.reposition(Vector2i(2, 4), main.game_map.grid_to_world(Vector2i(2, 4)), main.game_map)
+	var moved: Array = await _record_hits(1.2)
+	_check("R12-4 同一場移動位置後：每一擊都是 100", moved.size() >= 2 and _all_equal(moved, 100.0), moved)
+
+	# R12-5：同一場更新隊伍／屬性不重置
+	main._on_payload_received({"type": "update_team", "team_list": [_r12_zhao()]})
+	var updated: Array = await _record_hits(1.2)
+	_check("R12-5 同一場更新隊伍資料後：每一擊都是 100", updated.size() >= 2 and _all_equal(updated, 100.0), updated)
+
+	# R12-6：同一場移除後重新放置不重置
+	main._on_payload_received({"type": "update_team", "team_list": []})
+	await _wait(0.2)
+	var removed: bool = not main._placed_heroes.has("zhao_yun")
+	main._on_payload_received({"type": "update_team", "team_list": [_r12_zhao()]})
+	_r12_place("zhao_yun", Vector2i(3, 4))
+	var replaced: Array = await _record_hits(1.2)
+	_check("R12-6 同一場移除後重新放置：每一擊都是 100", removed and main._placed_heroes.has("zhao_yun") and replaced.size() >= 2 and _all_equal(replaced, 100.0), {"removed": removed, "hits": replaced})
+
+	# R12-7：新的一場（同一關重來，新的 battle_id）重置，第一擊又是 200
+	_load(_r12_payload("r12_b", [tank], "r12-b2", [_r12_zhao()]))
+	_r12_place("zhao_yun")
+	_bm().player_start_battle()
+	var again: Array = await _record_hits(1.2)
+	_check("R12-7 新的一場（新 battle_id）重置：第一擊 200，之後 100", again.size() >= 2 and again[0] == 200.0 and _all_equal(again.slice(1), 100.0), again)
+
+	# R12-8：其他武將（關羽，沒有技能）不受影響
+	_load(_r12_payload("r12_c", [tank], "r12-c1", [_r12_hero("guan_yu", null)]))
+	_r12_place("guan_yu")
+	_bm().player_start_battle()
+	var guan: Array = await _record_hits(1.2)
+	_check("R12-8 沒有技能的武將（關羽）：第一擊就是 100", guan.size() >= 2 and _all_equal(guan, 100.0), guan)
+
+	# R12-9：不認得的技能一律當作普通攻擊
+	_load(_r12_payload("r12_d", [tank], "r12-d1", [_r12_zhao("unknown_skill")]))
+	_r12_place("zhao_yun")
+	_bm().player_start_battle()
+	var unknown: Array = await _record_hits(1.2)
+	_check("R12-9 不認得的技能 id：當作普通攻擊，第一擊就是 100", unknown.size() >= 2 and _all_equal(unknown, 100.0), unknown)
+	_load(_stage_b())

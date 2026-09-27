@@ -36,14 +36,22 @@ var tile_size: int        = 48
 var hero_half: int        = 16
 const SLOW_RATIO: float   = 0.30   # ROAD 英雄對敵人施加的速度倍率
 
+# ── 技能（出征資料 team_list 的 skill，定義在 Web 的 utils/heroSkills）────
+## 奇襲（first_strike）：每場戰鬥首次有效普通攻擊的傷害倍率；1.0 代表沒有這個技能
+var first_strike_multiplier: float = 1.0
+## BattleManager：記錄這一場哪些武將已用過奇襲（記在這裡而不是武將節點，移位、重新放置都不會重置）
+var _battle_mgr: Node     = null
+
 # 顏色（依職業差異）
 var body_color: Color     = Color(0.20, 0.40, 0.80, 1)  # 預設藍
 
 # ═══════════════════════════════════════════
 #  初始化
 # ═══════════════════════════════════════════
-func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: bool, wave_mgr: Node) -> void:
+func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: bool, wave_mgr: Node, battle_mgr: Node = null) -> void:
 	hero_id    = str(state.get("hero_id", ""))
+	_battle_mgr = battle_mgr
+	_read_skill(state)
 	current_hp = float(state.get("hp", 1000))
 	max_hp     = current_hp
 	atk        = float(state.get("atk", 100))
@@ -113,6 +121,13 @@ func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: boo
 
 var def_stat: float = 50.0
 
+## 讀取技能參數；沒有或不認得的技能一律當作普通攻擊
+func _read_skill(state: Dictionary) -> void:
+	first_strike_multiplier = 1.0
+	var skill = state.get("skill", null)
+	if skill is Dictionary and str(skill.get("id", "")) == "first_strike":
+		first_strike_multiplier = max(1.0, float(skill.get("first_attack_multiplier", 1.0)))
+
 # ═══════════════════════════════════════════
 #  _process — 自動攻擊
 # ═══════════════════════════════════════════
@@ -138,8 +153,16 @@ func _process(delta: float) -> void:
 		_clear_all_slows(enemies)
 		return
 
-	# 攻擊
-	target.take_damage(atk)
+	# 攻擊。奇襲：這一場第一次真的攻擊到有效目標時傷害加倍（沒有目標時不會走到這裡，也就不會用掉）
+	var damage: float = atk
+	if first_strike_multiplier > 1.0 and _battle_mgr != null:
+		var boosted: float = atk * first_strike_multiplier
+		if _battle_mgr.consume_first_strike(hero_id, boosted):
+			damage = boosted
+			# Godot 專案沒有中文字型（中文會顯示成方框），用一定顯示得出來的倍率標記（例如「x2!」）；技能說明裡寫明這個標記
+			var m: float = first_strike_multiplier
+			_show_skill_text("x%s!" % (str(int(m)) if is_equal_approx(m, roundf(m)) else String.num(m, 2)))
+	target.take_damage(damage)
 	_is_attacking = true
 	_anim_timer   = 0.22
 	_atk_timer    = attack_speed
@@ -161,6 +184,13 @@ func _find_target(enemies: Array, range_px: float) -> Node:
 			best_progress = e.get_progress_ratio()
 			best = e
 	return best
+
+## 技能觸發時在武將上方顯示的文字（金色、放大，和一般的傷害數字區分）
+func _show_skill_text(text: String) -> void:
+	var ft = load("res://ui/FloatingText.gd").new()
+	get_parent().add_child(ft)
+	ft.scale = Vector2(1.5, 1.5)
+	ft.setup(text, Color(1.0, 0.85, 0.2), global_position + Vector2(0, -hero_half - 12))
 
 func _clear_all_slows(enemies: Array) -> void:
 	if not is_on_road:
@@ -258,6 +288,9 @@ func apply_stat_update(new_state: Dictionary, heroes_config: Array) -> void:
 
 	hero_level = int(new_state.get("level", hero_level))
 	atk        = float(new_state.get("atk", atk))
+	# 技能參數跟著隊伍資料更新；這一場是否已用過奇襲記在 BattleManager，不會因此重置
+	if new_state.has("skill"):
+		_read_skill(new_state)
 	def_stat   = float(new_state.get("def", def_stat))
 	max_hp     = new_max_hp
 	current_hp = new_max_hp * hp_ratio

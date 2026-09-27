@@ -14,6 +14,7 @@ import {
 import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { HeroState, HeroConfig, Rarity, JobClass } from "../../types";
+import HeroSkillInfo from "../../components/HeroSkillInfo";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 // ── 顯示設定 ──────────────────────────────────────────────
@@ -189,6 +190,7 @@ function UpgradeModal({
 
         {/* Body */}
         <div style={{ padding: "1.25rem" }}>
+          <HeroSkillInfo heroId={config.hero_id} variant="full" />
           {/* 目前屬性 */}
           <div
             style={{
@@ -507,6 +509,7 @@ function HeroCard({
           <span style={{ color: "var(--sg-blue)" }}>DEF {hero.def}</span>
           <span style={{ color: "var(--sg-green)" }}>HP {hero.hp}</span>
         </div>
+        <HeroSkillInfo heroId={config.hero_id} variant="tag" />
         <div className={styles.heroHint}>點擊升級</div>
       </div>
     </div>

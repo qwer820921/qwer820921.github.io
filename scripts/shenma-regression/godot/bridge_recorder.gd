@@ -8,6 +8,11 @@ extends "res://bridge/WebBridge.gd"
 
 var sent_stats: Array = []
 var sent_results: Array = []
+var sent_ready: int = 0
+
+func send_ready() -> void:
+	sent_ready += 1
+	super.send_ready()
 
 func send_stats(stats: Dictionary) -> void:
 	sent_stats.append(stats.duplicate(true))

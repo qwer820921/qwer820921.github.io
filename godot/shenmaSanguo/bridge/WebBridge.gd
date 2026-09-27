@@ -66,6 +66,10 @@ func _on_js_message(args: Array) -> void:
 		# 測試用唯讀查詢，頻繁輪詢時不印 log
 		debug_snapshot_requested.emit(str(payload.get("request_id", "")))
 		return
+	if payload.get("type") == "request_ready":
+		# Web 掛上訊息監聽後請遊戲再送一次就緒訊息：遊戲可能比頁面先準備好，第一次的 game_ready 會被漏掉
+		send_ready()
+		return
 	print("[WebBridge] 收到訊號:", payload.get("type", "payload"))
 	if payload.get("type") == "start_battle":
 		start_battle_requested.emit()

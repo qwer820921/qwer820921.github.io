@@ -19,7 +19,7 @@ async (page) => {
       ? ["get_heroes_config", "get_enemies_config", "get_all_maps"]
       : [];
   const BASE = "http://localhost:3000";
-  const EVIDENCE = ".handoff/evidence/round-10";
+  const EVIDENCE = ".handoff/evidence/round-12";
 
   // ── mock 靜態設定：14×11 地圖，第 5 列直線道路，上下兩列建築格 ──
   const ROW = 5;

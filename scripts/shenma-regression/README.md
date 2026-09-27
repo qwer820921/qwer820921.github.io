@@ -76,6 +76,7 @@ GODOT="<編輯器目錄>/Godot_v4.6.2-stable_win64_console.exe" \
 - R3：混合敵人組（缺設定組在第一／中間／最後、無路徑組、`count=0`、空白列、正常多組、自動模式）在清波當下必須「有效敵人全部生成且處理完」，且每波只發一次 `wave_all_spawned`／`wave_cleared`；整波無效（全部組無效、空波、波次缺號、自動模式中途遇到無效波）必須拒絕開戰、不結算，並能切到有效關卡恢復。
 - R9：場次識別碼。關卡資料的 `battle_id` 會帶在 `update_stats` 與結算上；同一關重來後只有新的一場送出訊息；在戰鬥結束最早發出的信號（`state_changed` 進入 RESULT）當下就載入新關卡，送出的結算仍帶產生它的那一場的 `battle_id` 與 `stage_id`（結算在發出任何信號前就建立好）；關卡資料沒有 `battle_id` 時送出空字串。測試暫時把 `Main.web_bridge` 換成 `bridge_recorder.gd`（繼承正式的 `WebBridge.gd`，只在送出前多記一份副本），因為非 Web 平台上訊息不會真的送出。
 - R10：`WebBridge.ready_message()`（`game_ready`）帶協定版本 `protocol: 2`；Web 只在版本相同時送出關卡資料（非 Web 平台不會真的送出，所以直接檢查訊息內容）。
+- R12：趙雲「奇襲」。用敵人實際的血量變化斷言每一擊的傷害（`_record_hits`）：第一擊 200、之後 100；放置後沒有目標不會用掉；同一場換波次、移動位置、更新隊伍、移除後重新放置都不再觸發；新的一場（新 `battle_id`）重置；沒有技能的武將與不認得的技能 id 都是普通攻擊。R12-10：收到 Web 的 `request_ready` 會再送一次 `game_ready`，不會當成關卡資料。
 - 大部分案例只用公開行為判定，可以拿同一支測試對照修正前後；R3-E 的「拒絕信號」檢查需要新版的 `wave_start_rejected` 信號，R9 需要新版的 `battle_id`（修正前會 FAIL，並在讀取 `BattleManager.battle_id` 時出現 SCRIPT ERROR）。
 
 ### 失敗 fixture
@@ -120,6 +121,7 @@ node scripts/shenma-regression/web/player-store.test.mjs
 - Round 9 新增：場次隔離（R9-C6～C8）。C6：切換帳號的讀取、切換前的保存、讀取後的第二次保存在途時才開打，都不能切換。C7：用 `BattleSession` 驗證只接受目前這一場的 `battle_id`：另一個帳號的新場次開打後、同一關重來後，上一場的結算（帶上一場的 `battle_id`）不採用；舊關卡的 stats 晚到不算開打、不上鎖；缺少、錯誤、空白、非字串的 `battle_id` 一律不採用；送到後端的 `save_result` 不含 `battle_id`。C8：store 只接受目前有效那一場的票：開始新的一場、明確離開、換帳號後，舊票不能結算、上鎖或解除新場次的鎖。
   - 切換鎖的 API 從 `setBattleLock(ticket | null)` 改成 `lockBattle(ticket)`／`endBattle(ticket)`（都比對擁有者）。R8-S2、S5 改用 `lock()`／`leave()` 兩個 helper（在舊版會退回 `setBattleLock`，所以同一支測試也能在修正前執行），斷言沒有改。
 - Round 10 新增：切換失敗的提示（R10-N1～N6）：切換送出後才開打、戰鬥中直接切換都會留下 `switchNotice`（不含存檔金鑰），之後合法切換成功或關閉提示就清除；較早的請求晚到（被較新的取代）不會覆蓋較新的提示，較新的切換成功後也不會產生提示；同帳號同步、首次登入失敗不產生切換提示。遊戲版本握手（R10-P1）：只有協定版本和網頁相同的 `game_ready` 才相容。
+- Round 12 新增：R12-S1，武將技能的定義（`utils/heroSkills.ts`）是說明文字與送進 Godot 參數的唯一來源。
 - 輸出 PASS／FAIL 各行與一行 `RESULT_JSON`；有任何失敗時結束碼為 1。
 - **已知限制的 fixture** 另外輸出 `LIMIT` 行，列在 `RESULT_JSON.limitations`，不計入 PASS／FAIL：它記錄「目前仍會發生」的行為（例如 L1：重新整理前已送出的 `save_profile` 晚到伺服器，會蓋掉之後保存的新資料，需要後端版本號）。出現 `LIMIT-CHANGED` 代表行為改變了，要同步更新基準文件與 fixture。
 
@@ -145,12 +147,13 @@ node scripts/shenma-regression/web/player-store.test.mjs
 | 7e   | `r8-web.js`                   | R8：戰鬥中切換帳號被擋下、結算只算給開戰的帳號；正常結算後可切換且 Godot 重新載入新帳號的關卡；切換關卡（明確離開）後可切換，舊結算晚到不採用；連按確認與重複結算只結算一次；獨立戰鬥頁不把 debug_snapshot 當成結算、連按只結算一次                                                                                                                                                                                                                                                                         |
 | 7f   | `r9-web.js`                   | R9：場次隔離。舊場次的結算用 Godot 實際產生、先攔住的那一筆重送：另一個帳號的新場次開打後、同一關重來後才送達都不採用；錯誤／缺少 `battle_id` 的結算不採用、這一場的結算連按與重複送達只結算一次；舊關卡的 stats（Godot 實際送出）晚到不影響 HUD 也不上鎖；切換帳號的讀取或保存在途時才開打，不切換、結算只算給原帳號；獨立戰鬥頁的錯誤／缺少 `battle_id` stats 與結算；回到主頁開打後切換仍被擋下；後端的戰鬥紀錄不含 `battle_id`                                                                          |
 | 7g   | `r10-web.js`                  | R10：遊戲版本不相符與延遲切換失敗。用真實舊產物（`24b1315b` 的 Godot 檔案，需先準備，見下方）：主頁與獨立戰鬥頁都顯示版本提示、不送關卡資料、不開戰；換回新版後重試只重新載入遊戲（頁面不重新整理，未同步的暱稱／隊伍、待確認升級、在途的保存都保留），遊戲的 Service Worker 換成新版本；已移除的 iframe 晚到的訊息不採用；之後正常開戰、只結算一次。新版只是載入慢（`index.pck` 延遲 10 秒）不誤判。切換送出後才開打被擋：視窗先關閉／保持開啟，主畫面都有「未切換」提示且不含金鑰，之後合法切換成功就清除 |
+| 7h   | `r12-web.js`                  | R12：趙雲「奇襲」。主頁武將視窗與武將頁顯示技能名稱與完整規則；主頁（用部署選單實際點選）與獨立戰鬥頁（送同一個 `place_hero` 訊息；畫布縮放不同，格子座標換算不適用）放置趙雲開戰，用快照的 `enemy_hp` 算出每一擊的實際傷害（第一擊 300、之後 150），觸發當下截圖；同一關重來可以再觸發；結算後的 `save_result`、存檔與 session 都不帶技能欄位；F 段讓頁面程式延遲 4 秒載入（遊戲比頁面先送出 `game_ready`），兩個戰鬥頁都不能停在載入中                                                                    |
 | 8    | `fixtures/deliberate-fail.js` | 刻意失敗的 fixture（見下方）；會汙染錯誤紀錄，所以放在最後或另開 context                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 **不經 MCP 執行**（MCP 無法使用，或需要把原始回傳存成檔案時）：
 
 ```bash
-PLAYWRIGHT_DIR=<含 playwright 套件的 node_modules>   node scripts/shenma-regression/tools/run-browser.mjs harness.js i1-init.js i2-lifecycle.js auto-timer.js normal-flows.js r3-mixed.js artifacts-and-network.js r4-web.js r5-web.js r7-web.js r8-web.js r9-web.js r10-web.js
+PLAYWRIGHT_DIR=<含 playwright 套件的 node_modules>   node scripts/shenma-regression/tools/run-browser.mjs harness.js i1-init.js i2-lifecycle.js auto-timer.js normal-flows.js r3-mixed.js artifacts-and-network.js r4-web.js r5-web.js r7-web.js r8-web.js r9-web.js r10-web.js r12-web.js
 ```
 
 同一個 browser context 依序執行同一批腳本，每支的原始回傳寫成證據目錄下的 `<腳本名>.raw.json`；任何一支 `allPass` 不是 `true` 時結束碼為 1。預設使用系統的 Chrome（`BROWSER_CHANNEL=chrome`，和 MCP 相同）、無頭模式（`HEADED=1` 顯示視窗）。專案沒有安裝 playwright，需要用 `PLAYWRIGHT_DIR` 指向現有的套件（例如 Playwright MCP 在 npx 快取裡的 `node_modules`）。在 MCP 裡也可以用 `H.saveLast(page, "檔名.json")` 把最近一次 `run.finish()` 的結果原封不動存檔。
@@ -191,5 +194,5 @@ for f in index.html index.pck index.service.worker.js; do git show 24b1315b:publ
 - Round 10 起兩個戰鬥頁只接受目前遊戲 iframe 送來的訊息（`event.source`）：注入訊息要從遊戲 iframe 內送出（`iframe.contentWindow.eval("window.parent.postMessage(...)")`），從其他視窗送出的會被忽略。`game_ready` 帶協定版本 `protocol`，版本不同時頁面顯示版本提示、不送關卡資料。
 - sessionStorage 在跨來源隔離（COOP，coi／遊戲 Service Worker 加上的標頭）與非隔離的頁面各有一份：從非隔離切到隔離（例如 coi 自動重新載入）時，非隔離那一份有資料就會帶過去、蓋掉隔離那一份；從隔離切到非隔離（強制重新整理、移除 SW 後再進入）時，看到的是非隔離自己那一份。只在其中一種狀態清除，之後會把沒清到的舊 session 帶回來（Round 10 實測：前一段植入的待確認升級出現在下一段；Round 11 的調查見基準文件 §19）。`resetOrigin` 因此清兩次。
 - Godot 送出的 `update_stats` 與結算都帶 `battle_id`（關卡資料送進去的場次識別碼，不含玩家金鑰），頁面只採用目前這一場的訊息；注入舊場次的訊息時要帶那一場實際的 `battle_id`，缺少 id 的訊息只能當成「格式錯誤」的案例。
-- Godot 狀態透過唯讀的 `debug_snapshot` 訊息讀取（`Main.gd` 的 `_on_debug_snapshot_requested`）。回應不含玩家金鑰或存檔（Round 9 起多了目前這一場的 `battle_id`），也不接受修改遊戲狀態；刻意不含 `stage_id`／`result` 欄位，避免 React 誤判為結算訊息。
+- Godot 狀態透過唯讀的 `debug_snapshot` 訊息讀取（`Main.gd` 的 `_on_debug_snapshot_requested`）。回應不含玩家金鑰或存檔（Round 9 起多了目前這一場的 `battle_id`；Round 12 起多了每個敵人目前的血量 `enemy_hp` 與這一場已用過奇襲的武將 `first_strike_used`），也不接受修改遊戲狀態；刻意不含 `stage_id`／`result` 欄位，避免 React 誤判為結算訊息。
 - Playwright MCP 會在倉庫根目錄產生 `.playwright-mcp/`（已 gitignore）。

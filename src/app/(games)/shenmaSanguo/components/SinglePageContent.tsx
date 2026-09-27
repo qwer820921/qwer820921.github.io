@@ -11,6 +11,7 @@ import { getPlayerKey } from "../api/gameApi";
 import { isStageUnlocked } from "../utils/stageUtils";
 import { describePlayerError } from "../utils/playerErrors";
 import { BattleSession, isBattleResultMessage } from "../utils/battleSession";
+import { heroSkillPayload } from "../utils/heroSkills";
 import {
   EngineStatus,
   activateLatestGameWorker,
@@ -545,7 +546,7 @@ export default function SinglePageContent() {
         def: heroConfig?.base_def ?? 0,
         hp: heroConfig?.base_hp ?? 0,
       };
-      return { ...state, slot: slot.slot };
+      return { ...state, slot: slot.slot, ...heroSkillPayload(slot.hero_id) };
     });
 
     // 新的一場：綁定目前帳號，battle_id 送進 Godot，舊關卡的訊息之後一律不採用
@@ -637,7 +638,7 @@ export default function SinglePageContent() {
         def: heroConfig?.base_def ?? 0,
         hp: heroConfig?.base_hp ?? 0,
       };
-      return { ...state, slot: slot.slot };
+      return { ...state, slot: slot.slot, ...heroSkillPayload(slot.hero_id) };
     });
     iframeRef.current.contentWindow.postMessage(
       { __godot_bridge: true, type: "update_team", team_list },
@@ -703,7 +704,7 @@ export default function SinglePageContent() {
           def: heroConfig?.base_def ?? 0,
           hp: heroConfig?.base_hp ?? 0,
         };
-        return { ...state, slot: slot.slot };
+        return { ...state, slot: slot.slot, ...heroSkillPayload(slot.hero_id) };
       });
       // 新的一場（同一關重來也是新的一場）：battle_id 送進 Godot
       const ticket = usePlayerStore.getState().beginBattle();

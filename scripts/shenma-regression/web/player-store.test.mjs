@@ -2254,6 +2254,30 @@ await test("R10-P1", async () => {
   );
 });
 
+// ══════════════════════════════════════════════════════════════
+//  Round 12：武將技能（趙雲「奇襲」）的定義是唯一來源
+//  說明文字與送進 Godot 的參數（出征資料 team_list[].skill）都由 utils/heroSkills 產生
+// ══════════════════════════════════════════════════════════════
+await test("R12-S1", async () => {
+  const { heroSkillOf, heroSkillPayload, describeHeroSkill } = require(
+    join(GAME, "utils/heroSkills.ts")
+  );
+  const zhao = heroSkillOf("zhao_yun");
+  const payload = heroSkillPayload("zhao_yun");
+  const none = heroSkillPayload("guan_yu");
+  check(
+    "R12-S1 趙雲的奇襲：送進 Godot 的參數（first_strike、2 倍）與說明文字出自同一份定義；沒有技能的武將不帶 skill 欄位",
+    zhao?.name === "奇襲" &&
+      zhao.firstAttackMultiplier === 2 &&
+      payload.skill?.id === "first_strike" &&
+      payload.skill?.first_attack_multiplier === zhao.firstAttackMultiplier &&
+      describeHeroSkill(zhao).includes(`${zhao.firstAttackMultiplier} 倍`) &&
+      heroSkillOf("guan_yu") === null &&
+      !("skill" in none),
+    { zhao, payload, none }
+  );
+});
+
 // ── 輸出 ───────────────────────────────────────────────────────
 const failed = results.filter((r) => !r.ok).length;
 console.log(

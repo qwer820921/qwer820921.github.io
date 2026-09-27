@@ -432,7 +432,7 @@ func _place_hero(cell: Vector2i, world_pos: Vector2) -> void:
 	hero.tile_size = _tile_size
 
 	var on_road: bool = game_map.get_tile_type(cell) == game_map.TileType.ROAD
-	hero.setup(_drag_hero_data, _heroes_config, cell, on_road, wave_manager)
+	hero.setup(_drag_hero_data, _heroes_config, cell, on_road, wave_manager, battle_manager)
 	hero.hero_clicked.connect(_on_hero_clicked)
 	hero.hero_died.connect(_on_hero_died)
 
@@ -673,12 +673,14 @@ func _process(delta: float) -> void:
 	_game_time += delta
 
 func _on_debug_snapshot_requested(request_id: String) -> void:
-	# 依 enemy_id 統計仍在場上的敵人節點
+	# 依 enemy_id 統計仍在場上的敵人節點；另外列出每個敵人目前的血量（測試用來算每一擊的實際傷害）
 	var enemy_nodes: Dictionary = {}
+	var enemy_hp: Dictionary = {}
 	for child in units_layer.get_children():
 		if child is Enemy and not child.is_queued_for_deletion():
 			var eid: String = child.enemy_id
 			enemy_nodes[eid] = int(enemy_nodes.get(eid, 0)) + 1
+			enemy_hp[str(child.get_instance_id())] = child.current_hp
 	var snapshot: Dictionary = {
 		"request_id":        request_id,
 		# 刻意不用 stage_id / result 欄位名稱，避免 Web 端誤判為結算訊息
@@ -694,6 +696,7 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"active_enemies":    wave_manager.get_active_enemy_count(),
 		"spawning_groups":   wave_manager.get_spawning_group_count(),
 		"enemy_nodes":       enemy_nodes,
+		"enemy_hp":          enemy_hp,
 		"game_time":         _game_time,
 		"time_scale":        Engine.time_scale,
 	}
