@@ -2278,6 +2278,38 @@ await test("R12-S1", async () => {
   );
 });
 
+await test("R14-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const huang = heroSkillOf("huang_zhong");
+  const payload = heroSkillPayload("huang_zhong");
+  const zhaoPayload = heroSkillPayload("zhao_yun");
+  const lv1 = describeHeroSkill(huang, 5);
+  const lv2 = describeHeroSkill(huang, 5 + 0.03);
+  check(
+    "R14-S1 黃忠的百步穿楊：送進 Godot 的參數（long_range、1.5 倍）、說明文字與實際射程出自同一份定義；參數只帶射程倍率，趙雲的參數不受影響",
+    huang?.id === "long_range" &&
+      huang.name === "百步穿楊" &&
+      payload.skill?.id === "long_range" &&
+      payload.skill?.range_multiplier === huang.rangeMultiplier &&
+      JSON.stringify(Object.keys(payload.skill).sort()) ===
+        '["id","range_multiplier"]' &&
+      JSON.stringify(Object.keys(zhaoPayload.skill).sort()) ===
+        '["first_attack_multiplier","id"]' &&
+      effectiveRange(huang, 5) === 7.5 &&
+      effectiveRange(huang, 5.03) === 7.545 &&
+      effectiveRange(null, 5) === 5 &&
+      lv1.includes(`${huang.rangeMultiplier} 倍`) &&
+      lv1.includes("射程 5 格，戰場上是 7.5 格") &&
+      lv2.includes("射程 5.03 格，戰場上是 7.545 格"),
+    { huang, payload, zhaoPayload, lv1, lv2 }
+  );
+});
+
 // ── 輸出 ───────────────────────────────────────────────────────
 const failed = results.filter((r) => !r.ok).length;
 console.log(

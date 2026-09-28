@@ -5,8 +5,9 @@
 // - PLAYWRIGHT_DIR：playwright 套件所在的 node_modules 目錄（專案本身沒有安裝 playwright）
 // - BROWSER_CHANNEL：預設 chrome（和 Playwright MCP 一樣使用系統的 Chrome）；HEADED=1 會顯示視窗
 // - 前置：npm run dev（http://localhost:3000）
+// - EVIDENCE_DIR：證據目錄（預設是 harness.js 裡的 EVIDENCE）；不同批次用不同目錄，避免互相覆寫
 // 任何一支腳本 allPass 不是 true（或執行時拋出例外）時結束碼為 1
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,6 +32,11 @@ const browser = await chromium.launch({
   headless: process.env.HEADED !== "1",
 });
 const context = await browser.newContext({ acceptDownloads: true });
+if (process.env.EVIDENCE_DIR) {
+  // harness 讀取這個目錄當作證據目錄（截圖與 *.raw.json 都寫在這裡）
+  mkdirSync(process.env.EVIDENCE_DIR, { recursive: true });
+  context.__shenmaEvidence = process.env.EVIDENCE_DIR;
+}
 const page = await context.newPage();
 let failed = 0;
 try {

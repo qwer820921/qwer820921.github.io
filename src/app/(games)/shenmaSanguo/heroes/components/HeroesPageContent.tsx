@@ -190,7 +190,13 @@ function UpgradeModal({
 
         {/* Body */}
         <div style={{ padding: "1.25rem" }}>
-          <HeroSkillInfo heroId={config.hero_id} variant="full" />
+          <HeroSkillInfo
+            heroId={config.hero_id}
+            variant="full"
+            rawRange={
+              config.attack_range + (hero.level - 1) * config.range_growth
+            }
+          />
           {/* 目前屬性 */}
           <div
             style={{

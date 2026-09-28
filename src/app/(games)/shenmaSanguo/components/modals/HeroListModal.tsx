@@ -596,6 +596,10 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                   <HeroSkillInfo
                     heroId={selectedConfig.hero_id}
                     variant="full"
+                    rawRange={
+                      selectedConfig.attack_range +
+                      (selectedHero.level - 1) * selectedConfig.range_growth
+                    }
                   />
                   <HeroDetailContent
                     hero={selectedHero}

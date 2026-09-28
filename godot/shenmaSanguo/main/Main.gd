@@ -681,6 +681,19 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			var eid: String = child.enemy_id
 			enemy_nodes[eid] = int(enemy_nodes.get(eid, 0)) + 1
 			enemy_hp[str(child.get_instance_id())] = child.current_hp
+	# 每位武將目前的有效射程（格），以及到每個敵人的距離（格）：測試用來量射程技能（百步穿楊）
+	var hero_ranges: Dictionary = {}
+	var hero_enemy_dist: Dictionary = {}
+	for hid in _placed_heroes:
+		var hero: Node = _placed_heroes[hid]
+		if not is_instance_valid(hero):
+			continue
+		hero_ranges[hid] = hero.attack_range
+		var dists: Dictionary = {}
+		for child in units_layer.get_children():
+			if child is Enemy and not child.is_queued_for_deletion():
+				dists[str(child.get_instance_id())] = hero.global_position.distance_to(child.global_position) / float(hero.tile_size)
+		hero_enemy_dist[hid] = dists
 	var snapshot: Dictionary = {
 		"request_id":        request_id,
 		# 刻意不用 stage_id / result 欄位名稱，避免 Web 端誤判為結算訊息
@@ -697,6 +710,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"spawning_groups":   wave_manager.get_spawning_group_count(),
 		"enemy_nodes":       enemy_nodes,
 		"enemy_hp":          enemy_hp,
+		"hero_ranges":       hero_ranges,
+		"hero_enemy_dist":   hero_enemy_dist,
 		"game_time":         _game_time,
 		"time_scale":        Engine.time_scale,
 	}

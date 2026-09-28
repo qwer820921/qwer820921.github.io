@@ -39,6 +39,8 @@ const SLOW_RATIO: float   = 0.30   # ROAD 英雄對敵人施加的速度倍率
 # ── 技能（出征資料 team_list 的 skill，定義在 Web 的 utils/heroSkills）────
 ## 奇襲（first_strike）：每場戰鬥首次有效普通攻擊的傷害倍率；1.0 代表沒有這個技能
 var first_strike_multiplier: float = 1.0
+## 百步穿楊（long_range）：有效射程倍率；1.0 代表沒有這個技能。射程每次都從設定重新計算（_compute_range），不會疊乘
+var range_multiplier: float = 1.0
 ## BattleManager：記錄這一場哪些武將已用過奇襲（記在這裡而不是武將節點，移位、重新放置都不會重置）
 var _battle_mgr: Node     = null
 
@@ -69,16 +71,12 @@ func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: boo
 		if cfg.get("hero_id", "") == hero_id:
 			hero_name    = str(cfg.get("name", hero_id))
 			
-			# 基礎屬性
-			var base_range: float = float(cfg.get("attack_range", 2.0))
+			# 基礎屬性與成長係數
 			var base_spd: float   = float(cfg.get("attack_speed", 1.0))
-			
-			# 成長係數
-			var range_growth: float = float(cfg.get("range_growth", 0.0))
-			var spd_growth: float   = float(cfg.get("atk_spd_growth", 0.0))
-			
-			# 計算最終屬性：屬性 = 基礎 + (等級-1) * 成長
-			attack_range = base_range + (hero_level - 1) * range_growth
+			var spd_growth: float = float(cfg.get("atk_spd_growth", 0.0))
+
+			# 計算最終屬性：屬性 = 基礎 + (等級-1) * 成長；射程另外乘上技能倍率
+			attack_range = _compute_range(cfg)
 			
 			# 攻速計算：縮短攻擊間隔 (間隔 = 基礎 * (1 - (等級-1) * 成長))，最快不超過 0.1s
 			attack_speed = max(0.1, base_spd * (1.0 - (hero_level - 1) * spd_growth))
@@ -121,12 +119,25 @@ func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: boo
 
 var def_stat: float = 50.0
 
-## 讀取技能參數；沒有或不認得的技能一律當作普通攻擊
+## 讀取技能參數；沒有或不認得的技能一律當作普通攻擊。每種技能只讀自己的欄位
 func _read_skill(state: Dictionary) -> void:
 	first_strike_multiplier = 1.0
+	range_multiplier = 1.0
 	var skill = state.get("skill", null)
-	if skill is Dictionary and str(skill.get("id", "")) == "first_strike":
-		first_strike_multiplier = max(1.0, float(skill.get("first_attack_multiplier", 1.0)))
+	if not (skill is Dictionary):
+		return
+	match str(skill.get("id", "")):
+		"first_strike":
+			first_strike_multiplier = max(1.0, float(skill.get("first_attack_multiplier", 1.0)))
+		"long_range":
+			range_multiplier = max(1.0, float(skill.get("range_multiplier", 1.0)))
+
+## 有效射程（格）＝（基礎射程 + (等級-1) × 射程成長）× 技能倍率。
+## 每次都從設定重新計算，不在目前的值上再乘：更新隊伍、升級、移位、重新放置都不會疊乘
+func _compute_range(cfg: Dictionary) -> float:
+	var base_range: float   = float(cfg.get("attack_range", 2.0))
+	var range_growth: float = float(cfg.get("range_growth", 0.0))
+	return (base_range + (hero_level - 1) * range_growth) * range_multiplier
 
 # ═══════════════════════════════════════════
 #  _process — 自動攻擊
@@ -297,11 +308,9 @@ func apply_stat_update(new_state: Dictionary, heroes_config: Array) -> void:
 
 	for cfg in heroes_config:
 		if cfg.get("hero_id", "") == hero_id:
-			var base_range: float   = float(cfg.get("attack_range", 2.0))
 			var base_spd: float     = float(cfg.get("attack_speed", 1.0))
-			var range_growth: float = float(cfg.get("range_growth", 0.0))
 			var spd_growth: float   = float(cfg.get("atk_spd_growth", 0.0))
-			attack_range = base_range + (hero_level - 1) * range_growth
+			attack_range = _compute_range(cfg)
 			attack_speed = max(0.1, base_spd * (1.0 - (hero_level - 1) * spd_growth))
 			break
 

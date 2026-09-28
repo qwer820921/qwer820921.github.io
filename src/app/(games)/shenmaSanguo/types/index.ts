@@ -204,11 +204,18 @@ export interface Loot {
  * Web → Godot：武將技能參數（隨出征資料的 team_list 送進去，定義在 utils/heroSkills）
  * 只存在戰場，不寫進玩家存檔；Godot 不認得的 id 一律當作普通攻擊
  */
-export interface HeroSkillPayload {
-  id: string;
-  /** first_strike：每場戰鬥首次有效普通攻擊的傷害倍率 */
-  first_attack_multiplier: number;
-}
+/** 送進 Godot 的技能參數：每種技能只帶自己的欄位（定義在 utils/heroSkills） */
+export type HeroSkillPayload =
+  | {
+      id: "first_strike";
+      /** 每場戰鬥首次有效普通攻擊的傷害倍率 */
+      first_attack_multiplier: number;
+    }
+  | {
+      id: "long_range";
+      /** 有效射程倍率 */
+      range_multiplier: number;
+    };
 
 export interface ExpeditionPayload {
   stage_id: string;

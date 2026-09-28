@@ -70,6 +70,8 @@ func _enemies_cfg() -> Array:
 		# R12：極慢、血厚（量測每一擊的傷害）／血量 300（兩擊打倒，用來清波）
 		{"enemy_id": "tank", "name": "T", "hp": 99999.0, "speed": 4.0},
 		{"enemy_id": "soft", "name": "S", "hp": 300.0, "speed": 4.0},
+		# R14：不會移動（速度 0）、血厚：放在離武將指定格數的位置量射程
+		{"enemy_id": "post", "name": "P", "hp": 99999.0, "speed": 0.0},
 	]
 
 func _payload(stage_id: String, waves: Array) -> Dictionary:
@@ -268,6 +270,9 @@ func _run() -> void:
 	rec_ready._on_js_message([JSON.stringify({"__godot_bridge": true, "type": "request_ready"})])
 	_check("R12-10 收到 request_ready：再送一次 game_ready，不當成關卡資料", rec_ready.sent_ready == 1 and payloads[0] == 0, {"sent_ready": rec_ready.sent_ready, "payloads": payloads[0]})
 	rec_ready.free()
+
+	# ── R14：黃忠「百步穿楊」（有效射程 ×1.5）──
+	await _r14_long_range_cases()
 
 	# ── 輸出 ──
 	var failed: int = 0
@@ -564,4 +569,147 @@ func _r12_first_strike_cases() -> void:
 	_bm().player_start_battle()
 	var unknown: Array = await _record_hits(1.2)
 	_check("R12-9 不認得的技能 id：當作普通攻擊，第一擊就是 100", unknown.size() >= 2 and _all_equal(unknown, 100.0), unknown)
+	_load(_stage_b())
+
+# ── R14 輔助：黃忠「百步穿楊」（有效射程 ×1.5） ──────────────────
+# 設定和正式 heroes_config 的黃忠相同（射程 5、射程成長 0.03）；攻擊間隔改成 0.5 秒，讓測試快一點
+func _r14_huang(level: int = 1, skill: Variant = {"id": "long_range", "range_multiplier": 1.5}) -> Dictionary:
+	var h: Dictionary = _r12_hero("huang_zhong", skill)
+	h["level"] = level
+	return h
+
+func _r14_payload(stage_id: String, battle_id: String, team: Array) -> Dictionary:
+	# 速度 0 的敵人停在原地：測試直接把它放在離武將指定格數的位置
+	var p: Dictionary = _r12_payload(stage_id, [[_grp("post", 1, 0.3)]], battle_id, team)
+	p["heroes_config"].append({"hero_id": "huang_zhong", "name": "黃忠", "job": "archer", "attack_range": 5.0, "range_growth": 0.03, "attack_speed": 0.5})
+	return p
+
+func _first_enemy() -> Node:
+	for c in main.units_layer.get_children():
+		if c is Enemy and is_instance_valid(c) and not c.is_queued_for_deletion():
+			return c
+	return null
+
+## 開戰後等這一場的敵人出現
+func _r14_enemy() -> Node:
+	await _wait_until(func(): return _first_enemy() != null, 5.0)
+	return _first_enemy()
+
+## 把敵人放在武將右邊正好 d 格的位置（距離 = d 格）
+func _r14_put(enemy: Node, hero: Node, d: float) -> void:
+	enemy.global_position = hero.global_position + Vector2(d * float(hero.tile_size), 0.0)
+
+## sec 秒內的每一擊：實際傷害與發生的時間（秒）
+func _record_hits_timed(sec: float) -> Array:
+	var hits: Array = []
+	var last: Dictionary = {}
+	for c in main.units_layer.get_children():
+		if c is Enemy and is_instance_valid(c):
+			last[c.get_instance_id()] = c.current_hp
+	var t0: int = Time.get_ticks_msec()
+	while Time.get_ticks_msec() < t0 + int(sec * 1000.0):
+		for c in main.units_layer.get_children():
+			if c is Enemy and is_instance_valid(c):
+				var id: int = c.get_instance_id()
+				var before: float = float(last.get(id, c.max_hp))
+				if c.current_hp < before - 0.001:
+					hits.append({"dmg": snappedf(before - c.current_hp, 0.01), "t": (Time.get_ticks_msec() - t0) / 1000.0})
+				last[id] = c.current_hp
+		await process_frame
+	return hits
+
+func _dmgs(hits: Array) -> Array:
+	var out: Array = []
+	for h in hits:
+		out.append(h.dmg)
+	return out
+
+## 相鄰兩擊的平均間隔（秒）；少於兩擊時回傳 -1
+func _avg_interval(hits: Array) -> float:
+	if hits.size() < 2:
+		return -1.0
+	return (float(hits[hits.size() - 1].t) - float(hits[0].t)) / float(hits.size() - 1)
+
+func _huang() -> Node:
+	return main._placed_heroes.get("huang_zhong")
+
+## 把敵人放在 d 格、記錄 sec 秒內的每一擊
+func _hits_at(enemy: Node, d: float, sec: float) -> Array:
+	_r14_put(enemy, _huang(), d)
+	return await _record_hits_timed(sec)
+
+func _r14_long_range_cases() -> void:
+	# R14-1～R14-4：Lv1 有效射程 7.5 格（5 × 1.5）
+	_load(_r14_payload("r14_a", "r14-a1", [_r14_huang()]))
+	_r12_place("huang_zhong", Vector2i(3, 4))
+	_check("R14-1 黃忠 Lv1 放置後有效射程 7.5 格（射程 5 × 1.5）", is_equal_approx(_huang().attack_range, 7.5), _huang().attack_range)
+	_bm().player_start_battle()
+	var e: Node = await _r14_enemy()
+	var at6: Array = await _hits_at(e, 6.0, 1.6)
+	_check("R14-2 敵人在 6 格（原射程 5 格外、新射程 7.5 格內）：實際扣血，每一擊都是攻擊力 100（傷害不變、不是奇襲）", at6.size() >= 2 and _all_equal(_dmgs(at6), 100.0), at6)
+	var itv_skill: float = _avg_interval(at6)
+	var at74: Array = await _hits_at(e, 7.4, 1.2)
+	var at752: Array = await _hits_at(e, 7.52, 1.2)
+	var at76: Array = await _hits_at(e, 7.6, 1.2)
+	_check("R14-3 新射程邊界：7.4 格打得到；7.52 格、7.6 格（7.5 格外）打不到", at74.size() >= 1 and at752.is_empty() and at76.is_empty(), {"7.4": at74.size(), "7.52": at752.size(), "7.6": at76.size()})
+
+	# 對照：同一位武將沒有技能時，射程 5 格：6 格打不到、4.9 格打得到；攻擊間隔相同
+	_load(_r14_payload("r14_b", "r14-b1", [_r14_huang(1, null)]))
+	_r12_place("huang_zhong", Vector2i(3, 4))
+	_bm().player_start_battle()
+	var e0: Node = await _r14_enemy()
+	var n6: Array = await _hits_at(e0, 6.0, 1.2)
+	var n49: Array = await _hits_at(e0, 4.9, 1.6)
+	var itv_plain: float = _avg_interval(n49)
+	_check("R14-4 對照：沒有技能時射程 5 格（6 格打不到、4.9 格打得到），每一擊同樣是 100", is_equal_approx(_huang().attack_range, 5.0) and n6.is_empty() and n49.size() >= 2 and _all_equal(_dmgs(n49), 100.0), {"range": _huang().attack_range, "6": n6.size(), "4.9": n49})
+	_check("R14-5 攻擊間隔不因技能改變：有技能與沒有技能都約 0.5 秒", itv_skill > 0.42 and itv_skill < 0.62 and absf(itv_skill - itv_plain) < 0.06, {"skill": itv_skill, "plain": itv_plain})
+
+	# R14-6：Lv2 的射程成長也一起乘上 1.5：(5 + 0.03) × 1.5 = 7.545
+	_load(_r14_payload("r14_c", "r14-c1", [_r14_huang(2)]))
+	_r12_place("huang_zhong", Vector2i(3, 4))
+	_bm().player_start_battle()
+	var e2: Node = await _r14_enemy()
+	var l2_in: Array = await _hits_at(e2, 7.52, 1.2)
+	var l2_out: Array = await _hits_at(e2, 7.57, 1.2)
+	_check("R14-6 Lv2 有效射程 7.545 格（(5 + 0.03) × 1.5）：7.52 格打得到（Lv1 打不到）、7.57 格打不到", is_equal_approx(_huang().attack_range, 7.545) and l2_in.size() >= 1 and l2_out.is_empty(), {"range": _huang().attack_range, "7.52": l2_in.size(), "7.57": l2_out.size()})
+
+	# R14-7：同一場連續更新隊伍三次：不疊乘，仍是 7.545；邊界不變
+	for i in range(3):
+		main._on_payload_received({"type": "update_team", "team_list": [_r14_huang(2)]})
+	var upd_in: Array = await _hits_at(e2, 7.52, 1.2)
+	var upd_out: Array = await _hits_at(e2, 7.6, 1.2)
+	_check("R14-7 連續更新隊伍三次：射程仍是 7.545（沒有變成 11.3 或 17）；7.52 格打得到、7.6 格打不到", is_equal_approx(_huang().attack_range, 7.545) and upd_in.size() >= 1 and upd_out.is_empty(), {"range": _huang().attack_range, "in": upd_in.size(), "out": upd_out.size()})
+
+	# R14-8：更新隊伍時等級改變，從基礎值重算（Lv1 → 7.5、Lv3 → (5 + 0.06) × 1.5 = 7.59）
+	main._on_payload_received({"type": "update_team", "team_list": [_r14_huang(1)]})
+	var r_l1: float = _huang().attack_range
+	main._on_payload_received({"type": "update_team", "team_list": [_r14_huang(3)]})
+	var r_l3: float = _huang().attack_range
+	_check("R14-8 更新隊伍時等級改變：從基礎值重新計算（Lv1 7.5、Lv3 7.59）", is_equal_approx(r_l1, 7.5) and is_equal_approx(r_l3, 7.59), {"lv1": r_l1, "lv3": r_l3})
+
+	# R14-9：移動位置、移除後重新放置：不疊乘
+	main._on_payload_received({"type": "update_team", "team_list": [_r14_huang(1)]})
+	_huang().reposition(Vector2i(4, 4), main.game_map.grid_to_world(Vector2i(4, 4)), main.game_map)
+	var r_moved: float = _huang().attack_range
+	main._on_payload_received({"type": "update_team", "team_list": []})
+	await _wait(0.2)
+	var removed: bool = not main._placed_heroes.has("huang_zhong")
+	main._on_payload_received({"type": "update_team", "team_list": [_r14_huang(1)]})
+	_r12_place("huang_zhong", Vector2i(5, 4))
+	var r_replaced: float = _huang().attack_range if _huang() != null else -1.0
+	var re_in: Array = await _hits_at(e2, 7.4, 1.2)
+	var re_out: Array = await _hits_at(e2, 7.6, 1.2)
+	_check("R14-9 移動位置、移除後重新放置：射程仍是 7.5；7.4 格打得到、7.6 格打不到", is_equal_approx(r_moved, 7.5) and removed and is_equal_approx(r_replaced, 7.5) and re_in.size() >= 1 and re_out.is_empty(), {"moved": r_moved, "removed": removed, "replaced": r_replaced, "in": re_in.size(), "out": re_out.size()})
+
+	# R14-10：新的一場（同一關重來）仍是 7.5
+	_load(_r14_payload("r14_c", "r14-c2", [_r14_huang(1)]))
+	_r12_place("huang_zhong", Vector2i(3, 4))
+	_check("R14-10 新的一場：射程 7.5", is_equal_approx(_huang().attack_range, 7.5), _huang().attack_range)
+
+	# R14-11：不認得的技能 id（帶了 range_multiplier 也一樣）當作普通攻擊；奇襲不影響射程
+	_load(_r14_payload("r14_d", "r14-d1", [_r14_huang(1, {"id": "unknown_skill", "range_multiplier": 1.5}), _r12_zhao()]))
+	_r12_place("huang_zhong", Vector2i(3, 4))
+	_r12_place("zhao_yun", Vector2i(8, 4))
+	var zhao: Node = main._placed_heroes.get("zhao_yun")
+	_check("R14-11 不認得的技能 id：射程維持 5；趙雲（奇襲）的射程不受影響（3）", is_equal_approx(_huang().attack_range, 5.0) and zhao != null and is_equal_approx(zhao.attack_range, 3.0) and is_equal_approx(zhao.first_strike_multiplier, 2.0), {"huang": _huang().attack_range, "zhao": zhao.attack_range if zhao else null})
 	_load(_stage_b())
