@@ -516,6 +516,17 @@ export default function SinglePageContent() {
       case "hide_upgrade_panel":
         setUpgradePanel(null);
         break;
+      case "tower_target_changed":
+        // 防禦塔的目標優先：只在場次與塔的識別碼都和目前面板相同時，換成 Godot 回傳的實際模式（過期的回覆不採用）
+        setUpgradePanel((prev: any) =>
+          prev &&
+          prev.unit_type === "tower" &&
+          prev.battle_id === event.data.battle_id &&
+          prev.tower_uid === event.data.tower_uid
+            ? { ...prev, target_mode: event.data.target_mode }
+            : prev
+        );
+        break;
       default:
         // 只採用目前這一場（battle_id 相同）、開打後的第一筆結算（舊關卡晚到、重複送達的都不採用）
         if (
@@ -779,6 +790,17 @@ export default function SinglePageContent() {
     sendToGodot({ type: "deselect_unit" });
   };
 
+  // 防禦塔的目標優先：帶回面板上的 battle_id 與塔的識別碼，Godot 確認是同一場、同一座塔才套用
+  const handleSetTargetMode = (mode: string) => {
+    if (!upgradePanel?.tower_uid) return;
+    sendToGodot({
+      type: "set_tower_target",
+      battle_id: upgradePanel.battle_id,
+      tower_uid: upgradePanel.tower_uid,
+      mode,
+    });
+  };
+
   const handleConfirmResult = () => {
     // 同一場只確認一次（連按不會重複結算）；結算只算給開戰時的帳號
     const taken = sessionRef.current.take();
@@ -892,6 +914,7 @@ export default function SinglePageContent() {
               data={upgradePanel}
               onUpgrade={handleUpgradeUnit}
               onClose={handleCloseUpgradePanel}
+              onSetTargetMode={handleSetTargetMode}
             />
           )}
         </div>

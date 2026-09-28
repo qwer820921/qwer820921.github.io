@@ -16,7 +16,9 @@ signal debug_snapshot_requested(request_id: String)
 ## Web ↔ Godot 橋接協定的版本：game_ready 帶給 Web，Web 只在版本和自己相同時才送出關卡資料。
 ## 版本不同（例如瀏覽器還在用舊版遊戲的快取）時，Web 會提示更新，不會開戰。
 ## 2：update_stats 與結算帶 battle_id（Round 9）
-const BRIDGE_PROTOCOL: int = 2
+## 3：防禦塔目標優先（Round 17）：set_tower_target 命令與 tower_target_changed 回覆；舊版遊戲不認得這個命令，
+##    所以提升版本，讓網頁對舊版遊戲顯示更新提示，而不是讓面板的選項默默失效
+const BRIDGE_PROTOCOL: int = 3
 
 
 var _msg_callback: JavaScriptObject
@@ -146,6 +148,15 @@ func send_debug_snapshot(data: Dictionary) -> void:
 	data["type"] = "debug_snapshot"
 	if OS.get_name() != "Web":
 		print("[WebBridge] (非 Web) 快照：", data)
+		return
+	var json = JSON.stringify(data)
+	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
+
+## 防禦塔的目標優先已套用：回傳塔的實際模式（同一場的 battle_id 與塔的識別碼），面板只顯示這個
+func send_tower_target_changed(data: Dictionary) -> void:
+	data["__godot_bridge"] = true
+	data["type"] = "tower_target_changed"
+	if OS.get_name() != "Web":
 		return
 	var json = JSON.stringify(data)
 	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)

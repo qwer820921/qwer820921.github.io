@@ -97,6 +97,16 @@ var stack_slow_amount: float = 0.0     # 疊加減速量 (文士塔)
 var body_color: Color      = Color.GREEN
 var tower_name: String     = "弓兵塔"
 
+## 目標優先（Round 17）：只存在這一場的記憶體（不寫存檔），新放置的塔一律從 "first" 開始。
+## - "first"：路線進度最高（既有行為；比的是路點進度，不是精確的「離基地剩餘距離」）
+## - "strongest"：當下血量最多；"weakest"：當下血量最少（比 current_hp，不是最大血量或百分比）
+## 血量相同時看路線進度，再相同維持候選的原順序。只改主要目標：砲兵的範圍傷害、文士的減速跟著主要目標，
+## 步兵的緩速光環照舊作用於範圍內所有敵人
+const TARGET_MODES: Array = ["first", "strongest", "weakest"]
+var target_mode: String    = "first"
+## 這座塔的識別碼（Main 放置時指定，同一個頁面內不重複）：Web 的命令用它確認是同一座塔
+var tower_uid: String      = ""
+
 var grid_cell: Vector2i    = Vector2i.ZERO
 var tile_size: int         = 48
 var _texture: Texture2D    = null
@@ -187,18 +197,36 @@ func _process(delta: float) -> void:
 	queue_redraw()
 	_sfx("tower_shoot")
 
+## 每次準備攻擊時，依目前的目標優先與敵人當下的狀態重新挑選（射程內、有效、活著的敵人）
 func _find_target(enemies: Array, range_px: float) -> Node:
-	# 選進度最靠近基地的敵人
-	var best: Node         = null
-	var best_prog: float   = -1.0
+	var best: Node = null
 	for e in enemies:
 		if not is_instance_valid(e) or e.is_dead():
 			continue
-		var dist: float = global_position.distance_to(e.global_position)
-		if dist <= range_px and e.get_progress_ratio() > best_prog:
-			best_prog = e.get_progress_ratio()
+		if global_position.distance_to(e.global_position) > range_px:
+			continue
+		if best == null or _better_target(e, best):
 			best = e
 	return best
+
+## a 是否比目前的 b 更優先（相同時回傳 false，保留先出現的候選）
+func _better_target(a: Node, b: Node) -> bool:
+	match target_mode:
+		"strongest":
+			if not is_equal_approx(a.current_hp, b.current_hp):
+				return a.current_hp > b.current_hp
+		"weakest":
+			if not is_equal_approx(a.current_hp, b.current_hp):
+				return a.current_hp < b.current_hp
+	return a.get_progress_ratio() > b.get_progress_ratio()
+
+## 切換目標優先：只換之後挑選目標的方式，不重置攻擊冷卻、不立即攻擊、不動射程／傷害／等級。不認得的模式不套用
+func set_target_mode(mode: String) -> bool:
+	if not TARGET_MODES.has(mode):
+		return false
+	target_mode = mode
+	queue_redraw()
+	return true
 
 func _attack_aoe(primary: Node, all_enemies: Array) -> void:
 	for e in all_enemies:

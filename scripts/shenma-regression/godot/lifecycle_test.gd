@@ -87,6 +87,10 @@ func _enemies_cfg() -> Array:
 		{"enemy_id": "post", "name": "P", "hp": 99999.0, "speed": 0.0},
 		# R15：不會移動、血量 130（普通攻擊 100 後剩 30，灼燒第 2 跳打倒）
 		{"enemy_id": "ember", "name": "E", "hp": 130.0, "speed": 0.0},
+		# R17：不會移動、血量不同（防禦塔目標優先）
+		{"enemy_id": "t_front", "name": "F", "hp": 1000.0, "speed": 0.0},
+		{"enemy_id": "t_tank", "name": "K", "hp": 5000.0, "speed": 0.0},
+		{"enemy_id": "t_weak", "name": "W", "hp": 300.0, "speed": 0.0},
 	]
 
 func _payload(stage_id: String, waves: Array) -> Dictionary:
@@ -277,7 +281,7 @@ func _run() -> void:
 	# ── R10：就緒訊息帶協定版本（Web 用來判斷遊戲版本是否相符）──
 	var bridge: Node = main.web_bridge
 	var ready: Dictionary = bridge.ready_message() if bridge.has_method("ready_message") else {}
-	_check("R10-1 game_ready 帶協定版本 2（Web 只在版本相同時送出關卡資料）", ready.get("type") == "game_ready" and ready.get("__godot_bridge") == true and typeof(ready.get("protocol")) == TYPE_INT and ready.get("protocol") == 2, ready)
+	_check("R10-1 game_ready 帶協定版本 3（Round 17 起；Web 只在版本相同時送出關卡資料）", ready.get("type") == "game_ready" and ready.get("__godot_bridge") == true and typeof(ready.get("protocol")) == TYPE_INT and ready.get("protocol") == 3, ready)
 
 	# ── R12：趙雲「奇襲」（每場戰鬥首次有效普通攻擊 2 倍傷害）──
 	await _r12_first_strike_cases()
@@ -298,6 +302,9 @@ func _run() -> void:
 
 	# ── R16：攻速成長（D17）──
 	await _r16_attack_speed_cases()
+
+	# ── R17：防禦塔目標優先 ──
+	await _r17_tower_target_cases()
 
 	# ── 輸出 ──
 	var failed: int = 0
@@ -1161,4 +1168,304 @@ func _r16_attack_speed_cases() -> void:
 	_load(_r16_payload("r16-d1", [_r16_guan(2)], {"speed_growth": 0.2}))
 	_r12_place("guan_yu", Vector2i(3, 4))
 	_check("R16-7 Godot 只讀 atk_spd_growth：設定只有 speed_growth 時 Lv2 仍是 0.5 秒（別名由 Web 正規化）", _guan() != null and is_equal_approx(_guan().attack_speed, 0.5), _guan().attack_speed if _guan() else null)
+	_load(_stage_b())
+
+# ── R17：防禦塔目標優先（Round 17）──
+# 三個不會移動的敵人同時在塔的射程內：生成順序是 weak、front、tank；路線進度（路點序號 ÷ 路點數）
+# 設成 front 0.75、tank 0.5、weak 0.25；血量 front 1000、tank 5000、weak 300。
+# 「優先前方」打 front、「血量最多」打 tank、「血量最少」打 weak，用實際的血量下降（或減速）判斷打中誰。
+# 塔的攻擊在 _process：時間用遊戲時間（_gt）
+func _r17_payload(battle_id: String, waves: int = 1) -> Dictionary:
+	var ws: Array = []
+	for i in range(waves):
+		ws.append([_grp("t_weak", 1, 0.3), _grp("t_front", 1, 0.3), _grp("t_tank", 1, 0.3)])
+	var p: Dictionary = _r12_payload("r17_a", ws, battle_id, [_r12_hero("guan_yu", null)])
+	# 四個路點：路線進度可以是 0.25、0.5、0.75（兩個路點時同一段路上的敵人進度都相同）
+	p["map"]["path_json"]["paths"] = {"path_a": [[0, 5], [4, 5], [8, 5], [13, 5]]}
+	return p
+
+func _r17_enemies() -> Dictionary:
+	var d: Dictionary = {}
+	for c in main.units_layer.get_children():
+		if c is Enemy and is_instance_valid(c) and not c.is_queued_for_deletion() and not c.is_dead():
+			d[c.enemy_id] = c
+	return d
+
+## 敵人放在塔旁邊（off 的單位是格），並設定路線進度
+func _r17_place_enemies(tower: Node, es: Dictionary, off: Dictionary) -> void:
+	var wp: Dictionary = {"t_front": 3, "t_tank": 2, "t_weak": 1}
+	var t: float = float(tower.tile_size)
+	for k in es:
+		es[k].global_position = tower.global_position + off.get(k, Vector2(20, 20)) * t
+		es[k]._wp_index = wp[k]
+
+func _r17_off() -> Dictionary:
+	return {"t_front": Vector2(0.6, 0.9), "t_tank": Vector2(-0.6, 0.9), "t_weak": Vector2(0.0, 1.3)}
+
+## 載入這一場、在 (3,4) 放一座塔、開戰，等三個敵人出現後放到射程內
+func _r17_start(battle_id: String, tower_type: String, off: Dictionary = {}, waves: int = 1) -> Dictionary:
+	_load(_r17_payload(battle_id, waves))
+	main._on_web_place_tower({"tower_type": tower_type, "cell_x": 3, "cell_y": 4})
+	var tower: Node = main.game_map.get_occupant(Vector2i(3, 4))
+	_bm().player_start_battle()
+	await _wait_until(func(): return _r17_enemies().size() == 3, 5.0)
+	var es: Dictionary = _r17_enemies()
+	if tower != null and es.size() == 3:
+		_r17_place_enemies(tower, es, off if not off.is_empty() else _r17_off())
+	return {"tower": tower, "e": es}
+
+## sec 秒（遊戲時間）內，每種敵人受到的傷害、被打中的時間（相對開始）、最低的移動倍率與疊加減速
+func _r17_hits(es: Dictionary, sec: float) -> Dictionary:
+	var dmg: Dictionary = {}
+	var times: Dictionary = {}
+	var last: Dictionary = {}
+	var slow: Dictionary = {}
+	var stack: Dictionary = {}
+	for k in es:
+		dmg[k] = 0.0
+		times[k] = []
+		last[k] = es[k].current_hp if is_instance_valid(es[k]) else 0.0
+		slow[k] = 1.0
+		stack[k] = 0.0
+	var t0: float = _gt()
+	var wall_end: int = Time.get_ticks_msec() + int(sec * 4000.0) + 10000
+	while _gt() < t0 + sec and Time.get_ticks_msec() < wall_end:
+		await process_frame
+		for k in es:
+			# 先檢查再指定：已釋放（死亡後移除）的敵人不能指定給有型別的變數
+			if not is_instance_valid(es[k]):
+				continue
+			var e: Node = es[k]
+			if e.current_hp < float(last[k]) - 0.001:
+				dmg[k] = float(dmg[k]) + float(last[k]) - e.current_hp
+				times[k].append(snappedf(_gt() - t0, 0.001))
+			last[k] = e.current_hp
+			slow[k] = minf(float(slow[k]), e.speed_mult)
+			stack[k] = maxf(float(stack[k]), e._stack_slow_amount)
+	return {"dmg": dmg, "times": times, "slow": slow, "stack": stack}
+
+## 只有 kind 受到傷害（其他敵人沒有）
+func _r17_only(r: Dictionary, kind: String) -> bool:
+	for k in r.dmg:
+		if (k == kind) != (float(r.dmg[k]) > 0.0):
+			return false
+	return true
+
+func _r17_cmd(tower: Node, mode: String, bid: String = "", uid: String = "") -> void:
+	main._on_payload_received({"type": "set_tower_target", "battle_id": bid if bid != "" else _bm().battle_id, "tower_uid": uid if uid != "" else tower.tower_uid, "mode": mode})
+
+## 等到這座塔打中任何一個敵人的那一幀，回傳那一幀的遊戲時間 t 與那一幀的長度 dt（沒有等到時 t 是 -1）
+func _r17_wait_hit(es: Dictionary, timeout: float = 3.0) -> Dictionary:
+	var last: Dictionary = {}
+	for k in es:
+		last[k] = es[k].current_hp if is_instance_valid(es[k]) else 0.0
+	var g_end: float = _gt() + timeout
+	var wall_end: int = Time.get_ticks_msec() + 20000
+	var prev: float = _gt()
+	while _gt() < g_end and Time.get_ticks_msec() < wall_end:
+		prev = _gt()
+		await process_frame
+		for k in es:
+			if is_instance_valid(es[k]) and es[k].current_hp < float(last[k]) - 0.001:
+				return {"t": _gt(), "dt": _gt() - prev}
+	return {"t": -1.0, "dt": 0.0}
+
+func _r17_tower_target_cases() -> void:
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	# 和正式的 WebBridge 一樣：rec 收到 Web 的 JSON 後，不認得的類型交給 Main 的 payload 處理
+	rec.payload_received.connect(main._on_payload_received)
+
+	# R17-1：新放置的弓兵塔預設「優先前方」；面板帶這座塔的識別碼、這一場的 battle_id 與實際模式
+	var s: Dictionary = await _r17_start("r17-a1", "archer")
+	var tw: Node = s.tower
+	var es: Dictionary = s.e
+	if tw == null or es.size() != 3:
+		_check("R17 前置：放置弓兵塔並等到三個敵人", false, {"tower": tw, "enemies": es.keys()})
+		main.web_bridge = original
+		rec.free()
+		return
+	main._on_tower_clicked(tw)
+	var panel1: Dictionary = rec.sent_panels.back() if not rec.sent_panels.is_empty() else {}
+	var r1: Dictionary = await _r17_hits(es, 1.7)
+	_check("R17-1 預設「優先前方」：面板帶塔的識別碼、這一場的 battle_id 與實際模式 first；三個敵人都在射程內時只打路線進度最高的 front（生成順序 weak 在前，不是取第一個候選）", tw.target_mode == "first" and panel1.get("tower_uid") == tw.tower_uid and tw.tower_uid != "" and panel1.get("battle_id") == "r17-a1" and panel1.get("target_mode") == "first" and _r17_only(r1, "t_front"), {"panel": panel1, "dmg": r1.dmg})
+
+	# R17-2：切換不偷跑冷卻：看到一擊的那一幀（剛設回 0.8 秒）立刻經由橋接的 JSON 切到「血量最多」，
+	# 下一擊仍在 0.8 秒到 0.8 秒＋一幀之後，打的是 tank；Godot 回傳實際模式；金幣、攻擊力、射程、等級不變
+	var gold0: int = _bm().battle_gold
+	var atk0: float = tw.atk
+	var range0: float = tw.range_tiles
+	var hit_a: Dictionary = await _r17_wait_hit(es)
+	rec._on_js_message([JSON.stringify({"__godot_bridge": true, "type": "set_tower_target", "battle_id": "r17-a1", "tower_uid": tw.tower_uid, "mode": "strongest"})])
+	var reply2: Dictionary = rec.sent_tower_targets.back() if not rec.sent_tower_targets.is_empty() else {}
+	var tank_hp0: float = es.t_tank.current_hp
+	var hit_b: Dictionary = await _r17_wait_hit(es)
+	# 攻擊只會發生在某一幀：間隔在 0.8 秒到 0.8 秒＋看到第二擊那一幀的長度之間
+	var itv: float = float(hit_b.t) - float(hit_a.t)
+	var r2: Dictionary = await _r17_hits(es, 1.7)
+	_check("R17-2 切換到「血量最多」：Godot 回傳 {battle_id, tower_uid, target_mode: strongest}；切換不重置冷卻（下一擊間隔在 0.8 秒到 0.8 秒＋一幀）、不額外攻擊；之後只打 tank；金幣、攻擊力、射程、等級不變", reply2.get("battle_id") == "r17-a1" and reply2.get("tower_uid") == tw.tower_uid and reply2.get("target_mode") == "strongest" and tw.target_mode == "strongest" and float(hit_a.t) > 0.0 and float(hit_b.t) > 0.0 and itv >= 0.8 - 0.0005 and itv <= 0.8 + float(hit_b.dt) + 0.0005 and es.t_tank.current_hp < tank_hp0 and _r17_only(r2, "t_tank") and _bm().battle_gold == gold0 and is_equal_approx(tw.atk, atk0) and is_equal_approx(tw.range_tiles, range0) and tw.tower_level == 1, {"reply": reply2, "interval": itv, "frame": hit_b.dt, "dmg": r2.dmg})
+
+	# R17-3：「血量最少」只打 weak
+	_r17_cmd(tw, "weakest")
+	await _r17_wait_hit(es)
+	var r3: Dictionary = await _r17_hits(es, 1.7)
+	_check("R17-3 切換到「血量最少」：之後只打 weak（當下血量最少）", tw.target_mode == "weakest" and _r17_only(r3, "t_weak"), r3.dmg)
+
+	# R17-4：每次攻擊都依「當下」血量重新挑選：「血量最多」時把 tank 的血量降到 500（最大血量仍是 5000，幾擊內不會死），
+	# 之後改打 front（1000）。比的若是最大血量，會繼續打 tank
+	_r17_cmd(tw, "strongest")
+	es.t_tank.current_hp = 500.0
+	await _r17_wait_hit(es)
+	var r4: Dictionary = await _r17_hits(es, 1.7)
+	_check("R17-4 依當下血量重新挑選：「血量最多」時 tank 的血量降到 500（最大血量 5000），之後改打 front（1000）", _r17_only(r4, "t_front"), r4.dmg)
+	_load(_stage_b())
+
+	# R17-5：平手：「血量最少」時 weak 與 front 都是 400 → 看路線進度（front 0.75 > weak 0.25）；
+	# 進度也相同時維持候選的原順序（生成順序 weak 在前）
+	s = await _r17_start("r17-b1", "archer")
+	tw = s.tower
+	es = s.e
+	main._on_tower_clicked(tw)
+	_r17_cmd(tw, "weakest")
+	# 設好血量後直接記錄：決定打誰的是設定後的第一擊（之後被打的那個血量更少，仍是同一個）
+	await _r17_wait_hit(es)
+	es.t_weak.current_hp = 400.0
+	es.t_front.current_hp = 400.0
+	var r5a: Dictionary = await _r17_hits(es, 0.9)
+	await _r17_wait_hit(es)
+	es.t_weak.current_hp = 400.0
+	es.t_front.current_hp = 400.0
+	es.t_front._wp_index = 1
+	var r5b: Dictionary = await _r17_hits(es, 0.9)
+	_check("R17-5 平手：血量相同時打路線進度較高的 front；進度也相同時維持原順序（weak）", float(r5a.dmg.t_front) > 0.0 and float(r5a.dmg.t_weak) == 0.0 and float(r5b.dmg.t_weak) > 0.0 and float(r5b.dmg.t_front) == 0.0, {"a": r5a.dmg, "b": r5b.dmg})
+
+	# R17-6：射程外、死亡、沒有目標：weak 移到射程外 → 改打 front；front 死亡 → 改打 tank；
+	# 三個都不在射程內 → 不攻擊；tank 回到射程內 → 繼續攻擊
+	es.t_front._wp_index = 3
+	es.t_weak.global_position = tw.global_position + Vector2(8.0, 0.0) * float(tw.tile_size)
+	await _r17_wait_hit(es)
+	var r6a: Dictionary = await _r17_hits(es, 0.9)
+	es.t_front.take_damage(99999.0)
+	await _r17_wait_hit(es)
+	var r6b: Dictionary = await _r17_hits(es, 0.9)
+	es.t_tank.global_position = tw.global_position + Vector2(-8.0, 0.0) * float(tw.tile_size)
+	var r6c: Dictionary = await _r17_hits(es, 1.7)
+	es.t_tank.global_position = tw.global_position + Vector2(0.0, 1.0) * float(tw.tile_size)
+	var r6d: Dictionary = await _r17_hits(es, 1.0)
+	_check("R17-6 只選射程內活著的敵人：weak 在射程外時打 front；front 死亡後打 tank；沒有目標時不攻擊；回到射程內繼續", _r17_only(r6a, "t_front") and float(r6b.dmg.t_tank) > 0.0 and float(r6b.dmg.t_weak) == 0.0 and float(r6c.dmg.t_tank) == 0.0 and float(r6c.dmg.t_weak) == 0.0 and float(r6d.dmg.t_tank) > 0.0, {"a": r6a.dmg, "b": r6b.dmg, "none": r6c.dmg, "back": r6d.dmg})
+	_load(_stage_b())
+
+	# R17-7：砲兵塔只改主要目標，範圍傷害照舊：weak 與 front 相距 0.5 格（範圍 80 像素內），tank 在另一側。
+	# 「血量最少」→ 主要目標 weak，weak 與 front 各受 80；「血量最多」→ 主要目標 tank，只有 tank 受傷
+	var art_off: Dictionary = {"t_weak": Vector2(-1.8, 0.0), "t_front": Vector2(-1.8, 0.5), "t_tank": Vector2(1.8, 0.0)}
+	s = await _r17_start("r17-c1", "artillery", art_off)
+	tw = s.tower
+	es = s.e
+	main._on_tower_clicked(tw)
+	_r17_cmd(tw, "weakest")
+	await _r17_wait_hit(es, 4.0)
+	var r7a: Dictionary = await _r17_hits(es, 3.1)
+	_r17_cmd(tw, "strongest")
+	await _r17_wait_hit(es, 4.0)
+	var r7b: Dictionary = await _r17_hits(es, 3.1)
+	_check("R17-7 砲兵塔：主要目標依模式（最少→weak、最多→tank），範圍傷害照舊（weak 為主時 front 也受 80）", float(r7a.dmg.t_weak) > 0.0 and is_equal_approx(float(r7a.dmg.t_weak), float(r7a.dmg.t_front)) and float(r7a.dmg.t_tank) == 0.0 and _r17_only(r7b, "t_tank"), {"weakest": r7a.dmg, "strongest": r7b.dmg, "aoe_px": tw.aoe_radius, "tile": tw.tile_size})
+	_load(_stage_b())
+
+	# R17-8：文士塔的減速跟著主要目標：「血量最多」→ 只有 tank 有疊加減速
+	s = await _r17_start("r17-d1", "scholar")
+	tw = s.tower
+	es = s.e
+	main._on_tower_clicked(tw)
+	_r17_cmd(tw, "strongest")
+	var r8: Dictionary = await _r17_hits(es, 1.5)
+	_check("R17-8 文士塔：「血量最多」時只有 tank 被疊加減速（沒有傷害）", float(r8.stack.t_tank) > 0.0 and float(r8.stack.t_front) == 0.0 and float(r8.stack.t_weak) == 0.0, {"stack": r8.stack, "dmg": r8.dmg})
+	_load(_stage_b())
+
+	# R17-9：步兵塔：傷害打「血量最少」的 weak；緩速光環照舊作用於射程內所有敵人（不因模式改變）
+	s = await _r17_start("r17-e1", "infantry", {"t_front": Vector2(0.5, 0.9), "t_tank": Vector2(-0.5, 0.9), "t_weak": Vector2(0.0, 1.3)})
+	tw = s.tower
+	es = s.e
+	main._on_tower_clicked(tw)
+	_r17_cmd(tw, "weakest")
+	await _r17_wait_hit(es, 3.0)
+	var r9: Dictionary = await _r17_hits(es, 3.2)
+	_check("R17-9 步兵塔：傷害只打 weak；緩速光環照舊作用於射程內三個敵人", _r17_only(r9, "t_weak") and float(r9.slow.t_weak) < 1.0 and float(r9.slow.t_front) < 1.0 and float(r9.slow.t_tank) < 1.0, {"dmg": r9.dmg, "slow": r9.slow})
+	_load(_stage_b())
+
+	# R17-10：騎兵塔：「血量最少」只打 weak
+	s = await _r17_start("r17-e2", "cavalry")
+	tw = s.tower
+	es = s.e
+	main._on_tower_clicked(tw)
+	_r17_cmd(tw, "weakest")
+	await _r17_wait_hit(es, 3.0)
+	var r10: Dictionary = await _r17_hits(es, 2.5)
+	_check("R17-10 騎兵塔：「血量最少」只打 weak", _r17_only(r10, "t_weak"), r10.dmg)
+	_load(_stage_b())
+
+	# R17-11：每座塔獨立；升級、關閉再開啟面板、跨波都保留
+	s = await _r17_start("r17-f1", "archer", {}, 2)
+	tw = s.tower
+	es = s.e
+	main._on_web_place_tower({"tower_type": "archer", "cell_x": 6, "cell_y": 4})
+	var tw2: Node = main.game_map.get_occupant(Vector2i(6, 4))
+	main._on_tower_clicked(tw)
+	_r17_cmd(tw, "weakest")
+	var n_panels: int = rec.sent_panels.size()
+	main._on_web_upgrade_unit()
+	var up_panel: Dictionary = rec.sent_panels.back() if rec.sent_panels.size() > n_panels else {}
+	main._deselect_unit()
+	main._on_tower_clicked(tw)
+	var reopen: Dictionary = rec.sent_panels.back()
+	# 打倒第一波，手動開第二波：同一座塔仍是「血量最少」
+	for k in es:
+		es[k].take_damage(999999.0)
+	await _wait_until(func(): return _bm().game_state == BattleManager.GameState.PREP, 3.0)
+	_bm().player_start_battle()
+	await _wait_until(func(): return _r17_enemies().size() == 3, 5.0)
+	var es2: Dictionary = _r17_enemies()
+	if es2.size() == 3:
+		_r17_place_enemies(tw, es2, _r17_off())
+	await _r17_wait_hit(es2)
+	var r11: Dictionary = await _r17_hits(es2, 1.5)
+	_check("R17-11 每座塔獨立（第二座仍是 first）；升級後 Lv2 仍是「血量最少」、面板帶實際模式；關閉再開啟仍是；第二波仍只打 weak", tw2 != null and tw2.target_mode == "first" and tw2.tower_uid != tw.tower_uid and tw.tower_level == 2 and up_panel.get("target_mode") == "weakest" and reopen.get("target_mode") == "weakest" and _bm().current_wave == 2 and es2.size() == 3 and float(r11.dmg.get("t_weak", 0.0)) > 0.0 and float(r11.dmg.get("t_tank", 0.0)) == 0.0, {"tw2": tw2.target_mode if tw2 else null, "level": tw.tower_level, "up_panel": up_panel.get("target_mode"), "reopen": reopen.get("target_mode"), "wave": _bm().current_wave, "dmg": r11.dmg})
+
+	# R17-12：新的一場：舊塔移除，新放置的塔從「優先前方」開始；上一場的命令不套用、不回覆
+	var old_uid: String = tw.tower_uid
+	s = await _r17_start("r17-g1", "archer")
+	tw = s.tower
+	es = s.e
+	main._on_tower_clicked(tw)
+	var n_reply: int = rec.sent_tower_targets.size()
+	_r17_cmd(tw, "weakest", "r17-f1")
+	_r17_cmd(tw, "weakest", "", old_uid)
+	_check("R17-12 新的一場：新塔是 first、識別碼不同；上一場的 battle_id 或舊塔的識別碼送來的命令都不套用、不回覆", tw.target_mode == "first" and tw.tower_uid != old_uid and rec.sent_tower_targets.size() == n_reply, {"mode": tw.target_mode, "uid": tw.tower_uid, "old": old_uid, "replies": rec.sent_tower_targets.size() - n_reply})
+
+	# R17-13：錯誤的命令一律不套用、不回覆：另一座塔的識別碼、不認得的模式、沒有選取、選取的是武將、這一場結束之後
+	main._on_web_place_tower({"tower_type": "archer", "cell_x": 6, "cell_y": 4})
+	var tw_b: Node = main.game_map.get_occupant(Vector2i(6, 4))
+	main._on_tower_clicked(tw)
+	n_reply = rec.sent_tower_targets.size()
+	_r17_cmd(tw, "weakest", "", tw_b.tower_uid)
+	_r17_cmd(tw, "closest")
+	main._deselect_unit()
+	_r17_cmd(tw, "weakest")
+	_r12_place("guan_yu", Vector2i(8, 4))
+	var guan: Node = main._placed_heroes.get("guan_yu")
+	if guan != null:
+		main._on_hero_clicked(guan)
+	_r17_cmd(tw, "weakest")
+	var mid_ok: bool = tw.target_mode == "first" and tw_b.target_mode == "first" and rec.sent_tower_targets.size() == n_reply
+	main._on_tower_clicked(tw)
+	for k in es:
+		if is_instance_valid(es[k]):
+			es[k].take_damage(999999.0)
+	await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 3.0)
+	_r17_cmd(tw, "weakest")
+	_check("R17-13 錯誤的命令不套用、不回覆：另一座塔的識別碼、不認得的模式、沒有選取、選取的是武將、這一場結束（RESULT）之後", mid_ok and guan != null and _bm().game_state == BattleManager.GameState.RESULT and tw.target_mode == "first" and tw_b.target_mode == "first" and rec.sent_tower_targets.size() == n_reply, {"mode": [tw.target_mode, tw_b.target_mode], "replies": rec.sent_tower_targets.size() - n_reply, "state": _bm().game_state})
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
 	_load(_stage_b())

@@ -2,8 +2,10 @@
  * Web ↔ Godot 橋接協定的版本（和 Godot WebBridge.gd 的 BRIDGE_PROTOCOL 相同）
  * Godot 的 game_ready 帶這個版本；版本相同才送出關卡資料
  * 2：update_stats 與結算帶 battle_id（Round 9）
+ * 3：防禦塔目標優先（Round 17）：set_tower_target 命令與 tower_target_changed 回覆。
+ *    舊版遊戲不認得這個命令，所以提升版本：網頁對舊版遊戲顯示更新提示，不讓面板的選項默默失效
  */
-export const BRIDGE_PROTOCOL = 2;
+export const BRIDGE_PROTOCOL = 3;
 
 /**
  * 遊戲引擎的狀態

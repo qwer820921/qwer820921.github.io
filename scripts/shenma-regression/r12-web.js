@@ -220,7 +220,7 @@ async (page) => {
       };
       // 區分原因：從遊戲 iframe 內再送一次 game_ready，頁面若接著送出關卡資料，代表監聽與來源檢查都正常，是時序問題
       const before = await H.bridgeLen(page);
-      await page.evaluate((sel) => document.querySelector(sel).contentWindow.eval("window.parent.postMessage({ __godot_bridge: true, type: 'game_ready', protocol: 2 }, '*')"), BIFRAME);
+      await page.evaluate((sel) => document.querySelector(sel).contentWindow.eval("window.parent.postMessage({ __godot_bridge: true, type: 'game_ready', protocol: 3 }, '*')"), BIFRAME);
       await H.sleep(5000);
       out.E_diag.afterReplay = {
         bridgeSince: (await H.bridgeSince(page, before)).map((m) => m.type || "result"),

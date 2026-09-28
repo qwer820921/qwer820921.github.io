@@ -1421,6 +1421,40 @@
   gap: 8px;
 }
 
+/* 防禦塔的攻擊目標（Round 17）：三個按鈕，手機可以點；排列用 Bootstrap Row／Col（UpgradePanel.tsx） */
+.targetModeBox {
+  margin-bottom: 12px;
+}
+
+.targetModeRow {
+  margin-top: 4px;
+}
+
+.targetModeBtn {
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 2px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.targetModeBtnActive {
+  background: var(--sg-primary);
+  border-color: var(--sg-primary);
+  color: #fff;
+  font-weight: 700;
+}
+
+.targetModeHint {
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
 .actionBtn {
   flex: 1;
   padding: 8px;
@@ -1867,6 +1901,23 @@
   flex: 1;
   overflow-y: auto;
   padding: 1rem;
+}
+
+/* ── 神馬三國的視窗開啟時，暫時隱藏全站浮動入口（說明、聊天；標記 data-floating-entry） ──
+   浮動入口的層級高於遊戲視窗，會蓋住視窗文字、搶走點擊。只要頁面上有神馬三國的視窗
+   （modalBackdrop、結算、金鑰設定、戰場上的選取面板與部署選單，或神馬頁面裡的 react-bootstrap Modal）
+   就隱藏，關閉後自動恢復；其他網站頁面沒有這些元素，不受影響。新的視窗沿用 modalBackdrop 就會一起套用，
+   不需要再調 z-index */
+:global(body):has(
+    .modalBackdrop,
+    .resultOverlay,
+    .keySetupOverlay,
+    .upgradePanel,
+    .placementOverlay
+  )
+  :global([data-floating-entry]),
+:global(body.modal-open):has(.gameBody) :global([data-floating-entry]) {
+  visibility: hidden;
 }
 
 /* ── 關卡敵軍預覽（EnemyPreviewModal）：疊在主頁的關卡視窗上方 ── */

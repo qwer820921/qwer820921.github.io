@@ -35,7 +35,8 @@ export function resolveOutPath(pathname) {
   let p = decodeURIComponent(pathname);
   if (p.includes("\0")) return null;
   p = normalize(p).replace(/\\/g, "/");
-  if (p.includes("..")) return null;
+  // 只擋真正的上層目錄片段；檔名本身可以有「..」（例如 Next 產生的 chunk 0a822ktq9z.9..js）
+  if (p.split("/").includes("..")) return null;
   const base = join(OUT, p);
   const isFile = (f) => existsSync(f) && statSync(f).isFile();
   if (isFile(base)) return base;

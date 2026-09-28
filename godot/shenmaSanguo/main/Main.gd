@@ -39,6 +39,8 @@ const DRAG_THRESHOLD: float  = 8.0
 var _tile_size: int            = 48    # 從 GameMap 取得，傳給 Entity
 var _placed_heroes: Dictionary = {}   # hero_id → Hero node
 var _selected_unit: Node       = null  # 選中的塔/武將
+## 防禦塔識別碼的流水號（只增不減、不重用）：Web 的目標優先命令用它確認是同一座塔
+var _tower_seq: int             = 0
 var _moving_unit: Node         = null  # 正在重新佈置的單位
 var _game_time: float          = 0.0   # 累計遊戲時間（受 time_scale 影響），供測試快照比對計時器
 
@@ -98,6 +100,8 @@ func _on_payload_received(payload: Dictionary) -> void:
 		print("[Main] 隊伍已更新，武將數：", _team_list.size())
 		_sync_placed_heroes_stats(_team_list)
 		_remove_heroes_not_in_team(_team_list)
+	elif type == "set_tower_target":
+		_on_web_set_tower_target(payload)
 	elif type == "load_stage" or payload.has("stage_id"):
 		# 初始初始化 或 切換關卡
 		_do_initial_setup(payload)
@@ -452,6 +456,8 @@ func _place_tower(cell: Vector2i, world_pos: Vector2) -> void:
 	tower.position = world_pos
 	tower.tile_size = _tile_size
 	tower.setup(_drag_tower_type, cell, wave_manager)
+	_tower_seq += 1
+	tower.tower_uid = "tower-%d" % _tower_seq
 	tower.tower_clicked.connect(_on_tower_clicked)
 	tower.upgrade_requested.connect(_on_upgrade_requested)
 
@@ -518,6 +524,10 @@ func _on_tower_clicked(tower: Node) -> void:
 		"upgrade_cost": cost,
 		"max_level": (tower.tower_level >= 5),
 		"can_afford": can_afford,
+		# 目標優先（Round 17）：面板顯示的是這裡的實際狀態；Web 的命令要帶回同一場的 battle_id 與這座塔的識別碼
+		"tower_uid": tower.tower_uid,
+		"battle_id": battle_manager.battle_id,
+		"target_mode": tower.target_mode,
 		"screen_pos": {"x": pos_screen.x, "y": pos_screen.y},
 	})
 
@@ -551,6 +561,26 @@ func _on_web_upgrade_unit() -> void:
 	if battle_manager.spend_gold(cost):
 		tower.apply_upgrade()
 		_on_tower_clicked(tower)  # 重新發送更新後的資訊給 Web
+
+## Web 的目標優先命令：只套用在「這一場、目前選取中的同一座有效防禦塔」。
+## 過期的面板（別場、已換選別的單位、塔已移除）、結束後、不認得的模式、武將都不套用，也不拿當下的任意選取物代替。
+## 確認套用後把塔的實際模式回傳給面板（tower_target_changed）
+func _on_web_set_tower_target(data: Dictionary) -> void:
+	var bid: String = str(data.get("battle_id", ""))
+	var uid: String = str(data.get("tower_uid", ""))
+	var mode: String = str(data.get("mode", ""))
+	if bid == "" or bid != battle_manager.battle_id:
+		return
+	if battle_manager.game_state != BattleManager.GameState.PREP and battle_manager.game_state != BattleManager.GameState.BATTLE:
+		return
+	if _selected_unit == null or not is_instance_valid(_selected_unit) or not (_selected_unit is Tower):
+		return
+	var tower: Tower = _selected_unit as Tower
+	if uid == "" or tower.tower_uid != uid:
+		return
+	if not tower.set_target_mode(mode):
+		return
+	web_bridge.send_tower_target_changed({"battle_id": bid, "tower_uid": uid, "target_mode": tower.target_mode})
 
 # ── Web 遠端放置處理 ──────────────────────────────────────────
 func _on_web_place_hero(data: Dictionary) -> void:
@@ -678,6 +708,9 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var enemy_hp: Dictionary = {}
 	# 灼燒中的敵人（周瑜「火攻」）：剩餘跳數與每跳傷害
 	var enemy_burn: Dictionary = {}
+	# 每個敵人的種類（測試用來對照防禦塔實際打中的是哪一種敵人）；每座防禦塔目前的目標優先
+	var enemy_kind: Dictionary = {}
+	var tower_targets: Dictionary = {}
 	for child in units_layer.get_children():
 		if child is Enemy and not child.is_queued_for_deletion():
 			var eid: String = child.enemy_id
@@ -685,6 +718,11 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			enemy_hp[str(child.get_instance_id())] = child.current_hp
 			if child.is_burning():
 				enemy_burn[str(child.get_instance_id())] = child.burn_state()
+			enemy_kind[str(child.get_instance_id())] = eid
+		elif child is Tower and not child.is_queued_for_deletion():
+			# screen：塔在畫面上的位置（和升級面板定位用的是同一套座標），測試用來點選塔
+			var sp: Vector2 = child.get_global_transform_with_canvas().origin
+			tower_targets[child.tower_uid] = {"type": child.tower_type_key, "mode": child.target_mode, "level": child.tower_level, "screen": {"x": sp.x, "y": sp.y}}
 	# 每位武將目前的有效射程（格），以及到每個敵人的距離（格）：測試用來量射程技能（百步穿楊）
 	var hero_ranges: Dictionary = {}
 	var hero_enemy_dist: Dictionary = {}
@@ -715,6 +753,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"enemy_nodes":       enemy_nodes,
 		"enemy_hp":          enemy_hp,
 		"enemy_burn":        enemy_burn,
+		"enemy_kind":        enemy_kind,
+		"tower_targets":     tower_targets,
 		"hero_ranges":       hero_ranges,
 		"hero_enemy_dist":   hero_enemy_dist,
 		"game_time":         _game_time,

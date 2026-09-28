@@ -200,6 +200,19 @@ export default function BattlePageContent() {
       return;
     }
 
+    if (event.data.type === "tower_target_changed") {
+      // 防禦塔的目標優先：只在場次與塔的識別碼都和目前面板相同時，換成 Godot 回傳的實際模式（過期的回覆不採用）
+      setUpgradePanel((prev: any) =>
+        prev &&
+        prev.unit_type === "tower" &&
+        prev.battle_id === event.data.battle_id &&
+        prev.tower_uid === event.data.tower_uid
+          ? { ...prev, target_mode: event.data.target_mode }
+          : prev
+      );
+      return;
+    }
+
     // 只有結算訊息才是結算（debug_snapshot 等其他訊息不是），
     // 而且只採用這一場（battle_id 相同）開打後的第一筆
     if (
@@ -351,6 +364,21 @@ export default function BattlePageContent() {
         "*"
       );
     }
+  };
+
+  // 防禦塔的目標優先：帶回面板上的 battle_id 與塔的識別碼，Godot 確認是同一場、同一座塔才套用
+  const handleSetTargetMode = (mode: string) => {
+    if (!upgradePanel?.tower_uid || !iframeRef.current?.contentWindow) return;
+    iframeRef.current.contentWindow.postMessage(
+      {
+        __godot_bridge: true,
+        type: "set_tower_target",
+        battle_id: upgradePanel.battle_id,
+        tower_uid: upgradePanel.tower_uid,
+        mode,
+      },
+      "*"
+    );
   };
 
   const handleCloseMenu = () => {
@@ -547,6 +575,7 @@ export default function BattlePageContent() {
                 data={upgradePanel}
                 onUpgrade={handleUpgradeUnit}
                 onClose={handleCloseUpgradePanel}
+                onSetTargetMode={handleSetTargetMode}
               />
             )}
           </div>

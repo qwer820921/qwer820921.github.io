@@ -2241,15 +2241,16 @@ await test("R10-P1", async () => {
   const got = [
     ready({}),
     ready({ protocol: 1 }),
-    ready({ protocol: "2" }),
-    ready({ protocol: 3 }),
+    ready({ protocol: "3" }),
     ready({ protocol: 2 }),
+    ready({ protocol: 4 }),
+    ready({ protocol: 3 }),
   ].map((m) => isCompatibleEngine(m));
   check(
-    "R10-P1 只有協定版本和網頁相同（2）的 game_ready 才相容；舊版（沒有 protocol）、其他版本、字串都不相容",
-    BRIDGE_PROTOCOL === 2 &&
+    "R10-P1 只有協定版本和網頁相同（Round 17 起是 3）的 game_ready 才相容；舊版（沒有 protocol）、Round 9～16 的 2、其他版本、字串都不相容",
+    BRIDGE_PROTOCOL === 3 &&
       JSON.stringify(got) ===
-        JSON.stringify([false, false, false, false, true]),
+        JSON.stringify([false, false, false, false, false, true]),
     got
   );
 });

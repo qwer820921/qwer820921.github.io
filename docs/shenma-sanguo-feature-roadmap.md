@@ -14,26 +14,27 @@
 
 ### 2.1 戰場（Godot）
 
-| 功能                                           | 狀態     | 依據（程式位置）                                                                                                                                               |
-| ---------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 地形格子（ROAD／BUILD／OBSTACLE／BASE／SPAWN） | 已有     | `map/GameMap.gd` 的 `TileType`，解析 `path_json`                                                                                                               |
-| 多路線地圖（`path_a`、`path_b`…）              | 已有     | `GameMap.gd` 的 `_paths`；敵人組依 `path` 走對應路線                                                                                                           |
-| 波次生成、混合敵人組、無效波次拒絕開戰         | 已有     | `systems/WaveManager.gd`、`BattleManager._reject_wave`（Round 3 回歸）                                                                                         |
-| 敵人沿路線移動、血量、死亡加戰鬥金幣           | 已有     | `entities/enemy/Enemy.gd`；擊殺 +5（`GOLD_PER_KILL`）                                                                                                          |
-| 武將放置（ROAD 阻擋並緩速、BUILD 遠程）        | 已有     | `Main._place_hero`、`Hero.gd`                                                                                                                                  |
-| 武將拖曳重新定位                               | 部分完成 | 備戰中可拖曳移位（`Main._on_unit_move_requested`、`Hero.reposition`）；舊計畫提到的「冷卻時間」沒有實作，戰鬥中不能移位                                        |
-| 防禦塔放置與升級                               | 已有     | 五種塔：archer、infantry、artillery、cavalry、scholar（`entities/tower/Tower.gd` 的 `TOWER_CONFIGS`）；戰中花戰鬥金幣升級                                      |
-| 底部拖曳放置 UI、點格子彈出部署選單            | 已有     | `ui/BattleHUD.gd`、`ui/DragGhost.gd`；Web 的 `PlacementMenu`                                                                                                   |
-| 遊戲狀態機（備戰 ↔ 戰鬥、手動迎戰）           | 已有     | `BattleManager.gd`                                                                                                                                             |
-| 自動模式                                       | 部分完成 | 清波後 1.5 秒自動開下一波（`AUTO_NEXT_WAVE_DELAY`）；舊計畫的「30 秒強制放下一波、可兩波重疊」沒有實作                                                         |
-| 戰鬥金幣                                       | 已有     | 初始 5000（舊計畫寫 500）、擊殺 +5、用於蓋塔與升塔，不寫進存檔                                                                                                 |
-| 基地血量、勝敗判定、星數與戰場點數結算         | 已有     | `BattleManager._end_battle`（Round 2～3 回歸）                                                                                                                 |
-| 依出征資料的隊伍載入武將屬性                   | 已有     | `team_list`；戰鬥中更新隊伍會同步屬性（`update_team`）                                                                                                         |
-| 攻速成長（等級越高攻擊間隔越短）               | 已有     | Round 16：正式設定的 `speed_growth` 在 Web 進入 store 時正規化成 `atk_spd_growth`（`utils/heroStats.ts`），Godot 照公式計算；之前名稱不同，成長沒有生效（D17） |
-| 場次識別碼、版本握手                           | 已有     | `battle_id`（Round 9）、`game_ready` 的 `protocol`（Round 10）                                                                                                 |
-| 武將職業差異化（弓兵／步兵／砲兵／騎兵）       | 部分完成 | 目前職業只影響顏色與屬性數值，沒有職業專屬的攻擊行為                                                                                                           |
-| 武將技能                                       | 部分完成 | 趙雲「奇襲」（Round 12）、黃忠「百步穿楊」（Round 14）、周瑜「火攻」（Round 15），見 §3；其他武將的技能都還沒有                                                |
-| 飛行單位（無視地面路徑）與對空策略             | 未實作   | 程式裡找不到                                                                                                                                                   |
+| 功能                                           | 狀態     | 依據（程式位置）                                                                                                                                                     |
+| ---------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 地形格子（ROAD／BUILD／OBSTACLE／BASE／SPAWN） | 已有     | `map/GameMap.gd` 的 `TileType`，解析 `path_json`                                                                                                                     |
+| 多路線地圖（`path_a`、`path_b`…）              | 已有     | `GameMap.gd` 的 `_paths`；敵人組依 `path` 走對應路線                                                                                                                 |
+| 波次生成、混合敵人組、無效波次拒絕開戰         | 已有     | `systems/WaveManager.gd`、`BattleManager._reject_wave`（Round 3 回歸）                                                                                               |
+| 敵人沿路線移動、血量、死亡加戰鬥金幣           | 已有     | `entities/enemy/Enemy.gd`；擊殺 +5（`GOLD_PER_KILL`）                                                                                                                |
+| 武將放置（ROAD 阻擋並緩速、BUILD 遠程）        | 已有     | `Main._place_hero`、`Hero.gd`                                                                                                                                        |
+| 武將拖曳重新定位                               | 部分完成 | 備戰中可拖曳移位（`Main._on_unit_move_requested`、`Hero.reposition`）；舊計畫提到的「冷卻時間」沒有實作，戰鬥中不能移位                                              |
+| 防禦塔放置與升級                               | 已有     | 五種塔：archer、infantry、artillery、cavalry、scholar（`entities/tower/Tower.gd` 的 `TOWER_CONFIGS`）；戰中花戰鬥金幣升級                                            |
+| 防禦塔目標優先（優先前方／血量最多／血量最少） | 已有     | Round 17：選取塔的面板選擇，只存在這一場（`Tower.gd` 的 `target_mode`、`Main._on_web_set_tower_target`）；砲兵的範圍傷害、文士的減速跟著主要目標，步兵的緩速光環不變 |
+| 底部拖曳放置 UI、點格子彈出部署選單            | 已有     | `ui/BattleHUD.gd`、`ui/DragGhost.gd`；Web 的 `PlacementMenu`                                                                                                         |
+| 遊戲狀態機（備戰 ↔ 戰鬥、手動迎戰）           | 已有     | `BattleManager.gd`                                                                                                                                                   |
+| 自動模式                                       | 部分完成 | 清波後 1.5 秒自動開下一波（`AUTO_NEXT_WAVE_DELAY`）；舊計畫的「30 秒強制放下一波、可兩波重疊」沒有實作                                                               |
+| 戰鬥金幣                                       | 已有     | 初始 5000（舊計畫寫 500）、擊殺 +5、用於蓋塔與升塔，不寫進存檔                                                                                                       |
+| 基地血量、勝敗判定、星數與戰場點數結算         | 已有     | `BattleManager._end_battle`（Round 2～3 回歸）                                                                                                                       |
+| 依出征資料的隊伍載入武將屬性                   | 已有     | `team_list`；戰鬥中更新隊伍會同步屬性（`update_team`）                                                                                                               |
+| 攻速成長（等級越高攻擊間隔越短）               | 已有     | Round 16：正式設定的 `speed_growth` 在 Web 進入 store 時正規化成 `atk_spd_growth`（`utils/heroStats.ts`），Godot 照公式計算；之前名稱不同，成長沒有生效（D17）       |
+| 場次識別碼、版本握手                           | 已有     | `battle_id`（Round 9）、`game_ready` 的 `protocol`（Round 10）                                                                                                       |
+| 武將職業差異化（弓兵／步兵／砲兵／騎兵）       | 部分完成 | 目前職業只影響顏色與屬性數值，沒有職業專屬的攻擊行為                                                                                                                 |
+| 武將技能                                       | 部分完成 | 趙雲「奇襲」（Round 12）、黃忠「百步穿楊」（Round 14）、周瑜「火攻」（Round 15），見 §3；其他武將的技能都還沒有                                                      |
+| 飛行單位（無視地面路徑）與對空策略             | 未實作   | 程式裡找不到                                                                                                                                                         |
 
 ### 2.2 網頁與存檔
 
@@ -110,8 +111,9 @@
 1. 趙雲「奇襲」（Round 12，已提交 `c62298db`）。
 2. 發布前必須處理：D11／D12（跨來源隔離切換時的存檔風險）。Round 13 實作「隔離只留給 AI 去背」與舊使用者遷移，Round 14 修正 Codex 找到的三個資料保護問題，Round 15 把「遷移狀態不明」改成停止寫入（只能讀取）；Codex 在 Round 16 驗收通過，已在本機提交 `4793872e`（基準文件 §21～§23）。正式發布前仍需後端的原子版本檢查與舊使用者的恢復方案（D16、D18）。
 3. 武將特色：黃忠「百步穿楊」（Round 14 第一版，Codex 已在 Round 15 驗收，已提交 `8275ff6d`）；周瑜「火攻」（Round 15 第一版，Codex 在 Round 16 驗收通過，已提交 `95dea9fe`），見 §3。
-4. 出征前的資訊：攻速成長修正（D17）與關卡敵軍預覽（Round 16，待 Codex 驗收，基準文件 §24）。
-5. 飛行敵人與對空策略、關卡內容與難度。
-6. 碎片升星、每日任務與成就：涉及新的存檔欄位與後端契約，需要先取得 GAS 程式與測試環境。
+4. 出征前的資訊：攻速成長修正（D17）與關卡敵軍預覽（Round 16，Codex 在 Round 17 驗收通過，已提交 `fe7724f2`，基準文件 §24）。
+5. 塔的戰術：防禦塔目標優先（Round 17，Codex 驗收通過；補上戰場面板的 D21 與按鈕列的 Bootstrap Grid 後提交，基準文件 §25）。同輪修正神馬視窗被全站浮動按鈕遮住（D21，含戰場上的選取面板與部署選單）與敵軍預覽的鍵盤操作。
+6. 飛行敵人與對空策略、關卡內容與難度。
+7. 碎片升星、每日任務與成就：涉及新的存檔欄位與後端契約，需要先取得 GAS 程式與測試環境。
 
 既有功能的完善（例如拖曳移位的冷卻、職業差異化）和全新玩法分開安排。

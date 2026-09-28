@@ -38,6 +38,8 @@ export default function PageInfoButton({
   return (
     <div
       ref={containerRef}
+      // 全站浮動入口：頁面自己的視窗開啟時可以用這個標記暫時隱藏（例如神馬三國的 shenmaSanguo.module.css）
+      data-floating-entry="page-info"
       style={{
         position: "fixed",
         top: "calc(var(--navbar-height, 70px) + 0.5rem)",

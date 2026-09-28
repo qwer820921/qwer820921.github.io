@@ -22,6 +22,8 @@ async (page) => {
   const PROMPT = '[data-testid="engine-incompatible"]';
   const NOTICE = '[data-testid="switch-failed-notice"]';
   const LEGACY = ".handoff/evidence/round-10/legacy-godot";
+  // 目前的橋接協定版本（和 Godot WebBridge.gd、utils/gameEngine.ts 相同；Round 17 起是 3）
+  const PROTOCOL = 3;
 
   // ── 遊戲檔案的路由：legacy＝回應真實舊產物；slow＝新版 index.pck 延遲 10 秒；off＝照常 ──
   const GAME_FILE = /\/games\/shenmaSanguo\/(index\.(?:html|pck|service\.worker\.js))(?:\?[^#]*)?$/;
@@ -237,8 +239,8 @@ async (page) => {
       const sw = await swState();
       const version = await currentCacheVersion();
       out.B_retry = { readyProtocol: ready.protocol ?? null, prepBattleId: prep.battle_id, prompt: (await count(PROMPT)) > 0, before, after, saves: saves.length, sw, version };
-      run.check("B-1 重試後載入新版遊戲：game_ready 協定版本 2，提示消失，送出關卡資料（備戰中，stats 帶 battle_id）",
-        ready.protocol === 2 && !out.B_retry.prompt && typeof prep.battle_id === "string" && prep.battle_id.length > 0, out.B_retry);
+      run.check(`B-1 重試後載入新版遊戲：game_ready 協定版本 ${PROTOCOL}，提示消失，送出關卡資料（備戰中，stats 帶 battle_id）`,
+        ready.protocol === PROTOCOL && !out.B_retry.prompt && typeof prep.battle_id === "string" && prep.battle_id.length > 0, out.B_retry);
       run.check("B-2 只重新載入遊戲：頁面沒有重新整理，未同步的暱稱／隊伍、版本號與待確認升級都和重試前相同，也沒有送出任何保存",
         before.pageId === after.pageId && JSON.stringify(before.session) === JSON.stringify(after.session) &&
           after.session.nickname === "未同步暱稱" && after.session.pendingUpgrade === "r10-op/unknown" && saves.length === 0,
@@ -298,7 +300,7 @@ async (page) => {
       out.C = { slowHits: hits, promptSeen, readyBefore, readyProtocol: ready.protocol ?? null, promptAfter: (await count(PROMPT)) > 0, hud: (await count('[title="切換關卡"]')) > 0 };
       run.check("C-1 index.pck 延遲 10 秒的前 8 秒：還沒有 game_ready，也沒有出現版本提示（仍是載入中）",
         hits >= 1 && !readyBefore && !promptSeen, out.C);
-      run.check("C-2 載入完成：協定版本相同，沒有提示，正常送出關卡資料並顯示 HUD", ready.protocol === 2 && !out.C.promptAfter && out.C.hud, out.C);
+      run.check("C-2 載入完成：協定版本相同，沒有提示，正常送出關卡資料並顯示 HUD", ready.protocol === PROTOCOL && !out.C.promptAfter && out.C.hud, out.C);
     });
 
     // ── D. 獨立戰鬥頁 ──
@@ -324,7 +326,7 @@ async (page) => {
       const after = { session: brief(await session()), pageId: await pageId(), pendingSave: await page.evaluate(() => window.__shenmaMock.pending("save_profile").length) };
       out.D_retry = { readyProtocol: ready2.protocol ?? null, battleId: prep.battle_id, prompt: (await count(PROMPT)) > 0, before, after };
       run.check("D-2 重試後載入新版並送出關卡資料；頁面沒有重新整理，未同步的暱稱／隊伍與版本號不變，原本的保存請求仍在等待（沒有重送或遺失）",
-        ready2.protocol === 2 && !out.D_retry.prompt && before.pageId === after.pageId &&
+        ready2.protocol === PROTOCOL && !out.D_retry.prompt && before.pageId === after.pageId &&
           JSON.stringify(before.session) === JSON.stringify(after.session) && before.pendingSave === 1 && after.pendingSave === 1,
         out.D_retry);
       await releaseAll("save_profile");

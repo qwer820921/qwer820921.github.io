@@ -1,11 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
-import {
-  ChatMessage,
-  chatWithAI,
-  GEMINI_MODEL,
-} from "@/services/chatApi";
+import { ChatMessage, chatWithAI, GEMINI_MODEL } from "@/services/chatApi";
 import React, { useState, useRef, useEffect } from "react";
 
 // Typing Indicator Component with animated dots
@@ -255,7 +251,8 @@ const ChatWidget = () => {
       setMessages((prev) => {
         const next = [...prev];
         next[next.length - 1] = {
-          text: error instanceof Error ? error.message : "發生錯誤，請稍後再試。",
+          text:
+            error instanceof Error ? error.message : "發生錯誤，請稍後再試。",
           sender: "bot",
         };
         return next;
@@ -269,6 +266,8 @@ const ChatWidget = () => {
     <div
       ref={widgetRef}
       className="position-fixed"
+      // 全站浮動入口：頁面自己的視窗開啟時可以用這個標記暫時隱藏（例如神馬三國的 shenmaSanguo.module.css）
+      data-floating-entry="chat"
       style={{
         zIndex: 1050,
         bottom: "20px",

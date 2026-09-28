@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { Row, Col } from "react-bootstrap";
 import { EnemyConfig, MapConfig } from "../../types";
@@ -10,6 +11,9 @@ import {
   PreviewWave,
 } from "../../utils/stagePreview";
 import styles from "../../styles/shenmaSanguo.module.css";
+
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 interface Props {
   map: MapConfig;
@@ -23,7 +27,9 @@ interface Props {
  * 關卡敵軍預覽（唯讀）：主頁的「關卡」視窗與獨立的關卡頁共用。
  * 只讀已載入的靜態設定（utils/stagePreview），沒有出征、切換關卡或任何寫入；
  * 用 portal 放在神馬三國的 gameBody（主題變數 --sg-* 定義在那裡；放到 body 會變成透明、沒有文字顏色），
- * 不在關卡卡片裡面，點擊不會觸發卡片（卡片本身點下去就是出征／切換關卡）
+ * 不在關卡卡片裡面，點擊不會觸發卡片（卡片本身點下去就是出征／切換關卡）。
+ * 鍵盤：開啟時焦點移到視窗裡、Tab 只在視窗內循環（不能操作背後的關卡卡片與出征按鈕），
+ * Esc 只關閉這個預覽，關閉後焦點回到開啟它的按鈕
  */
 export default function EnemyPreviewModal({
   map,
@@ -41,13 +47,54 @@ export default function EnemyPreviewModal({
       prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]
     );
 
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // 開啟時把焦點移到視窗裡（右上的關閉鈕），關閉時還給開啟前的元素（觸發的「敵軍預覽」按鈕）；
+  // 焦點被移到視窗外時（例如輔助工具）拉回視窗裡
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+    const prev =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    closeRef.current?.focus();
+    const onFocusIn = (e: FocusEvent) => {
+      const panel = panelRef.current;
+      if (panel && e.target instanceof Node && !panel.contains(e.target)) {
+        closeRef.current?.focus();
+      }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    document.addEventListener("focusin", onFocusIn);
+    return () => {
+      document.removeEventListener("focusin", onFocusIn);
+      if (prev && prev.isConnected) prev.focus();
+    };
+  }, []);
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape") {
+      // 只關閉這個預覽：不讓 Esc 再傳到後面的視窗
+      e.stopPropagation();
+      onClose();
+      return;
+    }
+    if (e.key !== "Tab" || !panelRef.current) return;
+    const items = Array.from(
+      panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)
+    );
+    if (items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+    const inside = !!active && panelRef.current.contains(active);
+    if (e.shiftKey && (active === first || !inside)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !inside)) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
 
   return createPortal(
     <div
@@ -59,15 +106,20 @@ export default function EnemyPreviewModal({
       data-testid="enemy-preview"
     >
       <div
+        ref={panelRef}
         className={styles.modalPanel}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={onKeyDown}
         role="dialog"
+        aria-modal="true"
         aria-label={`敵軍預覽：${map.name}`}
+        tabIndex={-1}
       >
         <div className={styles.modalHeader}>
           <span className={styles.modalTitle}>敵軍預覽｜{map.name}</span>
           {locked && <span className={styles.previewBadge}>鎖定</span>}
           <button
+            ref={closeRef}
             className={styles.modalClose}
             onClick={onClose}
             aria-label="關閉敵軍預覽"
