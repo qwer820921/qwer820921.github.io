@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { formatSec } from "../../utils/heroStats";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 interface UpgradePanelProps {
@@ -58,9 +59,13 @@ export default function UpgradePanel({
           <span className={styles.upgStatValue}>{data.atk.toFixed(0)}</span>
         </div>
         <div className={styles.upgStatItem}>
-          <span className={styles.upgStatLabel}>攻速</span>
-          <span className={styles.upgStatValue}>
-            {data.atk_spd.toFixed(1)}/s
+          {/* Godot 送來的是每秒攻擊次數（1 ÷ 攻擊間隔）；顯示成攻擊間隔，和武將列表、升級預覽一致 */}
+          <span className={styles.upgStatLabel}>攻擊間隔</span>
+          <span
+            className={styles.upgStatValue}
+            data-testid="upgrade-panel-interval"
+          >
+            {data.atk_spd > 0 ? `${formatSec(1 / data.atk_spd)}秒` : "—"}
           </span>
         </div>
         <div className={styles.upgStatItem}>

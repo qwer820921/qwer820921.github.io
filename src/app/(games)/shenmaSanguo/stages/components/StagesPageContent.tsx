@@ -1,11 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Container, Row, Col, Spinner, Alert } from "react-bootstrap";
 import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { isStageUnlocked } from "../../utils/stageUtils";
+import EnemyPreviewModal from "../../components/modals/EnemyPreviewModal";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 export default function StagesPageContent() {
@@ -13,6 +14,8 @@ export default function StagesPageContent() {
   const { player } = usePlayerStore();
   const { config: staticConfig, isLoading: configLoading } =
     useStaticConfigStore();
+  // 正在查看敵軍預覽的關卡（唯讀，不出征）
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   if (!player || configLoading || !staticConfig) {
     return (
@@ -72,6 +75,8 @@ export default function StagesPageContent() {
     if (!mapsByChapter[m.chapter]) mapsByChapter[m.chapter] = [];
     mapsByChapter[m.chapter].push(m);
   });
+  const previewMap =
+    staticConfig.maps.find((m) => m.map_id === previewId) ?? null;
 
   return (
     <div className={styles.stagesLayout}>
@@ -208,6 +213,21 @@ export default function StagesPageContent() {
                             >
                               {unlocked ? "出 征" : "尚未解鎖"}
                             </button>
+                            {/* 只查看，不出征：不能冒泡到卡片（卡片點下去就是出征） */}
+                            <button
+                              className={`${styles.btnOutline} w-100 mt-2`}
+                              style={{
+                                fontSize: "0.78rem",
+                                padding: "0.35rem",
+                              }}
+                              data-testid="enemy-preview-open"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPreviewId(map.map_id);
+                              }}
+                            >
+                              敵軍預覽
+                            </button>
                           </div>
                         </div>
                       </Col>
@@ -218,6 +238,14 @@ export default function StagesPageContent() {
             ))}
         </div>
       </div>
+      {previewMap && (
+        <EnemyPreviewModal
+          map={previewMap}
+          enemies={staticConfig.enemiesConfig ?? []}
+          locked={!isStageUnlocked(previewMap.map_id, player.max_stage)}
+          onClose={() => setPreviewId(null)}
+        />
+      )}
     </div>
   );
 }

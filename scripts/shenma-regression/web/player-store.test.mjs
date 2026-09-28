@@ -2671,6 +2671,394 @@ await test("R13F-H6", async ({ env, S }) => {
   );
 });
 
+// ══════════════════════════════════════════════════════════════
+//  Round 16（D17）：攻速成長的欄位名稱
+//  正式 heroes_config 用 speed_growth，程式內部用 atk_spd_growth；靜態設定進入 store 時
+//  （新的 API 回應、已存在的本機快取）都經過 utils/heroStats 的 normalizeStaticConfig
+// ══════════════════════════════════════════════════════════════
+const heroStats = () => require(join(GAME, "utils/heroStats.ts"));
+const STATIC_LOCAL_KEY = "shenma_static_config";
+const STATIC_TS_KEY = "shenma_static_ts";
+// 舊格式的武將設定（和正式設定一樣只有 speed_growth）
+const aliasHero = (hero_id, attack_speed, speed_growth) => ({
+  hero_id,
+  name: hero_id,
+  attack_speed,
+  speed_growth,
+  attack_range: 3,
+  range_growth: 0,
+});
+
+await test("R16-A1", async () => {
+  const { normalizeHeroConfig } = heroStats();
+  const g = (h) => normalizeHeroConfig(h).atk_spd_growth;
+  const cases = {
+    aliasOnly: g({ speed_growth: 0.02 }),
+    oldOnly: g({ atk_spd_growth: 0.05 }),
+    conflict: g({ atk_spd_growth: 0.05, speed_growth: 0.02 }),
+    explicitZero: g({ atk_spd_growth: 0, speed_growth: 0.3 }),
+    missing: g({}),
+    negativeOld: g({ atk_spd_growth: -0.1, speed_growth: 0.02 }),
+    nanOld: g({ atk_spd_growth: NaN, speed_growth: 0.02 }),
+    infOld: g({ atk_spd_growth: Infinity, speed_growth: 0.02 }),
+    nullOld: g({ atk_spd_growth: null, speed_growth: 0.02 }),
+    textOld: g({ atk_spd_growth: "abc", speed_growth: 0.02 }),
+    emptyOld: g({ atk_spd_growth: "", speed_growth: 0.02 }),
+    numericTextAlias: g({ speed_growth: "0.02" }),
+    bothInvalid: g({ atk_spd_growth: -1, speed_growth: "x" }),
+    negativeAlias: g({ speed_growth: -0.02 }),
+  };
+  const raw = { hero_id: "zhou_yu", speed_growth: 0.02, attack_speed: 1 };
+  const out = normalizeHeroConfig(raw);
+  check(
+    "R16-A1 攻速成長的欄位：atk_spd_growth 有效（包含明確的 0）時優先，否則用有效的 speed_growth，兩者都沒有或無效時是 0；無效＝負數、NaN、Infinity、null、非數字文字、空字串；其他欄位保留、原物件不被修改",
+    cases.aliasOnly === 0.02 &&
+      cases.oldOnly === 0.05 &&
+      cases.conflict === 0.05 &&
+      cases.explicitZero === 0 &&
+      cases.missing === 0 &&
+      cases.negativeOld === 0.02 &&
+      cases.nanOld === 0.02 &&
+      cases.infOld === 0.02 &&
+      cases.nullOld === 0.02 &&
+      cases.textOld === 0.02 &&
+      cases.emptyOld === 0.02 &&
+      cases.numericTextAlias === 0.02 &&
+      cases.bothInvalid === 0 &&
+      cases.negativeAlias === 0 &&
+      out.speed_growth === 0.02 &&
+      out.attack_speed === 1 &&
+      out.hero_id === "zhou_yu" &&
+      !("atk_spd_growth" in raw),
+    cases
+  );
+});
+
+await test("R16-A2", async () => {
+  const { normalizeHeroConfig, attackIntervalSec, formatSec } = heroStats();
+  const zhou = normalizeHeroConfig(aliasHero("zhou_yu", 1, 0.02));
+  const huang = normalizeHeroConfig(aliasHero("huang_zhong", 1.9, 0.01));
+  const fast = normalizeHeroConfig(aliasHero("fast", 1, 0.6));
+  const v = {
+    zhou1: attackIntervalSec(zhou, 1),
+    zhou2: attackIntervalSec(zhou, 2),
+    huang1: attackIntervalSec(huang, 1),
+    huang2: attackIntervalSec(huang, 2),
+    fast2: attackIntervalSec(fast, 2),
+    fast3: attackIntervalSec(fast, 3),
+    fmt: [formatSec(1.881), formatSec(0.98), formatSec(1), formatSec(0.1)],
+  };
+  check(
+    "R16-A2 攻擊間隔＝max(0.1, attack_speed × (1 − (等級 − 1) × 成長))：周瑜（正式設定 1、0.02）Lv1 1、Lv2 0.98；黃忠（1.9、0.01）Lv1 1.9、Lv2 1.881；成長 0.6 的 Lv2 0.4、Lv3 下限 0.1；顯示最多 3 位小數",
+    v.zhou1 === 1 &&
+      Math.abs(v.zhou2 - 0.98) < 1e-12 &&
+      v.huang1 === 1.9 &&
+      Math.abs(v.huang2 - 1.881) < 1e-12 &&
+      Math.abs(v.fast2 - 0.4) < 1e-12 &&
+      v.fast3 === 0.1 &&
+      JSON.stringify(v.fmt) === '["1.881","0.98","1","0.1"]',
+    v
+  );
+});
+
+await test("R16-A3", async ({ env }) => {
+  // 已存在的新鮮快取（舊格式）：不打 API，直接用正規化後的設定
+  const raw = {
+    heroesConfig: [
+      aliasHero("zhou_yu", 1, 0.02),
+      { ...aliasHero("zhao_yun", 1.4, 0.3), atk_spd_growth: 0 },
+    ],
+    enemiesConfig: [],
+    maps: [],
+  };
+  env.local.setItem(STATIC_LOCAL_KEY, JSON.stringify(raw));
+  env.local.setItem(STATIC_TS_KEY, String(Date.now()));
+  const { useStaticConfigStore } = require(
+    join(GAME, "store/staticConfigStore.ts")
+  );
+  await useStaticConfigStore.getState().loadConfig();
+  const cfg = useStaticConfigStore.getState().config;
+  const byId = Object.fromEntries(cfg.heroesConfig.map((h) => [h.hero_id, h]));
+  check(
+    "R16-A3 從舊快取啟動：沒有打 API；周瑜只有 speed_growth → atk_spd_growth 0.02（不需要清除快取）；趙雲明確的 atk_spd_growth 0 不被 speed_growth 0.3 蓋掉；本機快取的內容不被改寫",
+    env.server.calls.length === 0 &&
+      byId.zhou_yu.atk_spd_growth === 0.02 &&
+      byId.zhao_yun.atk_spd_growth === 0 &&
+      env.local.getItem(STATIC_LOCAL_KEY) === JSON.stringify(raw),
+    { calls: env.server.calls.length, heroes: cfg.heroesConfig }
+  );
+});
+
+await test("R16-A4", async ({ env }) => {
+  // 沒有快取：新的 API 回應（和正式設定一樣只有 speed_growth）同樣正規化；快取存 API 的原始內容
+  for (const a of ["get_heroes_config", "get_enemies_config", "get_all_maps"])
+    env.server.held.add(a);
+  const { useStaticConfigStore } = require(
+    join(GAME, "store/staticConfigStore.ts")
+  );
+  const p = useStaticConfigStore.getState().loadConfig();
+  await settle();
+  const respond = (action, body) =>
+    env.server.calls
+      .find((c) => c.action === action)
+      .respond({ status: 200, ...body });
+  respond("get_heroes_config", {
+    heroes: [
+      aliasHero("zhou_yu", 1, 0.02),
+      aliasHero("huang_zhong", 1.9, 0.01),
+    ],
+  });
+  respond("get_enemies_config", { enemies: [] });
+  respond("get_all_maps", { maps: [] });
+  await p;
+  const cfg = useStaticConfigStore.getState().config;
+  const cached = JSON.parse(env.local.getItem(STATIC_LOCAL_KEY) || "null");
+  check(
+    "R16-A4 新的 API 回應（只有 speed_growth）：store 的設定是 atk_spd_growth 0.02／0.01（送進 Godot 的 heroes_config 就是這一份）；快取保留原始內容",
+    cfg.heroesConfig[0].atk_spd_growth === 0.02 &&
+      cfg.heroesConfig[1].atk_spd_growth === 0.01 &&
+      cfg.heroesConfig.every((h) => typeof h.atk_spd_growth === "number") &&
+      cached &&
+      !("atk_spd_growth" in cached.heroesConfig[0]),
+    { heroes: cfg.heroesConfig }
+  );
+});
+
+await test("R16-A5", async ({ env }) => {
+  // 過期的舊快取：先用正規化後的快取顯示，API 回來後換成新的設定（新設定明確的 0 優先）
+  env.local.setItem(
+    STATIC_LOCAL_KEY,
+    JSON.stringify({
+      heroesConfig: [aliasHero("guan_yu", 1, 0.02)],
+      enemiesConfig: [],
+      maps: [],
+    })
+  );
+  env.local.setItem(STATIC_TS_KEY, String(Date.now() - 10 * 60_000));
+  for (const a of ["get_heroes_config", "get_enemies_config", "get_all_maps"])
+    env.server.held.add(a);
+  const { useStaticConfigStore } = require(
+    join(GAME, "store/staticConfigStore.ts")
+  );
+  const p = useStaticConfigStore.getState().loadConfig();
+  await settle();
+  const early =
+    useStaticConfigStore.getState().config.heroesConfig[0].atk_spd_growth;
+  for (const [a, body] of [
+    [
+      "get_heroes_config",
+      {
+        heroes: [{ ...aliasHero("guan_yu", 1, 0.5), atk_spd_growth: 0 }],
+      },
+    ],
+    ["get_enemies_config", { enemies: [] }],
+    ["get_all_maps", { maps: [] }],
+  ])
+    env.server.calls
+      .find((c) => c.action === a)
+      .respond({ status: 200, ...body });
+  await p;
+  const late =
+    useStaticConfigStore.getState().config.heroesConfig[0].atk_spd_growth;
+  check(
+    "R16-A5 過期的舊快取：API 回應前先用正規化後的快取（0.02）；API 回來後換成新的設定，明確的 atk_spd_growth 0 不被 speed_growth 0.5 蓋掉",
+    early === 0.02 && late === 0,
+    { early, late }
+  );
+});
+
+// ══════════════════════════════════════════════════════════════
+//  Round 16：關卡敵軍預覽（utils/stagePreview）
+//  出兵規則照 Godot（Main._count_waves、WaveManager.plan_wave、GameMap._parse_path_json）
+// ══════════════════════════════════════════════════════════════
+const stagePreview = () => require(join(GAME, "utils/stagePreview.ts"));
+const PV_ENEMIES = [
+  { enemy_id: "grunt", name: "步兵", hp: 20, speed: 60 },
+  { enemy_id: "cav", name: "騎兵", hp: 80, speed: 120 },
+  { enemy_id: "ghost", name: "幽靈" },
+];
+const pvMap = (
+  waves,
+  path_json = {
+    paths: {
+      path_a: [
+        [0, 5],
+        [13, 5],
+      ],
+      path_b: [
+        [0, 7],
+        [13, 7],
+      ],
+    },
+  }
+) => ({
+  map_id: "pv",
+  chapter: 1,
+  name: "預覽",
+  unlock_stage: "pv",
+  path_json,
+  waves,
+});
+
+await test("R16-P1", async () => {
+  const { buildStagePreview } = stagePreview();
+  const pv = buildStagePreview(
+    pvMap([
+      {
+        wave: 1,
+        enemies: [
+          { enemy_id: "grunt", count: 3, interval: 1, path: "path_a" },
+          { enemy_id: "grunt", count: 2, interval: 0.5, path: "path_b" },
+          { enemy_id: "cav", count: 1, interval: 1, path: "path_a" },
+        ],
+      },
+      {
+        wave: 2,
+        enemies: [{ enemy_id: "cav", count: 4, interval: 2, path: "path_b" }],
+      },
+    ]),
+    PV_ENEMIES
+  );
+  const w1 = pv.waves[0];
+  check(
+    "R16-P1 正常資料：2 波、每波與全關數量（6、4、10）；同種敵人分兩組、各自保留路線與間隔；名稱、血量、移動速度取自敵人設定；路線 path_a、path_b",
+    pv.waves.length === 2 &&
+      w1.total === 6 &&
+      pv.waves[1].total === 4 &&
+      pv.total === 10 &&
+      w1.groups.length === 3 &&
+      w1.groups[0].name === "步兵" &&
+      w1.groups[0].path === "path_a" &&
+      w1.groups[1].path === "path_b" &&
+      w1.groups[1].count === 2 &&
+      w1.groups[1].interval === 0.5 &&
+      w1.groups[2].hp === 80 &&
+      w1.groups[2].speed === 120 &&
+      !w1.incomplete &&
+      JSON.stringify(pv.pathIds) === '["path_a","path_b"]',
+    pv
+  );
+});
+
+await test("R16-P2", async () => {
+  const { buildStagePreview } = stagePreview();
+  const pv = buildStagePreview(
+    pvMap([
+      {
+        wave: 1,
+        enemies: [
+          { enemy_id: "", count: 5 },
+          { enemy_id: "unknown_x", count: 2 },
+          { enemy_id: "grunt", count: 3, path: "path_z" },
+          { enemy_id: "grunt", count: 0 },
+          { enemy_id: "grunt" },
+          { enemy_id: "ghost", count: 2, interval: 1 },
+        ],
+      },
+      { wave: 3, enemies: [{ enemy_id: "cav", count: 1, interval: 1 }] },
+      { wave: 1, enemies: [{ enemy_id: "cav", count: 9, interval: 1 }] },
+    ]),
+    PV_ENEMIES
+  );
+  const [w1, w2, w3] = pv.waves;
+  const byId = (id) => w1.groups.filter((g) => g.enemyId === id);
+  check(
+    "R16-P2 不完整資料照遊戲規則：空白列略過（不算敵人）、找不到設定／路線沒有路點／數量 0 的組不會出兵；沒有數量以 1 隻計、沒有路線用 path_a、沒有間隔 1 秒；設定缺血量／速度標成未提供；同一波重複的資料只用第一筆；缺少的第 2 波會被拒絕；有缺漏時全關不給確定總數",
+    pv.waves.length === 3 &&
+      w1.blankRows === 1 &&
+      byId("unknown_x")[0].outcome === "skip" &&
+      byId("unknown_x")[0].count === null &&
+      byId("grunt")[0].outcome === "skip" &&
+      byId("grunt")[1].outcome === "skip" &&
+      byId("grunt")[2].outcome === "spawn" &&
+      byId("grunt")[2].count === 1 &&
+      byId("grunt")[2].path === "path_a" &&
+      byId("grunt")[2].interval === 1 &&
+      byId("ghost")[0].hp === null &&
+      byId("ghost")[0].speed === null &&
+      byId("ghost")[0].count === 2 &&
+      w1.total === 3 &&
+      w1.incomplete &&
+      w1.duplicates === 1 &&
+      w2.missing &&
+      w2.rejected &&
+      w2.total === null &&
+      w3.total === 1 &&
+      pv.total === null,
+    pv
+  );
+});
+
+await test("R16-P3", async () => {
+  const { buildStagePreview, stagePathIds } = stagePreview();
+  const rejected = buildStagePreview(
+    pvMap([{ wave: 1, enemies: [{ enemy_id: "unknown_x", count: 3 }] }]),
+    PV_ENEMIES
+  );
+  const unknownCount = buildStagePreview(
+    pvMap([
+      {
+        wave: 1,
+        enemies: [
+          { enemy_id: "grunt", count: "3隻" },
+          { enemy_id: "cav", count: "2" },
+        ],
+      },
+    ]),
+    PV_ENEMIES
+  );
+  const empty = buildStagePreview(pvMap([]), PV_ENEMIES);
+  const noPath = buildStagePreview(
+    pvMap([{ wave: 1, enemies: [{ enemy_id: "grunt", count: 3 }] }], {}),
+    PV_ENEMIES
+  );
+  const paths = {
+    arr: stagePathIds({
+      paths: [
+        [0, 5],
+        [13, 5],
+      ],
+    }),
+    wp: stagePathIds({
+      waypoints: [
+        [0, 5],
+        [13, 5],
+      ],
+    }),
+    str: stagePathIds(JSON.stringify({ paths: { p1: [[0, 1]], empty: [] } })),
+    bad: stagePathIds("{not json"),
+  };
+  check(
+    "R16-P3 無法確定時不給數量：整波都不會出兵時標成遊戲會拒絕（不是 0 隻）；數量無法判讀（「3隻」）時這一波與全關都不給總數，純數字字串「2」照算；沒有波次、沒有路線都列為資料不完整；路線格式與 Godot 相同（paths 陣列、舊版 waypoints 都是 path_a，JSON 字串、沒有路點的路線不算）",
+    rejected.waves[0].rejected &&
+      rejected.waves[0].total === null &&
+      rejected.total === null &&
+      unknownCount.waves[0].groups[0].outcome === "unknown" &&
+      unknownCount.waves[0].groups[1].count === 2 &&
+      unknownCount.waves[0].total === null &&
+      unknownCount.total === null &&
+      empty.waves.length === 0 &&
+      empty.total === null &&
+      empty.problems.length === 1 &&
+      noPath.waves[0].rejected &&
+      noPath.problems.some((p) => /路線/.test(p)) &&
+      JSON.stringify(paths) ===
+        JSON.stringify({
+          arr: ["path_a"],
+          wp: ["path_a"],
+          str: ["p1"],
+          bad: [],
+        }),
+    {
+      rejected: rejected.waves,
+      unknownCount: unknownCount.waves,
+      empty,
+      noPath: noPath.waves,
+      paths,
+    }
+  );
+});
+
 // ── 輸出 ───────────────────────────────────────────────────────
 const failed = results.filter((r) => !r.ok).length;
 console.log(

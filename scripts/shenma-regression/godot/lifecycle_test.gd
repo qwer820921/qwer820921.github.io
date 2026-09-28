@@ -9,6 +9,8 @@ extends SceneTree
 
 const MAX_HP: int = 20
 var main: Node
+## 物理時鐘（physics_clock.gd）：灼燒的計時用
+var pclock: Node
 var results: Array = []
 var battle_ended_count: int = 0
 var last_result: Dictionary = {}
@@ -23,6 +25,17 @@ func _check(name: String, ok: bool, detail: Variant = "") -> void:
 
 func _wait(sec: float) -> void:
 	await create_timer(sec).timeout
+
+## 遊戲時間（秒）：Main 每一幀累加的 delta（受 Engine.time_scale 影響、暫停時不前進），和敵人灼燒、武將攻擊用的是同一個 delta。
+## 計時的斷言一律用它，不用牆鐘：電腦忙碌時一幀可能變長，但遊戲時間和遊戲裡的計時器仍然一致。
+## 在 await process_frame 之後讀取：這一幀的節點還沒處理，讀到的時間和血量都是上一幀處理完的狀態
+func _gt() -> float:
+	return main._game_time
+
+## 物理時鐘（秒）：累加 _physics_process 的 delta，和敵人的移動、灼燒同一個物理步進（受倍率影響、暫停時不前進）。
+## 灼燒的計時用它；武將攻擊在 _process，用 _gt
+func _pt() -> float:
+	return pclock.t
 
 func _wait_until(cond: Callable, timeout: float) -> bool:
 	var t: float = 0.0
@@ -113,6 +126,10 @@ func _expect_clean_prep(prefix: String, stage: String, waited: float) -> void:
 
 # ── 測試 ──────────────────────────────────────────────────────
 func _run() -> void:
+	# 物理時鐘放在最前面、優先處理：同一個物理步進裡先於遊戲節點累加
+	pclock = load("res://__regression__/physics_clock.gd").new()
+	pclock.process_physics_priority = -1000
+	root.add_child(pclock)
 	main = load("res://main/Main.tscn").instantiate()
 	root.add_child(main)
 	# 非 Web 平台 Main 會在 0.5 秒後注入自己的測試 payload，先等它結束再開始
@@ -278,6 +295,9 @@ func _run() -> void:
 
 	# ── R15：周瑜「火攻」（命中後附加 3 跳灼燒）──
 	await _r15_burn_cases()
+
+	# ── R16：攻速成長（D17）──
+	await _r16_attack_speed_cases()
 
 	# ── 輸出 ──
 	var failed: int = 0
@@ -604,21 +624,22 @@ func _r14_enemy() -> Node:
 func _r14_put(enemy: Node, hero: Node, d: float) -> void:
 	enemy.global_position = hero.global_position + Vector2(d * float(hero.tile_size), 0.0)
 
-## sec 秒內的每一擊：實際傷害與發生的時間（秒）
+## sec 秒（遊戲時間）內的每一擊：實際傷害與發生的時間（遊戲時間，秒；Round 16 起不用牆鐘）
 func _record_hits_timed(sec: float) -> Array:
 	var hits: Array = []
 	var last: Dictionary = {}
 	for c in main.units_layer.get_children():
 		if c is Enemy and is_instance_valid(c):
 			last[c.get_instance_id()] = c.current_hp
-	var t0: int = Time.get_ticks_msec()
-	while Time.get_ticks_msec() < t0 + int(sec * 1000.0):
+	var t0: float = _gt()
+	var wall_end: int = Time.get_ticks_msec() + int(sec * 4000.0) + 10000
+	while _gt() < t0 + sec and Time.get_ticks_msec() < wall_end:
 		for c in main.units_layer.get_children():
 			if c is Enemy and is_instance_valid(c):
 				var id: int = c.get_instance_id()
 				var before: float = float(last.get(id, c.max_hp))
 				if c.current_hp < before - 0.001:
-					hits.append({"dmg": snappedf(before - c.current_hp, 0.01), "t": (Time.get_ticks_msec() - t0) / 1000.0})
+					hits.append({"dmg": snappedf(before - c.current_hp, 0.01), "t": _gt() - t0})
 				last[id] = c.current_hp
 		await process_frame
 	return hits
@@ -746,41 +767,51 @@ func _r15_start(payload: Dictionary, hero_id: String = "zhou_yu") -> Node:
 	return e
 
 ## 把敵人放進射程（離武將 2 格），等到被打中（血量下降）的那一幀，立刻移到射程外（8 格）。
-## 回傳命中的時間（毫秒）與這一擊的傷害
+## 回傳看到命中的那一次的物理時鐘 t0、和前一次觀察的差 dh 與這一擊的傷害（命中發生在前一次觀察之後的 _process，灼燒從下一個物理步進開始倒數）；
+## wall 是實際時間（毫秒），只供診斷
 func _r15_hit_then_leave(e: Node, hero: Node) -> Dictionary:
 	var before: float = e.current_hp
 	_r14_put(e, hero, 2.0)
-	var t_end: int = Time.get_ticks_msec() + 3000
-	while Time.get_ticks_msec() < t_end and is_instance_valid(e) and e.current_hp >= before - 0.001:
+	var prev: float = _pt()
+	var g_end: float = _pt() + 3.0
+	var wall_end: int = Time.get_ticks_msec() + 20000
+	while _pt() < g_end and Time.get_ticks_msec() < wall_end and is_instance_valid(e) and e.current_hp >= before - 0.001:
+		prev = _pt()
 		await process_frame
-	var t0: int = Time.get_ticks_msec()
+	var t0: float = _pt()
 	var dmg: float = snappedf(before - e.current_hp, 0.01) if is_instance_valid(e) else -1.0
 	if is_instance_valid(e) and not e.is_dead():
 		_r14_put(e, hero, 8.0)
-	return {"t0": t0, "dmg": dmg}
+	return {"t0": t0, "dh": t0 - prev, "dmg": dmg, "wall": Time.get_ticks_msec()}
 
-## 到 t0 + sec 秒為止，記錄這個敵人每一幀的血量下降（時間是相對 t0 的秒數）；敵人死亡時記下死亡的時間後停止
-func _r15_drops(e: Node, t0: int, sec: float) -> Dictionary:
+## 到物理時鐘 t0 + sec 秒為止，記錄這個敵人每一幀的血量下降：t 是這一次、p 是前一次觀察時的物理時鐘（都相對 t0）。
+## 敵人死亡時記下死亡那一幀與前一幀的時間後停止。wall_ms 是同一段的實際時間（只供診斷）
+func _r15_drops(e: Node, t0: float, sec: float) -> Dictionary:
 	var drops: Array = []
-	var died: Array = [-1.0]
+	var died: Array = [-1.0, -1.0]
 	if not is_instance_valid(e):
-		return {"drops": drops, "died": -1.0}
+		return {"drops": drops, "died": -1.0, "died_p": -1.0}
+	var prev: Array = [_pt()]
 	var on_died := func(_n: Node) -> void:
-		died[0] = (Time.get_ticks_msec() - t0) / 1000.0
+		died[0] = _pt() - t0
+		died[1] = prev[0] - t0
 	e.died.connect(on_died)
 	var last: float = e.current_hp
-	while Time.get_ticks_msec() < t0 + int(sec * 1000.0):
+	var wall0: int = Time.get_ticks_msec()
+	var wall_end: int = wall0 + int(sec * 4000.0) + 10000
+	while _pt() < t0 + sec and Time.get_ticks_msec() < wall_end:
+		prev[0] = _pt()
 		await process_frame
 		if not is_instance_valid(e):
 			break
 		if e.current_hp < last - 0.001:
-			drops.append({"t": snappedf((Time.get_ticks_msec() - t0) / 1000.0, 0.001), "dmg": snappedf(last - e.current_hp, 0.01)})
+			drops.append({"t": _pt() - t0, "p": prev[0] - t0, "dmg": snappedf(last - e.current_hp, 0.01)})
 		last = e.current_hp
 	if is_instance_valid(e) and e.died.is_connected(on_died):
 		e.died.disconnect(on_died)
-	return {"drops": drops, "died": died[0]}
+	return {"drops": drops, "died": died[0], "died_p": died[1], "wall_ms": Time.get_ticks_msec() - wall0}
 
-## 把每一幀的血量下降拆成普通攻擊與灼燒跳傷（每一幀最多一擊、最多一跳）；拆不開的放在 bad
+## 把每一幀的血量下降拆成普通攻擊與灼燒跳傷（每一幀最多一擊、最多一跳）；拆不開的放在 bad。回傳的是 _r15_drops 的紀錄
 func _r15_split(drops: Array, hit: float, tick: float) -> Dictionary:
 	var hits: Array = []
 	var ticks: Array = []
@@ -788,26 +819,50 @@ func _r15_split(drops: Array, hit: float, tick: float) -> Dictionary:
 	for d in drops:
 		var v: float = d.dmg
 		if is_equal_approx(v, hit):
-			hits.append(d.t)
+			hits.append(d)
 		elif is_equal_approx(v, tick):
-			ticks.append(d.t)
+			ticks.append(d)
 		elif is_equal_approx(v, hit + tick):
-			hits.append(d.t)
-			ticks.append(d.t)
+			hits.append(d)
+			ticks.append(d)
 		else:
 			bad.append(d)
 	return {"hits": hits, "ticks": ticks, "bad": bad}
 
-## times 和 expected 數量相同，而且每個時間都在預期值 ± tol 秒內
-func _r15_near(times: Array, expected: Array, tol: float = 0.15) -> bool:
-	if times.size() != expected.size():
+## 每一跳都發生在「預期時間 expected[i]（物理時鐘，相對命中）到達」的那一幀：前一次觀察還沒到、這一次已經到。
+## 命中發生在看到命中的前一次觀察之後，所以下限再放寬 dh（兩次觀察之間的物理時間）。
+## 容差只來自實際經過的物理步進，不是固定秒數；0.0005 秒只吸收浮點誤差（1/60 秒累加 60 次不一定正好是 1）
+func _r15_at(recs: Array, expected: Array, dh: float) -> bool:
+	if recs.size() != expected.size():
 		return false
-	for i in range(times.size()):
-		if absf(float(times[i]) - float(expected[i])) > tol:
+	for i in range(recs.size()):
+		var ex: float = float(expected[i])
+		if not (float(recs[i].p) < ex + 0.0005 and float(recs[i].t) >= ex - dh - 0.0005):
 			return false
 	return true
 
+## 紀錄的時間（顯示用，毫秒精度）
+func _r15_ts(recs: Array) -> Array:
+	var out: Array = []
+	for r in recs:
+		out.append(snappedf(float(r.t), 0.001))
+	return out
+
+## 等不受時間倍率影響的 sec 秒（引擎的 delta，不是牆鐘），回傳這段期間物理時鐘前進的時間 adv、經過的物理步進數 steps，
+## 以及每一步的長度 per_step（應該正好是 Engine.time_scale ÷ 每秒物理步數）。電腦忙時引擎會限制每幀的步數，
+## 所以不拿實際時間比，只看每一步前進多少
+func _physics_rate(sec: float) -> Dictionary:
+	var tm: SceneTreeTimer = create_timer(sec, true, false, true)
+	var g0: float = _pt()
+	var f0: int = Engine.get_physics_frames()
+	while tm.time_left > 0.0:
+		await process_frame
+	var steps: int = Engine.get_physics_frames() - f0
+	var adv: float = _pt() - g0
+	return {"adv": adv, "steps": steps, "per_step": adv / float(steps) if steps > 0 else -1.0}
+
 func _r15_burn_cases() -> void:
+	# 灼燒在敵人的 _physics_process 推進：計時一律用物理時鐘（_pt），判定用 _r15_at：跳傷發生在預期時間到達的那一幀；牆鐘只記在細節裡供診斷
 	# R15-1：命中一次後移出射程：普通一擊 100；之後 3 跳各 20，第一跳在命中後 1 秒（命中當下不另外跳），之後每秒一跳，沒有第 4 跳
 	var float_texts: Array = []
 	var on_child := func(n: Node) -> void:
@@ -825,7 +880,7 @@ func _r15_burn_cases() -> void:
 	var r1: Dictionary = await _r15_drops(e1, h1.t0, 4.6)
 	main.units_layer.child_entered_tree.disconnect(on_child)
 	var s1: Dictionary = _r15_split(r1.drops, 100.0, 20.0)
-	_check("R15-1 命中一次後移出射程：普通一擊 100；之後 3 跳各 20，在命中後約 1、2、3 秒（第一跳不在命中當下），第 4 秒之後沒有再跳", h1.dmg == 100.0 and s1.hits.is_empty() and s1.bad.is_empty() and _r15_near(s1.ticks, [1.0, 2.0, 3.0]), {"hit": h1.dmg, "drops": r1.drops})
+	_check("R15-1 命中一次後移出射程：普通一擊 100；之後 3 跳各 20，在命中後遊戲時間 1、2、3 秒到達的那一幀（第一跳不在命中當下），到第 4.6 秒沒有第 4 跳", h1.dmg == 100.0 and s1.hits.is_empty() and s1.bad.is_empty() and _r15_at(s1.ticks, [1.0, 2.0, 3.0], h1.dh), {"hit": h1.dmg, "dh": h1.dh, "ticks": _r15_ts(s1.ticks), "drops": r1.drops, "wall_ms": r1.wall_ms})
 	var burn_texts: int = 0
 	for f in float_texts:
 		if f.text == "20" and f.color.is_equal_approx(Color(1.0, 0.55, 0.05)):
@@ -837,17 +892,22 @@ func _r15_burn_cases() -> void:
 	var e3: Node = await _r15_start(_r15_payload("r15_b", "r15-b1", [_r15_zhou()]))
 	var before3: float = e3.current_hp
 	_r14_put(e3, _zhou(), 2.0)
-	var t_end3: int = Time.get_ticks_msec() + 3000
-	while Time.get_ticks_msec() < t_end3 and e3.current_hp >= before3 - 0.001:
+	var prev3: float = _pt()
+	var g_end3: float = _pt() + 3.0
+	var wall_end3: int = Time.get_ticks_msec() + 20000
+	while _pt() < g_end3 and Time.get_ticks_msec() < wall_end3 and e3.current_hp >= before3 - 0.001:
+		prev3 = _pt()
 		await process_frame
-	var t3: int = Time.get_ticks_msec()
+	var t3: float = _pt()
+	var dh3: float = t3 - prev3
 	var first3: float = snappedf(before3 - e3.current_hp, 0.01)
 	var in_range: Dictionary = await _r15_drops(e3, t3, 2.6)
 	_r14_put(e3, _zhou(), 8.0)
+	var out_at: float = _pt() - t3
 	var after3: Dictionary = await _r15_drops(e3, t3, 6.2)
 	var s3: Dictionary = _r15_split(in_range.drops + after3.drops, 100.0, 20.0)
-	var last_hit: float = s3.hits[s3.hits.size() - 1] if not s3.hits.is_empty() else -1.0
-	_check("R15-3 連續命中時不疊加、不延後：每跳都是 20，跳傷在第 1、2 秒（不會因為一直命中而一直延後）；移出射程後再跳 3 次（第 3、4、5 秒），共 5 跳", first3 == 100.0 and s3.bad.is_empty() and s3.hits.size() >= 6 and last_hit < 2.65 and _r15_near(s3.ticks, [1.0, 2.0, 3.0, 4.0, 5.0]), {"hits": s3.hits, "ticks": s3.ticks, "bad": s3.bad})
+	var last_hit: float = float(s3.hits[s3.hits.size() - 1].t) if not s3.hits.is_empty() else -1.0
+	_check("R15-3 連續命中時不疊加、不延後：每跳都是 20，跳傷在第 1、2 秒（不會因為一直命中而一直延後）；移出射程後不再命中，再跳 3 次（第 3、4、5 秒），共 5 跳", first3 == 100.0 and s3.bad.is_empty() and s3.hits.size() >= 6 and last_hit > 2.0 and last_hit <= out_at + 0.0005 and _r15_at(s3.ticks, [1.0, 2.0, 3.0, 4.0, 5.0], dh3), {"hits": _r15_ts(s3.hits), "ticks": _r15_ts(s3.ticks), "out_at": out_at, "dh": dh3, "bad": s3.bad})
 
 	# R15-4：灼燒中攻擊力變成 150 後再命中一次：每跳傷害換成最近一次命中的快照（30）；下一跳的時間不重設（仍在第 1 秒），刷新後共 3 跳
 	var e4: Node = await _r15_start(_r15_payload("r15_c", "r15-c1", [_r15_zhou()]))
@@ -855,10 +915,10 @@ func _r15_burn_cases() -> void:
 	await _wait(0.3)
 	main._on_payload_received({"type": "update_team", "team_list": [_r15_zhou(150.0)]})
 	var h4b: Dictionary = await _r15_hit_then_leave(e4, _zhou())
-	var second_at: float = (h4b.t0 - h4.t0) / 1000.0
+	var second_at: float = h4b.t0 - h4.t0
 	var r4: Dictionary = await _r15_drops(e4, h4.t0, 4.6)
 	var s4: Dictionary = _r15_split(r4.drops, 150.0, 30.0)
-	_check("R15-4 灼燒中再命中（攻擊力 150）：每跳換成 30（最近一次命中的 20%）；下一跳仍在第一次命中後 1 秒（不從第二擊重算），之後共 3 跳", h4.dmg == 100.0 and h4b.dmg == 150.0 and second_at < 0.9 and s4.bad.is_empty() and _r15_near(s4.ticks, [1.0, 2.0, 3.0]), {"first": h4.dmg, "second": h4b.dmg, "second_at": second_at, "drops": r4.drops})
+	_check("R15-4 灼燒中再命中（攻擊力 150）：每跳換成 30（最近一次命中的 20%）；下一跳仍在第一次命中後 1 秒（不從第二擊重算），之後共 3 跳", h4.dmg == 100.0 and h4b.dmg == 150.0 and second_at < 0.9 and s4.bad.is_empty() and _r15_at(s4.ticks, [1.0, 2.0, 3.0], h4.dh), {"first": h4.dmg, "second": h4b.dmg, "second_at": second_at, "ticks": _r15_ts(s4.ticks), "drops": r4.drops})
 
 	# R15-5：灼燒打倒敵人（血量 130：普通 100 後剩 30，第 1 跳剩 10、第 2 跳打倒）：死亡後立即停止；擊殺、金幣、清波、結算都只一次
 	var killed: Array = [0]
@@ -879,7 +939,8 @@ func _r15_burn_cases() -> void:
 	_wm().enemy_killed.disconnect(on_killed)
 	_wm().wave_cleared.disconnect(on_cleared)
 	var s5: Dictionary = _r15_split(r5.drops, 100.0, 20.0)
-	_check("R15-5 灼燒打倒敵人：普通 100 後第 1 跳（約 1 秒）剩 10，第 2 跳（約 2 秒）打倒，之後沒有再跳；敵人移除", h5.dmg == 100.0 and s5.bad.is_empty() and _r15_near(s5.ticks, [1.0]) and absf(float(r5.died) - 2.0) <= 0.15 and not is_instance_valid(e5), {"hit": h5.dmg, "drops": r5.drops, "died": r5.died})
+	var died5: bool = float(r5.died_p) < 2.0005 and float(r5.died) >= 2.0 - h5.dh - 0.0005
+	_check("R15-5 灼燒打倒敵人：普通 100 後第 1 跳（第 1 秒）剩 10，第 2 跳（第 2 秒到達的那一幀）打倒，之後沒有再跳；敵人移除", h5.dmg == 100.0 and s5.bad.is_empty() and _r15_at(s5.ticks, [1.0], h5.dh) and died5 and not is_instance_valid(e5), {"hit": h5.dmg, "dh": h5.dh, "drops": r5.drops, "died": r5.died, "died_p": r5.died_p, "wall_ms": r5.wall_ms})
 	_check("R15-5 擊殺只結算一次：kills +1、戰鬥金幣 +5、擊殺信號 1 次、清波 1 次、這一場結算 1 次", _bm().kills - kills0 == 1 and _bm().battle_gold - gold0 == 5 and killed[0] == 1 and cleared[0] == 1 and battle_ended_count - ended0 == 1, {"kills": _bm().kills - kills0, "gold": _bm().battle_gold - gold0, "killed": killed[0], "cleared": cleared[0], "ended": battle_ended_count - ended0})
 
 	# R15-6：灼燒中抵達基地：立即停止（敵人移除），不算擊殺，城池只扣一次
@@ -903,7 +964,7 @@ func _r15_burn_cases() -> void:
 	main._on_payload_received({"type": "update_team", "team_list": []})
 	var r7: Dictionary = await _r15_drops(e7, h7.t0, 4.6)
 	var s7: Dictionary = _r15_split(r7.drops, 100.0, 20.0)
-	_check("R15-7 命中後移除周瑜：已附加的灼燒仍在第 1、2、3 秒各跳 20", h7.dmg == 100.0 and not main._placed_heroes.has("zhou_yu") and s7.hits.is_empty() and s7.bad.is_empty() and _r15_near(s7.ticks, [1.0, 2.0, 3.0]), {"removed": not main._placed_heroes.has("zhou_yu"), "drops": r7.drops})
+	_check("R15-7 命中後移除周瑜：已附加的灼燒仍在第 1、2、3 秒各跳 20", h7.dmg == 100.0 and not main._placed_heroes.has("zhou_yu") and s7.hits.is_empty() and s7.bad.is_empty() and _r15_at(s7.ticks, [1.0, 2.0, 3.0], h7.dh), {"removed": not main._placed_heroes.has("zhou_yu"), "ticks": _r15_ts(s7.ticks), "drops": r7.drops})
 
 	# R15-8：灼燒中開始新的一場（同一關重來）：舊敵人移除，新的一場的敵人沒有灼燒、不扣血
 	var e8: Node = await _r15_start(_r15_payload("r15_g", "r15-g1", [_r15_zhou()]))
@@ -915,36 +976,46 @@ func _r15_burn_cases() -> void:
 	await _wait(2.3)
 	_check("R15-8 新的一場不殘留：舊敵人移除；新的一場的敵人沒有灼燒、2 秒後血量不變", burning8 and not is_instance_valid(e8) and e8b != null and not e8b.is_burning() and e8b.current_hp == e8b.max_hp, {"old_valid": is_instance_valid(e8), "new_burning": e8b.is_burning() if e8b else null, "new_hp": e8b.current_hp if e8b else null})
 
-	# R15-9：暫停不消耗時間：命中後 0.3 秒暫停 1.5 秒，暫停期間沒有跳傷；恢復後照剩下的時間繼續（第一跳延後約 1.5 秒）
+	# R15-9：暫停不消耗時間：命中後 0.3 秒暫停 1.5 秒（實際時間）。暫停期間遊戲時間、灼燒的倒數與血量都不變；
+	# 恢復後照剩下的時間繼續，所以 3 跳仍在命中後遊戲時間 1、2、3 秒（實際時間延後了暫停的長度，只記在細節）
 	var e9: Node = await _r15_start(_r15_payload("r15_h", "r15-h1", [_r15_zhou()]))
 	var h9: Dictionary = await _r15_hit_then_leave(e9, _zhou())
 	await _wait(0.3)
 	var hp_pause: float = e9.current_hp
+	var g_pause: float = _pt()
+	var next_pause: float = float(e9.burn_state().next_in)
 	var p_start: int = Time.get_ticks_msec()
 	paused = true
 	await _wait(1.5)
 	var hp_paused_end: float = e9.current_hp
+	var g_paused_end: float = _pt()
+	var next_paused_end: float = float(e9.burn_state().next_in)
 	paused = false
-	var pause_len: float = (Time.get_ticks_msec() - p_start) / 1000.0
-	var r9: Dictionary = await _r15_drops(e9, h9.t0, 1.0 + pause_len + 2.6)
+	var pause_wall: float = (Time.get_ticks_msec() - p_start) / 1000.0
+	var r9: Dictionary = await _r15_drops(e9, h9.t0, 3.6)
 	var s9: Dictionary = _r15_split(r9.drops, 100.0, 20.0)
-	_check("R15-9 暫停期間沒有跳傷，恢復後繼續：3 跳在命中後約 1、2、3 秒再加上暫停的時間", hp_pause == hp_paused_end and s9.bad.is_empty() and _r15_near(s9.ticks, [1.0 + pause_len, 2.0 + pause_len, 3.0 + pause_len]), {"pause": pause_len, "during": hp_pause - hp_paused_end, "drops": r9.drops})
+	_check("R15-9 暫停期間遊戲時間、灼燒倒數與血量都不變（沒有跳傷）；恢復後繼續，3 跳在命中後遊戲時間 1、2、3 秒", hp_pause == hp_paused_end and g_pause == g_paused_end and next_pause == next_paused_end and next_pause > 0.0 and s9.bad.is_empty() and _r15_at(s9.ticks, [1.0, 2.0, 3.0], h9.dh), {"pause_wall": pause_wall, "game_during": g_paused_end - g_pause, "next_in": [next_pause, next_paused_end], "hp_during": hp_pause - hp_paused_end, "ticks": _r15_ts(s9.ticks)})
 
-	# R15-10：時間倍率依遊戲時間推進：2 倍速時每 0.5 秒（實際時間）一跳；部署選單的子彈時間（0.1 倍）1 秒內只經過 0.1 秒遊戲時間
+	# R15-10：時間倍率：2 倍速時每個物理步進前進的時間是 1 倍速的 2 倍；子彈時間（0.1 倍）只有 0.1 倍。
+	# 灼燒照遊戲時間跳（兩種倍率下都在命中後遊戲時間 1、2、3 秒）；實際時間只記在細節
 	Engine.time_scale = 2.0
+	# 比例在命中之前量：命中之後才量會佔掉遊戲時間約 1 秒，第一跳發生在量測期間而沒有記到（Round 16 第一次反向驗證時出現過一次）
+	var rate2: Dictionary = await _physics_rate(0.5)
 	var e10: Node = await _r15_start(_r15_payload("r15_i", "r15-i1", [_r15_zhou()]))
 	var h10: Dictionary = await _r15_hit_then_leave(e10, _zhou())
-	var r10: Dictionary = await _r15_drops(e10, h10.t0, 2.4)
+	var r10: Dictionary = await _r15_drops(e10, h10.t0, 3.6)
 	Engine.time_scale = 1.0
 	var s10: Dictionary = _r15_split(r10.drops, 100.0, 20.0)
 	var e10b: Node = await _r15_start(_r15_payload("r15_i", "r15-i2", [_r15_zhou()]))
 	var h10b: Dictionary = await _r15_hit_then_leave(e10b, _zhou())
 	Engine.time_scale = 0.1
-	await _wait_real(1.0)
+	var rate01: Dictionary = await _physics_rate(1.0)
 	Engine.time_scale = 1.0
-	var r10b: Dictionary = await _r15_drops(e10b, h10b.t0, 4.6)
+	var r10b: Dictionary = await _r15_drops(e10b, h10b.t0, 3.6)
 	var s10b: Dictionary = _r15_split(r10b.drops, 100.0, 20.0)
-	_check("R15-10 時間倍率：2 倍速時 3 跳在實際約 0.5、1.0、1.5 秒；子彈時間（0.1 倍）1 秒後恢復，3 跳在約 1.9、2.9、3.9 秒", s10.bad.is_empty() and _r15_near(s10.ticks, [0.5, 1.0, 1.5], 0.12) and s10b.bad.is_empty() and _r15_near(s10b.ticks, [1.9, 2.9, 3.9]), {"x2": s10.ticks, "slow": s10b.ticks})
+	var tps: float = float(Engine.physics_ticks_per_second)
+	var rate_ok: bool = rate2.steps > 0 and absf(rate2.per_step - 2.0 / tps) < 1e-9 and rate01.steps > 0 and absf(rate01.per_step - 0.1 / tps) < 1e-9
+	_check("R15-10 時間倍率：2 倍速時每個物理步進前進 2 ÷ 每秒步數、子彈時間 0.1 ÷ 每秒步數；兩種倍率下灼燒都在命中後遊戲時間 1、2、3 秒（照遊戲時間推進）", rate_ok and s10.bad.is_empty() and _r15_at(s10.ticks, [1.0, 2.0, 3.0], h10.dh) and s10b.bad.is_empty() and _r15_at(s10b.ticks, [1.0, 2.0, 3.0], h10b.dh), {"x2_rate": rate2, "x2": _r15_ts(s10.ticks), "x2_wall_ms": r10.wall_ms, "slow_rate": rate01, "slow": _r15_ts(s10b.ticks)})
 
 	# R15-11：沒有火攻的武將與不認得的技能 id 不附加灼燒（帶了灼燒參數也一樣）
 	var e11: Node = await _r15_start(_r15_payload("r15_j", "r15-j1", [_r15_zhou(100.0, {"id": "unknown_skill", "burn_ratio": 0.2, "burn_ticks": 3, "burn_interval": 1.0})]))
@@ -957,8 +1028,137 @@ func _r15_burn_cases() -> void:
 	var r11b: Dictionary = await _r15_drops(e11b, h11b.t0, 2.3)
 	var burning11b: bool = e11b.is_burning()
 	_check("R15-11 不認得的技能 id（帶了灼燒參數）與沒有技能的關羽：命中 100 後沒有灼燒、沒有跳傷", h11.dmg == 100.0 and r11.drops.is_empty() and not burning11 and h11b.dmg == 100.0 and r11b.drops.is_empty() and not burning11b, {"unknown": r11.drops, "guan": r11b.drops})
+
+	# R15-12：可控步進（Round 16）：停掉這個敵人的物理更新，改由測試以固定 0.0625 秒呼叫它的 _physics_process，時間完全由測試決定
+	#（敵人每一步最多採用 0.1 秒；1/16 秒在二進位是精確值，累加不會有誤差）。
+	# 附加（每跳 20）後第 0.75 秒沒有跳、第 1 秒正好一跳；第 1.5 秒再附加（每跳 30）只刷新剩餘跳數與傷害，
+	# 下一跳仍在第 2 秒（不是 2.5 秒）；之後第 2、3、4 秒各 30，第 5 秒沒有。命中當下（第 0 秒）不跳
+	_load(_r15_payload("r15_k", "r15-k1", []))
+	_bm().player_start_battle()
+	var e12: Node = await _r14_enemy()
+	var steps12: Array = []
+	if e12 != null:
+		e12.set_physics_process(false)
+		var hp12: float = e12.current_hp
+		e12.apply_burn(20.0, 3, 1.0)
+		var at0: bool = e12.current_hp == hp12
+		for i in range(1, 81):
+			e12._physics_process(0.0625)
+			var t12: float = i * 0.0625
+			if e12.current_hp < hp12 - 0.001:
+				steps12.append([t12, snappedf(hp12 - e12.current_hp, 0.01)])
+			hp12 = e12.current_hp
+			if is_equal_approx(t12, 1.5):
+				e12.apply_burn(30.0, 3, 1.0)
+		_check("R15-12 可控步進（每步 0.0625 秒）：附加當下不跳；第 1 秒 20；第 1.5 秒再附加後下一跳仍在第 2 秒；第 2、3、4 秒各 30，之後沒有", at0 and str(steps12) == str([[1.0, 20.0], [2.0, 30.0], [3.0, 30.0], [4.0, 30.0]]) and not e12.is_burning(), steps12)
+	else:
+		_check("R15-12 可控步進：等不到敵人", false, "")
 	_load(_stage_b())
 
-## 不受 Engine.time_scale 影響的等待（實際時間）
-func _wait_real(sec: float) -> void:
-	await create_timer(sec, true, false, true).timeout
+# ── R16：攻速成長（D17）──
+# Web 把正式設定的 speed_growth 正規化成 atk_spd_growth 後才送進來（store 測試 R16-A1～A5）；Godot 只讀 atk_spd_growth。
+# 攻擊間隔＝max(0.1, attack_speed × (1 − (等級 − 1) × atk_spd_growth))，初始化與 update_team 都從設定重新計算。
+# 武將攻擊在 _process：用遊戲時間（_gt）量實際的攻擊間隔
+func _r16_guan(level: int) -> Dictionary:
+	var h: Dictionary = _r12_hero("guan_yu", null)
+	h["level"] = level
+	return h
+
+func _r16_payload(battle_id: String, team: Array, growth: Dictionary) -> Dictionary:
+	var p: Dictionary = _r12_payload("r16_a", [[_grp("post", 1, 0.3)]], battle_id, team)
+	var cfg: Dictionary = {"hero_id": "guan_yu", "name": "關羽", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5}
+	cfg.merge(growth)
+	p["heroes_config"] = [cfg]
+	return p
+
+func _guan() -> Node:
+	return main._placed_heroes.get("guan_yu")
+
+## sec 秒（遊戲時間）內這個敵人每一次被打中的時間，以及期間最長的一幀（遊戲時間）
+func _r16_hits(e: Node, sec: float) -> Dictionary:
+	var hits: Array = []
+	var dmax: float = 0.0
+	var last: float = e.current_hp
+	var t0: float = _gt()
+	var prev: float = t0
+	var wall_end: int = Time.get_ticks_msec() + int(sec * 4000.0) + 10000
+	while _gt() < t0 + sec and Time.get_ticks_msec() < wall_end:
+		await process_frame
+		dmax = maxf(dmax, _gt() - prev)
+		prev = _gt()
+		if not is_instance_valid(e):
+			break
+		if e.current_hp < last - 0.001:
+			hits.append(snappedf(_gt() - t0, 0.0001))
+		last = e.current_hp
+	return {"hits": hits, "dmax": dmax}
+
+## 相鄰兩擊的間隔都在 [攻擊間隔, 攻擊間隔 + 最長的一幀]：每次攻擊後計時器設回攻擊間隔，攻擊只會發生在某一幀，
+## 所以實際間隔最多多出一幀（容差只來自實際的幀長；0.0005 秒吸收浮點誤差）
+func _r16_interval_ok(r: Dictionary, expect: float) -> bool:
+	var h: Array = r.hits
+	if h.size() < 3:
+		return false
+	for i in range(1, h.size()):
+		var d: float = float(h[i]) - float(h[i - 1])
+		if d < expect - 0.0005 or d > expect + float(r.dmax) + 0.0005:
+			return false
+	return true
+
+func _r16_attack_speed_cases() -> void:
+	# R16-1：Lv1 放置：攻擊間隔＝基礎 0.5 秒（成長 0.2 在 Lv1 不作用）
+	_load(_r16_payload("r16-a1", [_r16_guan(1)], {"atk_spd_growth": 0.2}))
+	_r12_place("guan_yu", Vector2i(3, 4))
+	_bm().player_start_battle()
+	var e: Node = await _r14_enemy()
+	if e == null or _guan() == null:
+		_check("R16-1 前置：等不到敵人或關羽沒有放置", false, "")
+		return
+	_r14_put(e, _guan(), 1.0)
+	await _wait(0.6)
+	var r1: Dictionary = await _r16_hits(e, 2.0)
+	_check("R16-1 Lv1：攻擊間隔 0.5 秒；實際每一擊的間隔在 0.5 秒到 0.5 秒＋一幀之間", is_equal_approx(_guan().attack_speed, 0.5) and _r16_interval_ok(r1, 0.5), {"attack_speed": _guan().attack_speed, "hits": r1.hits, "dmax": r1.dmax})
+
+	# R16-2：戰鬥中升到 Lv2（update_team）：0.5 × (1 − 0.2) = 0.4
+	main._on_payload_received({"type": "update_team", "team_list": [_r16_guan(2)]})
+	var as2: float = _guan().attack_speed
+	await _wait(0.6)
+	var r2: Dictionary = await _r16_hits(e, 2.0)
+	_check("R16-2 戰鬥中升到 Lv2（update_team）：攻擊間隔 0.4 秒（0.5 × (1 − 0.2)），實際間隔相符", is_equal_approx(as2, 0.4) and _r16_interval_ok(r2, 0.4), {"attack_speed": as2, "hits": r2.hits, "dmax": r2.dmax})
+
+	# R16-3：同一個等級重複 update_team 三次：仍是 0.4（從設定重新計算，不在目前的值上再乘）
+	for i in range(3):
+		main._on_payload_received({"type": "update_team", "team_list": [_r16_guan(2)]})
+	await _wait(0.5)
+	var r3: Dictionary = await _r16_hits(e, 1.6)
+	_check("R16-3 同一個等級重複 update_team 三次：攻擊間隔仍是 0.4 秒（不疊算），實際間隔相符", is_equal_approx(_guan().attack_speed, 0.4) and _r16_interval_ok(r3, 0.4), {"attack_speed": _guan().attack_speed, "hits": r3.hits})
+
+	# R16-4：升到 Lv3：0.5 × (1 − 0.4) = 0.3
+	main._on_payload_received({"type": "update_team", "team_list": [_r16_guan(3)]})
+	await _wait(0.5)
+	var r4: Dictionary = await _r16_hits(e, 1.6)
+	_check("R16-4 升到 Lv3：攻擊間隔 0.3 秒，實際間隔相符", is_equal_approx(_guan().attack_speed, 0.3) and _r16_interval_ok(r4, 0.3), {"attack_speed": _guan().attack_speed, "hits": r4.hits})
+
+	# R16-5：下限 0.1 秒：成長 0.6、直接以 Lv3 放置（初始化）→ 0.5 × (1 − 1.2) < 0.1 → 0.1；再升到 Lv5 仍是 0.1
+	_load(_r16_payload("r16-b1", [_r16_guan(3)], {"atk_spd_growth": 0.6}))
+	_r12_place("guan_yu", Vector2i(3, 4))
+	_bm().player_start_battle()
+	var e5: Node = await _r14_enemy()
+	_r14_put(e5, _guan(), 1.0)
+	await _wait(0.3)
+	var r5: Dictionary = await _r16_hits(e5, 1.0)
+	var as5: float = _guan().attack_speed
+	main._on_payload_received({"type": "update_team", "team_list": [_r16_guan(5)]})
+	_check("R16-5 下限：成長 0.6 的 Lv3 攻擊間隔是 0.1 秒（不會變成 0 或負數），實際間隔相符；升到 Lv5 仍是 0.1", is_equal_approx(as5, 0.1) and _r16_interval_ok(r5, 0.1) and is_equal_approx(_guan().attack_speed, 0.1), {"lv3": as5, "lv5": _guan().attack_speed, "hits": r5.hits, "dmax": r5.dmax})
+
+	# R16-6：初始化與 update_team 一致：直接以 Lv2 放置 → 0.4（和 R16-2 升級後相同）
+	_load(_r16_payload("r16-c1", [_r16_guan(2)], {"atk_spd_growth": 0.2}))
+	_r12_place("guan_yu", Vector2i(3, 4))
+	_check("R16-6 直接以 Lv2 放置（初始化）：攻擊間隔 0.4 秒，和戰鬥中升到 Lv2 相同", _guan() != null and is_equal_approx(_guan().attack_speed, 0.4), _guan().attack_speed if _guan() else null)
+
+	# R16-7：Godot 只讀 atk_spd_growth：只有 speed_growth（正式設定的名稱）時沒有成長。
+	# 正式設定由 Web 在進入 store 時正規化（store R16-A3、A4；瀏覽器 r16-web.js），這一項記錄兩邊的分工
+	_load(_r16_payload("r16-d1", [_r16_guan(2)], {"speed_growth": 0.2}))
+	_r12_place("guan_yu", Vector2i(3, 4))
+	_check("R16-7 Godot 只讀 atk_spd_growth：設定只有 speed_growth 時 Lv2 仍是 0.5 秒（別名由 Web 正規化）", _guan() != null and is_equal_approx(_guan().attack_speed, 0.5), _guan().attack_speed if _guan() else null)
+	_load(_stage_b())

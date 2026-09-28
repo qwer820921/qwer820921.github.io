@@ -57,7 +57,10 @@ export interface HeroConfig {
   image?: string;
   attack_image?: string;
   range_growth: number;
+  /** 攻速成長（程式內部使用的名稱）。靜態設定進入 store 時由 utils/heroStats 的 normalizeHeroConfig 補齊 */
   atk_spd_growth: number;
+  /** 正式 heroes_config 的攻速成長欄位名稱；atk_spd_growth 無效時才採用（見 normalizeHeroConfig） */
+  speed_growth?: number;
 }
 
 export interface EnemyConfig {

@@ -6,6 +6,7 @@ import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { HeroState, HeroConfig, Rarity, JobClass } from "../../types";
 import HeroSkillInfo from "../HeroSkillInfo";
+import { attackIntervalSec, formatSec } from "../../utils/heroStats";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 const rarityColor: Record<Rarity, string> = {
@@ -195,6 +196,16 @@ function HeroDetailContent({
               </div>
             </div>
           ))}
+        </div>
+        {/* 攻擊間隔（秒，越小越快）：和戰場上的 Godot 用同一個公式（utils/heroStats） */}
+        <div
+          className="text-center mt-2"
+          style={{ color: "var(--sg-muted)", fontSize: "0.7rem" }}
+          data-testid="attack-interval-preview"
+        >
+          攻擊間隔 {formatSec(attackIntervalSec(config, hero.level))} 秒 →{" "}
+          {formatSec(attackIntervalSec(config, hero.level + 1))}{" "}
+          秒（數字越小攻擊越快）
         </div>
       </div>
 

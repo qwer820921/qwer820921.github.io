@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { StaticConfig, MapConfig } from "../types";
 import { gameApi } from "../api/gameApi";
+import { normalizeStaticConfig } from "../utils/heroStats";
 
 const STATIC_LOCAL_KEY = "shenma_static_config";
 const STATIC_TS_KEY = "shenma_static_ts";
@@ -67,8 +68,12 @@ export const useStaticConfigStore = create<StaticConfigStore>((set, get) => {
         maps: allMapsRes.maps as MapConfig[],
       };
 
+      // 快取保留 API 的原始內容；store 裡的一律是正規化後的設定（攻速成長欄位名稱，見 utils/heroStats）
       writeCache(config);
-      set({ config, ...(blocking ? { isLoading: false } : {}) });
+      set({
+        config: normalizeStaticConfig(config),
+        ...(blocking ? { isLoading: false } : {}),
+      });
     } catch (e: unknown) {
       if (blocking) {
         const msg = e instanceof Error ? e.message : "GAS_ERROR";
@@ -88,10 +93,12 @@ export const useStaticConfigStore = create<StaticConfigStore>((set, get) => {
       // 防止重複呼叫
       if (get().isLoading) return;
 
-      const cached = readStaticLocal();
-      const hasCachedConfig = !!cached?.heroesConfig?.length;
+      const raw = readStaticLocal();
+      const hasCachedConfig = !!raw?.heroesConfig?.length;
 
-      if (hasCachedConfig) {
+      if (raw && hasCachedConfig) {
+        // 已存在的快取可能是舊格式（只有 speed_growth）：和 API 回應一樣先正規化，不需要玩家清除快取
+        const cached = normalizeStaticConfig(raw);
         const isExpired = Date.now() - readTimestamp() >= CACHE_TTL_MS;
 
         if (!isExpired) {

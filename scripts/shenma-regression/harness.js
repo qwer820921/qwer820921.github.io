@@ -20,7 +20,7 @@ async (page) => {
       : [];
   const BASE = "http://localhost:3000";
   // 證據目錄：tools/run-browser.mjs 可用 EVIDENCE_DIR 指定（context.__shenmaEvidence），避免不同批次互相覆寫
-  const EVIDENCE = context.__shenmaEvidence || ".handoff/evidence/round-15";
+  const EVIDENCE = context.__shenmaEvidence || ".handoff/evidence/round-16";
 
   // ── mock 靜態設定：14×11 地圖，第 5 列直線道路，上下兩列建築格 ──
   const ROW = 5;
@@ -46,6 +46,11 @@ async (page) => {
     atk_growth: 10, def_growth: 8, hp_growth: 100,
     range_growth: 0, atk_spd_growth: 0, image,
   });
+  // 只有正式設定的欄位名稱 speed_growth（沒有 atk_spd_growth）的武將
+  const aliasOnly = (h, speed_growth) => {
+    const { atk_spd_growth: _drop, ...rest } = h;
+    return { ...rest, speed_growth };
+  };
   const enemy = (enemy_id, name, hp, speed, image) => ({ enemy_id, name, hp, speed, image });
   const group = (enemy_id, count, interval) => ({ enemy_id, count, interval, path: "path_a" });
   const map = (map_id, name, waves) => ({
@@ -61,7 +66,9 @@ async (page) => {
       { ...hero("huang_zhong", "黃忠", "hero_huang_zhong.webp", "archer"), cost: 6, attack_range: 5, range_growth: 0.03 },
       // Round 15：周瑜（法師、火攻）。花費、攻擊力、射程、射程成長、攻擊間隔和正式設定相同（9、122、4、0.05、1 秒），其他數值沿用 mock 武將；
       // 預設隊伍不變，需要周瑜的情境自己設定隊伍（容量 11 放得下一位）
-      { ...hero("zhou_yu", "周瑜", "hero_zhou_yu.webp", "mage"), cost: 9, base_atk: 122, attack_range: 4, attack_speed: 1, range_growth: 0.05 },
+      // Round 16：周瑜的攻速成長和正式設定一樣只用 speed_growth（0.02，沒有 atk_spd_growth），驗證 Web 的欄位正規化；
+      // 其他 mock 武將維持明確的 atk_spd_growth 0（明確的 0 優先，攻擊間隔不隨等級改變）
+      aliasOnly({ ...hero("zhou_yu", "周瑜", "hero_zhou_yu.webp", "mage"), cost: 9, base_atk: 122, attack_range: 4, attack_speed: 1, range_growth: 0.05 }, 0.02),
     ],
     enemies: [
       // A 關：血厚、極慢、出兵間隔長 → 用來卡在「出兵間隔」中切關
@@ -92,6 +99,31 @@ async (page) => {
       map("chapter1_6", "Mock E 無效波", [[group("mock_missing_config", 1, 1.0), group("mock_b_grunt", 0, 1.0)]]),
       // R3：缺設定的組排在有效組前面 → 3 隻 B 步兵處理完之前不可結算
       map("chapter1_7", "Mock M 混合組", [[group("mock_missing_config", 1, 1.0), group("mock_b_grunt", 3, 1.0)]]),
+      // Round 16 敵軍預覽：兩條路線、兩波、同種敵人分兩組（預設玩家的進度是 chapter1_7，這一關是鎖定的；r16 的玩家會解鎖）
+      {
+        ...map("chapter1_8", "Mock P 多路線", [
+          [group("mock_grunt", 3, 1.0), { ...group("mock_grunt", 2, 1.0), path: "path_b" }, { ...group("mock_b_grunt", 1, 1.0), path: "path_b" }],
+          [group("mock_c_fast", 2, 0.5)],
+        ]),
+        path_json: { ...pathJson, paths: { path_a: [[0, ROW], [13, ROW]], path_b: [[0, ROW - 2], [13, ROW - 2]] } },
+      },
+      // Round 16 敵軍預覽：資料不完整（空白列、找不到的敵人、沒有路點的路線、沒有數量、數量 0、缺少第 2 波），一直是鎖定的
+      {
+        ...map("chapter1_9", "Mock Q 缺資料", []),
+        waves: [
+          {
+            wave: 1,
+            enemies: [
+              { enemy_id: "", count: 1, interval: 1, path: "path_a" },
+              group("mock_unknown_enemy", 2, 1.0),
+              { ...group("mock_grunt", 2, 1.0), path: "path_x" },
+              { enemy_id: "mock_grunt", interval: 1.0, path: "path_a" },
+              group("mock_grunt", 0, 1.0),
+            ],
+          },
+          { wave: 3, enemies: [group("mock_b_grunt", 1, 1.0)] },
+        ],
+      },
     ],
   };
 

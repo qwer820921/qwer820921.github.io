@@ -15,6 +15,7 @@ import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { HeroState, HeroConfig, Rarity, JobClass } from "../../types";
 import HeroSkillInfo from "../../components/HeroSkillInfo";
+import { attackIntervalSec, formatSec } from "../../utils/heroStats";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 // ── 顯示設定 ──────────────────────────────────────────────
@@ -227,14 +228,9 @@ function UpgradeModal({
                 c: C.gold,
               },
               {
-                label: "攻速",
-                value: Number(
-                  Math.max(
-                    0.1,
-                    config.attack_speed *
-                      (1.0 - (hero.level - 1) * config.atk_spd_growth)
-                  ).toFixed(2)
-                ),
+                // 攻擊間隔（秒，越小越快）：和戰場上的 Godot 用同一個公式（utils/heroStats）
+                label: "攻擊間隔",
+                value: `${formatSec(attackIntervalSec(config, hero.level))} 秒`,
                 c: C.muted,
               },
             ].map(({ label, value, c }) => (
@@ -318,20 +314,10 @@ function UpgradeModal({
                   c: C.gold,
                 },
                 {
-                  label: "攻速",
-                  cur: Number(
-                    Math.max(
-                      0.1,
-                      config.attack_speed *
-                        (1.0 - (hero.level - 1) * config.atk_spd_growth)
-                    ).toFixed(2)
-                  ),
+                  label: "攻擊間隔(秒)",
+                  cur: Number(formatSec(attackIntervalSec(config, hero.level))),
                   next: Number(
-                    Math.max(
-                      0.1,
-                      config.attack_speed *
-                        (1.0 - hero.level * config.atk_spd_growth)
-                    ).toFixed(2)
+                    formatSec(attackIntervalSec(config, hero.level + 1))
                   ),
                   c: C.text,
                 },
