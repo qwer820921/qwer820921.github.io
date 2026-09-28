@@ -1,5 +1,6 @@
 "use client";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
+import { useStageAnchor } from "../../utils/stageAnchor";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 interface PlacementMenuProps {
@@ -27,6 +28,10 @@ export default function PlacementMenu({
   const [activeTab, setActiveTab] = useState<"hero" | "tower">(
     isRoad ? "hero" : "tower"
   );
+  const menuRef = useRef<HTMLDivElement>(null);
+  // 定位和選取面板共用（utils/stageAnchor）：Godot 的點擊座標乘上縮放比例、限制在看得到的範圍、
+  // 太高時選單內容捲動；尺寸或方向改變時重算（Round 18，D22）
+  useStageAnchor(menuRef, pos);
 
   // 防禦塔配置
   const towerConfigs = [
@@ -45,11 +50,9 @@ export default function PlacementMenu({
   return (
     <div className={styles.placementOverlay} onClick={onClose}>
       <div
+        ref={menuRef}
         className={styles.placementMenu}
-        style={{
-          left: Math.min(window.innerWidth - 240, Math.max(20, pos.x - 120)),
-          top: Math.min(window.innerHeight - 340, Math.max(20, pos.y - 170)),
-        }}
+        data-testid="placement-menu"
         onClick={(e) => e.stopPropagation()}
       >
         <div className={styles.placementHeader}>

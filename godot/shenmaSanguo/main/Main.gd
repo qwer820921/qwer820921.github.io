@@ -102,6 +102,8 @@ func _on_payload_received(payload: Dictionary) -> void:
 		_remove_heroes_not_in_team(_team_list)
 	elif type == "set_tower_target":
 		_on_web_set_tower_target(payload)
+	elif type == "sell_tower":
+		_on_web_sell_tower(payload)
 	elif type == "load_stage" or payload.has("stage_id"):
 		# 初始初始化 或 切換關卡
 		_do_initial_setup(payload)
@@ -456,6 +458,8 @@ func _place_tower(cell: Vector2i, world_pos: Vector2) -> void:
 	tower.position = world_pos
 	tower.tile_size = _tile_size
 	tower.setup(_drag_tower_type, cell, wave_manager)
+	# 建造費已扣款成功：計入這座塔的投入（拆除時依此返還）
+	tower.add_investment(cost)
 	_tower_seq += 1
 	tower.tower_uid = "tower-%d" % _tower_seq
 	tower.tower_clicked.connect(_on_tower_clicked)
@@ -528,11 +532,17 @@ func _on_tower_clicked(tower: Node) -> void:
 		"tower_uid": tower.tower_uid,
 		"battle_id": battle_manager.battle_id,
 		"target_mode": tower.target_mode,
+		# 備戰拆除（Round 18）：這座塔已實際支付的戰鬥金幣、拆除時返還的金額、目前能不能拆（只有備戰中可以）。
+		# Web 的拆除命令要帶回確認時看到的返還金額，和這裡不同（例如確認期間升級了）就不拆
+		"invested_gold": tower.invested_gold,
+		"sell_refund": tower.get_sell_refund(),
+		"can_sell": battle_manager.game_state == BattleManager.GameState.PREP,
 		"screen_pos": {"x": pos_screen.x, "y": pos_screen.y},
 	})
 
 func _on_upgrade_requested(tower: Node, cost: int) -> void:
 	if battle_manager.spend_gold(cost):
+		tower.add_investment(cost)
 		tower.apply_upgrade()
 		# 重新發送更新後的資訊給 Web
 		_on_tower_clicked(tower)
@@ -557,8 +567,13 @@ func _on_web_upgrade_unit() -> void:
 	if not (_selected_unit is Tower):
 		return
 	var tower: Tower = _selected_unit as Tower
+	# 已達最高等級：升級費是 0，不能用 0 元再升一級（Round 18 前這裡沒有檢查，會免費升到 Lv6）
+	if not tower.can_upgrade():
+		return
 	var cost: int = tower.get_upgrade_cost()
 	if battle_manager.spend_gold(cost):
+		# 扣款成功才計入投入；金幣不足（扣款失敗）時不升級、不計入
+		tower.add_investment(cost)
 		tower.apply_upgrade()
 		_on_tower_clicked(tower)  # 重新發送更新後的資訊給 Web
 
@@ -581,6 +596,52 @@ func _on_web_set_tower_target(data: Dictionary) -> void:
 	if not tower.set_target_mode(mode):
 		return
 	web_bridge.send_tower_target_changed({"battle_id": bid, "tower_uid": uid, "target_mode": tower.target_mode})
+
+## 備戰拆除（Round 18）：Web 送 sell_tower {battle_id, tower_uid, expected_refund}。Godot 是唯一的結算方：
+## 只在「這一場、備戰中（PREP）、目前選取中的同一座有效防禦塔、還沒拆、Web 確認時看到的返還金額等於現在的返還金額」時拆除。
+## 返還金額一律由這裡依實際投入計算，Web 帶來的金額只用來確認玩家看到的是最新的數字，不拿來付款。
+## 拆除在同一個處理裡完成：標記已拆 → 取消選取與拖曳 → 釋放格子 → 移除節點（立即停止攻擊與光環）→ 返還一次。
+## 每個命令都回覆 tower_sell_result（成功或原因）；不成功時回覆帶這座塔現在的返還金額與能不能拆，讓 Web 更新面板
+func _on_web_sell_tower(data: Dictionary) -> void:
+	var bid: String = str(data.get("battle_id", ""))
+	var uid: String = str(data.get("tower_uid", ""))
+	# JSON 的數字在 Godot 是 float；沒有帶、不是數字或不是整數時當成 -1（一定和現在的返還金額不同，不會拆）
+	var raw: Variant = data.get("expected_refund")
+	var expected: int = -1
+	if raw is int or (raw is float and is_equal_approx(raw, floor(raw))):
+		expected = int(raw)
+	var tower: Tower = null
+	if _selected_unit != null and is_instance_valid(_selected_unit) and _selected_unit is Tower and not _selected_unit.is_queued_for_deletion():
+		tower = _selected_unit as Tower
+	var same: bool = tower != null and uid != "" and tower.tower_uid == uid
+	var reason: String = ""
+	if bid == "" or bid != battle_manager.battle_id:
+		reason = "stale_battle"
+	elif not same:
+		reason = "not_selected"
+	elif tower.sold:
+		reason = "already_sold"
+	elif battle_manager.game_state != BattleManager.GameState.PREP:
+		reason = "not_prep"
+	elif expected != tower.get_sell_refund():
+		reason = "refund_changed"
+	if reason != "":
+		# 回覆帶這座塔現在的返還金額與能不能拆（不是這座塔時 refund 是 -1），Web 用它更新面板
+		var current: int = tower.get_sell_refund() if same else -1
+		web_bridge.send_tower_sell_result({"battle_id": bid, "tower_uid": uid, "ok": false, "reason": reason, "refund": current, "can_sell": battle_manager.game_state == BattleManager.GameState.PREP, "gold": battle_manager.battle_gold})
+		return
+
+	var refund: int = tower.get_sell_refund()
+	var cell: Vector2i = tower.get_cell()
+	tower.sold = true
+	if _moving_unit == tower or _pressed_unit == tower:
+		_end_drag()
+	_deselect_unit()
+	game_map.clear_occupied(cell)
+	units_layer.remove_child(tower)
+	tower.queue_free()
+	battle_manager.refund_gold(refund)
+	web_bridge.send_tower_sell_result({"battle_id": bid, "tower_uid": uid, "ok": true, "refund": refund, "gold": battle_manager.battle_gold, "cell_x": cell.x, "cell_y": cell.y})
 
 # ── Web 遠端放置處理 ──────────────────────────────────────────
 func _on_web_place_hero(data: Dictionary) -> void:
@@ -722,7 +783,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		elif child is Tower and not child.is_queued_for_deletion():
 			# screen：塔在畫面上的位置（和升級面板定位用的是同一套座標），測試用來點選塔
 			var sp: Vector2 = child.get_global_transform_with_canvas().origin
-			tower_targets[child.tower_uid] = {"type": child.tower_type_key, "mode": child.target_mode, "level": child.tower_level, "screen": {"x": sp.x, "y": sp.y}}
+			# cell、invested、refund（Round 18）：塔所在的格子、已實際支付的戰鬥金幣、拆除時的返還金額
+			tower_targets[child.tower_uid] = {"type": child.tower_type_key, "mode": child.target_mode, "level": child.tower_level, "screen": {"x": sp.x, "y": sp.y}, "cell": [child.grid_cell.x, child.grid_cell.y], "invested": child.invested_gold, "refund": child.get_sell_refund()}
 	# 每位武將目前的有效射程（格），以及到每個敵人的距離（格）：測試用來量射程技能（百步穿楊）
 	var hero_ranges: Dictionary = {}
 	var hero_enemy_dist: Dictionary = {}

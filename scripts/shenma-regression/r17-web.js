@@ -566,6 +566,27 @@ async (page) => {
     await page.waitForSelector('[data-testid="tower-target"]', { timeout: 15000 });
     await H.sleep(300);
     r.tower = await overlayState("panel");
+    if (label === "main-mobile") {
+      // Round 17 的版面裡，手機主頁這座塔的面板和說明入口自然重疊（Codex 發現的情境）。Round 18 的 D22 讓遊戲畫面置中留邊，
+      // 面板不再碰到入口；改成把說明入口暫時移到「攻擊力」欄位上（模擬重疊），確認入口隱藏時重疊區域仍點得到面板
+      await page.evaluate(() => {
+        const info = document.querySelector('[data-floating-entry="page-info"]');
+        const stat = document.querySelector('div[class*="upgradePanel"] [class*="upgStatItem"]');
+        if (!info || !stat) return;
+        const b = stat.getBoundingClientRect();
+        info.dataset.r17Style = info.getAttribute("style") || "";
+        info.style.top = `${Math.round(b.top)}px`;
+        info.style.left = `${Math.round(b.left)}px`;
+      });
+      r.towerMoved = await overlayState("panel");
+      await page.evaluate(() => {
+        const info = document.querySelector('[data-floating-entry="page-info"]');
+        if (info && info.dataset.r17Style !== undefined) {
+          info.setAttribute("style", info.dataset.r17Style);
+          delete info.dataset.r17Style;
+        }
+      });
+    }
     r.towerFl = await floating();
     r.towerShot = await H.shot(page, `r17-c-${label}-tower`);
     await closePanel();
@@ -636,14 +657,14 @@ async (page) => {
       }
       const r = await overlayCase(c.label, sel, c.build, c.road);
       out.C[c.label] = caseBrief(r);
-      if (c.label === "main-mobile") out.C.mainMobileTowerOverlap = r.tower.overlap;
+      if (c.label === "main-mobile") out.C.mainMobileTowerOverlap = { natural: r.tower.overlap, moved: r.towerMoved ? r.towerMoved.overlap : null };
       if (i === 0) out.C.grid = r.tower.grid;
       run.check(`C-${i + 1} ${c.page === "main" ? "主頁" : "獨立戰鬥頁"}${c.vp.width}×${c.vp.height}：部署選單、塔面板、武將面板開啟時浮動入口都隱藏、點不到；塔與武將面板每個欄位與按鈕（關閉、升級、目標）完整在畫面內、點得到自己；部署選單的關閉、分頁與每張卡片點得到自己；每次關閉後入口恢復`,
         caseOk(r), out.C[c.label]);
     });
   }
-  const ov = (out.C.mainMobileTowerOverlap || []).find((o) => o.name === "page-info");
-  run.check("C-5 手機主頁的塔面板和說明入口原本的位置重疊（Codex 發現的情境）：重疊區域的 9 個點都點到面板、沒有點到入口",
+  const ov = ((out.C.mainMobileTowerOverlap && out.C.mainMobileTowerOverlap.moved) || []).find((o) => o.name === "page-info");
+  run.check("C-5 說明入口和塔面板重疊時（Codex 發現的情境；D22 之後手機主頁不再自然重疊，把入口移到「攻擊力」上模擬）：重疊區域的 9 個點都點到面板、沒有點到入口",
     !!ov && ov.points === 9 && ov.onPanel === 9 && ov.onEntry === 0, { overlap: out.C.mainMobileTowerOverlap });
   const g = out.C.grid;
   run.check("C-6 目標按鈕列用 Bootstrap Grid：外層 row（g-1）、每個按鈕在 col-4 裡，三個按鈕同一列、同寬",

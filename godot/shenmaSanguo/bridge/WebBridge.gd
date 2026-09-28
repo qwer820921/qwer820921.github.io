@@ -18,7 +18,9 @@ signal debug_snapshot_requested(request_id: String)
 ## 2：update_stats 與結算帶 battle_id（Round 9）
 ## 3：防禦塔目標優先（Round 17）：set_tower_target 命令與 tower_target_changed 回覆；舊版遊戲不認得這個命令，
 ##    所以提升版本，讓網頁對舊版遊戲顯示更新提示，而不是讓面板的選項默默失效
-const BRIDGE_PROTOCOL: int = 3
+## 4：備戰拆除防禦塔（Round 18）：sell_tower 命令與 tower_sell_result 回覆，面板多了投入與返還金額；
+##    舊版遊戲不認得拆除命令（網頁會一直等不到回覆），所以同樣提升版本
+const BRIDGE_PROTOCOL: int = 4
 
 
 var _msg_callback: JavaScriptObject
@@ -156,6 +158,16 @@ func send_debug_snapshot(data: Dictionary) -> void:
 func send_tower_target_changed(data: Dictionary) -> void:
 	data["__godot_bridge"] = true
 	data["type"] = "tower_target_changed"
+	if OS.get_name() != "Web":
+		return
+	var json = JSON.stringify(data)
+	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
+
+## 拆除防禦塔的結果（Round 18）：{battle_id, tower_uid, ok, refund, gold, reason?}。
+## battle_id 與 tower_uid 是命令帶來的值，Web 只在和目前面板相同時採用
+func send_tower_sell_result(data: Dictionary) -> void:
+	data["__godot_bridge"] = true
+	data["type"] = "tower_sell_result"
 	if OS.get_name() != "Web":
 		return
 	var json = JSON.stringify(data)

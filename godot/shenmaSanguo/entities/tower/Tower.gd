@@ -107,6 +107,14 @@ var target_mode: String    = "first"
 ## 這座塔的識別碼（Main 放置時指定，同一個頁面內不重複）：Web 的命令用它確認是同一座塔
 var tower_uid: String      = ""
 
+## 備戰拆除（Round 18）：這座塔已實際支付的戰鬥金幣（建造＋成功的升級；只有扣款成功才計入，失敗的升級不算），
+## 拆除時返還 floor(投入 × SELL_REFUND_RATIO)。比例集中在這裡維護（第一版 50%，還沒做平衡評估）。
+## 只存在這一場的記憶體；新放置的塔（包括同一格重建）從 0 開始
+const SELL_REFUND_RATIO: float = 0.5
+var invested_gold: int     = 0
+## 已拆除：Main 在同一個處理裡標記、釋放格子並移除這座塔；重複或延遲的命令看到它就不會再退款
+var sold: bool             = false
+
 var grid_cell: Vector2i    = Vector2i.ZERO
 var tile_size: int         = 48
 var _texture: Texture2D    = null
@@ -273,6 +281,18 @@ func request_upgrade() -> void:
 	var cost: int = get_upgrade_cost()
 	if cost > 0:
 		upgrade_requested.emit(self, cost)
+
+# ═══════════════════════════════════════════
+#  拆除（Round 18）
+# ═══════════════════════════════════════════
+## 記下一筆已成功扣款的建造或升級費用（呼叫端在 spend_gold 成功之後才呼叫）
+func add_investment(amount: int) -> void:
+	if amount > 0:
+		invested_gold += amount
+
+## 拆除時返還的戰鬥金幣：floor(已實際支付 × 比例)，不依等級推算
+func get_sell_refund() -> int:
+	return int(floor(float(invested_gold) * SELL_REFUND_RATIO))
 
 # ═══════════════════════════════════════════
 #  選取狀態

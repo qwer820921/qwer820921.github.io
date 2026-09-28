@@ -698,6 +698,7 @@
   align-items: center;
   width: 100%;
   height: 100vh; /* 固定為視窗高度 */
+  height: 100dvh; /* 手機瀏覽器的網址列收合時仍是實際可見的高度（不支援的瀏覽器用上一行） */
   overflow: hidden; /* 防止出現滾動條 */
   padding: 0;
   gap: 0;
@@ -710,13 +711,12 @@
   justify-content: center;
 }
 
+/* 內容用 Bootstrap Row／Col 排列（BattlePageContent.tsx）：窄螢幕自動換行，不再超出視窗（Round 18，D22） */
 .battleTopBar {
   width: 100%;
   max-width: var(--battle-max-w);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.6rem 1rem;
+  flex: none;
+  padding: 0.5rem 1rem;
   background: var(--sg-surface);
   border-bottom: 1px solid var(--sg-border);
 }
@@ -740,24 +740,37 @@
   color: var(--sg-muted);
 }
 
-/* 直式遊戲框 */
+/* 直式遊戲框：戰場區域（頁面上標記 data-game-stage，面板定位用它當可見範圍） */
 .gamePortraitWrap {
   flex: 1;
   min-height: 0; /* 允許 flex 收縮 */
+  width: 100%; /* 獨立戰鬥頁的外層是置中排列：不指定寬度時會被遊戲框撐寬、超出視窗（D22） */
   display: flex;
   justify-content: center;
-  align-items: flex-start;
+  align-items: center;
   overflow: hidden;
   position: relative;
+  container-type: size;
 }
 
 .gameWrapper {
   position: relative;
-  height: 100%; /* 填滿可用高度 */
-  aspect-ratio: 9 / 10; /* 540:600 直式比例 */
+  height: 100%;
   width: 100%;
   background: #1a1a2e;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+}
+
+/* D22（Round 18）：遊戲畫面固定 540:720（3:4），依戰場區域的實際寬高放到最大、置中留邊，不拉伸、不裁掉地圖。
+   比例固定時 Godot 的邏輯畫面一直是 540×720：縮放或轉向只改變縮放倍率，已放置的單位、地圖格子與面板座標不會錯位，
+   也不需要重新載入遊戲。不支援容器查詢單位的舊瀏覽器維持填滿的舊版面 */
+@supports (width: 1cqw) {
+  .gameWrapper {
+    flex: none;
+    width: min(100cqw, 75cqh);
+    height: auto;
+    aspect-ratio: 3 / 4;
+  }
 }
 
 .gameIframe {
@@ -1258,10 +1271,12 @@
   padding: 0 4px;
 }
 
+/* 選單的最大高度由定位（utils/stageAnchor）依可見範圍設定；放不下時只有這一段捲動，標題列與關閉鈕一直看得到 */
 .placementContent {
   padding: 0.75rem;
-  max-height: 480px; /* 增加高度 */
-  overflow-y: visible; /* 盡量不顯示滾動條 */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .heroGrid,
@@ -1358,12 +1373,18 @@
   color: #f59e0b;
 }
 /* ── Upgrade Panel ───────────────────────────────────────── */
+/* 位置、最大寬高由定位（utils/stageAnchor）依遊戲畫面座標與可見範圍設定 */
 .upgradePanel {
+  position: absolute;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
   background: rgba(15, 23, 42, 0.95);
   border: 2px solid var(--sg-primary);
   border-radius: 12px;
   padding: 12px;
-  min-width: 200px;
+  /* 固定寬度：拆除的確認文字較長時也不會撐成滿版（很窄的畫面由定位設定的最大寬度限制） */
+  width: 232px;
   box-shadow:
     0 10px 25px -5px rgba(0, 0, 0, 0.5),
     0 8px 10px -6px rgba(0, 0, 0, 0.5);
@@ -1372,6 +1393,7 @@
 }
 
 .upgradeHeader {
+  flex: none;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1500,11 +1522,77 @@
   filter: grayscale(0.5);
 }
 
+/* 選取面板的內容：可用高度不夠時只有這一段捲動（標題列 upgradeHeader 固定） */
+.upgradeBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ── 備戰拆除防禦塔（Round 18）── */
+.sellBox {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sellBtn,
+.sellOkBtn,
+.sellCancelBtn {
+  width: 100%;
+  min-height: 34px;
+}
+
+.sellBtn {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+}
+
+.sellBtn:disabled {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.55);
+  border-color: rgba(255, 255, 255, 0.15);
+  cursor: not-allowed;
+}
+
+.sellOkBtn {
+  background: var(--sg-red);
+  color: #fff;
+}
+
+.sellCancelBtn {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.sellOkBtn:disabled,
+.sellCancelBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sellConfirmText {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  margin-bottom: 6px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.sellMessage {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #fcd34d;
+}
+
 /* ── SinglePage 單頁版面 ────────────────────────────────────── */
 .singlePage {
   position: relative;
   width: 100%;
   height: 100vh;
+  height: 100dvh; /* 手機瀏覽器實際可見的高度（不支援的瀏覽器用上一行） */
   overflow: hidden;
   background-color: #1a1a2e;
   background-image: url("/images/shenmaSanguo/tiles/tile_grass1.webp");

@@ -20,7 +20,7 @@ async (page) => {
       : [];
   const BASE = "http://localhost:3000";
   // 證據目錄：tools/run-browser.mjs 可用 EVIDENCE_DIR 指定（context.__shenmaEvidence），避免不同批次互相覆寫
-  const EVIDENCE = context.__shenmaEvidence || ".handoff/evidence/round-17";
+  const EVIDENCE = context.__shenmaEvidence || ".handoff/evidence/round-18";
 
   // ── mock 靜態設定：14×11 地圖，第 5 列直線道路，上下兩列建築格 ──
   const ROW = 5;

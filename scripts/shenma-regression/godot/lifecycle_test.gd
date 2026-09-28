@@ -281,7 +281,7 @@ func _run() -> void:
 	# ── R10：就緒訊息帶協定版本（Web 用來判斷遊戲版本是否相符）──
 	var bridge: Node = main.web_bridge
 	var ready: Dictionary = bridge.ready_message() if bridge.has_method("ready_message") else {}
-	_check("R10-1 game_ready 帶協定版本 3（Round 17 起；Web 只在版本相同時送出關卡資料）", ready.get("type") == "game_ready" and ready.get("__godot_bridge") == true and typeof(ready.get("protocol")) == TYPE_INT and ready.get("protocol") == 3, ready)
+	_check("R10-1 game_ready 帶協定版本 4（Round 18 起；Web 只在版本相同時送出關卡資料）", ready.get("type") == "game_ready" and ready.get("__godot_bridge") == true and typeof(ready.get("protocol")) == TYPE_INT and ready.get("protocol") == 4, ready)
 
 	# ── R12：趙雲「奇襲」（每場戰鬥首次有效普通攻擊 2 倍傷害）──
 	await _r12_first_strike_cases()
@@ -305,6 +305,9 @@ func _run() -> void:
 
 	# ── R17：防禦塔目標優先 ──
 	await _r17_tower_target_cases()
+
+	# ── R18：備戰拆除防禦塔 ──
+	await _r18_sell_cases()
 
 	# ── 輸出 ──
 	var failed: int = 0
@@ -1466,6 +1469,227 @@ func _r17_tower_target_cases() -> void:
 	_check("R17-13 錯誤的命令不套用、不回覆：另一座塔的識別碼、不認得的模式、沒有選取、選取的是武將、這一場結束（RESULT）之後", mid_ok and guan != null and _bm().game_state == BattleManager.GameState.RESULT and tw.target_mode == "first" and tw_b.target_mode == "first" and rec.sent_tower_targets.size() == n_reply, {"mode": [tw.target_mode, tw_b.target_mode], "replies": rec.sent_tower_targets.size() - n_reply, "state": _bm().game_state})
 
 	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── R18：備戰拆除防禦塔（Round 18）──
+# 命令一律經過真實的 JSON 路徑（rec._on_js_message），和 Web 送來的一樣（數字是 float）。
+# 返還＝floor(這座塔已實際支付的建造＋成功升級費用 × 0.5)，只有 PREP 能拆
+## 還在場上（沒有被釋放、仍在場景樹裡）：錯誤的實作可能提早釋放節點，不能直接對它呼叫方法
+func _alive(n: Variant) -> bool:
+	return is_instance_valid(n) and n.is_inside_tree()
+
+func _r18_sell(rec: Node, uid: String, expected: Variant, bid: String = "") -> Dictionary:
+	var d: Dictionary = {"__godot_bridge": true, "type": "sell_tower", "battle_id": bid if bid != "" else _bm().battle_id, "tower_uid": uid}
+	if expected != null:
+		d["expected_refund"] = expected
+	var n: int = rec.sent_sells.size()
+	rec._on_js_message([JSON.stringify(d)])
+	return rec.sent_sells.back() if rec.sent_sells.size() > n else {}
+
+func _r18_upgrade(rec: Node) -> void:
+	rec._on_js_message([JSON.stringify({"__godot_bridge": true, "type": "request_upgrade"})])
+
+func _r18_build(type_key: String, cell: Vector2i) -> Node:
+	main._on_web_place_tower({"tower_type": type_key, "cell_x": cell.x, "cell_y": cell.y})
+	return main.game_map.get_occupant(cell)
+
+## 選取這座塔，回傳面板送出的資料
+func _r18_panel(rec: Node, tw: Node) -> Dictionary:
+	main._on_tower_clicked(tw)
+	return rec.sent_panels.back() if not rec.sent_panels.is_empty() else {}
+
+func _r18_sell_cases() -> void:
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+	# 升級命令（request_upgrade）在正式的 WebBridge 是另一個信號，Main 在 _ready 接的是原本的橋接，這裡也接上
+	rec.upgrade_unit_requested.connect(main._on_web_upgrade_unit)
+
+	# R18-1：五種塔各建一座（備戰中）：投入＝建造費、面板的返還＝一半；逐一拆除：金幣剛好加回返還、格子釋放、節點立即移出場景、面板關閉；擊殺數不變
+	_load(_r17_payload("r18-a1"))
+	var types: Array = ["archer", "infantry", "artillery", "cavalry", "scholar"]
+	var costs: Dictionary = {"archer": 50, "infantry": 70, "artillery": 100, "cavalry": 120, "scholar": 80}
+	var g0: int = _bm().battle_gold
+	var towers: Array = []
+	var build_ok: bool = true
+	for i in range(types.size()):
+		var g_before: int = _bm().battle_gold
+		var tw: Node = _r18_build(types[i], Vector2i(i + 1, 4))
+		towers.append(tw)
+		build_ok = build_ok and tw != null and tw.invested_gold == int(costs[types[i]]) and _bm().battle_gold == g_before - int(costs[types[i]])
+	var rows: Array = []
+	var sell_ok: bool = true
+	for i in range(towers.size()):
+		var tw: Node = towers[i]
+		var cost: int = int(costs[types[i]])
+		var panel: Dictionary = _r18_panel(rec, tw)
+		var hides: int = rec.sent_hides
+		var g_before: int = _bm().battle_gold
+		var reply: Dictionary = _r18_sell(rec, tw.tower_uid, float(panel.get("sell_refund", -1)))
+		var refund: int = floori(float(cost) / 2.0)
+		rows.append({"type": types[i], "panel_refund": panel.get("sell_refund"), "invested": panel.get("invested_gold"), "can_sell": panel.get("can_sell"), "reply": reply, "gold": _bm().battle_gold - g_before, "in_tree": tw.is_inside_tree(), "hide": rec.sent_hides - hides})
+		sell_ok = sell_ok and int(panel.get("sell_refund", -1)) == refund and int(panel.get("invested_gold", -1)) == cost and panel.get("can_sell") == true and reply.get("ok") == true and int(reply.get("refund", -1)) == refund and _bm().battle_gold - g_before == refund and not tw.is_inside_tree() and main.game_map.get_occupant(Vector2i(i + 1, 4)) == null and rec.sent_hides - hides >= 1 and main._selected_unit == null
+	_check("R18-1 五種塔：投入＝建造費（50／70／100／120／80）、返還＝一半（25／35／50／60／40）；備戰中拆除後金幣剛好加回返還、格子釋放、節點立即移出場景、面板關閉；擊殺數仍是 0", build_ok and sell_ok and _bm().kills == 0 and _bm().battle_gold == g0 - 420 + 210, {"rows": rows, "gold": [g0, _bm().battle_gold], "kills": _bm().kills})
+
+	# R18-2：弓兵升到 Lv3（50＋50＋100＝200，返還 100）；金幣不足的升級失敗、不計入；升到 Lv5 後再要求升級不會免費升到 Lv6
+	var ar: Node = _r18_build("archer", Vector2i(1, 4))
+	_r18_panel(rec, ar)
+	_r18_upgrade(rec)
+	_r18_upgrade(rec)
+	var lv3: Dictionary = {"level": ar.tower_level, "invested": ar.invested_gold, "refund": ar.get_sell_refund(), "panel": rec.sent_panels.back().get("sell_refund")}
+	var g_keep: int = _bm().battle_gold
+	_bm().battle_gold = 10
+	_r18_upgrade(rec)
+	var failed: Dictionary = {"level": ar.tower_level, "invested": ar.invested_gold, "gold": _bm().battle_gold}
+	_bm().battle_gold = g_keep
+	_r18_upgrade(rec)
+	_r18_upgrade(rec)
+	var g_max: int = _bm().battle_gold
+	_r18_upgrade(rec)
+	var capped: Dictionary = {"level": ar.tower_level, "invested": ar.invested_gold, "gold": _bm().battle_gold - g_max}
+	var reply2: Dictionary = _r18_sell(rec, ar.tower_uid, float(ar.get_sell_refund()))
+	_check("R18-2 弓兵 Lv3 共支付 200、返還 100（面板也是 100）；金幣不足的升級失敗：等級與投入不變；Lv5（支付 550）後再要求升級：仍是 Lv5、不扣金幣、投入不變；拆除返還 275", lv3.level == 3 and lv3.invested == 200 and lv3.refund == 100 and int(lv3.panel) == 100 and failed.level == 3 and failed.invested == 200 and failed.gold == 10 and capped.level == 5 and capped.invested == 550 and capped.gold == 0 and reply2.get("ok") == true and int(reply2.get("refund", -1)) == 275, {"lv3": lv3, "failed": failed, "capped": capped, "reply": reply2})
+
+	# R18-3：文士 80＋首次升級 75＝155，返還 77（奇數向下取整）
+	var sc: Node = _r18_build("scholar", Vector2i(2, 4))
+	_r18_panel(rec, sc)
+	_r18_upgrade(rec)
+	var g3: int = _bm().battle_gold
+	var p3: Dictionary = rec.sent_panels.back()
+	var reply3: Dictionary = _r18_sell(rec, sc.tower_uid, float(p3.get("sell_refund", -1)))
+	_check("R18-3 文士 80＋75＝155：面板與實際返還都是 77（向下取整）", sc.invested_gold == 155 and int(p3.get("sell_refund", -1)) == 77 and reply3.get("ok") == true and int(reply3.get("refund", -1)) == 77 and _bm().battle_gold - g3 == 77, {"invested": sc.invested_gold, "panel": p3.get("sell_refund"), "reply": reply3, "gold": _bm().battle_gold - g3})
+
+	# R18-4：兩塔獨立：A 升級並改成「血量最少」、拆 A；B 的等級、模式、投入、占格都不變，金幣只加 A 的返還
+	var ta: Node = _r18_build("archer", Vector2i(3, 4))
+	var tb: Node = _r18_build("cavalry", Vector2i(4, 4))
+	_r18_panel(rec, ta)
+	_r18_upgrade(rec)
+	_r17_cmd(ta, "weakest")
+	var g4: int = _bm().battle_gold
+	var reply4: Dictionary = _r18_sell(rec, ta.tower_uid, float(ta.get_sell_refund()))
+	_check("R18-4 兩塔獨立：拆 A（投入 100、返還 50）後，B 仍是 Lv1、first、投入 120、占著 (4,4)；金幣只加 50", reply4.get("ok") == true and _bm().battle_gold - g4 == 50 and _alive(tb) and tb.tower_level == 1 and tb.target_mode == "first" and tb.invested_gold == 120 and main.game_map.get_occupant(Vector2i(4, 4)) == tb, {"reply": reply4, "gold": _bm().battle_gold - g4, "b": [tb.tower_level, tb.target_mode, tb.invested_gold] if _alive(tb) else null})
+
+	# R18-5：重複命令：同一座塔連送兩次拆除，只返還一次（第二次回覆不成功）；原格重建是新的塔（新識別碼、Lv1、first、投入＝建造費），舊識別碼的命令不能拆掉它
+	var td: Node = _r18_build("archer", Vector2i(5, 4))
+	var old_uid: String = td.tower_uid
+	_r18_panel(rec, td)
+	var g5: int = _bm().battle_gold
+	var r5a: Dictionary = _r18_sell(rec, old_uid, 25.0)
+	var r5b: Dictionary = _r18_sell(rec, old_uid, 25.0)
+	var once: int = _bm().battle_gold - g5
+	var tn: Node = _r18_build("archer", Vector2i(5, 4))
+	_r18_panel(rec, tn)
+	var g5b: int = _bm().battle_gold
+	var r5c: Dictionary = _r18_sell(rec, old_uid, 25.0)
+	_check("R18-5 連送兩次只返還一次（第二次 not_selected）；原格重建：新識別碼、Lv1、first、投入 50；舊識別碼的延遲命令不拆新塔、不退款", r5a.get("ok") == true and r5b.get("ok") == false and r5b.get("reason") == "not_selected" and once == 25 and tn != null and tn.tower_uid != old_uid and tn.tower_level == 1 and tn.target_mode == "first" and tn.invested_gold == 50 and r5c.get("ok") == false and _bm().battle_gold == g5b and main.game_map.get_occupant(Vector2i(5, 4)) == tn, {"a": r5a, "b": r5b, "once": once, "new": [tn.tower_uid, old_uid], "c": r5c})
+
+	# R18-6：拒絕（金幣、塔、投入都不變，回覆原因）：別場的 battle_id、另一座塔、返還金額不符（少 1、Web 自己填的大金額、沒有帶、非整數）、沒有選取、選取的是武將
+	var te: Node = _r18_build("archer", Vector2i(6, 4))
+	var g6: int = _bm().battle_gold
+	_r18_panel(rec, te)
+	var n_panels: int = rec.sent_panels.size()
+	var hides6: int = rec.sent_hides
+	var r6: Dictionary = {}
+	r6["stale"] = _r18_sell(rec, te.tower_uid, 25.0, "r18-old")
+	r6["other"] = _r18_sell(rec, tn.tower_uid, 25.0)
+	r6["less"] = _r18_sell(rec, te.tower_uid, 24.0)
+	r6["forged"] = _r18_sell(rec, te.tower_uid, 9999.0)
+	r6["missing"] = _r18_sell(rec, te.tower_uid, null)
+	r6["fraction"] = _r18_sell(rec, te.tower_uid, 25.5)
+	# 拒絕時不重送面板（不會先隱藏再顯示）；是這座塔時回覆帶現在的返還金額 25 與 can_sell，別座塔時 refund 是 -1
+	var refreshed: bool = rec.sent_panels.size() == n_panels and rec.sent_hides == hides6 and int(r6.less.get("refund", -1)) == 25 and int(r6.forged.get("refund", -1)) == 25 and r6.less.get("can_sell") == true and int(r6.other.get("refund", 0)) == -1
+	main._deselect_unit()
+	r6["none"] = _r18_sell(rec, te.tower_uid, 25.0)
+	_r12_place("guan_yu", Vector2i(8, 4))
+	var guan: Node = main._placed_heroes.get("guan_yu")
+	if guan != null:
+		main._on_hero_clicked(guan)
+	r6["hero"] = _r18_sell(rec, te.tower_uid, 25.0)
+	var reasons: Dictionary = {}
+	var all_rejected: bool = true
+	for k in r6:
+		reasons[k] = [r6[k].get("ok"), r6[k].get("reason")]
+		all_rejected = all_rejected and r6[k].get("ok") == false
+	_check("R18-6 拒絕且不改任何狀態：別場 → stale_battle；另一座塔 → not_selected；返還金額少 1、Web 自填 9999、沒有帶、非整數 → refund_changed（不重送面板，回覆帶現在的返還 25）；沒有選取、選取武將 → not_selected", all_rejected and r6.stale.get("reason") == "stale_battle" and r6.other.get("reason") == "not_selected" and r6.less.get("reason") == "refund_changed" and r6.forged.get("reason") == "refund_changed" and r6.missing.get("reason") == "refund_changed" and r6.fraction.get("reason") == "refund_changed" and r6.none.get("reason") == "not_selected" and r6.hero.get("reason") == "not_selected" and refreshed and _bm().battle_gold == g6 and _alive(te) and te.invested_gold == 50 and main.game_map.get_occupant(Vector2i(6, 4)) == te and guan != null, {"reasons": reasons, "refreshed": refreshed, "gold": _bm().battle_gold - g6})
+
+	# R18-7：確認期間升級了（返還 25 → 50）：拿舊金額的命令不拆（refund_changed），面板重送 50；用新金額再確認才拆，返還 50
+	_r18_panel(rec, te)
+	_r18_upgrade(rec)
+	var g7: int = _bm().battle_gold
+	var p7: Dictionary = rec.sent_panels.back()
+	var r7a: Dictionary = _r18_sell(rec, te.tower_uid, 25.0)
+	var mid7: int = _bm().battle_gold - g7
+	var r7b: Dictionary = _r18_sell(rec, te.tower_uid, float(r7a.get("refund", -1)))
+	_check("R18-7 確認期間升級（返還 25→50，升級時面板已重送 50）：拿舊金額 25 的命令 refund_changed、不退款，回覆帶現在的 50；用 50 再確認才拆、返還 50", r7a.get("ok") == false and r7a.get("reason") == "refund_changed" and int(r7a.get("refund", -1)) == 50 and int(p7.get("sell_refund", -1)) == 50 and mid7 == 0 and r7b.get("ok") == true and _bm().battle_gold - g7 == 50, {"a": r7a, "panel": p7.get("sell_refund"), "b": r7b})
+
+	# R18-8：拆掉的塔立即停止作用：備戰中拆掉弓兵與步兵，開戰後把三個敵人放在原本的位置 2 秒：沒有受傷、沒有被緩速
+	_load(_r17_payload("r18-b1"))
+	var t8a: Node = _r18_build("archer", Vector2i(3, 4))
+	var t8b: Node = _r18_build("infantry", Vector2i(4, 4))
+	var pos8: Vector2 = t8a.global_position
+	for t in [t8a, t8b]:
+		_r18_panel(rec, t)
+		_r18_sell(rec, t.tower_uid, float(t.get_sell_refund()))
+	_bm().player_start_battle()
+	await _wait_until(func(): return _r17_enemies().size() == 3, 5.0)
+	var es8: Dictionary = _r17_enemies()
+	var r8: Dictionary = {"dmg": {}, "slow": {}}
+	if es8.size() == 3:
+		var ts: float = float(main._tile_size)
+		var offs: Dictionary = _r17_off()
+		for k in es8:
+			es8[k].global_position = pos8 + offs[k] * ts
+		r8 = await _r17_hits(es8, 2.0)
+	var none_hit: bool = es8.size() == 3
+	for k in r8.dmg:
+		none_hit = none_hit and float(r8.dmg[k]) == 0.0 and float(r8.slow[k]) == 1.0
+	_check("R18-8 備戰中拆掉的弓兵與步兵立即停止作用：開戰後三個敵人在原本的位置 2 秒，沒有受傷、沒有被緩速", none_hit and not is_instance_valid(t8a) and not is_instance_valid(t8b), r8)
+
+	# R18-9：戰鬥中（BATTLE）不能拆：面板 can_sell 是 false；命令回覆 not_prep、不退款；塔仍在。這一場結束（RESULT）後同樣不能拆
+	var t9: Node = _r18_build("archer", Vector2i(6, 4))
+	var p9: Dictionary = _r18_panel(rec, t9)
+	var g9: int = _bm().battle_gold
+	var uid9: String = t9.tower_uid
+	var r9: Dictionary = _r18_sell(rec, uid9, float(t9.get_sell_refund()))
+	var gold9: int = _bm().battle_gold - g9
+	for k in es8:
+		if is_instance_valid(es8[k]):
+			es8[k].take_damage(999999.0)
+	await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 3.0)
+	var state9: int = _bm().game_state
+	var r9b: Dictionary = _r18_sell(rec, uid9, 25.0)
+	_check("R18-9 戰鬥中面板 can_sell=false，拆除命令 not_prep（回覆 can_sell=false）、不退款、塔仍在；這一場結束（RESULT）後同樣 not_prep", p9.get("can_sell") == false and r9.get("ok") == false and r9.get("reason") == "not_prep" and r9.get("can_sell") == false and gold9 == 0 and state9 == BattleManager.GameState.RESULT and r9b.get("ok") == false and r9b.get("reason") == "not_prep" and _alive(t9), {"panel": p9.get("can_sell"), "r9": r9, "state": state9, "r9b": r9b, "gold": gold9})
+
+	# R18-10：拆除不算擊殺、不影響結算：這一場打倒 3 個敵人，結算的 kills 是 3，戰場點數＝3×10＋20×20＋600
+	var loots: Array = last_result.get("loots", [])
+	var points: int = int(loots[0].get("count", -1)) if not loots.is_empty() else -1
+	_check("R18-10 拆除不影響擊殺與結算：kills 3、戰場點數 1030（3×10＋城池 20×20＋三星 600）", last_result.get("battle_id") == "r18-b1" and int(last_result.get("kills", -1)) == 3 and points == 1030, last_result)
+
+	# R18-11：競態：備戰中打開確認後開戰 → not_prep；自動模式清波後、下一波開始前（仍是 BATTLE、等待自動下一波）→ not_prep；下一波開始後 → not_prep
+	_load(_r17_payload("r18-c1", 2))
+	var t11: Node = _r18_build("archer", Vector2i(3, 4))
+	var confirm_refund: int = int(_r18_panel(rec, t11).get("sell_refund", -1))
+	var uid11: String = t11.tower_uid
+	_bm().player_start_battle()
+	var r11a: Dictionary = _r18_sell(rec, uid11, float(confirm_refund))
+	await _wait_until(func(): return _r17_enemies().size() == 3, 5.0)
+	_bm().toggle_auto_mode()
+	for e in _r17_enemies().values():
+		e.take_damage(999999.0)
+	await _wait_until(func(): return _bm()._auto_wave_pending, 3.0)
+	var pending: bool = _bm()._auto_wave_pending and _bm().game_state == BattleManager.GameState.BATTLE
+	if _alive(t11):
+		_r18_panel(rec, t11)
+	var r11b: Dictionary = _r18_sell(rec, uid11, float(confirm_refund))
+	await _wait_until(func(): return _bm().current_wave == 2, 4.0)
+	var r11c: Dictionary = _r18_sell(rec, uid11, float(confirm_refund))
+	_check("R18-11 競態：確認後開戰 → not_prep；自動模式清波後等待下一波（BATTLE）→ not_prep；下一波開始後 → not_prep；塔一直在、沒有退款", r11a.get("reason") == "not_prep" and pending and r11b.get("reason") == "not_prep" and _bm().current_wave == 2 and r11c.get("reason") == "not_prep" and _alive(t11) and t11.invested_gold == 50, {"a": r11a, "pending": pending, "b": r11b, "wave": _bm().current_wave, "c": r11c})
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	rec.upgrade_unit_requested.disconnect(main._on_web_upgrade_unit)
 	main.web_bridge = original
 	rec.free()
 	_load(_stage_b())

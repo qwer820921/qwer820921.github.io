@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Spinner, Modal, Container } from "react-bootstrap";
+import { Spinner, Modal, Container, Row, Col } from "react-bootstrap";
 import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { useSoundSettingsStore } from "../../store/soundSettingsStore";
@@ -21,12 +21,19 @@ import {
   isCompatibleEngine,
 } from "../../utils/gameEngine";
 import { heroSkillPayload } from "../../utils/heroSkills";
+import {
+  panelAfterSellResult,
+  sellStateAfterResult,
+  TowerSellResult,
+  TowerSellState,
+} from "../../utils/towerSell";
 import EngineUpdatePrompt from "../../components/EngineUpdatePrompt";
 import styles from "../../styles/shenmaSanguo.module.css";
 import PlacementMenu from "./PlacementMenu";
 import UpgradePanel from "./UpgradePanel";
 
 interface BattleStats {
+  battle_id?: string;
   gold: number;
   wave: number;
   total_waves: number;
@@ -79,6 +86,8 @@ export default function BattlePageContent() {
     cell: { x: number; y: number };
   } | null>(null);
   const [upgradePanel, setUpgradePanel] = useState<any | null>(null);
+  // 備戰拆除的狀態（確認中、送出中、不成功的原因；見 utils/towerSell）
+  const [towerSell, setTowerSell] = useState<TowerSellState | null>(null);
   const [placedHeroIds, setPlacedHeroIds] = useState<string[]>([]);
   // 這一關的戰鬥：記下屬於哪個帳號、能不能採用結算（見 utils/battleSession）
   const sessionRef = useRef(new BattleSession());
@@ -197,6 +206,16 @@ export default function BattlePageContent() {
 
     if (event.data.type === "hide_upgrade_panel") {
       setUpgradePanel(null);
+      setTowerSell(null);
+      return;
+    }
+
+    if (event.data.type === "tower_sell_result") {
+      // 備戰拆除的結果：只採用和目前面板同一場、同一座塔的回覆。成功時關閉面板（金幣等 Godot 的 update_stats）；
+      // 不成功時面板換成 Godot 帶回的現在返還金額，並顯示原因
+      const d = event.data as TowerSellResult;
+      setUpgradePanel((prev: any) => panelAfterSellResult(prev, d));
+      setTowerSell((prev) => sellStateAfterResult(prev, d));
       return;
     }
 
@@ -358,6 +377,7 @@ export default function BattlePageContent() {
 
   const handleCloseUpgradePanel = () => {
     setUpgradePanel(null);
+    setTowerSell(null);
     if (iframeRef.current?.contentWindow) {
       iframeRef.current.contentWindow.postMessage(
         { __godot_bridge: true, type: "deselect_unit" },
@@ -376,6 +396,35 @@ export default function BattlePageContent() {
         battle_id: upgradePanel.battle_id,
         tower_uid: upgradePanel.tower_uid,
         mode,
+      },
+      "*"
+    );
+  };
+
+  // 備戰拆除：先確認；確認後帶回面板上的 battle_id、塔的識別碼與確認時看到的返還金額，由 Godot 驗證並結算
+  const handleSellStart = () => {
+    if (!upgradePanel?.tower_uid) return;
+    setTowerSell({
+      battle_id: upgradePanel.battle_id,
+      tower_uid: upgradePanel.tower_uid,
+      phase: "confirm",
+    });
+  };
+
+  const handleSellConfirm = (expectedRefund: number) => {
+    if (!upgradePanel?.tower_uid || !iframeRef.current?.contentWindow) return;
+    setTowerSell({
+      battle_id: upgradePanel.battle_id,
+      tower_uid: upgradePanel.tower_uid,
+      phase: "pending",
+    });
+    iframeRef.current.contentWindow.postMessage(
+      {
+        __godot_bridge: true,
+        type: "sell_tower",
+        battle_id: upgradePanel.battle_id,
+        tower_uid: upgradePanel.tower_uid,
+        expected_refund: expectedRefund,
       },
       "*"
     );
@@ -428,103 +477,105 @@ export default function BattlePageContent() {
       <div className={styles.battleLayout}>
         {/* 頂部狀態列 */}
         <div className={styles.battleTopBar}>
-          <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-            <button
-              onClick={() => router.push("/shenmaSanguo/stages")}
-              style={{
-                background: "none",
-                border: "none",
-                color: "var(--sg-muted)",
-                cursor: "pointer",
-                fontSize: "1.1rem",
-                padding: "0 4px",
-                lineHeight: 1,
-                flexShrink: 0,
-              }}
-              title="返回關卡選擇"
-            >
-              ‹
-            </button>
-            <span className={styles.battleTopBarTitle}>{mapName}</span>
-            {battleStats && (
-              <div className={styles.statsRow}>
-                <div className={styles.statItem}>
-                  <span className={styles.statIcon}>💰</span>
-                  <span className={styles.statValue}>{battleStats.gold}</span>
-                </div>
-                <div className={styles.statItem}>
-                  <span className={styles.statIcon}>🌊</span>
-                  <span className={styles.statValue}>
-                    {battleStats.wave}/{battleStats.total_waves}
-                  </span>
-                </div>
-                <div className={styles.statItem}>
-                  <span className={styles.statIcon}>🏰</span>
-                  <span
-                    className={styles.statValue}
-                    style={{
-                      color:
-                        battleStats.hp / battleStats.max_hp < 0.3
-                          ? "var(--sg-red)"
-                          : "inherit",
-                    }}
-                  >
-                    {battleStats.hp}/{battleStats.max_hp}
-                  </span>
-                  <div
-                    className={styles.hpBarMini}
-                    style={
-                      {
-                        "--hp-percent": `${(battleStats.hp / battleStats.max_hp) * 100}%`,
-                      } as React.CSSProperties
-                    }
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 控制按鈕組 */}
-          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-            <span className={styles.battleTopBarStatus}>
-              {payloadSent && !battleResult && !battleStats && (
-                <Spinner
-                  animation="border"
-                  size="sm"
-                  className="me-1"
-                  style={{ width: "0.7rem", height: "0.7rem" }}
-                />
-              )}
-              {statusText}
-            </span>
-
-            {battleStats && battleStats.game_state !== GameState.RESULT && (
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
+          <Row className="g-2 align-items-center">
+            <Col xs="auto" className="d-flex align-items-center gap-2">
+              <button
+                onClick={() => router.push("/shenmaSanguo/stages")}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--sg-muted)",
+                  cursor: "pointer",
+                  fontSize: "1.1rem",
+                  padding: "0 4px",
+                  lineHeight: 1,
+                  flexShrink: 0,
+                }}
+                title="返回關卡選擇"
               >
-                <button
-                  className={`${styles.topBtn} ${battleStats.auto_mode ? styles.topBtnActive : ""}`}
-                  onClick={handleToggleAuto}
-                  title="自動進入下一波"
-                >
-                  自動 {battleStats.auto_mode ? "ON" : "OFF"}
-                </button>
-                <button
-                  className={styles.topBtnPrimary}
-                  onClick={handleStartBattle}
-                  disabled={battleStats.game_state !== GameState.PREP}
-                >
-                  {battleStats.game_state === GameState.BATTLE
-                    ? "戰鬥中"
-                    : "迎戰"}
-                </button>
-              </div>
+                ‹
+              </button>
+              <span className={styles.battleTopBarTitle}>{mapName}</span>
+            </Col>
+            {battleStats && (
+              <Col xs="auto">
+                <div className={styles.statsRow}>
+                  <div className={styles.statItem}>
+                    <span className={styles.statIcon}>💰</span>
+                    <span className={styles.statValue}>{battleStats.gold}</span>
+                  </div>
+                  <div className={styles.statItem}>
+                    <span className={styles.statIcon}>🌊</span>
+                    <span className={styles.statValue}>
+                      {battleStats.wave}/{battleStats.total_waves}
+                    </span>
+                  </div>
+                  <div className={styles.statItem}>
+                    <span className={styles.statIcon}>🏰</span>
+                    <span
+                      className={styles.statValue}
+                      style={{
+                        color:
+                          battleStats.hp / battleStats.max_hp < 0.3
+                            ? "var(--sg-red)"
+                            : "inherit",
+                      }}
+                    >
+                      {battleStats.hp}/{battleStats.max_hp}
+                    </span>
+                    <div
+                      className={styles.hpBarMini}
+                      style={
+                        {
+                          "--hp-percent": `${(battleStats.hp / battleStats.max_hp) * 100}%`,
+                        } as React.CSSProperties
+                      }
+                    />
+                  </div>
+                </div>
+              </Col>
             )}
-          </div>
+
+            {/* 控制按鈕組 */}
+            <Col xs="auto" className="ms-auto d-flex align-items-center gap-2">
+              <span className={styles.battleTopBarStatus}>
+                {payloadSent && !battleResult && !battleStats && (
+                  <Spinner
+                    animation="border"
+                    size="sm"
+                    className="me-1"
+                    style={{ width: "0.7rem", height: "0.7rem" }}
+                  />
+                )}
+                {statusText}
+              </span>
+
+              {battleStats && battleStats.game_state !== GameState.RESULT && (
+                <div className="d-flex align-items-center gap-2">
+                  <button
+                    className={`${styles.topBtn} ${battleStats.auto_mode ? styles.topBtnActive : ""}`}
+                    onClick={handleToggleAuto}
+                    title="自動進入下一波"
+                  >
+                    自動 {battleStats.auto_mode ? "ON" : "OFF"}
+                  </button>
+                  <button
+                    className={styles.topBtnPrimary}
+                    onClick={handleStartBattle}
+                    disabled={battleStats.game_state !== GameState.PREP}
+                  >
+                    {battleStats.game_state === GameState.BATTLE
+                      ? "戰鬥中"
+                      : "迎戰"}
+                  </button>
+                </div>
+              )}
+            </Col>
+          </Row>
         </div>
 
-        {/* 遊戲 iframe（直式 9:16）*/}
-        <div className={styles.gamePortraitWrap}>
+        {/* 遊戲 iframe：固定 540:720，放進戰場區域的實際寬高（D22）；data-game-stage 是面板定位的可見範圍 */}
+        <div className={styles.gamePortraitWrap} data-game-stage>
           <div className={styles.gameWrapper}>
             {iframeLoading && (
               <div className={styles.loadingOverlay}>
@@ -576,6 +627,11 @@ export default function BattlePageContent() {
                 onUpgrade={handleUpgradeUnit}
                 onClose={handleCloseUpgradePanel}
                 onSetTargetMode={handleSetTargetMode}
+                canSell={battleStats?.game_state === GameState.PREP}
+                sell={towerSell}
+                onSellStart={handleSellStart}
+                onSellCancel={() => setTowerSell(null)}
+                onSellConfirm={handleSellConfirm}
               />
             )}
           </div>

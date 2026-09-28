@@ -22,8 +22,8 @@ async (page) => {
   const PROMPT = '[data-testid="engine-incompatible"]';
   const NOTICE = '[data-testid="switch-failed-notice"]';
   const LEGACY = ".handoff/evidence/round-10/legacy-godot";
-  // 目前的橋接協定版本（和 Godot WebBridge.gd、utils/gameEngine.ts 相同；Round 17 起是 3）
-  const PROTOCOL = 3;
+  // 目前的橋接協定版本（和 Godot WebBridge.gd、utils/gameEngine.ts 相同；Round 18 起是 4）
+  const PROTOCOL = 4;
 
   // ── 遊戲檔案的路由：legacy＝回應真實舊產物；slow＝新版 index.pck 延遲 10 秒；off＝照常 ──
   const GAME_FILE = /\/games\/shenmaSanguo\/(index\.(?:html|pck|service\.worker\.js))(?:\?[^#]*)?$/;

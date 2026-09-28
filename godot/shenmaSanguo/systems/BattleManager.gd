@@ -120,6 +120,14 @@ func earn_gold(amount: int) -> void:
 	battle_gold_changed.emit(battle_gold)
 	_sync_stats_to_web()
 
+## 拆除防禦塔的返還（Round 18）：只增加這一場的戰鬥金幣；不是擊殺收益，不改 kills、星數、戰場點數，也不寫存檔
+func refund_gold(amount: int) -> void:
+	if amount <= 0:
+		return
+	battle_gold += amount
+	battle_gold_changed.emit(battle_gold)
+	_sync_stats_to_web()
+
 # ── 敵人事件（由 Main.gd 轉接）────────────────────────────────
 func on_enemy_reached_base() -> void:
 	if game_state == GameState.RESULT:

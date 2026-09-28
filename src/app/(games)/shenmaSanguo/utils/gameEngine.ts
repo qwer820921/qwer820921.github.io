@@ -4,8 +4,10 @@
  * 2：update_stats 與結算帶 battle_id（Round 9）
  * 3：防禦塔目標優先（Round 17）：set_tower_target 命令與 tower_target_changed 回覆。
  *    舊版遊戲不認得這個命令，所以提升版本：網頁對舊版遊戲顯示更新提示，不讓面板的選項默默失效
+ * 4：備戰拆除防禦塔（Round 18）：sell_tower 命令與 tower_sell_result 回覆，面板多了投入與返還金額。
+ *    舊版遊戲不認得拆除命令（網頁會等不到回覆），同樣提升版本
  */
-export const BRIDGE_PROTOCOL = 3;
+export const BRIDGE_PROTOCOL = 4;
 
 /**
  * 遊戲引擎的狀態

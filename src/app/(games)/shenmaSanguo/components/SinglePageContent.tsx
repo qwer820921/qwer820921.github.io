@@ -13,6 +13,12 @@ import { describePlayerError } from "../utils/playerErrors";
 import { BattleSession, isBattleResultMessage } from "../utils/battleSession";
 import { heroSkillPayload } from "../utils/heroSkills";
 import {
+  panelAfterSellResult,
+  sellStateAfterResult,
+  TowerSellResult,
+  TowerSellState,
+} from "../utils/towerSell";
+import {
   EngineStatus,
   activateLatestGameWorker,
   isCompatibleEngine,
@@ -334,6 +340,8 @@ export default function SinglePageContent() {
     cell: { x: number; y: number };
   } | null>(null);
   const [upgradePanel, setUpgradePanel] = useState<any | null>(null);
+  // 備戰拆除的狀態（確認中、送出中、不成功的原因；見 utils/towerSell）
+  const [towerSell, setTowerSell] = useState<TowerSellState | null>(null);
   const [battleResult, setBattleResult] = useState<BattleResultPayload | null>(
     null
   );
@@ -515,7 +523,16 @@ export default function SinglePageContent() {
         break;
       case "hide_upgrade_panel":
         setUpgradePanel(null);
+        setTowerSell(null);
         break;
+      case "tower_sell_result": {
+        // 備戰拆除的結果：只採用和目前面板同一場、同一座塔的回覆。成功時關閉面板（金幣等 Godot 的 update_stats）；
+        // 不成功時面板換成 Godot 帶回的現在返還金額，並顯示原因
+        const d = event.data as TowerSellResult;
+        setUpgradePanel((prev: any) => panelAfterSellResult(prev, d));
+        setTowerSell((prev) => sellStateAfterResult(prev, d));
+        break;
+      }
       case "tower_target_changed":
         // 防禦塔的目標優先：只在場次與塔的識別碼都和目前面板相同時，換成 Godot 回傳的實際模式（過期的回覆不採用）
         setUpgradePanel((prev: any) =>
@@ -681,6 +698,7 @@ export default function SinglePageContent() {
     setPlacedHeroIds([]);
     setPlacementMenu(null);
     setUpgradePanel(null);
+    setTowerSell(null);
     await activateLatestGameWorker();
     setEngineStatus("loading");
     setIframeLoading(true);
@@ -787,7 +805,33 @@ export default function SinglePageContent() {
 
   const handleCloseUpgradePanel = () => {
     setUpgradePanel(null);
+    setTowerSell(null);
     sendToGodot({ type: "deselect_unit" });
+  };
+
+  // 備戰拆除：先確認；確認後帶回面板上的 battle_id、塔的識別碼與確認時看到的返還金額，由 Godot 驗證並結算
+  const handleSellStart = () => {
+    if (!upgradePanel?.tower_uid) return;
+    setTowerSell({
+      battle_id: upgradePanel.battle_id,
+      tower_uid: upgradePanel.tower_uid,
+      phase: "confirm",
+    });
+  };
+
+  const handleSellConfirm = (expectedRefund: number) => {
+    if (!upgradePanel?.tower_uid) return;
+    setTowerSell({
+      battle_id: upgradePanel.battle_id,
+      tower_uid: upgradePanel.tower_uid,
+      phase: "pending",
+    });
+    sendToGodot({
+      type: "sell_tower",
+      battle_id: upgradePanel.battle_id,
+      tower_uid: upgradePanel.tower_uid,
+      expected_refund: expectedRefund,
+    });
   };
 
   // 防禦塔的目標優先：帶回面板上的 battle_id 與塔的識別碼，Godot 確認是同一場、同一座塔才套用
@@ -838,8 +882,9 @@ export default function SinglePageContent() {
 
   return (
     <div className={styles.singlePage}>
-      {/* Godot iframe — 不卸載；只有遊戲版本不相符、玩家按下重新載入時才換成新的 iframe */}
-      <div className={styles.gamePortraitWrap}>
+      {/* Godot iframe — 不卸載；只有遊戲版本不相符、玩家按下重新載入時才換成新的 iframe。
+          遊戲畫面固定 540:720、放進戰場區域的實際寬高（D22）；data-game-stage 是面板定位的可見範圍 */}
+      <div className={styles.gamePortraitWrap} data-game-stage>
         <div className={styles.gameWrapper}>
           {/* 進場動畫：payload 送出前全程顯示（含 Godot 載入階段） */}
           {!payloadSent &&
@@ -915,6 +960,11 @@ export default function SinglePageContent() {
               onUpgrade={handleUpgradeUnit}
               onClose={handleCloseUpgradePanel}
               onSetTargetMode={handleSetTargetMode}
+              canSell={battleStats?.game_state === GameState.PREP}
+              sell={towerSell}
+              onSellStart={handleSellStart}
+              onSellCancel={() => setTowerSell(null)}
+              onSellConfirm={handleSellConfirm}
             />
           )}
         </div>
