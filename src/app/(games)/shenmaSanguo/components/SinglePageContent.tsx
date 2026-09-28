@@ -225,9 +225,12 @@ function ThreeKingdomsLoader({ progress }: { progress: number }) {
 function BattleResultModal({
   result,
   onConfirm,
+  notSaved,
 }: {
   result: BattleResultPayload;
   onConfirm: () => void;
+  /** 寫入限制中（開戰後才遇到限制）：結果照常顯示，並說明沒有記錄 */
+  notSaved?: boolean;
 }) {
   const isWin = result.result === BattleResult.Win;
 
@@ -274,6 +277,11 @@ function BattleResultModal({
             ))}
           </div>
         )}
+        {notSaved && (
+          <div className={styles.resultNotSaved} data-testid="result-hold">
+            這個分頁的存檔暫停保存，這場的結果與獎勵沒有記錄（見畫面下方的說明）。
+          </div>
+        )}
         <button
           className={styles.btnGold}
           style={{ width: "100%", marginTop: "1rem" }}
@@ -295,6 +303,7 @@ export default function SinglePageContent() {
     initFromGAS,
     isLoading: playerLoading,
     error: playerError,
+    writeHold,
   } = usePlayerStore();
   const { config: staticConfig, fetchProgress } = useStaticConfigStore();
   // 讀不到存檔時由錯誤面板切換到金鑰輸入畫面
@@ -549,14 +558,15 @@ export default function SinglePageContent() {
       return { ...state, slot: slot.slot, ...heroSkillPayload(slot.hero_id) };
     });
 
-    // 新的一場：綁定目前帳號，battle_id 送進 Godot，舊關卡的訊息之後一律不採用
-    // （開頭已確認有玩家資料，beginBattle 一定會回傳戰鬥票）
+    // 新的一場：綁定目前帳號，battle_id 送進 Godot，舊關卡的訊息之後一律不採用。
+    // 寫入限制中沒有戰鬥票（結果無法保存）：不送關卡資料、不開戰，畫面顯示說明
     const ticket = usePlayerStore.getState().beginBattle();
+    if (!ticket) return;
     sessionRef.current.begin(ticket);
 
     const payload: ExpeditionPayload = {
       stage_id: currentMapId,
-      battle_id: ticket?.id ?? "",
+      battle_id: ticket.id,
       player: {
         key: player.key,
         nickname: player.nickname,
@@ -812,6 +822,7 @@ export default function SinglePageContent() {
           {/* 進場動畫：payload 送出前全程顯示（含 Godot 載入階段） */}
           {!payloadSent &&
             hasKey &&
+            !writeHold &&
             !loadTimedOut &&
             !playerLoadFailed &&
             !keyEntryVisible &&
@@ -822,6 +833,15 @@ export default function SinglePageContent() {
                 }
               />
             )}
+
+          {/* 寫入限制中不開戰：不送關卡資料，說明原因（見 types 的 MigrationHold） */}
+          {writeHold && !payloadSent && !keyEntryVisible && (
+            <div className={styles.loadingOverlay} data-testid="battle-hold">
+              <p className={styles.loadingText}>
+                這個分頁的存檔暫停保存，暫時不能開始戰鬥（見畫面下方的說明）。
+              </p>
+            </div>
+          )}
 
           {/* 逾時錯誤畫面（120s 後） */}
           {iframeLoading && loadTimedOut && (
@@ -877,8 +897,8 @@ export default function SinglePageContent() {
         </div>
       </div>
 
-      {/* HUD 疊加層 */}
-      {payloadSent && !battleResult && (
+      {/* HUD 疊加層：寫入限制中沒有開戰，仍顯示 HUD 供查看武將、隊伍與玩家資訊（戰鬥按鈕要有戰況才出現） */}
+      {(payloadSent || (writeHold && !!player)) && !battleResult && (
         <>
           {/* 頂欄 */}
           <div className={styles.hudTopBar}>
@@ -997,6 +1017,7 @@ export default function SinglePageContent() {
         <BattleResultModal
           result={battleResult}
           onConfirm={handleConfirmResult}
+          notSaved={writeHold}
         />
       )}
 

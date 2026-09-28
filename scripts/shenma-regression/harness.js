@@ -284,6 +284,16 @@ async (page) => {
       test: (c) => /^Failed to load resource: the server responded with a status of 404/.test(c.text) &&
         /^http:\/\/localhost:3000\/_next\/static\/chunks\/src_components_common_[0-9a-z_-]+\._\.js$/i.test(c.url),
     },
+    {
+      why: "網站首頁「聯絡」卡片的封面 /images/cover/contact.webp 不存在（public/ 沒有這個檔案，和神馬三國無關；Round 13 的測試會經過首頁）",
+      test: (c) => /^Failed to load resource: the server responded with a status of 404/.test(c.text) &&
+        /^http:\/\/localhost:3000\/images\/cover\/contact\.webp$/.test(c.url),
+    },
+    {
+      why: "只在正式靜態匯出出現（tools/serve-out.mjs）：Next 16 預先載入要求 __next.<區段>.<區段>.txt，out/ 裡是巢狀目錄（__next.<區段>/<區段>.txt），GitHub Pages 同樣找不到；只影響首頁的部落格連結預先載入，和神馬三國無關",
+      test: (c) => /^Failed to load resource: the server responded with a status of 404/.test(c.text) &&
+        /^http:\/\/localhost:3000\/blog\/[^?]*\/__next\.[^/?]+\.txt(\?|$)/.test(c.url),
+    },
   ];
   page.on("pageerror", (e) => state.pageErrors.push({ t: Date.now(), text: String(e).slice(0, 300) }));
 
@@ -495,6 +505,8 @@ async (page) => {
           assertions,
           ...extra,
           expectedConsoleErrors: expected.length,
+          // 預期錯誤的來源（網址）與次數，避免過寬的樣式默默吞掉其他錯誤
+          expectedConsoleSources: expected.reduce((m, c) => ((m[c.text + " " + c.url] = (m[c.text + " " + c.url] || 0) + 1), m), {}),
           knownConsoleNoise: noise,
           gasNetwork,
           elapsedSec: Math.round((Date.now() - t0) / 1000),

@@ -24,7 +24,7 @@ async (page) => {
     const fileSizes = (cfgText.match(/"fileSizes":(\{[^}]*\})/) || [])[1] || null;
     const entries = fw.performance.getEntriesByType("resource")
       .filter((e) => /index\.(pck|wasm|js)$/.test(e.name))
-      .map((e) => ({ name: e.name.replace(location.origin, ""), transferSize: e.transferSize, encodedBodySize: e.encodedBodySize }));
+      .map((e) => ({ name: e.name.replace(location.origin, ""), transferSize: e.transferSize, encodedBodySize: e.encodedBodySize, decodedBodySize: e.decodedBodySize }));
     const regs = (await navigator.serviceWorker.getRegistrations()).map((r) => ({ scope: r.scope, script: (r.active || r.waiting || r.installing || {}).scriptURL }));
     const cacheVersion = (swText.match(/^const CACHE_VERSION = '([^']*)';$/m) || [])[1] || null;
     return { files: out, cacheVersion, iframeFileSizes: fileSizes, iframeResourceEntries: entries, swRegistrations: regs, cacheKeys: await caches.keys() };
@@ -42,8 +42,10 @@ async (page) => {
     sizes["index.pck"] === f["index.pck"].size && sizes["index.wasm"] === f["index.wasm"].size,
     { iframe: sizes, served: { pck: f["index.pck"].size, wasm: f["index.wasm"].size } });
   const loaded = (name) => served.iframeResourceEntries.find((e) => e.name.endsWith("/" + name));
+  // 比對解壓後的大小：Round 13 起神馬頁面沒有根目錄的 coi SW，iframe 第一次載入時資源直接走網路，
+  // 伺服器可能壓縮傳輸（encodedBodySize 是壓縮後大小）；經由 SW 或快取取得時兩者相同
   run.check("iframe 實際載入的 pck／wasm／js 大小與目前檔案一致",
-    ["index.pck", "index.wasm", "index.js"].every((n) => loaded(n) && loaded(n).encodedBodySize === f[n].size),
+    ["index.pck", "index.wasm", "index.js"].every((n) => loaded(n) && loaded(n).decodedBodySize === f[n].size),
     served.iframeResourceEntries);
   const godotCaches = served.cacheKeys.filter((k) => k.startsWith("shenmaSanguo-sw-cache-"));
   run.check("Godot SW 快取只有目前 CACHE_VERSION（沒有舊產物快取）",

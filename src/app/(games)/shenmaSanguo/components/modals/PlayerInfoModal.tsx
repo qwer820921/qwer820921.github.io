@@ -16,7 +16,8 @@ interface Props {
 }
 
 export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
-  const { player, initFromGAS, refreshProfile, syncError } = usePlayerStore();
+  const { player, initFromGAS, refreshProfile, syncError, writeHold } =
+    usePlayerStore();
   const { config: staticConfig } = useStaticConfigStore();
 
   const [mounted, setMounted] = useState(false);
@@ -271,7 +272,13 @@ export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
               武將升級的結果還無法確認，確認前先不自動保存；本機資料都還在。按「強制從雲端同步」會重新確認，也可以使用畫面下方的提示。
             </Alert>
           )}
+          {writeHold && !feedback && (
+            <Alert variant="warning" className="py-2 small mb-3">
+              這個分頁的存檔暫停保存：不會送出任何修改，可以從雲端讀取最新資料；本機資料都還在（見畫面下方的說明）。
+            </Alert>
+          )}
           {syncError &&
+            !writeHold &&
             !feedback &&
             player?.syncStatus !== SyncStatus.Unconfirmed && (
               <Alert variant="warning" className="py-2 small mb-3">

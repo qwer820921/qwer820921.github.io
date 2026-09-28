@@ -56,7 +56,7 @@ export default function BattlePageContent() {
   const mapId = searchParams.get("map") ?? "";
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const { player, applyBattleResult } = usePlayerStore();
+  const { player, applyBattleResult, writeHold } = usePlayerStore();
   const { config: staticConfig } = useStaticConfigStore();
   const { sfxEnabled, sfxPolyphony } = useSoundSettingsStore();
 
@@ -117,14 +117,15 @@ export default function BattlePageContent() {
       return { ...state, slot: slot.slot, ...heroSkillPayload(slot.hero_id) };
     });
 
-    // 新的一場：綁定目前帳號，battle_id 送進 Godot
-    // （開頭已確認有玩家資料，beginBattle 一定會回傳戰鬥票）
+    // 新的一場：綁定目前帳號，battle_id 送進 Godot。
+    // 寫入限制中沒有戰鬥票（結果無法保存）：不送關卡資料、不開戰，畫面顯示說明
     const ticket = usePlayerStore.getState().beginBattle();
+    if (!ticket) return;
     sessionRef.current.begin(ticket);
 
     const payload: ExpeditionPayload = {
       stage_id: mapId,
-      battle_id: ticket?.id ?? "",
+      battle_id: ticket.id,
       player: {
         key: player.key,
         nickname: player.nickname,
@@ -388,9 +389,11 @@ export default function BattlePageContent() {
         ? "勝利"
         : "落敗"
       : ""
-    : iframeLoading
-      ? "載入中..."
-      : "準備中...";
+    : writeHold
+      ? "存檔暫停保存"
+      : iframeLoading
+        ? "載入中..."
+        : "準備中...";
 
   return (
     <Container fluid className={styles.battleContainer}>
@@ -499,6 +502,14 @@ export default function BattlePageContent() {
               <div className={styles.loadingOverlay}>
                 <Spinner animation="border" variant="light" />
                 <p className={styles.loadingText}>載入戰場中...</p>
+              </div>
+            )}
+            {/* 寫入限制中不開戰：不送關卡資料，說明原因（見 types 的 MigrationHold） */}
+            {writeHold && !payloadSent && !iframeLoading && (
+              <div className={styles.loadingOverlay} data-testid="battle-hold">
+                <p className={styles.loadingText}>
+                  這個分頁的存檔暫停保存，暫時不能開始戰鬥（見畫面下方的說明）。
+                </p>
               </div>
             )}
             {/* 遊戲版本和網頁不相符：提示更新，不開戰 */}
@@ -666,6 +677,16 @@ export default function BattlePageContent() {
                             .filter((l) => l.item === "battle_points")
                             .reduce((s, l) => s + l.count, 0)}
                         </span>
+                      </div>
+                    )}
+
+                    {writeHold && (
+                      <div
+                        className={styles.resultNotSaved}
+                        data-testid="result-hold"
+                        style={{ marginBottom: "1rem" }}
+                      >
+                        這個分頁的存檔暫停保存，這場的結果與獎勵沒有記錄（見畫面下方的說明）。
                       </div>
                     )}
 

@@ -4,6 +4,11 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import ClientRoot from "./ClientRoot";
 import ChatWidget from "@/components/common/chatWidget";
+import { siteIsolationBoot } from "@/utils/siteIsolation/boot";
+
+// 跨來源隔離只給 AI 去背（bgRemover），並處理舊的全站隔離遷移（見 utils/siteIsolation/boot.ts）。
+// 必須在任何程式之前、頁面解析時就執行，所以用行內 script（next/script 的 beforeInteractive 要等 Next 的程式載入後才執行）
+const SITE_ISOLATION_SCRIPT = `(${siteIsolationBoot.toString()})(window);`;
 
 export const viewport: Viewport = {
   themeColor: [
@@ -52,6 +57,10 @@ export default function RootLayout({
   return (
     <html lang="zh-Hant">
       <head>
+        <script
+          id="site-isolation"
+          dangerouslySetInnerHTML={{ __html: SITE_ISOLATION_SCRIPT }}
+        />
         {/* favicon 與 PWA 資源 */}
         <link rel="icon" href="/favicon.ico" />
         <link rel="apple-touch-icon" href="/logo192.png" />
@@ -78,9 +87,6 @@ export default function RootLayout({
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2709303513603814"
           crossOrigin="anonymous"
         />
-
-        {/* 啟用 Cross-Origin Isolation (用於去背引擎) */}
-        <Script src="/coi-serviceworker.js" strategy="beforeInteractive" />
       </head>
       <body>
         <ClientRoot>{children}</ClientRoot>

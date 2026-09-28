@@ -106,7 +106,8 @@ function KeySetupView() {
 // ── 主選單 ───────────────────────────────────────────────
 export default function MainMenuContent() {
   const router = useRouter();
-  const { player, isLoading, error, updateNickname } = usePlayerStore();
+  const { player, isLoading, error, updateNickname, writeHold } =
+    usePlayerStore();
   const { config: staticConfig, isLoading: configLoading } =
     useStaticConfigStore();
 
@@ -261,7 +262,8 @@ export default function MainMenuContent() {
               <div className={styles.playerName}>{player.nickname}</div>
               <button
                 onClick={startEdit}
-                title="編輯名稱"
+                disabled={writeHold}
+                title={writeHold ? "這個分頁的存檔暫停保存" : "編輯名稱"}
                 style={{
                   background: "none",
                   border: "none",

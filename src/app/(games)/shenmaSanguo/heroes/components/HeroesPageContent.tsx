@@ -88,6 +88,9 @@ function UpgradeModal({
 
   const cost = config.upgrade_cost_base * hero.level;
   const canAfford = gold >= cost;
+  // 寫入限制中不能升級（store 也會拒絕）：按鈕停用並說明
+  const writeHold = usePlayerStore((s) => s.writeHold);
+  const blocked = loading || !canAfford || writeHold;
 
   const handleUpgrade = async () => {
     setLoading(true);
@@ -105,6 +108,7 @@ function UpgradeModal({
         ACCOUNT_CHANGED: "存檔已切換，這次升級沒有套用",
         UPGRADE_UNCONFIRMED:
           "連線中斷，無法確定升級是否完成。請先用畫面下方的「重新確認」，不要重複升級",
+        MIGRATION_HOLD: "這個分頁的存檔暫停保存，不能升級（見畫面下方的說明）",
       };
       setFeedback({
         type: "danger",
@@ -385,6 +389,15 @@ function UpgradeModal({
               {feedback.msg}
             </Alert>
           )}
+          {writeHold && (
+            <Alert
+              variant="warning"
+              className="py-2 small"
+              data-testid="upgrade-hold"
+            >
+              這個分頁的存檔暫停保存，不能升級（見畫面下方的說明）。
+            </Alert>
+          )}
 
           {/* 按鈕 */}
           <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -406,21 +419,20 @@ function UpgradeModal({
             </button>
             <button
               onClick={handleUpgrade}
-              disabled={loading || !canAfford}
+              disabled={blocked}
               style={{
                 flex: 2,
-                background:
-                  loading || !canAfford
-                    ? "rgba(99,102,241,0.25)"
-                    : "linear-gradient(135deg,#6366f1,#818cf8)",
+                background: blocked
+                  ? "rgba(99,102,241,0.25)"
+                  : "linear-gradient(135deg,#6366f1,#818cf8)",
                 border: "none",
-                color: loading || !canAfford ? "#6366f1" : "#fff",
+                color: blocked ? "#6366f1" : "#fff",
                 fontWeight: 700,
                 borderRadius: 8,
                 padding: "0.55rem",
-                cursor: canAfford ? "pointer" : "not-allowed",
+                cursor: canAfford && !writeHold ? "pointer" : "not-allowed",
                 fontSize: "0.9rem",
-                opacity: loading || !canAfford ? 0.6 : 1,
+                opacity: blocked ? 0.6 : 1,
               }}
             >
               {loading ? (

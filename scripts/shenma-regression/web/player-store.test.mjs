@@ -2310,6 +2310,322 @@ await test("R14-S1", async () => {
   );
 });
 
+// ══════════════════════════════════════════════════════════════
+//  Round 13 修正（C13-F，Round 15 定案）：遷移狀態不明的寫入限制（MigrationHold）
+//  讀不回網站更新前的暫存時，那份暫存可能有稍晚才在伺服器完成的升級，前端無法確認。
+//  限制中這個分頁不送出任何寫入（save_profile、upgrade_hero、save_result、create_profile），只能讀取；
+//  重新整理、讀取雲端、關閉提示都不會解除。斷言都用「經過一段時間後的寫入次數」，
+//  不等待不應出現的請求
+// ══════════════════════════════════════════════════════════════
+const WRITE_ACTIONS = [
+  "save_profile",
+  "upgrade_hero",
+  "save_result",
+  "create_profile",
+];
+const writesSince = (env, from) =>
+  env.server.calls
+    .slice(from)
+    .filter((c) => WRITE_ACTIONS.includes(c.action))
+    .map((c) => c.action);
+const holdOf = (env) => readSession(env)?.migrationHold ?? null;
+const lateUpgrade = (env, key, gold = 900) => {
+  const p = env.server.profiles.get(key);
+  p.gold = gold;
+  p.heroes = [
+    { hero_id: "guan_yu", level: 2, star: 0, atk: 160, def: 128, hp: 1600 },
+  ];
+};
+const teamOf = (p) => (p?.team || []).map((t) => t.hero_id);
+const heroLv = (p, id) => p?.heroes?.find((h) => h.hero_id === id)?.level ?? 1;
+const twoHeroes = () => ({
+  ...baseProfile(),
+  team: [
+    { hero_id: "guan_yu", slot: 1 },
+    { hero_id: "zhao_yun", slot: 2 },
+  ],
+});
+
+await test("R13F-L2", async ({ env, S: S0 }) => {
+  // 原本的已知限制 L2（合併保存的讀寫之間被蓋掉）改成失敗門檻：限制中不送出任何寫入。
+  // 限制開始前已開戰、已有一筆還在 debounce 的修改；之後嘗試隊伍、暱稱、升級、結算、手動同步、重新整理補送
+  await loaded(env, S0, "test_l2", twoHeroes());
+  const ticket = S0().beginBattle();
+  const editedBefore = S0().updateNickname("限制前的修改");
+  const from = env.server.calls.length;
+  S0().holdMigrationWrites();
+  // 更新前的頁面送出的升級，稍晚才在伺服器完成
+  lateUpgrade(env, "test_l2");
+  const settled = S0().applyBattleResult(winResult(500), ticket);
+  const team = S0().updateTeam([{ hero_id: "guan_yu", slot: 1 }]);
+  const up = await S0().upgradeHero("guan_yu", heroCfg);
+  const sync = await S0().refreshProfile();
+  await env.clock.advance(120_000); // debounce（30 秒）與重試間隔都過了
+  const beforeReload = S0().player;
+  // 重新整理：新頁面沒有呼叫 holdMigrationWrites，限制來自 session 的標記
+  const S = reloadPage(env);
+  const restored = S().loadFromSession("test_l2");
+  await env.clock.advance(120_000);
+  const nickAfter = S().updateNickname("重新整理後");
+  await env.clock.advance(60_000);
+  const writes = writesSince(env, from);
+  const server = env.server.profiles.get("test_l2");
+  const p = S().player;
+  check(
+    "R13F-L2 遷移狀態不明：稍晚完成的升級之後，嘗試結算、隊伍、暱稱、升級、手動同步、debounce 自動保存、重新整理後補送，寫入請求都是 0；後端保有 900 與關羽 Lv2",
+    !!ticket &&
+      editedBefore === true &&
+      writes.length === 0 &&
+      settled.ok === false &&
+      settled.error === "MIGRATION_HOLD" &&
+      team === false &&
+      up.error === "MIGRATION_HOLD" &&
+      sync.ok === false &&
+      sync.error === "MIGRATION_HOLD" &&
+      restored === true &&
+      nickAfter === false &&
+      server.gold === 900 &&
+      heroLv(server, "guan_yu") === 2 &&
+      server.nickname === "旅行者" &&
+      JSON.stringify(teamOf(server)) === '["guan_yu","zhao_yun"]',
+    {
+      writes,
+      settled,
+      team,
+      up,
+      sync,
+      restored,
+      nickAfter,
+      server: {
+        gold: server.gold,
+        heroes: server.heroes,
+        nickname: server.nickname,
+      },
+    }
+  );
+  check(
+    "R13F-L2-2 本機修改保留在 session（暱稱、未同步版本），沒有套用結算獎勵、沒有本機升級；重新整理後仍在限制中，保存失敗原因是 MIGRATION_HOLD",
+    beforeReload.gold === 1000 &&
+      beforeReload.exp === 0 &&
+      p.nickname === "限制前的修改" &&
+      p.rev !== p.syncedRev &&
+      heroLv(p, "guan_yu") === 1 &&
+      JSON.stringify(teamOf(p)) === '["guan_yu","zhao_yun"]' &&
+      S().writeHold === true &&
+      !!holdOf(env) &&
+      S().syncError === "MIGRATION_HOLD",
+    {
+      gold: beforeReload.gold,
+      exp: beforeReload.exp,
+      nickname: p.nickname,
+      rev: p.rev,
+      syncedRev: p.syncedRev,
+      writeHold: S().writeHold,
+      hold: holdOf(env),
+      syncError: S().syncError,
+    }
+  );
+});
+
+await test("R13F-H1", async ({ env, S }) => {
+  // 開機腳本的分頁標記（lostCopy）：store 在每次寫入前直接檢查，不依賴元件先呼叫 holdMigrationWrites
+  globalThis.window.__siteIsolation = { lostCopy: true };
+  const r = await loaded(env, S, "test_h1", twoHeroes());
+  const from = env.server.calls.length;
+  lateUpgrade(env, "test_h1");
+  const team = S().updateTeam([{ hero_id: "guan_yu", slot: 1 }]);
+  const nick = S().updateNickname("不應保存");
+  const up = await S().upgradeHero("guan_yu", heroCfg);
+  const ticket = S().beginBattle();
+  await env.clock.advance(120_000);
+  const server = env.server.profiles.get("test_h1");
+  check(
+    "R13F-H1 只有分頁標記（沒有呼叫 holdMigrationWrites）也一樣：讀取照常，隊伍、暱稱、升級都不修改、不能開戰，寫入請求 0，存檔記上標記",
+    r.ok &&
+      team === false &&
+      nick === false &&
+      up.error === "MIGRATION_HOLD" &&
+      ticket === null &&
+      writesSince(env, from).length === 0 &&
+      server.gold === 900 &&
+      S().writeHold === true &&
+      !!holdOf(env) &&
+      S().player.rev === S().player.syncedRev,
+    { r, team, nick, up, ticket, writes: writesSince(env, from) }
+  );
+});
+
+await test("R13F-H2", async ({ env, S: S0 }) => {
+  // 重新整理前留下未同步的修改與結果不明的升級，之後進入限制
+  env.server.profiles.set("test_h2", baseProfile());
+  env.local.setItem("shenma_player_key", "test_h2");
+  env.session.setItem(
+    SESSION_KEY,
+    JSON.stringify({
+      ...baseProfile("未同步的暱稱"),
+      key: "test_h2",
+      syncStatus: "pending",
+      rev: 2,
+      syncedRev: 0,
+      pendingUpgrade: {
+        id: "op-h2",
+        hero_id: "guan_yu",
+        base: baseProfile(),
+        sent_at: 0,
+        state: "in_flight",
+      },
+      migrationHold: { since: 1 },
+    })
+  );
+  void S0;
+  const S = reloadPage(env);
+  const restored = S().loadFromSession("test_h2");
+  await env.clock.advance(1_000);
+  const p1 = S().player;
+  const reads1 = env.server.count("get_profile", "test_h2");
+  // 舊升級稍晚才在伺服器完成：之後的自動重新確認讀得到，只在本機採用
+  lateUpgrade(env, "test_h2");
+  await env.clock.advance(60_000);
+  const p2 = S().player;
+  const writes = writesSince(env, 0);
+  const server = env.server.profiles.get("test_h2");
+  check(
+    "R13F-H2 session 帶著限制標記：待確認的升級只重新讀取確認（不重送 upgrade_hero），看不到時維持待確認，未同步的暱稱保留、沒有補送",
+    restored &&
+      S().writeHold === true &&
+      reads1 >= 1 &&
+      p1.pendingUpgrade?.id === "op-h2" &&
+      p1.nickname === "未同步的暱稱" &&
+      writes.length === 0,
+    {
+      restored,
+      reads1,
+      pending: p1.pendingUpgrade?.id,
+      nickname: p1.nickname,
+      writes,
+    }
+  );
+  check(
+    "R13F-H2-2 升級稍晚完成後：讀取確認並在本機採用（900、關羽 Lv2），本機暱稱仍是未同步；寫入請求 0，後端維持 900／Lv2、暱稱不變",
+    !p2.pendingUpgrade &&
+      p2.gold === 900 &&
+      heroLv(p2, "guan_yu") === 2 &&
+      p2.nickname === "未同步的暱稱" &&
+      p2.rev !== p2.syncedRev &&
+      writes.length === 0 &&
+      server.gold === 900 &&
+      server.nickname === "旅行者",
+    {
+      pending: p2.pendingUpgrade,
+      gold: p2.gold,
+      nickname: p2.nickname,
+      writes,
+    }
+  );
+});
+
+await test("R13F-H3", async ({ env, S }) => {
+  // 限制中可以讀取：背景讀取、手動同步（沒有本機修改）採用雲端資料，限制不解除
+  S().holdMigrationWrites();
+  await loaded(env, S, "test_h3");
+  lateUpgrade(env, "test_h3");
+  const from = env.server.calls.length;
+  await S().backgroundRefresh("test_h3");
+  const afterBg = S().player.gold;
+  lateUpgrade(env, "test_h3", 850);
+  const sync = await S().refreshProfile();
+  await env.clock.advance(60_000);
+  check(
+    "R13F-H3 限制中讀取照常：背景讀取與手動同步採用雲端（900、850），限制與標記仍在，寫入請求 0",
+    afterBg === 900 &&
+      sync.ok === true &&
+      S().player.gold === 850 &&
+      heroLv(S().player, "guan_yu") === 2 &&
+      S().writeHold === true &&
+      !!holdOf(env) &&
+      writesSince(env, from).length === 0,
+    { afterBg, sync, gold: S().player.gold, writes: writesSince(env, from) }
+  );
+});
+
+await test("R13F-H4", async ({ env, S }) => {
+  // 切換帳號：有本機修改時不切換（修改無法保存）；沒有修改時可以讀取其他帳號，但新帳號同樣受限、不建立新存檔
+  await loaded(env, S, "test_h4a");
+  S().updateNickname("A 的修改");
+  S().holdMigrationWrites();
+  env.server.profiles.set("test_h4b", baseProfile("B"));
+  const from = env.server.calls.length;
+  const r1 = await S().initFromGAS("test_h4b");
+  const stayA =
+    S().player.key === "test_h4a" && S().player.nickname === "A 的修改";
+  check(
+    "R13F-H4 限制中有本機修改：切換帳號失敗（MIGRATION_HOLD），留在原帳號、修改保留，寫入請求 0",
+    r1.ok === false &&
+      r1.error === "MIGRATION_HOLD" &&
+      stayA &&
+      writesSince(env, from).length === 0,
+    { r1, key: S().player.key, writes: writesSince(env, from) }
+  );
+});
+
+await test("R13F-H5", async ({ env, S }) => {
+  S().holdMigrationWrites();
+  await loaded(env, S, "test_h5a");
+  env.server.profiles.set("test_h5b", baseProfile("B"));
+  const from = env.server.calls.length;
+  const r1 = await S().initFromGAS("test_h5b");
+  const nick = S().updateNickname("B 的修改");
+  const r2 = await S().initFromGAS("test_h5_new");
+  await env.clock.advance(60_000);
+  check(
+    "R13F-H5 限制中沒有本機修改：可以讀取並切換到其他帳號（B），B 同樣受限；找不到存檔時不建立（MIGRATION_HOLD、沒有 create_profile），寫入請求 0",
+    r1.ok === true &&
+      S().player.key === "test_h5b" &&
+      nick === false &&
+      r2.ok === false &&
+      r2.error === "MIGRATION_HOLD" &&
+      env.server.count("create_profile") === 0 &&
+      writesSince(env, from).length === 0 &&
+      !!holdOf(env),
+    { r1, r2, key: S().player.key, writes: writesSince(env, from) }
+  );
+});
+
+await test("R13F-H6", async ({ env, S }) => {
+  // 沒有遷移狀態不明的分頁不受影響：修改、升級、結算照常送出，存檔沒有限制標記
+  await loaded(env, S, "test_h6");
+  const nick = S().updateNickname("一般使用者");
+  await env.clock.advance(35_000);
+  const up = await S().upgradeHero("guan_yu", heroCfg);
+  const ticket = S().beginBattle();
+  const settled = S().applyBattleResult(winResult(500), ticket);
+  await env.clock.advance(35_000);
+  const server = env.server.profiles.get("test_h6");
+  const saves = env.server.calls.filter((c) => c.action === "save_profile");
+  check(
+    "R13F-H6 一般分頁不受影響：暱稱保存、伺服器升級、結算與保存都照常送出；沒有限制標記，送出的資料不含限制欄位",
+    nick === true &&
+      up.success === true &&
+      !!ticket &&
+      settled.ok === true &&
+      server.nickname === "一般使用者" &&
+      heroLv(server, "guan_yu") === 2 &&
+      server.gold === 1000 - 100 + 500 &&
+      resultCalls(env).length === 1 &&
+      S().writeHold === false &&
+      !holdOf(env) &&
+      saves.length >= 2 &&
+      saves.every((c) => !("migrationHold" in c.payload.data)),
+    {
+      nick,
+      up,
+      settled,
+      server: { nickname: server.nickname, gold: server.gold },
+      saves: saves.length,
+    }
+  );
+});
+
 // ── 輸出 ───────────────────────────────────────────────────────
 const failed = results.filter((r) => !r.ok).length;
 console.log(

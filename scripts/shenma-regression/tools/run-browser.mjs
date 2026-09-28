@@ -6,6 +6,8 @@
 // - BROWSER_CHANNEL：預設 chrome（和 Playwright MCP 一樣使用系統的 Chrome）；HEADED=1 會顯示視窗
 // - 前置：npm run dev（http://localhost:3000）
 // - EVIDENCE_DIR：證據目錄（預設是 harness.js 裡的 EVIDENCE）；不同批次用不同目錄，避免互相覆寫
+// - LOCAL_ASSETS=1：驗證正式靜態匯出時使用（前置改成 tools/serve-out.mjs）。正式版的 _next 資源指向
+//   https://qwer820921.github.io/（assetPrefix），這些請求一律由本機 out/ 回應，不會連到正式站
 // 任何一支腳本 allPass 不是 true（或執行時拋出例外）時結束碼為 1
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -36,6 +38,19 @@ if (process.env.EVIDENCE_DIR) {
   // harness 讀取這個目錄當作證據目錄（截圖與 *.raw.json 都寫在這裡）
   mkdirSync(process.env.EVIDENCE_DIR, { recursive: true });
   context.__shenmaEvidence = process.env.EVIDENCE_DIR;
+}
+if (process.env.LOCAL_ASSETS === "1") {
+  const { resolveOutPath, contentType } = await import("./serve-out.mjs");
+  await context.route("https://qwer820921.github.io/**", (route) => {
+    const file = resolveOutPath(new URL(route.request().url()).pathname);
+    return file
+      ? route.fulfill({
+          status: 200,
+          contentType: contentType(file),
+          body: readFileSync(file),
+        })
+      : route.fulfill({ status: 404, body: "not in out/" });
+  });
 }
 const page = await context.newPage();
 let failed = 0;

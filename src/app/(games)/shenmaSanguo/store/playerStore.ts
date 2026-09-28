@@ -9,12 +9,13 @@ import {
   BattleResult,
   BattleTicket,
   PendingUpgrade,
+  MigrationHold,
 } from "../types";
 import { gameApi, setPlayerKey, GasError } from "../api/gameApi";
 import { stageToNum, getNextStage } from "../utils/stageUtils";
 
 // ── 常數 ──────────────────────────────────────────────────────
-const PLAYER_SESSION_KEY = "shenma_player_state";
+export const PLAYER_SESSION_KEY = "shenma_player_state";
 const DEBOUNCE_MS = 30_000; // 使用者修改後合併送出的等待時間
 const RETRY_MS = 30_000; // 保存失敗後的重試間隔
 const RESTORE_SYNC_DELAY_MS = 0; // 重新整理後恢復的未同步修改：立即補送
@@ -54,6 +55,35 @@ let _checkInFlight: InFlight<UpgradeCheckResult> | null = null;
 // 已結算的戰鬥記下識別碼，同一場只能結算一次
 let _activeBattle: { ticket: BattleTicket; locked: boolean } | null = null;
 const _settledBattles = new Set<string>();
+// 遷移狀態不明的分頁（見 types 的 MigrationHold）：這個頁面不送出任何寫入，只能讀取。
+// 由 holdMigrationWrites() 設定（分頁標記由開機腳本保存在 session），或從 session 載入到帶有 migrationHold 的存檔時設定；
+// 一旦設定就不會解除
+let _writeHold = false;
+let _onHold: (() => void) | null = null; // store 建立時設定：更新畫面用的 writeHold
+// 網站遷移的存檔處理還沒完成（見 utils/siteIsolation/boot.ts 的 problem）：不讀取 session、不讀取伺服器存檔、不保存，
+// 避免覆蓋還沒處理的暫存。由 setSessionBlocked() 設定
+let _sessionBlocked = false;
+
+/** 進入寫入限制（不會解除） */
+function markHold() {
+  if (_writeHold) return;
+  _writeHold = true;
+  _onHold?.();
+}
+/**
+ * 目前是否在寫入限制中。開機腳本的分頁標記（lostCopy，存在 session，重新整理後仍在）也在每次寫入前直接檢查，
+ * 不依賴元件先呼叫 holdMigrationWrites
+ */
+function writesHeld(): boolean {
+  if (
+    !_writeHold &&
+    typeof window !== "undefined" &&
+    window.__siteIsolation?.lostCopy === true
+  ) {
+    markHold();
+  }
+  return _writeHold;
+}
 
 /** 這張票是不是目前有效的那一場（同一個帳號世代、而且還沒被新場次、離開或結算取代） */
 const isActiveBattle = (ticket: BattleTicket | null | undefined) =>
@@ -117,6 +147,7 @@ function toServerData(p: SessionPlayerState): PlayerState {
   delete data.rev;
   delete data.syncedRev;
   delete data.pendingUpgrade;
+  delete data.migrationHold;
   return data as PlayerState;
 }
 
@@ -195,6 +226,13 @@ function readPendingUpgrade(raw: unknown): PendingUpgrade | null {
   };
 }
 
+// 寫入限制的標記：有這個欄位（不論內容）就維持限制，不會因為格式不對而解除
+function readMigrationHold(raw: unknown): MigrationHold | null {
+  if (raw === undefined || raw === null) return null;
+  const h = raw as Partial<MigrationHold>;
+  return { since: typeof h.since === "number" ? h.since : 0 };
+}
+
 function readSession(expectedKey: string): SessionPlayerState | null {
   if (typeof window === "undefined") return null;
   try {
@@ -219,6 +257,7 @@ function readSession(expectedKey: string): SessionPlayerState | null {
       rev,
       syncedRev,
       pendingUpgrade: readPendingUpgrade(parsed.pendingUpgrade),
+      migrationHold: readMigrationHold(parsed.migrationHold),
     };
   } catch {
     return null;
@@ -249,7 +288,10 @@ const snapshotToken = (): SnapshotToken => ({
 const isFreshSnapshot = (t: SnapshotToken) =>
   t.gen === _accountGen && t.dataGen === _dataGen;
 
-/** 讀取存檔；只有 PROFILE_NOT_FOUND 才建檔，其他錯誤一律回報失敗 */
+/**
+ * 讀取存檔；只有 PROFILE_NOT_FOUND 才建檔，其他錯誤一律回報失敗。
+ * 寫入限制中不建檔（建檔也是寫入），回報 MIGRATION_HOLD
+ */
 async function fetchProfile(
   key: string
 ): Promise<
@@ -266,6 +308,7 @@ async function fetchProfile(
     const code = errorCode(e);
     if (code !== "PROFILE_NOT_FOUND") return { ok: false, error: code };
   }
+  if (writesHeld()) return { ok: false, error: "MIGRATION_HOLD" };
   // 新玩家：建立存檔後重新讀取（不依賴 create_profile 的回傳格式）
   try {
     await gameApi.createProfile(key, "旅行者");
@@ -291,6 +334,8 @@ interface PlayerStore {
   loadingKey: string | null;
   /** 沒有玩家資料時的讀取錯誤代碼（有玩家資料時，錯誤只回傳給呼叫端） */
   error: string | null;
+  /** 遷移狀態不明的寫入限制（見 types 的 MigrationHold）：這個分頁只能讀取，設定後不會解除 */
+  writeHold: boolean;
   /** 最近一次背景保存失敗的錯誤代碼（成功後清除；失敗會自動重試） */
   syncError: string | null;
   /** 正在重新確認待確認的升級 */
@@ -315,15 +360,16 @@ interface PlayerStore {
   /** 背景靜默刷新（沒有未同步修改、沒有待確認的升級時才執行，回應時再檢查一次） */
   backgroundRefresh: (key: string) => Promise<void>;
 
-  /** 暱稱變更 → 30s debounce 同步 */
-  updateNickname: (nickname: string) => void;
-  /** 隊伍變更 → 30s debounce 同步 */
-  updateTeam: (team: TeamSlot[]) => void;
+  /** 暱稱變更 → 30s debounce 同步；寫入限制中不修改，回傳 false */
+  updateNickname: (nickname: string) => boolean;
+  /** 隊伍變更 → 30s debounce 同步；寫入限制中不修改，回傳 false */
+  updateTeam: (team: TeamSlot[]) => boolean;
   /**
    * 武將升級
    * - 沒有未同步修改：呼叫 GAS upgrade_hero（伺服器計算）；送出前先把這次升級記進 session
    * - 有未同步修改：本地計算，重置 debounce timer
    * - 上一次伺服器升級還在處理，或結果待確認時拒絕，避免重複扣款
+   * - 寫入限制中拒絕（MIGRATION_HOLD），本機也不計算
    */
   upgradeHero: (
     heroId: string,
@@ -331,7 +377,8 @@ interface PlayerStore {
   ) => Promise<{ success: boolean; error?: string }>;
   /**
    * 開始一場戰鬥（送出關卡資料時呼叫）：取得綁定目前帳號的戰鬥票，成為目前有效的一場。
-   * 之前的那一場（如果還在）就此失效，它的鎖也一起解除。票的 id 也是送進 Godot 的場次識別碼
+   * 之前的那一場（如果還在）就此失效，它的鎖也一起解除。票的 id 也是送進 Godot 的場次識別碼。
+   * 寫入限制中不開戰（戰鬥結果無法保存），回傳 null
    */
   beginBattle: () => BattleTicket | null;
   /** 戰鬥票是否仍是目前有效的那一場（開始新的一場、離開、結算、切換帳號後就不是） */
@@ -342,7 +389,8 @@ interface PlayerStore {
   endBattle: (ticket: BattleTicket | null | undefined) => void;
   /**
    * 戰鬥結算：本地先更新，接著送出 save_result（只送一次）並保存 profile
-   * 戰鬥票必須是目前帳號、目前有效的那一場，而且還沒結算過；否則不套用任何獎勵、不送任何請求
+   * 戰鬥票必須是目前帳號、目前有效的那一場，而且還沒結算過；否則不套用任何獎勵、不送任何請求。
+   * 寫入限制中（開戰後才遇到限制）也不套用、不送出（MIGRATION_HOLD），由畫面說明結果沒有記錄
    */
   applyBattleResult: (
     result: BattleResultPayload,
@@ -350,6 +398,13 @@ interface PlayerStore {
   ) => BattleSettleResult;
   /** 重新讀取伺服器，確認待確認的升級是否已完成；看得到才採用並保存本機修改 */
   recheckPendingUpgrade: () => Promise<UpgradeCheckResult>;
+  /**
+   * 這個分頁遷移狀態不明（讀不回網站更新前的暫存）：之後不送出任何寫入，只能讀取（見 types 的 MigrationHold）。
+   * 目前與之後載入的存檔都記上標記（重新整理後仍有效）；沒有解除的方法。已有的本機修改與待確認的升級都保留
+   */
+  holdMigrationWrites: () => void;
+  /** 網站遷移的存檔處理還沒完成時暫停：不讀取 session、不讀取伺服器存檔、不保存 */
+  setSessionBlocked: (blocked: boolean) => void;
 
   clearError: () => void;
   /** 關閉切換失敗的提示 */
@@ -363,9 +418,22 @@ interface PlayerStore {
 
 // ── Zustand Store ──────────────────────────────────────────────
 export const usePlayerStore = create<PlayerStore>((set, get) => {
-  /** 寫入 store 與 session（同步狀態一律由版本、在途寫入與待確認的升級推導） */
+  _onHold = () => set({ writeHold: true });
+  /**
+   * 寫入 store 與 session（同步狀態一律由版本、在途寫入與待確認的升級推導）。
+   * 寫入限制中，每一份存檔都帶著限制標記（重新整理後從 session 讀回仍有效）
+   */
   const commit = (p: SessionPlayerState) => {
-    const next = withStatus(p);
+    const next = withStatus(
+      writesHeld() && !p.migrationHold
+        ? {
+            ...p,
+            migrationHold: {
+              since: get().player?.migrationHold?.since ?? Date.now(),
+            },
+          }
+        : p
+    );
     writeSession(next);
     set({ player: next });
     return next;
@@ -388,6 +456,11 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
   const adoptServerData = (p: SessionPlayerState) => {
     _dataGen += 1;
     return commit(p);
+  };
+  /** 寫入限制中還有本機修改：不送出，記下原因（不自動重試；修改都保留在 session） */
+  const heldSave = () => {
+    set({ syncError: "MIGRATION_HOLD" });
+    return false;
   };
   /** 本機修改：版本 +1 */
   const edit = (patch: Partial<PlayerState>) => {
@@ -504,6 +577,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       await waitForWrites();
       const p = get().player;
       if (!p || !hasUnsyncedChanges(p)) return null;
+      // 寫入限制中：本機修改無法保存，保留在這裡（切換帳號、手動同步都不進行）
+      if (writesHeld()) return "MIGRATION_HOLD";
       if (isUnconfirmed(p)) {
         await checkUpgrade("manual");
         if (isUnconfirmed(get().player)) return "UPGRADE_UNCONFIRMED";
@@ -520,6 +595,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     isLoading: false,
     loadingKey: null,
     error: null,
+    writeHold: _writeHold,
     syncError: null,
     checkingUpgrade: false,
     switchNotice: null,
@@ -527,8 +603,11 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     // ── 初始化 ─────────────────────────────────────────────────
 
     loadFromSession: (key: string) => {
+      if (_sessionBlocked) return false;
       const session = readSession(key);
       if (!session) return false;
+      // 存檔帶著寫入限制的標記：整個分頁維持限制（分頁標記遺失時的另一份紀錄）
+      if (session.migrationHold) markHold();
       resetAccountState();
       commit(session);
       // 重新整理前的升級結果不明：先重新確認，確認前不保存（避免蓋掉伺服器上已完成的升級）
@@ -541,6 +620,10 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
 
     initFromGAS: (rawKey: string) => {
       const key = rawKey.trim();
+      if (_sessionBlocked) {
+        set({ error: get().player ? null : "SESSION_BLOCKED" });
+        return Promise.resolve({ ok: false, error: "SESSION_BLOCKED" });
+      }
       // 同一個 key 的讀取已在進行：共用結果，避免連按造成重複建檔與請求風暴
       if (_loadInFlight && _loadInFlight.key === key) {
         return _loadInFlight.promise;
@@ -701,17 +784,24 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
 
     // ── 玩家操作 ───────────────────────────────────────────────
 
+    // 寫入限制中不修改：修改無法保存，不讓玩家以為仍能正常保存
     updateNickname: (nickname: string) => {
-      if (edit({ nickname })) get()._scheduleSync();
+      if (writesHeld() || !edit({ nickname })) return false;
+      get()._scheduleSync();
+      return true;
     },
 
     updateTeam: (team: TeamSlot[]) => {
-      if (edit({ team })) get()._scheduleSync();
+      if (writesHeld() || !edit({ team })) return false;
+      get()._scheduleSync();
+      return true;
     },
 
     upgradeHero: async (heroId: string, heroConfig: HeroConfig) => {
       const player = get().player;
       if (!player) return { success: false, error: "NOT_LOADED" };
+      // 寫入限制中：不送出 upgrade_hero，也不在本機計算（之後無法保存）
+      if (writesHeld()) return { success: false, error: "MIGRATION_HOLD" };
       if (isUnconfirmed(player)) {
         return { success: false, error: "UPGRADE_UNCONFIRMED" };
       }
@@ -821,7 +911,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     },
 
     beginBattle: () => {
-      if (!get().player) return null;
+      if (!get().player || writesHeld()) return null;
       const ticket = { id: newOpId(), gen: _accountGen };
       _activeBattle = { ticket, locked: false };
       return ticket;
@@ -855,6 +945,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       if (!isActiveBattle(ticket)) {
         return { ok: false, error: "BATTLE_NOT_CURRENT" };
       }
+      // 開戰後才遇到寫入限制：不套用獎勵、不送出 save_result（結果無法保存），由畫面說明
+      if (writesHeld()) return { ok: false, error: "MIGRATION_HOLD" };
       _settledBattles.add(ticket.id);
       _activeBattle = null; // 這一場結束：解除鎖，這張票之後不能再使用
 
@@ -936,6 +1028,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     _syncNow: () => {
       const player = get().player;
       if (!player) return Promise.resolve(true);
+      if (_sessionBlocked) return Promise.resolve(false);
       // 升級結果待確認：整份保存會送出可能過時的 heroes／gold，先重新確認；
       // 確認後（checkUpgrade 內）才會保存本機修改
       if (isUnconfirmed(player)) {
@@ -945,6 +1038,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         });
       }
       if (!hasUnsyncedChanges(player)) return Promise.resolve(true);
+      // 寫入限制中：不送出 save_profile（自動保存、重新整理後補送、重試、切換前保存都經過這裡），修改保留
+      if (writesHeld()) return Promise.resolve(heldSave());
       // 已有保存在途：等它結束（結束時若還有新修改會自動再排程）
       if (isCurrent(_saveInFlight)) return _saveInFlight.promise;
       // 升級或戰鬥結算紀錄還在途：等它結束再保存。現在送出的快照不含它的結果，
@@ -997,6 +1092,18 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       self.promise = promise;
       _saveInFlight = { gen, promise };
       return promise;
+    },
+
+    holdMigrationWrites: () => {
+      markHold();
+      // 目前的存檔（若有）也記上標記；本機修改、待確認的升級都保留，只是之後不送出
+      const p = get().player;
+      if (p && !p.migrationHold) commit(p);
+    },
+
+    setSessionBlocked: (blocked: boolean) => {
+      _sessionBlocked = blocked;
+      if (!blocked && get().error === "SESSION_BLOCKED") set({ error: null });
     },
 
     clearError: () => set({ error: null }),

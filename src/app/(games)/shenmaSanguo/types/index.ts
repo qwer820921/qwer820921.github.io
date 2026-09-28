@@ -152,6 +152,20 @@ export interface SessionPlayerState extends PlayerState {
   syncedRev?: number;
   /** 已送出、還沒確認結果的伺服器升級（只存在本機，不送到伺服器） */
   pendingUpgrade?: PendingUpgrade | null;
+  /** 遷移狀態不明的寫入限制（只存在本機，不送到伺服器）：見 MigrationHold */
+  migrationHold?: MigrationHold | null;
+}
+
+/**
+ * 遷移狀態不明的寫入限制：網站移除全站跨來源隔離時，這個分頁讀不回更新前的暫存
+ * （見 utils/siteIsolation/boot.ts 的 lostCopy），那份暫存可能有稍晚才在伺服器完成的操作（例如升級），
+ * 前端無法確認。限制期間這個分頁不送出任何寫入（save_profile、upgrade_hero、save_result、create_profile），
+ * 只能讀取；重新整理、讀取雲端、關閉提示、重新輸入金鑰都不會解除（目前沒有可靠的解除依據，需要後端版本號）。
+ * 這個欄位是分頁標記的另一份持久紀錄：從 session 載入時看到它，整個分頁都維持限制
+ */
+export interface MigrationHold {
+  /** 開始限制的時間（毫秒） */
+  since: number;
 }
 
 /**

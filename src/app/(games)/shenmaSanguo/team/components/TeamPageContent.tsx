@@ -47,7 +47,7 @@ const MAX_SLOTS = 5;
 
 export default function TeamPageContent() {
   const router = useRouter();
-  const { player, updateTeam } = usePlayerStore();
+  const { player, updateTeam, writeHold } = usePlayerStore();
   const { config: staticConfig, isLoading: configLoading } =
     useStaticConfigStore();
 
@@ -100,8 +100,8 @@ export default function TeamPageContent() {
       hero_id: heroId,
       slot: idx + 1,
     }));
-    updateTeam(newTeam);
-    setSaved(true);
+    // 寫入限制中 store 不修改（回傳 false）：不顯示「已儲存」
+    if (updateTeam(newTeam)) setSaved(true);
   };
 
   const isDirty =
@@ -280,6 +280,15 @@ export default function TeamPageContent() {
           隊伍已儲存，將於 30 秒內同步至雲端。
         </Alert>
       )}
+      {writeHold && (
+        <Alert
+          variant="warning"
+          className="w-100 py-2 small mt-3"
+          data-testid="team-hold"
+        >
+          這個分頁的存檔暫停保存，隊伍暫時不能修改（見畫面下方的說明）。
+        </Alert>
+      )}
 
       <div
         style={{
@@ -299,7 +308,9 @@ export default function TeamPageContent() {
           className={styles.btnGold}
           style={{ flex: 1 }}
           onClick={handleSave}
-          disabled={!isDirty || isOverCapacity || selected.length === 0}
+          disabled={
+            writeHold || !isDirty || isOverCapacity || selected.length === 0
+          }
         >
           儲存隊伍
         </button>

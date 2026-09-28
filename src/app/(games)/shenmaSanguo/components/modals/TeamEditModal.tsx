@@ -56,7 +56,7 @@ interface Props {
 }
 
 export default function TeamEditModal({ onClose, onTeamSaved }: Props) {
-  const { player, updateTeam } = usePlayerStore();
+  const { player, updateTeam, writeHold } = usePlayerStore();
   const { config: staticConfig } = useStaticConfigStore();
   const [selected, setSelected] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
@@ -105,7 +105,8 @@ export default function TeamEditModal({ onClose, onTeamSaved }: Props) {
       hero_id: heroId,
       slot: idx + 1,
     }));
-    updateTeam(newTeam);
+    // 寫入限制中 store 不修改（回傳 false）：不顯示「已儲存」
+    if (!updateTeam(newTeam)) return;
     setSaved(true);
     onTeamSaved?.();
   };
@@ -380,6 +381,15 @@ export default function TeamEditModal({ onClose, onTeamSaved }: Props) {
               隊伍已儲存，將於 30 秒內同步至雲端。
             </Alert>
           )}
+          {writeHold && (
+            <Alert
+              variant="warning"
+              className="py-2 small"
+              data-testid="team-hold"
+            >
+              這個分頁的存檔暫停保存，隊伍暫時不能修改（見畫面下方的說明）。
+            </Alert>
+          )}
 
           <div style={{ display: "flex", gap: "0.65rem", marginTop: "0.5rem" }}>
             <button className={styles.btnOutline} onClick={onClose}>
@@ -389,7 +399,9 @@ export default function TeamEditModal({ onClose, onTeamSaved }: Props) {
               className={styles.btnGold}
               style={{ flex: 1 }}
               onClick={handleSave}
-              disabled={!isDirty || isOverCapacity || selected.length === 0}
+              disabled={
+                writeHold || !isDirty || isOverCapacity || selected.length === 0
+              }
             >
               儲存隊伍
             </button>

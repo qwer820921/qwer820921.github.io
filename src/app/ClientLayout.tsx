@@ -3,6 +3,7 @@ import { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { AuthProvider } from "@/contexts/AuthContext";
 import dynamic from "next/dynamic";
+import SiteIsolationGuard from "@/components/common/siteIsolationGuard";
 
 // 使用 dynamic import 來動態加載客戶端組件
 const Navbar = dynamic(() => import("@/components/common/navbar"), {
@@ -56,6 +57,9 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
 
   return (
     <AuthProvider>
+      {/* SPA 換頁時依路徑進入或離開跨來源隔離（只有 AI 去背使用） */}
+      <SiteIsolationGuard />
+
       {/* 結構化資料 */}
       <BreadcrumbJsonLd />
 

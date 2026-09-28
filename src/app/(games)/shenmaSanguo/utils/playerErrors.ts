@@ -34,6 +34,10 @@ export function describePlayerError(code: string | null | undefined): string {
       return "這場戰鬥已經結束或離開，結果沒有套用。";
     case "ACCOUNT_CHANGED":
       return "存檔已切換，這次操作沒有套用。";
+    case "SESSION_BLOCKED":
+      return "網站更新的存檔處理還沒完成，暫停讀取與保存。請依畫面上方的提示重試。";
+    case "MIGRATION_HOLD":
+      return "這個分頁的存檔暫停保存（網站更新時讀不回更新前的暫存，無法確認雲端上是否有較新的進度），這次操作沒有送出。";
     default:
       return "伺服器暫時無法處理，請稍後再試。";
   }
