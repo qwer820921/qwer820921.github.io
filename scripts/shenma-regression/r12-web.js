@@ -128,8 +128,8 @@ async (page) => {
     await page.locator('[data-testid="hero-skill-tag"]').first().click();
     const detail2 = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_page = { tags, detail2 };
-    // Round 14 起 mock 名單多了黃忠（百步穿楊），武將頁依序是趙雲、黃忠兩個技能標籤；第一個是趙雲
-    run.check("A-3 武將頁：趙雲的技能標籤是奇襲（關羽沒有），點開後顯示同樣的完整規則", tags.length === 2 && tags[0] === "技能：奇襲" && tags[1] === "技能：百步穿楊" && detail2 === detail, out.A_page);
+    // Round 14 起 mock 名單多了黃忠（百步穿楊）、Round 15 起多了周瑜（火攻）：武將頁依序是趙雲、黃忠、周瑜三個技能標籤；第一個是趙雲
+    run.check("A-3 武將頁：趙雲的技能標籤是奇襲（關羽沒有），點開後顯示同樣的完整規則", tags.length === 3 && tags[0] === "技能：奇襲" && tags[1] === "技能：百步穿楊" && tags[2] === "技能：火攻" && detail2 === detail, out.A_page);
   });
 
   // ── B. 主頁：實際開戰，第一擊 2 倍、之後恢復；這一場只觸發一次 ──

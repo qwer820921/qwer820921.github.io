@@ -2310,6 +2310,51 @@ await test("R14-S1", async () => {
   );
 });
 
+await test("R15-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    burnTickDamage,
+    effectiveRange,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const zhou = heroSkillOf("zhou_yu");
+  const payload = heroSkillPayload("zhou_yu");
+  const text = describeHeroSkill(zhou, 4, 122);
+  const others = ["zhao_yun", "huang_zhong", "guan_yu"].map((id) =>
+    Object.keys(heroSkillPayload(id).skill || {}).sort()
+  );
+  check(
+    "R15-S1 周瑜的火攻：送進 Godot 的參數（burn、20%、3 跳、間隔 1 秒）、說明文字與每跳傷害出自同一份定義；參數只帶火攻欄位，其他武將不受影響，射程不變",
+    zhou?.id === "burn" &&
+      zhou.name === "火攻" &&
+      payload.skill?.id === "burn" &&
+      payload.skill.burn_ratio === zhou.burnRatio &&
+      payload.skill.burn_ticks === zhou.burnTicks &&
+      payload.skill.burn_interval === zhou.burnIntervalSec &&
+      zhou.burnRatio === 0.2 &&
+      zhou.burnTicks === 3 &&
+      zhou.burnIntervalSec === 1 &&
+      JSON.stringify(Object.keys(payload.skill).sort()) ===
+        '["burn_interval","burn_ratio","burn_ticks","id"]' &&
+      JSON.stringify(others) ===
+        JSON.stringify([
+          ["first_attack_multiplier", "id"],
+          ["id", "range_multiplier"],
+          [],
+        ]) &&
+      burnTickDamage(zhou, 100) === 20 &&
+      burnTickDamage(zhou, 122) === 24.4 &&
+      burnTickDamage(heroSkillOf("zhao_yun"), 100) === 0 &&
+      effectiveRange(zhou, 4) === 4 &&
+      text.includes("每 1 秒受到一次傷害，共 3 次") &&
+      text.includes("20%") &&
+      text.includes("目前攻擊力 122：每次灼燒 24.4") &&
+      text.includes("不會疊加"),
+    { zhou, payload, others, text }
+  );
+});
+
 // ══════════════════════════════════════════════════════════════
 //  Round 13 修正（C13-F，Round 15 定案）：遷移狀態不明的寫入限制（MigrationHold）
 //  讀不回網站更新前的暫存時，那份暫存可能有稍晚才在伺服器完成的升級，前端無法確認。

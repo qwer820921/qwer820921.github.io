@@ -72,6 +72,8 @@ func _enemies_cfg() -> Array:
 		{"enemy_id": "soft", "name": "S", "hp": 300.0, "speed": 4.0},
 		# R14：不會移動（速度 0）、血厚：放在離武將指定格數的位置量射程
 		{"enemy_id": "post", "name": "P", "hp": 99999.0, "speed": 0.0},
+		# R15：不會移動、血量 130（普通攻擊 100 後剩 30，灼燒第 2 跳打倒）
+		{"enemy_id": "ember", "name": "E", "hp": 130.0, "speed": 0.0},
 	]
 
 func _payload(stage_id: String, waves: Array) -> Dictionary:
@@ -273,6 +275,9 @@ func _run() -> void:
 
 	# ── R14：黃忠「百步穿楊」（有效射程 ×1.5）──
 	await _r14_long_range_cases()
+
+	# ── R15：周瑜「火攻」（命中後附加 3 跳灼燒）──
+	await _r15_burn_cases()
 
 	# ── 輸出 ──
 	var failed: int = 0
@@ -713,3 +718,247 @@ func _r14_long_range_cases() -> void:
 	var zhao: Node = main._placed_heroes.get("zhao_yun")
 	_check("R14-11 不認得的技能 id：射程維持 5；趙雲（奇襲）的射程不受影響（3）", is_equal_approx(_huang().attack_range, 5.0) and zhao != null and is_equal_approx(zhao.attack_range, 3.0) and is_equal_approx(zhao.first_strike_multiplier, 2.0), {"huang": _huang().attack_range, "zhao": zhao.attack_range if zhao else null})
 	_load(_stage_b())
+
+# ── R15 輔助：周瑜「火攻」（每次有效普通攻擊附加 3 跳灼燒，每跳＝命中時攻擊力 × 20%，間隔 1 秒） ──
+# 設定和正式 heroes_config 的周瑜相同（射程 4、射程成長 0.05、法師）；攻擊間隔改成 0.35 秒（測試用：連續命中和每秒的跳傷時間錯開）。
+# 用每一幀的實際血量下降判斷：攻擊力 100 時普通攻擊一擊 100、跳傷 20（同一幀兩者都發生時是 120）
+func _r15_zhou(atk_v: float = 100.0, skill: Variant = {"id": "burn", "burn_ratio": 0.2, "burn_ticks": 3, "burn_interval": 1.0}) -> Dictionary:
+	var h: Dictionary = _r12_hero("zhou_yu", skill)
+	h["atk"] = atk_v
+	return h
+
+func _r15_payload(stage_id: String, battle_id: String, team: Array, waves: Array = [[_grp("post", 1, 0.3)]]) -> Dictionary:
+	var p: Dictionary = _r12_payload(stage_id, waves, battle_id, team)
+	p["heroes_config"].append({"hero_id": "zhou_yu", "name": "周瑜", "job": "mage", "attack_range": 4.0, "range_growth": 0.05, "attack_speed": 0.35})
+	return p
+
+func _zhou() -> Node:
+	return main._placed_heroes.get("zhou_yu")
+
+## 開戰、等敵人出現後先移到射程外（離 (3,4) 8 格），再放置武將；之後由測試決定何時進入射程
+func _r15_start(payload: Dictionary, hero_id: String = "zhou_yu") -> Node:
+	_load(payload)
+	_bm().player_start_battle()
+	var e: Node = await _r14_enemy()
+	if e != null:
+		e.global_position = main.game_map.grid_to_world(Vector2i(3, 4)) + Vector2(8.0 * float(e.tile_size), 0.0)
+	_r12_place(hero_id, Vector2i(3, 4))
+	return e
+
+## 把敵人放進射程（離武將 2 格），等到被打中（血量下降）的那一幀，立刻移到射程外（8 格）。
+## 回傳命中的時間（毫秒）與這一擊的傷害
+func _r15_hit_then_leave(e: Node, hero: Node) -> Dictionary:
+	var before: float = e.current_hp
+	_r14_put(e, hero, 2.0)
+	var t_end: int = Time.get_ticks_msec() + 3000
+	while Time.get_ticks_msec() < t_end and is_instance_valid(e) and e.current_hp >= before - 0.001:
+		await process_frame
+	var t0: int = Time.get_ticks_msec()
+	var dmg: float = snappedf(before - e.current_hp, 0.01) if is_instance_valid(e) else -1.0
+	if is_instance_valid(e) and not e.is_dead():
+		_r14_put(e, hero, 8.0)
+	return {"t0": t0, "dmg": dmg}
+
+## 到 t0 + sec 秒為止，記錄這個敵人每一幀的血量下降（時間是相對 t0 的秒數）；敵人死亡時記下死亡的時間後停止
+func _r15_drops(e: Node, t0: int, sec: float) -> Dictionary:
+	var drops: Array = []
+	var died: Array = [-1.0]
+	if not is_instance_valid(e):
+		return {"drops": drops, "died": -1.0}
+	var on_died := func(_n: Node) -> void:
+		died[0] = (Time.get_ticks_msec() - t0) / 1000.0
+	e.died.connect(on_died)
+	var last: float = e.current_hp
+	while Time.get_ticks_msec() < t0 + int(sec * 1000.0):
+		await process_frame
+		if not is_instance_valid(e):
+			break
+		if e.current_hp < last - 0.001:
+			drops.append({"t": snappedf((Time.get_ticks_msec() - t0) / 1000.0, 0.001), "dmg": snappedf(last - e.current_hp, 0.01)})
+		last = e.current_hp
+	if is_instance_valid(e) and e.died.is_connected(on_died):
+		e.died.disconnect(on_died)
+	return {"drops": drops, "died": died[0]}
+
+## 把每一幀的血量下降拆成普通攻擊與灼燒跳傷（每一幀最多一擊、最多一跳）；拆不開的放在 bad
+func _r15_split(drops: Array, hit: float, tick: float) -> Dictionary:
+	var hits: Array = []
+	var ticks: Array = []
+	var bad: Array = []
+	for d in drops:
+		var v: float = d.dmg
+		if is_equal_approx(v, hit):
+			hits.append(d.t)
+		elif is_equal_approx(v, tick):
+			ticks.append(d.t)
+		elif is_equal_approx(v, hit + tick):
+			hits.append(d.t)
+			ticks.append(d.t)
+		else:
+			bad.append(d)
+	return {"hits": hits, "ticks": ticks, "bad": bad}
+
+## times 和 expected 數量相同，而且每個時間都在預期值 ± tol 秒內
+func _r15_near(times: Array, expected: Array, tol: float = 0.15) -> bool:
+	if times.size() != expected.size():
+		return false
+	for i in range(times.size()):
+		if absf(float(times[i]) - float(expected[i])) > tol:
+			return false
+	return true
+
+func _r15_burn_cases() -> void:
+	# R15-1：命中一次後移出射程：普通一擊 100；之後 3 跳各 20，第一跳在命中後 1 秒（命中當下不另外跳），之後每秒一跳，沒有第 4 跳
+	var float_texts: Array = []
+	var on_child := func(n: Node) -> void:
+		if n is FloatingText:
+			create_timer(0.1).timeout.connect(func() -> void:
+				if is_instance_valid(n) and n._label != null:
+					float_texts.append({"text": n._label.text, "color": n._label.get_theme_color("font_color")})
+			)
+	var e1: Node = await _r15_start(_r15_payload("r15_a", "r15-a1", [_r15_zhou()]))
+	_check("R15-0 周瑜讀到火攻參數：每跳 20%、3 跳、間隔 1 秒；射程與攻擊間隔照設定（4 格、0.35 秒），不受技能影響", _zhou() != null and is_equal_approx(_zhou().burn_ratio, 0.2) and _zhou().burn_ticks == 3 and is_equal_approx(_zhou().burn_interval, 1.0) and is_equal_approx(_zhou().attack_range, 4.0) and is_equal_approx(_zhou().attack_speed, 0.35), {"ratio": _zhou().burn_ratio, "ticks": _zhou().burn_ticks, "interval": _zhou().burn_interval, "range": _zhou().attack_range})
+	main.units_layer.child_entered_tree.connect(on_child)
+	var h1: Dictionary = await _r15_hit_then_leave(e1, _zhou())
+	await _wait(0.5)
+	var burning_mid: bool = e1.is_burning()
+	var r1: Dictionary = await _r15_drops(e1, h1.t0, 4.6)
+	main.units_layer.child_entered_tree.disconnect(on_child)
+	var s1: Dictionary = _r15_split(r1.drops, 100.0, 20.0)
+	_check("R15-1 命中一次後移出射程：普通一擊 100；之後 3 跳各 20，在命中後約 1、2、3 秒（第一跳不在命中當下），第 4 秒之後沒有再跳", h1.dmg == 100.0 and s1.hits.is_empty() and s1.bad.is_empty() and _r15_near(s1.ticks, [1.0, 2.0, 3.0]), {"hit": h1.dmg, "drops": r1.drops})
+	var burn_texts: int = 0
+	for f in float_texts:
+		if f.text == "20" and f.color.is_equal_approx(Color(1.0, 0.55, 0.05)):
+			burn_texts += 1
+	_check("R15-2 灼燒看得到：跳完前敵人有灼燒狀態（橘色外圈），跳完後沒有；3 次跳傷都顯示橘色的「20」", burning_mid and not e1.is_burning() and burn_texts == 3, {"mid": burning_mid, "after": e1.is_burning(), "burn_texts": burn_texts, "texts": float_texts})
+
+	# R15-3：連續命中（每 0.35 秒一擊）約 2.6 秒後移出射程：不疊加（每跳都是 20），也不延後下一跳（仍在第 1、2 秒跳）；
+	# 最後一擊把剩餘跳數刷新為 3，之後在第 3、4、5 秒各跳一次，共 5 跳
+	var e3: Node = await _r15_start(_r15_payload("r15_b", "r15-b1", [_r15_zhou()]))
+	var before3: float = e3.current_hp
+	_r14_put(e3, _zhou(), 2.0)
+	var t_end3: int = Time.get_ticks_msec() + 3000
+	while Time.get_ticks_msec() < t_end3 and e3.current_hp >= before3 - 0.001:
+		await process_frame
+	var t3: int = Time.get_ticks_msec()
+	var first3: float = snappedf(before3 - e3.current_hp, 0.01)
+	var in_range: Dictionary = await _r15_drops(e3, t3, 2.6)
+	_r14_put(e3, _zhou(), 8.0)
+	var after3: Dictionary = await _r15_drops(e3, t3, 6.2)
+	var s3: Dictionary = _r15_split(in_range.drops + after3.drops, 100.0, 20.0)
+	var last_hit: float = s3.hits[s3.hits.size() - 1] if not s3.hits.is_empty() else -1.0
+	_check("R15-3 連續命中時不疊加、不延後：每跳都是 20，跳傷在第 1、2 秒（不會因為一直命中而一直延後）；移出射程後再跳 3 次（第 3、4、5 秒），共 5 跳", first3 == 100.0 and s3.bad.is_empty() and s3.hits.size() >= 6 and last_hit < 2.65 and _r15_near(s3.ticks, [1.0, 2.0, 3.0, 4.0, 5.0]), {"hits": s3.hits, "ticks": s3.ticks, "bad": s3.bad})
+
+	# R15-4：灼燒中攻擊力變成 150 後再命中一次：每跳傷害換成最近一次命中的快照（30）；下一跳的時間不重設（仍在第 1 秒），刷新後共 3 跳
+	var e4: Node = await _r15_start(_r15_payload("r15_c", "r15-c1", [_r15_zhou()]))
+	var h4: Dictionary = await _r15_hit_then_leave(e4, _zhou())
+	await _wait(0.3)
+	main._on_payload_received({"type": "update_team", "team_list": [_r15_zhou(150.0)]})
+	var h4b: Dictionary = await _r15_hit_then_leave(e4, _zhou())
+	var second_at: float = (h4b.t0 - h4.t0) / 1000.0
+	var r4: Dictionary = await _r15_drops(e4, h4.t0, 4.6)
+	var s4: Dictionary = _r15_split(r4.drops, 150.0, 30.0)
+	_check("R15-4 灼燒中再命中（攻擊力 150）：每跳換成 30（最近一次命中的 20%）；下一跳仍在第一次命中後 1 秒（不從第二擊重算），之後共 3 跳", h4.dmg == 100.0 and h4b.dmg == 150.0 and second_at < 0.9 and s4.bad.is_empty() and _r15_near(s4.ticks, [1.0, 2.0, 3.0]), {"first": h4.dmg, "second": h4b.dmg, "second_at": second_at, "drops": r4.drops})
+
+	# R15-5：灼燒打倒敵人（血量 130：普通 100 後剩 30，第 1 跳剩 10、第 2 跳打倒）：死亡後立即停止；擊殺、金幣、清波、結算都只一次
+	var killed: Array = [0]
+	var cleared: Array = [0]
+	var on_killed := func(_n: Node) -> void:
+		killed[0] += 1
+	var on_cleared := func(_w: int) -> void:
+		cleared[0] += 1
+	_wm().enemy_killed.connect(on_killed)
+	_wm().wave_cleared.connect(on_cleared)
+	var ended0: int = battle_ended_count
+	var e5: Node = await _r15_start(_r15_payload("r15_d", "r15-d1", [_r15_zhou()], [[_grp("ember", 1, 0.3)]]))
+	var kills0: int = _bm().kills
+	var gold0: int = _bm().battle_gold
+	var h5: Dictionary = await _r15_hit_then_leave(e5, _zhou())
+	var r5: Dictionary = await _r15_drops(e5, h5.t0, 3.6)
+	await _wait(0.3)
+	_wm().enemy_killed.disconnect(on_killed)
+	_wm().wave_cleared.disconnect(on_cleared)
+	var s5: Dictionary = _r15_split(r5.drops, 100.0, 20.0)
+	_check("R15-5 灼燒打倒敵人：普通 100 後第 1 跳（約 1 秒）剩 10，第 2 跳（約 2 秒）打倒，之後沒有再跳；敵人移除", h5.dmg == 100.0 and s5.bad.is_empty() and _r15_near(s5.ticks, [1.0]) and absf(float(r5.died) - 2.0) <= 0.15 and not is_instance_valid(e5), {"hit": h5.dmg, "drops": r5.drops, "died": r5.died})
+	_check("R15-5 擊殺只結算一次：kills +1、戰鬥金幣 +5、擊殺信號 1 次、清波 1 次、這一場結算 1 次", _bm().kills - kills0 == 1 and _bm().battle_gold - gold0 == 5 and killed[0] == 1 and cleared[0] == 1 and battle_ended_count - ended0 == 1, {"kills": _bm().kills - kills0, "gold": _bm().battle_gold - gold0, "killed": killed[0], "cleared": cleared[0], "ended": battle_ended_count - ended0})
+
+	# R15-6：灼燒中抵達基地：立即停止（敵人移除），不算擊殺，城池只扣一次
+	var leaked: Array = [0]
+	var on_leaked := func(_n: Node) -> void:
+		leaked[0] += 1
+	_wm().enemy_leaked.connect(on_leaked)
+	var e6: Node = await _r15_start(_r15_payload("r15_e", "r15-e1", [_r15_zhou()]))
+	var kills6: int = _bm().kills
+	var hp6: int = _bm().base_hp
+	var h6: Dictionary = await _r15_hit_then_leave(e6, _zhou())
+	var burning6: bool = e6.is_burning()
+	e6.base_speed = 3000.0
+	await _wait(2.5)
+	_wm().enemy_leaked.disconnect(on_leaked)
+	_check("R15-6 灼燒中抵達基地：敵人移除、之後沒有跳傷；不算擊殺，城池只扣 1", h6.dmg == 100.0 and burning6 and not is_instance_valid(e6) and _bm().kills == kills6 and leaked[0] == 1 and hp6 - _bm().base_hp == 1, {"burning": burning6, "kills": _bm().kills - kills6, "leaked": leaked[0], "hp": hp6 - _bm().base_hp})
+
+	# R15-7：命中後移除周瑜（更新隊伍時拿掉）：已附加的灼燒仍跳完 3 次
+	var e7: Node = await _r15_start(_r15_payload("r15_f", "r15-f1", [_r15_zhou()]))
+	var h7: Dictionary = await _r15_hit_then_leave(e7, _zhou())
+	main._on_payload_received({"type": "update_team", "team_list": []})
+	var r7: Dictionary = await _r15_drops(e7, h7.t0, 4.6)
+	var s7: Dictionary = _r15_split(r7.drops, 100.0, 20.0)
+	_check("R15-7 命中後移除周瑜：已附加的灼燒仍在第 1、2、3 秒各跳 20", h7.dmg == 100.0 and not main._placed_heroes.has("zhou_yu") and s7.hits.is_empty() and s7.bad.is_empty() and _r15_near(s7.ticks, [1.0, 2.0, 3.0]), {"removed": not main._placed_heroes.has("zhou_yu"), "drops": r7.drops})
+
+	# R15-8：灼燒中開始新的一場（同一關重來）：舊敵人移除，新的一場的敵人沒有灼燒、不扣血
+	var e8: Node = await _r15_start(_r15_payload("r15_g", "r15-g1", [_r15_zhou()]))
+	await _r15_hit_then_leave(e8, _zhou())
+	var burning8: bool = e8.is_burning()
+	_load(_r15_payload("r15_g", "r15-g2", [_r15_zhou()]))
+	_bm().player_start_battle()
+	var e8b: Node = await _r14_enemy()
+	await _wait(2.3)
+	_check("R15-8 新的一場不殘留：舊敵人移除；新的一場的敵人沒有灼燒、2 秒後血量不變", burning8 and not is_instance_valid(e8) and e8b != null and not e8b.is_burning() and e8b.current_hp == e8b.max_hp, {"old_valid": is_instance_valid(e8), "new_burning": e8b.is_burning() if e8b else null, "new_hp": e8b.current_hp if e8b else null})
+
+	# R15-9：暫停不消耗時間：命中後 0.3 秒暫停 1.5 秒，暫停期間沒有跳傷；恢復後照剩下的時間繼續（第一跳延後約 1.5 秒）
+	var e9: Node = await _r15_start(_r15_payload("r15_h", "r15-h1", [_r15_zhou()]))
+	var h9: Dictionary = await _r15_hit_then_leave(e9, _zhou())
+	await _wait(0.3)
+	var hp_pause: float = e9.current_hp
+	var p_start: int = Time.get_ticks_msec()
+	paused = true
+	await _wait(1.5)
+	var hp_paused_end: float = e9.current_hp
+	paused = false
+	var pause_len: float = (Time.get_ticks_msec() - p_start) / 1000.0
+	var r9: Dictionary = await _r15_drops(e9, h9.t0, 1.0 + pause_len + 2.6)
+	var s9: Dictionary = _r15_split(r9.drops, 100.0, 20.0)
+	_check("R15-9 暫停期間沒有跳傷，恢復後繼續：3 跳在命中後約 1、2、3 秒再加上暫停的時間", hp_pause == hp_paused_end and s9.bad.is_empty() and _r15_near(s9.ticks, [1.0 + pause_len, 2.0 + pause_len, 3.0 + pause_len]), {"pause": pause_len, "during": hp_pause - hp_paused_end, "drops": r9.drops})
+
+	# R15-10：時間倍率依遊戲時間推進：2 倍速時每 0.5 秒（實際時間）一跳；部署選單的子彈時間（0.1 倍）1 秒內只經過 0.1 秒遊戲時間
+	Engine.time_scale = 2.0
+	var e10: Node = await _r15_start(_r15_payload("r15_i", "r15-i1", [_r15_zhou()]))
+	var h10: Dictionary = await _r15_hit_then_leave(e10, _zhou())
+	var r10: Dictionary = await _r15_drops(e10, h10.t0, 2.4)
+	Engine.time_scale = 1.0
+	var s10: Dictionary = _r15_split(r10.drops, 100.0, 20.0)
+	var e10b: Node = await _r15_start(_r15_payload("r15_i", "r15-i2", [_r15_zhou()]))
+	var h10b: Dictionary = await _r15_hit_then_leave(e10b, _zhou())
+	Engine.time_scale = 0.1
+	await _wait_real(1.0)
+	Engine.time_scale = 1.0
+	var r10b: Dictionary = await _r15_drops(e10b, h10b.t0, 4.6)
+	var s10b: Dictionary = _r15_split(r10b.drops, 100.0, 20.0)
+	_check("R15-10 時間倍率：2 倍速時 3 跳在實際約 0.5、1.0、1.5 秒；子彈時間（0.1 倍）1 秒後恢復，3 跳在約 1.9、2.9、3.9 秒", s10.bad.is_empty() and _r15_near(s10.ticks, [0.5, 1.0, 1.5], 0.12) and s10b.bad.is_empty() and _r15_near(s10b.ticks, [1.9, 2.9, 3.9]), {"x2": s10.ticks, "slow": s10b.ticks})
+
+	# R15-11：沒有火攻的武將與不認得的技能 id 不附加灼燒（帶了灼燒參數也一樣）
+	var e11: Node = await _r15_start(_r15_payload("r15_j", "r15-j1", [_r15_zhou(100.0, {"id": "unknown_skill", "burn_ratio": 0.2, "burn_ticks": 3, "burn_interval": 1.0})]))
+	var h11: Dictionary = await _r15_hit_then_leave(e11, _zhou())
+	var r11: Dictionary = await _r15_drops(e11, h11.t0, 2.3)
+	# 下一次載入關卡會移除這個敵人：先記下狀態
+	var burning11: bool = e11.is_burning()
+	var e11b: Node = await _r15_start(_r15_payload("r15_j", "r15-j2", [_r12_hero("guan_yu", null)]), "guan_yu")
+	var h11b: Dictionary = await _r15_hit_then_leave(e11b, main._placed_heroes.get("guan_yu"))
+	var r11b: Dictionary = await _r15_drops(e11b, h11b.t0, 2.3)
+	var burning11b: bool = e11b.is_burning()
+	_check("R15-11 不認得的技能 id（帶了灼燒參數）與沒有技能的關羽：命中 100 後沒有灼燒、沒有跳傷", h11.dmg == 100.0 and r11.drops.is_empty() and not burning11 and h11b.dmg == 100.0 and r11b.drops.is_empty() and not burning11b, {"unknown": r11.drops, "guan": r11b.drops})
+	_load(_stage_b())
+
+## 不受 Engine.time_scale 影響的等待（實際時間）
+func _wait_real(sec: float) -> void:
+	await create_timer(sec, true, false, true).timeout

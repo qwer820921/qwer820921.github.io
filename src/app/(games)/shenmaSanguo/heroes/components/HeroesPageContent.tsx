@@ -200,6 +200,7 @@ function UpgradeModal({
             rawRange={
               config.attack_range + (hero.level - 1) * config.range_growth
             }
+            atk={hero.atk}
           />
           {/* 目前屬性 */}
           <div

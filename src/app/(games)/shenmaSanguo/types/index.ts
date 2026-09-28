@@ -229,6 +229,15 @@ export type HeroSkillPayload =
       id: "long_range";
       /** 有效射程倍率 */
       range_multiplier: number;
+    }
+  | {
+      id: "burn";
+      /** 每跳傷害＝命中時攻擊力 × burn_ratio */
+      burn_ratio: number;
+      /** 每次命中後的跳數 */
+      burn_ticks: number;
+      /** 每跳間隔（秒） */
+      burn_interval: number;
     };
 
 export interface ExpeditionPayload {

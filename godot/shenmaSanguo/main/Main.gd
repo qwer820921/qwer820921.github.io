@@ -676,11 +676,15 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 依 enemy_id 統計仍在場上的敵人節點；另外列出每個敵人目前的血量（測試用來算每一擊的實際傷害）
 	var enemy_nodes: Dictionary = {}
 	var enemy_hp: Dictionary = {}
+	# 灼燒中的敵人（周瑜「火攻」）：剩餘跳數與每跳傷害
+	var enemy_burn: Dictionary = {}
 	for child in units_layer.get_children():
 		if child is Enemy and not child.is_queued_for_deletion():
 			var eid: String = child.enemy_id
 			enemy_nodes[eid] = int(enemy_nodes.get(eid, 0)) + 1
 			enemy_hp[str(child.get_instance_id())] = child.current_hp
+			if child.is_burning():
+				enemy_burn[str(child.get_instance_id())] = child.burn_state()
 	# 每位武將目前的有效射程（格），以及到每個敵人的距離（格）：測試用來量射程技能（百步穿楊）
 	var hero_ranges: Dictionary = {}
 	var hero_enemy_dist: Dictionary = {}
@@ -710,6 +714,7 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"spawning_groups":   wave_manager.get_spawning_group_count(),
 		"enemy_nodes":       enemy_nodes,
 		"enemy_hp":          enemy_hp,
+		"enemy_burn":        enemy_burn,
 		"hero_ranges":       hero_ranges,
 		"hero_enemy_dist":   hero_enemy_dist,
 		"game_time":         _game_time,

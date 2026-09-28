@@ -41,6 +41,11 @@ const SLOW_RATIO: float   = 0.30   # ROAD 英雄對敵人施加的速度倍率
 var first_strike_multiplier: float = 1.0
 ## 百步穿楊（long_range）：有效射程倍率；1.0 代表沒有這個技能。射程每次都從設定重新計算（_compute_range），不會疊乘
 var range_multiplier: float = 1.0
+## 火攻（burn）：每次有效普通攻擊命中後，對目標附加灼燒（每跳＝命中時攻擊力 × burn_ratio，共 burn_ticks 跳，間隔 burn_interval 秒）。
+## burn_ratio 0 代表沒有這個技能；灼燒本身記在敵人身上（Enemy.apply_burn），跳傷不會再觸發火攻
+var burn_ratio: float = 0.0
+var burn_ticks: int = 0
+var burn_interval: float = 1.0
 ## BattleManager：記錄這一場哪些武將已用過奇襲（記在這裡而不是武將節點，移位、重新放置都不會重置）
 var _battle_mgr: Node     = null
 
@@ -123,6 +128,9 @@ var def_stat: float = 50.0
 func _read_skill(state: Dictionary) -> void:
 	first_strike_multiplier = 1.0
 	range_multiplier = 1.0
+	burn_ratio = 0.0
+	burn_ticks = 0
+	burn_interval = 1.0
 	var skill = state.get("skill", null)
 	if not (skill is Dictionary):
 		return
@@ -131,6 +139,14 @@ func _read_skill(state: Dictionary) -> void:
 			first_strike_multiplier = max(1.0, float(skill.get("first_attack_multiplier", 1.0)))
 		"long_range":
 			range_multiplier = max(1.0, float(skill.get("range_multiplier", 1.0)))
+		"burn":
+			var interval: float = float(skill.get("burn_interval", 1.0))
+			var ticks: int = int(skill.get("burn_ticks", 0))
+			# 參數不合理（非正數）時不啟用，當作普通攻擊
+			if interval > 0.0 and ticks > 0:
+				burn_ratio = max(0.0, float(skill.get("burn_ratio", 0.0)))
+				burn_ticks = ticks
+				burn_interval = interval
 
 ## 有效射程（格）＝（基礎射程 + (等級-1) × 射程成長）× 技能倍率。
 ## 每次都從設定重新計算，不在目前的值上再乘：更新隊伍、升級、移位、重新放置都不會疊乘
@@ -174,6 +190,9 @@ func _process(delta: float) -> void:
 			var m: float = first_strike_multiplier
 			_show_skill_text("x%s!" % (str(int(m)) if is_equal_approx(m, roundf(m)) else String.num(m, 2)))
 	target.take_damage(damage)
+	# 火攻：這一擊命中後附加灼燒（快照是這次命中時的攻擊力）；目標被這一擊打倒時不附加
+	if burn_ratio > 0.0 and is_instance_valid(target) and not target.is_dead():
+		target.apply_burn(atk * burn_ratio, burn_ticks, burn_interval)
 	_is_attacking = true
 	_anim_timer   = 0.22
 	_atk_timer    = attack_speed

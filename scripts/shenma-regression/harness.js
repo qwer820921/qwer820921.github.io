@@ -20,7 +20,7 @@ async (page) => {
       : [];
   const BASE = "http://localhost:3000";
   // 證據目錄：tools/run-browser.mjs 可用 EVIDENCE_DIR 指定（context.__shenmaEvidence），避免不同批次互相覆寫
-  const EVIDENCE = context.__shenmaEvidence || ".handoff/evidence/round-14";
+  const EVIDENCE = context.__shenmaEvidence || ".handoff/evidence/round-15";
 
   // ── mock 靜態設定：14×11 地圖，第 5 列直線道路，上下兩列建築格 ──
   const ROW = 5;
@@ -59,6 +59,9 @@ async (page) => {
       // Round 14：黃忠（弓兵、百步穿楊）。射程與射程成長和正式設定相同（5、0.03）、花費 6，其他數值沿用 mock 武將；
       // 預設隊伍不變（關羽＋趙雲），需要黃忠的情境自己設定隊伍
       { ...hero("huang_zhong", "黃忠", "hero_huang_zhong.webp", "archer"), cost: 6, attack_range: 5, range_growth: 0.03 },
+      // Round 15：周瑜（法師、火攻）。花費、攻擊力、射程、射程成長、攻擊間隔和正式設定相同（9、122、4、0.05、1 秒），其他數值沿用 mock 武將；
+      // 預設隊伍不變，需要周瑜的情境自己設定隊伍（容量 11 放得下一位）
+      { ...hero("zhou_yu", "周瑜", "hero_zhou_yu.webp", "mage"), cost: 9, base_atk: 122, attack_range: 4, attack_speed: 1, range_growth: 0.05 },
     ],
     enemies: [
       // A 關：血厚、極慢、出兵間隔長 → 用來卡在「出兵間隔」中切關

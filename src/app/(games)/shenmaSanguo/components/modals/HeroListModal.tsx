@@ -613,6 +613,7 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                       selectedConfig.attack_range +
                       (selectedHero.level - 1) * selectedConfig.range_growth
                     }
+                    atk={selectedHero.atk}
                   />
                   <HeroDetailContent
                     hero={selectedHero}

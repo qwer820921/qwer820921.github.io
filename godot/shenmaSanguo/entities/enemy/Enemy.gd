@@ -34,6 +34,15 @@ var _is_dead: bool      = false
 var _texture: Texture2D = null
 var _texture_atk: Texture2D = null
 
+# ── 灼燒（周瑜「火攻」，Hero.gd 命中時呼叫 apply_burn）───────────────
+## 同一個敵人只有一份灼燒：剩餘跳數、每跳傷害（最近一次命中時的快照）、距離下一跳的時間。
+## 時間用 _physics_process 的 delta 推進（受 Engine.time_scale 影響；遊戲暫停時不前進）
+var _burn_ticks_left: int   = 0
+var _burn_damage: float     = 0.0
+var _burn_interval: float   = 1.0
+var _burn_timer: float      = 0.0
+const BURN_COLOR: Color     = Color(1.0, 0.55, 0.05)  # 橘色：灼燒標記與跳傷數字
+
 # ── 武將阻路 ──────────────────────────────────────────────────
 var _game_map: Node        = null
 var _blocker: Node         = null   # 正在阻擋路徑的武將
@@ -106,6 +115,18 @@ func _physics_process(delta: float) -> void:
 			_stack_slow_amount = 0.0 # 疊加效果結束
 			queue_redraw()
 
+	# 灼燒：到時間就跳一次（走一般的受傷／死亡流程）；死亡後立即停止
+	if _burn_ticks_left > 0:
+		_burn_timer -= delta
+		while _burn_ticks_left > 0 and _burn_timer <= 0.0 and not _is_dead:
+			_burn_ticks_left -= 1
+			_burn_timer += _burn_interval
+			take_damage(_burn_damage, true)
+			if _burn_ticks_left == 0:
+				queue_redraw()
+		if _is_dead:
+			return
+
 	# 抵達終點
 	if _wp_index >= _waypoints.size():
 		_on_reached_base()
@@ -156,7 +177,8 @@ func _physics_process(delta: float) -> void:
 # ═══════════════════════════════════════════
 #  受傷 / 死亡
 # ═══════════════════════════════════════════
-func take_damage(amount: float) -> void:
+## is_burn：灼燒的跳傷（數字用橘色、稍微往上，和普通攻擊區分）；死亡、擊殺與金幣照一般流程只觸發一次
+func take_damage(amount: float, is_burn: bool = false) -> void:
 	if _is_dead:
 		return
 	current_hp -= amount
@@ -165,7 +187,10 @@ func take_damage(amount: float) -> void:
 	# 顯示傷害數字
 	var ft = load("res://ui/FloatingText.gd").new()
 	get_parent().add_child(ft)
-	ft.setup("%.0f" % amount, Color(1.0, 0.4, 0.2), global_position)
+	if is_burn:
+		ft.setup("%.0f" % amount, BURN_COLOR, global_position + Vector2(0, -12))
+	else:
+		ft.setup("%.0f" % amount, Color(1.0, 0.4, 0.2), global_position)
 
 	if current_hp <= 0.0:
 		current_hp = 0.0
@@ -194,6 +219,26 @@ func apply_stackable_slow(amount: float, duration: float) -> void:
 	ft.setup("緩", Color(0.2, 0.6, 0.9), global_position + Vector2(0, -10))
 	
 	queue_redraw()
+
+## 周瑜「火攻」：附加灼燒。同一個敵人只有一份：
+## - 沒有灼燒時：開始新的一份，第一跳在 interval 秒後（命中當下不另外跳）
+## - 已在灼燒時：剩餘跳數刷新為 ticks、每跳傷害換成這次的快照，已在倒數的下一跳時間不變（不疊加、不延後）
+func apply_burn(damage: float, ticks: int, interval: float) -> void:
+	if _is_dead or ticks <= 0 or damage <= 0.0 or interval <= 0.0:
+		return
+	if _burn_ticks_left <= 0:
+		_burn_interval = interval
+		_burn_timer = interval
+	_burn_ticks_left = ticks
+	_burn_damage = damage
+	queue_redraw()
+
+func is_burning() -> bool:
+	return _burn_ticks_left > 0 and not _is_dead
+
+## 測試用唯讀資訊（debug_snapshot）：剩餘跳數與每跳傷害
+func burn_state() -> Dictionary:
+	return {"ticks_left": _burn_ticks_left, "damage": _burn_damage, "next_in": _burn_timer if _burn_ticks_left > 0 else 0.0}
 
 func _die() -> void:
 	_is_dead = true
@@ -228,6 +273,10 @@ func _draw() -> void:
 		draw_string(ThemeDB.fallback_font,
 			Vector2(-6, 6), label_text,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
+
+	# 灼燒中：橘色外圈（貼圖與純色模式共用）
+	if is_burning():
+		draw_arc(Vector2.ZERO, r + 3.0, 0, TAU, 28, Color(BURN_COLOR, 0.95), 3.0)
 
 	# HP 條（貼圖與純色模式共用）
 	var bar_x: float = -HP_BAR_W / 2.0
