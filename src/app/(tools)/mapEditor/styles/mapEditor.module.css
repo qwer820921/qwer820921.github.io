@@ -1,7 +1,8 @@
 /* 地圖編輯器頁面樣式 */
 
 .container {
-  padding-top: 1rem;
+  /* 上方留出全站「頁面說明」浮動按鈕（左上角）的位置，避免壓到標題 */
+  padding-top: 3rem;
   padding-bottom: 3rem;
   max-width: 1200px;
 }

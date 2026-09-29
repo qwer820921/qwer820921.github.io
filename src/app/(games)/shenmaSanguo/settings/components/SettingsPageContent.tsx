@@ -8,6 +8,7 @@ import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { useSoundSettingsStore } from "../../store/soundSettingsStore";
 import { describePlayerError } from "../../utils/playerErrors";
+import BackupPreviewModal from "../../components/modals/BackupPreviewModal";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 export default function SettingsPageContent() {
@@ -22,6 +23,7 @@ export default function SettingsPageContent() {
   const currentKey = mounted ? getPlayerKey() : null;
 
   const [inputKey, setInputKey] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: "success" | "danger";
@@ -201,6 +203,24 @@ export default function SettingsPageContent() {
           </button>
         </Form>
       </div>
+
+      {/* 存檔備份檔：唯讀預覽之前匯出的 JSON（不需要登入，不會改變任何存檔） */}
+      <div className={`${styles.sgCard} w-100 p-3 mt-3`}>
+        <div className={styles.settingsCardTitle}>存檔備份檔</div>
+        <p className={styles.settingsCardHint}>
+          讀取之前在存檔衝突時匯出的備份（JSON），比較檔案裡的兩份資料。只預覽，不會匯入或覆蓋存檔。
+        </p>
+        <button
+          className={`${styles.btnOutline} w-100`}
+          onClick={() => setPreviewOpen(true)}
+          data-testid="backup-preview-open"
+        >
+          📂 預覽備份檔
+        </button>
+      </div>
+      {previewOpen && (
+        <BackupPreviewModal onClose={() => setPreviewOpen(false)} />
+      )}
 
       {currentKey && (
         <>

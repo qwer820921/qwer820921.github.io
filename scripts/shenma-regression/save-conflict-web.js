@@ -5,7 +5,8 @@ async (page) => {
   //   預設是腳本內建的契約 mock（新版後端的版本契約）；tools/run-browser.mjs 設定 GAS_BACKEND 時改用那個模組的後端
   // - 只有玩家存檔與設定寫入的請求交給共用後端；靜態設定的讀取仍由 harness 的頁面內 mock 回應
   // - 情境：舊分頁的保存被拒 → 衝突提示 → 比較 → 取消 → 確認期間雲端又更新 → 延遲回覆與連按 → 保留這個分頁 →
-  //   匯出備份 → 另一個分頁使用雲端、放回備份 → 重新整理後重新偵測 → 寫入限制時不能處理 → 地圖編輯器的管理密碼
+  //   匯出備份 → 另一個分頁使用雲端、放回備份 → 重新整理後重新偵測 → 寫入限制時不能處理 → 地圖編輯器的管理密碼 →
+  //   在設定頁預覽剛才下載的匯出檔（唯讀）
   // - 不需要 Godot（只走 /shenmaSanguo 的隊伍、武將、設定頁與 /mapEditor）；全部虛構金鑰與測試用密碼
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -467,25 +468,22 @@ async (page) => {
     const consoleA = [];
     const onConsole = (m) => consoleA.push(m.text());
     page.on("console", onConsole);
-    // 地圖編輯器預設的障礙物素材 tiles/tile_dirt.webp 不存在（既有問題，和這次功能無關）：回應空圖，避免 404 蓋掉其他錯誤
-    await ctx.route("**/images/shenmaSanguo/tiles/tile_dirt.webp", (r) => r.fulfill({ status: 200, contentType: "image/webp", body: "" }));
-    out.stubbed = ["/images/shenmaSanguo/tiles/tile_dirt.webp（地圖編輯器既有的素材缺漏）"];
+    // 實際素材、一般點擊（頁面說明在地圖編輯器預設收合）；水合完成前的點擊會遺失，重試到子分頁出現
     await page.goto(H.BASE + "/mapEditor");
-    // 頁面說明的浮動面板會蓋住上方的分頁按鈕（全站既有元件）：用 DOM 點擊事件；水合完成前的點擊會遺失，重試到子分頁出現
     await waitUntil(async () => {
-      await page.getByRole("button", { name: "⚔️ 物件" }).dispatchEvent("click");
+      await page.getByRole("button", { name: "⚔️ 物件" }).click();
       await H.sleep(500);
       return page.getByRole("button", { name: "🦸 武將設定" }).isVisible();
     }, 30000, "物件分頁");
-    await page.getByRole("button", { name: "🦸 武將設定" }).dispatchEvent("click");
+    await page.getByRole("button", { name: "🦸 武將設定" }).click();
     await H.sleep(300);
     // 物件頁同時有敵人、武將兩組按鈕，只有目前的子分頁看得到
     const visibleBtn = (text) => page.locator("button:visible", { hasText: text }).first();
-    await visibleBtn("📥 從 Sheet 載入").dispatchEvent("click");
+    await visibleBtn("📥 從 Sheet 載入").click();
     await page.waitForFunction(() => /✓ 已載入 \d+ 筆/.test(document.body.innerText), null, { timeout: 30000 });
     await waitUntil(async () => !(await visibleBtn("💾 儲存至 Sheet").isDisabled()), 10000, "儲存按鈕可按");
     const adminLog = () => logOf("A", "save_heroes_config");
-    const save = () => visibleBtn("💾 儲存至 Sheet").dispatchEvent("click");
+    const save = () => visibleBtn("💾 儲存至 Sheet").click();
     await save();
     await waitNotice(page, "admin-token-input", 10000);
     const inputType = await page.locator('[data-testid="admin-token-input"]').getAttribute("type");
@@ -510,6 +508,35 @@ async (page) => {
       inputType === "password" && afterCancel === 0 && logs13.length === 2 && logs13[0].status === 403 && logs13[1].status === 200 && logs13.every((e) => e.hasAdminToken) &&
         !stores.includes(ADMIN) && !stores.includes("wrong-token") && !consoleA.some((t) => t.includes(ADMIN)),
       { inputType, afterCancel, logs13 });
+
+    // ── 14. 在設定頁預覽剛才下載的匯出檔（唯讀，不寫入）──
+    const WRITE_ACTIONS = ["create_profile", "save_profile", "save_result", "upgrade_hero", "update_map_config", "create_map_config", "save_waves_config", "save_enemies_config", "save_heroes_config"];
+    await page.goto(SHENMA + "/settings");
+    await page.locator('[data-testid="backup-preview-open"]').waitFor({ timeout: 60000 });
+    await H.sleep(2000);
+    const writes14 = () => backend.log.filter((e) => WRITE_ACTIONS.includes(e.action)).length;
+    const w14 = writes14();
+    const sess14 = JSON.stringify(await sessionOf(page));
+    await waitUntil(async () => {
+      await page.locator('[data-testid="backup-preview-open"]').click();
+      await H.sleep(300);
+      return page.locator('[data-testid="backup-preview-modal"]').isVisible();
+    }, 20000, "預覽視窗");
+    const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.locator('[data-testid="backup-preview-pick"]').click()]);
+    await chooser.setFiles(exportPath);
+    await page.locator('[data-testid="backup-preview-result"]').waitFor({ timeout: 10000 });
+    await page.locator("#backup-preview-show-same").check();
+    const preview = await page.locator('[data-testid="backup-preview-modal"]').innerText();
+    const previewRows = await page.evaluate(() => [...document.querySelectorAll('[data-testid="backup-preview-table"] tbody tr')].map((tr) => ({ row: tr.getAttribute("data-row"), cells: [...tr.querySelectorAll("td")].map((td) => td.innerText) })));
+    await H.shot(page, "save-conflict-export-preview");
+    await page.locator('[data-testid="backup-preview-close"]').click();
+    await H.sleep(1000);
+    const team14 = previewRows.find((r) => r.row === "team");
+    const gold14 = previewRows.find((r) => r.row === "gold");
+    run.check("C-14 在設定頁用一般點擊選擇剛才下載的匯出檔：顯示匯出時間與兩份資料（這個分頁的隊伍有黃忠、雲端點數 700、版本 R+1），畫面沒有存檔金鑰；全程沒有寫入請求、這個分頁的 session 不變",
+      /存檔衝突|保留了這個分頁/.test(preview) && /版本 1/.test(preview) && team14 && /黃忠/.test(team14.cells[1]) && gold14 && gold14.cells[2] === "700" &&
+        preview.includes(`雲端是版本 ${R + 1}`) && !preview.includes(KEY) && writes14() === w14 && JSON.stringify(await sessionOf(page)) === sess14,
+      { team14, gold14, writes: writes14() - w14 });
 
     const unexpectedB = bErrors.filter((e) => !KNOWN_B(e));
     run.check("B 分頁沒有非預期的 console error／pageerror", unexpectedB.length === 0, unexpectedB.slice(0, 5));

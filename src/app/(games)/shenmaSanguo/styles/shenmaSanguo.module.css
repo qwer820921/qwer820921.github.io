@@ -2068,6 +2068,39 @@
   padding-left: 1.25rem;
 }
 
+/* ── 備份檔預覽（BackupPreviewModal）：沿用衝突比較的視窗與比較表 ── */
+.backupFileName {
+  font-size: 0.8rem;
+  color: var(--sg-muted);
+  overflow-wrap: anywhere;
+  align-self: center;
+}
+
+.backupMeta {
+  font-size: 0.82rem;
+  color: var(--sg-text);
+  overflow-wrap: anywhere;
+}
+
+.backupMetaLabel {
+  color: var(--sg-muted);
+  font-weight: 600;
+}
+
+/* 設定頁的「存檔備份檔」區塊 */
+.settingsCardTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--sg-text);
+  margin-bottom: 0.5rem;
+}
+
+.settingsCardHint {
+  font-size: 0.75rem;
+  color: var(--sg-muted);
+  margin-bottom: 1rem;
+}
+
 /* ── 關卡敵軍預覽（EnemyPreviewModal）：疊在主頁的關卡視窗上方 ── */
 .enemyPreviewBackdrop {
   z-index: 210;

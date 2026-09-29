@@ -7,8 +7,40 @@
 3. **工具自我測試**（`tools/selftest.mjs`）：用刻意製造的 fixture 確認產物核對與 log 檢查「該失敗時一定失敗」。
 4. **玩家存檔 store 測試**（`web/player-store.test.mjs`）：在 Node 內執行 `playerStore.ts`，每個 GAS 請求的成功／失敗與回應順序、以及計時器都由測試控制，驗證登入、切換帳號與同步的非同步規則。
 5. **跨來源隔離開機腳本測試**（`web/site-isolation.test.mjs`，Round 13 起）：在 Node 內用假的 window 執行 `src/utils/siteIsolation/boot.ts`，驗證遷移、查不到舊註冊與備份寫不回時的保護，以及「不會無限重新載入」的規則；真實瀏覽器的行為由 `r13-web.js` 驗證。
+6. **備份檔讀取與驗證測試**（`web/backup-file.test.mjs`）：在 Node 內執行 `utils/backupFile.ts`，驗證離線備份檔（存檔衝突時匯出的 JSON）的格式、版本、大小與欄位檢查。
+7. **素材引用檢查**（`tools/check-assets.mjs`）：網頁與 Godot 程式裡寫死的地圖貼圖路徑都要有實際檔案。
 
 所有寫入都不會送到正式 GAS／Sheets。截圖與結果 JSON 的證據放在 `.handoff/evidence/`（已 gitignore）。
+
+## 回歸分層：快速／相關／完整（先看這裡）
+
+每次修改不必重跑全部瀏覽器回歸（約 35 分鐘）。依改動範圍選一層，用 `tools/run-tier.mjs` 依序執行並記錄每一步的耗時（有設定 `EVIDENCE_DIR` 時另外寫成 `<EVIDENCE_DIR>/tier-<層>.json`）。第一版維持序列執行、不平行；不為了變快刪斷言、縮短遊戲計時，沒有跑的項目在回報裡寫「未跑」，不能當成通過。
+
+| 層   | 命令                                                                                         | 內容                                                                                                                                                 | 耗時（參考）               |
+| ---- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| 快速 | `node scripts/shenma-regression/tools/run-tier.mjs quick`                                    | tsc、神馬三國／地圖編輯器／共用元件的 ESLint、store 測試、備份檔測試、跨來源隔離開機腳本測試、工具自我測試、素材引用檢查。不需要 dev server 與 Godot | 約 80 秒                   |
+| 相關 | `node scripts/shenma-regression/tools/run-tier.mjs related <功能...>`（`list` 列出全部功能） | 快速＋改到的功能的瀏覽器腳本（自動先跑 `harness.js`）。需要 `npm run dev` 與 `PLAYWRIGHT_DIR`                                                        | 依功能，見下表             |
+| 完整 | `node scripts/shenma-regression/tools/run-tier.mjs full`                                     | 快速＋全部瀏覽器腳本（順序同第 4 節）。Godot 端另外跑 `godot-check.sh`                                                                               | 瀏覽器約 35 分鐘＋快速一層 |
+
+**什麼時候跑完整**：改到戰鬥流程、Godot 橋接或產物、跨來源隔離、harness／執行器等共用的測試基礎設施，或是發布前。改了 GDScript 另外要 Godot 匯出與 `godot-check.sh`。
+
+**改了什麼 → 跑哪幾組**（`related` 的功能名稱；耗時是 dev 模式下的參考值）：
+
+| 改到的地方                                                                                               | 功能                                                         | 瀏覽器腳本與耗時                                                                                     |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `store/playerStore.ts`、`api/gameApi.ts`、`GameInitializer.tsx`、設定頁、玩家資訊視窗                    | `account`、`save-conflict`                                   | account：i1、r4、r5、r7（約 4.5 分鐘）                                                               |
+| 存檔衝突（`SaveConflict*`、`ConflictBackupNotice.tsx`、`utils/saveConflict.ts`、`SaveCompareTable.tsx`） | `save-conflict`、`backup-preview`                            | save-conflict：`save-conflict-web.js`（約 100 秒；可再用 `GAS_BACKEND` 換成模擬後端跑一次）          |
+| 備份檔預覽（`BackupPreviewModal.tsx`、`utils/backupFile.ts`）                                            | `backup-preview`（匯出格式有改時加 `save-conflict`）         | backup-preview：`backup-preview-web.js`（約 15 秒）                                                  |
+| 地圖編輯器（`src/app/(tools)/mapEditor`）                                                                | `map-editor`、`save-conflict`（管理密碼）                    | map-editor：`map-editor-web.js`（約 7 秒）                                                           |
+| 全站元件（`src/components`，例如頁面說明 `PageInfoButton.tsx`）                                          | `floating-ui`＋用到它的頁面的功能                            | floating-ui：r17（約 100 秒）                                                                        |
+| 主頁／戰鬥頁的版面與視窗                                                                                 | `floating-ui`、`battle-layout`                               | battle-layout：r18（約 130 秒）                                                                      |
+| 橋接協定、`gameEngine.ts`、Godot 產物                                                                    | `battle-flow`、`engine-version`、`artifacts`＋用到的戰鬥功能 | battle-flow：i2、auto-timer、normal-flows、r3、r8、r9（約 7 分鐘）；engine-version：r10（約 130 秒） |
+| 武將技能、攻速成長、敵軍預覽                                                                             | `skills`、`stage-preview`                                    | skills：r12、r14、r15（約 3 分鐘）；stage-preview：r16（約 80 秒）                                   |
+| 戰鬥速度、暫停                                                                                           | `speed-pause`                                                | r19、r20（約 100 秒）                                                                                |
+| 跨來源隔離（標頭、開機腳本、Service Worker）                                                             | `isolation`                                                  | r13（約 6 分鐘）                                                                                     |
+| 只改文件                                                                                                 | 不用跑                                                       |                                                                                                      |
+
+後端草稿（GAS）的模擬測試與反向驗證不在版控內，由後端的交付紀錄另外說明。
 
 ## 需要的工具
 
@@ -115,6 +147,14 @@ node scripts/shenma-regression/tools/selftest.mjs public/games/shenmaSanguo
 
 複製交付產物到系統暫存目錄後逐一製造差異，確認 `verify-export.mjs` 只放行「node_ids、CACHE_VERSION、換行」三種差異，`.gdc`、`.scn` 其他位元組、`uid_cache.bin`、SW 其他內容、`index.html`、多出檔案都會失敗；並用合成 log 確認 `check-log.mjs` 對 ERROR／SCRIPT ERROR／Parse Error／FAIL／缺 RESULT_JSON／total=0 都會失敗。每個 fixture 也會檢查「確實改到了檔案」，避免允許差異的案例空過。不會修改傳入的目錄。
 
+素材引用檢查：
+
+```bash
+node scripts/shenma-regression/tools/check-assets.mjs
+```
+
+掃描 `src` 的 ts／tsx／css 與 `godot/shenmaSanguo` 的 gd／tscn 裡寫死的 `tiles/…`、`maps/…` 圖片，網頁的要存在於 `public/images/shenmaSanguo/`，Godot 的要存在於 `godot/shenmaSanguo/assets/`。註解裡的範例不檢查；已知例外（Godot 單獨執行時的測試資料）逐項寫出原因、另外列出，不算失敗。
+
 ## 3. 玩家存檔 store 測試（不需要瀏覽器）
 
 ```bash
@@ -158,6 +198,16 @@ node scripts/shenma-regression/web/site-isolation.test.mjs
 - SI-19～SI-29（Round 14，C13-1／C13-2）：查詢舊註冊一直失敗或逾時時，未確認的分頁停在 uncertain（不信任、不寫確認標記、不可使用），已確認的分頁照常；查詢恢復後照一般規則處理；玩家改用雲端存檔繼續；在原頁面重試（不重新載入）；停在 uncertain 後被舊 SW 帶回隔離狀態時，備份標成可疑、不採用，離開隔離也失敗時隔離那一份不照舊使用。備份寫不回 session、被取代的舊值存不進復原區時保留備份、編號記進分頁紀錄（紀錄也寫不進去時網址上的編號保留），下一次載入或在原頁面重試時採用。SI-16 從「逾時視為沒有」改成上面的規則。
 - SR-1：神馬三國的復原提示只看這個分頁、這個帳號、無法確認的暫存，並判斷有沒有未同步內容。
 
+### 3c. 備份檔讀取與驗證測試（不需要瀏覽器）
+
+```bash
+node scripts/shenma-regression/web/backup-file.test.mjs
+```
+
+- 即時轉譯 `utils/backupFile.ts` 與 `utils/saveConflict.ts`，用 `buildExport` 產生的匯出直接讀回。
+- 備份檔-1～9：目前的格式（版本 1）與沒有格式標記的舊匯出、雲端無法讀取；未知格式、較新的版本、版本不是正整數、不是物件、壞掉的 JSON、空檔案；超過 512 KB；欄位型別與範圍（負數、文字數字、無限大、武將數量、空的 id、小數的隊伍位置、過長暱稱、日期、版本號）；禁止的鍵名與巢狀層數；存檔金鑰被拿掉、HTML 字串原樣保留；每個錯誤代碼都有說明。
+- 反向驗證：`BACKUP_FILE_SRC=<改壞的 backupFile.ts>` 時改用那個檔案，應該要有測試失敗。
+
 ## 4. 瀏覽器回歸
 
 前置：`npm run dev`（`http://localhost:3000`）。**同一時間不要跑 `npm run build` 或 `tsc`**，避免 `.next` 被同時寫入。
@@ -189,14 +239,18 @@ node scripts/shenma-regression/web/site-isolation.test.mjs
 | 7o   | `r19-web.js`                  | R19：戰鬥速度 1×／2× 與部署慢速。M（主頁 375×740）：新的一場 1×；320×640 也放得下；測試攔下速度命令時畫面不改（不先改顯示）；Godot 確認後才亮 2×；2× 開部署選單是 0.1、提示「部署中暫時慢速」、取消回 2；選單中選 1×、點選單外關閉後是 1；點戰場留邊關閉（沒有部署、沒有切關、金幣不變）；轉成 740×375 場次與 2× 不變、左右留邊也能關閉；戰鬥中保留並可切換；戰鬥中開著選單時切關，新的一場 1×、選單關閉；沒有寫入。B（獨立戰鬥頁）：頂欄按鈕（375 與 320）、2× 與部署慢速、選單中選 1× 後留邊關閉、轉向。V：協定 4 產物顯示更新提示、沒有速度按鈕                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 7p   | `r20-web.js`                  | R20：手動暫停。P（主頁 375×740，Mock A 慢速出兵）：新的一場有「暫停」、375 與 320 寬放得下；命令被攔下時畫面不改（不先改顯示）；備戰中暫停後才顯示「已暫停」與「繼續」、迎戰與自動停用，點空格不開選單、直接送的開戰／切自動／蓋塔被拒絕；戰鬥中暫停時遊戲時間、敵人位置與血量、出兵數不變，繼續後第二隻在出兵間隔（4 秒）時出現；2× 開部署選單後暫停（選單鎖住）、暫停中選 1×、關選單仍暫停、保留選單直接繼續回 0.1；暫停中點塔看面板（升級與改目標停用、直接送的命令被拒絕）；暫停中 320×640 與 740×375；暫停中切關（新的一場未暫停、上一場的繼續命令 stale_battle）；Mock C 自動下一波的等待凍結；不寫入。B（獨立戰鬥頁）：頂欄暫停（375 與 320）、備戰中拒絕的操作、2× 暫停、橫向。V：加入暫停之前的產物顯示更新提示、沒有暫停按鈕。`ENGINE_DIR` 有值時改用該目錄的遊戲（反向驗證），不跑 V                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | 7q   | `save-conflict-web.js`        | 存檔版本保護與衝突處理（基準文件 §29），兩個分頁、不需要 Godot（只走隊伍、武將、設定頁與地圖編輯器）。兩個分頁共用同一個後端：後端在 Node 端（`exposeBinding`），所有分頁的請求依序處理、共用同一份資料；只有玩家存檔與設定寫入交給它，靜態設定仍由 harness 的頁面內 mock 回應。預設是腳本內建的新版後端契約 mock；執行器設定 `GAS_BACKEND=<模組>` 時改用那個模組的 `createBackend()`。C-1～C-12：B 升級與改隊伍後，A 用舊版本保存被拒 → 衝突提示；比較視窗（只列不同的項目、武將明細、沒有存檔金鑰）；取消與返回不改資料；確認期間 B 又升級時不覆蓋、刷新比較；延遲回覆時按鈕處理中且連按不多送；保留這個分頁；匯出備份（沒有存檔金鑰）；B 使用雲端、放回備份後再次比較；重新整理後重新偵測；寫入限制時不能處理。C-13：地圖編輯器的管理密碼（遮蔽輸入、取消不送出、錯誤清除後重新詢問、不在網址與儲存空間）。dev 時左下角的 Next.js 指示器會蓋住底部提示的第一個按鈕，所以底部提示用 DOM 點擊事件（`LOCAL_ASSETS=1` 時用一般點擊）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 7r   | `backup-preview-web.js`       | 離線備份檔預覽（設定頁，唯讀）。用一般點擊開啟檔案選擇器；目前格式與舊匯出的預覽與比較、改選檔案、取消選檔、關閉再開；壞掉的 JSON、較新的版本、超過大小上限、副檔名是 .json 的圖片都顯示原因；惡意 HTML 只當文字；窄螢幕（390）頁面與比較表都不需要橫向捲動；全程沒有寫入請求、storage 不變。測試用的檔案透過頁面下載存到證據目錄再選取                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 7s   | `map-editor-web.js`           | 地圖編輯器：實際素材（不攔截），整頁捲動後沒有破圖或素材 404；預設障礙物素材存在、放一格障礙物用的就是它；頁面說明預設收合，分頁與工具列用一般點擊操作；說明展開後可以關閉；窄版（390）說明按鈕不壓到標題                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | 7j   | `r14-web.js`                  | R14：黃忠「百步穿楊」。技能說明（主頁武將視窗、武將頁，詳情寫出目前等級在戰場上的實際射程）；主頁用部署選單實際放置在 (12,4)，用快照的 `hero_ranges`／`hero_enemy_dist` 量第一次扣血時敵人的距離（原射程 5 格外、7.5 格內），更遠時沒有扣血、每一擊就是攻擊力；選取時既有的武將資訊面板顯示實際射程；戰鬥中升級兩次，射程依序 7.545、7.59（不疊乘）；獨立戰鬥頁（`place_hero` 訊息）同樣有效；存檔、session 沒有技能或射程欄位。mock 名單多了黃忠（射程 5、成長 0.03、花費 6），預設隊伍不變                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 8    | `fixtures/deliberate-fail.js` | 刻意失敗的 fixture（見下方）；會汙染錯誤紀錄，所以放在最後或另開 context                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 **不經 MCP 執行**（MCP 無法使用，或需要把原始回傳存成檔案時）：
 
 ```bash
-PLAYWRIGHT_DIR=<含 playwright 套件的 node_modules>   node scripts/shenma-regression/tools/run-browser.mjs harness.js i1-init.js i2-lifecycle.js auto-timer.js normal-flows.js r3-mixed.js r4-web.js r5-web.js r7-web.js r8-web.js r9-web.js r10-web.js r12-web.js r13-web.js r14-web.js r15-web.js r16-web.js artifacts-and-network.js r17-web.js r18-web.js r19-web.js r20-web.js
+PLAYWRIGHT_DIR=<含 playwright 套件的 node_modules>   node scripts/shenma-regression/tools/run-browser.mjs harness.js i1-init.js i2-lifecycle.js auto-timer.js normal-flows.js r3-mixed.js r4-web.js r5-web.js r7-web.js r8-web.js r9-web.js r10-web.js r12-web.js r13-web.js r14-web.js r15-web.js r16-web.js artifacts-and-network.js r17-web.js r18-web.js r19-web.js r20-web.js save-conflict-web.js backup-preview-web.js map-editor-web.js
 ```
+
+`tools/run-tier.mjs full` 跑的是同一份清單（前面加上快速一層）。
 
 同一個 browser context 依序執行同一批腳本，每支的原始回傳寫成證據目錄下的 `<腳本名>.raw.json`（`EVIDENCE_DIR` 可指定證據目錄，不同批次用不同目錄，避免互相覆寫；Round 13 曾因此蓋掉一次結果）；任何一支 `allPass` 不是 `true` 時結束碼為 1。預設使用系統的 Chrome（`BROWSER_CHANNEL=chrome`，和 MCP 相同）、無頭模式（`HEADED=1` 顯示視窗）。專案沒有安裝 playwright，需要用 `PLAYWRIGHT_DIR` 指向現有的套件（例如 Playwright MCP 在 npx 快取裡的 `node_modules`）。在 MCP 裡也可以用 `H.saveLast(page, "檔名.json")` 把最近一次 `run.finish()` 的結果原封不動存檔。
 

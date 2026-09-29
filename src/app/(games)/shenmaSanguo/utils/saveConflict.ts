@@ -1,6 +1,7 @@
 // 存檔衝突的比較與匯出（純函式，不含畫面）：比較這個分頁與雲端兩份存檔，
 // 產生摘要列、武將明細列與匯出用的備份內容。不包含存檔金鑰
 import { HeroState, PlayerState, TeamSlot } from "../types";
+import { BACKUP_FILE_FORMAT, BACKUP_FILE_VERSION } from "./backupFile";
 
 /** 比較表的一列：兩邊的顯示文字，以及兩邊是否不同 */
 export interface CompareRow {
@@ -160,7 +161,7 @@ export function compareSaves(
   return { summary, heroes };
 }
 
-/** 匯出內容：兩份存檔與版本（不含存檔金鑰） */
+/** 匯出內容：格式標記、兩份存檔與版本（不含存檔金鑰）；可以在設定頁的「預覽備份檔」讀回比較 */
 export function buildExport(input: {
   reason: string;
   local: PlayerState;
@@ -169,6 +170,8 @@ export function buildExport(input: {
   cloudRev: number;
 }) {
   return {
+    format: BACKUP_FILE_FORMAT,
+    version: BACKUP_FILE_VERSION,
     note: "神馬三國存檔備份（不含存檔金鑰）。this_tab 是這個分頁的資料，cloud 是當時雲端的資料；rev 是雲端存檔的版本。",
     exported_at: new Date().toISOString(),
     reason: input.reason,

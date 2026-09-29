@@ -4,13 +4,16 @@ import { useState, useEffect, useRef } from "react";
 interface PageInfoButtonProps {
   title: string;
   description: React.ReactNode;
+  /** 一進頁面是否展開說明（預設展開）；說明會蓋住頁面上方操作的頁面傳 false */
+  defaultOpen?: boolean;
 }
 
 export default function PageInfoButton({
   title,
   description,
+  defaultOpen = true,
 }: PageInfoButtonProps) {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

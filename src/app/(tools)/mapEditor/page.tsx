@@ -51,7 +51,9 @@ export default function Page() {
   const mapImages = readImages("maps");
   return (
     <>
+      {/* 說明面板展開時會蓋住編輯器上方的分頁與工具列，預設收合 */}
       <PageInfoButton
+        defaultOpen={false}
         title="地圖編輯器"
         description={
           <p>

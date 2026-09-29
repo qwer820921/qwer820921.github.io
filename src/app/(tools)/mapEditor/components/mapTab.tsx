@@ -28,17 +28,18 @@ const DEFAULT_TEXTURES: TileTextures = {
   empty: "tiles/tile_empty.webp",
   base: "tiles/tile_fortress.webp",
   spawn: "tiles/tile_gate.webp",
-  obstacle: "tiles/tile_dirt.webp",
+  // 障礙物素材只有編號版（tile_dirt1～24），2 是岩石
+  obstacle: "tiles/tile_dirt2.webp",
 };
 
+// 讀不到 public/images/shenmaSanguo/tiles 時的備援清單：只列實際存在的素材
 const DEFAULT_TILE_IMAGE_OPTIONS = [
   "tiles/tile_stone.webp",
   "tiles/tile_grass1.webp",
-  "tiles/tile_dirt.webp",
+  "tiles/tile_dirt2.webp",
   "tiles/tile_empty.webp",
   "tiles/tile_fortress.webp",
   "tiles/tile_gate.webp",
-  "tiles/tile_tree.webp",
 ];
 
 // ── 格子工具函式 ──────────────────────────────────────────────

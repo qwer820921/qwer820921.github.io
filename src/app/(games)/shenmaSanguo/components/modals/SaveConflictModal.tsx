@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Alert, Button, Col, Form, Row, Table } from "react-bootstrap";
+import { Alert, Button, Col, Row } from "react-bootstrap";
 import { ExclamationTriangleFill } from "react-bootstrap-icons";
 import {
   ConflictChoice,
@@ -11,6 +11,7 @@ import {
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { PlayerState, SessionPlayerState } from "../../types";
 import { describePlayerError } from "../../utils/playerErrors";
+import SaveCompareTable from "../SaveCompareTable";
 import {
   buildExport,
   compareSaves,
@@ -104,9 +105,6 @@ export default function SaveConflictModal({ onClose }: Props) {
     ...compared.summary.filter((r) => r.differs && r.id !== "heroes"),
     ...compared.heroes.filter((r) => r.differs),
   ];
-  const summaryRows = showSame
-    ? compared.summary
-    : compared.summary.filter((r) => r.differs);
 
   const exportBoth = () =>
     downloadJson(
@@ -194,73 +192,18 @@ export default function SaveConflictModal({ onClose }: Props) {
 
           {!confirm && (
             <>
-              <Table
-                size="sm"
-                bordered
-                responsive
-                className={styles.conflictTable}
-                data-testid="save-conflict-table"
-              >
-                <thead>
-                  <tr>
-                    <th>項目</th>
-                    <th>這個分頁（尚未保存）</th>
-                    <th>雲端（版本 {conflict.serverRev}）</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summaryRows.map((r) => (
-                    <tr
-                      key={r.id}
-                      className={r.differs ? styles.conflictDiff : undefined}
-                      data-row={r.id}
-                      data-differs={r.differs ? "1" : "0"}
-                    >
-                      <td>{r.label}</td>
-                      <td>{r.local}</td>
-                      <td>{r.cloud}</td>
-                    </tr>
-                  ))}
-                  {showHeroes &&
-                    compared.heroes
-                      .filter((r) => showSame || r.differs)
-                      .map((r) => (
-                        <tr
-                          key={r.id}
-                          className={
-                            r.differs ? styles.conflictDiff : undefined
-                          }
-                          data-row={r.id}
-                          data-differs={r.differs ? "1" : "0"}
-                        >
-                          <td>└ {r.label}</td>
-                          <td>{r.local}</td>
-                          <td>{r.cloud}</td>
-                        </tr>
-                      ))}
-                </tbody>
-              </Table>
-              <Row className="g-2 mb-3">
-                <Col xs="auto">
-                  <Form.Check
-                    type="switch"
-                    id="conflict-show-same"
-                    label="顯示相同的項目"
-                    checked={showSame}
-                    onChange={(e) => setShowSame(e.target.checked)}
-                  />
-                </Col>
-                <Col xs="auto">
-                  <Form.Check
-                    type="switch"
-                    id="conflict-show-heroes"
-                    label="展開武將明細"
-                    checked={showHeroes}
-                    onChange={(e) => setShowHeroes(e.target.checked)}
-                    data-testid="save-conflict-heroes"
-                  />
-                </Col>
-              </Row>
+              <SaveCompareTable
+                summary={compared.summary}
+                heroes={compared.heroes}
+                localLabel="這個分頁（尚未保存）"
+                cloudLabel={`雲端（版本 ${conflict.serverRev}）`}
+                showSame={showSame}
+                onShowSame={setShowSame}
+                showHeroes={showHeroes}
+                onShowHeroes={setShowHeroes}
+                idPrefix="conflict"
+                testIdPrefix="save-conflict"
+              />
               {cloudCorrupt && (
                 <Alert variant="danger" className="py-2 small">
                   雲端存檔無法讀取（資料損毀），伺服器不接受覆寫，兩個選項都無法使用。請先匯出這個分頁的資料並回報問題。

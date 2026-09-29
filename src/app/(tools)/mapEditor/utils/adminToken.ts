@@ -49,6 +49,14 @@ export function adminErrorText(code: string): string {
       return "管理密碼不正確（或後端沒有設定），已清除，下次儲存時重新輸入";
     case "BUSY":
       return "後端忙碌中，請稍後再試";
+    case "BACKUP_FAILED":
+      return "寫入前的備份沒有完成，設定沒有改變，請稍後再試";
+    case "CONFIG_WRITE_FAILED":
+      return "寫入到一半失敗；寫入前的完整內容已備份，再儲存一次會以備份為基準重寫";
+    case "BACKUP_LIMIT":
+      return "失敗留下的備份已到上限，請管理者在試算表的 _config_backups 確認後再儲存；這次沒有寫入";
+    case "CONFIG_NEEDS_REPAIR":
+      return "上一次寫入的結果不明，為了不蓋掉可以恢復的內容暫停寫入；請管理者依 _config_backups 處理";
     default:
       return code;
   }

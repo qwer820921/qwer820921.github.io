@@ -333,9 +333,9 @@ async (page) => {
         /^http:\/\/localhost:3000\/images\/cover\/contact\.webp$/.test(c.url),
     },
     {
-      why: "只在正式靜態匯出出現（tools/serve-out.mjs）：Next 16 預先載入要求 __next.<區段>.<區段>.txt，out/ 裡是巢狀目錄（__next.<區段>/<區段>.txt），GitHub Pages 同樣找不到；只影響首頁的部落格連結預先載入，和神馬三國無關",
+      why: "只在正式靜態匯出出現（tools/serve-out.mjs）：Next 16 預先載入要求 __next.<區段>.<區段>.txt，out/ 裡是巢狀目錄（__next.<區段>/<區段>.txt），GitHub Pages 同樣找不到；最早在首頁的部落格連結看到，地圖編輯器捲到頁尾時的「登入」連結也會；只略過已觀察到的部落格與登入路徑，遊戲與其他路徑的同類錯誤仍須失敗",
       test: (c) => /^Failed to load resource: the server responded with a status of 404/.test(c.text) &&
-        /^http:\/\/localhost:3000\/blog\/[^?]*\/__next\.[^/?]+\.txt(\?|$)/.test(c.url),
+        /^http:\/\/localhost:3000\/(?:blog\/[^?]*\/|logIn\/)__next\.[^/?]+\.txt(\?|$)/.test(c.url),
     },
   ];
   page.on("pageerror", (e) => state.pageErrors.push({ t: Date.now(), text: String(e).slice(0, 300) }));
