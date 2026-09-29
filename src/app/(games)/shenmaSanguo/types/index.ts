@@ -16,6 +16,8 @@ export enum JobClass {
   Archer = "archer",
   Artillery = "artillery",
   Cavalry = "cavalry",
+  /** 法師（周瑜）：目前只是分類，戰場上沒有專屬的機制 */
+  Mage = "mage",
 }
 
 export enum BattleResult {
@@ -163,6 +165,8 @@ export interface SessionPlayerState extends PlayerState {
   serverRev?: number | null;
   /** 已送出、還沒確認結果的伺服器升級（只存在本機，不送到伺服器） */
   pendingUpgrade?: PendingUpgrade | null;
+  /** 還沒確認雲端已保存的戰鬥結算（依結算順序；只存在本機，不送到伺服器）：見 PendingSettle */
+  pendingSettles?: PendingSettle[];
   /** 遷移狀態不明的寫入限制（只存在本機，不送到伺服器）：見 MigrationHold */
   migrationHold?: MigrationHold | null;
 }
@@ -214,6 +218,39 @@ export interface PendingUpgrade {
    * unknown：回應遺失（重新整理、網路錯誤、無法解析的回應），無法確定伺服器是否已完成
    */
   state: "in_flight" | "unknown";
+}
+
+/**
+ * 戰鬥結算的完整獎勵（後端在同一次寫入保存點數、經驗、等級、容量與進度）還沒確認時的紀錄，
+ * 和本機先套用的獎勵在同一次寫進 session。確認之前不送整份保存：整份保存會先把獎勵寫進雲端，
+ * 晚到的結算又會再加一次。重新整理或回應遺失時，用同一個 request_id、同一份內容與第一次的 base_rev
+ * 重新送出確認（後端已處理就回傳第一次的結果，不會有第二份獎勵）
+ */
+export interface PendingSettle {
+  /** request_id（這一場的戰鬥票 id） */
+  id: string;
+  /** 送到後端的結算內容（不含場次識別碼） */
+  record: {
+    result: BattleResult;
+    stage_id: string;
+    stars_earned: number;
+    kills: number;
+    time_seconds: number;
+    loots: Loot[];
+  };
+  /** 本機算出的獎勵（和後端回報的比對） */
+  reward: { points: number; exp: number };
+  /** 本機套用這場獎勵後的版本（player.rev） */
+  local_rev: number;
+  /** 第一次送出時帶的雲端版本；還沒送出時是 null（重送一律用第一次的版本） */
+  base_rev: number | null;
+  /**
+   * queued：排隊中、還沒送出；sent：這個頁面送出後在等回應；
+   * unknown：送出後結果不明（回應遺失、重新整理、伺服器忙碌），要重新送出確認
+   */
+  state: "queued" | "sent" | "unknown";
+  /** 本機套用的時間（毫秒） */
+  at: number;
 }
 
 // ── 通訊協議（Web ↔ Godot）──────────────────────────────────

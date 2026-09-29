@@ -214,6 +214,22 @@
   background: #fff;
 }
 
+/* 遊戲不認得的稀有度／職業（保留原值，只標示） */
+.configSelectUnknown {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.unknownHint {
+  margin-bottom: 0.6rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.08);
+  font-size: 0.78rem;
+  color: #92400e;
+}
+
 /* ── 刪除按鈕 ── */
 .deleteBtn {
   padding: 0.18rem 0.45rem;

@@ -13,7 +13,7 @@ import {
 } from "react-bootstrap";
 import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
-import { HeroState, HeroConfig, Rarity, JobClass } from "../../types";
+import { HeroState, HeroConfig, Rarity } from "../../types";
 import HeroSkillInfo from "../../components/HeroSkillInfo";
 import HeroFilterBar from "../../components/HeroFilterBar";
 import { attackIntervalSec, formatSec } from "../../utils/heroStats";
@@ -23,34 +23,11 @@ import {
   filterAndSortHeroes,
   resolveHeroState,
 } from "../../utils/heroFilter";
+import { jobInfo, rarityInfo } from "../../utils/heroCategories";
 import styles from "../../styles/shenmaSanguo.module.css";
 
-// ── 顯示設定 ──────────────────────────────────────────────
-const rarityColor: Record<Rarity, string> = {
-  [Rarity.Orange]: "#e8922a",
-  [Rarity.Purple]: "#9b59b6",
-  [Rarity.Blue]: "#5299e0",
-  [Rarity.Green]: "#52c07a",
-};
-const rarityLabel: Record<Rarity, string> = {
-  [Rarity.Orange]: "橘",
-  [Rarity.Purple]: "紫",
-  [Rarity.Blue]: "藍",
-  [Rarity.Green]: "綠",
-};
-const jobLabel: Record<JobClass, string> = {
-  [JobClass.Infantry]: "步兵",
-  [JobClass.Archer]: "弓兵",
-  [JobClass.Artillery]: "砲兵",
-  [JobClass.Cavalry]: "騎兵",
-};
-const jobBarClass: Record<JobClass, string> = {
-  [JobClass.Infantry]: styles.jobInfantry,
-  [JobClass.Archer]: styles.jobArcher,
-  [JobClass.Artillery]: styles.jobArtillery,
-  [JobClass.Cavalry]: styles.jobCavalry,
-};
-const rarityBgClass: Record<Rarity, string> = {
+// ── 顯示設定（名稱與顏色在 utils/heroCategories；遊戲不認得的稀有度沒有底色） ──
+const rarityBgClass: Record<string, string> = {
   [Rarity.Orange]: styles.rarityOrange,
   [Rarity.Purple]: styles.rarityPurple,
   [Rarity.Blue]: styles.rarityBlue,
@@ -113,7 +90,8 @@ function UpgradeModal({
     }
   };
 
-  const color = rarityColor[config.rarity as Rarity];
+  const rarity = rarityInfo(config.rarity);
+  const color = rarity.color;
 
   // Modal 透過 portal 渲染在 .gameBody 外，CSS 變數無效，使用硬編碼值
   const C = {
@@ -172,7 +150,7 @@ function UpgradeModal({
                 padding: "1px 6px",
               }}
             >
-              {rarityLabel[config.rarity as Rarity]}
+              {rarity.label}
             </span>
           </div>
           <button
@@ -446,17 +424,17 @@ function HeroCard({
   config: HeroConfig;
   onClick: () => void;
 }) {
-  const color = rarityColor[config.rarity as Rarity];
+  const rarity = rarityInfo(config.rarity);
+  const job = jobInfo(config.job);
+  const color = rarity.color;
   return (
     <div
-      className={`${styles.heroCard} ${rarityBgClass[config.rarity as Rarity]}`}
+      className={`${styles.heroCard} ${rarityBgClass[rarity.value] ?? ""}`}
       data-hero-id={config.hero_id}
       onClick={onClick}
       style={{ borderColor: `${color}30` }}
     >
-      <div
-        className={`${styles.heroJobBar} ${jobBarClass[config.job as JobClass]}`}
-      />
+      <div className={styles.heroJobBar} style={{ background: job.color }} />
       <div className={styles.heroCardInner}>
         <div
           style={{
@@ -478,8 +456,10 @@ function HeroCard({
               flexShrink: 0,
               marginLeft: 4,
             }}
+            title={rarity.known ? undefined : "遊戲不認得的稀有度（保留原值）"}
+            data-testid="hero-rarity"
           >
-            {rarityLabel[config.rarity as Rarity]}
+            {rarity.label}
           </span>
         </div>
         <div
@@ -499,8 +479,11 @@ function HeroCard({
           >
             Lv.{hero.level}
           </Badge>
-          <span style={{ fontSize: "0.62rem", color: "var(--sg-muted)" }}>
-            {jobLabel[config.job as JobClass]}
+          <span
+            style={{ fontSize: "0.62rem", color: job.color, fontWeight: 600 }}
+            data-testid="hero-job"
+          >
+            {job.label}
           </span>
           {hero.star > 0 && (
             <span style={{ fontSize: "0.62rem", color: "var(--sg-gold)" }}>

@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Row, Col, Spinner, Alert } from "react-bootstrap";
 import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
-import { HeroState, HeroConfig, Rarity, JobClass } from "../../types";
+import { HeroState, HeroConfig } from "../../types";
 import HeroSkillInfo from "../HeroSkillInfo";
 import HeroFilterBar from "../HeroFilterBar";
 import { attackIntervalSec, formatSec } from "../../utils/heroStats";
@@ -14,32 +14,8 @@ import {
   filterAndSortHeroes,
   resolveHeroState,
 } from "../../utils/heroFilter";
+import { jobInfo, rarityInfo } from "../../utils/heroCategories";
 import styles from "../../styles/shenmaSanguo.module.css";
-
-const rarityColor: Record<Rarity, string> = {
-  [Rarity.Orange]: "#e8922a",
-  [Rarity.Purple]: "#9b59b6",
-  [Rarity.Blue]: "#5299e0",
-  [Rarity.Green]: "#52c07a",
-};
-const rarityLabel: Record<Rarity, string> = {
-  [Rarity.Orange]: "橘",
-  [Rarity.Purple]: "紫",
-  [Rarity.Blue]: "藍",
-  [Rarity.Green]: "綠",
-};
-const jobLabel: Record<JobClass, string> = {
-  [JobClass.Infantry]: "步兵",
-  [JobClass.Archer]: "弓兵",
-  [JobClass.Artillery]: "砲兵",
-  [JobClass.Cavalry]: "騎兵",
-};
-const jobColor: Record<JobClass, string> = {
-  [JobClass.Infantry]: "#ef4444",
-  [JobClass.Archer]: "#10b981",
-  [JobClass.Artillery]: "#3b82f6",
-  [JobClass.Cavalry]: "#8b5cf6",
-};
 
 const r = (n: number) => Math.round(n);
 
@@ -364,8 +340,10 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
             {/* Hero grid */}
             <Row className="g-2">
               {listed.items.map(({ config, hero, cost: upgradeCost }) => {
-                const color = rarityColor[config.rarity as Rarity];
-                const jColor = jobColor[config.job as JobClass];
+                const rarity = rarityInfo(config.rarity);
+                const job = jobInfo(config.job);
+                const color = rarity.color;
+                const jColor = job.color;
                 const isSelected = config.hero_id === selectedHeroId;
                 const inTeam = teamHeroIds.has(config.hero_id);
                 const canAfford = player.gold >= upgradeCost;
@@ -428,8 +406,14 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                               flexShrink: 0,
                               marginLeft: 4,
                             }}
+                            title={
+                              rarity.known
+                                ? undefined
+                                : "遊戲不認得的稀有度（保留原值）"
+                            }
+                            data-testid="hero-rarity"
                           >
-                            {rarityLabel[config.rarity as Rarity]}
+                            {rarity.label}
                           </span>
                         </div>
                         <div
@@ -439,8 +423,11 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                             marginBottom: "0.2rem",
                           }}
                         >
-                          <span style={{ color: jColor, fontWeight: 600 }}>
-                            {jobLabel[config.job as JobClass]}
+                          <span
+                            style={{ color: jColor, fontWeight: 600 }}
+                            data-testid="hero-job"
+                          >
+                            {job.label}
                           </span>
                           　Lv.{hero.level}
                         </div>
@@ -479,8 +466,10 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
       {selectedHero &&
         selectedConfig &&
         (() => {
-          const color = rarityColor[selectedConfig.rarity as Rarity];
-          const jColor = jobColor[selectedConfig.job as JobClass];
+          const rarity = rarityInfo(selectedConfig.rarity);
+          const job = jobInfo(selectedConfig.job);
+          const color = rarity.color;
+          const jColor = job.color;
           return (
             <div
               className={styles.modalBackdrop}
@@ -552,7 +541,7 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                         padding: "1px 5px",
                       }}
                     >
-                      {rarityLabel[selectedConfig.rarity as Rarity]}
+                      {rarity.label}
                     </span>
                     <span
                       style={{
@@ -561,7 +550,7 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                         fontWeight: 600,
                       }}
                     >
-                      {jobLabel[selectedConfig.job as JobClass]}
+                      {job.label}
                     </span>
                   </div>
                   <button className={styles.modalClose} onClick={closeDetail}>

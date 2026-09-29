@@ -5,43 +5,18 @@ import { useRouter } from "next/navigation";
 import { Container, Row, Col, Spinner, Alert } from "react-bootstrap";
 import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
-import { HeroState, HeroConfig, Rarity, JobClass, TeamSlot } from "../../types";
+import { TeamSlot } from "../../types";
+import HeroFilterBar from "../../components/HeroFilterBar";
+import {
+  DEFAULT_HERO_FILTER,
+  HeroFilterCriteria,
+  TEAM_SORT_OPTIONS,
+  filterAndSortHeroes,
+  resolveHeroState,
+} from "../../utils/heroFilter";
+import { jobInfo, rarityInfo } from "../../utils/heroCategories";
+import { onActivateKey } from "../../utils/keyboard";
 import styles from "../../styles/shenmaSanguo.module.css";
-
-const rarityColor: Record<Rarity, string> = {
-  [Rarity.Orange]: "#e8922a",
-  [Rarity.Purple]: "#9b59b6",
-  [Rarity.Blue]: "#5299e0",
-  [Rarity.Green]: "#52c07a",
-};
-const jobLabel: Record<JobClass, string> = {
-  [JobClass.Infantry]: "步",
-  [JobClass.Archer]: "弓",
-  [JobClass.Artillery]: "砲",
-  [JobClass.Cavalry]: "騎",
-};
-const jobBarClass: Record<JobClass, string> = {
-  [JobClass.Infantry]: styles.jobInfantry,
-  [JobClass.Archer]: styles.jobArcher,
-  [JobClass.Artillery]: styles.jobArtillery,
-  [JobClass.Cavalry]: styles.jobCavalry,
-};
-
-function resolveHeroState(
-  config: HeroConfig,
-  playerHeroes: HeroState[]
-): HeroState {
-  return (
-    playerHeroes.find((h) => h.hero_id === config.hero_id) ?? {
-      hero_id: config.hero_id,
-      level: 1,
-      star: 0,
-      atk: config.base_atk,
-      def: config.base_def,
-      hp: config.base_hp,
-    }
-  );
-}
 
 const MAX_SLOTS = 5;
 
@@ -53,6 +28,9 @@ export default function TeamPageContent() {
 
   const [selected, setSelected] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
+  // 搜尋、職業與排序只篩選下方可選的武將（出陣槽位照常顯示）；只在這個頁面的記憶體，離開後恢復預設
+  const [criteria, setCriteria] =
+    useState<HeroFilterCriteria>(DEFAULT_HERO_FILTER);
 
   useEffect(() => {
     if (player) {
@@ -124,6 +102,13 @@ export default function TeamPageContent() {
     }
   );
 
+  // 可選的武將：共用的搜尋、職業篩選與排序（入隊、移除一律用 hero_id，不看列表位置）
+  const listed = filterAndSortHeroes(
+    staticConfig.heroesConfig,
+    player.heroes,
+    criteria
+  );
+
   return (
     <Container fluid className={styles.pageContainer}>
       <div className={styles.header}>
@@ -176,37 +161,52 @@ export default function TeamPageContent() {
       <div style={{ width: "100%", marginBottom: "1.5rem" }}>
         <div className={styles.sectionLabel}>出陣隊伍</div>
         <div className={styles.slotsRow}>
-          {displaySlots.map((slot, i) => (
-            <div
-              key={i}
-              className={
-                slot.heroId
-                  ? `${styles.slot} ${styles.slotFilled}`
-                  : styles.slot
-              }
-              onClick={() => slot.heroId && toggleHero(slot.heroId)}
-              title={slot.heroId ? "點擊移除" : undefined}
-            >
-              <span className={styles.slotNum}>#{i + 1}</span>
-              {slot.config && slot.hero ? (
-                <>
-                  <span
-                    style={{
-                      fontSize: "0.58rem",
-                      color: rarityColor[slot.config.rarity as Rarity],
-                      fontWeight: 600,
-                    }}
-                  >
-                    {jobLabel[slot.config.job as JobClass]}
-                  </span>
-                  <div className={styles.slotName}>{slot.config.name}</div>
-                  <div className={styles.slotLv}>Lv.{slot.hero.level}</div>
-                </>
-              ) : (
-                <div className={styles.slotEmpty}>空</div>
-              )}
-            </div>
-          ))}
+          {displaySlots.map((slot, i) => {
+            const heroId = slot.heroId;
+            // 已上陣的槽位可以用鍵盤移除（Enter 或空白鍵）；空的槽位不能操作
+            const remove = heroId ? () => toggleHero(heroId) : undefined;
+            return (
+              <div
+                key={i}
+                className={
+                  slot.heroId
+                    ? `${styles.slot} ${styles.slotFilled}`
+                    : styles.slot
+                }
+                onClick={remove}
+                title={slot.heroId ? "點擊移除" : undefined}
+                role={remove ? "button" : undefined}
+                tabIndex={remove ? 0 : undefined}
+                aria-label={
+                  remove
+                    ? `移除第 ${i + 1} 位：${slot.config?.name ?? slot.heroId}`
+                    : undefined
+                }
+                onKeyDown={remove ? onActivateKey(remove) : undefined}
+                data-testid="team-slot"
+                data-hero-id={slot.heroId ?? ""}
+              >
+                <span className={styles.slotNum}>#{i + 1}</span>
+                {slot.config && slot.hero ? (
+                  <>
+                    <span
+                      style={{
+                        fontSize: "0.58rem",
+                        color: rarityInfo(slot.config.rarity).color,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {jobInfo(slot.config.job).short}
+                    </span>
+                    <div className={styles.slotName}>{slot.config.name}</div>
+                    <div className={styles.slotLv}>Lv.{slot.hero.level}</div>
+                  </>
+                ) : (
+                  <div className={styles.slotEmpty}>空</div>
+                )}
+              </div>
+            );
+          })}
         </div>
         <p
           style={{
@@ -222,20 +222,36 @@ export default function TeamPageContent() {
       {/* 武將池 */}
       <div style={{ width: "100%" }}>
         <div className={styles.sectionLabel}>選擇武將</div>
+        <HeroFilterBar
+          criteria={criteria}
+          onChange={setCriteria}
+          matched={listed.matched}
+          total={listed.total}
+          sortOptions={TEAM_SORT_OPTIONS}
+          ariaLabel="可選武將的搜尋與篩選"
+        />
         <Row className="g-2">
-          {staticConfig.heroesConfig.map((config) => {
-            const hero = resolveHeroState(config, player.heroes);
+          {listed.items.map(({ config, hero }) => {
             const isSelected = selected.includes(config.hero_id);
-            const color = rarityColor[config.rarity as Rarity];
+            const color = rarityInfo(config.rarity).color;
+            const job = jobInfo(config.job);
             return (
               <Col xs={6} sm={4} md={3} key={config.hero_id}>
                 <div
                   className={`${styles.poolCard} ${isSelected ? styles.poolCardActive : ""}`}
                   style={{ borderColor: isSelected ? `${color}80` : undefined }}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={isSelected}
+                  aria-label={`${config.name}（${job.label}，出陣費用 ${config.cost}）`}
                   onClick={() => toggleHero(config.hero_id)}
+                  onKeyDown={onActivateKey(() => toggleHero(config.hero_id))}
+                  data-testid="team-pool-card"
+                  data-hero-id={config.hero_id}
                 >
                   <div
-                    className={`${styles.heroJobBar} ${jobBarClass[config.job as JobClass]}`}
+                    className={styles.heroJobBar}
+                    style={{ background: job.color }}
                   />
                   <div style={{ padding: "0.55rem 0.65rem", flex: 1 }}>
                     <div
@@ -255,7 +271,10 @@ export default function TeamPageContent() {
                         marginBottom: "0.25rem",
                       }}
                     >
-                      Lv.{hero.level}　Cost{" "}
+                      <span style={{ color: job.color, fontWeight: 600 }}>
+                        {job.label}
+                      </span>
+                      　Lv.{hero.level}　Cost{" "}
                       <span style={{ color: "var(--sg-gold)" }}>
                         {config.cost}
                       </span>

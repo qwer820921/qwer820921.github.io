@@ -5,16 +5,10 @@ import { useRouter } from "next/navigation";
 import { Container, Row, Col, Spinner, Form, Alert } from "react-bootstrap";
 import { usePlayerStore } from "../store/playerStore";
 import { useStaticConfigStore } from "../store/staticConfigStore";
-import { SyncStatus, Rarity } from "../types";
+import { SyncStatus } from "../types";
 import { getPlayerKey } from "../api/gameApi";
+import { rarityInfo } from "../utils/heroCategories";
 import styles from "../styles/shenmaSanguo.module.css";
-
-const rarityColor: Record<Rarity, string> = {
-  [Rarity.Orange]: "#e8922a",
-  [Rarity.Purple]: "#9b59b6",
-  [Rarity.Blue]: "#5299e0",
-  [Rarity.Green]: "#52c07a",
-};
 
 // ── 首次登入畫面 ──────────────────────────────────────────
 function KeySetupView() {
@@ -369,7 +363,7 @@ export default function MainMenuContent() {
                 (h) => h.hero_id === slot.hero_id
               );
               const color = heroConf
-                ? rarityColor[heroConf.rarity as Rarity]
+                ? rarityInfo(heroConf.rarity).color
                 : "var(--sg-muted)";
               return (
                 <div

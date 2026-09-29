@@ -71,6 +71,7 @@ const toData = (p: SessionPlayerState): PlayerState => {
   delete d.syncedRev;
   delete d.serverRev;
   delete d.pendingUpgrade;
+  delete d.pendingSettles;
   delete d.migrationHold;
   return d as PlayerState;
 };

@@ -50,6 +50,19 @@ export function describePlayerError(code: string | null | undefined): string {
       return "還有存檔正在寫入，請稍候再試。";
     case "UPGRADE_PENDING":
       return "武將升級的結果還在確認中，請先處理升級。";
+    case "SETTLE_UNCONFIRMED":
+      return "戰鬥結算的結果還無法確認（連線中斷時，伺服器可能已保存，也可能沒有）。確認之前先不保存也不切換，以免獎勵被寫兩次；本機的獎勵與修改都還在。請確認網路後按「重新確認」。";
+    case "SETTLE_PENDING":
+      return "戰鬥結算還在確認雲端是否已保存，請等確認完成後再處理。";
+    case "SETTLE_MISMATCH":
+      return "伺服器保存的戰鬥獎勵和畫面上的不同，已暫停保存；請用畫面下方的提示比較兩份資料後選擇。";
+    case "RESULT_UNKNOWN":
+      return "伺服器無法確認這場戰鬥是否已經結算過（時間太久），沒有再次發給獎勵；保存時請比較兩份資料後選擇。";
+    case "REQUEST_ID_REUSED":
+      return "伺服器上這場戰鬥的紀錄內容不同，沒有套用這次的結算；獎勵會隨一般的存檔保存。";
+    case "INVALID_RESULT":
+    case "INVALID_REWARD":
+      return "戰鬥結果的資料不正確，這場沒有套用獎勵。";
     case "BUSY":
       return "伺服器忙碌中（同時有其他存檔正在寫入），請稍後再試。";
     case "DATA_CORRUPT":

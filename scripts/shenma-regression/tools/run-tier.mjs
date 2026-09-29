@@ -4,7 +4,7 @@
 //   node scripts/shenma-regression/tools/run-tier.mjs related <功能...>   例：related save-conflict backup-preview
 //   node scripts/shenma-regression/tools/run-tier.mjs full
 //   node scripts/shenma-regression/tools/run-tier.mjs list              列出功能與對應的瀏覽器腳本
-// - quick：型別檢查、神馬三國與地圖編輯器的 ESLint、Node 測試（store、備份檔、武將列表篩選、地圖編輯器的錯誤說明、跨來源隔離開機腳本）、harness 雜訊規則、
+// - quick：型別檢查、神馬三國與地圖編輯器的 ESLint、Node 測試（store、戰鬥結算獎勵規則、備份檔、武將列表篩選、地圖編輯器的錯誤說明、跨來源隔離開機腳本）、harness 雜訊規則、
 //   工具自我測試、素材引用檢查。不需要 dev server 與 Godot
 // - related：quick 之後，只跑指定功能的瀏覽器腳本；full：quick 之後跑全部瀏覽器腳本（約 35 分鐘）
 //   瀏覽器腳本需要 npm run dev 與 PLAYWRIGHT_DIR（見 README）；Godot 端另外用 godot-check.sh
@@ -34,6 +34,11 @@ const QUICK = [
     "玩家存檔 store 測試",
     "node",
     ["scripts/shenma-regression/web/player-store.test.mjs"],
+  ],
+  [
+    "戰鬥結算獎勵規則測試",
+    "node",
+    ["scripts/shenma-regression/web/battle-reward.test.mjs"],
   ],
   [
     "備份檔讀取與驗證測試",
@@ -117,8 +122,20 @@ const AREAS = {
     scripts: ["r12-web.js", "r14-web.js", "r15-web.js", "skill-sweep-web.js"],
   },
   heroes: {
-    what: "武將列表的搜尋、職業篩選與排序（主頁武將視窗、武將頁），升級後重新排序與切換帳號後重算",
-    scripts: ["hero-filter-web.js"],
+    what: "武將列表的搜尋、職業篩選與排序（主頁武將視窗、武將頁），升級後重新排序與切換帳號後重算；法師與遊戲不認得的職業／稀有度的顯示",
+    scripts: ["hero-filter-web.js", "team-filter-web.js"],
+  },
+  team: {
+    what: "隊伍編排的搜尋、職業篩選與排序（主頁隊伍視窗、隊伍頁）：只篩選可選武將、槽位照常、依 hero_id 入隊、容量、鍵盤、切換帳號、寫入限制",
+    scripts: ["team-filter-web.js"],
+  },
+  "hero-category": {
+    what: "地圖編輯器武將表的稀有度／職業選單（遊戲的值、不認得的值保留原值）",
+    scripts: ["hero-category-web.js"],
+  },
+  settle: {
+    what: "戰鬥結算的完整獎勵：真 Godot 勝敗結算、回應遺失與重新確認、重新整理時在途、結算中改隊伍（需要 Godot 產物；可用 GAS_BACKEND 換成模擬後端）",
+    scripts: ["settle-web.js"],
   },
   "stage-preview": { what: "攻速成長、關卡敵軍預覽", scripts: ["r16-web.js"] },
   "floating-ui": {
@@ -166,6 +183,9 @@ const FULL = [
   "map-editor-web.js",
   "skill-sweep-web.js",
   "hero-filter-web.js",
+  "team-filter-web.js",
+  "hero-category-web.js",
+  "settle-web.js",
 ];
 
 const [mode, ...rest] = process.argv.slice(2);

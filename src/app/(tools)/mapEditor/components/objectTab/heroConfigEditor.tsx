@@ -4,6 +4,12 @@ import styles from "../../styles/objectTab.module.css";
 import { HeroConfig } from "../../types";
 import { gameApi, GasError } from "@/app/(games)/shenmaSanguo/api/gameApi";
 import {
+  HERO_JOBS,
+  HERO_RARITIES,
+  isKnownJob,
+  isKnownRarity,
+} from "@/app/(games)/shenmaSanguo/utils/heroCategories";
+import {
   ADMIN_TOKEN_MISSING,
   adminErrorText,
   forgetAdminToken,
@@ -25,21 +31,50 @@ const NUM_FIELDS: (keyof HeroConfig)[] = [
   "range_growth",
 ];
 
-const RARITY_OPTIONS = ["N", "R", "SR", "SSR", "UR"];
-const JOB_OPTIONS = ["步兵", "弓手", "騎兵", "法師", "醫師", "投石"];
+/**
+ * 稀有度與職業的選單：只提供遊戲認得的值（和遊戲畫面共用 utils/heroCategories），顯示「名稱（值）」。
+ * 試算表裡遊戲不認得的舊值（例如 N／SR、中文職業）保留原值：選單多一個「原值」選項並標示，
+ * 載入、重新繪製都不會改寫；只有管理者在選單選了新的值並儲存時才會改變（沒動的列照原值送回）
+ */
+type SelectSpec = {
+  options: { value: string; label: string }[];
+  isKnown: (v: unknown) => boolean;
+  /** 說明文字用的名稱 */
+  name: string;
+};
+const RARITY_SELECT: SelectSpec = {
+  options: HERO_RARITIES.map((r) => ({
+    value: r.value,
+    label: `${r.label}（${r.value}）`,
+  })),
+  isKnown: isKnownRarity,
+  name: "稀有度",
+};
+const JOB_SELECT: SelectSpec = {
+  options: HERO_JOBS.map((j) => ({
+    value: j.value,
+    label: `${j.label}（${j.value}）`,
+  })),
+  isKnown: isKnownJob,
+  name: "職業",
+};
+
+/** 遊戲不認得的值在選單上的說明（空白也算，遊戲不認得） */
+const unknownLabel = (raw: string) =>
+  raw === "" ? "（空白：遊戲不認得）" : `${raw}（遊戲不認得，保留原值）`;
 
 // 所有欄位順序（對應 GAS sheet）
 const COLUMNS: {
   key: keyof HeroConfig;
   label: string;
   wide?: boolean;
-  select?: string[];
+  select?: SelectSpec;
 }[] = [
   { key: "hero_id", label: "hero_id", wide: true },
   { key: "name", label: "名稱", wide: true },
-  { key: "rarity", label: "稀有度", select: RARITY_OPTIONS },
+  { key: "rarity", label: "稀有度", select: RARITY_SELECT },
   { key: "cost", label: "費用" },
-  { key: "job", label: "職業", select: JOB_OPTIONS },
+  { key: "job", label: "職業", select: JOB_SELECT },
   { key: "base_atk", label: "基礎ATK" },
   { key: "base_def", label: "基礎DEF" },
   { key: "base_hp", label: "基礎HP" },
@@ -60,9 +95,9 @@ function makeBlank(): HeroConfig {
   return {
     hero_id: "",
     name: "",
-    rarity: "N",
+    rarity: "green",
     cost: 100,
-    job: "步兵",
+    job: "infantry",
     base_atk: 50,
     base_def: 30,
     base_hp: 500,
@@ -148,6 +183,11 @@ export default function HeroConfigEditor() {
     }
   };
 
+  // 稀有度或職業不是遊戲認得的值的列數（保留原值，只提示）
+  const unknownRows = rows.filter(
+    (row) => !isKnownRarity(row.rarity) || !isKnownJob(row.job)
+  ).length;
+
   const msgClass =
     status === "ok"
       ? styles.statusOk
@@ -181,6 +221,17 @@ export default function HeroConfigEditor() {
         )}
       </div>
 
+      {unknownRows > 0 && (
+        <div
+          className={styles.unknownHint}
+          role="status"
+          data-testid="hero-unknown-hint"
+        >
+          有 {unknownRows}{" "}
+          列的稀有度或職業不是遊戲認得的值（標成黃色）：已保留原值（遊戲畫面顯示原值，職業歸在「其他」）。只有在選單選擇新的值並儲存時才會改變。
+        </div>
+      )}
+
       {/* 表格 */}
       {rows.length === 0 ? (
         <div className={styles.emptyHint}>
@@ -200,42 +251,58 @@ export default function HeroConfigEditor() {
             <tbody>
               {rows.map((row, i) => (
                 <tr key={i}>
-                  {COLUMNS.map((col) => (
-                    <td key={col.key}>
-                      {col.select ? (
-                        <select
-                          className={styles.configSelect}
-                          value={String(row[col.key] ?? "")}
-                          onChange={(e) =>
-                            handleChange(i, col.key, e.target.value)
-                          }
-                        >
-                          {col.select.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          className={[
-                            styles.configInput,
-                            col.wide ? styles.configInputWide : "",
-                            NUM_FIELDS.includes(col.key)
-                              ? styles.configInputNum
-                              : "",
-                          ].join(" ")}
-                          type={
-                            NUM_FIELDS.includes(col.key) ? "number" : "text"
-                          }
-                          value={String(row[col.key] ?? "")}
-                          onChange={(e) =>
-                            handleChange(i, col.key, e.target.value)
-                          }
-                        />
-                      )}
-                    </td>
-                  ))}
+                  {COLUMNS.map((col) => {
+                    const sel = col.select;
+                    const raw = String(row[col.key] ?? "");
+                    const unknown = !!sel && !sel.isKnown(row[col.key]);
+                    return (
+                      <td key={col.key}>
+                        {sel ? (
+                          <select
+                            className={`${styles.configSelect} ${unknown ? styles.configSelectUnknown : ""}`}
+                            value={raw}
+                            onChange={(e) =>
+                              handleChange(i, col.key, e.target.value)
+                            }
+                            title={
+                              unknown
+                                ? `${sel.name}「${raw}」不是遊戲認得的值，儲存時會保留原值`
+                                : undefined
+                            }
+                            aria-label={`第 ${i + 1} 列的${sel.name}`}
+                            data-testid={`hero-${col.key}-select`}
+                            data-unknown={unknown ? "true" : undefined}
+                          >
+                            {unknown && (
+                              <option value={raw}>{unknownLabel(raw)}</option>
+                            )}
+                            {sel.options.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            className={[
+                              styles.configInput,
+                              col.wide ? styles.configInputWide : "",
+                              NUM_FIELDS.includes(col.key)
+                                ? styles.configInputNum
+                                : "",
+                            ].join(" ")}
+                            type={
+                              NUM_FIELDS.includes(col.key) ? "number" : "text"
+                            }
+                            value={String(row[col.key] ?? "")}
+                            onChange={(e) =>
+                              handleChange(i, col.key, e.target.value)
+                            }
+                          />
+                        )}
+                      </td>
+                    );
+                  })}
                   <td>
                     <button
                       className={styles.deleteBtn}

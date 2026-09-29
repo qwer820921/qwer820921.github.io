@@ -1,18 +1,23 @@
 import { HeroConfig, HeroState, JobClass } from "../types";
+import { HERO_JOBS, isKnownJob } from "./heroCategories";
 
 /**
- * 武將列表的搜尋、職業篩選與排序（主頁武將視窗與獨立武將頁共用）
+ * 武將列表的搜尋、職業篩選與排序（主頁武將視窗、獨立武將頁與兩個隊伍編排入口共用）
  * - 只影響畫面顯示：不改玩家存檔、隊伍或靜態設定，條件由呼叫端放在元件的 state
  * - 數值一律用目前玩家資料與設定計算（不是畫面上格式化過的文字）；攻擊力是存檔裡的基礎攻擊，不含戰場技能加成
  */
 
-export type HeroSortKey = "default" | "level" | "atk" | "cost";
+export type HeroSortKey = "default" | "level" | "atk" | "cost" | "deploy";
+
+/** 職業篩選的「其他」：遊戲不認得的職業（見 utils/heroCategories） */
+export const OTHER_JOB = "other";
+export type HeroJobFilter = JobClass | typeof OTHER_JOB;
 
 export interface HeroFilterCriteria {
   /** 名稱或 hero_id 的部分文字；比對前去掉頭尾空白、英文字母不分大小寫 */
   query: string;
-  /** null＝全部職業 */
-  job: JobClass | null;
+  /** null＝全部職業；OTHER_JOB＝遊戲不認得的職業 */
+  job: HeroJobFilter | null;
   sort: HeroSortKey;
 }
 
@@ -22,20 +27,37 @@ export const DEFAULT_HERO_FILTER: HeroFilterCriteria = {
   sort: "default",
 };
 
-export const HERO_SORT_OPTIONS: { value: HeroSortKey; label: string }[] = [
+export type HeroSortOption = { value: HeroSortKey; label: string };
+
+/** 武將列表（主頁武將視窗、武將頁）的排序 */
+export const HERO_SORT_OPTIONS: HeroSortOption[] = [
   { value: "default", label: "預設順序" },
   { value: "level", label: "等級 高→低" },
   { value: "atk", label: "攻擊力 高→低" },
   { value: "cost", label: "升級費用 低→高" },
 ];
 
-export const HERO_JOB_OPTIONS: { value: JobClass | null; label: string }[] = [
-  { value: null, label: "全部" },
-  { value: JobClass.Infantry, label: "步兵" },
-  { value: JobClass.Archer, label: "弓兵" },
-  { value: JobClass.Artillery, label: "砲兵" },
-  { value: JobClass.Cavalry, label: "騎兵" },
+/** 隊伍編排的排序：多了出陣費用（佔用的容量） */
+export const TEAM_SORT_OPTIONS: HeroSortOption[] = [
+  { value: "default", label: "預設順序" },
+  { value: "level", label: "等級 高→低" },
+  { value: "atk", label: "攻擊力 高→低" },
+  { value: "deploy", label: "出陣費用 低→高" },
+  { value: "cost", label: "升級費用 低→高" },
 ];
+
+export const HERO_JOB_OPTIONS: {
+  value: HeroJobFilter | null;
+  label: string;
+}[] = [
+  { value: null, label: "全部" },
+  ...HERO_JOBS.map((j) => ({ value: j.value as JobClass, label: j.label })),
+  { value: OTHER_JOB, label: "其他" },
+];
+
+/** 這位武將是否符合職業篩選（「其他」是遊戲不認得的職業，包含空白） */
+export const matchesJob = (job: unknown, filter: HeroJobFilter | null) =>
+  filter === null || (filter === OTHER_JOB ? !isKnownJob(job) : job === filter);
 
 export const isDefaultHeroFilter = (c: HeroFilterCriteria) =>
   c.query.trim() === "" && c.job === null && c.sort === "default";
@@ -98,7 +120,7 @@ export function filterAndSortHeroes(
   });
   const matchedRows = rows.filter(
     ({ config }) =>
-      (criteria.job === null || config.job === criteria.job) &&
+      matchesJob(config.job, criteria.job) &&
       (q === "" ||
         String(config.name).toLowerCase().includes(q) ||
         String(config.hero_id).toLowerCase().includes(q))
@@ -107,10 +129,11 @@ export function filterAndSortHeroes(
     if (criteria.sort === "level") return sortValue(r.hero.level);
     if (criteria.sort === "atk") return sortValue(r.hero.atk);
     if (criteria.sort === "cost") return sortValue(r.cost);
+    if (criteria.sort === "deploy") return sortValue(r.config.cost);
     return null;
   };
   // 高→低的排序把數值取負；同值（和沒有數值的）依原清單順序
-  const dir = criteria.sort === "cost" ? 1 : -1;
+  const dir = criteria.sort === "cost" || criteria.sort === "deploy" ? 1 : -1;
   const sorted =
     criteria.sort === "default"
       ? matchedRows

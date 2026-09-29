@@ -1,8 +1,8 @@
 // 神馬三國武將列表的搜尋、職業篩選與排序（utils/heroFilter.ts）測試，不需要瀏覽器
-// - 用專案內的 TypeScript 即時轉譯 heroFilter.ts（主頁武將視窗與武將頁共用的純函式）
-// - 涵蓋：名稱／id 的部分文字、頭尾空白、英文字母大小寫；職業篩選與組合；空結果與符合數；
-//   等級／攻擊力（高→低）與升級費用（低→高）的排序、同值維持原清單順序、數值不是用格式化文字比較；
-//   沒有升級紀錄的武將是 Lv1 與基礎屬性；不改動傳入的資料
+// - 用專案內的 TypeScript 即時轉譯 heroFilter.ts（主頁武將視窗、武將頁與隊伍編排共用的純函式）與 heroCategories.ts
+// - 涵蓋：名稱／id 的部分文字、頭尾空白、英文字母大小寫；職業篩選（含法師與「其他」）與組合；空結果與符合數；
+//   等級／攻擊力（高→低）與升級費用、出陣費用（低→高）的排序、同值維持原清單順序、數值不是用格式化文字比較；
+//   沒有升級紀錄的武將是 Lv1 與基礎屬性；不改動傳入的資料；職業與稀有度的名稱、顏色與不認得的值
 // 用法：node scripts/shenma-regression/web/hero-filter.test.mjs
 // 反向驗證：HERO_FILTER_SRC 指向改壞的 heroFilter.ts 時應該要有測試失敗
 // 輸出 PASS／FAIL 各行與一行 RESULT_JSON；有任何失敗時結束碼為 1
@@ -44,7 +44,16 @@ const {
   DEFAULT_HERO_FILTER,
   HERO_JOB_OPTIONS,
   HERO_SORT_OPTIONS,
+  TEAM_SORT_OPTIONS,
+  OTHER_JOB,
 } = require(REAL);
+const {
+  jobInfo,
+  rarityInfo,
+  HERO_JOBS,
+  HERO_RARITIES,
+  UNKNOWN_CATEGORY_COLOR,
+} = require(join(UTILS, "heroCategories.ts"));
 
 const results = [];
 const check = (name, ok, detail) => {
@@ -302,12 +311,18 @@ block("Lv1 與輸入不變", () => {
 
 block("選項", () => {
   check(
-    "武將篩選-20 職業選項是全部、步兵、弓兵、砲兵、騎兵；排序選項是預設、等級、攻擊力、升級費用",
+    "武將篩選-20 職業選項是全部、步兵、弓兵、砲兵、騎兵、法師、其他；武將列表的排序是預設、等級、攻擊力、升級費用；隊伍編排多了出陣費用",
     JSON.stringify(HERO_JOB_OPTIONS.map((o) => [o.value, o.label])) ===
-      '[[null,"全部"],["infantry","步兵"],["archer","弓兵"],["artillery","砲兵"],["cavalry","騎兵"]]' &&
+      '[[null,"全部"],["infantry","步兵"],["archer","弓兵"],["artillery","砲兵"],["cavalry","騎兵"],["mage","法師"],["other","其他"]]' &&
       JSON.stringify(HERO_SORT_OPTIONS.map((o) => o.value)) ===
-        '["default","level","atk","cost"]',
-    { jobs: HERO_JOB_OPTIONS, sorts: HERO_SORT_OPTIONS }
+        '["default","level","atk","cost"]' &&
+      JSON.stringify(TEAM_SORT_OPTIONS.map((o) => o.value)) ===
+        '["default","level","atk","deploy","cost"]',
+    {
+      jobs: HERO_JOB_OPTIONS,
+      sorts: HERO_SORT_OPTIONS,
+      team: TEAM_SORT_OPTIONS,
+    }
   );
   check(
     "武將篩選-21 預設條件的判斷：只有空白的搜尋仍算預設，任何職業或排序不是預設就不是",
@@ -316,6 +331,90 @@ block("選項", () => {
       !isDefaultHeroFilter({ ...DEFAULT_HERO_FILTER, query: "關" }) &&
       !isDefaultHeroFilter({ ...DEFAULT_HERO_FILTER, job: "archer" }) &&
       !isDefaultHeroFilter({ ...DEFAULT_HERO_FILTER, sort: "cost" })
+  );
+});
+
+// ── 法師、遊戲不認得的職業、出陣費用排序（隊伍編排）─────────────────
+// 混合的設定：標準職業、法師、不認得的職業（中文舊值、healer、空白、沒有欄位）、舊的稀有度
+const MIXED = [
+  cfg("guan_yu", "關羽", "infantry", { cost: 8 }),
+  cfg("zhou_yu", "周瑜", "mage", { cost: 6, rarity: "purple" }),
+  cfg("old_a", "舊甲", "步兵", { cost: 3, rarity: "SR" }),
+  cfg("healer", "華佗", "healer", { cost: 5, rarity: "" }),
+  cfg("blank", "無名", "", { cost: 4 }),
+  cfg("nojob", "無職", undefined, { cost: 7 }),
+  cfg("zhao_yun", "趙雲", "cavalry", { cost: 5 }),
+];
+block("法師與其他", () => {
+  const mage = run({ job: "mage" }, MIXED, []);
+  const other = run({ job: OTHER_JOB }, MIXED, []);
+  const inf = run({ job: "infantry" }, MIXED, []);
+  const otherQ = run({ job: OTHER_JOB, query: "華" }, MIXED, []);
+  check(
+    "武將篩選-22 法師篩選找到周瑜；「其他」找到所有遊戲不認得的職業（中文「步兵」、healer、空白、沒有欄位），不會把中文「步兵」當成步兵；步兵只有 infantry；「其他」也能和搜尋組合（華 → 華佗）",
+    JSON.stringify(ids(mage)) === '["zhou_yu"]' &&
+      JSON.stringify(ids(other)) === '["old_a","healer","blank","nojob"]' &&
+      JSON.stringify(ids(inf)) === '["guan_yu"]' &&
+      JSON.stringify(ids(otherQ)) === '["healer"]' &&
+      mage.total === 7,
+    { mage: ids(mage), other: ids(other), inf: ids(inf), otherQ: ids(otherQ) }
+  );
+  const deploy = run({ sort: "deploy" }, MIXED, []);
+  const deployTie = run(
+    { sort: "deploy" },
+    [
+      cfg("a", "甲", "infantry", { cost: 5 }),
+      cfg("b", "乙", "mage", { cost: "x" }),
+      cfg("c", "丙", "archer", { cost: 5 }),
+      cfg("d", "丁", "archer", { cost: 2 }),
+    ],
+    []
+  );
+  check(
+    "武將篩選-23 出陣費用 低→高：3、4、5、5、6、7、8（同值依設定順序：華佗在趙雲前）；無效的費用排在最後",
+    JSON.stringify(ids(deploy)) ===
+      '["old_a","blank","healer","zhao_yun","zhou_yu","nojob","guan_yu"]' &&
+      JSON.stringify(ids(deployTie)) === '["d","a","c","b"]',
+    { deploy: ids(deploy), deployTie: ids(deployTie) }
+  );
+});
+block("職業與稀有度的顯示", () => {
+  const known = HERO_JOBS.map((j) => jobInfo(j.value));
+  const mage = jobInfo("mage");
+  const unknown = ["步兵", "healer", "", null, undefined, 3].map(jobInfo);
+  check(
+    "武將篩選-24 職業名稱與顏色：五種職業（含法師，顏色和其他職業都不同）；不認得的值顯示「其他（原始值）」或「其他（未設定）」、灰色、known=false，不會變成步兵",
+    known.every((k) => k.known && k.label && k.short && k.color) &&
+      new Set(known.map((k) => k.color)).size === 5 &&
+      mage.label === "法師" &&
+      mage.short === "法" &&
+      unknown[0].label === "其他（步兵）" &&
+      unknown[1].label === "其他（healer）" &&
+      unknown[2].label === "其他（未設定）" &&
+      unknown[3].label === "其他（未設定）" &&
+      unknown[4].label === "其他（未設定）" &&
+      unknown[5].label === "其他（3）" &&
+      unknown.every(
+        (u) =>
+          !u.known &&
+          u.color === UNKNOWN_CATEGORY_COLOR &&
+          u.color !== jobInfo("infantry").color
+      ),
+    { known, unknown }
+  );
+  const rk = HERO_RARITIES.map((r) => rarityInfo(r.value));
+  const ru = ["SR", "N", "", null, " UR "].map(rarityInfo);
+  check(
+    "武將篩選-25 稀有度：橘、紫、藍、綠四種；不認得的值（舊的 SR、N、空白、前後空白）顯示原始值或「？」、灰色、known=false，不會空白",
+    JSON.stringify(rk.map((r) => r.label)) === '["橘","紫","藍","綠"]' &&
+      rk.every((r) => r.known) &&
+      ru[0].label === "SR" &&
+      ru[1].label === "N" &&
+      ru[2].label === "？" &&
+      ru[3].label === "？" &&
+      ru[4].label === "UR" &&
+      ru.every((r) => !r.known && r.color === UNKNOWN_CATEGORY_COLOR),
+    { rk, ru }
   );
 });
 

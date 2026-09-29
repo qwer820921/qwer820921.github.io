@@ -8,6 +8,7 @@ import {
   HERO_SORT_OPTIONS,
   HeroFilterCriteria,
   HeroSortKey,
+  HeroSortOption,
   isDefaultHeroFilter,
 } from "../utils/heroFilter";
 import styles from "../styles/shenmaSanguo.module.css";
@@ -17,10 +18,14 @@ interface Props {
   onChange: (next: HeroFilterCriteria) => void;
   matched: number;
   total: number;
+  /** 排序選項（預設是武將列表的；隊伍編排用 TEAM_SORT_OPTIONS，多了出陣費用） */
+  sortOptions?: HeroSortOption[];
+  /** 整個控制列的名稱（螢幕閱讀器） */
+  ariaLabel?: string;
 }
 
 /**
- * 武將列表的搜尋、職業篩選與排序控制列（主頁武將視窗與獨立武將頁共用）
+ * 武將列表的搜尋、職業篩選與排序控制列（主頁武將視窗、獨立武將頁與兩個隊伍編排入口共用）
  * 條件只在呼叫端的元件 state：不寫存檔、session 或網址，輸入時不送任何請求
  */
 export default function HeroFilterBar({
@@ -28,6 +33,8 @@ export default function HeroFilterBar({
   onChange,
   matched,
   total,
+  sortOptions = HERO_SORT_OPTIONS,
+  ariaLabel = "武將搜尋與篩選",
 }: Props) {
   const uid = useId();
   const searchId = `${uid}-search`;
@@ -46,7 +53,7 @@ export default function HeroFilterBar({
     <div
       className={styles.heroFilterPanel}
       role="search"
-      aria-label="武將搜尋與篩選"
+      aria-label={ariaLabel}
       data-testid="hero-filter-bar"
     >
       <Row className="g-2 align-items-end">
@@ -79,7 +86,7 @@ export default function HeroFilterBar({
             }
             data-testid="hero-filter-sort"
           >
-            {HERO_SORT_OPTIONS.map((o) => (
+            {sortOptions.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>

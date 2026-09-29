@@ -3,6 +3,7 @@
 // - 每個 GAS 請求都可以停在「待回應」，由測試決定何時成功、後端錯誤或網路錯誤，不靠固定等待
 // - 所有金鑰都是虛構的 test_*，後端是記憶體內的 mock
 // 用法：node scripts/shenma-regression/web/player-store.test.mjs
+// 反向驗證：PLAYER_STORE_SRC 指向改壞的 playerStore.ts 時改用那個檔案（相對匯入仍以原本的位置解析），應該要有測試失敗
 // 輸出 PASS／FAIL 各行與一行 RESULT_JSON；有任何失敗時結束碼為 1
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -14,8 +15,17 @@ const ts = require("typescript");
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const GAME = join(ROOT, "src/app/(games)/shenmaSanguo");
 
+const STORE = join(GAME, "store/playerStore.ts");
+const STORE_SRC = process.env.PLAYER_STORE_SRC
+  ? resolve(process.env.PLAYER_STORE_SRC)
+  : STORE;
+
 require.extensions[".ts"] = (module, filename) => {
-  const out = ts.transpileModule(readFileSync(filename, "utf8"), {
+  const source = readFileSync(
+    filename === STORE ? STORE_SRC : filename,
+    "utf8"
+  );
+  const out = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
       target: ts.ScriptTarget.ES2020,
@@ -117,6 +127,129 @@ function makeEnv() {
     revs: new Map(),
     resultIds: new Map(),
     corrupt: new Set(),
+    // 完整結算（settleContract 時啟用，模擬支援 settle_contract: 2 的後端；關閉時結算照舊只記進度）：
+    // 點數、經驗、等級、容量、進度和去重紀錄一起保存；同 id 同內容 duplicate、不同內容 409 REQUEST_ID_REUSED、
+    // 舊形式的紀錄回 legacy_result；去重只記 resultMemory 筆，找不到而且 base ≤ 被擠掉的最大 prev_rev 時 409 RESULT_UNKNOWN。
+    // settleTweak 可以改後端算出的獎勵（模擬前後端公式不同）
+    settleContract: false,
+    resultMemory: 30,
+    trimmed: new Map(),
+    settleTweak: null,
+    handleFullSettle(
+      c,
+      p,
+      rev,
+      bump,
+      hasBase,
+      base,
+      body,
+      stageNum,
+      nextStage
+    ) {
+      const key = c.key;
+      const pl = c.payload || {};
+      const id = pl.request_id;
+      if (typeof id !== "string" || !id) {
+        c.respond({ status: 400, error: "REQUEST_ID_REQUIRED" });
+        return true;
+      }
+      if (!hasBase) {
+        c.respond({ status: 428, error: "BASE_REV_REQUIRED" });
+        return true;
+      }
+      const stars = pl.stars_earned;
+      const count = (v) => Number.isSafeInteger(v) && v >= 0;
+      const loots = Array.isArray(pl.loots) ? pl.loots : [];
+      const lootsOk = loots.every(
+        (l) =>
+          !l ||
+          (l.item !== "battle_points" && l.item !== "gold") ||
+          count(l.count)
+      );
+      if (!(Number.isInteger(stars) && stars >= 0 && stars <= 3) || !lootsOk) {
+        c.respond({ status: 400, error: "INVALID_REWARD" });
+        return true;
+      }
+      const win = pl.result === "WIN";
+      const bp = loots.filter((l) => l && l.item === "battle_points");
+      const gold = loots.filter((l) => l && l.item === "gold");
+      const sum = (list) => list.reduce((s, l) => s + l.count, 0);
+      let points = win ? (bp.length ? sum(bp) : sum(gold)) : 10;
+      let exp = win ? 50 + stars * 20 : 10;
+      if (this.settleTweak)
+        ({ points, exp } = this.settleTweak({ points, exp }));
+      const fp = [
+        pl.result,
+        pl.stage_id,
+        stars,
+        points,
+        pl.kills,
+        pl.time_seconds,
+      ].join("|");
+      const ids = this.resultIds.get(key) ?? new Map();
+      this.resultIds.set(key, ids);
+      const settleBody = (e, extra) => ({
+        ...body(e),
+        settle_contract: 2,
+        request_id: id,
+        reward: e.reward,
+        after: e.after,
+        ...extra,
+      });
+      if (ids.has(id)) {
+        const e = ids.get(id);
+        if (e.c !== 2)
+          c.respond({ ...body(e), duplicate: true, legacy_result: true });
+        else if (e.fp !== fp)
+          c.respond({ status: 409, error: "REQUEST_ID_REUSED" });
+        else c.respond(settleBody(e, { duplicate: true }));
+        return true;
+      }
+      const trimmed = this.trimmed.get(key);
+      if (trimmed !== undefined && base <= trimmed) {
+        c.respond({ status: 409, error: "RESULT_UNKNOWN" });
+        return true;
+      }
+      this.battleLogs.push({ key, ...pl });
+      let level = Number.isInteger(p.level) && p.level >= 1 ? p.level : 1;
+      let xp = Number.isFinite(p.exp) && p.exp >= 0 ? p.exp : 0;
+      xp += exp;
+      while (xp >= level * 100) {
+        xp -= level * 100;
+        level += 1;
+      }
+      p.gold += points;
+      p.exp = xp;
+      p.level = level;
+      p.capacity = 10 + level;
+      if (win && stageNum(nextStage(pl.stage_id)) > stageNum(p.max_stage)) {
+        p.max_stage = nextStage(pl.stage_id);
+      }
+      const prev = rev();
+      const e = {
+        log_id: "log-" + this.battleLogs.length,
+        prev_rev: prev,
+        rev: bump(),
+        c: 2,
+        fp,
+        reward: { points, exp },
+        after: {
+          gold: p.gold,
+          exp: p.exp,
+          level: p.level,
+          capacity: p.capacity,
+          max_stage: p.max_stage,
+        },
+      };
+      ids.set(id, e);
+      if (ids.size > this.resultMemory) {
+        const [oldId, old] = ids.entries().next().value;
+        ids.delete(oldId);
+        this.trimmed.set(key, Math.max(trimmed ?? -1, old.prev_rev));
+      }
+      c.respond(settleBody(e, { logged: true }));
+      return true;
+    },
     handleRev(c) {
       const key = c.key;
       const p = this.profiles.get(key);
@@ -197,6 +330,19 @@ function makeEnv() {
             else if (hasBase) out.base_mismatch = true;
             return out;
           };
+          if (this.settleContract && c.payload?.settle_contract === 2) {
+            return this.handleFullSettle(
+              c,
+              p,
+              rev,
+              bump,
+              hasBase,
+              base,
+              body,
+              stageNum,
+              nextStage
+            );
+          }
           if (id && ids.has(id)) {
             c.respond({ ...body(ids.get(id)), duplicate: true });
             return true;
@@ -362,7 +508,7 @@ function freshStore() {
   for (const k of Object.keys(require.cache)) {
     if (k.startsWith(GAME)) delete require.cache[k];
   }
-  return require(join(GAME, "store/playerStore.ts")).usePlayerStore;
+  return require(STORE).usePlayerStore;
 }
 
 const SESSION_KEY = "shenma_player_state";
@@ -3744,6 +3890,7 @@ await test("版本-7b", async ({ env, S }) => {
 });
 
 await test("版本-8", async ({ env, S }) => {
+  // 只記進度的後端（v2.7 形式，回應沒有 settle_contract）
   const K = "test_ver8";
   revEnv(env, K, 5);
   await loaded(env, S, K, env.server.profiles.get(K));
@@ -3752,16 +3899,38 @@ await test("版本-8", async ({ env, S }) => {
   S().applyBattleResult(winResult(300), ticket);
   appliedButNetworkError(env, await env.server.waitFor("save_result", K));
   await settle(60);
+  const mid = {
+    saves: savesOf(env, K).length,
+    status: status(S),
+    state: S().player?.pendingSettles?.[0]?.state,
+  };
+  env.server.held.delete("save_result");
+  await env.clock.advance(30_000);
+  await settle(60);
+  const results = env.server.calls.filter(
+    (c) => c.action === "save_result" && c.key === K
+  );
   const server = env.server.profiles.get(K);
   check(
-    "版本-8 結算的回應遺失（伺服器其實已推進到版本 6）：本機無法確認雲端的新版本是否只多了這一場，保存被拒後停下來請玩家選擇（不自動判斷、不重送結算）；雲端沒有被覆蓋",
-    S().saveConflict?.serverRev === 6 &&
-      env.server.count("save_result", K) === 1 &&
+    "版本-8 結算的回應遺失（伺服器其實已推進到版本 6；後端只記進度）：結果不明時不送整份保存（待確認）；30 秒後用同一個 request_id、同一個版本 5 重新確認 → duplicate（沒有 settle_contract）證明是在版本 5 上結算 → 版本前進到 6，照舊由整份保存帶上點數與經驗（7）；沒有衝突，雲端只推進一次",
+    mid.saves === 0 &&
+      mid.status === "unconfirmed" &&
+      mid.state === "unknown" &&
+      results.length === 2 &&
+      results[1].payload.request_id === results[0].payload.request_id &&
+      results[1].payload.base_rev === 5 &&
+      S().saveConflict === null &&
       savesOf(env, K).length === 1 &&
-      server.gold === 1000 &&
+      savesOf(env, K)[0].payload.base_rev === 6 &&
+      server.gold === 1300 &&
       server.max_stage === "chapter1_2" &&
-      S().player?.gold === 1300,
-    { conflict: S().saveConflict, server: brief(server) }
+      S().player?.serverRev === 7 &&
+      status(S) === "idle",
+    {
+      mid,
+      results: results.map((c) => c.payload.base_rev),
+      server: brief(server),
+    }
   );
 });
 
@@ -4267,6 +4436,789 @@ await test("衝突-10", async ({ env, S }) => {
       env.server.revs.get(K) === 7 &&
       status(S) === "idle",
     { r, r2, serverRev: S().player?.serverRev }
+  );
+});
+
+// ══════════════════════════════════════════════════════════════
+//  戰鬥結算的完整獎勵（後端支援 settle_contract: 2）：點數、經驗、等級、容量、進度由 save_result 一次保存，
+//  結算確認後不需要整份保存；結果不明時用同一個 request_id 重新確認，不會重複發獎。
+//  mock 後端的 settleContract 模擬新後端（關閉時是只記進度的舊後端，見版本-8、結算-14）
+// ══════════════════════════════════════════════════════════════
+const fullEnv = (env, key, rev = 5, profile = baseProfile()) => {
+  revEnv(env, key, rev, profile);
+  env.server.settleContract = true;
+};
+const resultsOf = (env, key) =>
+  env.server.calls.filter((c) => c.action === "save_result" && c.key === key);
+const loseResult = () => ({
+  result: "LOSE",
+  stage_id: "chapter1_1",
+  stars_earned: 0,
+  kills: 2,
+  time_seconds: 20,
+  loots: [{ item: "battle_points", count: 10 }],
+});
+/** Godot 實際送來的形狀：多了橋接標記與場次識別碼 */
+const fromGodot = (r, ticket) => ({
+  ...r,
+  battle_id: ticket.id,
+  __godot_bridge: true,
+});
+const settleFields = (p) =>
+  p && {
+    gold: p.gold,
+    exp: p.exp,
+    level: p.level,
+    capacity: p.capacity,
+    max_stage: p.max_stage,
+  };
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const pendingIn = (env) => readSession(env)?.pendingSettles ?? [];
+
+await test("結算-1", async ({ env, S }) => {
+  const K = "test_st1";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("save_profile"); // 任何整份保存都攔住（不回應）
+  const ticket = S().beginBattle();
+  const r = S().applyBattleResult(fromGodot(winResult(580), ticket), ticket);
+  const queued = pendingIn(env)[0];
+  const sessionGold = readSession(env)?.gold;
+  const shown = settleFields(S().player);
+  await settle(80);
+  const call = resultsOf(env, K)[0];
+  const server = env.server.profiles.get(K);
+  const expect = {
+    gold: 1580,
+    exp: 10,
+    level: 2,
+    capacity: 12,
+    max_stage: "chapter1_2",
+  };
+  check(
+    "結算-1 勝利（Godot 的 battle_points 580、3 星）：本機立即顯示完整獎勵，session 裡同時有獎勵與這場的待確認紀錄（沒有在途寫入，已送出：sent、版本 5）；save_result 帶 settle_contract 2、request_id＝這一場、base 5，不含 battle_id 與橋接標記；後端一次保存點數 1580、經驗 10、Lv2、容量 12、進度 chapter1_2（版本 6）；回應相符 → 版本前進到 6、已同步、佇列清空，**沒有送出任何整份保存**",
+    r.ok === true &&
+      same(shown, expect) &&
+      queued?.id === ticket.id &&
+      queued?.state === "sent" &&
+      queued?.base_rev === 5 &&
+      sessionGold === 1580 &&
+      call?.payload.settle_contract === 2 &&
+      call?.payload.request_id === ticket.id &&
+      call?.payload.base_rev === 5 &&
+      !("battle_id" in (call?.payload || {})) &&
+      !("__godot_bridge" in (call?.payload || {})) &&
+      savesOf(env, K).length === 0 &&
+      same(settleFields(server), expect) &&
+      env.server.revs.get(K) === 6 &&
+      S().player?.serverRev === 6 &&
+      status(S) === "idle" &&
+      (S().player?.pendingSettles ?? []).length === 0 &&
+      pendingIn(env).length === 0,
+    {
+      shown,
+      queued,
+      payload: call?.payload,
+      server: settleFields(server),
+      serverRev: S().player?.serverRev,
+      status: status(S),
+    }
+  );
+  // 所有整份保存都被攔住的情況下重新整理，並清掉 session 直接從雲端讀：完整獎勵都在雲端
+  env.session.clear();
+  const S2 = reloadPage(env);
+  await S2().initFromGAS(K);
+  await settle();
+  check(
+    "結算-1b 結算確認後擋住所有整份保存、重新整理並直接從雲端讀取：點數、經驗、等級、容量、進度都在（不靠整份保存）",
+    same(settleFields(S2().player), expect) &&
+      S2().player?.serverRev === 6 &&
+      savesOf(env, K).length === 0,
+    settleFields(S2().player)
+  );
+});
+
+await test("結算-2", async ({ env, S }) => {
+  const K = "test_st2";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  const ticket = S().beginBattle();
+  S().applyBattleResult(fromGodot(loseResult(), ticket), ticket);
+  await settle(80);
+  const server = env.server.profiles.get(K);
+  const expect = {
+    gold: 1010,
+    exp: 10,
+    level: 1,
+    capacity: 11,
+    max_stage: "chapter1_1",
+  };
+  check(
+    "結算-2 落敗：點數 +10、經驗 +10、等級與容量不變、進度不變，雲端與本機相同（版本 6），沒有整份保存",
+    same(settleFields(server), expect) &&
+      same(settleFields(S().player), expect) &&
+      S().player?.serverRev === 6 &&
+      savesOf(env, K).length === 0 &&
+      status(S) === "idle",
+    { server: settleFields(server), local: settleFields(S().player) }
+  );
+});
+
+await test("結算-3", async ({ env, S }) => {
+  const K = "test_st3";
+  fullEnv(env, K, 5, { ...baseProfile(), exp: 90 });
+  await loaded(env, S, K, env.server.profiles.get(K));
+  const t1 = S().beginBattle();
+  S().applyBattleResult({ ...winResult(100), stars_earned: 1 }, t1);
+  await settle(80);
+  const one = {
+    server: settleFields(env.server.profiles.get(K)),
+    local: settleFields(S().player),
+  };
+  const K2 = "test_st3b";
+  fullEnv(env, K2, 5, { ...baseProfile(), exp: 290 });
+  await S().initFromGAS(K2);
+  await settle();
+  const t2 = S().beginBattle();
+  S().applyBattleResult({ ...winResult(100), stage_id: "chapter1_10" }, t2);
+  await settle(80);
+  const multi = {
+    server: settleFields(env.server.profiles.get(K2)),
+    local: settleFields(S().player),
+  };
+  check(
+    "結算-3 升級：經驗 90＋70 → Lv2 剩 60、容量 12；經驗 290＋110（異常的舊資料）→ 連升到 Lv3 剩 100、容量 13，chapter1_10 通關換章到 chapter2_1；本機與雲端相同、都沒有整份保存",
+    same(one.server, {
+      gold: 1100,
+      exp: 60,
+      level: 2,
+      capacity: 12,
+      max_stage: "chapter1_2",
+    }) &&
+      same(one.local, one.server) &&
+      same(multi.server, {
+        gold: 1100,
+        exp: 100,
+        level: 3,
+        capacity: 13,
+        max_stage: "chapter2_1",
+      }) &&
+      same(multi.local, multi.server) &&
+      savesOf(env, K).length === 0 &&
+      savesOf(env, K2).length === 0,
+    { one, multi }
+  );
+});
+
+await test("結算-4", async ({ env, S }) => {
+  const K = "test_st4";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("save_result");
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  appliedButNetworkError(env, await env.server.waitFor("save_result", K)); // 伺服器已保存（版本 6），回應遺失
+  await settle(60);
+  const mid = {
+    state: pendingIn(env)[0]?.state,
+    base: pendingIn(env)[0]?.base_rev,
+    status: status(S),
+    saves: savesOf(env, K).length,
+    gold: env.server.profiles.get(K).gold,
+  };
+  env.server.held.delete("save_result");
+  await env.clock.advance(30_000);
+  await settle(80);
+  const calls = resultsOf(env, K);
+  const strip = (p) => ({ ...p, base_rev: undefined });
+  check(
+    "結算-4 回應遺失後重查：待確認（unknown、版本 5，同步狀態「待確認」）期間不送整份保存；30 秒後用同一個 request_id、同一份內容、同一個版本重新送出 → duplicate（第一次的結果）→ 確認、已同步；雲端點數 1300 只加一次、結算紀錄 1 筆、版本 6",
+    mid.state === "unknown" &&
+      mid.base === 5 &&
+      mid.status === "unconfirmed" &&
+      mid.saves === 0 &&
+      mid.gold === 1300 &&
+      calls.length === 2 &&
+      same(strip(calls[0].payload), strip(calls[1].payload)) &&
+      calls[1].payload.base_rev === 5 &&
+      env.server.profiles.get(K).gold === 1300 &&
+      env.server.battleLogs.filter((l) => l.key === K).length === 1 &&
+      env.server.revs.get(K) === 6 &&
+      S().player?.serverRev === 6 &&
+      status(S) === "idle" &&
+      savesOf(env, K).length === 0,
+    { mid, n: calls.length, server: settleFields(env.server.profiles.get(K)) }
+  );
+});
+
+await test("結算-5", async ({ env, S }) => {
+  const K = "test_st5";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("save_result");
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  (await env.server.waitFor("save_result", K)).networkError(); // 伺服器沒有處理
+  await settle(40);
+  const lost = env.server.profiles.get(K).gold;
+  await env.clock.advance(30_000);
+  const second = await env.server.waitFor("save_result", K, 2);
+  second.respond({ status: 503, error: "BUSY" }); // 伺服器忙碌：零寫入
+  await settle(40);
+  const busy = {
+    state: pendingIn(env)[0]?.state,
+    gold: env.server.profiles.get(K).gold,
+  };
+  env.server.held.delete("save_result");
+  await env.clock.advance(60_000);
+  await settle(80);
+  check(
+    "結算-5 沒寫入的結算可以安全重試：第一次連線中斷（伺服器沒處理）、第二次 503 BUSY 都維持待確認、雲端不變；之後用同一個 request_id 重送 → 套用一次（點數 1300、版本 6），已同步、沒有整份保存",
+    lost === 1000 &&
+      busy.state === "unknown" &&
+      busy.gold === 1000 &&
+      resultsOf(env, K).length === 3 &&
+      new Set(resultsOf(env, K).map((c) => c.payload.request_id)).size === 1 &&
+      env.server.profiles.get(K).gold === 1300 &&
+      env.server.revs.get(K) === 6 &&
+      status(S) === "idle" &&
+      savesOf(env, K).length === 0,
+    { lost, busy, n: resultsOf(env, K).length }
+  );
+});
+
+await test("結算-6", async ({ env, S }) => {
+  // 重新整理時結算還在途：伺服器之後才處理（新頁面收不到那個回應）
+  const K = "test_st6";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("save_result");
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  const orphan = await env.server.waitFor("save_result", K);
+  const S2 = reloadPage(env);
+  S2().loadFromSession(K);
+  const restored = S2().player?.pendingSettles?.[0];
+  env.server.handle(orphan); // 舊請求被處理（版本 6）
+  env.server.held.delete("save_result");
+  await env.clock.advance(0);
+  await settle(80);
+  check(
+    "結算-6 重新整理時結算在途、伺服器之後才處理：新頁面把它當成結果不明（unknown、版本 5），用同一個 request_id 重新確認 → duplicate → 已同步（版本 6）；雲端點數只加一次，沒有整份保存",
+    restored?.state === "unknown" &&
+      restored?.base_rev === 5 &&
+      resultsOf(env, K).length === 2 &&
+      resultsOf(env, K)[1].payload.request_id === ticket.id &&
+      env.server.profiles.get(K).gold === 1300 &&
+      S2().player?.gold === 1300 &&
+      S2().player?.serverRev === 6 &&
+      S2().player?.syncStatus === "idle" &&
+      savesOf(env, K).length === 0,
+    {
+      restored,
+      n: resultsOf(env, K).length,
+      gold: env.server.profiles.get(K).gold,
+    }
+  );
+
+  // 另一種順序：新頁面先重新確認（套用一次），舊請求之後才被處理 → duplicate，不重複發獎
+  const K2 = "test_st6b";
+  const env2 = env;
+  fullEnv(env2, K2, 5);
+  const S3 = reloadPage(env2);
+  env2.local.setItem("shenma_player_key", K2);
+  await S3().initFromGAS(K2);
+  await settle();
+  env2.server.held.add("save_result");
+  const t2 = S3().beginBattle();
+  S3().applyBattleResult(winResult(300), t2);
+  const orphan2 = await env2.server.waitFor("save_result", K2);
+  const S4 = reloadPage(env2);
+  env2.server.held.delete("save_result");
+  S4().loadFromSession(K2);
+  await env2.clock.advance(0);
+  await settle(80);
+  let late = null;
+  orphan2.respond = (j) => {
+    late = j;
+  };
+  env2.server.handle(orphan2);
+  check(
+    "結算-6b 重新整理後新頁面先重新確認（伺服器第一次處理，套用一次），舊請求之後才到 → duplicate，點數仍是 1300、版本 6",
+    env2.server.profiles.get(K2).gold === 1300 &&
+      late?.duplicate === true &&
+      env2.server.revs.get(K2) === 6 &&
+      S4().player?.syncStatus === "idle",
+    { late, gold: env2.server.profiles.get(K2).gold }
+  );
+});
+
+await test("結算-7", async ({ env, S }) => {
+  const K = "test_st7";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  S().updateTeam([{ hero_id: "zhao_yun", slot: 1 }]); // 結算前的未同步修改
+  env.server.held.add("save_profile");
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  const save1 = await env.server.waitFor("save_profile", K);
+  const mid = {
+    gold: env.server.profiles.get(K).gold,
+    rev: env.server.revs.get(K),
+    base: save1.payload.base_rev,
+  };
+  save1.networkError(); // 整份保存失敗（伺服器沒處理）
+  await settle(40);
+  const after = {
+    team: env.server.profiles.get(K).team[0].hero_id,
+    err: S().syncError,
+    status: status(S),
+  };
+  env.server.held.delete("save_profile");
+  await env.clock.advance(30_000);
+  await settle(40);
+  const server = env.server.profiles.get(K);
+  check(
+    "結算-7 結算前有未同步的隊伍修改：結算先確認（雲端點數 1300、版本 6），之後的整份保存帶版本 6；整份保存失敗時雲端仍有完整獎勵、隊伍未保存，30 秒後重送成功（隊伍 zhao_yun、點數仍是 1300 沒有重複）",
+    mid.gold === 1300 &&
+      mid.rev === 6 &&
+      mid.base === 6 &&
+      after.team === "guan_yu" &&
+      after.err === "NETWORK_ERROR" &&
+      after.status === "pending" &&
+      server.team[0].hero_id === "zhao_yun" &&
+      server.gold === 1300 &&
+      server.exp === 10 &&
+      S().player?.serverRev === 7 &&
+      status(S) === "idle",
+    { mid, after, server: brief(server) }
+  );
+});
+
+await test("結算-8", async ({ env, S }) => {
+  const K = "test_st8";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  otherTabSaves(env, K, { nickname: "B", gold: 700 }); // 另一個分頁先保存（版本 6）
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  await settle(80);
+  const call = resultsOf(env, K)[0];
+  const server = env.server.profiles.get(K);
+  check(
+    "結算-8 另一個分頁先更新（版本 6）後用版本 5 結算：後端在最新資料上套用（700＋300＝1000、版本 7）但只回 base_mismatch；本機只有這場沒同步 → 標成已同步並重新讀取雲端採用（暱稱 B、點數 1000、版本 7），沒有衝突、沒有整份保存",
+    call?.payload.base_rev === 5 &&
+      server.gold === 1000 &&
+      server.nickname === "B" &&
+      env.server.revs.get(K) === 7 &&
+      S().player?.nickname === "B" &&
+      S().player?.gold === 1000 &&
+      S().player?.serverRev === 7 &&
+      S().saveConflict === null &&
+      savesOf(env, K).length === 0 &&
+      status(S) === "idle",
+    {
+      server: brief(server),
+      local: brief(S().player),
+      serverRev: S().player?.serverRev,
+    }
+  );
+
+  const K2 = "test_st8b";
+  fullEnv(env, K2, 5);
+  await S().initFromGAS(K2);
+  await settle();
+  S().updateNickname("A改"); // 本機還有其他修改
+  otherTabSaves(env, K2, { gold: 700 }); // 版本 6
+  const t2 = S().beginBattle();
+  S().applyBattleResult(winResult(300), t2);
+  await settle(80);
+  const s2 = env.server.profiles.get(K2);
+  check(
+    "結算-8b 同樣的情況、但本機還有改名：獎勵在雲端（1000，只一次）；改名的保存帶版本 5 被拒 → 衝突比較（雲端版本 7，兩邊都含這場獎勵），不會用任何一邊默默覆蓋",
+    s2.gold === 1000 &&
+      env.server.revs.get(K2) === 7 &&
+      S().saveConflict?.serverRev === 7 &&
+      S().saveConflict?.server?.gold === 1000 &&
+      S().player?.gold === 1300 &&
+      S().player?.nickname === "A改" &&
+      s2.nickname === "旅行者",
+    {
+      conflict: S().saveConflict?.serverRev,
+      server: brief(s2),
+      local: brief(S().player),
+    }
+  );
+});
+
+await test("結算-9", async ({ env, S }) => {
+  const K = "test_st9";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("save_result");
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  const call = await env.server.waitFor("save_result", K);
+  S().updateTeam([{ hero_id: "zhao_yun", slot: 1 }]); // 結算在途時改隊伍
+  await env.clock.advance(30_000); // 隊伍的自動保存時間到了，但結算還沒確認
+  const midSaves = savesOf(env, K).length;
+  env.server.held.delete("save_result");
+  env.server.handle(call);
+  await settle(80);
+  const server = env.server.profiles.get(K);
+  check(
+    "結算-9 結算在途時改隊伍：確認之前不送整份保存（30 秒後仍 0 筆）；確認後版本前進到 6，隊伍的保存帶版本 6 → 雲端有新隊伍、點數 1300 沒有重複；本機的隊伍沒有被回應蓋掉",
+    midSaves === 0 &&
+      savesOf(env, K).length === 1 &&
+      savesOf(env, K)[0].payload.base_rev === 6 &&
+      server.team[0].hero_id === "zhao_yun" &&
+      server.gold === 1300 &&
+      S().player?.team[0].hero_id === "zhao_yun" &&
+      S().player?.serverRev === 7 &&
+      status(S) === "idle",
+    { midSaves, server: brief(server) }
+  );
+});
+
+await test("結算-10", async ({ env, S }) => {
+  const K = "test_st10";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("upgrade_hero");
+  const up = S().upgradeHero("guan_yu", heroCfg);
+  const upCall = await env.server.waitFor("upgrade_hero", K);
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  await settle(40);
+  const before = resultsOf(env, K).length;
+  env.server.held.delete("upgrade_hero");
+  env.server.handle(upCall);
+  await up;
+  await settle(80);
+  const server = env.server.profiles.get(K);
+  check(
+    "結算-10 升級在途時結算：結算等升級完成才送（期間 0 筆），帶升級後的版本 6；雲端點數 1000−100＋300＝1200、武將 Lv2（只扣一次、只加一次），沒有衝突",
+    before === 0 &&
+      resultsOf(env, K)[0]?.payload.base_rev === 6 &&
+      server.gold === 1200 &&
+      heroOf(server)?.level === 2 &&
+      S().player?.gold === 1200 &&
+      S().saveConflict === null &&
+      status(S) === "idle",
+    { before, server: brief(server), local: brief(S().player) }
+  );
+
+  const K2 = "test_st10b";
+  fullEnv(env, K2, 5);
+  await S().initFromGAS(K2);
+  await settle();
+  env.server.held.add("upgrade_hero");
+  const up2 = S().upgradeHero("guan_yu", heroCfg);
+  appliedButNetworkError(env, await env.server.waitFor("upgrade_hero", K2)); // 伺服器已升級（版本 6），回應遺失
+  env.server.held.add("get_profile"); // 升級的重新確認先停在讀取
+  await up2;
+  const t2 = S().beginBattle();
+  S().applyBattleResult(winResult(300), t2);
+  await settle(60);
+  const waiting = resultsOf(env, K2).length;
+  const unconfirmed = S().player?.pendingUpgrade?.state;
+  env.server.held.delete("upgrade_hero");
+  env.server.held.delete("get_profile");
+  for (const c of env.server.calls.filter(
+    (x) => x.action === "get_profile" && !x.settled
+  )) {
+    env.server.handle(c);
+  }
+  await env.clock.advance(0);
+  await settle(80);
+  const rc = { ok: !S().player?.pendingUpgrade };
+  const order = env.server.calls.map((c) => c.action);
+  const s2 = env.server.profiles.get(K2);
+  check(
+    "結算-10b 升級結果不明時結算：結算排在升級後面（0 筆）；重新確認看到升級並合併後才送出結算；雲端 1000−100＋300＝1200、Lv2，本機相同（點數差額合併沒有把獎勵加兩次）",
+    waiting === 0 &&
+      unconfirmed === "unknown" &&
+      rc.ok === true &&
+      order.lastIndexOf("get_profile") < order.lastIndexOf("save_result") &&
+      resultsOf(env, K2).length === 1 &&
+      s2.gold === 1200 &&
+      heroOf(s2)?.level === 2 &&
+      S().player?.gold === 1200 &&
+      status(S) === "idle",
+    { waiting, rc, server: brief(s2), local: brief(S().player) }
+  );
+});
+
+await test("結算-11", async ({ env, S }) => {
+  const K = "test_st11";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  const ticket = S().beginBattle();
+  // 伺服器上已經有同一個 request_id、但內容不同的結算
+  env.server.resultIds.set(
+    K,
+    new Map([
+      [
+        ticket.id,
+        {
+          log_id: "x",
+          prev_rev: 4,
+          rev: 5,
+          c: 2,
+          fp: "other",
+          reward: { points: 1, exp: 1 },
+        },
+      ],
+    ])
+  );
+  S().applyBattleResult(winResult(300), ticket);
+  await settle(80);
+  check(
+    "結算-11 同一個 request_id、伺服器上是不同內容：409 REQUEST_ID_REUSED → 確定沒有套用、不再重送（1 筆）；退回舊行為由整份保存帶上本機的獎勵（版本 5 → 6，點數 1300 只一次）",
+    resultsOf(env, K).length === 1 &&
+      savesOf(env, K).length === 1 &&
+      savesOf(env, K)[0].payload.base_rev === 5 &&
+      env.server.profiles.get(K).gold === 1300 &&
+      (S().player?.pendingSettles ?? []).length === 0 &&
+      status(S) === "idle",
+    {
+      n: resultsOf(env, K).length,
+      saves: savesOf(env, K).length,
+      gold: env.server.profiles.get(K).gold,
+    }
+  );
+});
+
+await test("結算-12", async ({ env, S }) => {
+  const K = "test_st12";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("save_result");
+  const t1 = S().beginBattle();
+  S().applyBattleResult(winResult(300), t1);
+  const t2 = S().beginBattle();
+  S().applyBattleResult(winResult(200), t2);
+  const first = await env.server.waitFor("save_result", K);
+  await settle(40);
+  const inFlight = resultsOf(env, K).length;
+  const queued = pendingIn(env).map((s) => s.state);
+  env.server.held.delete("save_result");
+  env.server.handle(first);
+  await settle(120);
+  const server = env.server.profiles.get(K);
+  check(
+    "結算-12 連續兩場：一次只送一筆（第二場排隊）；第一場確認後才送第二場（帶版本 6）；雲端點數 1000＋300＋200、兩場各一筆紀錄，本機已同步、沒有整份保存",
+    inFlight === 1 &&
+      same(queued, ["sent", "queued"]) &&
+      resultsOf(env, K).length === 2 &&
+      resultsOf(env, K)[1].payload.base_rev === 6 &&
+      server.gold === 1500 &&
+      env.server.battleLogs.filter((l) => l.key === K).length === 2 &&
+      S().player?.gold === 1500 &&
+      S().player?.serverRev === 7 &&
+      savesOf(env, K).length === 0 &&
+      status(S) === "idle",
+    { inFlight, queued, server: brief(server) }
+  );
+});
+
+await test("結算-13", async ({ env, S }) => {
+  // 只記進度的後端（沒有 settle_contract）：照舊由整份保存帶上點數與經驗
+  const K = "test_st13";
+  revEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  await settle(80);
+  const server = env.server.profiles.get(K);
+  check(
+    "結算-13 只記進度的後端：請求仍帶 settle_contract（舊後端不認得），回應沒有 settle_contract → 舊行為：版本前進到 6，整份保存帶 6 寫入點數 1300、經驗 10、Lv2（版本 7）",
+    resultsOf(env, K)[0]?.payload.settle_contract === 2 &&
+      savesOf(env, K).length === 1 &&
+      savesOf(env, K)[0].payload.base_rev === 6 &&
+      same(settleFields(server), {
+        gold: 1300,
+        exp: 10,
+        level: 2,
+        capacity: 12,
+        max_stage: "chapter1_2",
+      }) &&
+      S().player?.serverRev === 7 &&
+      status(S) === "idle",
+    { server: settleFields(server), saves: savesOf(env, K).length }
+  );
+});
+
+await test("結算-14", async ({ env, S }) => {
+  const K = "test_st14";
+  fullEnv(env, K, 6, { ...baseProfile(), max_stage: "chapter1_2" });
+  await loaded(env, S, K, env.server.profiles.get(K));
+  const ticket = S().beginBattle();
+  // 伺服器上是舊版留下的紀錄（沒有 c:2；當時只推進了關卡，版本 5 → 6）
+  env.server.resultIds.set(
+    K,
+    new Map([[ticket.id, { log_id: "old", prev_rev: 6, rev: 6 }]])
+  );
+  S().applyBattleResult(winResult(300), ticket);
+  await settle(80);
+  const res = resultsOf(env, K)[0];
+  check(
+    "結算-14 同一場在伺服器上是舊版留下的紀錄（只存進度）：回 legacy_result、沒有 settle_contract → 不當成完整結算的成功、後端也不補發；退回舊行為由整份保存帶上點數與經驗（點數 1300 只一次）",
+    res &&
+      env.server.profiles.get(K).gold === 1300 &&
+      env.server.profiles.get(K).exp === 10 &&
+      savesOf(env, K).length === 1 &&
+      env.server.battleLogs.filter((l) => l.key === K).length === 0 &&
+      status(S) === "idle",
+    { gold: env.server.profiles.get(K).gold, saves: savesOf(env, K).length }
+  );
+});
+
+await test("結算-15", async ({ env, S }) => {
+  const K = "test_st15";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  // 伺服器已經擠掉很多場的去重紀錄（被擠掉的最大 prev_rev 是 9），雲端也早就被改過（版本 40）
+  env.server.trimmed.set(K, 9);
+  env.server.revs.set(K, 40);
+  env.server.profiles.set(K, { ...baseProfile(), gold: 5000 });
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  await settle(80);
+  check(
+    "結算-15 伺服器無法確認（409 RESULT_UNKNOWN：這場帶的版本 5 早於去重紀錄的範圍）：不重送、不套用；本機獎勵留在未同步的修改，保存帶版本 5 被拒 → 衝突比較由玩家選擇",
+    resultsOf(env, K).length === 1 &&
+      env.server.profiles.get(K).gold === 5000 &&
+      S().saveConflict?.serverRev === 40 &&
+      S().player?.gold === 1300 &&
+      (S().player?.pendingSettles ?? []).length === 0,
+    {
+      n: resultsOf(env, K).length,
+      conflict: S().saveConflict?.serverRev,
+      err: S().syncError,
+    }
+  );
+});
+
+await test("結算-16", async ({ env, S }) => {
+  const K = "test_st16";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.settleTweak = ({ points, exp }) => ({ points, exp: exp + 1 }); // 後端算的經驗和前端不同
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  await settle(80);
+  check(
+    "結算-16 後端算出的獎勵和本機不同（經驗差 1）：不前進版本、不標同步（SETTLE_MISMATCH）→ 保存帶版本 5 被拒 → 衝突比較，不默默選一邊；雲端的獎勵只套用一次",
+    S().saveConflict?.serverRev === 6 &&
+      env.server.profiles.get(K).gold === 1300 &&
+      env.server.profiles.get(K).exp === 11 &&
+      S().player?.exp === 10 &&
+      S().player?.serverRev === 5,
+    {
+      conflict: S().saveConflict?.serverRev,
+      err: S().syncError,
+      server: settleFields(env.server.profiles.get(K)),
+    }
+  );
+});
+
+await test("結算-17", async ({ env, S }) => {
+  const K = "test_st17";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("save_result");
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  (await env.server.waitFor("save_result", K)).networkError();
+  await settle(40);
+  // 切換帳號、衝突處理、背景讀取都停下
+  env.server.profiles.set("test_st17_other", baseProfile("別人"));
+  env.server.revs.set("test_st17_other", 1);
+  const sw = S().initFromGAS("test_st17_other");
+  (await env.server.waitFor("save_result", K, 2)).networkError(); // 切換前的重新確認也失敗
+  const r = await sw;
+  const block = S().conflictBlockReason();
+  const gets = env.server.count("get_profile", K);
+  await S().backgroundRefresh(K);
+  const gets2 = env.server.count("get_profile", K);
+  // 網路恢復：玩家按「重新確認」
+  env.server.held.delete("save_result");
+  const rc = await S().recheckPendingSettles();
+  await settle(40);
+  check(
+    "結算-17 結算結果不明時：切換帳號先重新確認，確認不了就停下（SETTLE_UNCONFIRMED，仍是原帳號、沒有讀另一個帳號）；衝突處理回 SETTLE_PENDING；背景讀取不採用雲端；網路恢復後「重新確認」→ 套用一次、已同步",
+    r.ok === false &&
+      r.error === "SETTLE_UNCONFIRMED" &&
+      S().player?.key === K &&
+      env.server.count("get_profile", "test_st17_other") === 0 &&
+      block === "SETTLE_PENDING" &&
+      gets2 === gets &&
+      rc.ok === true &&
+      env.server.profiles.get(K).gold === 1300 &&
+      status(S) === "idle",
+    { r, block, rc, gold: env.server.profiles.get(K).gold }
+  );
+});
+
+await test("結算-18", async ({ env, S }) => {
+  const K = "test_st18";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  const t1 = S().beginBattle();
+  const bad = S().applyBattleResult({ ...winResult(300), stars_earned: 5 }, t1);
+  const again = S().applyBattleResult(winResult(300), t1);
+  const t2 = S().beginBattle();
+  const neg = S().applyBattleResult(
+    { ...winResult(300), loots: [{ item: "battle_points", count: -1 }] },
+    t2
+  );
+  const t3 = S().beginBattle();
+  const both = S().applyBattleResult(
+    {
+      ...winResult(0),
+      loots: [
+        { item: "battle_points", count: 300 },
+        { item: "gold", count: 50 },
+      ],
+    },
+    t3
+  );
+  const shown = S().player?.gold;
+  await settle(80);
+  check(
+    "結算-18 Godot 的結算不合規則（5 星、負的點數）：不套用、不送出（INVALID_RESULT），同一場不能再結算；同時帶 battle_points 與 gold 時只算 battle_points（本機 1300、雲端 1300，不會重複計點）",
+    bad.ok === false &&
+      bad.error === "INVALID_RESULT" &&
+      again.error === "BATTLE_ALREADY_SETTLED" &&
+      neg.error === "INVALID_RESULT" &&
+      both.ok === true &&
+      shown === 1300 &&
+      resultsOf(env, K).length === 1 &&
+      env.server.profiles.get(K).gold === 1300,
+    { bad, again, neg, shown, gold: env.server.profiles.get(K).gold }
+  );
+});
+
+await test("結算-19", async ({ env, S }) => {
+  const K = "test_st19";
+  fullEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("save_result");
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  (await env.server.waitFor("save_result", K)).networkError();
+  await settle(40);
+  S().holdMigrationWrites();
+  env.server.held.delete("save_result");
+  await env.clock.advance(300_000);
+  check(
+    "結算-19 結算待確認時進入寫入限制：不再送出（save_result 仍 1 筆、雲端不變），本機的獎勵與待確認紀錄都保留",
+    resultsOf(env, K).length === 1 &&
+      env.server.profiles.get(K).gold === 1000 &&
+      S().player?.gold === 1300 &&
+      pendingIn(env).length === 1,
+    { n: resultsOf(env, K).length, pending: pendingIn(env) }
   );
 });
 

@@ -23,6 +23,9 @@ export class GasError extends Error {
   }
 }
 
+/** 完整結算獎勵的契約版本：請求與後端的回應都帶這個值才算新契約（見 saveResult） */
+export const SETTLE_CONTRACT = 2;
+
 /** 有數字時才帶 base_rev（舊版後端或版本不明時不帶） */
 const withBase = (payload: object, baseRev?: number | null) =>
   typeof baseRev === "number" ? { ...payload, base_rev: baseRev } : payload;
@@ -67,22 +70,29 @@ export const gameApi = {
   // ── 存檔 ──
 
   /**
-   * 戰鬥結算：GAS 伺服器端更新金幣與 max_stage，並寫入 battle_logs
+   * 戰鬥結算：GAS 伺服器端更新存檔並寫入 battle_logs
    * requestId：這一場的識別碼；新版後端用它辨識重送（同一場只記錄一次），舊版後端忽略
    * baseRev：送出時本機的雲端版本；新版後端只在它等於寫入前的版本時才回傳新的 rev
-   * 回傳：{ status: 200, success: true, log_id, prev_rev?, rev?, base_mismatch? }
+   * fullReward：帶 settle_contract: 2，要求後端在同一次寫入保存完整獎勵（點數、經驗、等級、容量、進度）。
+   *   支援的後端回應也帶 settle_contract: 2（附 request_id、reward、after）；舊後端不認得，照舊只記進度
+   * 回傳：{ status: 200, success: true, log_id, prev_rev?, rev?, base_mismatch?, duplicate?, settle_contract?, reward?, after? }
    */
   saveResult: (
     key: string,
     result: object,
     requestId?: string,
-    baseRev?: number | null
+    baseRev?: number | null,
+    fullReward = false
   ) =>
     callGAS(
       "save_result",
       key,
       withBase(
-        requestId ? { ...result, request_id: requestId } : result,
+        {
+          ...result,
+          ...(requestId ? { request_id: requestId } : {}),
+          ...(fullReward ? { settle_contract: SETTLE_CONTRACT } : {}),
+        },
         baseRev
       )
     ),

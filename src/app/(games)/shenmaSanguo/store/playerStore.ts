@@ -6,13 +6,23 @@ import {
   TeamSlot,
   HeroConfig,
   BattleResultPayload,
-  BattleResult,
   BattleTicket,
   PendingUpgrade,
+  PendingSettle,
   MigrationHold,
 } from "../types";
-import { gameApi, setPlayerKey, GasError } from "../api/gameApi";
-import { stageToNum, getNextStage } from "../utils/stageUtils";
+import {
+  gameApi,
+  setPlayerKey,
+  GasError,
+  SETTLE_CONTRACT,
+} from "../api/gameApi";
+import {
+  applyBattleReward,
+  computeBattleReward,
+  sameSettleAfter,
+  toBattleRecord,
+} from "../utils/battleReward";
 
 // ── 常數 ──────────────────────────────────────────────────────
 export const PLAYER_SESSION_KEY = "shenma_player_state";
@@ -48,8 +58,9 @@ let _autoRecheckStep = 0; // 已排過幾次自動重新確認
 type InFlight<T> = { gen: number; promise: Promise<T> };
 let _loadInFlight: { key: string; promise: Promise<LoadResult> } | null = null;
 let _saveInFlight: InFlight<boolean> | null = null;
-let _battleInFlight: InFlight<void> | null = null; // 戰鬥結算整段（save_result＋之後的保存）
-let _resultInFlight: InFlight<void> | null = null; // 只有 save_result 本身
+// 戰鬥結算的佇列處理（player.pendingSettles 依序送出 save_result；一次只處理一筆，確認後才送下一筆）
+let _settleInFlight: InFlight<void> | null = null;
+let _settleRetryStep = 0; // 結算結果不明後，已排過幾次自動重新確認（間隔同 AUTO_RECHECK_DELAYS_MS）
 let _upgradeInFlight: InFlight<unknown> | null = null;
 let _checkInFlight: InFlight<UpgradeCheckResult> | null = null;
 // 戰鬥歸屬：目前有效的一場（送出關卡資料時建立）。開始新的一場、明確離開、結算、換帳號都會讓它失效，
@@ -192,6 +203,20 @@ const hasUnsyncedChanges = (p: SessionPlayerState) =>
   revOf(p) !== syncedRevOf(p);
 const isUnconfirmed = (p: SessionPlayerState | null | undefined) =>
   p?.pendingUpgrade?.state === "unknown";
+/** 還沒確認雲端已保存的戰鬥結算（依結算順序） */
+const pendingOf = (p: SessionPlayerState | null | undefined): PendingSettle[] =>
+  p?.pendingSettles ?? [];
+/** 結算會改的數值（和後端回報的 after 比對） */
+const settleFieldsOf = (p: PlayerState) => ({
+  gold: p.gold,
+  exp: p.exp,
+  level: p.level,
+  capacity: p.capacity,
+  max_stage: p.max_stage,
+});
+/** 有結果不明、等著重新確認的結算 */
+const settleUnknown = (p: SessionPlayerState | null | undefined) =>
+  pendingOf(p).some((s) => s.state === "unknown");
 /** 雲端版本基準；舊版後端（不回報版本）或舊版 session 沒有時是 null */
 const serverRevOf = (p: SessionPlayerState | null | undefined) =>
   typeof p?.serverRev === "number" ? p.serverRev : null;
@@ -233,13 +258,14 @@ const PERMANENT_SAVE_ERRORS = new Set([
 ]);
 
 function withStatus(p: SessionPlayerState): SessionPlayerState {
-  const syncStatus = isUnconfirmed(p)
-    ? SyncStatus.Unconfirmed
-    : _busy > 0
-      ? SyncStatus.Syncing
-      : hasUnsyncedChanges(p)
-        ? SyncStatus.Pending
-        : SyncStatus.Idle;
+  const syncStatus =
+    isUnconfirmed(p) || settleUnknown(p)
+      ? SyncStatus.Unconfirmed
+      : _busy > 0
+        ? SyncStatus.Syncing
+        : hasUnsyncedChanges(p)
+          ? SyncStatus.Pending
+          : SyncStatus.Idle;
   return { ...p, syncStatus };
 }
 
@@ -252,6 +278,7 @@ function toServerData(p: SessionPlayerState): PlayerState {
   delete data.syncedRev;
   delete data.serverRev;
   delete data.pendingUpgrade;
+  delete data.pendingSettles;
   delete data.migrationHold;
   return data as PlayerState;
 }
@@ -332,6 +359,31 @@ function readPendingUpgrade(raw: unknown): PendingUpgrade | null {
   };
 }
 
+/**
+ * 從 session 讀回待確認的結算。送出請求的是上一個頁面，它的回應已經不可能送達：送出過的（sent）一律視為結果不明，
+ * 之後用同一份內容與第一次的版本重新確認。格式不對的項目略過（只可能是 session 被改過）
+ */
+function readPendingSettles(raw: unknown): PendingSettle[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PendingSettle[] = [];
+  for (const item of raw) {
+    const s = item as Partial<PendingSettle> | null;
+    if (!s || typeof s.id !== "string" || !s.record || !s.reward) continue;
+    if (typeof s.local_rev !== "number") continue;
+    if (!toBattleRecord({ ...s.record, __godot_bridge: true })) continue;
+    out.push({
+      id: s.id,
+      record: s.record,
+      reward: s.reward,
+      local_rev: s.local_rev,
+      base_rev: typeof s.base_rev === "number" ? s.base_rev : null,
+      state: s.state === "queued" ? "queued" : "unknown",
+      at: typeof s.at === "number" ? s.at : 0,
+    });
+  }
+  return out;
+}
+
 // 寫入限制的標記：有這個欄位（不論內容）就維持限制，不會因為格式不對而解除
 function readMigrationHold(raw: unknown): MigrationHold | null {
   if (raw === undefined || raw === null) return null;
@@ -365,6 +417,7 @@ function readSession(expectedKey: string): SessionPlayerState | null {
       // 沒有版本（舊版 session 或舊版後端）：不假設任何版本，保存不帶 base_rev
       serverRev: serverRevOf(parsed),
       pendingUpgrade: readPendingUpgrade(parsed.pendingUpgrade),
+      pendingSettles: readPendingSettles(parsed.pendingSettles),
       migrationHold: readMigrationHold(parsed.migrationHold),
     };
   } catch {
@@ -549,8 +602,11 @@ interface PlayerStore {
   /** 明確離開這一場（切換關卡、離開頁面）：這一場失效並解除它的鎖。不是目前的場次時不做任何事 */
   endBattle: (ticket: BattleTicket | null | undefined) => void;
   /**
-   * 戰鬥結算：本地先更新，接著送出 save_result（只送一次）並保存 profile
+   * 戰鬥結算：本機先套用（點數、經驗、等級、容量、進度），同一次寫入把這場記進待確認的結算（session），
+   * 接著依序送出 save_result。後端回報完整結算（settle_contract）後這場獎勵就已保存在雲端，不需要整份保存；
+   * 舊後端照舊由之後的整份保存帶上。結果不明時維持待確認，用同一個 request_id 重新確認（不會重複發獎）。
    * 戰鬥票必須是目前帳號、目前有效的那一場，而且還沒結算過；否則不套用任何獎勵、不送任何請求。
+   * Godot 的結算不合規則（星數、點數）時也不套用、不送出（INVALID_RESULT）。
    * 寫入限制中（開戰後才遇到限制）也不套用、不送出（MIGRATION_HOLD），由畫面說明結果沒有記錄
    */
   applyBattleResult: (
@@ -559,6 +615,11 @@ interface PlayerStore {
   ) => BattleSettleResult;
   /** 重新讀取伺服器，確認待確認的升級是否已完成；看得到才採用並保存本機修改 */
   recheckPendingUpgrade: () => Promise<UpgradeCheckResult>;
+  /**
+   * 重新確認還沒確認的戰鬥結算（用同一個 request_id 與同一份內容重新送出；伺服器已處理過就回傳第一次的結果）。
+   * 全部確認後回傳 ok；仍無法確認回傳 SETTLE_UNCONFIRMED（待確認的升級要先處理：UPGRADE_PENDING）
+   */
+  recheckPendingSettles: () => Promise<ResolveResult>;
   /**
    * 這個分頁遷移狀態不明（讀不回網站更新前的暫存）：之後不送出任何寫入，只能讀取（見 types 的 MigrationHold）。
    * 目前與之後載入的存檔都記上標記（重新整理後仍有效）；沒有解除的方法。已有的本機修改與待確認的升級都保留
@@ -656,6 +717,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     _accountGen += 1;
     _busy = 0;
     _autoRecheckStep = 0;
+    _settleRetryStep = 0;
     _activeBattle = null;
     _uncertainSave = null;
     clearDebounce();
@@ -745,13 +807,11 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     if (holdActive()) return "MIGRATION_HOLD";
     // 已開打或有待確認的結算（和切換帳號的鎖相同）、結算紀錄還在途：戰鬥結果要套用在目前的資料上，
     // 結算或離開後再處理。備戰中可以處理（和手動同步一樣，已送進遊戲的隊伍不會重新載入）
-    if (
-      battleLocked() ||
-      isCurrent(_battleInFlight) ||
-      isCurrent(_resultInFlight)
-    ) {
+    if (battleLocked() || isCurrent(_settleInFlight)) {
       return "BATTLE_IN_PROGRESS";
     }
+    // 結算還沒確認雲端已保存：採用雲端或覆蓋雲端都可能讓這場獎勵消失或重複，確認後再處理
+    if (pendingOf(p).length > 0) return "SETTLE_PENDING";
     if (p.pendingUpgrade) return "UPGRADE_PENDING";
     if (_resolving && !ignoreResolving) return "RESOLVE_IN_PROGRESS";
     if (
@@ -772,7 +832,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
   /** 等目前帳號的在途寫入都結束 */
   const waitForWrites = async () => {
     for (;;) {
-      const list = [_saveInFlight, _battleInFlight, _upgradeInFlight]
+      const list = [_saveInFlight, _settleInFlight, _upgradeInFlight]
         .filter(isCurrent)
         .map((f) => f.promise);
       if (list.length === 0) return;
@@ -878,6 +938,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         key,
         syncStatus: SyncStatus.Idle,
         pendingUpgrade: null,
+        // 排在升級之後的結算（本機已套用、還沒送出）：合併後的資料已含它們的本機獎勵，照原本的順序接著送出
+        pendingSettles: pendingOf(cur),
         rev: hasLocalEdits ? base + 1 : base,
         syncedRev: base,
         serverRev: nextServerRev,
@@ -890,7 +952,13 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     _checkInFlight = { gen, promise };
     void promise.finally(() => {
       if (_checkInFlight?.promise === promise) _checkInFlight = null;
-      if (gen === _accountGen) set({ checkingUpgrade: false });
+      if (gen !== _accountGen) return;
+      set({ checkingUpgrade: false });
+      // 升級確認完成（不論結果）：排在它後面的結算可以送出了
+      const after = get().player;
+      if (after && !after.pendingUpgrade && pendingOf(after).length > 0) {
+        get()._scheduleSync(0);
+      }
     });
     return promise;
   };
@@ -1083,13 +1151,16 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
   };
   /**
    * 保存目前帳號所有未同步的修改；成功（或本來就沒有）回傳 null，否則回傳錯誤代碼。
-   * 升級結果待確認時先重新確認，確認不了就不保存（UPGRADE_UNCONFIRMED）
+   * 升級結果待確認時先重新確認，確認不了就不保存（UPGRADE_UNCONFIRMED）；
+   * 戰鬥結算還沒確認雲端已保存時先重新確認，確認不了就停下（SETTLE_UNCONFIRMED）
    */
   const flushCurrent = async (): Promise<string | null> => {
+    const dirty = (p: SessionPlayerState) =>
+      hasUnsyncedChanges(p) || pendingOf(p).length > 0;
     for (let i = 0; i < 5; i++) {
       await waitForWrites();
       const p = get().player;
-      if (!p || !hasUnsyncedChanges(p)) return null;
+      if (!p || !dirty(p)) return null;
       // 寫入限制中：本機修改無法保存，保留在這裡（切換帳號、手動同步都不進行）
       if (writesHeld()) return "MIGRATION_HOLD";
       // 版本衝突還沒處理：本機修改不能保存，也不能用雲端資料蓋掉（切換帳號、手動同步都不進行）
@@ -1099,10 +1170,212 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         if (isUnconfirmed(get().player)) return "UPGRADE_UNCONFIRMED";
         continue;
       }
+      if (pendingOf(p).length > 0) {
+        await runSettleQueue();
+        if (pendingOf(get().player).length > 0) return "SETTLE_UNCONFIRMED";
+        continue;
+      }
       if (!(await get()._syncNow())) return "UNSYNCED_SAVE_FAILED";
     }
     const p = get().player;
-    return !p || !hasUnsyncedChanges(p) ? null : "UNSYNCED_SAVE_FAILED";
+    return !p || !dirty(p) ? null : "UNSYNCED_SAVE_FAILED";
+  };
+
+  // ── 戰鬥結算的佇列（完整獎勵，見 types 的 PendingSettle） ─────────────
+  /** 修改佇列裡的一筆（找不到就不做事）；extra 是一起寫入的其他欄位 */
+  const patchSettle = (
+    id: string,
+    patch: Partial<PendingSettle> | null,
+    extra: Partial<SessionPlayerState> = {}
+  ) => {
+    const cur = get().player;
+    if (!cur) return;
+    const list = pendingOf(cur);
+    commit({
+      ...cur,
+      ...extra,
+      pendingSettles: patch
+        ? list.map((s) => (s.id === id ? { ...s, ...patch } : s))
+        : list.filter((s) => s.id !== id),
+    });
+  };
+  /** 結算結果不明：依 AUTO_RECHECK_DELAYS_MS 排下一次自動重新確認（用完之後只在玩家操作時確認） */
+  const scheduleSettleRetry = () => {
+    if (_settleRetryStep < AUTO_RECHECK_DELAYS_MS.length) {
+      get()._scheduleSync(AUTO_RECHECK_DELAYS_MS[_settleRetryStep]);
+      _settleRetryStep += 1;
+    }
+  };
+  /** 伺服器確定沒有套用、重送也不會成功的結算錯誤：退回舊行為（由整份保存帶上本機的獎勵，仍受版本保護） */
+  const SETTLE_REJECTED = new Set([
+    "REQUEST_ID_REQUIRED",
+    "INVALID_REQUEST_ID",
+    "BAD_BASE_REV",
+    "BASE_REV_REQUIRED",
+    "INVALID_RESULT",
+    "INVALID_REWARD",
+    "REQUEST_ID_REUSED",
+    "DATA_TOO_LARGE",
+    "PROFILE_NOT_FOUND",
+    "DATA_CORRUPT",
+    "MISSING_KEY",
+    "BAD_REQUEST",
+    "UNKNOWN_ACTION",
+  ]);
+  /** 本機算出的獎勵和後端回報的相同 */
+  const sameReward = (a: PendingSettle["reward"], b: unknown) => {
+    const o = b as Record<string, unknown> | null | undefined;
+    return !!o && o.points === a.points && o.exp === a.exp;
+  };
+  /**
+   * 處理完整結算的成功回應（首次或 duplicate；見基準文件的結算契約）：
+   * 從佇列移除；base_rev 相符時版本基準前進；結算前沒有其他未同步修改時，這筆獎勵算已同步，不需要整份保存。
+   * 後端算出的獎勵和本機不同，或 base 相符、本機只有這筆沒同步，套用後的數值（after）卻和本機不同時：
+   * 不前進、不標同步，之後保存由衝突比較處理（不默默選一邊）。版本不符時雲端的數值本來就可能不同（其他分頁改過），只比對獎勵。
+   * 回傳是否要在佇列處理完後重新讀取雲端（版本不符、而且本機只有這筆沒同步）
+   */
+  const settleConfirmed = (
+    head: PendingSettle,
+    base: number,
+    res: Record<string, unknown>
+  ): boolean => {
+    const cur = get().player as SessionPlayerState;
+    const onlyThis = syncedRevOf(cur) === head.local_rev - 1;
+    const alone = onlyThis && revOf(cur) === head.local_rev;
+    const rev = revField(res, "rev");
+    const chained =
+      rev !== null &&
+      revField(res, "prev_rev") === base &&
+      serverRevOf(cur) === base;
+    if (
+      !sameReward(head.reward, res.reward) ||
+      (chained && alone && !sameSettleAfter(settleFieldsOf(cur), res.after))
+    ) {
+      patchSettle(head.id, null);
+      set({ syncError: "SETTLE_MISMATCH" });
+      return false;
+    }
+    patchSettle(head.id, null, {
+      ...(chained ? { serverRev: rev } : {}),
+      ...(onlyThis ? { syncedRev: head.local_rev } : {}),
+    });
+    // 雲端在送出的版本之後被其他分頁改過：獎勵已套用在雲端最新的資料上，本機沒有其他修改時讀取雲端採用
+    return !chained && alone;
+  };
+  /**
+   * 送出佇列最前面的一筆，回傳 next（這筆處理完，可以送下一筆）或 stop（停下，等之後再確認）
+   * - 沒有雲端版本（舊後端或舊 session）：舊行為——從佇列移除後只送一次，獎勵由之後的整份保存帶上
+   * - 其他：帶 settle_contract 送出，第一次送出前記下版本與 sent；結果不明時用同一份內容與版本重新確認
+   */
+  const sendSettle = async (
+    gen: number,
+    key: string,
+    head: PendingSettle
+  ): Promise<{ step: "next" | "stop"; refresh?: boolean }> => {
+    const base = head.base_rev ?? serverRevOf(get().player);
+    if (base === null) {
+      patchSettle(head.id, null);
+      beginBusy(gen);
+      try {
+        await gameApi.saveResult(key, head.record, head.id, null);
+      } catch (err: unknown) {
+        console.warn("[Background Sync] 戰鬥結算紀錄送出失敗:", err);
+      } finally {
+        endBusy(gen);
+      }
+      return { step: "next" };
+    }
+    patchSettle(head.id, { base_rev: base, state: "sent" });
+    beginBusy(gen);
+    let res: Record<string, unknown> | null = null;
+    let failure = "";
+    let definite = false;
+    try {
+      res = await gameApi.saveResult(key, head.record, head.id, base, true);
+    } catch (e: unknown) {
+      failure = errorCode(e);
+      definite = e instanceof GasError;
+    } finally {
+      endBusy(gen);
+    }
+    const cur = get().player;
+    if (
+      gen !== _accountGen ||
+      !cur ||
+      cur.key !== key ||
+      !pendingOf(cur).some((s) => s.id === head.id)
+    ) {
+      return { step: "stop" };
+    }
+    if (res && res.settle_contract !== SETTLE_CONTRACT) {
+      // 舊後端（或伺服器上是舊版留下的紀錄）：只記了進度，獎勵由整份保存帶上（舊行為）。
+      // 雲端是在送出時的版本上結算時，本機資料（已先套用這場）包含雲端的新版本，可以前進
+      const rev = revField(res, "rev");
+      const chained =
+        rev !== null &&
+        revField(res, "prev_rev") === base &&
+        serverRevOf(cur) === base;
+      patchSettle(head.id, null, chained ? { serverRev: rev } : {});
+      return { step: "next" };
+    }
+    if (res && res.request_id === head.id) {
+      _settleRetryStep = 0;
+      return { step: "next", refresh: settleConfirmed(head, base, res) };
+    }
+    if (
+      definite &&
+      (SETTLE_REJECTED.has(failure) || failure === "RESULT_UNKNOWN")
+    ) {
+      // 伺服器確定沒有套用（或無法確認、不會再套用）：不再重送。本機的獎勵留在未同步的修改裡，
+      // 由整份保存帶上；雲端版本在這之後有變化時，保存會出現衝突比較
+      patchSettle(head.id, null);
+      set({ syncError: failure });
+      return { step: "next" };
+    }
+    // 結果不明（網路錯誤、伺服器忙碌、執行中的例外、無法解析或對不上的回應）：維持待確認，
+    // 之後用同一個 request_id、同一份內容與第一次的版本重新送出確認（已處理過就回傳第一次的結果）
+    patchSettle(head.id, { state: "unknown" });
+    set({ syncError: failure || "BAD_RESPONSE" });
+    scheduleSettleRetry();
+    return { step: "stop" };
+  };
+  /**
+   * 依序處理結算佇列（同一個帳號同時只有一個在跑）。送出前等在途的保存與升級完成；
+   * 有待確認的升級時，帶版本的結算排在它後面（避免升級的點數差額合併把雲端已有的獎勵再加一次）
+   */
+  const runSettleQueue = (): Promise<void> => {
+    if (isCurrent(_settleInFlight)) return _settleInFlight.promise;
+    const gen = _accountGen;
+    const run = async () => {
+      let refresh = false;
+      for (;;) {
+        if (gen !== _accountGen) return;
+        const writes = [_saveInFlight, _upgradeInFlight]
+          .filter(isCurrent)
+          .map((f) => f.promise.catch(() => undefined));
+        if (writes.length > 0) {
+          await Promise.all(writes);
+          continue;
+        }
+        const p = get().player;
+        const head = pendingOf(p)[0];
+        if (!p || !head) break;
+        if (_sessionBlocked || writesHeld()) return;
+        const versioned = (head.base_rev ?? serverRevOf(p)) !== null;
+        if (versioned && p.pendingUpgrade) return;
+        const r = await sendSettle(gen, p.key, head);
+        if (r.refresh) refresh = true;
+        if (r.step === "stop") return;
+      }
+      const p = get().player;
+      if (refresh && p) void get().backgroundRefresh(p.key);
+    };
+    const promise = run();
+    _settleInFlight = { gen, promise };
+    void promise.finally(() => {
+      if (_settleInFlight?.promise === promise) _settleInFlight = null;
+    });
+    return promise;
   };
 
   return {
@@ -1130,8 +1403,13 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       commit(session);
       set({ conflictBackup: readBackup(key) });
       // 重新整理前的升級結果不明：先重新確認，確認前不保存（避免蓋掉伺服器上已完成的升級）
+      // 還沒確認的戰鬥結算：用同一份內容重新確認（見 _syncNow）
       // 其他未確認的修改：不等使用者再操作，直接補送（只重送 profile）
-      if (isUnconfirmed(session) || hasUnsyncedChanges(session)) {
+      if (
+        isUnconfirmed(session) ||
+        pendingOf(session).length > 0 ||
+        hasUnsyncedChanges(session)
+      ) {
         get()._scheduleSync(RESTORE_SYNC_DELAY_MS);
       }
       return true;
@@ -1262,12 +1540,13 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
 
     backgroundRefresh: async (key: string) => {
       const player = get().player;
-      // 有本機未同步修改、在途寫入或待確認的升級時跳過，避免覆蓋
+      // 有本機未同步修改、在途寫入、待確認的升級或結算時跳過，避免覆蓋
       if (
         !player ||
         player.key !== key ||
         hasUnsyncedChanges(player) ||
         player.pendingUpgrade ||
+        pendingOf(player).length > 0 ||
         currentConflict() ||
         _busy > 0
       ) {
@@ -1287,6 +1566,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
           revOf(cur) !== rev0 ||
           hasUnsyncedChanges(cur) ||
           cur.pendingUpgrade ||
+          pendingOf(cur).length > 0 ||
           currentConflict() ||
           _busy > 0
         ) {
@@ -1532,95 +1812,58 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       }
       // 開戰後才遇到寫入限制：不套用獎勵、不送出 save_result（結果無法保存），由畫面說明
       if (writesHeld()) return { ok: false, error: "MIGRATION_HOLD" };
+      // Godot 的結算先驗證（星數、點數、勝負、關卡）：不合規則就不套用、不送出。這一場仍算結束，不會再被採用
+      const record = toBattleRecord(result);
+      const reward = record && computeBattleReward(record);
       _settledBattles.add(ticket.id);
       _activeBattle = null; // 這一場結束：解除鎖，這張票之後不能再使用
+      if (!record || !reward) return { ok: false, error: "INVALID_RESULT" };
 
       clearDebounce(); // 取消 pending debounce，結算後統一處理
 
-      // 1. 本地立即計算 (Optimistic Update)
-      const isWin = result.result === BattleResult.Win;
-      const pointsReward = isWin
-        ? result.loots
-            .filter((l) => l.item === "battle_points" || l.item === "gold")
-            .reduce((sum, l) => sum + l.count, 0)
-        : 10; // 失敗低保
-
-      // EXP：勝利 50 + 星數×20；失敗低保 10
-      const expGain = isWin ? 50 + result.stars_earned * 20 : 10;
-      const expAfter = player.exp + expGain;
-      const expNeeded = (level: number) => level * 100;
-      let newLevel = player.level;
-      let newExp = expAfter;
-      while (newExp >= expNeeded(newLevel)) {
-        newExp -= expNeeded(newLevel);
-        newLevel += 1;
-      }
-
-      const nextStage = getNextStage(result.stage_id);
-      const shouldUpdateStage =
-        isWin && stageToNum(nextStage) > stageToNum(player.max_stage);
-
-      // 保留未同步的 heroes / team 變更
-      edit({
-        gold: player.gold + pointsReward,
-        exp: newExp,
-        level: newLevel,
-        capacity: 10 + newLevel,
-        max_stage: shouldUpdateStage ? nextStage : player.max_stage,
+      // 1. 本機立即套用（和後端的完整結算同一套規則，見 utils/battleReward），保留未同步的 heroes／team 修改。
+      //    同一次寫入把這場記進待確認的結算（重新整理後也知道它還沒確認，不會用整份保存重複寫入獎勵）
+      const after = applyBattleReward(player, reward, record);
+      const localRev = revOf(player) + 1;
+      const settle: PendingSettle = {
+        // 場次識別碼另外當作 request_id（後端用它辨識重送），不放在結算內容裡
+        id: ticket.id,
+        record,
+        reward,
+        local_rev: localRev,
+        base_rev: null,
+        state: "queued",
+        at: Date.now(),
+      };
+      _dataGen += 1; // 結算會改變伺服器資料：之前送出的背景讀取都已過時
+      commit({
+        ...player,
+        ...after,
+        rev: localRev,
+        pendingSettles: [...pendingOf(player), settle],
       });
 
-      // 2. 背景同步：save_result 只送一次（失敗也不重播，避免重複發獎勵），
-      //    接著以一般的 profile 保存送出最新快照；保存失敗會自動重試
-      const gen = _accountGen;
-      const key = player.key;
-      beginBusy(gen);
-      // 場次識別碼另外當作 request_id（新版後端用它辨識重送），不放在結算內容裡
-      const record: Partial<BattleResultPayload> = { ...result };
-      delete record.battle_id;
-      const resultPromise = (async () => {
-        // 已經送出的保存與升級先完成：結算要帶它們之後的雲端版本，兩個寫入交錯時彼此的版本都對不上
-        const writes = [_saveInFlight, _upgradeInFlight]
-          .filter(isCurrent)
-          .map((f) => f.promise.catch(() => undefined));
-        if (writes.length > 0) await Promise.all(writes);
-        if (gen !== _accountGen) return;
-        const baseRev = serverRevOf(get().player);
-        try {
-          const res = await gameApi.saveResult(key, record, ticket.id, baseRev);
-          // 雲端是在送出時的版本上結算（prev_rev 等於 base_rev，後端也才會回 rev）：本機已先套用這一場的結果，
-          // 所以本機資料包含雲端的新版本，可以前進。版本對不上時維持原本的版本，之後保存由版本衝突處理
-          const cur = get().player;
-          const rev = revField(res, "rev");
-          if (
-            gen === _accountGen &&
-            cur &&
-            cur.key === key &&
-            baseRev !== null &&
-            rev !== null &&
-            revField(res, "prev_rev") === baseRev &&
-            serverRevOf(cur) === baseRev
-          ) {
-            commit({ ...cur, serverRev: rev });
-          }
-        } catch (err: unknown) {
-          console.warn("[Background Sync] 戰鬥結算紀錄送出失敗:", err);
-        }
-      })();
-      _resultInFlight = { gen, promise: resultPromise };
-      const promise = (async () => {
-        await resultPromise;
-        if (_resultInFlight?.promise === resultPromise) _resultInFlight = null;
-        endBusy(gen);
-        if (gen === _accountGen) await get()._syncNow();
-      })();
-      _battleInFlight = { gen, promise };
-      void promise.finally(() => {
-        if (_battleInFlight?.promise === promise) _battleInFlight = null;
-      });
+      // 2. 背景送出：依序確認每一場（見 runSettleQueue）。完整結算確認後不需要整份保存；
+      //    舊後端（回應沒有 settle_contract）照舊由之後的整份保存帶上獎勵
+      void get()._syncNow();
       return { ok: true };
     },
 
     recheckPendingUpgrade: () => checkUpgrade("manual"),
+
+    recheckPendingSettles: async () => {
+      const p = get().player;
+      if (!p || pendingOf(p).length === 0) return { ok: true };
+      if (_sessionBlocked) return { ok: false, error: "SESSION_BLOCKED" };
+      if (writesHeld()) return { ok: false, error: "MIGRATION_HOLD" };
+      if (p.pendingUpgrade) return { ok: false, error: "UPGRADE_PENDING" };
+      _settleRetryStep = 0;
+      await get()._syncNow();
+      const after = get().player;
+      return !after || pendingOf(after).length === 0
+        ? { ok: true }
+        : { ok: false, error: "SETTLE_UNCONFIRMED" };
+    },
 
     // ── 內部：同步 ─────────────────────────────────────────────
 
@@ -1637,6 +1880,24 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       const player = get().player;
       if (!player) return Promise.resolve(true);
       if (_sessionBlocked) return Promise.resolve(false);
+      // 待確認的戰鬥結算：先依序確認（獎勵是雲端上的增量，和版本衝突無關）。全部確認之前不送整份保存，
+      // 避免整份保存先把獎勵寫進雲端、晚到的結算又再加一次；全部確認後才保存其他修改。
+      // 帶版本的結算排在待確認的升級後面：佇列停在那裡時先重新確認升級（確認後會再送出結算）
+      if (pendingOf(player).length > 0) {
+        if (writesHeld()) return Promise.resolve(heldSave());
+        const gen = _accountGen;
+        return runSettleQueue().then(() => {
+          if (gen !== _accountGen) return false;
+          const after = get().player;
+          if (!after) return true;
+          if (pendingOf(after).length > 0) {
+            return isUnconfirmed(after)
+              ? checkUpgrade("auto").then(() => false)
+              : false;
+          }
+          return get()._syncNow();
+        });
+      }
       // 版本衝突還沒處理：暫停保存（本機修改都保留），等玩家比較後選擇
       if (currentConflict()) return Promise.resolve(false);
       // 升級結果待確認：整份保存會送出可能過時的 heroes／gold，先重新確認；
@@ -1652,9 +1913,9 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       if (writesHeld()) return Promise.resolve(heldSave());
       // 已有保存在途：等它結束（結束時若還有新修改會自動再排程）
       if (isCurrent(_saveInFlight)) return _saveInFlight.promise;
-      // 升級或戰鬥結算紀錄還在途：等它結束再保存。現在送出的快照不含它的結果，
+      // 升級或戰鬥結算還在途：等它結束再保存。現在送出的快照不含它的結果，
       // 會把伺服器剛算好的 heroes／gold 蓋掉
-      const serverOps = [_upgradeInFlight, _resultInFlight].filter(isCurrent);
+      const serverOps = [_upgradeInFlight, _settleInFlight].filter(isCurrent);
       if (serverOps.length > 0) {
         const gen = _accountGen;
         return Promise.allSettled(serverOps.map((f) => f.promise)).then(() =>

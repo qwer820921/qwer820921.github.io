@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import {
   useSiteIsolationProblem,
@@ -13,6 +13,7 @@ import { useStaticConfigStore } from "../store/staticConfigStore";
 import { SyncStatus } from "../types";
 import { findIsolationRecovery } from "../utils/isolationRecovery";
 import UpgradeUnconfirmedNotice from "./UpgradeUnconfirmedNotice";
+import SettleUnconfirmedNotice from "./SettleUnconfirmedNotice";
 import SaveConflictNotice from "./SaveConflictNotice";
 import ConflictBackupNotice from "./ConflictBackupNotice";
 import SaveConflictModal from "./modals/SaveConflictModal";
@@ -35,6 +36,13 @@ export default function GameInitializer() {
   const playerKey = usePlayerStore((s) => s.player?.key ?? null);
   const syncStatus = usePlayerStore(
     (s) => s.player?.syncStatus ?? SyncStatus.Idle
+  );
+  // 待確認的是升級還是戰鬥結算（同步狀態都是 Unconfirmed，提示分開）
+  const upgradeUnknown = usePlayerStore(
+    (s) => s.player?.pendingUpgrade?.state === "unknown"
+  );
+  const settleUnknown = usePlayerStore((s) =>
+    (s.player?.pendingSettles ?? []).some((p) => p.state === "unknown")
   );
   // 切換存檔失敗（視窗關閉後才失敗時，主畫面靠這個提示）
   const switchFailed = usePlayerStore((s) => s.switchNotice !== null);
@@ -134,6 +142,37 @@ export default function GameInitializer() {
           ? styles.syncBarPending
           : styles.syncBarIdle;
   const unconfirmed = syncStatus === SyncStatus.Unconfirmed;
+  const hasBottomNotices =
+    !!isolationProblem ||
+    unconfirmed ||
+    switchFailed ||
+    writeHold ||
+    saveConflict ||
+    conflictBackup;
+
+  // 底部提示固定在畫面最下方、層級高於一般視窗：量測它的高度寫成 CSS 變數，
+  // 視窗（modalBackdrop／modalPanel）的下緣讓出這段空間，捲到最下面的按鈕（例如「儲存隊伍」）不會被提示蓋住
+  const bottomNoticesRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const root = document.documentElement;
+    const el = bottomNoticesRef.current;
+    if (!hasBottomNotices || !el) {
+      root.style.removeProperty("--sg-bottom-notices-h");
+      return;
+    }
+    const update = () =>
+      root.style.setProperty(
+        "--sg-bottom-notices-h",
+        `${Math.ceil(el.getBoundingClientRect().height)}px`
+      );
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty("--sg-bottom-notices-h");
+    };
+  }, [hasBottomNotices]);
 
   return (
     <>
@@ -158,20 +197,16 @@ export default function GameInitializer() {
           </div>
         </div>
       )}
-      {/* 固定在頁面底部，不擋住上方的 HUD 按鈕：存檔處理暫停、切換存檔失敗、存檔暫停保存（含網站更新前的暫存）、武將升級結果待確認、存檔版本衝突與處理後的備份 */}
-      {(isolationProblem ||
-        unconfirmed ||
-        switchFailed ||
-        writeHold ||
-        saveConflict ||
-        conflictBackup) && (
-        <div className={styles.bottomNotices}>
+      {/* 固定在頁面底部，不擋住上方的 HUD 按鈕：存檔處理暫停、切換存檔失敗、存檔暫停保存（含網站更新前的暫存）、武將升級或戰鬥結算的結果待確認、存檔版本衝突與處理後的備份 */}
+      {hasBottomNotices && (
+        <div className={styles.bottomNotices} ref={bottomNoticesRef}>
           {isolationProblem && (
             <IsolationProblemNotice problem={isolationProblem} />
           )}
           <SwitchFailedNotice />
           {writeHold && <MigrationHoldNotice item={recovery} />}
-          {unconfirmed && <UpgradeUnconfirmedNotice />}
+          {unconfirmed && upgradeUnknown && <UpgradeUnconfirmedNotice />}
+          {unconfirmed && settleUnknown && <SettleUnconfirmedNotice />}
           {saveConflict && (
             <SaveConflictNotice onCompare={() => setCompareOpen(true)} />
           )}
