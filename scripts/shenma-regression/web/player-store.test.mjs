@@ -2244,14 +2244,28 @@ await test("R10-P1", async () => {
     ready({ protocol: "3" }),
     ready({ protocol: 2 }),
     ready({ protocol: 3 }),
-    ready({ protocol: 5 }),
     ready({ protocol: 4 }),
+    ready({ protocol: 5 }),
+    ready({ protocol: "6" }),
+    ready({ protocol: 7 }),
+    ready({ protocol: 6 }),
   ].map((m) => isCompatibleEngine(m));
   check(
-    "R10-P1 只有協定版本和網頁相同（Round 18 起是 4）的 game_ready 才相容；舊版（沒有 protocol）、Round 9～16 的 2、Round 17 的 3、其他版本、字串都不相容",
-    BRIDGE_PROTOCOL === 4 &&
+    "R10-P1 只有協定版本和網頁相同（加入手動暫停後是 6）的 game_ready 才相容；舊版（沒有 protocol）、2（battle_id）、3（防禦塔目標優先）、4（備戰拆除）、5（戰鬥速度）、其他版本、字串都不相容",
+    BRIDGE_PROTOCOL === 6 &&
       JSON.stringify(got) ===
-        JSON.stringify([false, false, false, false, false, false, true]),
+        JSON.stringify([
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          true,
+        ]),
     got
   );
 });
@@ -3058,6 +3072,135 @@ await test("R16-P3", async () => {
       noPath: noPath.waves,
       paths,
     }
+  );
+});
+
+// ══════════════════════════════════════════════════════════════
+//  戰鬥速度（utils/gameSpeed）
+//  畫面只採 Godot 已確認的速度（update_stats 的 speed）；只開這一場的部署選單，關閉時帶回選單識別
+// ══════════════════════════════════════════════════════════════
+await test("R19-W1", async () => {
+  const { GAME_SPEEDS, confirmedSpeed, canChangeSpeed, isDeploySlow } = require(
+    join(GAME, "utils/gameSpeed.ts")
+  );
+  const st = (extra) => ({
+    game_state: 1,
+    speed: 1,
+    time_scale: 1,
+    deploy_slow: false,
+    ...extra,
+  });
+  const speeds = [
+    st(),
+    st({ speed: 2 }),
+    st({ speed: "2" }),
+    st({ speed: 3 }),
+    st({ speed: 1.5 }),
+    st({ speed: undefined }),
+    null,
+  ].map((x) => confirmedSpeed(x));
+  const can = [
+    st(),
+    st({ game_state: 2 }),
+    st({ game_state: 3 }),
+    st({ game_state: 0 }),
+    st({ speed: undefined }),
+    null,
+  ].map((x) => canChangeSpeed(x));
+  const slow = [
+    st({ deploy_slow: true, time_scale: 0.1 }),
+    st({ deploy_slow: "true" }),
+    st(),
+    null,
+  ].map((x) => isDeploySlow(x));
+  check(
+    "R19-W1 速度只採 Godot 已確認的 1 或 2（字串、3、1.5、缺少都不顯示）；備戰與戰鬥中才能切換（結算、還沒開始、沒有速度都不行）；部署慢速只看 Godot 回報的 deploy_slow",
+    JSON.stringify(GAME_SPEEDS) === "[1,2]" &&
+      JSON.stringify(speeds) ===
+        JSON.stringify([1, 2, null, null, null, null, null]) &&
+      JSON.stringify(can) ===
+        JSON.stringify([true, true, false, false, false, false]) &&
+      JSON.stringify(slow) === JSON.stringify([true, false, false, false]),
+    { speeds, can, slow }
+  );
+});
+
+await test("R19-W2", async () => {
+  const { deployMenuRef } = require(join(GAME, "utils/gameSpeed.ts"));
+  const cur = "b-1";
+  const got = [
+    deployMenuRef({ battle_id: "b-1", menu_id: 3 }, cur),
+    deployMenuRef({ battle_id: "b-0", menu_id: 3 }, cur),
+    deployMenuRef({ menu_id: 3 }, cur),
+    deployMenuRef({ battle_id: "b-1" }, cur),
+    deployMenuRef({ battle_id: "b-1", menu_id: "3" }, cur),
+    deployMenuRef({ battle_id: "b-1", menu_id: 0 }, cur),
+    deployMenuRef({ battle_id: "b-1", menu_id: 1.5 }, cur),
+    deployMenuRef({ battle_id: "b-1", menu_id: 3 }, null),
+    deployMenuRef({ battle_id: "", menu_id: 3 }, ""),
+  ];
+  check(
+    "R19-W2 部署選單只接受目前這一場（battle_id 相同）、選單編號是正整數的 click_cell；別場、缺少、字串、0、小數、沒有進行中的場次都不開",
+    JSON.stringify(got) ===
+      JSON.stringify([
+        { battle_id: "b-1", menu_id: 3 },
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+      ]),
+    got
+  );
+});
+
+// ══════════════════════════════════════════════════════════════
+//  手動暫停（utils/gameSpeed 的 isPaused／canTogglePause、utils/towerSell 的原因說明）
+//  畫面只採 Godot 已確認的 paused（布林）；備戰與戰鬥中、Godot 回報了暫停狀態才能操作
+// ══════════════════════════════════════════════════════════════
+await test("R20-W1", async () => {
+  const { isPaused, canTogglePause } = require(
+    join(GAME, "utils/gameSpeed.ts")
+  );
+  const { sellReasonText } = require(join(GAME, "utils/towerSell.ts"));
+  const st = (extra) => ({
+    game_state: 2,
+    speed: 1,
+    time_scale: 1,
+    deploy_slow: false,
+    paused: false,
+    ...extra,
+  });
+  const paused = [
+    st({ paused: true }),
+    st(),
+    st({ paused: "true" }),
+    st({ paused: 1 }),
+    st({ paused: undefined }),
+    null,
+  ].map((x) => isPaused(x));
+  const can = [
+    st(),
+    st({ paused: true }),
+    st({ game_state: 1 }),
+    st({ game_state: 3 }),
+    st({ game_state: 0 }),
+    st({ paused: undefined }),
+    st({ paused: "false" }),
+    null,
+  ].map((x) => canTogglePause(x));
+  const text = sellReasonText("paused");
+  check(
+    "R20-W1 暫停只採 Godot 已確認的布林 paused（字串、1、缺少都不算暫停）；備戰與戰鬥中、有布林 paused 才能暫停或繼續（結算、還沒開始、舊版沒有 paused 都不行）；拆塔被拒的原因 paused 有說明",
+    JSON.stringify(paused) ===
+      JSON.stringify([true, false, false, false, false, false]) &&
+      JSON.stringify(can) ===
+        JSON.stringify([true, true, true, false, false, false, false, false]) &&
+      /暫停/.test(text),
+    { paused, can, text }
   );
 });
 

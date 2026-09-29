@@ -14,6 +14,7 @@ signal wave_changed(current: int, total: int)
 signal battle_ended(result: Dictionary)
 signal auto_mode_changed(enabled: bool)
 signal wave_start_rejected(wave_num: int, reason: String)  # 波次沒有可生成的敵人，拒絕開戰
+signal pause_changed(paused: bool)  # 手動暫停：Main 依此停掉／恢復模擬用的節點
 
 # ── 常數 ──────────────────────────────────────────────────────
 const INITIAL_GOLD: int        = 5000
@@ -49,6 +50,23 @@ var _auto_wave_pending: bool = false
 ## 跨波次、移位、更新隊伍、同場移除再放回都不會重新取得；initialize（新的一場、新的 battle_id）才清空
 var _first_strike_used: Dictionary = {}
 
+# ── 戰鬥速度 ──────────────────────────────────────────────
+# Engine.time_scale 只由 _apply_time_scale 寫入：實際倍率＝部署選單開著時固定 DEPLOY_TIME_SCALE，否則是玩家選的速度。
+# 敵人移動、攻擊冷卻、灼燒、減速、出兵間隔、自動下一波都照這個倍率推進；傷害、費用、獎勵不受影響
+const DEPLOY_TIME_SCALE: float = 0.1
+## 玩家選的速度（1 或 2 倍）：新的一場（initialize）與結算時回到 1；同一場跨波、更新隊伍、升級都保留
+var speed_pref: int = 1
+## 目前開著的部署選單編號（0＝沒有開著）：只有帶著這一場的 battle_id 與這個編號的關閉命令能解除慢速
+var deploy_menu_id: int = 0
+## 部署選單編號的流水號：只增不減，換場次也不重用
+var _deploy_menu_seq: int = 0
+
+# ── 手動暫停 ──────────────────────────────────────────────
+# 和玩家選的速度、部署慢速分開記錄：暫停不改 Engine.time_scale（也不靠倍率 0 假裝暫停），不動 SceneTree.paused。
+# 暫停時 Main 停掉模擬用的節點（UnitsLayer、WaveManager、BattleManager 本身的處理與計時器），繼續後從同一個進度接著跑。
+# 只存在這一場的記憶體（不寫存檔、不送後端）；新的一場（initialize）與結算時解除
+var manual_paused: bool = false
+
 # ── 外部引用（由 Main.gd 初始化後傳入）──────────────────────
 var _wave_manager: Node = null
 var _web_bridge: Node = null
@@ -61,6 +79,9 @@ func initialize(p_total_waves: int, p_stage_id: String, wave_mgr: Node, bridge: 
 	stage_id       = p_stage_id
 	battle_id      = p_battle_id
 	_first_strike_used.clear()
+	# 新的一場：清掉上一場的部署慢速與手動暫停，速度回到 1 倍
+	_reset_speed()
+	_reset_pause()
 	_wave_manager  = wave_mgr
 	_web_bridge    = bridge
 	battle_gold    = INITIAL_GOLD
@@ -78,18 +99,24 @@ func initialize(p_total_waves: int, p_stage_id: String, wave_mgr: Node, bridge: 
 
 # ── _process ─────────────────────────────────────────────────
 func _process(delta: float) -> void:
-	if game_state != GameState.BATTLE:
+	# 手動暫停時 Main 已停掉這個節點的處理；這裡再擋一次，戰鬥時間（結算的 time_seconds）不前進
+	if game_state != GameState.BATTLE or manual_paused:
 		return
 	battle_time += delta
 	# 波次切換已全面改用信號驅動，不再使用強制間隔計時。
 
 # ── 玩家操作 ─────────────────────────────────────────────────
+## 暫停中不能開戰（Web 的按鈕也停用；這裡是最後一道檢查）
 func player_start_battle() -> void:
-	if game_state != GameState.PREP:
+	if game_state != GameState.PREP or manual_paused:
 		return
 	_spawn_next_wave()
 
+## 暫停中不能切換自動：不改狀態，只把目前的狀態再同步給 Web
 func toggle_auto_mode() -> void:
+	if manual_paused:
+		_sync_stats_to_web()
+		return
 	auto_mode = !auto_mode
 	auto_mode_changed.emit(auto_mode)
 	if auto_mode and game_state == GameState.PREP:
@@ -173,7 +200,8 @@ func _schedule_auto_wave() -> void:
 	var life: int      = _lifecycle
 	var from_wave: int = current_wave
 	_sync_stats_to_web()
-	get_tree().create_timer(AUTO_NEXT_WAVE_DELAY).timeout.connect(func():
+	# 遊戲計時器：掛在這個節點底下，手動暫停時跟著停住、繼續後只等剩下的時間
+	create_game_timer(self, AUTO_NEXT_WAVE_DELAY).timeout.connect(func():
 		# 只接受「同一個關卡生命週期、同一次排程」的計時器
 		if token != _auto_wave_token or life != _lifecycle:
 			return
@@ -187,6 +215,18 @@ func _schedule_auto_wave() -> void:
 func _cancel_auto_wave() -> void:
 	_auto_wave_token += 1
 	_auto_wave_pending = false
+
+## 遊戲時間的單次計時器：Timer 節點掛在 parent 底下，照 Engine.time_scale 倒數；parent 的處理被停掉（手動暫停）
+## 或 SceneTree 暫停時一起停住，恢復後只跑剩下的時間（不重新計滿）。觸發後自行釋放。
+## 取代 SceneTree.create_timer：它預設在暫停時照走，也不跟著節點停住。sec ≤ 0 時在下一個有處理的幀觸發
+static func create_game_timer(parent: Node, sec: float) -> Timer:
+	var t := Timer.new()
+	t.one_shot = true
+	t.wait_time = maxf(sec, 0.0001)
+	t.timeout.connect(t.queue_free)
+	parent.add_child(t)
+	t.start()
+	return t
 
 func _spawn_next_wave() -> void:
 	var next_wave: int = current_wave + 1
@@ -254,6 +294,9 @@ func _end_battle(is_win: bool) -> void:
 		"loots":        [{ "item": "battle_points", "count": _calc_battle_points() if is_win else 10 }]
 	}
 	_cancel_auto_wave()
+	# 結算後不再有部署慢速、加速或手動暫停：結算畫面與之後的新場次都從 1 倍、未暫停開始（結算內容已在上面先建立）
+	_reset_speed()
+	_reset_pause()
 	game_state = GameState.RESULT
 	state_changed.emit(game_state)
 	battle_ended.emit(result)
@@ -274,9 +317,92 @@ func _sync_stats_to_web() -> void:
 		"max_hp": MAX_BASE_HP,
 		"game_state": game_state,
 		"auto_mode": auto_mode,
-		"auto_next_wave_pending": _auto_wave_pending
+		"auto_next_wave_pending": _auto_wave_pending,
+		# 戰鬥速度：已確認的玩家選擇、實際倍率、是否在部署選單的暫時慢速中
+		"speed": speed_pref,
+		"time_scale": effective_time_scale(),
+		"deploy_slow": deploy_menu_id != 0,
+		# 手動暫停：已確認的狀態。暫停中 time_scale 仍是繼續後會用的倍率
+		"paused": manual_paused,
 	}
 	_web_bridge.send_stats(stats)
+
+# ── 戰鬥速度 ──────────────────────────────────────────────
+## 實際的時間倍率：部署選單開著時固定 0.1（不乘上玩家選的速度），否則是玩家選的速度
+func effective_time_scale() -> float:
+	return DEPLOY_TIME_SCALE if deploy_menu_id != 0 else float(speed_pref)
+
+func _apply_time_scale() -> void:
+	Engine.time_scale = effective_time_scale()
+
+func _reset_speed() -> void:
+	speed_pref = 1
+	deploy_menu_id = 0
+	_apply_time_scale()
+
+## 打開部署選單（玩家點了可部署的空格）：進入暫時慢速，回傳這個選單的編號（Web 關閉選單時帶回）。
+## 只有備戰與戰鬥中、沒有手動暫停時可以打開，其他狀態回傳 0（不開選單、不改倍率）
+func open_deploy_menu() -> int:
+	if game_state != GameState.PREP and game_state != GameState.BATTLE:
+		return 0
+	if manual_paused:
+		return 0
+	_deploy_menu_seq += 1
+	deploy_menu_id = _deploy_menu_seq
+	_apply_time_scale()
+	_sync_stats_to_web()
+	return deploy_menu_id
+
+## 關閉部署選單（取消或部署完成）：只接受這一場、目前開著的那個選單，恢復玩家選的速度。
+## 別場、較早的選單、已經關閉的命令都不改倍率，回傳 false
+func close_deploy_menu(p_battle_id: String, menu_id: int) -> bool:
+	if p_battle_id == "" or p_battle_id != battle_id or menu_id <= 0 or menu_id != deploy_menu_id:
+		return false
+	deploy_menu_id = 0
+	_apply_time_scale()
+	_sync_stats_to_web()
+	return true
+
+## 玩家選擇戰鬥速度：只接受這一場、備戰或戰鬥中、數字 1 或 2（JSON 的數字是 float）；字串、布林、其他數值都不接受。
+## 成功回傳空字串，否則回傳原因且不改任何狀態。部署選單開著時只更新選擇，實際倍率仍是慢速，關閉選單後才套用。
+## 只改倍率：不動 SceneTree.paused 與手動暫停（暫停中選速度只記下，繼續後才套用），不重設任何計時器
+func set_speed(p_battle_id: String, raw: Variant) -> String:
+	if p_battle_id == "" or p_battle_id != battle_id:
+		return "stale_battle"
+	if game_state != GameState.PREP and game_state != GameState.BATTLE:
+		return "not_active"
+	var v: int = 0
+	if raw is int:
+		v = raw
+	elif raw is float and (raw == 1.0 or raw == 2.0):
+		v = int(raw)
+	if v != 1 and v != 2:
+		return "invalid_speed"
+	speed_pref = v
+	_apply_time_scale()
+	_sync_stats_to_web()
+	return ""
+
+## 手動暫停／繼續：只接受這一場、備戰或戰鬥中、paused 是布林（true 暫停、false 繼續）。
+## 命令帶的是目標狀態、不是切換：重送同一個值回傳成功但不改任何東西。字串、數字、null、沒有帶都不接受。
+## 成功回傳空字串，否則回傳原因且不改任何狀態。不改玩家選的速度與部署慢速，也不動 Engine.time_scale 與 SceneTree.paused
+func set_paused(p_battle_id: String, raw: Variant) -> String:
+	if p_battle_id == "" or p_battle_id != battle_id:
+		return "stale_battle"
+	if game_state != GameState.PREP and game_state != GameState.BATTLE:
+		return "not_active"
+	if not (raw is bool):
+		return "invalid_paused"
+	if raw != manual_paused:
+		manual_paused = raw
+		pause_changed.emit(manual_paused)
+		_sync_stats_to_web()
+	return ""
+
+## 解除手動暫停（新的一場、結算）：一律發出信號，讓 Main 把模擬用的節點恢復處理
+func _reset_pause() -> void:
+	manual_paused = false
+	pause_changed.emit(false)
 
 ## 奇襲：這位武將在這一場還沒用過就記下並回傳 true（武將真的攻擊到有效目標時才呼叫）
 func consume_first_strike(hero_id: String, damage: float) -> bool:
@@ -292,6 +418,9 @@ func get_debug_state() -> Dictionary:
 		"lifecycle": _lifecycle,
 		"auto_wave_token": _auto_wave_token,
 		"auto_next_wave_pending": _auto_wave_pending,
+		"speed_pref": speed_pref,
+		"deploy_menu_id": deploy_menu_id,
+		"manual_paused": manual_paused,
 	}
 
 # ═══════════════════════════════════════════

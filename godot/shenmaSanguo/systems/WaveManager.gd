@@ -136,7 +136,8 @@ func _spawn_group(plan: Dictionary, gen: int) -> void:
 			_active_enemies.append(enemy)
 			enemy_spawned.emit(enemy)
 		if i < count - 1:
-			await get_tree().create_timer(plan.interval).timeout
+			# 出兵間隔用遊戲計時器：掛在 WaveManager 底下，手動暫停時跟著停住，繼續後只等剩下的時間、不立刻補出
+			await BattleManager.create_game_timer(self, plan.interval).timeout
 
 	_finish_group(gen)
 

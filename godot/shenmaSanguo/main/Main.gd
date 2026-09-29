@@ -42,7 +42,7 @@ var _selected_unit: Node       = null  # 選中的塔/武將
 ## 防禦塔識別碼的流水號（只增不減、不重用）：Web 的目標優先命令用它確認是同一座塔
 var _tower_seq: int             = 0
 var _moving_unit: Node         = null  # 正在重新佈置的單位
-var _game_time: float          = 0.0   # 累計遊戲時間（受 time_scale 影響），供測試快照比對計時器
+var _game_time: float          = 0.0   # 累計遊戲時間（受 time_scale 影響、手動暫停時不前進），供測試快照比對計時器
 
 # ═══════════════════════════════════════════
 #  _ready
@@ -52,7 +52,6 @@ func _ready() -> void:
 	web_bridge.payload_received.connect(_on_payload_received)
 	web_bridge.start_battle_requested.connect(_on_start_btn_pressed)
 	web_bridge.auto_toggle_requested.connect(_on_auto_btn_pressed)
-	web_bridge.resume_game_requested.connect(_on_resume_game)
 	web_bridge.move_unit_requested.connect(_on_web_move_unit)
 	web_bridge.deselect_unit_requested.connect(_deselect_unit)
 	web_bridge.upgrade_unit_requested.connect(_on_web_upgrade_unit)
@@ -73,6 +72,7 @@ func _ready() -> void:
 	battle_manager.battle_gold_changed.connect(_on_battle_gold_changed)
 	battle_manager.wave_changed.connect(_on_wave_changed)
 	battle_manager.battle_ended.connect(_on_battle_ended)
+	battle_manager.pause_changed.connect(_on_pause_changed)
 
 	# WaveManager signals（只會收到目前關卡世代的敵人事件）
 	wave_manager.enemy_killed.connect(_on_enemy_killed)
@@ -104,6 +104,12 @@ func _on_payload_received(payload: Dictionary) -> void:
 		_on_web_set_tower_target(payload)
 	elif type == "sell_tower":
 		_on_web_sell_tower(payload)
+	elif type == "resume_game":
+		_on_web_close_deploy_menu(payload)
+	elif type == "set_game_speed":
+		_on_web_set_game_speed(payload)
+	elif type == "set_paused":
+		_on_web_set_paused(payload)
 	elif type == "load_stage" or payload.has("stage_id"):
 		# 初始初始化 或 切換關卡
 		_do_initial_setup(payload)
@@ -247,6 +253,8 @@ func _on_wave_cleared(_wave_num: int) -> void:
 #  拖曳放置
 # ═══════════════════════════════════════════
 func _on_drag_hero_started(hero_data: Dictionary) -> void:
+	if _actions_paused():
+		return
 	_moving_unit     = null
 	_drag_type       = DragType.HERO
 	_drag_hero_data = hero_data
@@ -254,6 +262,8 @@ func _on_drag_hero_started(hero_data: Dictionary) -> void:
 	drag_ghost.start_drag("hero", hero_data.get("hero_id", "?"), Color(0.20, 0.40, 0.80, 0.75))
 
 func _on_drag_tower_started(tower_type: String) -> void:
+	if _actions_paused():
+		return
 	var cfg = Tower.TOWER_CONFIGS.get(tower_type, {})
 	var cost: int = int(cfg.get("cost", 50))
 	if not battle_manager.can_spend_gold(cost):
@@ -270,9 +280,9 @@ func _on_drag_tower_started(tower_type: String) -> void:
 	game_map.highlight_valid_cells(_drag_type)
 
 func _on_unit_move_requested(unit: Node) -> void:
-	if battle_manager.game_state != BattleManager.GameState.PREP:
-		return  # 安全檢查：非備戰期間不可移動
-		
+	if battle_manager.game_state != BattleManager.GameState.PREP or _actions_paused():
+		return  # 安全檢查：非備戰期間、手動暫停中不可移動
+
 	_moving_unit = unit
 	_is_dragging = true
 	
@@ -339,18 +349,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				if can_place:
 					_deselect_unit()
 					battle_hud.hide_upgrade_panel()
-					
-					# 進入「子彈時間」
-					Engine.time_scale = 0.1
-					
-					# 取得螢幕位置傳給 Web
-					var pos_screen: Vector2 = get_viewport().get_mouse_position()
-					web_bridge.send_click_cell({
-						"cell_x": cell.x,
-						"cell_y": cell.y,
-						"tile_type": type_name,
-						"screen_pos": {"x": pos_screen.x, "y": pos_screen.y}
-					})
+					# 進入部署選單的暫時慢速，並把螢幕位置傳給 Web 彈出選單
+					_open_deploy_menu(cell, type_name, get_viewport().get_mouse_position())
 				else:
 					# 點擊其他（裝飾、障礙物）-> 僅取消選取
 					_deselect_unit()
@@ -409,6 +409,8 @@ func _is_valid_placement(cell: Vector2i) -> bool:
 	return false
 
 func _place_unit(cell: Vector2i) -> void:
+	if _actions_paused():
+		return  # 暫停時開始的拖曳已被取消；這裡再擋一次，不放置也不移位
 	var world_pos: Vector2 = game_map.grid_to_world(cell)
 	
 	if _moving_unit != null:
@@ -541,6 +543,8 @@ func _on_tower_clicked(tower: Node) -> void:
 	})
 
 func _on_upgrade_requested(tower: Node, cost: int) -> void:
+	if _actions_paused():
+		return
 	if battle_manager.spend_gold(cost):
 		tower.add_investment(cost)
 		tower.apply_upgrade()
@@ -553,8 +557,73 @@ func _deselect_unit() -> void:
 	_selected_unit = null
 	web_bridge.send_hide_upgrade_panel()
 
-func _on_resume_game() -> void:
-	Engine.time_scale = 1.0
+# ═══════════════════════════════════════════
+#  部署選單的暫時慢速與戰鬥速度
+#  倍率一律由 BattleManager 管理（Engine.time_scale 只在那裡寫入），這裡只轉接 Web 的命令
+# ═══════════════════════════════════════════
+## 玩家點了可部署的空格：進入暫時慢速，通知 Web 彈出選單。click_cell 帶這一場的 battle_id 與選單編號，
+## Web 關閉選單時帶回（resume_game），只有同一場、同一個選單的關閉命令能恢復速度。不在備戰或戰鬥中時不開選單
+func _open_deploy_menu(cell: Vector2i, type_name: String, pos_screen: Vector2) -> void:
+	var menu_id: int = battle_manager.open_deploy_menu()
+	if menu_id == 0:
+		return
+	web_bridge.send_click_cell({
+		"cell_x": cell.x,
+		"cell_y": cell.y,
+		"tile_type": type_name,
+		"screen_pos": {"x": pos_screen.x, "y": pos_screen.y},
+		"battle_id": battle_manager.battle_id,
+		"menu_id": menu_id,
+	})
+
+## Web 關閉部署選單（取消、點選單外或戰場留邊、部署完成）：resume_game {battle_id, menu_id}。
+## 過期的命令（別場、較早的選單、已經關閉、沒有帶識別）不改倍率
+func _on_web_close_deploy_menu(data: Dictionary) -> void:
+	var raw: Variant = data.get("menu_id")
+	var menu_id: int = 0
+	if raw is int or (raw is float and is_equal_approx(raw, floor(raw))):
+		menu_id = int(raw)
+	battle_manager.close_deploy_menu(str(data.get("battle_id", "")), menu_id)
+
+## Web 選擇戰鬥速度：set_game_speed {battle_id, speed}。只接受這一場、備戰或戰鬥中、數字 1 或 2（見 BattleManager.set_speed）。
+## 每個命令都回覆 game_speed_result（成功或原因），帶目前已確認的速度與實際倍率；battle_id 是命令帶來的值，Web 只採用目前這一場的
+func _on_web_set_game_speed(data: Dictionary) -> void:
+	var bid: String = str(data.get("battle_id", ""))
+	var reason: String = battle_manager.set_speed(bid, data.get("speed"))
+	var reply: Dictionary = {"battle_id": bid, "ok": reason == "", "speed": battle_manager.speed_pref, "time_scale": battle_manager.effective_time_scale()}
+	if reason != "":
+		reply["reason"] = reason
+	web_bridge.send_game_speed_result(reply)
+
+# ═══════════════════════════════════════════
+#  手動暫停／繼續
+#  狀態由 BattleManager 記錄（和速度、部署慢速分開），這裡轉接 Web 的命令，並依狀態停掉／恢復模擬用的節點
+# ═══════════════════════════════════════════
+## 模擬用的節點：敵人／武將／防禦塔／傷害數字（UnitsLayer 底下全部）、出兵計時（WaveManager 底下的遊戲計時器）、
+## 自動下一波的計時與戰鬥時間（BattleManager）。暫停時停掉它們的處理，Engine.time_scale 與 SceneTree.paused 都不動：
+## 橋接（WebBridge）、Main 的輸入與命令處理、HUD、測試快照照常運作
+func _on_pause_changed(paused: bool) -> void:
+	var mode: int = Node.PROCESS_MODE_DISABLED if paused else Node.PROCESS_MODE_INHERIT
+	for n in [units_layer, wave_manager, battle_manager]:
+		n.process_mode = mode
+	if paused and (_is_dragging or _pressed_unit != null):
+		# 進行中的拖曳（放置、移位）一律取消：暫停時不能部署或移位
+		_end_drag()
+
+## 手動暫停中：不能開戰、切自動、部署、移位、升級、拆塔、改目標（Web 也會停用按鈕；這裡是最後一道檢查）
+func _actions_paused() -> bool:
+	return battle_manager.manual_paused
+
+## Web 暫停或繼續：set_paused {battle_id, paused}。paused 是目標狀態（true 暫停、false 繼續），重送同一個值不改變；
+## 只接受這一場、備戰或戰鬥中、布林（見 BattleManager.set_paused）。每個命令都回覆 game_pause_result（成功或原因），
+## 帶目前已確認的暫停狀態、玩家選的速度與實際倍率；battle_id 是命令帶來的值，Web 只採用目前這一場的
+func _on_web_set_paused(data: Dictionary) -> void:
+	var bid: String = str(data.get("battle_id", ""))
+	var reason: String = battle_manager.set_paused(bid, data.get("paused"))
+	var reply: Dictionary = {"battle_id": bid, "ok": reason == "", "paused": battle_manager.manual_paused, "speed": battle_manager.speed_pref, "time_scale": battle_manager.effective_time_scale()}
+	if reason != "":
+		reply["reason"] = reason
+	web_bridge.send_game_pause_result(reply)
 
 func _on_web_move_unit() -> void:
 	if _selected_unit == null or not is_instance_valid(_selected_unit):
@@ -564,7 +633,7 @@ func _on_web_move_unit() -> void:
 func _on_web_upgrade_unit() -> void:
 	if _selected_unit == null or not is_instance_valid(_selected_unit):
 		return
-	if not (_selected_unit is Tower):
+	if not (_selected_unit is Tower) or _actions_paused():
 		return
 	var tower: Tower = _selected_unit as Tower
 	# 已達最高等級：升級費是 0，不能用 0 元再升一級（Round 18 前這裡沒有檢查，會免費升到 Lv6）
@@ -588,6 +657,8 @@ func _on_web_set_tower_target(data: Dictionary) -> void:
 		return
 	if battle_manager.game_state != BattleManager.GameState.PREP and battle_manager.game_state != BattleManager.GameState.BATTLE:
 		return
+	if _actions_paused():
+		return  # 暫停中不改目標（不回覆，面板維持 Godot 目前的模式）
 	if _selected_unit == null or not is_instance_valid(_selected_unit) or not (_selected_unit is Tower):
 		return
 	var tower: Tower = _selected_unit as Tower
@@ -621,6 +692,8 @@ func _on_web_sell_tower(data: Dictionary) -> void:
 		reason = "not_selected"
 	elif tower.sold:
 		reason = "already_sold"
+	elif _actions_paused():
+		reason = "paused"
 	elif battle_manager.game_state != BattleManager.GameState.PREP:
 		reason = "not_prep"
 	elif expected != tower.get_sell_refund():
@@ -645,6 +718,9 @@ func _on_web_sell_tower(data: Dictionary) -> void:
 
 # ── Web 遠端放置處理 ──────────────────────────────────────────
 func _on_web_place_hero(data: Dictionary) -> void:
+	if _actions_paused():
+		print("[Main] Web 部署失敗：手動暫停中")
+		return
 	var hid: String = str(data.get("hero_id", ""))
 	var cell: Vector2i = Vector2i(int(data.get("cell_x", 0)), int(data.get("cell_y", 0)))
 	
@@ -671,6 +747,9 @@ func _on_web_place_hero(data: Dictionary) -> void:
 		print("[Main] Web 部署失敗：位置無效或已重複部署")
 
 func _on_web_place_tower(data: Dictionary) -> void:
+	if _actions_paused():
+		print("[Main] Web 建造失敗：手動暫停中")
+		return
 	var type_key: String = str(data.get("tower_type", ""))
 	var cell: Vector2i = Vector2i(int(data.get("cell_x", 0)), int(data.get("cell_y", 0)))
 	
@@ -761,7 +840,9 @@ func _inject_test_payload() -> void:
 #  測試用唯讀快照（Web 送 debug_snapshot → 回傳目前狀態，不改變任何遊戲狀態）
 # ═══════════════════════════════════════════
 func _process(delta: float) -> void:
-	_game_time += delta
+	# 手動暫停時遊戲時間不前進（Main 本身不停：它要處理輸入與命令）
+	if not battle_manager.manual_paused:
+		_game_time += delta
 
 func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 依 enemy_id 統計仍在場上的敵人節點；另外列出每個敵人目前的血量（測試用來算每一擊的實際傷害）
@@ -772,6 +853,7 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 每個敵人的種類（測試用來對照防禦塔實際打中的是哪一種敵人）；每座防禦塔目前的目標優先
 	var enemy_kind: Dictionary = {}
 	var tower_targets: Dictionary = {}
+	var enemy_pos: Dictionary = {}
 	for child in units_layer.get_children():
 		if child is Enemy and not child.is_queued_for_deletion():
 			var eid: String = child.enemy_id
@@ -780,6 +862,7 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			if child.is_burning():
 				enemy_burn[str(child.get_instance_id())] = child.burn_state()
 			enemy_kind[str(child.get_instance_id())] = eid
+			enemy_pos[str(child.get_instance_id())] = [child.position.x, child.position.y]
 		elif child is Tower and not child.is_queued_for_deletion():
 			# screen：塔在畫面上的位置（和升級面板定位用的是同一套座標），測試用來點選塔
 			var sp: Vector2 = child.get_global_transform_with_canvas().origin
@@ -821,6 +904,10 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"hero_enemy_dist":   hero_enemy_dist,
 		"game_time":         _game_time,
 		"time_scale":        Engine.time_scale,
+		# 手動暫停：模擬用的節點是否已停掉、SceneTree 本身是否暫停（這個功能不用它）；每個敵人的位置（測試比對暫停前後）
+		"world_frozen":      units_layer.process_mode == Node.PROCESS_MODE_DISABLED,
+		"tree_paused":       get_tree().paused,
+		"enemy_pos":         enemy_pos,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)

@@ -26,6 +26,19 @@ func _check(name: String, ok: bool, detail: Variant = "") -> void:
 func _wait(sec: float) -> void:
 	await create_timer(sec).timeout
 
+## 不受 Engine.time_scale 影響的等待（R20）：錯誤的實作可能用倍率 0 假裝暫停，測試自己的等待不能因此停住
+func _wait_real(sec: float) -> void:
+	await create_timer(sec, true, false, true).timeout
+
+func _wait_until_real(cond: Callable, timeout: float) -> bool:
+	var t: float = 0.0
+	while t < timeout:
+		if cond.call():
+			return true
+		await create_timer(0.02, true, false, true).timeout
+		t += 0.02
+	return cond.call()
+
 ## 遊戲時間（秒）：Main 每一幀累加的 delta（受 Engine.time_scale 影響、暫停時不前進），和敵人灼燒、武將攻擊用的是同一個 delta。
 ## 計時的斷言一律用它，不用牆鐘：電腦忙碌時一幀可能變長，但遊戲時間和遊戲裡的計時器仍然一致。
 ## 在 await process_frame 之後讀取：這一幀的節點還沒處理，讀到的時間和血量都是上一幀處理完的狀態
@@ -91,6 +104,8 @@ func _enemies_cfg() -> Array:
 		{"enemy_id": "t_front", "name": "F", "hp": 1000.0, "speed": 0.0},
 		{"enemy_id": "t_tank", "name": "K", "hp": 5000.0, "speed": 0.0},
 		{"enemy_id": "t_weak", "name": "W", "hp": 300.0, "speed": 0.0},
+		# R19：不會移動、血量 90（弓兵塔 30 × 3 擊打倒；比較 1 倍與 2 倍的結算）
+		{"enemy_id": "r19_soft", "name": "S", "hp": 90.0, "speed": 0.0},
 	]
 
 func _payload(stage_id: String, waves: Array) -> Dictionary:
@@ -136,6 +151,8 @@ func _run() -> void:
 	root.add_child(pclock)
 	main = load("res://main/Main.tscn").instantiate()
 	root.add_child(main)
+	# 手動暫停時物理時鐘也不前進（和敵人的移動、灼燒一樣）
+	pclock.bm = main.battle_manager
 	# 非 Web 平台 Main 會在 0.5 秒後注入自己的測試 payload，先等它結束再開始
 	await _wait(1.0)
 	_bm().battle_ended.connect(func(r: Dictionary):
@@ -281,7 +298,7 @@ func _run() -> void:
 	# ── R10：就緒訊息帶協定版本（Web 用來判斷遊戲版本是否相符）──
 	var bridge: Node = main.web_bridge
 	var ready: Dictionary = bridge.ready_message() if bridge.has_method("ready_message") else {}
-	_check("R10-1 game_ready 帶協定版本 4（Round 18 起；Web 只在版本相同時送出關卡資料）", ready.get("type") == "game_ready" and ready.get("__godot_bridge") == true and typeof(ready.get("protocol")) == TYPE_INT and ready.get("protocol") == 4, ready)
+	_check("R10-1 game_ready 帶協定版本 6（加入手動暫停後的版本；Web 只在版本相同時送出關卡資料）", ready.get("type") == "game_ready" and ready.get("__godot_bridge") == true and typeof(ready.get("protocol")) == TYPE_INT and ready.get("protocol") == 6, ready)
 
 	# ── R12：趙雲「奇襲」（每場戰鬥首次有效普通攻擊 2 倍傷害）──
 	await _r12_first_strike_cases()
@@ -308,6 +325,13 @@ func _run() -> void:
 
 	# ── R18：備戰拆除防禦塔 ──
 	await _r18_sell_cases()
+
+	# ── R19：戰鬥速度 1×／2× 與部署選單的暫時慢速 ──
+	await _r19_speed_cases()
+
+	# ── R20：攻擊冷卻保留零頭與手動暫停 ──
+	await _r20_cooldown_cases()
+	await _r20_pause_cases()
 
 	# ── 輸出 ──
 	var failed: int = 0
@@ -1006,26 +1030,29 @@ func _r15_burn_cases() -> void:
 	var s9: Dictionary = _r15_split(r9.drops, 100.0, 20.0)
 	_check("R15-9 暫停期間遊戲時間、灼燒倒數與血量都不變（沒有跳傷）；恢復後繼續，3 跳在命中後遊戲時間 1、2、3 秒", hp_pause == hp_paused_end and g_pause == g_paused_end and next_pause == next_paused_end and next_pause > 0.0 and s9.bad.is_empty() and _r15_at(s9.ticks, [1.0, 2.0, 3.0], h9.dh), {"pause_wall": pause_wall, "game_during": g_paused_end - g_pause, "next_in": [next_pause, next_paused_end], "hp_during": hp_pause - hp_paused_end, "ticks": _r15_ts(s9.ticks)})
 
-	# R15-10：時間倍率：2 倍速時每個物理步進前進的時間是 1 倍速的 2 倍；子彈時間（0.1 倍）只有 0.1 倍。
-	# 灼燒照遊戲時間跳（兩種倍率下都在命中後遊戲時間 1、2、3 秒）；實際時間只記在細節
-	Engine.time_scale = 2.0
+	# R15-10：時間倍率：2 倍速時每個物理步進前進的時間是 1 倍速的 2 倍；部署選單的慢速（0.1 倍）只有 0.1 倍。
+	# 灼燒照遊戲時間跳（兩種倍率下都在命中後遊戲時間 1、2、3 秒）；實際時間只記在細節。
+	# 倍率只由 BattleManager 設定、新的一場回到 1 倍：開戰後用正式的速度命令（set_speed）切到 2 倍，
+	# 慢速用正式的打開／關閉部署選單（原本直接改 Engine.time_scale，載入新的一場後會被重設）
+	var e10: Node = await _r15_start(_r15_payload("r15_i", "r15-i1", [_r15_zhou()]))
+	var sp10: String = _bm().set_speed(_bm().battle_id, 2.0)
 	# 比例在命中之前量：命中之後才量會佔掉遊戲時間約 1 秒，第一跳發生在量測期間而沒有記到（Round 16 第一次反向驗證時出現過一次）
 	var rate2: Dictionary = await _physics_rate(0.5)
-	var e10: Node = await _r15_start(_r15_payload("r15_i", "r15-i1", [_r15_zhou()]))
 	var h10: Dictionary = await _r15_hit_then_leave(e10, _zhou())
 	var r10: Dictionary = await _r15_drops(e10, h10.t0, 3.6)
-	Engine.time_scale = 1.0
+	var ts10: float = Engine.time_scale
 	var s10: Dictionary = _r15_split(r10.drops, 100.0, 20.0)
 	var e10b: Node = await _r15_start(_r15_payload("r15_i", "r15-i2", [_r15_zhou()]))
+	var ts10b: float = Engine.time_scale
 	var h10b: Dictionary = await _r15_hit_then_leave(e10b, _zhou())
-	Engine.time_scale = 0.1
+	var menu10: int = _bm().open_deploy_menu()
 	var rate01: Dictionary = await _physics_rate(1.0)
-	Engine.time_scale = 1.0
+	_bm().close_deploy_menu(_bm().battle_id, menu10)
 	var r10b: Dictionary = await _r15_drops(e10b, h10b.t0, 3.6)
 	var s10b: Dictionary = _r15_split(r10b.drops, 100.0, 20.0)
 	var tps: float = float(Engine.physics_ticks_per_second)
 	var rate_ok: bool = rate2.steps > 0 and absf(rate2.per_step - 2.0 / tps) < 1e-9 and rate01.steps > 0 and absf(rate01.per_step - 0.1 / tps) < 1e-9
-	_check("R15-10 時間倍率：2 倍速時每個物理步進前進 2 ÷ 每秒步數、子彈時間 0.1 ÷ 每秒步數；兩種倍率下灼燒都在命中後遊戲時間 1、2、3 秒（照遊戲時間推進）", rate_ok and s10.bad.is_empty() and _r15_at(s10.ticks, [1.0, 2.0, 3.0], h10.dh) and s10b.bad.is_empty() and _r15_at(s10b.ticks, [1.0, 2.0, 3.0], h10b.dh), {"x2_rate": rate2, "x2": _r15_ts(s10.ticks), "x2_wall_ms": r10.wall_ms, "slow_rate": rate01, "slow": _r15_ts(s10b.ticks)})
+	_check("R15-10 時間倍率：2 倍速（速度命令）時每個物理步進前進 2 ÷ 每秒步數、部署慢速 0.1 ÷ 每秒步數；兩種倍率下灼燒都在命中後遊戲時間 1、2、3 秒（照遊戲時間推進）；下一場開始時回到 1 倍", sp10 == "" and ts10 == 2.0 and ts10b == 1.0 and menu10 > 0 and rate_ok and s10.bad.is_empty() and _r15_at(s10.ticks, [1.0, 2.0, 3.0], h10.dh) and s10b.bad.is_empty() and _r15_at(s10b.ticks, [1.0, 2.0, 3.0], h10b.dh), {"set_speed": sp10, "ts": [ts10, ts10b], "x2_rate": rate2, "x2": _r15_ts(s10.ticks), "x2_wall_ms": r10.wall_ms, "slow_rate": rate01, "slow": _r15_ts(s10b.ticks)})
 
 	# R15-11：沒有火攻的武將與不認得的技能 id 不附加灼燒（帶了灼燒參數也一樣）
 	var e11: Node = await _r15_start(_r15_payload("r15_j", "r15-j1", [_r15_zhou(100.0, {"id": "unknown_skill", "burn_ratio": 0.2, "burn_ticks": 3, "burn_interval": 1.0})]))
@@ -1103,17 +1130,23 @@ func _r16_hits(e: Node, sec: float) -> Dictionary:
 		last = e.current_hp
 	return {"hits": hits, "dmax": dmax}
 
-## 相鄰兩擊的間隔都在 [攻擊間隔, 攻擊間隔 + 最長的一幀]：每次攻擊後計時器設回攻擊間隔，攻擊只會發生在某一幀，
-## 所以實際間隔最多多出一幀（容差只來自實際的幀長；0.0005 秒吸收浮點誤差）
+## 累積時程：冷卻保留越過零點的零頭，第 k 擊排在「第一擊的預定時間＋k × 攻擊間隔」，實際命中落在那之後的第一幀。
+## 所以每一擊的時間減去 k × 攻擊間隔的差距都落在同一個一幀寬的範圍內（最大減最小 ≤ 最長的一幀），不會逐擊變大；
+## 相鄰兩擊的間隔因此可能比攻擊間隔短（最多一幀），但一幀不會打兩下。容差只來自實際的幀長；0.0005 秒吸收浮點誤差。
+## 舊的判定（每一擊都不得短於攻擊間隔）只適用於每擊設回完整冷卻的舊寫法，已不適用
 func _r16_interval_ok(r: Dictionary, expect: float) -> bool:
 	var h: Array = r.hits
 	if h.size() < 3:
 		return false
-	for i in range(1, h.size()):
-		var d: float = float(h[i]) - float(h[i - 1])
-		if d < expect - 0.0005 or d > expect + float(r.dmax) + 0.0005:
+	var lo: float = INF
+	var hi: float = -INF
+	for i in range(h.size()):
+		if i > 0 and float(h[i]) - float(h[i - 1]) < expect - float(r.dmax) - 0.0005:
 			return false
-	return true
+		var off: float = float(h[i]) - float(h[0]) - float(i) * expect
+		lo = minf(lo, off)
+		hi = maxf(hi, off)
+	return hi - lo <= float(r.dmax) + 0.0005
 
 func _r16_attack_speed_cases() -> void:
 	# R16-1：Lv1 放置：攻擊間隔＝基礎 0.5 秒（成長 0.2 在 Lv1 不作用）
@@ -1127,7 +1160,7 @@ func _r16_attack_speed_cases() -> void:
 	_r14_put(e, _guan(), 1.0)
 	await _wait(0.6)
 	var r1: Dictionary = await _r16_hits(e, 2.0)
-	_check("R16-1 Lv1：攻擊間隔 0.5 秒；實際每一擊的間隔在 0.5 秒到 0.5 秒＋一幀之間", is_equal_approx(_guan().attack_speed, 0.5) and _r16_interval_ok(r1, 0.5), {"attack_speed": _guan().attack_speed, "hits": r1.hits, "dmax": r1.dmax})
+	_check("R16-1 Lv1：攻擊間隔 0.5 秒；實際每一擊都在累積時程（第一擊＋k × 0.5 秒）的一幀之內", is_equal_approx(_guan().attack_speed, 0.5) and _r16_interval_ok(r1, 0.5), {"attack_speed": _guan().attack_speed, "hits": r1.hits, "dmax": r1.dmax})
 
 	# R16-2：戰鬥中升到 Lv2（update_team）：0.5 × (1 − 0.2) = 0.4
 	main._on_payload_received({"type": "update_team", "team_list": [_r16_guan(2)]})
@@ -1304,10 +1337,10 @@ func _r17_tower_target_cases() -> void:
 	var reply2: Dictionary = rec.sent_tower_targets.back() if not rec.sent_tower_targets.is_empty() else {}
 	var tank_hp0: float = es.t_tank.current_hp
 	var hit_b: Dictionary = await _r17_wait_hit(es)
-	# 攻擊只會發生在某一幀：間隔在 0.8 秒到 0.8 秒＋看到第二擊那一幀的長度之間
+	# 攻擊只會發生在某一幀：間隔在 0.8 秒−看到第一擊那一幀的長度（冷卻保留零頭）到 0.8 秒＋看到第二擊那一幀的長度之間
 	var itv: float = float(hit_b.t) - float(hit_a.t)
 	var r2: Dictionary = await _r17_hits(es, 1.7)
-	_check("R17-2 切換到「血量最多」：Godot 回傳 {battle_id, tower_uid, target_mode: strongest}；切換不重置冷卻（下一擊間隔在 0.8 秒到 0.8 秒＋一幀）、不額外攻擊；之後只打 tank；金幣、攻擊力、射程、等級不變", reply2.get("battle_id") == "r17-a1" and reply2.get("tower_uid") == tw.tower_uid and reply2.get("target_mode") == "strongest" and tw.target_mode == "strongest" and float(hit_a.t) > 0.0 and float(hit_b.t) > 0.0 and itv >= 0.8 - 0.0005 and itv <= 0.8 + float(hit_b.dt) + 0.0005 and es.t_tank.current_hp < tank_hp0 and _r17_only(r2, "t_tank") and _bm().battle_gold == gold0 and is_equal_approx(tw.atk, atk0) and is_equal_approx(tw.range_tiles, range0) and tw.tower_level == 1, {"reply": reply2, "interval": itv, "frame": hit_b.dt, "dmg": r2.dmg})
+	_check("R17-2 切換到「血量最多」：Godot 回傳 {battle_id, tower_uid, target_mode: strongest}；切換不重置冷卻（下一擊間隔在 0.8 秒的前後一幀內）、不額外攻擊；之後只打 tank；金幣、攻擊力、射程、等級不變", reply2.get("battle_id") == "r17-a1" and reply2.get("tower_uid") == tw.tower_uid and reply2.get("target_mode") == "strongest" and tw.target_mode == "strongest" and float(hit_a.t) > 0.0 and float(hit_b.t) > 0.0 and itv >= 0.8 - float(hit_a.dt) - 0.0005 and itv <= 0.8 + float(hit_b.dt) + 0.0005 and es.t_tank.current_hp < tank_hp0 and _r17_only(r2, "t_tank") and _bm().battle_gold == gold0 and is_equal_approx(tw.atk, atk0) and is_equal_approx(tw.range_tiles, range0) and tw.tower_level == 1, {"reply": reply2, "interval": itv, "frame": hit_b.dt, "dmg": r2.dmg})
 
 	# R17-3：「血量最少」只打 weak
 	_r17_cmd(tw, "weakest")
@@ -1690,6 +1723,1149 @@ func _r18_sell_cases() -> void:
 
 	rec.payload_received.disconnect(main._on_payload_received)
 	rec.upgrade_unit_requested.disconnect(main._on_web_upgrade_unit)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── R19：戰鬥速度 1×／2× 與部署選單的暫時慢速 ──
+# 倍率只由 BattleManager 寫入：實際倍率＝部署選單開著時 0.1，否則是玩家選的速度（1 或 2）；新的一場與結算時回到 1。
+# 命令一律經過真實的 JSON 路徑（_on_js_message，數字是 float）；打開部署選單用 Main._open_deploy_menu（點空格時呼叫的同一個函式，
+# 實際的點擊由瀏覽器 r19-web.js 驗證）。比例用物理步進與遊戲時間量，不用牆鐘
+const R19_NO_SPEED: String = "__no_speed__"
+
+func _r19_js(rec: Node, d: Dictionary) -> void:
+	d["__godot_bridge"] = true
+	rec._on_js_message([JSON.stringify(d)])
+
+## 送出速度命令，回傳 Godot 的回覆（沒有回覆時是空字典）；speed 是 R19_NO_SPEED 時不帶 speed 欄位
+func _r19_speed(rec: Node, speed: Variant, bid: String = "") -> Dictionary:
+	var d: Dictionary = {"type": "set_game_speed", "battle_id": bid if bid != "" else _bm().battle_id}
+	if not (speed is String and speed == R19_NO_SPEED):
+		d["speed"] = speed
+	var n: int = rec.sent_speeds.size()
+	_r19_js(rec, d)
+	return rec.sent_speeds.back() if rec.sent_speeds.size() > n else {}
+
+## 點了 (c,4) 的建築位：打開部署選單，回傳 Web 收到的 click_cell（沒有打開時是空字典）
+func _r19_open(rec: Node, c: int = 2) -> Dictionary:
+	var n: int = rec.sent_clicks.size()
+	main._open_deploy_menu(Vector2i(c, 4), "build", Vector2(10.0, 10.0))
+	return rec.sent_clicks.back() if rec.sent_clicks.size() > n else {}
+
+## Web 關閉部署選單（resume_game）：預設帶這個選單的 battle_id 與編號，可以指定別的值模擬過期命令
+func _r19_close(rec: Node, menu: Dictionary, bid: Variant = null, mid: Variant = null) -> void:
+	_r19_js(rec, {"type": "resume_game", "battle_id": bid if bid != null else menu.get("battle_id", ""), "menu_id": mid if mid != null else menu.get("menu_id")})
+
+func _r19_state() -> Dictionary:
+	return {"ts": Engine.time_scale, "pref": _bm().speed_pref, "menu": _bm().deploy_menu_id, "bid": _bm().battle_id, "state": _bm().game_state}
+
+func _r19_last_stats(rec: Node) -> Dictionary:
+	return rec.sent_stats.back() if not rec.sent_stats.is_empty() else {}
+
+func _r19_payload(battle_id: String, waves: Array = [[_grp("a_slow", 3, 2.0)], [_grp("a_slow", 3, 2.0)]]) -> Dictionary:
+	return _with_id(_payload("r19_a", waves), battle_id)
+
+## 等不受倍率影響的 sec 秒，回傳這個敵人每個物理步進前進的距離、每秒遊戲時間前進的距離（直線路段）
+func _r19_move(e: Node, sec: float) -> Dictionary:
+	var tm: SceneTreeTimer = create_timer(sec, true, false, true)
+	var x0: float = e.global_position.x
+	var g0: float = _pt()
+	var f0: int = Engine.get_physics_frames()
+	while tm.time_left > 0.0 and is_instance_valid(e):
+		await process_frame
+	if not is_instance_valid(e):
+		return {"steps": 0, "per_step": -1.0, "per_sec": -1.0}
+	var steps: int = Engine.get_physics_frames() - f0
+	var dx: float = e.global_position.x - x0
+	var adv: float = _pt() - g0
+	return {"steps": steps, "dx": dx, "per_step": dx / float(steps) if steps > 0 else -1.0, "per_sec": dx / adv if adv > 0.0 else -1.0}
+
+## sec 秒（遊戲時間）內這些敵人每一次受傷的遊戲時間與傷害、期間最長的一幀（遊戲時間）、經過的物理步進
+func _r19_hits(es: Array, sec: float) -> Dictionary:
+	var last: Dictionary = {}
+	for e in es:
+		last[e.get_instance_id()] = e.current_hp
+	var hits: Array = []
+	var t0: float = _gt()
+	var prev: float = t0
+	var dmax: float = 0.0
+	var f0: int = Engine.get_physics_frames()
+	var wall_end: int = Time.get_ticks_msec() + int(sec * 4000.0) + 10000
+	while _gt() < t0 + sec and Time.get_ticks_msec() < wall_end:
+		await process_frame
+		dmax = maxf(dmax, _gt() - prev)
+		prev = _gt()
+		for e in es:
+			if not is_instance_valid(e):
+				continue
+			var id: int = e.get_instance_id()
+			if e.current_hp < float(last[id]) - 0.001:
+				hits.append({"t": snappedf(_gt() - t0, 0.0001), "dmg": snappedf(float(last[id]) - e.current_hp, 0.01)})
+			last[id] = e.current_hp
+	return {"hits": hits, "dmax": dmax, "steps": Engine.get_physics_frames() - f0}
+
+## 累積時程（遊戲時間；和 _r16_interval_ok 相同的判定）：每一擊減去 k × 攻擊間隔的差距都在最長的一幀之內
+func _r19_interval_ok(r: Dictionary, expect: float) -> bool:
+	var ts: Array = []
+	for h in r.hits:
+		ts.append(float(h.t))
+	return _r16_interval_ok({"hits": ts, "dmax": r.dmax}, expect)
+
+## 出兵與自動下一波的時間：載入 battle_id 這一場（兩波，每波 3 隻 c_fast、間隔 1 秒）、切到 speed 倍、開自動，
+## 記錄每一次出兵、清波、開始下一波當下的遊戲時間與物理步進，直到結算；dmax 是期間最長的一幀（遊戲時間）
+func _r19_spawn_timing(rec: Node, battle_id: String, speed: float) -> Dictionary:
+	_load(_with_id(_payload("r19_s", [[_grp("c_fast", 3, 1.0)], [_grp("c_fast", 3, 1.0)]]), battle_id))
+	_r19_speed(rec, speed)
+	var ev: Dictionary = {"spawn": [], "clear": [], "wave": []}
+	var on_spawn := func(_e: Node) -> void:
+		ev.spawn.append([_gt(), Engine.get_physics_frames()])
+	var on_clear := func(_n: int) -> void:
+		ev.clear.append([_gt(), Engine.get_physics_frames()])
+	var on_wave := func(cur: int, _t: int) -> void:
+		ev.wave.append([_gt(), Engine.get_physics_frames(), cur, Engine.time_scale])
+	_wm().enemy_spawned.connect(on_spawn)
+	_wm().wave_cleared.connect(on_clear)
+	_bm().wave_changed.connect(on_wave)
+	_bm().toggle_auto_mode()
+	var prev: float = _gt()
+	var dmax: float = 0.0
+	var wall_end: int = Time.get_ticks_msec() + 30000
+	while _bm().game_state != BattleManager.GameState.RESULT and Time.get_ticks_msec() < wall_end:
+		await process_frame
+		dmax = maxf(dmax, _gt() - prev)
+		prev = _gt()
+	_wm().enemy_spawned.disconnect(on_spawn)
+	_wm().wave_cleared.disconnect(on_clear)
+	_bm().wave_changed.disconnect(on_wave)
+	var gaps: Array = []
+	var gap_steps: Array = []
+	for i in [1, 2, 4, 5]:
+		if i < ev.spawn.size():
+			gaps.append(float(ev.spawn[i][0]) - float(ev.spawn[i - 1][0]))
+			gap_steps.append(int(ev.spawn[i][1]) - int(ev.spawn[i - 1][1]))
+	var wait: float = -1.0
+	var wait_steps: int = -1
+	var w2: Array = ev.wave.filter(func(w): return int(w[2]) == 2)
+	if not ev.clear.is_empty() and not w2.is_empty():
+		wait = float(w2[0][0]) - float(ev.clear[0][0])
+		wait_steps = int(w2[0][1]) - int(ev.clear[0][1])
+	return {"gaps": gaps, "gap_steps": gap_steps, "wait": wait, "wait_steps": wait_steps, "dmax": dmax, "spawns": ev.spawn.size(), "waves": ev.wave, "result": last_result.get("battle_id") == battle_id}
+
+## 1 倍與 2 倍的同一個固定場景：備戰中蓋弓兵（投入 50）並拆除、再蓋一座；開戰後兩個不會移動、血量 90 的敵人在射程內，
+## 弓兵每擊 30 打倒兩個敵人後結算。回傳每一擊的傷害、結算與金幣。
+## 每一擊用血量下降記錄（基準是最大血量，開始記錄前的那一擊也算到）；被打倒的那一擊敵人會立刻移除，記成倒下前剩下的血量
+func _r19_same_game(rec: Node, battle_id: String, speed: float) -> Dictionary:
+	_load(_with_id(_payload("r19_g", [[_grp("r19_soft", 2, 0.3)]]), battle_id))
+	_r19_speed(rec, speed)
+	var g0: int = _bm().battle_gold
+	var t1: Node = _r18_build("archer", Vector2i(1, 4))
+	var p1: Dictionary = _r18_panel(rec, t1)
+	var sell: Dictionary = _r18_sell(rec, t1.tower_uid, float(p1.get("sell_refund", -1)))
+	_r18_build("archer", Vector2i(1, 4))
+	main._deselect_unit()
+	var ended0: int = battle_ended_count
+	_bm().player_start_battle()
+	var found: Array = [[]]
+	await _wait_until(func():
+		found[0] = []
+		for c in main.units_layer.get_children():
+			if c is Enemy and not c.is_queued_for_deletion():
+				found[0].append(c)
+		return found[0].size() == 2, 5.0)
+	var track: Array = []
+	for e in found[0]:
+		track.append({"node": e, "last": float(e.max_hp), "done": false})
+	var dmgs: Array = []
+	var f0: int = Engine.get_physics_frames()
+	var t0: float = _gt()
+	var wall_end: int = Time.get_ticks_msec() + 30000
+	while _bm().game_state != BattleManager.GameState.RESULT and _gt() < t0 + 8.0 and Time.get_ticks_msec() < wall_end:
+		await process_frame
+		for t in track:
+			if t.done:
+				continue
+			if not is_instance_valid(t.node) or t.node.is_dead():
+				dmgs.append(snappedf(float(t.last), 0.01))
+				t.done = true
+				continue
+			var hp: float = t.node.current_hp
+			if hp < float(t.last) - 0.001:
+				dmgs.append(snappedf(float(t.last) - hp, 0.01))
+				t.last = hp
+	var steps: int = Engine.get_physics_frames() - f0
+	var loots: Array = last_result.get("loots", [])
+	return {
+		"speed": speed, "sell": sell.get("refund"), "dmgs": dmgs, "kills": last_result.get("kills"),
+		"stars": last_result.get("stars_earned"), "points": int(loots[0].get("count", -1)) if not loots.is_empty() else -1,
+		"time": last_result.get("time_seconds"), "gold": _bm().battle_gold - g0, "ended": battle_ended_count - ended0,
+		"same_battle": last_result.get("battle_id") == battle_id, "steps": steps,
+	}
+
+func _r19_speed_cases() -> void:
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+	rec.upgrade_unit_requested.connect(main._on_web_upgrade_unit)
+
+	# R19-1：切關：A 開著部署選單（0.1）時載入 B：B 是 1 倍、沒有開著的選單；
+	# 2 倍速時同一關重來（新的 battle_id）回到 1 倍；戰鬥中 2 倍並開著選單時載入新的一場也一樣
+	_load(_r19_payload("r19-a1"))
+	var a_menu: Dictionary = _r19_open(rec)
+	var in_menu: Dictionary = _r19_state()
+	var slow_stats: Dictionary = _r19_last_stats(rec)
+	_load(_r19_payload("r19-b1"))
+	var after_b: Dictionary = _r19_state()
+	var b_stats: Dictionary = _r19_last_stats(rec)
+	_r19_speed(rec, 2.0)
+	var at2: float = Engine.time_scale
+	_load(_r19_payload("r19-b2"))
+	var after_restart: Dictionary = _r19_state()
+	_r19_speed(rec, 2.0)
+	_bm().player_start_battle()
+	_r19_open(rec)
+	var battle_menu: Dictionary = _r19_state()
+	_load(_r19_payload("r19-b3"))
+	var after_battle: Dictionary = _r19_state()
+	var ok1: bool = a_menu.get("battle_id") == "r19-a1" and int(a_menu.get("menu_id", 0)) > 0 and in_menu.ts == 0.1 and in_menu.menu == int(a_menu.get("menu_id", -1)) \
+		and slow_stats.get("battle_id") == "r19-a1" and slow_stats.get("deploy_slow") == true and slow_stats.get("time_scale") == 0.1 and int(slow_stats.get("speed", -1)) == 1 \
+		and after_b.ts == 1.0 and after_b.pref == 1 and after_b.menu == 0 and after_b.bid == "r19-b1" \
+		and b_stats.get("battle_id") == "r19-b1" and int(b_stats.get("speed", -1)) == 1 and b_stats.get("time_scale") == 1.0 and b_stats.get("deploy_slow") == false \
+		and at2 == 2.0 and after_restart.ts == 1.0 and after_restart.pref == 1 \
+		and battle_menu.ts == 0.1 and battle_menu.pref == 2 and battle_menu.state == BattleManager.GameState.BATTLE and after_battle.ts == 1.0 and after_battle.pref == 1 and after_battle.menu == 0
+	_check("R19-1 部署慢速與速度不跨場：A 開部署選單（0.1，click_cell 帶 battle_id 與選單編號）→ 載入 B：倍率 1、選擇 1、沒有開著的選單，B 的 stats 也是 1；2 倍時同一關重來回到 1；戰鬥中 2 倍並開著選單時載入新的一場也回到 1", ok1, {"click": a_menu, "in_menu": in_menu, "slow_stats": slow_stats, "after_b": after_b, "b_stats": b_stats, "at2": at2, "restart": after_restart, "battle_menu": battle_menu, "after_battle": after_battle})
+
+	# R19-2：過期的關閉命令不改新場次：C1 開選單後切到 C2（2 倍）並開新選單；C1 的關閉命令、C2 帶較早的選單編號、沒有帶選單編號、
+	# 選單編號是字串、完全沒有識別（舊版網頁的命令）都不解除 C2 的慢速；C2 自己的關閉命令才恢復 2 倍；
+	# 再送一次同一個關閉命令、再送 C1 的舊命令都不改變（不會被改回 1 倍）
+	_load(_r19_payload("r19-c1"))
+	var c1m: Dictionary = _r19_open(rec)
+	_load(_r19_payload("r19-c2"))
+	_r19_speed(rec, 2.0)
+	var c2m: Dictionary = _r19_open(rec)
+	var seen: Array = []
+	_r19_close(rec, c1m)
+	seen.append(Engine.time_scale)
+	_r19_close(rec, c2m, null, c1m.get("menu_id"))
+	seen.append(Engine.time_scale)
+	_r19_js(rec, {"type": "resume_game", "battle_id": "r19-c2"})
+	seen.append(Engine.time_scale)
+	_r19_js(rec, {"type": "resume_game", "battle_id": "r19-c2", "menu_id": str(c2m.get("menu_id"))})
+	seen.append(Engine.time_scale)
+	_r19_js(rec, {"type": "resume_game"})
+	seen.append(Engine.time_scale)
+	var still: Dictionary = _r19_state()
+	_r19_close(rec, c2m)
+	var restored: Dictionary = _r19_state()
+	_r19_close(rec, c2m)
+	_r19_close(rec, c1m)
+	var after_dupe: Dictionary = _r19_state()
+	_check("R19-2 過期的關閉命令不改新場次：上一場的關閉、較早的選單編號、沒有編號、編號是字串、沒有任何識別都不解除慢速（仍是 0.1、選單仍開著）；這個選單自己的關閉才恢復 2 倍；重複的關閉與上一場的舊命令之後也不會改回 1 倍",
+		seen == [0.1, 0.1, 0.1, 0.1, 0.1] and still.menu == int(c2m.get("menu_id", -1)) and int(c2m.get("menu_id", 0)) > int(c1m.get("menu_id", 0)) and restored.ts == 2.0 and restored.pref == 2 and restored.menu == 0 and after_dupe.ts == 2.0 and after_dupe.pref == 2 and after_dupe.bid == "r19-c2",
+		{"seen": seen, "menus": [c1m.get("menu_id"), c2m.get("menu_id")], "still": still, "restored": restored, "after_dupe": after_dupe})
+
+	# R19-3：同一場先後兩個部署選單（第一個還沒關閉就打開第二個）：第一個的關閉命令不解除第二個的慢速；第二個關閉後恢復 2 倍
+	_load(_r19_payload("r19-d1"))
+	_r19_speed(rec, 2.0)
+	var d1: Dictionary = _r19_open(rec, 2)
+	var d2: Dictionary = _r19_open(rec, 3)
+	_r19_close(rec, d1)
+	var mid3: Dictionary = _r19_state()
+	_r19_close(rec, d2)
+	var end3: Dictionary = _r19_state()
+	_check("R19-3 同一場兩個部署選單重疊：舊選單的關閉命令不解除新選單的慢速（仍 0.1、開著的是新選單）；新選單關閉後恢復 2 倍",
+		mid3.ts == 0.1 and mid3.menu == int(d2.get("menu_id", -1)) and int(d2.get("menu_id", 0)) > int(d1.get("menu_id", 0)) and end3.ts == 2.0 and end3.menu == 0,
+		{"menus": [d1.get("menu_id"), d2.get("menu_id")], "mid": mid3, "end": end3})
+
+	# R19-4：玩家選擇與部署慢速分開記錄：2 倍 → 開選單固定 0.1（不是 0.2）→ 取消回 2 倍；選單開著時選 1 倍：回覆成功、已確認的選擇 1、
+	# 實際倍率仍 0.1 → 關閉後 1 倍；選單開著時選回 2 倍 → 關閉後 2 倍
+	_load(_r19_payload("r19-e1"))
+	var r4a: Dictionary = _r19_speed(rec, 2.0)
+	var e1m: Dictionary = _r19_open(rec)
+	var e_menu: Dictionary = _r19_state()
+	var e_stats: Dictionary = _r19_last_stats(rec)
+	_r19_close(rec, e1m)
+	var e_back: Dictionary = _r19_state()
+	var e2m: Dictionary = _r19_open(rec)
+	var r4b: Dictionary = _r19_speed(rec, 1.0)
+	var e_mid: Dictionary = _r19_state()
+	_r19_close(rec, e2m)
+	var e_to1: Dictionary = _r19_state()
+	var e3m: Dictionary = _r19_open(rec)
+	var r4c: Dictionary = _r19_speed(rec, 2)
+	var e_mid2: Dictionary = _r19_state()
+	_r19_close(rec, e3m)
+	var e_to2: Dictionary = _r19_state()
+	_check("R19-4 選擇與部署慢速分開：2 倍時開選單是 0.1（不是 0.2），取消後回 2；選單中選 1 倍：回覆 ok、speed 1、time_scale 0.1，關閉後 1；選單中選回 2 倍：關閉後 2",
+		r4a.get("ok") == true and int(r4a.get("speed", -1)) == 2 and r4a.get("time_scale") == 2.0 and e_menu.ts == 0.1 and e_menu.pref == 2 and e_stats.get("time_scale") == 0.1 and int(e_stats.get("speed", -1)) == 2 \
+		and e_back.ts == 2.0 and r4b.get("ok") == true and int(r4b.get("speed", -1)) == 1 and r4b.get("time_scale") == 0.1 and e_mid.ts == 0.1 and e_mid.pref == 1 and e_to1.ts == 1.0 \
+		and r4c.get("ok") == true and e_mid2.ts == 0.1 and e_to2.ts == 2.0 and e_to2.pref == 2,
+		{"r4a": r4a, "menu": e_menu, "stats": e_stats, "back": e_back, "r4b": r4b, "mid": e_mid, "to1": e_to1, "r4c": r4c, "to2": e_to2})
+
+	# R19-5：同一場保留 2 倍：更新隊伍、蓋塔與升級、第 1 波清空回到備戰、自動模式的第 2、3 波開始當下都還是 2；
+	# 第 3 波開著部署選單時結算：結算後倍率 1、選擇 1、沒有開著的選單（慢速與加速都不延續到結算畫面）
+	_load(_with_id(_payload("r19_f", [[_grp("c_fast", 1, 0.1)], [_grp("c_fast", 1, 0.1)], [_grp("c_fast", 1, 0.1)]]), "r19-f1"))
+	_r19_speed(rec, 2.0)
+	main._on_payload_received({"type": "update_team", "team_list": []})
+	var tw5: Node = _r18_build("archer", Vector2i(2, 4))
+	_r18_panel(rec, tw5)
+	_r18_upgrade(rec)
+	main._deselect_unit()
+	var keep1: Dictionary = _r19_state()
+	var lv5: int = tw5.tower_level
+	var at_wave: Dictionary = {}
+	var menu5: Array = [{}]
+	var on_wave5 := func(cur: int, _t: int) -> void:
+		at_wave[cur] = [_bm().speed_pref, Engine.time_scale, _bm().game_state]
+		if cur == 3:
+			menu5[0] = _r19_open(rec)
+	_bm().wave_changed.connect(on_wave5)
+	_bm().player_start_battle()
+	await _wait_until(func(): return _bm().game_state == BattleManager.GameState.PREP and _bm().current_wave == 1, 10.0)
+	var keep2: Dictionary = _r19_state()
+	_bm().toggle_auto_mode()
+	await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 30.0)
+	_bm().wave_changed.disconnect(on_wave5)
+	var at_result: Dictionary = _r19_state()
+	_check("R19-5 同一場保留 2 倍：更新隊伍、蓋塔並升到 Lv2 後仍 2；第 1 波清空回到備戰仍 2；自動模式第 2、3 波開始當下仍 2；第 3 波開著部署選單（0.1）時結算：結算後倍率 1、選擇 1、沒有開著的選單",
+		keep1.ts == 2.0 and keep1.pref == 2 and lv5 == 2 and keep2.ts == 2.0 and keep2.pref == 2 and at_wave.get(1, []) == [2, 2.0, 2] and at_wave.get(2, []) == [2, 2.0, 2] and at_wave.get(3, []) == [2, 2.0, 2] \
+		and int(menu5[0].get("menu_id", 0)) > 0 and at_result.state == BattleManager.GameState.RESULT and at_result.ts == 1.0 and at_result.pref == 1 and at_result.menu == 0,
+		{"keep1": keep1, "level": lv5, "keep2": keep2, "at_wave": at_wave, "menu": menu5[0], "at_result": at_result})
+
+	# R19-6：拒絕且不改任何狀態：結算後（RESULT）的速度命令 → not_active、打開部署選單不開（沒有 click_cell、倍率仍 1）；
+	# 新的一場選 2 倍後：別場的 battle_id → stale_battle；字串 "2"、3、0、-1、1.5、true、null、沒有帶 → invalid_speed。
+	# 每個命令都有回覆；battle_id、倍率、選擇都不變
+	var r6_result: Dictionary = _r19_speed(rec, 2.0)
+	var clicks6: int = rec.sent_clicks.size()
+	main._open_deploy_menu(Vector2i(2, 4), "build", Vector2(10.0, 10.0))
+	var result_menu: bool = rec.sent_clicks.size() == clicks6 and Engine.time_scale == 1.0
+	_load(_r19_payload("r19-g1"))
+	_r19_speed(rec, 2.0)
+	var before6: Dictionary = _r19_state()
+	var rej: Dictionary = {}
+	rej["stale"] = _r19_speed(rec, 1.0, "r19-f1")
+	rej["string"] = _r19_speed(rec, "2")
+	rej["three"] = _r19_speed(rec, 3)
+	rej["zero"] = _r19_speed(rec, 0)
+	rej["negative"] = _r19_speed(rec, -1)
+	rej["fraction"] = _r19_speed(rec, 1.5)
+	rej["bool"] = _r19_speed(rec, true)
+	rej["null"] = _r19_speed(rec, null)
+	rej["missing"] = _r19_speed(rec, R19_NO_SPEED)
+	var after6: Dictionary = _r19_state()
+	var reasons6: Dictionary = {}
+	var all_rej: bool = true
+	for k in rej:
+		reasons6[k] = [rej[k].get("ok"), rej[k].get("reason")]
+		all_rej = all_rej and rej[k].get("ok") == false and rej[k].get("reason") == ("stale_battle" if k == "stale" else "invalid_speed")
+	_check("R19-6 拒絕且不改狀態：結算後 not_active、也不開部署選單；別場 stale_battle；字串、3、0、-1、1.5、true、null、沒有帶都是 invalid_speed；battle_id、倍率 2、選擇 2 都不變",
+		r6_result.get("ok") == false and r6_result.get("reason") == "not_active" and result_menu and all_rej and before6 == after6 and after6.ts == 2.0 and after6.pref == 2 and after6.bid == "r19-g1",
+		{"result": r6_result, "result_menu": result_menu, "reasons": reasons6, "before": before6, "after": after6})
+
+	# R19-7：暫停（SceneTree.paused）中選速度：回覆成功、選擇改變，但暫停不被解除；暫停期間遊戲時間不前進
+	paused = true
+	var g7: float = _gt()
+	var r7: Dictionary = _r19_speed(rec, 1.0)
+	await _wait(0.3)
+	var still_paused: bool = paused
+	var g7b: float = _gt()
+	paused = false
+	_check("R19-7 暫停中選 1 倍：回覆 ok、選擇 1，暫停沒有被解除、遊戲時間不前進（速度命令只改倍率）",
+		r7.get("ok") == true and int(r7.get("speed", -1)) == 1 and still_paused and g7 == g7b, {"reply": r7, "paused": still_paused, "game_time": [g7, g7b]})
+
+	# R19-8：每個物理步進前進的遊戲時間＝實際倍率 ÷ 每秒步數：1 倍、2 倍、部署選單 0.1（選擇 2 倍時也是 0.1）、關閉後回到 2 倍；
+	# 同一個敵人（速度 60 px/秒、直線路段）每個物理步進前進的距離也照同樣的比例，換算成每秒遊戲時間都是 60 px
+	_load(_with_id(_payload("r19_m", [[_grp("w_grunt", 1, 0.1)]]), "r19-m1"))
+	_bm().player_start_battle()
+	var mv: Node = await _r14_enemy()
+	var rt: Dictionary = {}
+	var mvs: Dictionary = {}
+	if mv != null:
+		rt["x1"] = await _physics_rate(0.3)
+		mvs["x1"] = await _r19_move(mv, 0.4)
+		_r19_speed(rec, 2.0)
+		rt["x2"] = await _physics_rate(0.3)
+		mvs["x2"] = await _r19_move(mv, 0.4)
+		var m8: Dictionary = _r19_open(rec)
+		rt["slow"] = await _physics_rate(0.5)
+		mvs["slow"] = await _r19_move(mv, 0.5)
+		_r19_close(rec, m8)
+		rt["back"] = await _physics_rate(0.3)
+	var tps: float = float(Engine.physics_ticks_per_second)
+	var k8: Dictionary = {"x1": 1.0, "x2": 2.0, "slow": 0.1, "back": 2.0}
+	var ok8: bool = mv != null
+	for k in k8:
+		ok8 = ok8 and rt.has(k) and int(rt[k].steps) > 0 and absf(float(rt[k].per_step) - float(k8[k]) / tps) < 1e-9
+	for k in ["x1", "x2", "slow"]:
+		ok8 = ok8 and mvs.has(k) and int(mvs[k].steps) > 0 and absf(float(mvs[k].per_step) - 60.0 * float(k8[k]) / tps) < 1e-3 and absf(float(mvs[k].per_sec) - 60.0) < 0.05
+	_check("R19-8 實際推進照倍率：每個物理步進前進 1、2、0.1（2 倍時開選單）÷ 每秒步數，關閉選單回到 2；敵人每步前進 1、2、0.1 px（速度 60），換算成每秒遊戲時間都是 60 px", ok8, {"rate": rt, "move": mvs})
+
+	# R19-9：攻擊冷卻照遊戲時間：同一座弓兵（0.8 秒）與關羽（0.5 秒）在 1 倍與 2 倍下，每一擊的傷害相同、每一擊都在累積時程的一幀之內
+	# （冷卻保留零頭，相鄰兩擊可能短一幀，所以驗累積時程），同樣 3 秒遊戲時間的擊數相差不超過 1（不額外補一發）；2 倍經過的物理步進約是 1 倍的一半。
+	# 長時間（60 秒）與各種幀率的比較在 R20-1
+	var s9: Dictionary = await _r17_start("r19-k1", "archer")
+	var h9: Dictionary = {}
+	if s9.e.size() == 3:
+		h9["tower1"] = await _r19_hits([s9.e["t_front"]], 3.0)
+		_r19_speed(rec, 2.0)
+		h9["tower2"] = await _r19_hits([s9.e["t_front"]], 3.0)
+	_load(_r16_payload("r19-k2", [_r16_guan(1)], {}))
+	_r12_place("guan_yu", Vector2i(3, 4))
+	_bm().player_start_battle()
+	var e9: Node = await _r14_enemy()
+	if e9 != null and _guan() != null:
+		_r14_put(e9, _guan(), 1.0)
+		await _wait(0.6)
+		h9["hero1"] = await _r19_hits([e9], 3.0)
+		_r19_speed(rec, 2.0)
+		h9["hero2"] = await _r19_hits([e9], 3.0)
+	var ok9: bool = h9.size() == 4
+	if ok9:
+		for pair in [["tower1", "tower2", 0.8, 30.0], ["hero1", "hero2", 0.5, 100.0]]:
+			var a: Dictionary = h9[pair[0]]
+			var b: Dictionary = h9[pair[1]]
+			var dmg_ok: bool = true
+			for h in a.hits + b.hits:
+				dmg_ok = dmg_ok and float(h.dmg) == float(pair[3])
+			var ratio: float = float(b.steps) / float(a.steps) if int(a.steps) > 0 else -1.0
+			ok9 = ok9 and dmg_ok and _r19_interval_ok(a, pair[2]) and _r19_interval_ok(b, pair[2]) and absi(a.hits.size() - b.hits.size()) <= 1 and ratio > 0.4 and ratio < 0.6
+	var brief9: Dictionary = {}
+	for k in h9:
+		brief9[k] = {"n": h9[k].hits.size(), "t": h9[k].hits.map(func(h): return h.t), "dmg": h9[k].hits.map(func(h): return h.dmg).slice(0, 2), "dmax": h9[k].dmax, "steps": h9[k].steps}
+	_check("R19-9 攻擊冷卻照遊戲時間：弓兵 0.8 秒、關羽 0.5 秒，1 倍與 2 倍下每擊傷害相同（30、100），每一擊都在累積時程的一幀之內，3 秒遊戲時間的擊數相差不超過 1；2 倍經過的物理步進約是一半", ok9, brief9)
+
+	# R19-10：灼燒、減速、切換當下：周瑜命中後灼燒中切到 2 倍的同一幀，遊戲時間、灼燒倒數、減速剩餘時間、周瑜的攻擊冷卻都不變（不跳時鐘、不重設計時器）；
+	# 之後灼燒仍在命中後遊戲時間 1、2、3 秒各跳一次（共 3 跳、不加倍）；跳完後再加 1 秒的疊加減速：2 倍下經過 1 秒遊戲時間（約 30 個物理步進）解除
+	var e10: Node = await _r15_start(_r15_payload("r19_b", "r19-n1", [_r15_zhou()]))
+	var ok10: bool = false
+	var d10: Dictionary = {}
+	if e10 != null:
+		var h10: Dictionary = await _r15_hit_then_leave(e10, _zhou())
+		e10.apply_stackable_slow(0.2, 1.0)
+		var before10: Array = [_gt(), _pt(), e10.burn_state().next_in, e10._stack_slow_timer, _zhou()._atk_timer]
+		var r10s: Dictionary = _r19_speed(rec, 2.0)
+		var after10: Array = [_gt(), _pt(), e10.burn_state().next_in, e10._stack_slow_timer, _zhou()._atk_timer]
+		# 灼燒在切換後立刻開始記錄（第一跳在命中後 1 秒，不能被其他量測佔掉）；跳完後再量一次新的 1 秒減速
+		var r10: Dictionary = await _r15_drops(e10, h10.t0, 3.6)
+		var s10: Dictionary = _r15_split(r10.drops, 100.0, 20.0)
+		e10.apply_stackable_slow(0.2, 1.0)
+		var p0: float = _pt()
+		var f0: int = Engine.get_physics_frames()
+		var prev10: float = p0
+		var dp: float = 0.0
+		var wall_end: int = Time.get_ticks_msec() + 20000
+		while e10._stack_slow_amount > 0.0 and Time.get_ticks_msec() < wall_end:
+			prev10 = _pt()
+			await process_frame
+			dp = maxf(dp, _pt() - prev10)
+		var slow_end: Array = [_pt() - p0, Engine.get_physics_frames() - f0]
+		var slow_ok: bool = float(slow_end[0]) >= 1.0 - 0.0005 and float(slow_end[0]) <= 1.0 + dp + 0.0005 and int(slow_end[1]) >= 25 and int(slow_end[1]) <= 40
+		ok10 = r10s.get("ok") == true and before10 == after10 and slow_ok and s10.bad.is_empty() and _r15_at(s10.ticks, [1.0, 2.0, 3.0], h10.dh) and Engine.time_scale == 2.0
+		d10 = {"reply": r10s, "before": before10, "after": after10, "slow_end": slow_end, "dp": dp, "ticks": _r15_ts(s10.ticks), "bad": s10.bad}
+	_check("R19-10 切到 2 倍的同一幀：遊戲時間、灼燒倒數、減速剩餘、周瑜攻擊冷卻都不變；之後灼燒在命中後 1、2、3 秒各跳一次（不加倍）；1 秒的減速在 2 倍下經過 1 秒遊戲時間（約 30 步）解除", ok10, d10)
+
+	# R19-11：出兵間隔與自動下一波的等待照遊戲時間：1 倍與 2 倍下出兵間隔都是 1 秒、清波到下一波都是 1.5 秒（到 1 秒／1.5 秒＋一幀之間）；
+	# 2 倍經過的物理步進約是 1 倍的一半
+	var sp1: Dictionary = await _r19_spawn_timing(rec, "r19-p1", 1.0)
+	var sp2: Dictionary = await _r19_spawn_timing(rec, "r19-p2", 2.0)
+	var ok11: bool = true
+	for sp in [sp1, sp2]:
+		ok11 = ok11 and sp.gaps.size() == 4 and sp.result and float(sp.wait) >= 1.5 - 0.0005 and float(sp.wait) <= 1.5 + float(sp.dmax) + 0.0005
+		for g in sp.gaps:
+			ok11 = ok11 and float(g) >= 1.0 - 0.0005 and float(g) <= 1.0 + float(sp.dmax) + 0.0005
+	for w in sp1.waves:
+		ok11 = ok11 and float(w[3]) == 1.0
+	for w in sp2.waves:
+		ok11 = ok11 and float(w[3]) == 2.0
+	var steps_ratio: float = float(sp2.wait_steps) / float(sp1.wait_steps) if int(sp1.wait_steps) > 0 else -1.0
+	var sum1: int = 0
+	var sum2: int = 0
+	for s in sp1.gap_steps:
+		sum1 += int(s)
+	for s in sp2.gap_steps:
+		sum2 += int(s)
+	var gap_ratio: float = float(sum2) / float(sum1) if sum1 > 0 else -1.0
+	ok11 = ok11 and steps_ratio > 0.4 and steps_ratio < 0.6 and gap_ratio > 0.4 and gap_ratio < 0.6
+	_check("R19-11 出兵與自動下一波照遊戲時間：1 倍與 2 倍下出兵間隔都是 1 秒、清波到下一波都是 1.5 秒（到＋一幀之間）；2 倍的物理步進約是一半",
+		ok11, {"x1": sp1, "x2": sp2, "wait_ratio": steps_ratio, "gap_ratio": gap_ratio})
+
+	# R19-12：沒有額外收益：同一個固定場景在 1 倍與 2 倍下，備戰拆塔返還都是 25；每一擊都是 30、擊數相同；
+	# 擊殺、星數、戰場點數、戰鬥金幣變化、結算次數都相同；結算的 time_seconds 是遊戲時間（相差不超過 1 秒）
+	var g1: Dictionary = await _r19_same_game(rec, "r19-q1", 1.0)
+	var g2: Dictionary = await _r19_same_game(rec, "r19-q2", 2.0)
+	var same: bool = g1.same_battle and g2.same_battle and int(g1.ended) == 1 and int(g2.ended) == 1 and int(g1.sell) == 25 and int(g2.sell) == 25 \
+		and g1.dmgs == g2.dmgs and g1.dmgs.size() == 6 and _all_equal(g1.dmgs, 30.0) and g1.kills == g2.kills and int(g1.kills) == 2 and g1.stars == g2.stars and int(g1.stars) == 3 \
+		and g1.points == g2.points and int(g1.points) == 1020 and g1.gold == g2.gold and absi(int(g1.time) - int(g2.time)) <= 1
+	_check("R19-12 沒有額外收益：1 倍與 2 倍的同一個場景：拆塔返還都是 25；6 擊都是 30；擊殺 2、三星、戰場點數 1020、戰鬥金幣變化、結算一次都相同；time_seconds 是遊戲時間（相差不超過 1）",
+		same, {"x1": g1, "x2": g2})
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	rec.upgrade_unit_requested.disconnect(main._on_web_upgrade_unit)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── R20：攻擊冷卻保留零頭與手動暫停 ──
+# A：Hero／Tower 的攻擊冷卻保留越過零點的零頭（下一擊排在上一擊的預定時間＋攻擊間隔）；沒有目標時停在 0、不囤積；
+#    一幀最多一擊，單幀長過攻擊間隔時從這一擊起算完整的間隔。固定步進的部分直接呼叫真正的 Hero._process／Tower._process
+#    （set_process(false) 後手動給 delta＝倍率 ÷ 每秒幀數，不依牆鐘）；實際引擎的部分用遊戲時間（_gt）量。
+# B：手動暫停。命令一律經過真實的 JSON 路徑（bridge_recorder 的 _on_js_message）；暫停只停掉模擬用的節點，
+#    不動 SceneTree.paused 與 Engine.time_scale。測試的等待用 SceneTree 計時器與牆鐘（不受這個暫停影響，測試自己不會停住）
+
+## 固定步進用的目標：永遠在射程內、不會死，只數被打了幾次（文士塔的減速也算一次）
+class R20Target extends Node2D:
+	var hits: int = 0
+	var current_hp: float = 1.0e9
+	func is_dead() -> bool:
+		return false
+	func get_progress_ratio() -> float:
+		return 0.5
+	func take_damage(_amount: float, _is_burn: bool = false) -> void:
+		hits += 1
+	func apply_slow(_mult: float, _duration: float) -> void:
+		pass
+	func clear_slow() -> void:
+		pass
+	func apply_stackable_slow(_amount: float, _duration: float) -> void:
+		hits += 1
+	func apply_burn(_damage: float, _ticks: int, _interval: float) -> void:
+		pass
+
+class R20Wave extends Node:
+	var enemies: Array = []
+	func get_active_enemies() -> Array:
+		return enemies
+
+## 真正的武將或弓兵塔腳本（攻擊間隔改成 cd），不經過場景樹的處理：測試自己呼叫 _process
+func _r20_unit(holder: Node, kind: String, cd: float, wave: Node) -> Node:
+	var u: Node
+	if kind == "hero":
+		u = load("res://entities/hero/Hero.gd").new()
+		holder.add_child(u)
+		u.attack_range = 3.0
+		u.attack_speed = cd
+		u._wave_mgr = wave
+	else:
+		u = load("res://entities/tower/Tower.gd").new()
+		holder.add_child(u)
+		u.setup("archer", Vector2i.ZERO, wave)
+		u.atk_spd = cd
+	u.set_process(false)
+	return u
+
+## 用固定的 delta 呼叫 steps 次 _process（步數從 first 起算），回傳每一擊發生在第幾步；同一步打到兩下以上時 multi 為 true
+func _r20_steps(u: Node, tgt: Node, delta: float, steps: int, first: int = 1) -> Dictionary:
+	var at: Array = []
+	var multi: bool = false
+	for i in range(first, first + steps):
+		var before: int = tgt.hits
+		u._process(delta)
+		var n: int = tgt.hits - before
+		if n > 0:
+			at.append(i)
+		if n > 1:
+			multi = true
+	return {"at": at, "multi": multi}
+
+## 時間矩陣：武將與弓兵塔 × 攻擊間隔 0.1／0.5／0.8／3 秒 × 每秒 30／60／120 幀 × 1／2 倍，都跑 60 秒遊戲時間。
+## 冷卻從 0 開始、目標一直在射程內：第一擊在第 1 步（首次攻擊相位）；第 k 擊和第一擊相差 k × 間隔 到 k × 間隔＋一步之間（理想時程）；
+## 總擊數和理想時程 1 + floor((60 − 第一擊的時間) ÷ 間隔) 相差不超過 1；同一個間隔與幀率下 1 倍與 2 倍相差不超過 1
+func _r20_matrix(holder: Node, tgt: Node, wave: Node) -> Dictionary:
+	var bad: Array = []
+	var sample: Array = []
+	var all: Array = []
+	for kind in ["hero", "tower"]:
+		for cd in [0.1, 0.5, 0.8, 3.0]:
+			for fps in [30, 60, 120]:
+				var n_by: Dictionary = {}
+				for speed in [1, 2]:
+					var u: Node = _r20_unit(holder, kind, cd, wave)
+					var delta: float = float(speed) / float(fps)
+					var steps: int = int(round(60.0 * float(fps) / float(speed)))
+					tgt.hits = 0
+					var r: Dictionary = _r20_steps(u, tgt, delta, steps)
+					u.free()
+					var at: Array = r.at
+					var lo: float = 0.0
+					var hi: float = 0.0
+					var first_ok: bool = not at.is_empty() and int(at[0]) == 1
+					if first_ok:
+						for k in range(at.size()):
+							var off: float = float(int(at[k]) - int(at[0])) * delta - float(k) * cd
+							lo = minf(lo, off)
+							hi = maxf(hi, off)
+					var ideal: int = int(floor((float(steps) * delta - delta) / cd + 1e-9)) + 1
+					var row: Dictionary = {"kind": kind, "cd": cd, "fps": fps, "speed": speed, "hits": at.size(), "ideal": ideal, "off": [snappedf(lo, 0.000001), snappedf(hi, 0.000001)], "step": snappedf(delta, 0.000001)}
+					all.append([kind, cd, fps, speed, at.size(), ideal])
+					if not first_ok or r.multi or lo < -1e-9 or hi > delta + 1e-9 or absi(at.size() - ideal) > 1:
+						bad.append(row)
+					if is_equal_approx(cd, 0.1) and fps == 60:
+						sample.append(row)
+					n_by[speed] = at.size()
+				if absi(int(n_by[1]) - int(n_by[2])) > 1:
+					bad.append({"kind": kind, "cd": cd, "fps": fps, "x1": n_by[1], "x2": n_by[2]})
+	print("R20_MATRIX " + JSON.stringify(all))
+	return {"rows": all.size(), "bad": bad, "sample": sample}
+
+## 空場不囤積（每秒 60 幀、1 倍、間隔 0.5 秒）：有目標 60 步 → 移走目標 180 步 → 放回。沒有目標時不攻擊、冷卻停在 0；
+## 放回的那一步打一擊，下一擊在一個間隔（30 步，浮點誤差可能多一步）之後，不是立刻補打
+func _r20_idle(holder: Node, tgt: Node, wave: Node, kind: String) -> Dictionary:
+	var u: Node = _r20_unit(holder, kind, 0.5, wave)
+	var d: float = 1.0 / 60.0
+	tgt.hits = 0
+	var a: Dictionary = _r20_steps(u, tgt, d, 60, 1)
+	wave.enemies = []
+	var b: Dictionary = _r20_steps(u, tgt, d, 180, 61)
+	var idle_timer: float = u._atk_timer
+	wave.enemies = [tgt]
+	var c: Dictionary = _r20_steps(u, tgt, d, 50, 241)
+	u.free()
+	var ok: bool = a.at.size() == 2 and b.at.is_empty() and idle_timer == 0.0 and c.at.size() == 2 and int(c.at[0]) == 241 \
+		and int(c.at[1]) - 241 >= 30 and int(c.at[1]) - 241 <= 31 and not c.multi
+	return {"ok": ok, "before": a.at, "empty": b.at, "idle_timer": idle_timer, "after": c.at}
+
+## 極長的一幀（每秒 60 幀跑 1 秒後給一步 5 秒）：那一步只打一擊（不是 10 擊），之後冷卻是完整的 0.5 秒；
+## 下一擊在 30 步（浮點誤差可能多一步）之後，中間沒有補打
+func _r20_long_frame(holder: Node, tgt: Node, wave: Node, kind: String) -> Dictionary:
+	var u: Node = _r20_unit(holder, kind, 0.5, wave)
+	var d: float = 1.0 / 60.0
+	tgt.hits = 0
+	_r20_steps(u, tgt, d, 60, 1)
+	var h0: int = tgt.hits
+	u._process(5.0)
+	var in_long: int = tgt.hits - h0
+	var timer_after: float = u._atk_timer
+	var c: Dictionary = _r20_steps(u, tgt, d, 50, 62)
+	u.free()
+	var ok: bool = in_long == 1 and is_equal_approx(timer_after, 0.5) and c.at.size() == 1 and int(c.at[0]) - 61 >= 30 and int(c.at[0]) - 61 <= 31
+	return {"ok": ok, "hits_in_long_frame": in_long, "timer_after": timer_after, "after": c.at}
+
+## 反向檢查的對照：同一個矩陣條件下，舊的「每擊設回完整冷卻」會少打多少（只記錄，不影響判定；真正的反向驗證是把正式程式改回舊寫法重跑）
+func _r20_old_rule(cd: float, fps: int, speed: int) -> int:
+	var delta: float = float(speed) / float(fps)
+	var timer: float = 0.0
+	var n: int = 0
+	for i in range(int(round(60.0 * float(fps) / float(speed)))):
+		timer -= delta
+		if timer <= 0.0:
+			n += 1
+			timer = cd
+	return n
+
+## 實際引擎的一擊紀錄：每一幀比較血量，記下血量下降那一幀的遊戲時間（單擊傷害 dmg；一幀掉兩擊以上記為 multi）
+func _r20_tracker(e: Node, dmg: float) -> Dictionary:
+	return {"e": e, "last": e.current_hp, "dmg": dmg, "hits": [], "dmax": 0.0, "multi": false, "bad_dmg": []}
+
+## 記錄到遊戲時間前進 sec 秒為止；wall_ms ≥ 0 時改成等牆鐘 wall_ms 毫秒（暫停中遊戲時間不前進）
+func _r20_track(tr: Dictionary, sec: float, wall_ms: int = -1) -> void:
+	var g_end: float = _gt() + sec
+	var w_end: int = Time.get_ticks_msec() + (wall_ms if wall_ms >= 0 else int(sec * 4000.0) + 10000)
+	var prev: float = _gt()
+	while (wall_ms >= 0 or _gt() < g_end) and Time.get_ticks_msec() < w_end:
+		await process_frame
+		tr.dmax = maxf(float(tr.dmax), _gt() - prev)
+		prev = _gt()
+		if not is_instance_valid(tr.e):
+			return
+		var e: Node = tr.e
+		var drop: float = float(tr.last) - e.current_hp
+		if drop > 0.001:
+			tr.hits.append(_gt())
+			if drop > float(tr.dmg) * 1.5:
+				tr.multi = true
+			elif not is_equal_approx(drop, float(tr.dmg)):
+				tr.bad_dmg.append(drop)
+		tr.last = e.current_hp
+
+## 累積時程：每一擊的時間減去 k × 間隔（以記錄到的第一擊為準）的最大差距。保留零頭時只差在「命中落在哪一幀」，不超過最長的一幀；
+## 每擊都設回完整冷卻時這個差距會逐擊變大
+func _r20_spread(hits: Array, cd: float) -> float:
+	if hits.size() < 2:
+		return -1.0
+	var lo: float = INF
+	var hi: float = -INF
+	for i in range(hits.size()):
+		var off: float = float(hits[i]) - float(hits[0]) - float(i) * cd
+		lo = minf(lo, off)
+		hi = maxf(hi, off)
+	return hi - lo
+
+func _r20_cooldown_cases() -> void:
+	var holder := Node2D.new()
+	holder.visible = false
+	root.add_child(holder)
+	var wave := R20Wave.new()
+	holder.add_child(wave)
+	var tgt := R20Target.new()
+	holder.add_child(tgt)
+	wave.enemies = [tgt]
+
+	# R20-1：時間矩陣（固定步進、真正的 Hero／Tower 程式）
+	var m: Dictionary = _r20_matrix(holder, tgt, wave)
+	var old: Dictionary = {"0.1@60 x1": _r20_old_rule(0.1, 60, 1), "0.1@60 x2": _r20_old_rule(0.1, 60, 2), "0.5@60 x1": _r20_old_rule(0.5, 60, 1), "0.5@60 x2": _r20_old_rule(0.5, 60, 2)}
+	_check("R20-1 冷卻保留零頭（固定步進 60 秒遊戲時間，武將與弓兵塔 × 間隔 0.1／0.5／0.8／3 秒 × 每秒 30／60／120 幀 × 1／2 倍，共 48 組）：第一擊在第 1 步，每一擊和理想時程（第一擊＋k × 間隔）只差不到一步，總擊數和理想相差不超過 1，1 倍與 2 倍相差不超過 1",
+		m.rows == 48 and m.bad.is_empty(), {"bad": m.bad, "sample_cd0.1_fps60": m.sample, "old_rule_for_reference": old})
+
+	# R20-2：空場／目標離開不囤積，取得新目標最多先打一擊，之後照冷卻
+	var i_hero: Dictionary = _r20_idle(holder, tgt, wave, "hero")
+	var i_tower: Dictionary = _r20_idle(holder, tgt, wave, "tower")
+	_check("R20-2 空場不囤積（固定步進）：沒有目標的 180 步不攻擊、冷卻停在 0；目標回來的那一步打一擊，下一擊在一個間隔（30 步）之後，武將與弓兵塔都一樣",
+		i_hero.ok and i_tower.ok, {"hero": i_hero, "tower": i_tower})
+
+	# R20-3：極長的一幀只打一擊，之後從這一擊起算完整的間隔（不補發）
+	var l_hero: Dictionary = _r20_long_frame(holder, tgt, wave, "hero")
+	var l_tower: Dictionary = _r20_long_frame(holder, tgt, wave, "tower")
+	_check("R20-3 極長的一幀（5 秒、間隔 0.5 秒）：那一幀只打一擊（受幀率限制，其餘作廢），冷卻設回完整的 0.5 秒，下一擊在 30 步之後、中間不補打；武將與弓兵塔都一樣",
+		l_hero.ok and l_tower.ok, {"hero": l_hero, "tower": l_tower})
+	holder.queue_free()
+
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# R20-4：實際引擎：弓兵塔（0.8 秒、每擊 30）持續打同一個不會移動的敵人；途中經由橋接切到 2 倍、開部署選單（0.1）再關閉、
+	# 手動暫停再繼續、切回 1 倍。每個命令的當下攻擊冷卻與敵人血量都不變（命令本身不重設冷卻、不攻擊）；
+	# 整段每一擊的遊戲時間減去 k × 0.8 的差距不超過最長的一幀（累積時程不漂移），擊數和經過的遊戲時間相符，每擊都是 30、一幀最多一擊
+	var s4: Dictionary = await _r17_start("r20-k1", "archer")
+	var ok4: bool = false
+	var d4: Dictionary = {}
+	if s4.tower != null and s4.e.size() == 3:
+		var tw: Node = s4.tower
+		var ef: Node = s4.e["t_front"]
+		var tr: Dictionary = _r20_tracker(ef, 30.0)
+		var cmds: Array = []
+		await _r20_track(tr, 2.0)
+		var steps: Array = [
+			["speed2", func(): _r19_speed(rec, 2.0)],
+			["menu", func(): d4["menu"] = _r19_open(rec)],
+			["close", func(): _r19_close(rec, d4.get("menu", {}))],
+			["pause", func(): _r20_pause(rec, true)],
+			["resume", func(): _r20_pause(rec, false)],
+			["speed1", func(): _r19_speed(rec, 1.0)],
+		]
+		var waits: Dictionary = {"speed2": [2.0, -1], "menu": [0.12, -1], "close": [1.5, -1], "pause": [0.0, 1200], "resume": [1.5, -1], "speed1": [2.0, -1]}
+		for st in steps:
+			var b: Array = [tw._atk_timer, ef.current_hp, Engine.time_scale]
+			st[1].call()
+			var a: Array = [tw._atk_timer, ef.current_hp, Engine.time_scale]
+			cmds.append({"cmd": st[0], "timer_same": b[0] == a[0], "hp_same": b[1] == a[1], "ts": [b[2], a[2]]})
+			var w: Array = waits[st[0]]
+			await _r20_track(tr, float(w[0]), int(w[1]))
+		var h: Array = tr.hits
+		var elapsed: float = float(h.back()) - float(h[0]) if h.size() >= 2 else -1.0
+		var expect_n: int = int(floor(elapsed / 0.8 + 1e-9)) + 1
+		var spread: float = _r20_spread(h, 0.8)
+		var cmd_ok: bool = true
+		for c in cmds:
+			cmd_ok = cmd_ok and c.timer_same and c.hp_same
+		ok4 = cmd_ok and h.size() >= 8 and spread >= 0.0 and spread <= float(tr.dmax) + 0.0005 and absi(h.size() - expect_n) <= 1 and not tr.multi and tr.bad_dmg.is_empty() and Engine.time_scale == 1.0
+		d4 = {"cmds": cmds, "hits": h.size(), "expect": expect_n, "spread": snappedf(spread, 0.0001), "dmax": snappedf(float(tr.dmax), 0.0001), "multi": tr.multi, "bad_dmg": tr.bad_dmg, "t": h.map(func(x): return snappedf(float(x) - float(h[0]), 0.001))}
+	_check("R20-4 實際引擎跨倍率／部署／暫停：命令當下冷卻與血量不變；整段每一擊和累積時程（第一擊＋k × 0.8）的差距不超過一幀、擊數和遊戲時間相符、每擊 30、一幀最多一擊", ok4, d4)
+
+	# R20-5：實際引擎的空場重新有目標與極長的一幀：關羽（0.5 秒、每擊 100）的目標移到射程外 1.5 秒：沒有攻擊、冷卻停在 0；
+	# 移回射程的第一幀就打一擊，下一擊在 0.5 秒到 0.5 秒＋一幀之間（不補打）；再直接給這位武將一個 3 秒的 _process：只打一擊，
+	# 之後 0.45 秒遊戲時間內沒有補打，下一擊在 0.5 秒到 0.5 秒＋一幀之間
+	_load(_r16_payload("r20-i1", [_r16_guan(1)], {}))
+	_r12_place("guan_yu", Vector2i(3, 4))
+	_bm().player_start_battle()
+	var e5: Node = await _r14_enemy()
+	var ok5: bool = false
+	var d5: Dictionary = {}
+	if e5 != null and _guan() != null:
+		var g: Node = _guan()
+		_r14_put(e5, g, 1.0)
+		var t_a: Dictionary = _r20_tracker(e5, 100.0)
+		await _r20_track(t_a, 1.2)
+		_r14_put(e5, g, 6.0)
+		var t_b: Dictionary = _r20_tracker(e5, 100.0)
+		await _r20_track(t_b, 1.5)
+		var idle_timer: float = g._atk_timer
+		_r14_put(e5, g, 1.0)
+		var back_at: float = _gt()
+		var t_c: Dictionary = _r20_tracker(e5, 100.0)
+		await _r20_track(t_c, 1.1)
+		var hp_l: float = e5.current_hp
+		var long_at: float = _gt()
+		g._process(3.0)
+		var long_hits: float = (hp_l - e5.current_hp) / 100.0
+		var long_timer: float = g._atk_timer
+		var t_d: Dictionary = _r20_tracker(e5, 100.0)
+		await _r20_track(t_d, 0.45)
+		# 等待可能跨過截止時間一幀；只算真正發生在 0.45 秒窗口內的攻擊，不能把窗口外的正常下一擊算成補發
+		var quiet: int = t_d.hits.filter(func(t): return float(t) - long_at < 0.45).size()
+		await _r20_track(t_d, 0.3)
+		var hc: Array = t_c.hits
+		var hd: Array = t_d.hits
+		var reacq_ok: bool = hc.size() >= 2 and float(hc[0]) - back_at <= float(t_c.dmax) + 0.0005 and float(hc[1]) - float(hc[0]) >= 0.5 - 0.0005 and float(hc[1]) - float(hc[0]) <= 0.5 + float(t_c.dmax) + 0.0005
+		var long_ok: bool = is_equal_approx(long_hits, 1.0) and is_equal_approx(long_timer, 0.5) and quiet == 0 and hd.size() >= 1 and float(hd[0]) - long_at >= 0.5 - 0.0005 and float(hd[0]) - long_at <= 0.5 + float(t_d.dmax) + 0.0005
+		ok5 = t_a.hits.size() >= 2 and t_b.hits.is_empty() and idle_timer == 0.0 and reacq_ok and long_ok and not t_c.multi and not t_d.multi
+		d5 = {"before": t_a.hits.size(), "empty": t_b.hits.size(), "idle_timer": idle_timer, "reacq": hc.map(func(x): return snappedf(float(x) - back_at, 0.001)), "dmax_c": snappedf(float(t_c.dmax), 0.0001),
+			"long_hits": long_hits, "long_timer": long_timer, "quiet": quiet, "after_long": hd.map(func(x): return snappedf(float(x) - long_at, 0.001)), "dmax_d": snappedf(float(t_d.dmax), 0.0001)}
+	_check("R20-5 實際引擎的空場與極長一幀：目標離開 1.5 秒沒有攻擊、冷卻停在 0；回到射程的第一幀打一擊、下一擊在 0.5 秒到＋一幀；3 秒的單幀只打一擊、冷卻設回 0.5，之後 0.45 秒不補打、下一擊在 0.5 秒到＋一幀", ok5, d5)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+## 送出暫停命令（真實的 JSON 路徑），回傳 Godot 的回覆（沒有回覆時是空字典）；omit 為 true 時不帶 paused 欄位
+func _r20_pause(rec: Node, paused: Variant, bid: String = "", omit: bool = false) -> Dictionary:
+	var d: Dictionary = {"type": "set_paused", "battle_id": bid if bid != "" else _bm().battle_id}
+	if not omit:
+		d["paused"] = paused
+	var n: int = rec.sent_pauses.size()
+	_r19_js(rec, d)
+	return rec.sent_pauses.back() if rec.sent_pauses.size() > n else {}
+
+## 暫停前後比對用：場上每個單位的位置、血量、攻擊冷卻、灼燒與減速剩餘、路點；遊戲計時器剩下的時間；出兵數、波次、遊戲時間、戰鬥時間
+func _r20_world(spawned: Array) -> Dictionary:
+	var units: Dictionary = {}
+	for c in main.units_layer.get_children():
+		if c.is_queued_for_deletion():
+			continue
+		var k: String = str(c.get_instance_id())
+		if c is Enemy:
+			units[k] = [c.position, c.current_hp, c._burn_timer, c._burn_ticks_left, c._stack_slow_timer, c._stack_slow_amount, c._wp_index]
+		elif c is Tower or c is Hero:
+			units[k] = [c.position, c._atk_timer, c._anim_timer]
+	return {"units": units, "timers": _r20_timers(), "spawned": spawned[0], "wave": _bm().current_wave, "state": _bm().game_state,
+		"gt": _gt(), "bt": _bm().battle_time, "active": _wm().get_active_enemy_count(), "spawning": _wm().get_spawning_group_count(), "pending": _bm()._auto_wave_pending}
+
+## WaveManager 與 BattleManager 底下還在倒數的遊戲計時器剩下的時間
+func _r20_timers() -> Array:
+	var out: Array = []
+	for n in _wm().get_children() + _bm().get_children():
+		if n is Timer and not n.is_queued_for_deletion() and not n.is_stopped():
+			out.append(n.time_left)
+	return out
+
+func _r20_frozen() -> bool:
+	return main.units_layer.process_mode == Node.PROCESS_MODE_DISABLED and _wm().process_mode == Node.PROCESS_MODE_DISABLED and _bm().process_mode == Node.PROCESS_MODE_DISABLED
+
+func _r20_running() -> bool:
+	return main.units_layer.process_mode == Node.PROCESS_MODE_INHERIT and _wm().process_mode == Node.PROCESS_MODE_INHERIT and _bm().process_mode == Node.PROCESS_MODE_INHERIT
+
+## 等到遊戲時間到 t（或牆鐘逾時），回傳期間最長的一幀
+func _r20_until_gt(t: float, wall_ms: int = 10000) -> float:
+	var dmax: float = 0.0
+	var prev: float = _gt()
+	var w_end: int = Time.get_ticks_msec() + wall_ms
+	while _gt() < t and Time.get_ticks_msec() < w_end:
+		await process_frame
+		dmax = maxf(dmax, _gt() - prev)
+		prev = _gt()
+	return dmax
+
+func _r20_pause_cases() -> void:
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+	rec.upgrade_unit_requested.connect(main._on_web_upgrade_unit)
+	rec.start_battle_requested.connect(main._on_start_btn_pressed)
+	rec.auto_toggle_requested.connect(main._on_auto_btn_pressed)
+	rec.move_unit_requested.connect(main._on_web_move_unit)
+	var spawned: Array = [0]
+	var spawn_t: Array = []
+	var on_spawn := func(_e: Node) -> void:
+		spawned[0] += 1
+		spawn_t.append(_gt())
+	_wm().enemy_spawned.connect(on_spawn)
+
+	# R20-6：暫停真的凍結模擬：出兵中（間隔 1 秒、第一隻出現後 0.4 秒）的場上有移動中的敵人、弓兵塔與文士塔（減速計時）；
+	# 暫停後等牆鐘 1.5 秒：每個單位的位置／血量／冷卻／減速剩餘、出兵計時器剩下的時間、出兵數、波次、遊戲時間、戰鬥時間都不變；
+	# Engine.time_scale 仍是 1、SceneTree.paused 仍是 false；update_stats 帶 paused。繼續後下一隻在「剩下的時間」後出現（不重新計滿、不立刻補出）
+	_load(_with_id(_payload("r20_p", [[_grp("a_slow", 3, 1.0)], [_grp("a_slow", 1, 0.1)]]), "r20-p1"))
+	main._on_web_place_tower({"tower_type": "archer", "cell_x": 1, "cell_y": 4})
+	main._on_web_place_tower({"tower_type": "scholar", "cell_x": 2, "cell_y": 4})
+	spawned[0] = 0
+	spawn_t.clear()
+	_bm().player_start_battle()
+	await _wait_until_real(func(): return spawned[0] >= 1, 5.0)
+	await _r20_until_gt(float(spawn_t[0]) + 0.4 if not spawn_t.is_empty() else _gt())
+	var w0: Dictionary = _r20_world(spawned)
+	var r6: Dictionary = _r20_pause(rec, true)
+	var st6: Dictionary = _r19_last_stats(rec)
+	await _wait_real(1.5)
+	var w1: Dictionary = _r20_world(spawned)
+	var frozen6: bool = _r20_frozen()
+	var tree6: bool = paused
+	var ts6: float = Engine.time_scale
+	var rem: float = float(w1.timers[0]) if w1.timers.size() == 1 else -1.0
+	var t_resume: float = _gt()
+	var n_before: int = spawned[0]
+	var r6b: Dictionary = _r20_pause(rec, false)
+	var dmax6: float = 0.0
+	var prev6: float = _gt()
+	var w_end6: int = Time.get_ticks_msec() + 10000
+	while spawned[0] == n_before and Time.get_ticks_msec() < w_end6:
+		await process_frame
+		dmax6 = maxf(dmax6, _gt() - prev6)
+		prev6 = _gt()
+	var gap6: float = float(spawn_t.back()) - t_resume if spawned[0] > n_before else -1.0
+	var ok6: bool = r6.get("ok") == true and r6.get("paused") == true and st6.get("paused") == true and st6.get("battle_id") == "r20-p1" and w0 == w1 and frozen6 and not tree6 and ts6 == 1.0 \
+		and rem > 0.0 and rem < 1.0 and r6b.get("ok") == true and r6b.get("paused") == false and _r20_running() and gap6 >= rem - 0.0005 and gap6 <= rem + dmax6 + 0.0005 and w0.units.size() >= 3
+	_check("R20-6 暫停凍結模擬：牆鐘 1.5 秒內位置／血量／冷卻／減速／出兵計時器／出兵數／波次／遊戲時間／戰鬥時間都不變，time_scale 仍 1、SceneTree 沒有暫停、stats 帶 paused；繼續後下一隻在剩下的時間（不重新計滿）到＋一幀出現",
+		ok6, {"reply": r6, "stats_paused": st6.get("paused"), "same": w0 == w1, "frozen": frozen6, "tree_paused": tree6, "ts": ts6, "remaining": rem, "resume_reply": r6b, "gap": gap6, "dmax": dmax6, "units": w0.units.size(), "gt": [w0.gt, w1.gt], "timers": [w0.timers, w1.timers]})
+
+	# R20-7：2 倍 → 暫停 → 繼續：暫停中 time_scale 仍是 2（不靠倍率 0）、選擇仍是 2；繼續後每個物理步進前進 2 ÷ 每秒步數
+	_r19_speed(rec, 2.0)
+	var r7: Dictionary = _r20_pause(rec, true)
+	var mid7: Array = [Engine.time_scale, _bm().speed_pref, _r20_frozen()]
+	var g7: float = _gt()
+	await _wait_real(0.4)
+	var g7b: float = _gt()
+	_r20_pause(rec, false)
+	var rate7: Dictionary = await _physics_rate(0.3)
+	var tps: float = float(Engine.physics_ticks_per_second)
+	var ok7: bool = r7.get("ok") == true and float(r7.get("time_scale", -1)) == 2.0 and int(r7.get("speed", -1)) == 2 and mid7 == [2.0, 2, true] and g7 == g7b \
+		and int(rate7.steps) > 0 and absf(float(rate7.per_step) - 2.0 / tps) < 1e-9 and Engine.time_scale == 2.0 and _r20_running()
+	_check("R20-7 2 倍時暫停：回覆與 time_scale 都是 2（不用倍率 0 假裝暫停）、遊戲時間不前進；繼續後仍是 2 倍（每個物理步進 2 ÷ 每秒步數）", ok7, {"reply": r7, "mid": mid7, "game_time": [g7, g7b], "rate": rate7})
+
+	# R20-8：部署與暫停：2 倍開部署選單（0.1）後暫停 → 暫停優先（凍結、倍率仍記 0.1）；暫停中不能開新選單；
+	# 暫停中關閉選單 → 倍率 2 但仍暫停；繼續 → 2 倍。另一次保留選單直接繼續 → 回到 0.1，關閉後 2
+	var m8: Dictionary = _r19_open(rec)
+	var r8: Dictionary = _r20_pause(rec, true)
+	var a8: Array = [Engine.time_scale, _bm().manual_paused, _r20_frozen(), _bm().deploy_menu_id]
+	var clicks8: int = rec.sent_clicks.size()
+	var open8: Dictionary = _r19_open(rec, 5)
+	var no_click8: bool = rec.sent_clicks.size() == clicks8
+	_r19_close(rec, m8)
+	var st8: Dictionary = _r19_last_stats(rec)
+	var b8: Array = [Engine.time_scale, _bm().manual_paused, _r20_frozen(), _bm().deploy_menu_id]
+	_r20_pause(rec, false)
+	var c8: Array = [Engine.time_scale, _bm().manual_paused, _r20_running()]
+	var m8b: Dictionary = _r19_open(rec)
+	_r20_pause(rec, true)
+	_r20_pause(rec, false)
+	var d8: Array = [Engine.time_scale, _bm().manual_paused, _r20_running(), _bm().deploy_menu_id == int(m8b.get("menu_id", -1))]
+	_r19_close(rec, m8b)
+	var e8: float = Engine.time_scale
+	var ok8: bool = not m8.is_empty() and r8.get("ok") == true and float(r8.get("time_scale", -1)) == 0.1 and a8 == [0.1, true, true, int(m8.get("menu_id", -1))] \
+		and open8.is_empty() and no_click8 and b8 == [2.0, true, true, 0] and st8.get("paused") == true and st8.get("deploy_slow") == false and float(st8.get("time_scale", -1)) == 2.0 \
+		and c8 == [2.0, false, true] and not m8b.is_empty() and d8 == [0.1, false, true, true] and e8 == 2.0
+	_check("R20-8 部署中暫停：暫停優先（凍結，倍率記 0.1）；暫停中不能開新選單；暫停中關閉選單 → 倍率 2 仍暫停，繼續後 2；保留選單直接繼續 → 0.1，關閉後 2",
+		ok8, {"pause_reply": r8, "in_menu": a8, "new_menu": open8, "closed": b8, "stats": {"paused": st8.get("paused"), "deploy_slow": st8.get("deploy_slow"), "ts": st8.get("time_scale")}, "resumed": c8, "keep_menu": d8, "after_close": e8})
+
+	# R20-9：暫停中選速度只記下偏好：選 1 倍 → 回覆成功、選擇 1、倍率 1，但仍暫停、仍凍結；繼續後 1 倍。
+	# 重送同一個值冪等：暫停兩次、繼續兩次都成功，狀態只改一次
+	_r20_pause(rec, true)
+	var r9: Dictionary = _r19_speed(rec, 1.0)
+	var a9: Array = [_bm().speed_pref, Engine.time_scale, _bm().manual_paused, _r20_frozen()]
+	var n9: int = rec.sent_stats.size()
+	var r9b: Dictionary = _r20_pause(rec, true)
+	var dup_stats: int = rec.sent_stats.size() - n9
+	_r20_pause(rec, false)
+	var r9c: Dictionary = _r20_pause(rec, false)
+	var ok9: bool = r9.get("ok") == true and int(r9.get("speed", -1)) == 1 and a9 == [1, 1.0, true, true] and r9b.get("ok") == true and r9b.get("paused") == true and dup_stats == 0 \
+		and r9c.get("ok") == true and r9c.get("paused") == false and not _bm().manual_paused and _r20_running() and Engine.time_scale == 1.0
+	_check("R20-9 暫停中選 1 倍：回覆成功、選擇與倍率 1，但仍暫停；重送暫停／繼續冪等（第二次成功、不再改狀態也不再送 stats）；繼續後 1 倍",
+		ok9, {"speed_reply": r9, "during": a9, "dup_pause": r9b, "dup_stats": dup_stats, "dup_resume": r9c})
+
+	# R20-10：拒絕且不改狀態：別場 → stale_battle（暫停中送別場的繼續也不會解除）；字串、數字、null、物件、沒有帶 → invalid_paused；結算後 → not_active
+	var reasons10: Dictionary = {}
+	var before10: Array = [_bm().manual_paused, Engine.time_scale, _bm().battle_id]
+	reasons10["stale"] = _r20_pause(rec, true, "r20-old").get("reason")
+	for v in ["true", 1.0, 0.0, null, {"x": 1}]:
+		reasons10[JSON.stringify(v)] = _r20_pause(rec, v).get("reason")
+	reasons10["missing"] = _r20_pause(rec, null, "", true).get("reason")
+	var after10: Array = [_bm().manual_paused, Engine.time_scale, _bm().battle_id]
+	_r20_pause(rec, true)
+	var stale_resume: Dictionary = _r20_pause(rec, false, "r20-old")
+	var still10: bool = _bm().manual_paused and _r20_frozen()
+	_r20_pause(rec, false)
+	var all_invalid: bool = true
+	for k in reasons10:
+		if k != "stale":
+			all_invalid = all_invalid and reasons10[k] == "invalid_paused"
+	var ok10: bool = reasons10["stale"] == "stale_battle" and all_invalid and before10 == after10 and stale_resume.get("reason") == "stale_battle" and stale_resume.get("paused") == true and still10
+	_check("R20-10 拒絕且不改狀態：別場 stale_battle；字串 \"true\"、1、0、null、物件、沒有帶都是 invalid_paused；暫停中別場的繼續命令不解除（回覆 stale_battle、paused 仍 true）",
+		ok10, {"reasons": reasons10, "before": before10, "after": after10, "stale_resume": stale_resume, "still_paused": still10})
+
+	# R20-11：暫停中的操作一律由 Godot 拒絕（經過真實的 JSON 路徑）：開戰、切自動、部署武將與防禦塔、移位、升級、拆塔、改目標、
+	# 點空格開部署選單、Godot 內的拖曳都不改狀態；暫停前開始的拖曳在暫停時取消。繼續後升級與開戰恢復可用
+	_load(_r16_payload("r20-o1", [_r16_guan(1)], {}))
+	var t11: Node = _r18_build("archer", Vector2i(1, 4))
+	main._on_drag_tower_started("archer")
+	var dragging0: bool = main._is_dragging
+	_r20_pause(rec, true)
+	var drag_cancelled: bool = not main._is_dragging
+	main._on_tower_clicked(t11)
+	var gold11: int = _bm().battle_gold
+	var n_units: int = main.units_layer.get_child_count()
+	var tt11: int = rec.sent_tower_targets.size()
+	_r19_js(rec, {"type": "start_battle"})
+	_r19_js(rec, {"type": "toggle_auto"})
+	_r19_js(rec, {"type": "place_hero", "hero_id": "guan_yu", "cell_x": 5, "cell_y": 4})
+	_r19_js(rec, {"type": "place_tower", "tower_type": "archer", "cell_x": 6, "cell_y": 4})
+	_r19_js(rec, {"type": "request_move"})
+	var moving: bool = main._is_dragging
+	_r19_js(rec, {"type": "request_upgrade"})
+	var sell11: Dictionary = _r18_sell(rec, t11.tower_uid, float(t11.get_sell_refund()))
+	_r19_js(rec, {"type": "set_tower_target", "battle_id": "r20-o1", "tower_uid": t11.tower_uid, "mode": "strongest"})
+	var click11: Dictionary = _r19_open(rec, 7)
+	main._on_drag_hero_started({"hero_id": "guan_yu"})
+	var hud_drag: bool = main._is_dragging
+	main._on_unit_move_requested(t11)
+	var move_drag: bool = main._is_dragging
+	var a11: Dictionary = {"state": _bm().game_state, "wave": _bm().current_wave, "auto": _bm().auto_mode, "heroes": main._placed_heroes.size(), "units": main.units_layer.get_child_count(),
+		"gold": _bm().battle_gold, "level": t11.tower_level, "mode": t11.target_mode, "alive": _alive(t11), "menu": _bm().deploy_menu_id}
+	var rej11: bool = a11.state == 1 and a11.wave == 0 and a11.auto == false and a11.heroes == 0 and a11.units == n_units and a11.gold == gold11 and a11.level == 1 and a11.mode == "first" \
+		and a11.alive and a11.menu == 0 and not moving and not hud_drag and not move_drag and sell11.get("reason") == "paused" and sell11.get("ok") == false and rec.sent_tower_targets.size() == tt11 and click11.is_empty()
+	_r20_pause(rec, false)
+	_r19_js(rec, {"type": "request_upgrade"})
+	var lv_after: int = t11.tower_level
+	_r19_js(rec, {"type": "start_battle"})
+	var ok11: bool = dragging0 and drag_cancelled and rej11 and lv_after == 2 and _bm().game_state == BattleManager.GameState.BATTLE
+	_check("R20-11 暫停中 Godot 拒絕操作：開戰、切自動、部署武將／防禦塔、移位（Web 命令與 Godot 內拖曳）、升級、拆塔（回覆 paused）、改目標、開部署選單都不改狀態；暫停前的拖曳被取消；繼續後升級與開戰可用",
+		ok11, {"drag_before": dragging0, "drag_cancelled": drag_cancelled, "after": a11, "sell": sell11, "click": click11, "level_after_resume": lv_after, "state_after": _bm().game_state})
+
+	# R20-12：新的一場清掉暫停：A 戰鬥中 2 倍並暫停 → 載入 B：B 未暫停、模擬節點恢復處理、倍率 1、B 的 stats paused false；
+	# B 暫停後送 A 的繼續命令不解除（stale_battle）；同一關重來（新的 battle_id）也未暫停
+	_load(_r19_payload("r20-n1"))
+	_bm().player_start_battle()
+	_r19_speed(rec, 2.0)
+	_r20_pause(rec, true)
+	var a12: Array = [_bm().manual_paused, _r20_frozen(), Engine.time_scale]
+	_load(_r19_payload("r20-n2"))
+	var st12: Dictionary = _r19_last_stats(rec)
+	var b12: Array = [_bm().manual_paused, _r20_running(), Engine.time_scale, _bm().speed_pref]
+	_r20_pause(rec, true)
+	var old12: Dictionary = _r20_pause(rec, false, "r20-n1")
+	var c12: Array = [_bm().manual_paused, _r20_frozen()]
+	_load(_r19_payload("r20-n3"))
+	var d12: Array = [_bm().manual_paused, _r20_running(), Engine.time_scale]
+	var ok12: bool = a12 == [true, true, 2.0] and b12 == [false, true, 1.0, 1] and st12.get("paused") == false and st12.get("battle_id") == "r20-n2" and old12.get("reason") == "stale_battle" and c12 == [true, true] and d12 == [false, true, 1.0]
+	_check("R20-12 新的一場清掉暫停：A（2 倍、暫停）→ B 未暫停、恢復處理、倍率 1、stats paused false；B 暫停時 A 的繼續命令不解除；同一關重來也未暫停",
+		ok12, {"a": a12, "b": b12, "b_stats": {"paused": st12.get("paused"), "bid": st12.get("battle_id")}, "old_resume": old12, "b_paused": c12, "restart": d12})
+
+	# R20-13：舊計時器無效：A 出兵中（間隔 1 秒）暫停後載入 B（不開戰）：A 的出兵計時器恢復倒數後觸發，但 B 沒有敵人、仍在備戰；
+	# C 自動模式清波後等待下一波時暫停、載入 D：D 不會自己開波
+	_load(_with_id(_payload("r20_t", [[_grp("a_slow", 3, 1.0)]]), "r20-t1"))
+	spawned[0] = 0
+	_bm().player_start_battle()
+	await _wait_until_real(func(): return spawned[0] >= 1, 5.0)
+	await _wait_real(0.2)
+	_r20_pause(rec, true)
+	var t13: int = _r20_timers().size()
+	_load(_with_id(_payload("r20_t", [[_grp("a_slow", 3, 1.0)]]), "r20-t2"))
+	var n13: int = spawned[0]
+	await _wait_real(2.0)
+	var sp13: int = spawned[0] - n13
+	var b13: Dictionary = _state()
+	_load(_with_id(_payload("r20_c", [[_grp("c_fast", 1, 0.1)], [_grp("c_fast", 1, 0.1)]]), "r20-c1"))
+	var cleared: Array = [false]
+	var cb13 := func(_n: int) -> void:
+		if not cleared[0]:
+			cleared[0] = true
+			# 清波是在敵人的物理處理中發出的：暫停延到這一幀的處理結束後（實際的命令也是在兩幀之間從 Web 送來）
+			_r20_pause.call_deferred(rec, true)
+	_wm().wave_cleared.connect(cb13)
+	_bm().toggle_auto_mode()
+	await _wait_until_real(func(): return cleared[0], 5.0)
+	_wm().wave_cleared.disconnect(cb13)
+	var pend13: bool = _bm()._auto_wave_pending and _bm().manual_paused
+	_load(_with_id(_payload("r20_c", [[_grp("c_fast", 1, 0.1)], [_grp("c_fast", 1, 0.1)]]), "r20-c2"))
+	await _wait_real(2.5)
+	var d13: Dictionary = _state()
+	var ok13: bool = t13 >= 1 and sp13 == 0 and b13.state == 1 and b13.wave == 0 and b13.enemy_nodes.is_empty() and b13.active == 0 and pend13 and d13.state == 1 and d13.wave == 0 and d13.stage == "r20_c"
+	_check("R20-13 舊計時器無效：A 出兵中暫停後載入 B，A 的出兵計時器之後觸發也不在 B 出兵（B 仍備戰、沒有敵人）；C 等待自動下一波時暫停、載入 D，D 不會自己開波",
+		ok13, {"timers_at_pause": t13, "spawned_after_load": sp13, "b": b13, "pending_paused": pend13, "d": d13})
+
+	# R20-14：自動下一波的等待也凍結：C 自動模式清波後 0.5 秒暫停，牆鐘 2 秒後仍在第 1 波、仍在等待，計時器剩約 1 秒；
+	# 繼續後在剩下的時間到＋一幀開第 2 波（清波到開波的遊戲時間約 1.5 秒）
+	_load(_with_id(_payload("r20_w", [[_grp("c_fast", 1, 0.1)], [_grp("a_slow", 1, 0.1)]]), "r20-w1"))
+	var clear_t: Array = [-1.0]
+	var cb14 := func(_n: int) -> void:
+		if clear_t[0] < 0.0:
+			clear_t[0] = _gt()
+	_wm().wave_cleared.connect(cb14)
+	_bm().toggle_auto_mode()
+	await _wait_until_real(func(): return clear_t[0] >= 0.0, 5.0)
+	_wm().wave_cleared.disconnect(cb14)
+	var dm14: float = await _r20_until_gt(float(clear_t[0]) + 0.5)
+	_r20_pause(rec, true)
+	await _wait_real(2.0)
+	var mid14: Array = [_bm().current_wave, _bm()._auto_wave_pending, _r20_timers()]
+	var rem14: float = float(mid14[2][0]) if (mid14[2] as Array).size() == 1 else -1.0
+	var t_r14: float = _gt()
+	var w2_t: Array = [-1.0]
+	var cbw := func(cur: int, _t: int) -> void:
+		if cur == 2 and w2_t[0] < 0.0:
+			w2_t[0] = _gt()
+	_bm().wave_changed.connect(cbw)
+	_r20_pause(rec, false)
+	var dmax14: float = 0.0
+	var prev14: float = _gt()
+	var w_end14: int = Time.get_ticks_msec() + 10000
+	while w2_t[0] < 0.0 and Time.get_ticks_msec() < w_end14:
+		await process_frame
+		dmax14 = maxf(dmax14, _gt() - prev14)
+		prev14 = _gt()
+	_bm().wave_changed.disconnect(cbw)
+	var gap14: float = float(w2_t[0]) - t_r14
+	var total14: float = float(w2_t[0]) - float(clear_t[0])
+	var ok14: bool = mid14[0] == 1 and mid14[1] == true and rem14 > 0.9 and rem14 <= 1.0 + 0.0005 and gap14 >= rem14 - 0.0005 and gap14 <= rem14 + dmax14 + 0.0005 \
+		and total14 >= 1.5 - 0.0005 and total14 <= 1.5 + maxf(dm14, dmax14) * 2.0 + 0.0005
+	_check("R20-14 自動下一波的等待凍結：清波後 0.5 秒暫停，牆鐘 2 秒後仍第 1 波、仍等待、剩約 1 秒；繼續後在剩下的時間到＋一幀開第 2 波（清波到開波的遊戲時間約 1.5 秒）",
+		ok14, {"mid": mid14, "remaining": rem14, "gap": gap14, "dmax": dmax14, "total": total14})
+
+	# R20-15：灼燒與減速剩餘也凍結：周瑜命中後（灼燒中）加 1 秒疊加減速，暫停牆鐘 1.2 秒：灼燒倒數、剩餘跳數、減速剩餘、血量都不變；
+	# 繼續後灼燒仍在命中後遊戲時間（物理時鐘，暫停時不前進）1、2、3 秒各跳一次（共 3 跳、不補跳）
+	var e15: Node = await _r15_start(_r15_payload("r20_b", "r20-b1", [_r15_zhou()]))
+	var ok15: bool = false
+	var d15: Dictionary = {}
+	if e15 != null:
+		var h15: Dictionary = await _r15_hit_then_leave(e15, _zhou())
+		e15.apply_stackable_slow(0.2, 1.0)
+		var b15: Array = [e15.burn_state().next_in, e15.burn_state().ticks_left, e15._stack_slow_timer, e15.current_hp, _pt()]
+		var r15: Dictionary = _r20_pause(rec, true)
+		await _wait_real(1.2)
+		var a15: Array = [e15.burn_state().next_in, e15.burn_state().ticks_left, e15._stack_slow_timer, e15.current_hp, _pt()]
+		_r20_pause(rec, false)
+		var dr15: Dictionary = await _r15_drops(e15, h15.t0, 3.6)
+		var s15: Dictionary = _r15_split(dr15.drops, 100.0, 20.0)
+		ok15 = r15.get("ok") == true and b15 == a15 and s15.bad.is_empty() and _r15_at(s15.ticks, [1.0, 2.0, 3.0], h15.dh)
+		d15 = {"before": b15, "after": a15, "ticks": _r15_ts(s15.ticks), "bad": s15.bad}
+	_check("R20-15 灼燒與減速凍結：暫停牆鐘 1.2 秒內灼燒倒數、剩餘跳數、減速剩餘、血量與物理時鐘都不變；繼續後灼燒在命中後 1、2、3 秒各跳一次（不補跳）", ok15, d15)
+
+	# R20-16：外部測試自己設的 SceneTree.paused 不被這個功能解除：樹暫停時送速度 2、暫停、繼續：回覆都成功，SceneTree 仍暫停、遊戲時間不前進
+	_load(_r19_payload("r20-x1"))
+	paused = true
+	var g16: float = _gt()
+	var s16: Dictionary = _r19_speed(rec, 2.0)
+	var p16: Dictionary = _r20_pause(rec, true)
+	var q16: Dictionary = _r20_pause(rec, false)
+	await _wait_real(0.3)
+	var still16: bool = paused
+	var g16b: float = _gt()
+	paused = false
+	var ok16: bool = s16.get("ok") == true and p16.get("ok") == true and q16.get("ok") == true and still16 and g16 == g16b and not _bm().manual_paused
+	_check("R20-16 外部設的 SceneTree.paused 不被解除：樹暫停時速度 2、暫停、繼續的回覆都成功，SceneTree 仍暫停、遊戲時間不前進", ok16, {"speed": s16, "pause": p16, "resume": q16, "tree_paused": still16, "game_time": [g16, g16b]})
+
+	# R20-17：結算清掉暫停（白箱：暫停中直接讓城池血量歸零觸發結算；正常遊戲暫停中不會結算）：結算內容屬於這一場（先建立再清狀態）；
+	# 結算後未暫停、恢復處理、倍率 1；結算後的暫停命令 not_active
+	_load(_r19_payload("r20-r1"))
+	_bm().player_start_battle()
+	_r19_speed(rec, 2.0)
+	_r20_pause(rec, true)
+	var ended17: int = battle_ended_count
+	for i in range(MAX_HP):
+		_bm().on_enemy_reached_base()
+	var after17: Array = [_bm().manual_paused, _r20_running(), Engine.time_scale, _bm().game_state]
+	var late17: Dictionary = _r20_pause(rec, true)
+	var ok17: bool = battle_ended_count - ended17 == 1 and last_result.get("battle_id") == "r20-r1" and last_result.get("result") == "LOSE" and after17 == [false, true, 1.0, BattleManager.GameState.RESULT] \
+		and late17.get("reason") == "not_active" and not _bm().manual_paused
+	_check("R20-17 結算清掉暫停（白箱觸發）：結算一次、屬於這一場；之後未暫停、恢復處理、倍率 1；結算後的暫停命令 not_active",
+		ok17, {"ended": battle_ended_count - ended17, "result": {"bid": last_result.get("battle_id"), "r": last_result.get("result")}, "after": after17, "late": late17})
+
+	_wm().enemy_spawned.disconnect(on_spawn)
+	rec.payload_received.disconnect(main._on_payload_received)
+	rec.upgrade_unit_requested.disconnect(main._on_web_upgrade_unit)
+	rec.start_battle_requested.disconnect(main._on_start_btn_pressed)
+	rec.auto_toggle_requested.disconnect(main._on_auto_btn_pressed)
+	rec.move_unit_requested.disconnect(main._on_web_move_unit)
 	main.web_bridge = original
 	rec.free()
 	_load(_stage_b())

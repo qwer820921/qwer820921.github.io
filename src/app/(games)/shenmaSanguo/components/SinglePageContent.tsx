@@ -23,10 +23,20 @@ import {
   activateLatestGameWorker,
   isCompatibleEngine,
 } from "../utils/gameEngine";
+import {
+  DeployMenuRef,
+  GameSpeed,
+  canChangeSpeed,
+  canTogglePause,
+  deployMenuRef,
+  isPaused,
+} from "../utils/gameSpeed";
 import EngineUpdatePrompt from "./EngineUpdatePrompt";
 import styles from "../styles/shenmaSanguo.module.css";
 import PlacementMenu from "../battle/components/PlacementMenu";
 import UpgradePanel from "../battle/components/UpgradePanel";
+import SpeedToggle from "../battle/components/SpeedToggle";
+import PauseToggle, { PauseBadge } from "../battle/components/PauseToggle";
 import StageSelectModal from "./modals/StageSelectModal";
 import TeamEditModal from "./modals/TeamEditModal";
 import HeroListModal from "./modals/HeroListModal";
@@ -34,6 +44,7 @@ import PlayerInfoModal from "./modals/PlayerInfoModal";
 import SettingsModal from "./modals/SettingsModal";
 
 interface BattleStats {
+  battle_id?: string;
   gold: number;
   wave: number;
   total_waves: number;
@@ -41,6 +52,12 @@ interface BattleStats {
   max_hp: number;
   game_state: number;
   auto_mode: boolean;
+  /** 戰鬥速度：Godot 已確認的選擇（1／2）、實際倍率、是否在部署選單的暫時慢速中 */
+  speed?: number;
+  time_scale?: number;
+  deploy_slow?: boolean;
+  /** 手動暫停：Godot 已確認的狀態 */
+  paused?: boolean;
 }
 
 const GameState = { WAITING: 0, PREP: 1, BATTLE: 2, RESULT: 3 };
@@ -338,6 +355,8 @@ export default function SinglePageContent() {
     type: "road" | "build";
     pos: { x: number; y: number };
     cell: { x: number; y: number };
+    /** 這個選單屬於哪一場、哪個選單：關閉時帶回，Godot 才恢復速度 */
+    ref: DeployMenuRef;
   } | null>(null);
   const [upgradePanel, setUpgradePanel] = useState<any | null>(null);
   // 備戰拆除的狀態（確認中、送出中、不成功的原因；見 utils/towerSell）
@@ -508,13 +527,38 @@ export default function SinglePageContent() {
         syncBattleLock(sessionRef.current);
         setBattleStats(event.data as BattleStats);
         break;
-      case "click_cell":
+      case "click_cell": {
+        // 只開目前這一場的部署選單。不是這一場的選單不顯示，並立刻送回關閉命令：
+        // Godot 只在它仍是目前開著的選單時才恢復速度，過期的不會影響新場次
+        const ref = deployMenuRef(
+          event.data,
+          sessionRef.current.owner?.id ?? null
+        );
+        if (!ref) {
+          if (
+            typeof event.data.battle_id === "string" &&
+            typeof event.data.menu_id === "number"
+          ) {
+            iframeRef.current?.contentWindow?.postMessage(
+              {
+                __godot_bridge: true,
+                type: "resume_game",
+                battle_id: event.data.battle_id,
+                menu_id: event.data.menu_id,
+              },
+              "*"
+            );
+          }
+          break;
+        }
         setPlacementMenu({
           type: event.data.tile_type,
           pos: event.data.screen_pos,
           cell: { x: event.data.cell_x, y: event.data.cell_y },
+          ref,
         });
         break;
+      }
       case "hide_placement_menu":
         setPlacementMenu(null);
         break;
@@ -552,6 +596,8 @@ export default function SinglePageContent() {
         ) {
           syncBattleLock(sessionRef.current);
           setBattleResult(event.data);
+          // 結算時 Godot 已結束部署慢速：部署選單一起關閉
+          setPlacementMenu(null);
         }
     }
   }, []);
@@ -708,13 +754,22 @@ export default function SinglePageContent() {
   };
 
   // ── 按鈕處理 ────────────────────────────────────────────────
-  const handleStartBattle = () => sendToGodot({ type: "start_battle" });
-  const handleToggleAuto = () => sendToGodot({ type: "toggle_auto" });
+  // 手動暫停中：開戰、切自動、部署、升級、改目標、拆塔的按鈕都停用，這裡再擋一次（Godot 也會拒絕）
+  const paused = isPaused(battleStats);
+  const handleStartBattle = () => {
+    if (!paused) sendToGodot({ type: "start_battle" });
+  };
+  const handleToggleAuto = () => {
+    if (!paused) sendToGodot({ type: "toggle_auto" });
+  };
 
   const handleStageSelected = (mapId: string) => {
     if (!staticConfig || !player) return;
     const map = staticConfig.maps.find((m) => m.map_id === mapId);
     if (!map) return;
+
+    // 部署選單還開著（HUD 在選單上方，可以直接切關）：先照一般的取消關閉，舊選單不留到新的一場
+    handleCloseMenu();
 
     setCurrentMapId(mapId);
     setPayloadSent(false);
@@ -773,7 +828,7 @@ export default function SinglePageContent() {
   };
 
   const handleSelectUnit = (id: string, category: "hero" | "tower") => {
-    if (!placementMenu) return;
+    if (paused || !placementMenu) return;
     if (category === "hero") {
       sendToGodot({
         type: "place_hero",
@@ -793,13 +848,36 @@ export default function SinglePageContent() {
     handleCloseMenu();
   };
 
+  // 關閉部署選單（取消、點選單外或戰場留邊、部署完成）：帶回這個選單的 battle_id 與編號，
+  // Godot 只在它是這一場、目前開著的選單時恢復玩家選的速度
   const handleCloseMenu = () => {
+    const ref = placementMenu?.ref;
     setPlacementMenu(null);
-    sendToGodot({ type: "resume_game" });
+    if (ref) {
+      sendToGodot({
+        type: "resume_game",
+        battle_id: ref.battle_id,
+        menu_id: ref.menu_id,
+      });
+    }
+  };
+
+  // 戰鬥速度 1×／2×：帶目前這一場的 battle_id，畫面等 Godot 的 update_stats 才改變
+  const handleSetSpeed = (speed: GameSpeed) => {
+    const battleId = sessionRef.current.owner?.id;
+    if (!battleId || !canChangeSpeed(battleStats)) return;
+    sendToGodot({ type: "set_game_speed", battle_id: battleId, speed });
+  };
+
+  // 手動暫停／繼續：送出目標狀態與目前這一場的 battle_id（不是切換），畫面等 Godot 的 update_stats 才改變
+  const handleSetPaused = (next: boolean) => {
+    const battleId = sessionRef.current.owner?.id;
+    if (!battleId || !canTogglePause(battleStats)) return;
+    sendToGodot({ type: "set_paused", battle_id: battleId, paused: next });
   };
 
   const handleUpgradeUnit = () => {
-    if (!upgradePanel) return;
+    if (paused || !upgradePanel) return;
     sendToGodot({ type: "request_upgrade" });
   };
 
@@ -811,7 +889,7 @@ export default function SinglePageContent() {
 
   // 備戰拆除：先確認；確認後帶回面板上的 battle_id、塔的識別碼與確認時看到的返還金額，由 Godot 驗證並結算
   const handleSellStart = () => {
-    if (!upgradePanel?.tower_uid) return;
+    if (paused || !upgradePanel?.tower_uid) return;
     setTowerSell({
       battle_id: upgradePanel.battle_id,
       tower_uid: upgradePanel.tower_uid,
@@ -820,7 +898,7 @@ export default function SinglePageContent() {
   };
 
   const handleSellConfirm = (expectedRefund: number) => {
-    if (!upgradePanel?.tower_uid) return;
+    if (paused || !upgradePanel?.tower_uid) return;
     setTowerSell({
       battle_id: upgradePanel.battle_id,
       tower_uid: upgradePanel.tower_uid,
@@ -836,7 +914,7 @@ export default function SinglePageContent() {
 
   // 防禦塔的目標優先：帶回面板上的 battle_id 與塔的識別碼，Godot 確認是同一場、同一座塔才套用
   const handleSetTargetMode = (mode: string) => {
-    if (!upgradePanel?.tower_uid) return;
+    if (paused || !upgradePanel?.tower_uid) return;
     sendToGodot({
       type: "set_tower_target",
       battle_id: upgradePanel.battle_id,
@@ -885,6 +963,14 @@ export default function SinglePageContent() {
       {/* Godot iframe — 不卸載；只有遊戲版本不相符、玩家按下重新載入時才換成新的 iframe。
           遊戲畫面固定 540:720、放進戰場區域的實際寬高（D22）；data-game-stage 是面板定位的可見範圍 */}
       <div className={styles.gamePortraitWrap} data-game-stage>
+        {/* 部署選單開著時，戰場的留邊（D24）和選單外一樣是關閉區：只蓋住遊戲畫面以外的留邊，點了照一般的取消關閉 */}
+        {placementMenu && (
+          <div
+            className={styles.stageMenuBackdrop}
+            data-testid="stage-menu-backdrop"
+            onClick={handleCloseMenu}
+          />
+        )}
         <div className={styles.gameWrapper}>
           {/* 進場動畫：payload 送出前全程顯示（含 Godot 載入階段） */}
           {!payloadSent &&
@@ -952,6 +1038,7 @@ export default function SinglePageContent() {
               teamList={enrichedTeamList}
               heroesConfig={staticConfig?.heroesConfig || []}
               placedHeroIds={placedHeroIds}
+              locked={paused}
             />
           )}
           {upgradePanel && (
@@ -965,7 +1052,13 @@ export default function SinglePageContent() {
               onSellStart={handleSellStart}
               onSellCancel={() => setTowerSell(null)}
               onSellConfirm={handleSellConfirm}
+              locked={paused}
             />
+          )}
+
+          {/* 手動暫停中：戰場下方的「已暫停」與「繼續」；結算後不顯示 */}
+          {payloadSent && !battleResult && (
+            <PauseBadge stats={battleStats} onSet={handleSetPaused} />
           )}
         </div>
       </div>
@@ -1047,7 +1140,9 @@ export default function SinglePageContent() {
                   <button
                     className={styles.hudBarBtn}
                     onClick={handleStartBattle}
-                    disabled={battleStats.game_state !== GameState.PREP}
+                    disabled={
+                      battleStats.game_state !== GameState.PREP || paused
+                    }
                     style={
                       battleStats.game_state === GameState.BATTLE
                         ? { background: "rgba(99, 102, 241, 0.6)" }
@@ -1061,9 +1156,20 @@ export default function SinglePageContent() {
                   <button
                     className={`${styles.hudBarBtn} ${battleStats.auto_mode ? styles.hudActionBtnActive : ""}`}
                     onClick={handleToggleAuto}
+                    disabled={paused}
                   >
                     自動
                   </button>
+                  <SpeedToggle
+                    stats={battleStats}
+                    onSelect={handleSetSpeed}
+                    variant="hud"
+                  />
+                  <PauseToggle
+                    stats={battleStats}
+                    onSet={handleSetPaused}
+                    variant="hud"
+                  />
                 </>
               )}
             </div>

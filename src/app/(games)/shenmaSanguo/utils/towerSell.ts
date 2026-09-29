@@ -79,6 +79,8 @@ export function sellReasonText(reason: string | undefined): string {
       return "這座塔已不是目前選取的防禦塔，請重新點選。";
     case "stale_battle":
       return "這一場已經結束或更換，請重新點選。";
+    case "paused":
+      return "戰鬥已暫停，繼續後才能拆除。";
     default:
       return "拆除沒有完成，請重新點選這座塔。";
   }

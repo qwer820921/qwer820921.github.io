@@ -7,7 +7,6 @@ extends Node
 signal payload_received(data: Dictionary)
 signal start_battle_requested()
 signal auto_toggle_requested()
-signal resume_game_requested()
 signal move_unit_requested()
 signal deselect_unit_requested()
 signal upgrade_unit_requested()
@@ -20,7 +19,12 @@ signal debug_snapshot_requested(request_id: String)
 ##    所以提升版本，讓網頁對舊版遊戲顯示更新提示，而不是讓面板的選項默默失效
 ## 4：備戰拆除防禦塔（Round 18）：sell_tower 命令與 tower_sell_result 回覆，面板多了投入與返還金額；
 ##    舊版遊戲不認得拆除命令（網頁會一直等不到回覆），所以同樣提升版本
-const BRIDGE_PROTOCOL: int = 4
+## 5：戰鬥速度：set_game_speed 命令與 game_speed_result 回覆，update_stats 帶 speed／time_scale／deploy_slow；
+##    click_cell 帶 battle_id 與選單編號，關閉選單的 resume_game 要帶回（舊版遊戲不看，舊的關閉命令會解除新選單的慢速）。
+##    舊版遊戲不認得速度命令（按鈕會默默沒有作用），所以提升版本
+## 6：手動暫停：set_paused 命令 {battle_id, paused（布林，目標狀態）} 與 game_pause_result 回覆
+##    {battle_id, ok, paused, speed, time_scale, reason?}，update_stats 帶 paused。舊版遊戲不認得暫停命令，所以提升版本
+const BRIDGE_PROTOCOL: int = 6
 
 
 var _msg_callback: JavaScriptObject
@@ -79,8 +83,6 @@ func _on_js_message(args: Array) -> void:
 		start_battle_requested.emit()
 	elif payload.get("type") == "toggle_auto":
 		auto_toggle_requested.emit()
-	elif payload.get("type") == "resume_game":
-		resume_game_requested.emit()
 	elif payload.get("type") == "request_move":
 		move_unit_requested.emit()
 	elif payload.get("type") == "deselect_unit":
@@ -168,6 +170,24 @@ func send_tower_target_changed(data: Dictionary) -> void:
 func send_tower_sell_result(data: Dictionary) -> void:
 	data["__godot_bridge"] = true
 	data["type"] = "tower_sell_result"
+	if OS.get_name() != "Web":
+		return
+	var json = JSON.stringify(data)
+	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
+
+## 戰鬥速度的回覆：{battle_id, ok, speed, time_scale, reason?}。battle_id 是命令帶來的值，Web 只在和目前這一場相同時採用
+func send_game_speed_result(data: Dictionary) -> void:
+	data["__godot_bridge"] = true
+	data["type"] = "game_speed_result"
+	if OS.get_name() != "Web":
+		return
+	var json = JSON.stringify(data)
+	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
+
+## 手動暫停的回覆：{battle_id, ok, paused, speed, time_scale, reason?}。battle_id 是命令帶來的值，Web 只在和目前這一場相同時採用
+func send_game_pause_result(data: Dictionary) -> void:
+	data["__godot_bridge"] = true
+	data["type"] = "game_pause_result"
 	if OS.get_name() != "Web":
 		return
 	var json = JSON.stringify(data)

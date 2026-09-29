@@ -68,6 +68,8 @@ interface UpgradePanelProps {
   onSellCancel?: () => void;
   /** 確認拆除：帶回確認時看到的返還金額（Godot 比對不同就不拆） */
   onSellConfirm?: (expectedRefund: number) => void;
+  /** 手動暫停中：只能查看，升級、改目標、拆除都停用（Godot 也會拒絕） */
+  locked?: boolean;
 }
 
 export default function UpgradePanel({
@@ -80,6 +82,7 @@ export default function UpgradePanel({
   onSellStart,
   onSellCancel,
   onSellConfirm,
+  locked = false,
 }: UpgradePanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   // 定位和部署選單共用（utils/stageAnchor）：Godot 座標乘上縮放比例、限制在看得到的範圍、尺寸或方向改變時重算
@@ -149,6 +152,12 @@ export default function UpgradePanel({
           )}
         </div>
 
+        {locked && (
+          <div className={styles.lockNotice} data-testid="unit-panel-locked">
+            已暫停：繼續後才能升級、拆除或改目標
+          </div>
+        )}
+
         {showTarget && (
           <div className={styles.targetModeBox} data-testid="tower-target">
             <div className={styles.upgStatLabel}>攻擊目標</div>
@@ -166,6 +175,7 @@ export default function UpgradePanel({
                         : ""
                     }`}
                     aria-pressed={o.mode === data.target_mode}
+                    disabled={locked}
                     data-testid={`tower-target-${o.mode}`}
                     onClick={() => {
                       if (o.mode !== data.target_mode)
@@ -191,8 +201,8 @@ export default function UpgradePanel({
         <div className={styles.upgradeActions}>
           {data.unit_type === "tower" && !data.max_level && (
             <button
-              className={`${styles.actionBtn} ${styles.upgradeBtn} ${!data.can_afford ? styles.btnDisabled : ""}`}
-              disabled={!data.can_afford || confirming}
+              className={`${styles.actionBtn} ${styles.upgradeBtn} ${!data.can_afford || locked ? styles.btnDisabled : ""}`}
+              disabled={!data.can_afford || confirming || locked}
               onClick={onUpgrade}
             >
               升級 (💰{data.upgrade_cost})
@@ -210,10 +220,14 @@ export default function UpgradePanel({
               <button
                 className={`${styles.actionBtn} ${styles.sellBtn}`}
                 data-testid="tower-sell"
-                disabled={!canSell}
+                disabled={!canSell || locked}
                 onClick={onSellStart}
               >
-                {canSell ? `拆除（返還 💰${refund}）` : "備戰時可拆除"}
+                {!canSell
+                  ? "備戰時可拆除"
+                  : locked
+                    ? "暫停中不能拆除"
+                    : `拆除（返還 💰${refund}）`}
               </button>
             ) : (
               <div
@@ -232,7 +246,7 @@ export default function UpgradePanel({
                     <button
                       className={`${styles.actionBtn} ${styles.sellOkBtn}`}
                       data-testid="tower-sell-ok"
-                      disabled={!canSell || pending}
+                      disabled={!canSell || pending || locked}
                       onClick={() => onSellConfirm?.(refund)}
                     >
                       {pending ? "拆除中…" : "確認拆除"}

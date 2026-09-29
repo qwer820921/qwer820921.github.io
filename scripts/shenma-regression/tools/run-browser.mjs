@@ -6,6 +6,7 @@
 // - BROWSER_CHANNEL：預設 chrome（和 Playwright MCP 一樣使用系統的 Chrome）；HEADED=1 會顯示視窗
 // - 前置：npm run dev（http://localhost:3000）
 // - EVIDENCE_DIR：證據目錄（預設是 harness.js 裡的 EVIDENCE）；不同批次用不同目錄，避免互相覆寫
+// - ENGINE_DIR：反向驗證用的遊戲檔案目錄（支援的情境腳本會改用這個目錄的遊戲，見 README）
 // - LOCAL_ASSETS=1：驗證正式靜態匯出時使用（前置改成 tools/serve-out.mjs）。正式版的 _next 資源指向
 //   https://qwer820921.github.io/（assetPrefix），這些請求一律由本機 out/ 回應，不會連到正式站
 // 任何一支腳本 allPass 不是 true（或執行時拋出例外）時結束碼為 1
@@ -38,6 +39,11 @@ if (process.env.EVIDENCE_DIR) {
   // harness 讀取這個目錄當作證據目錄（截圖與 *.raw.json 都寫在這裡）
   mkdirSync(process.env.EVIDENCE_DIR, { recursive: true });
   context.__shenmaEvidence = process.env.EVIDENCE_DIR;
+}
+if (process.env.ENGINE_DIR) {
+  // 反向驗證用：遊戲的 index.html／index.pck／index.service.worker.js 改由這個目錄提供（例如刻意改壞後匯出的遊戲），
+  // 情境腳本讀 context.__shenmaEngineDir 自行攔截
+  context.__shenmaEngineDir = process.env.ENGINE_DIR;
 }
 if (process.env.LOCAL_ASSETS === "1") {
   const { resolveOutPath, contentType } = await import("./serve-out.mjs");

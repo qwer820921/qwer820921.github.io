@@ -1213,6 +1213,14 @@
   box-shadow: none;
 }
 
+/* 部署選單開著時的戰場留邊（D24）：放在遊戲畫面之前，只露出畫面以外的留邊；和選單外同樣是關閉區、同樣變暗 */
+.stageMenuBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
 /* ── Placement Menu ─────────────────────────────────────── */
 .placementOverlay {
   position: absolute;
@@ -2249,4 +2257,140 @@
   background: #059669;
   transform: translateY(-1px);
   box-shadow: 0 3px 8px rgba(16, 185, 129, 0.4);
+}
+
+/* ── 戰鬥速度 1×／2×：主頁 HUD 與獨立戰鬥頁頂欄共用（SpeedToggle.tsx） ── */
+.speedToggle {
+  position: relative;
+  display: inline-flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+/* 兩顆小按鈕：沿用各自的按鈕樣式（hudBarBtn／topBtn），只縮小左右留白，窄螢幕不擠掉迎戰、返回與金幣 */
+.speedBtn {
+  min-width: 34px;
+  padding-left: 6px;
+  padding-right: 6px;
+  letter-spacing: 0;
+}
+
+/* 部署選單開著時的短提示：放在按鈕下方，不佔版面、不擋點擊 */
+.speedHint {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.92);
+  color: #1a1f36;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ── 手動暫停／繼續：主頁 HUD 與獨立戰鬥頁頂欄共用（PauseToggle.tsx） ── */
+/* 沿用各自的按鈕樣式（hudBarBtn／topBtn），圖示＋文字 */
+.pauseBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* 很窄的畫面只留圖示（按鈕的名稱仍是「暫停／繼續」），不擠掉迎戰、自動與速度 */
+@media (max-width: 400px) {
+  .pauseLabel {
+    display: none;
+  }
+  .pauseBtn {
+    min-width: 34px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}
+
+/* 360 寬以下（例如 320）：主頁 HUD 按鈕列多了暫停鈕，縮小留白與間距，迎戰、自動、1×、2×、暫停、武將、隊伍仍放得下一列 */
+@media (max-width: 360px) {
+  .hudActionBar {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .hudActionBarLeft,
+  .hudActionBarRight {
+    gap: 3px;
+  }
+  .hudBarBtn {
+    padding-left: 8px;
+    padding-right: 8px;
+    letter-spacing: 0;
+  }
+  .hudBarBtn.speedBtn,
+  .hudBarBtn.pauseBtn {
+    min-width: 30px;
+    padding-left: 5px;
+    padding-right: 5px;
+  }
+}
+
+/* 戰場上的「已暫停」：遊戲畫面下方中央的一小塊，只有這裡擋住點擊（暫停中仍可點單位查看資訊）；
+   疊在部署選單的遮罩之上（選單開著時也按得到「繼續」），在單位面板之下 */
+.pauseBadge {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px 5px 14px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(245, 158, 11, 0.85);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+}
+
+.pauseBadgeText {
+  color: #fbbf24;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.pauseResumeBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 3px 12px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #6366f1, #818cf8);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pauseResumeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 部署選單與單位面板在暫停中的說明（只能查看、關閉） */
+.lockNotice {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fbbf24;
+  font-size: 0.72rem;
+  font-weight: 700;
 }

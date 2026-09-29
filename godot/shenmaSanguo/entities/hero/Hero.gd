@@ -158,7 +158,13 @@ func _compute_range(cfg: Dictionary) -> float:
 # ═══════════════════════════════════════════
 #  _process — 自動攻擊
 # ═══════════════════════════════════════════
+## _atk_timer 是距離下一擊的遊戲時間：
+## - 持續有目標時，下一擊排在「上一擊的預定時間＋攻擊間隔」，越過零點的零頭保留到下一次，不因幀長逐擊落後（1 倍與 2 倍的擊數相同）
+## - 冷卻好了但沒有目標時停在 0（待命），不累積欠下的攻擊；取得目標的那一幀打一擊，之後照攻擊間隔
+## - 一幀最多打一擊：單幀長過攻擊間隔時其餘的攻擊作廢（受幀率限制），下一擊從這一擊起算一個完整的攻擊間隔，不補發
+## 切換速度、部署慢速、手動暫停、升級、重選目標都不重設這個計時器
 func _process(delta: float) -> void:
+	var was_ready: bool = _atk_timer <= 0.0
 	_atk_timer -= delta
 	
 	if _anim_timer > 0.0:
@@ -176,8 +182,9 @@ func _process(delta: float) -> void:
 	var enemies: Array = _wave_mgr.get_active_enemies()
 	var target: Node = _find_target(enemies, range_px)
 	if target == null:
-		# 清除所有減速
+		# 清除所有減速；待命停在 0，不囤積攻擊
 		_clear_all_slows(enemies)
+		_atk_timer = 0.0
 		return
 
 	# 攻擊。奇襲：這一場第一次真的攻擊到有效目標時傷害加倍（沒有目標時不會走到這裡，也就不會用掉）
@@ -195,7 +202,9 @@ func _process(delta: float) -> void:
 		target.apply_burn(atk * burn_ratio, burn_ticks, burn_interval)
 	_is_attacking = true
 	_anim_timer   = 0.22
-	_atk_timer    = attack_speed
+	# 保留這一幀越過零點的時間（零頭）；待命後的第一擊、或零頭長過一個間隔（極長的一幀）時從這一擊起算完整的間隔
+	var late: float = 0.0 if was_ready else -_atk_timer
+	_atk_timer    = attack_speed - (late if late < attack_speed else 0.0)
 	queue_redraw()
 
 	# ROAD 武將：在攻擊的回合對目標施加緩速

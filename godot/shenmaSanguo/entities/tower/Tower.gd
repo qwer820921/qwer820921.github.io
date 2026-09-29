@@ -170,7 +170,10 @@ func setup(type_key: String, cell: Vector2i, wave_mgr: Node) -> void:
 # ═══════════════════════════════════════════
 #  _process — 自動攻擊
 # ═══════════════════════════════════════════
+## 攻擊冷卻和武將相同（見 Hero._process）：持續有目標時保留越過零點的零頭；
+## 沒有目標時停在 0 不囤積；一幀最多打一擊，單幀長過攻擊間隔時其餘作廢、從這一擊起算完整的間隔
 func _process(delta: float) -> void:
+	var was_ready: bool = _atk_timer <= 0.0
 	_atk_timer -= delta
 	
 	if _anim_timer > 0.0:
@@ -190,6 +193,7 @@ func _process(delta: float) -> void:
 	var enemies: Array = _wave_mgr.get_active_enemies()
 	var target: Node = _find_target(enemies, range_px)
 	if target == null:
+		_atk_timer = 0.0  # 待命：不囤積攻擊
 		return
 
 	if is_aoe:
@@ -201,7 +205,8 @@ func _process(delta: float) -> void:
 
 	_is_attacking = true
 	_anim_timer   = 0.22  # 攻擊圖顯示時長
-	_atk_timer    = atk_spd
+	var late: float = 0.0 if was_ready else -_atk_timer
+	_atk_timer    = atk_spd - (late if late < atk_spd else 0.0)
 	queue_redraw()
 	_sfx("tower_shoot")
 

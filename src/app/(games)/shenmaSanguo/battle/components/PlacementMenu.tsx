@@ -12,6 +12,8 @@ interface PlacementMenuProps {
   teamList: any[];
   heroesConfig: any[];
   placedHeroIds: string[];
+  /** 手動暫停中：不能部署，只能關閉選單（Godot 也會拒絕部署命令） */
+  locked?: boolean;
 }
 
 export default function PlacementMenu({
@@ -23,6 +25,7 @@ export default function PlacementMenu({
   teamList,
   heroesConfig,
   placedHeroIds,
+  locked = false,
 }: PlacementMenuProps) {
   const isRoad = type === "road";
   const [activeTab, setActiveTab] = useState<"hero" | "tower">(
@@ -80,6 +83,11 @@ export default function PlacementMenu({
         )}
 
         <div className={styles.placementContent}>
+          {locked && (
+            <div className={styles.lockNotice} data-testid="placement-locked">
+              已暫停：繼續後才能部署
+            </div>
+          )}
           {activeTab === "hero" ? (
             <div className={styles.heroGrid}>
               {teamList.map((slot) => {
@@ -90,8 +98,8 @@ export default function PlacementMenu({
                 return (
                   <button
                     key={slot.hero_id}
-                    className={`${styles.menuCard} ${isPlaced ? styles.cardDisabled : ""}`}
-                    disabled={isPlaced}
+                    className={`${styles.menuCard} ${isPlaced || locked ? styles.cardDisabled : ""}`}
+                    disabled={isPlaced || locked}
                     onClick={() => onSelect(slot.hero_id, "hero")}
                   >
                     <div className={styles.cardIcon}>
@@ -129,8 +137,8 @@ export default function PlacementMenu({
                 return (
                   <button
                     key={t.id}
-                    className={`${styles.menuCard} ${!canAfford ? styles.cardDisabled : ""}`}
-                    disabled={!canAfford}
+                    className={`${styles.menuCard} ${!canAfford || locked ? styles.cardDisabled : ""}`}
+                    disabled={!canAfford || locked}
                     onClick={() => onSelect(t.id, "tower")}
                   >
                     <div className={styles.cardIcon}>

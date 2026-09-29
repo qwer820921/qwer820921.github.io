@@ -55,3 +55,6 @@ next-env.d.ts
 
 # Playwright MCP 暫存（截圖、主控台紀錄）
 .playwright-mcp/
+
+# 神馬三國回歸測試用的舊版遊戲產物（依 scripts/shenma-regression/README.md 從 git 取出）
+/scripts/shenma-regression/.legacy/
