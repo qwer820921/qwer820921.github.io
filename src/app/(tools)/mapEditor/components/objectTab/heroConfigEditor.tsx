@@ -2,7 +2,13 @@
 import React, { useState } from "react";
 import styles from "../../styles/objectTab.module.css";
 import { HeroConfig } from "../../types";
-import { gameApi } from "@/app/(games)/shenmaSanguo/api/gameApi";
+import { gameApi, GasError } from "@/app/(games)/shenmaSanguo/api/gameApi";
+import {
+  ADMIN_TOKEN_MISSING,
+  adminErrorText,
+  forgetAdminToken,
+  requireAdminToken,
+} from "../../utils/adminToken";
 
 // 數值欄位
 const NUM_FIELDS: (keyof HeroConfig)[] = [
@@ -124,11 +130,21 @@ export default function HeroConfigEditor() {
   const handleSave = async () => {
     setS("saving", "儲存中...");
     try {
-      const data = await gameApi.saveHeroesConfig(rows);
+      // 管理密碼：沒有輸入就不送出
+      const token = await requireAdminToken();
+      if (!token) throw new Error(ADMIN_TOKEN_MISSING);
+      const data = await gameApi.saveHeroesConfig(rows, token);
       if (data.status !== 200) throw new Error(data.error || "儲存失敗");
       setS("ok", `✓ 已儲存 ${rows.length} 筆至 Sheet`);
     } catch (e) {
-      setS("error", `✗ ${e instanceof Error ? e.message : String(e)}`);
+      // 後端拒絕管理密碼：清掉，下次儲存重新詢問
+      if (e instanceof GasError && e.message === "ADMIN_REQUIRED") {
+        forgetAdminToken();
+      }
+      setS(
+        "error",
+        `✗ ${e instanceof Error ? adminErrorText(e.message) : String(e)}`
+      );
     }
   };
 

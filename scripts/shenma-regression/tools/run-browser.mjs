@@ -7,13 +7,14 @@
 // - 前置：npm run dev（http://localhost:3000）
 // - EVIDENCE_DIR：證據目錄（預設是 harness.js 裡的 EVIDENCE）；不同批次用不同目錄，避免互相覆寫
 // - ENGINE_DIR：反向驗證用的遊戲檔案目錄（支援的情境腳本會改用這個目錄的遊戲，見 README）
+// - GAS_BACKEND：多分頁情境（save-conflict-web.js）的共用後端模組（export createBackend），沒有設定時用腳本內建的契約 mock
 // - LOCAL_ASSETS=1：驗證正式靜態匯出時使用（前置改成 tools/serve-out.mjs）。正式版的 _next 資源指向
 //   https://qwer820921.github.io/（assetPrefix），這些請求一律由本機 out/ 回應，不會連到正式站
 // 任何一支腳本 allPass 不是 true（或執行時拋出例外）時結束碼為 1
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
 const SUITE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -44,6 +45,14 @@ if (process.env.ENGINE_DIR) {
   // 反向驗證用：遊戲的 index.html／index.pck／index.service.worker.js 改由這個目錄提供（例如刻意改壞後匯出的遊戲），
   // 情境腳本讀 context.__shenmaEngineDir 自行攔截
   context.__shenmaEngineDir = process.env.ENGINE_DIR;
+}
+if (process.env.GAS_BACKEND) {
+  // 共用後端（多分頁情境用）：模組的 createBackend() 取代情境腳本內建的契約 mock，
+  // 例如用本機模擬的試算表執行後端程式。模組路徑相對於倉庫根目錄
+  const mod = await import(
+    pathToFileURL(resolve(ROOT, process.env.GAS_BACKEND)).href
+  );
+  context.__shenmaGasBackendFactory = mod.createBackend;
 }
 if (process.env.LOCAL_ASSETS === "1") {
   const { resolveOutPath, contentType } = await import("./serve-out.mjs");

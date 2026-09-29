@@ -2,7 +2,10 @@
 // GAS 不支援 CORS preflight，所以不設定 Content-Type header
 // body 傳純字串，GAS 用 e.postData.contents 讀取
 
+// 建置時可用環境變數 NEXT_PUBLIC_SHENMA_GAS_URL 改成測試用的部署（例如試算表副本的 exec 網址）；沒有設定時是正式的後端。
+// 網址會包進前端程式，只能放公開的部署網址，不能放任何密碼
 export const SHENMA_SANGUO_GAS_URL =
+  process.env.NEXT_PUBLIC_SHENMA_GAS_URL ||
   "https://script.google.com/macros/s/AKfycbwp4fh9r832zzUwY6x1HnvxrhuKxGAb0cluL_89ydsqSLQAwHHxMkUt_8mJQO1xDpue/exec";
 
 const GAS_URL = SHENMA_SANGUO_GAS_URL;
@@ -10,8 +13,19 @@ const GAS_URL = SHENMA_SANGUO_GAS_URL;
 /**
  * GAS 已處理請求並回傳錯誤（status ≠ 200）。
  * 和網路錯誤、無法解析的回應不同：這代表伺服器明確拒絕，而不是結果不明。
+ * response 是後端回應的完整內容（例如版本衝突時附上雲端目前的 rev 與 data）
  */
-export class GasError extends Error {}
+export class GasError extends Error {
+  readonly response: Record<string, unknown>;
+  constructor(code: string, response: Record<string, unknown> = {}) {
+    super(code);
+    this.response = response;
+  }
+}
+
+/** 有數字時才帶 base_rev（舊版後端或版本不明時不帶） */
+const withBase = (payload: object, baseRev?: number | null) =>
+  typeof baseRev === "number" ? { ...payload, base_rev: baseRev } : payload;
 
 async function callGAS(action: string, key?: string, payload?: object) {
   const res = await fetch(GAS_URL, {
@@ -21,7 +35,7 @@ async function callGAS(action: string, key?: string, payload?: object) {
   });
   const data = await res.json();
   if (data.status !== 200) {
-    throw new GasError(data.error || "GAS_ERROR");
+    throw new GasError(data.error || "GAS_ERROR", data);
   }
   return data;
 }
@@ -44,27 +58,45 @@ export const gameApi = {
 
   /**
    * 覆寫玩家完整 data（隊伍變更、debounce 同步時使用）
+   * baseRev：這份資料根據的雲端版本；雲端在這之後被改過時後端回 REV_CONFLICT（附雲端目前的 rev 與 data），不寫入
+   * 回傳：{ status: 200, success: true, rev?, prev_rev? }（舊版後端沒有 rev）
    */
-  saveProfile: (key: string, data: object) =>
-    callGAS("save_profile", key, { data }),
+  saveProfile: (key: string, data: object, baseRev?: number | null) =>
+    callGAS("save_profile", key, withBase({ data }, baseRev)),
 
   // ── 存檔 ──
 
   /**
    * 戰鬥結算：GAS 伺服器端更新金幣與 max_stage，並寫入 battle_logs
+   * requestId：這一場的識別碼；新版後端用它辨識重送（同一場只記錄一次），舊版後端忽略
+   * baseRev：送出時本機的雲端版本；新版後端只在它等於寫入前的版本時才回傳新的 rev
+   * 回傳：{ status: 200, success: true, log_id, prev_rev?, rev?, base_mismatch? }
    */
-  saveResult: (key: string, result: object) =>
-    callGAS("save_result", key, result),
+  saveResult: (
+    key: string,
+    result: object,
+    requestId?: string,
+    baseRev?: number | null
+  ) =>
+    callGAS(
+      "save_result",
+      key,
+      withBase(
+        requestId ? { ...result, request_id: requestId } : result,
+        baseRev
+      )
+    ),
 
   // ── 武將升級 ──
 
   /**
    * 武將升級：GAS 伺服器端計算費用、扣金幣、更新屬性
-   * 回傳：{ status: 200, hero: {...}, gold_remaining: number }
+   * baseRev：送出時本機的雲端版本；新版後端在雲端版本不同時回 REV_CONFLICT，不扣點數
+   * 回傳：{ status: 200, hero: {...}, gold_remaining: number, cost?, rev?, prev_rev? }
    * 失敗：{ status: 400, error: "GOLD_NOT_ENOUGH" }
    */
-  upgradeHero: (key: string, heroId: string) =>
-    callGAS("upgrade_hero", key, { hero_id: heroId }),
+  upgradeHero: (key: string, heroId: string, baseRev?: number | null) =>
+    callGAS("upgrade_hero", key, withBase({ hero_id: heroId }, baseRev)),
 
   // ── 靜態設定（讀取）──
 
@@ -78,16 +110,22 @@ export const gameApi = {
   // ── 靜態設定（寫入）──
 
   /**
-   * 批次覆寫整張 enemies_config sheet
+   * 批次覆寫整張 enemies_config sheet（需要管理密碼；密碼錯誤或後端沒設定時回 ADMIN_REQUIRED）
    */
-  saveEnemiesConfig: (enemies: object[]) =>
-    callGAS("save_enemies_config", undefined, { enemies }),
+  saveEnemiesConfig: (enemies: object[], adminToken: string) =>
+    callGAS("save_enemies_config", undefined, {
+      enemies,
+      admin_token: adminToken,
+    }),
 
   /**
-   * 批次覆寫整張 heroes_config sheet
+   * 批次覆寫整張 heroes_config sheet（需要管理密碼；密碼錯誤或後端沒設定時回 ADMIN_REQUIRED）
    */
-  saveHeroesConfig: (heroes: object[]) =>
-    callGAS("save_heroes_config", undefined, { heroes }),
+  saveHeroesConfig: (heroes: object[], adminToken: string) =>
+    callGAS("save_heroes_config", undefined, {
+      heroes,
+      admin_token: adminToken,
+    }),
 };
 
 // ── localStorage key 管理 ──

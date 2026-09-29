@@ -2016,6 +2016,58 @@
   visibility: hidden;
 }
 
+/* ── 存檔衝突比較（SaveConflictModal）：疊在底部提示（bottomNotices）上方，
+   低於全站聊天按鈕（1050，視窗開啟時已隱藏浮動入口） ── */
+.conflictBackdrop {
+  z-index: 1045;
+}
+
+.conflictPanel {
+  max-width: 640px;
+}
+
+.conflictIcon {
+  color: var(--sg-gold-dim);
+  font-size: 1rem;
+}
+
+.conflictIntro {
+  font-size: 0.85rem;
+  color: var(--sg-text);
+  line-height: 1.6;
+}
+
+.conflictTable {
+  font-size: 0.8rem;
+}
+
+.conflictTable th {
+  white-space: nowrap;
+}
+
+.conflictDiff td {
+  background: #fffbeb;
+  font-weight: 600;
+}
+
+.conflictHint {
+  font-size: 0.75rem;
+  color: var(--sg-muted);
+  margin-top: 0.25rem;
+}
+
+.conflictConfirmTitle {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--sg-text);
+}
+
+.conflictImpact {
+  font-size: 0.82rem;
+  color: var(--sg-text);
+  padding-left: 1.25rem;
+}
+
 /* ── 關卡敵軍預覽（EnemyPreviewModal）：疊在主頁的關卡視窗上方 ── */
 .enemyPreviewBackdrop {
   z-index: 210;

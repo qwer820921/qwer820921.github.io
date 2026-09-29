@@ -11,6 +11,12 @@ import {
   WaveRow,
 } from "../types";
 import { SHENMA_SANGUO_GAS_URL } from "@/app/(games)/shenmaSanguo/api/gameApi";
+import {
+  ADMIN_TOKEN_MISSING,
+  adminErrorText,
+  forgetAdminToken,
+  requireAdminToken,
+} from "../utils/adminToken";
 
 type Tool = "waypoint" | "build" | "obstacle" | "erase" | "texture";
 
@@ -110,6 +116,21 @@ async function gasCall(action: string, payload: object) {
     body: JSON.stringify({ action, payload }),
   });
   return res.json();
+}
+
+/**
+ * 設定寫入：帶管理密碼（只在 POST 內容裡，不放網址）。沒有輸入就不送出；
+ * 後端拒絕密碼時清掉，下次儲存重新詢問。回傳和 gasCall 相同，錯誤代碼轉成說明文字
+ */
+async function gasAdminCall(action: string, payload: object) {
+  const token = await requireAdminToken();
+  if (!token) throw new Error(adminErrorText(ADMIN_TOKEN_MISSING));
+  const data = await gasCall(action, { ...payload, admin_token: token });
+  if (data?.error === "ADMIN_REQUIRED") forgetAdminToken();
+  if (data?.status !== 200) {
+    throw new Error(adminErrorText(String(data?.error || "儲存失敗")));
+  }
+  return data;
 }
 
 // ── 主元件 ───────────────────────────────────────────────────
@@ -607,11 +628,10 @@ export default function MapTab({
         }))
         .filter((w) => w.enemies.length > 0);
 
-      const data = await gasCall("save_waves_config", {
+      await gasAdminCall("save_waves_config", {
         map_id: mapId,
         waves: cleanWaves,
       });
-      if (data.status !== 200) throw new Error(data.error || "儲存失敗");
       setWaveStatus("ok");
       setWaveMsg("✓ 波次儲存成功");
     } catch (e) {
@@ -700,11 +720,10 @@ export default function MapTab({
     setSheetStatus("saving");
     setSheetMsg("更新中...");
     try {
-      const data = await gasCall("update_map_config", {
+      await gasAdminCall("update_map_config", {
         map_id: mapId,
         path_json: buildMapJson(),
       });
-      if (data.status !== 200) throw new Error(data.error || "更新失敗");
       setSheetStatus("ok");
       setSheetMsg("✓ 更新成功");
     } catch (e) {
@@ -717,14 +736,13 @@ export default function MapTab({
     setSheetStatus("saving");
     setSheetMsg("新增中...");
     try {
-      const data = await gasCall("create_map_config", {
+      await gasAdminCall("create_map_config", {
         map_id: mapId,
         chapter: parseInt(chapter) || 1,
         name: mapName,
         unlock_stage: unlockStage,
         path_json: buildMapJson(),
       });
-      if (data.status !== 200) throw new Error(data.error || "新增失敗");
       setSheetStatus("ok");
       setSheetMsg("✓ 新增成功");
     } catch (e) {

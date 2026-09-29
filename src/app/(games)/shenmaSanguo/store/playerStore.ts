@@ -16,6 +16,8 @@ import { stageToNum, getNextStage } from "../utils/stageUtils";
 
 // ── 常數 ──────────────────────────────────────────────────────
 export const PLAYER_SESSION_KEY = "shenma_player_state";
+/** 解決存檔衝突前的備份（只存在這個分頁的 session，見 ConflictBackup） */
+export const CONFLICT_BACKUP_KEY = "shenma_conflict_backup";
 const DEBOUNCE_MS = 30_000; // 使用者修改後合併送出的等待時間
 const RETRY_MS = 30_000; // 保存失敗後的重試間隔
 const RESTORE_SYNC_DELAY_MS = 0; // 重新整理後恢復的未同步修改：立即補送
@@ -63,6 +65,21 @@ let _onHold: (() => void) | null = null; // store 建立時設定：更新畫面
 // 網站遷移的存檔處理還沒完成（見 utils/siteIsolation/boot.ts 的 problem）：不讀取 session、不讀取伺服器存檔、不保存，
 // 避免覆蓋還沒處理的暫存。由 setSessionBlocked() 設定
 let _sessionBlocked = false;
+// 雲端版本（player.serverRev，見 types）：這個分頁的資料根據雲端哪一個版本，保存、升級、結算時當作 base_rev 送出。
+//   只在確定雲端的新版本已包含在本機資料裡時才前進：採用整份雲端資料、整份保存成功，
+//   或升級／結算的回應證明是在送出時的版本上計算（prev_rev 等於送出的 base_rev）。
+//   升級與結算是在雲端「目前」的資料上計算，回應的 rev 不能證明本機資料包含其他分頁的修改，所以不能只看最新的 rev。
+// 版本衝突：保存被拒時暫停自動保存、保留本機修改，由玩家比較兩份資料後選擇（resolveSaveConflict）。
+// 結果不明的保存（網路錯誤、回應遺失）：記下送出的資料與版本；之後遇到版本衝突時，
+//   雲端剛好是這份資料就代表它其實成功了，不必請玩家選擇
+let _uncertainSave: {
+  gen: number;
+  key: string;
+  base: number;
+  data: PlayerState;
+  localRev: number;
+} | null = null;
+let _resolving = false; // 正在處理版本衝突（一次只處理一個選擇）
 
 /** 進入寫入限制（不會解除） */
 function markHold() {
@@ -85,6 +102,14 @@ function writesHeld(): boolean {
   return _writeHold;
 }
 
+/** 寫入限制是否生效；不更新畫面狀態（畫面繪製期間也可以呼叫，例如判斷按鈕能不能按） */
+function holdActive(): boolean {
+  return (
+    _writeHold ||
+    (typeof window !== "undefined" && window.__siteIsolation?.lostCopy === true)
+  );
+}
+
 /** 這張票是不是目前有效的那一場（同一個帳號世代、而且還沒被新場次、離開或結算取代） */
 const isActiveBattle = (ticket: BattleTicket | null | undefined) =>
   !!ticket &&
@@ -104,6 +129,47 @@ export type SwitchNotice = { error: string };
 /** 戰鬥結算的結果：不屬於目前帳號、不是目前的場次或已經結算過時不套用 */
 export type BattleSettleResult = { ok: true } | { ok: false; error: string };
 
+/**
+ * 版本衝突：雲端存檔在這個分頁的資料版本之後被其他分頁或裝置改過（或本機不知道自己的版本），保存被拒絕。
+ * 暫停自動保存，本機修改都保留，等玩家比較後選擇。只屬於偵測到它的帳號世代；
+ * id 每次偵測或重新比較都會換新，確認時要帶畫面上那一份的 id，避免用舊的比較結果做決定
+ */
+export type SaveConflict = {
+  id: string;
+  /** 帳號世代（切換帳號後這份衝突就失效） */
+  gen: number;
+  /** 雲端版本：玩家看到的那一份；「保留這個分頁」只會覆蓋這個版本 */
+  serverRev: number;
+  /** 雲端資料；損毀或格式不對時是 null */
+  server: PlayerState | null;
+  /** conflict：雲端版本不同；base_unknown：本機不知道自己根據哪個版本，後端要求帶版本 */
+  reason: "conflict" | "base_unknown";
+  detectedAt: number;
+};
+
+export type ConflictChoice = "server" | "local";
+
+/**
+ * 解決衝突前的備份（這個分頁的 session，重新整理後仍在）：選擇前這個分頁的資料與當時的雲端資料都留著，
+ * 可以匯出，也可以把被放棄／被覆蓋的那一份放回這個分頁（之後保存會再出現衝突比較，由玩家決定）
+ */
+export type ConflictBackup = {
+  key: string;
+  savedAt: number;
+  choice: ConflictChoice;
+  /** 選擇前這個分頁的資料與它根據的雲端版本 */
+  local: PlayerState;
+  localBaseRev: number | null;
+  /** 選擇前的雲端資料與版本 */
+  cloud: PlayerState | null;
+  cloudRev: number;
+};
+
+/** 玩家確認時畫面上的狀態：衝突的 id 與這個分頁的本機版本（兩者都沒變才執行） */
+export type ConflictExpectation = { conflictId: string; localRev: number };
+
+export type ResolveResult = { ok: true } | { ok: false; error: string };
+
 export type LoadResult =
   | { ok: true; created: boolean; keptLocal?: boolean }
   | { ok: false; error: string; superseded?: boolean };
@@ -111,11 +177,12 @@ export type LoadResult =
 /**
  * 重新確認待確認升級的結果
  * - applied：伺服器上看得到這次升級，已採用並保存本機的其他修改
+ * - not_applied：升級帶著版本送出，雲端版本已不是那個版本、也看不到升級：確定沒有套用（新版後端才有）
  * - none：沒有待確認的升級
  * 看不到升級時回傳 { ok: false, error: "UPGRADE_UNCONFIRMED" }，繼續待確認
  */
 export type UpgradeCheckResult =
-  | { ok: true; outcome: "applied" | "none" }
+  | { ok: true; outcome: "applied" | "not_applied" | "none" }
   | { ok: false; error: string };
 
 // ── 版本與資料 helpers ─────────────────────────────────────────
@@ -125,8 +192,45 @@ const hasUnsyncedChanges = (p: SessionPlayerState) =>
   revOf(p) !== syncedRevOf(p);
 const isUnconfirmed = (p: SessionPlayerState | null | undefined) =>
   p?.pendingUpgrade?.state === "unknown";
+/** 雲端版本基準；舊版後端（不回報版本）或舊版 session 沒有時是 null */
+const serverRevOf = (p: SessionPlayerState | null | undefined) =>
+  typeof p?.serverRev === "number" ? p.serverRev : null;
+/** 後端回應裡的版本欄位（rev、prev_rev）：非負整數才算，其他（沒有、格式不對）是 null */
+const revField = (res: unknown, field: "rev" | "prev_rev"): number | null => {
+  const v = (res as Record<string, unknown> | null | undefined)?.[field];
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null;
+};
 const sameJson = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
+/** 不受物件欄位順序影響的 JSON：比較本機與雲端兩份存檔的內容是否完全相同 */
+function stableJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(",")}]`;
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o)
+      .filter((k) => o[k] !== undefined)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableJson(o[k])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(v) ?? "null";
+}
+const sameData = (a: unknown, b: unknown) => stableJson(a) === stableJson(b);
+
+/** 整份保存的結果：saved 成功；same／uncertain 被拒但雲端就是本機（或自己上一次）的內容，已自動採用 */
+type SaveOutcome = {
+  kind: "saved" | "same" | "uncertain" | "conflict" | "failed";
+  error: string | null;
+};
+const savedOk = (o: SaveOutcome) =>
+  o.kind !== "conflict" && o.kind !== "failed";
+/** 後端明確拒絕、重送也不會成功的保存錯誤：不自動重試（下一次修改時才再送） */
+const PERMANENT_SAVE_ERRORS = new Set([
+  "DATA_CORRUPT",
+  "INVALID_DATA",
+  "DATA_TOO_LARGE",
+  "BAD_BASE_REV",
+]);
 
 function withStatus(p: SessionPlayerState): SessionPlayerState {
   const syncStatus = isUnconfirmed(p)
@@ -146,6 +250,7 @@ function toServerData(p: SessionPlayerState): PlayerState {
   delete data.syncStatus;
   delete data.rev;
   delete data.syncedRev;
+  delete data.serverRev;
   delete data.pendingUpgrade;
   delete data.migrationHold;
   return data as PlayerState;
@@ -221,6 +326,7 @@ function readPendingUpgrade(raw: unknown): PendingUpgrade | null {
     id: op.id,
     hero_id: op.hero_id,
     base: normalizeProfile(op.base),
+    base_rev: typeof op.base_rev === "number" ? op.base_rev : null,
     sent_at: typeof op.sent_at === "number" ? op.sent_at : 0,
     state: "unknown",
   };
@@ -256,6 +362,8 @@ function readSession(expectedKey: string): SessionPlayerState | null {
       heroes: parsed.heroes || [],
       rev,
       syncedRev,
+      // 沒有版本（舊版 session 或舊版後端）：不假設任何版本，保存不帶 base_rev
+      serverRev: serverRevOf(parsed),
       pendingUpgrade: readPendingUpgrade(parsed.pendingUpgrade),
       migrationHold: readMigrationHold(parsed.migrationHold),
     };
@@ -267,6 +375,39 @@ function readSession(expectedKey: string): SessionPlayerState | null {
 function writeSession(state: SessionPlayerState) {
   if (typeof window === "undefined") return;
   sessionStorage.setItem(PLAYER_SESSION_KEY, JSON.stringify(state));
+}
+
+/** 讀取這個帳號的衝突備份；沒有、帳號不符或格式不對時回傳 null */
+function readBackup(key: string): ConflictBackup | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(CONFLICT_BACKUP_KEY);
+    if (!raw) return null;
+    const b = JSON.parse(raw) as ConflictBackup;
+    if (!b || b.key !== key || !validateData(b.local)) return null;
+    if (b.choice !== "server" && b.choice !== "local") return null;
+    return {
+      ...b,
+      local: normalizeProfile(b.local),
+      cloud: validateData(b.cloud) ? normalizeProfile(b.cloud) : null,
+      localBaseRev: typeof b.localBaseRev === "number" ? b.localBaseRev : null,
+      cloudRev: typeof b.cloudRev === "number" ? b.cloudRev : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 寫入衝突備份；session 寫不進去時回傳 false（呼叫端仍保留記憶體裡的備份） */
+function writeBackup(b: ConflictBackup | null): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (b) sessionStorage.setItem(CONFLICT_BACKUP_KEY, JSON.stringify(b));
+    else sessionStorage.removeItem(CONFLICT_BACKUP_KEY);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function clearDebounce() {
@@ -290,12 +431,13 @@ const isFreshSnapshot = (t: SnapshotToken) =>
 
 /**
  * 讀取存檔；只有 PROFILE_NOT_FOUND 才建檔，其他錯誤一律回報失敗。
- * 寫入限制中不建檔（建檔也是寫入），回報 MIGRATION_HOLD
+ * 寫入限制中不建檔（建檔也是寫入），回報 MIGRATION_HOLD。
+ * rev：雲端版本（和資料是同一次讀取的結果）；舊版後端沒有時是 null
  */
 async function fetchProfile(
   key: string
 ): Promise<
-  | { ok: true; data: PlayerState; created: boolean }
+  | { ok: true; data: PlayerState; created: boolean; rev: number | null }
   | { ok: false; error: string }
 > {
   try {
@@ -303,7 +445,12 @@ async function fetchProfile(
     if (!validateData(res.data)) {
       return { ok: false, error: "PROFILE_FORMAT_INVALID" };
     }
-    return { ok: true, data: normalizeProfile(res.data), created: false };
+    return {
+      ok: true,
+      data: normalizeProfile(res.data),
+      created: false,
+      rev: revField(res, "rev"),
+    };
   } catch (e: unknown) {
     const code = errorCode(e);
     if (code !== "PROFILE_NOT_FOUND") return { ok: false, error: code };
@@ -320,7 +467,12 @@ async function fetchProfile(
     if (!validateData(res.data)) {
       return { ok: false, error: "PROFILE_FORMAT_INVALID" };
     }
-    return { ok: true, data: normalizeProfile(res.data), created: true };
+    return {
+      ok: true,
+      data: normalizeProfile(res.data),
+      created: true,
+      rev: revField(res, "rev"),
+    };
   } catch (e: unknown) {
     return { ok: false, error: errorCode(e) };
   }
@@ -345,6 +497,15 @@ interface PlayerStore {
    * 開始新的切換、切換成功或玩家關閉提示時清除
    */
   switchNotice: SwitchNotice | null;
+  /**
+   * 版本衝突（見 SaveConflict）：有衝突時暫停自動保存，本機修改都保留，等玩家用 resolveSaveConflict 選擇。
+   * 手動同步、切換帳號也會先停下（REV_CONFLICT），不會用任何一份資料默默蓋掉另一份
+   */
+  saveConflict: SaveConflict | null;
+  /** 正在處理玩家對版本衝突的選擇 */
+  resolvingConflict: boolean;
+  /** 最近一次解決衝突前的備份（這個帳號的；見 ConflictBackup） */
+  conflictBackup: ConflictBackup | null;
 
   /** 從 sessionStorage 載入指定 key 的存檔；key 不符或沒有資料時回傳 false */
   loadFromSession: (key: string) => boolean;
@@ -405,6 +566,28 @@ interface PlayerStore {
   holdMigrationWrites: () => void;
   /** 網站遷移的存檔處理還沒完成時暫停：不讀取 session、不讀取伺服器存檔、不保存 */
   setSessionBlocked: (blocked: boolean) => void;
+
+  /**
+   * 處理版本衝突（玩家確認後才呼叫；expect 是確認時畫面上的衝突 id 與本機版本，任一個變了就不執行，回傳 CONFLICT_CHANGED）
+   * - server：採用雲端版本，放棄這個分頁尚未保存的修改。先重新讀取雲端，版本仍是畫面上那一份才採用；
+   *   雲端又更新時刷新比較（新的衝突 id），請玩家重新確認
+   * - local：保留這個分頁的版本，只覆蓋畫面上那一份雲端版本（條件寫入）；雲端又更新時同樣刷新比較，不會自動重試覆蓋
+   * 兩者都先備份選擇前的兩份資料（conflictBackup）。帳號世代、戰鬥中、待確認的升級、寫入限制、存檔處理暫停、
+   * 其他寫入在途時都不執行（回傳原因代碼），資料不變
+   */
+  resolveSaveConflict: (
+    choice: ConflictChoice,
+    expect: ConflictExpectation
+  ) => Promise<ResolveResult>;
+  /** 目前不能處理版本衝突的原因（戰鬥中、寫入限制等）；可以處理時回傳 null */
+  conflictBlockReason: () => string | null;
+  /**
+   * 把備份裡被放棄或被覆蓋的那一份放回這個分頁，當作尚未保存的修改（版本是它當時根據的雲端版本）。
+   * 之後保存時會再出現衝突比較，由玩家決定；不會直接覆蓋雲端
+   */
+  restoreConflictBackup: () => ResolveResult;
+  /** 刪除衝突備份（玩家確認不需要之後） */
+  dismissConflictBackup: () => void;
 
   clearError: () => void;
   /** 關閉切換失敗的提示 */
@@ -474,8 +657,117 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     _busy = 0;
     _autoRecheckStep = 0;
     _activeBattle = null;
+    _uncertainSave = null;
     clearDebounce();
-    set({ syncError: null, checkingUpgrade: false, switchNotice: null });
+    // 版本衝突與備份屬於舊帳號：不帶到新帳號（新帳號的備份在載入後讀取）
+    set({
+      syncError: null,
+      checkingUpgrade: false,
+      switchNotice: null,
+      saveConflict: null,
+      conflictBackup: null,
+    });
+  };
+  /** 目前的版本衝突（只認目前帳號世代的） */
+  const currentConflict = () => {
+    const c = get().saveConflict;
+    return c && c.gen === _accountGen ? c : null;
+  };
+  /** 記下（或刷新）版本衝突：每次都換新的 id，玩家要看過新的比較才能確認 */
+  const raiseConflict = (
+    gen: number,
+    rev: number,
+    server: PlayerState | null,
+    reason: SaveConflict["reason"]
+  ) => {
+    set({
+      saveConflict: {
+        id: newOpId(),
+        gen,
+        serverRev: rev,
+        server,
+        reason,
+        detectedAt: Date.now(),
+      },
+    });
+  };
+  /**
+   * 保存或升級被拒（REV_CONFLICT／BASE_REV_REQUIRED，回應附雲端目前的 rev 與 data）：
+   * - same：雲端內容和本機完全相同（例如自己上一次保存其實成功、只是回應遺失），沒有任何資料會遺失，直接採用雲端版本
+   * - uncertain：雲端正好是自己上一次結果不明的保存（版本 +1、內容相同），採用它的版本，之後的修改再保存
+   * - conflict：其他情況一律記下衝突、暫停保存，等玩家選擇（本機修改都保留）
+   * - invalid：回應沒有可用的版本、或已經不是同一個帳號，什麼都不做
+   */
+  const onRevRejected = (
+    gen: number,
+    key: string,
+    response: Record<string, unknown>,
+    reason: SaveConflict["reason"]
+  ): "same" | "uncertain" | "conflict" | "invalid" => {
+    const cur = get().player;
+    if (gen !== _accountGen || !cur || cur.key !== key) return "invalid";
+    const rev = revField(response, "rev");
+    if (rev === null) return "invalid";
+    const server = validateData(response.data)
+      ? normalizeProfile(response.data)
+      : null;
+    if (server && sameData(server, toServerData(cur))) {
+      _uncertainSave = null;
+      commit({ ...cur, serverRev: rev, syncedRev: revOf(cur) });
+      set({ syncError: null });
+      return "same";
+    }
+    const u = _uncertainSave;
+    if (
+      u &&
+      u.gen === gen &&
+      u.key === key &&
+      server &&
+      rev === u.base + 1 &&
+      sameData(server, u.data)
+    ) {
+      _uncertainSave = null;
+      commit({
+        ...cur,
+        serverRev: rev,
+        syncedRev: Math.max(syncedRevOf(cur), u.localRev),
+      });
+      return "uncertain";
+    }
+    raiseConflict(gen, rev, server, reason);
+    return "conflict";
+  };
+  /** 目前不能處理版本衝突的原因；可以處理時回傳 null */
+  const blockReason = (ignoreResolving = false): string | null => {
+    const p = get().player;
+    if (!p) return "NOT_LOADED";
+    if (_sessionBlocked) return "SESSION_BLOCKED";
+    if (holdActive()) return "MIGRATION_HOLD";
+    // 已開打或有待確認的結算（和切換帳號的鎖相同）、結算紀錄還在途：戰鬥結果要套用在目前的資料上，
+    // 結算或離開後再處理。備戰中可以處理（和手動同步一樣，已送進遊戲的隊伍不會重新載入）
+    if (
+      battleLocked() ||
+      isCurrent(_battleInFlight) ||
+      isCurrent(_resultInFlight)
+    ) {
+      return "BATTLE_IN_PROGRESS";
+    }
+    if (p.pendingUpgrade) return "UPGRADE_PENDING";
+    if (_resolving && !ignoreResolving) return "RESOLVE_IN_PROGRESS";
+    if (
+      isCurrent(_saveInFlight) ||
+      isCurrent(_upgradeInFlight) ||
+      isCurrent(_checkInFlight) ||
+      _loadInFlight
+    ) {
+      return "WRITE_IN_PROGRESS";
+    }
+    return null;
+  };
+  /** 保存衝突備份（session 寫不進去時仍留在記憶體，這個頁面可以匯出） */
+  const keepBackup = (b: ConflictBackup) => {
+    writeBackup(b);
+    set({ conflictBackup: b });
   };
   /** 等目前帳號的在途寫入都結束 */
   const waitForWrites = async () => {
@@ -518,12 +810,14 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     };
     const run = async (): Promise<UpgradeCheckResult> => {
       let server: PlayerState;
+      let serverRev: number | null;
       const token = snapshotToken();
       try {
         const res = await gameApi.getProfile(key);
         if (!validateData(res.data))
           return retryLater("PROFILE_FORMAT_INVALID");
         server = normalizeProfile(res.data);
+        serverRev = revField(res, "rev");
       } catch (e: unknown) {
         return retryLater(errorCode(e));
       }
@@ -538,13 +832,44 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       }
       // 讀取期間已採用了其他伺服器資料：這份回應可能比較舊，不採用，之後再確認
       if (!isFreshSnapshot(token)) return retryLater("STALE_READ");
+      const opBase = typeof op.base_rev === "number" ? op.base_rev : null;
       if (!upgradeVisible(server, op)) {
+        // 升級帶著版本送出、雲端版本已經不是那個版本：舊請求之後才被處理也會因版本不符被拒，確定沒有套用。
+        // 本機資料（送出前的資料＋之後的修改）仍根據送出時的版本；之後保存時若雲端已被改過，會出現衝突比較
+        if (opBase !== null && serverRev !== null && serverRev !== opBase) {
+          _autoRecheckStep = 0;
+          if (hasUnsyncedChanges(cur)) {
+            commit({ ...cur, pendingUpgrade: null });
+            get()._scheduleSync(0);
+          } else {
+            // 本機沒有修改：直接採用剛讀到的雲端資料（沒有任何本機內容會遺失）
+            const same = revOf(cur);
+            adoptServerData({
+              ...server,
+              key,
+              syncStatus: SyncStatus.Idle,
+              pendingUpgrade: null,
+              rev: same,
+              syncedRev: same,
+              serverRev,
+            });
+          }
+          return { ok: true, outcome: "not_applied" };
+        }
         return retryLater("UPGRADE_UNCONFIRMED");
       }
       const merged = mergeLocalIntoServer(server, op.base, toServerData(cur));
       if (!merged) return { ok: false, error: "UPGRADE_MERGE_CONFLICT" };
       // 伺服器目前的資料成為已確認的版本；本機修改（若有）另外算一個未同步的版本
       const hasLocalEdits = !sameJson(merged, server);
+      // 雲端版本基準：本機沒有修改時整份採用雲端（版本就是雲端的）；有修改時，只有雲端在送出之後只多了這次升級
+      // （版本正好 +1）才能前進。雲端還有其他寫入時維持送出時的版本，之後保存會出現衝突比較，不會默默蓋掉
+      const nextServerRev =
+        serverRev === null
+          ? null
+          : !hasLocalEdits || (opBase !== null && serverRev === opBase + 1)
+            ? serverRev
+            : opBase;
       const base = revOf(cur);
       clearDebounce();
       _autoRecheckStep = 0;
@@ -555,6 +880,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         pendingUpgrade: null,
         rev: hasLocalEdits ? base + 1 : base,
         syncedRev: base,
+        serverRev: nextServerRev,
       });
       if (hasLocalEdits) await get()._syncNow();
       return { ok: true, outcome: "applied" };
@@ -569,6 +895,193 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     return promise;
   };
   /**
+   * 送出整份保存（目前的本機資料）。base 是這份資料根據的雲端版本（null：不帶 base_rev，舊版後端或版本不明）。
+   * 成功時雲端這個版本的內容就是送出的資料，版本基準改成回應的 rev；被拒時交給 onRevRejected；
+   * 其他失敗記下錯誤並排重試（版本衝突中、或重送也不會成功的錯誤不重試）
+   */
+  const startSave = (base: number | null): Promise<SaveOutcome> => {
+    const player = get().player as SessionPlayerState;
+    clearDebounce();
+    const gen = _accountGen;
+    const key = player.key;
+    const sentRev = revOf(player);
+    const data = toServerData(player);
+    const self: { promise?: Promise<boolean> } = {};
+    const run = async (): Promise<SaveOutcome> => {
+      beginBusy(gen);
+      let res: Record<string, unknown> | null = null;
+      let failure: string | null = null;
+      let rejected: Record<string, unknown> | null = null;
+      let uncertain = false;
+      try {
+        res = await gameApi.saveProfile(key, data, base);
+      } catch (e: unknown) {
+        failure = errorCode(e);
+        if (e instanceof GasError) {
+          if (failure === "REV_CONFLICT" || failure === "BASE_REV_REQUIRED") {
+            rejected = e.response;
+          }
+        } else {
+          uncertain = true;
+        }
+      }
+      if (_saveInFlight?.promise === self.promise) _saveInFlight = null;
+      endBusy(gen);
+      const done: SaveOutcome = res
+        ? { kind: "saved", error: null }
+        : { kind: "failed", error: failure };
+      if (gen !== _accountGen) return done; // 帳號已切換：只影響舊帳號的伺服器資料
+      const cur = get().player;
+      if (!cur || cur.key !== key) return done;
+
+      let outcome = done;
+      if (res) {
+        // 只確認自己送出的版本；在途期間的新修改仍是未同步。
+        // 整份保存成功：雲端這個版本的內容就是送出的資料（舊版後端沒有版本時是 null）
+        _uncertainSave = null;
+        commit({
+          ...cur,
+          syncedRev: Math.max(syncedRevOf(cur), sentRev),
+          serverRev: revField(res, "rev"),
+        });
+        set({ syncError: null });
+      } else if (rejected) {
+        const r = onRevRejected(
+          gen,
+          key,
+          rejected,
+          failure === "BASE_REV_REQUIRED" ? "base_unknown" : "conflict"
+        );
+        if (r === "conflict") {
+          // 版本衝突：不重試（再送一次也會被拒），暫停保存等玩家選擇；本機修改都保留
+          set({ syncError: failure });
+          return { kind: "conflict", error: failure };
+        }
+        if (r === "invalid") {
+          set({ syncError: "BAD_RESPONSE" });
+          outcome = { kind: "failed", error: "BAD_RESPONSE" };
+        } else {
+          outcome = { kind: r, error: null };
+        }
+      } else {
+        // 網路錯誤或無法解析的回應：可能已經寫入，也可能沒有。記下送出的內容，之後遇到版本衝突時用來辨認
+        if (uncertain && base !== null) {
+          _uncertainSave = { gen, key, base, data, localRev: sentRev };
+        }
+        set({ syncError: failure });
+      }
+      const after = get().player;
+      if (after && hasUnsyncedChanges(after) && !currentConflict()) {
+        if (outcome.kind === "failed") {
+          if (!PERMANENT_SAVE_ERRORS.has(outcome.error ?? "")) {
+            get()._scheduleSync(RETRY_MS);
+          }
+        } else if (!_debounceTimer) {
+          get()._scheduleSync(0);
+        }
+      }
+      return outcome;
+    };
+    const outcomePromise = run();
+    const promise = outcomePromise.then(savedOk);
+    self.promise = promise;
+    _saveInFlight = { gen, promise };
+    return outcomePromise;
+  };
+  /** 採用雲端版本（玩家確認後）：先重新讀取，雲端仍是玩家看到的那個版本才採用 */
+  const adoptCloud = async (
+    conflict: SaveConflict,
+    before: SessionPlayerState
+  ): Promise<ResolveResult> => {
+    const gen = conflict.gen;
+    const key = before.key;
+    const token = snapshotToken();
+    let fresh: PlayerState;
+    let rev: number | null;
+    try {
+      const res = await gameApi.getProfile(key);
+      if (!validateData(res.data)) {
+        return { ok: false, error: "PROFILE_FORMAT_INVALID" };
+      }
+      fresh = normalizeProfile(res.data);
+      rev = revField(res, "rev");
+    } catch (e: unknown) {
+      return { ok: false, error: errorCode(e) };
+    }
+    const cur = get().player;
+    if (gen !== _accountGen || !cur || cur.key !== key) {
+      return { ok: false, error: "ACCOUNT_CHANGED" };
+    }
+    if (currentConflict()?.id !== conflict.id) {
+      return { ok: false, error: "CONFLICT_CHANGED" };
+    }
+    if (rev === null) return { ok: false, error: "BAD_RESPONSE" };
+    const block = blockReason(true);
+    if (block) return { ok: false, error: block };
+    // 雲端在確認期間又更新、或本機在讀取期間有新的修改：放棄與採用的內容都和玩家看到的不同，
+    // 用剛讀到的雲端刷新比較，請玩家重新確認（不採用玩家沒看過的版本）
+    if (
+      rev !== conflict.serverRev ||
+      revOf(cur) !== revOf(before) ||
+      !isFreshSnapshot(token)
+    ) {
+      raiseConflict(gen, rev, fresh, conflict.reason);
+      return { ok: false, error: "CONFLICT_CHANGED" };
+    }
+    keepBackup({
+      key,
+      savedAt: Date.now(),
+      choice: "server",
+      local: toServerData(cur),
+      localBaseRev: serverRevOf(cur),
+      cloud: fresh,
+      cloudRev: rev,
+    });
+    const same = revOf(cur);
+    clearDebounce();
+    _uncertainSave = null;
+    adoptServerData({
+      ...fresh,
+      key,
+      syncStatus: SyncStatus.Idle,
+      pendingUpgrade: null,
+      rev: same,
+      syncedRev: same,
+      serverRev: rev,
+    });
+    set({ saveConflict: null, syncError: null });
+    return { ok: true };
+  };
+  /** 保留這個分頁的版本（玩家確認後）：只覆蓋玩家看到的那個雲端版本（條件寫入） */
+  const keepLocal = async (
+    conflict: SaveConflict,
+    before: SessionPlayerState
+  ): Promise<ResolveResult> => {
+    // 雲端資料損毀時後端不接受任何覆寫，不送出
+    if (!conflict.server) return { ok: false, error: "DATA_CORRUPT" };
+    // 送出前先備份兩份資料：之後回應遺失、重新整理也還留著被覆蓋的雲端資料
+    keepBackup({
+      key: before.key,
+      savedAt: Date.now(),
+      choice: "local",
+      local: toServerData(before),
+      localBaseRev: serverRevOf(before),
+      cloud: conflict.server,
+      cloudRev: conflict.serverRev,
+    });
+    const o = await startSave(conflict.serverRev);
+    if (conflict.gen !== _accountGen) {
+      return { ok: false, error: "ACCOUNT_CHANGED" };
+    }
+    if (o.kind === "conflict") return { ok: false, error: "CONFLICT_CHANGED" };
+    if (o.kind === "failed")
+      return { ok: false, error: o.error ?? "GAS_ERROR" };
+    set({ saveConflict: null, syncError: null });
+    const after = get().player;
+    if (after && hasUnsyncedChanges(after)) get()._scheduleSync(0);
+    return { ok: true };
+  };
+  /**
    * 保存目前帳號所有未同步的修改；成功（或本來就沒有）回傳 null，否則回傳錯誤代碼。
    * 升級結果待確認時先重新確認，確認不了就不保存（UPGRADE_UNCONFIRMED）
    */
@@ -579,6 +1092,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       if (!p || !hasUnsyncedChanges(p)) return null;
       // 寫入限制中：本機修改無法保存，保留在這裡（切換帳號、手動同步都不進行）
       if (writesHeld()) return "MIGRATION_HOLD";
+      // 版本衝突還沒處理：本機修改不能保存，也不能用雲端資料蓋掉（切換帳號、手動同步都不進行）
+      if (currentConflict()) return "REV_CONFLICT";
       if (isUnconfirmed(p)) {
         await checkUpgrade("manual");
         if (isUnconfirmed(get().player)) return "UPGRADE_UNCONFIRMED";
@@ -599,6 +1114,9 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     syncError: null,
     checkingUpgrade: false,
     switchNotice: null,
+    saveConflict: null,
+    resolvingConflict: false,
+    conflictBackup: null,
 
     // ── 初始化 ─────────────────────────────────────────────────
 
@@ -610,6 +1128,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       if (session.migrationHold) markHold();
       resetAccountState();
       commit(session);
+      set({ conflictBackup: readBackup(key) });
       // 重新整理前的升級結果不明：先重新確認，確認前不保存（避免蓋掉伺服器上已完成的升級）
       // 其他未確認的修改：不等使用者再操作，直接補送（只重送 profile）
       if (isUnconfirmed(session) || hasUnsyncedChanges(session)) {
@@ -714,6 +1233,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
           syncStatus: SyncStatus.Idle,
           rev: base,
           syncedRev: base,
+          serverRev: r.rev,
           pendingUpgrade: null,
         });
         set({
@@ -721,6 +1241,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
           loadingKey: null,
           error: null,
           syncError: null,
+          ...(sameAccount ? {} : { conflictBackup: readBackup(key) }),
         });
         return { ok: true, created: r.created };
       };
@@ -747,6 +1268,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         player.key !== key ||
         hasUnsyncedChanges(player) ||
         player.pendingUpgrade ||
+        currentConflict() ||
         _busy > 0
       ) {
         return;
@@ -765,6 +1287,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
           revOf(cur) !== rev0 ||
           hasUnsyncedChanges(cur) ||
           cur.pendingUpgrade ||
+          currentConflict() ||
           _busy > 0
         ) {
           return;
@@ -775,6 +1298,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
           syncStatus: SyncStatus.Idle,
           rev: rev0,
           syncedRev: rev0,
+          serverRev: revField(res, "rev"),
           pendingUpgrade: null,
         });
       } catch {
@@ -831,10 +1355,12 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         // ── 沒有未同步修改：呼叫 GAS（伺服器計算，防竄改）──────
         const gen = _accountGen;
         const key = player.key;
+        const baseRev = serverRevOf(player);
         const op: PendingUpgrade = {
           id: newOpId(),
           hero_id: heroId,
           base: toServerData(player),
+          base_rev: baseRev,
           sent_at: Date.now(),
           state: "in_flight",
         };
@@ -842,7 +1368,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         // 不會把送出前的 heroes／gold 當成最新版保存
         commit({ ...player, pendingUpgrade: op });
         _dataGen += 1; // 升級會改變伺服器資料：之前送出的背景讀取都已過時
-        const promise = gameApi.upgradeHero(key, heroId);
+        const token = snapshotToken();
+        const promise = gameApi.upgradeHero(key, heroId, baseRev);
         _upgradeInFlight = { gen, promise };
         beginBusy(gen);
         try {
@@ -851,7 +1378,17 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
           if (gen !== _accountGen || !cur || cur.key !== key) {
             return { success: false, error: "ACCOUNT_CHANGED" };
           }
-          // 套用到「目前」的資料，保留升級期間的其他修改；金幣只扣伺服器算出的差額
+          // 雲端是在送出時的版本上升級（prev_rev 等於送出的 base_rev）：本機資料＋這次升級＝雲端的新版本，可以前進。
+          // 否則（舊版後端、沒有版本）維持原本的版本基準，不拿回應的 rev 當成本機資料的版本
+          const newRev = revField(res, "rev");
+          const chained =
+            baseRev !== null &&
+            revField(res, "prev_rev") === baseRev &&
+            serverRevOf(cur) === baseRev &&
+            newRev !== null;
+          // 套用到「目前」的資料，保留升級期間的其他修改；金幣只扣這次升級的費用
+          // （新版後端回報 cost；舊版後端用伺服器算出的差額）
+          const cost = typeof res.cost === "number" ? res.cost : null;
           const idx = cur.heroes.findIndex((h) => h.hero_id === heroId);
           const heroes =
             idx !== -1
@@ -860,9 +1397,13 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
           commit({
             ...cur,
             heroes,
-            gold: cur.gold + (res.gold_remaining - op.base.gold),
+            gold:
+              cost !== null
+                ? cur.gold - cost
+                : cur.gold + (res.gold_remaining - op.base.gold),
             pendingUpgrade: null,
             rev: revOf(cur) + 1,
+            serverRev: chained ? newRev : serverRevOf(cur),
           });
           get()._scheduleSync();
           return { success: true };
@@ -876,6 +1417,50 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
             cur.pendingUpgrade?.id !== op.id
           ) {
             return { success: false, error: code };
+          }
+          if (
+            e instanceof GasError &&
+            (code === "REV_CONFLICT" || code === "BASE_REV_REQUIRED")
+          ) {
+            // 雲端版本和送出時不同（或後端要求版本）：伺服器沒有扣點數。
+            // 本機沒有其他修改時直接採用雲端目前的資料（附在回應裡、在鎖內讀到的），請玩家確認後再升級；
+            // 有修改時記下衝突，等玩家比較後選擇
+            const rev = revField(e.response, "rev");
+            const fresh = validateData(e.response.data)
+              ? normalizeProfile(e.response.data)
+              : null;
+            if (
+              !hasUnsyncedChanges(cur) &&
+              fresh &&
+              rev !== null &&
+              isFreshSnapshot(token)
+            ) {
+              const same = revOf(cur);
+              adoptServerData({
+                ...fresh,
+                key,
+                syncStatus: SyncStatus.Idle,
+                pendingUpgrade: null,
+                rev: same,
+                syncedRev: same,
+                serverRev: rev,
+              });
+              return { success: false, error: "REV_CONFLICT_RELOADED" };
+            }
+            commit({ ...cur, pendingUpgrade: null });
+            const outcome = onRevRejected(
+              gen,
+              key,
+              e.response,
+              code === "BASE_REV_REQUIRED" ? "base_unknown" : "conflict"
+            );
+            return {
+              success: false,
+              error:
+                outcome === "same" || outcome === "uncertain"
+                  ? "REV_CONFLICT_RELOADED"
+                  : "REV_CONFLICT",
+            };
           }
           if (e instanceof GasError) {
             // 伺服器明確回傳錯誤：這次升級沒有套用，期間的其他修改照常保存
@@ -989,15 +1574,38 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       const gen = _accountGen;
       const key = player.key;
       beginBusy(gen);
-      // 場次識別碼只用來在頁面比對歸屬，不送到後端（不改變 save_result 的契約）
+      // 場次識別碼另外當作 request_id（新版後端用它辨識重送），不放在結算內容裡
       const record: Partial<BattleResultPayload> = { ...result };
       delete record.battle_id;
-      const resultPromise = gameApi.saveResult(key, record).then(
-        () => undefined,
-        (err: unknown) => {
+      const resultPromise = (async () => {
+        // 已經送出的保存與升級先完成：結算要帶它們之後的雲端版本，兩個寫入交錯時彼此的版本都對不上
+        const writes = [_saveInFlight, _upgradeInFlight]
+          .filter(isCurrent)
+          .map((f) => f.promise.catch(() => undefined));
+        if (writes.length > 0) await Promise.all(writes);
+        if (gen !== _accountGen) return;
+        const baseRev = serverRevOf(get().player);
+        try {
+          const res = await gameApi.saveResult(key, record, ticket.id, baseRev);
+          // 雲端是在送出時的版本上結算（prev_rev 等於 base_rev，後端也才會回 rev）：本機已先套用這一場的結果，
+          // 所以本機資料包含雲端的新版本，可以前進。版本對不上時維持原本的版本，之後保存由版本衝突處理
+          const cur = get().player;
+          const rev = revField(res, "rev");
+          if (
+            gen === _accountGen &&
+            cur &&
+            cur.key === key &&
+            baseRev !== null &&
+            rev !== null &&
+            revField(res, "prev_rev") === baseRev &&
+            serverRevOf(cur) === baseRev
+          ) {
+            commit({ ...cur, serverRev: rev });
+          }
+        } catch (err: unknown) {
           console.warn("[Background Sync] 戰鬥結算紀錄送出失敗:", err);
         }
-      );
+      })();
       _resultInFlight = { gen, promise: resultPromise };
       const promise = (async () => {
         await resultPromise;
@@ -1029,6 +1637,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       const player = get().player;
       if (!player) return Promise.resolve(true);
       if (_sessionBlocked) return Promise.resolve(false);
+      // 版本衝突還沒處理：暫停保存（本機修改都保留），等玩家比較後選擇
+      if (currentConflict()) return Promise.resolve(false);
       // 升級結果待確認：整份保存會送出可能過時的 heroes／gold，先重新確認；
       // 確認後（checkUpgrade 內）才會保存本機修改
       if (isUnconfirmed(player)) {
@@ -1052,46 +1662,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         );
       }
 
-      clearDebounce();
-      const gen = _accountGen;
-      const key = player.key;
-      const sentRev = revOf(player);
-      const data = toServerData(player);
-      const self: { promise?: Promise<boolean> } = {};
-      const run = async () => {
-        beginBusy(gen);
-        let ok = false;
-        let failure: string | null = null;
-        try {
-          await gameApi.saveProfile(key, data);
-          ok = true;
-        } catch (e: unknown) {
-          failure = errorCode(e);
-        }
-        if (_saveInFlight?.promise === self.promise) _saveInFlight = null;
-        endBusy(gen);
-        if (gen !== _accountGen) return ok; // 帳號已切換：只影響舊帳號的伺服器資料
-
-        const cur = get().player;
-        if (!cur || cur.key !== key) return ok;
-        if (ok) {
-          // 只確認自己送出的版本；在途期間的新修改仍是未同步
-          commit({ ...cur, syncedRev: Math.max(syncedRevOf(cur), sentRev) });
-          set({ syncError: null });
-        } else {
-          set({ syncError: failure });
-        }
-        const after = get().player;
-        if (after && hasUnsyncedChanges(after)) {
-          if (!ok) get()._scheduleSync(RETRY_MS);
-          else if (!_debounceTimer) get()._scheduleSync(0);
-        }
-        return ok;
-      };
-      const promise = run();
-      self.promise = promise;
-      _saveInFlight = { gen, promise };
-      return promise;
+      return startSave(serverRevOf(player)).then(savedOk);
     },
 
     holdMigrationWrites: () => {
@@ -1104,6 +1675,69 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     setSessionBlocked: (blocked: boolean) => {
       _sessionBlocked = blocked;
       if (!blocked && get().error === "SESSION_BLOCKED") set({ error: null });
+    },
+
+    resolveSaveConflict: async (
+      choice: ConflictChoice,
+      expect: ConflictExpectation
+    ) => {
+      const conflict = currentConflict();
+      const cur = get().player;
+      if (!conflict || !cur) return { ok: false, error: "NO_CONFLICT" };
+      // 玩家確認時看到的衝突或本機資料已經變了：不用舊的比較結果做決定
+      if (conflict.id !== expect.conflictId || revOf(cur) !== expect.localRev) {
+        return { ok: false, error: "CONFLICT_CHANGED" };
+      }
+      const block = blockReason();
+      if (block) return { ok: false, error: block };
+      _resolving = true;
+      set({ resolvingConflict: true });
+      try {
+        return choice === "server"
+          ? await adoptCloud(conflict, cur)
+          : await keepLocal(conflict, cur);
+      } finally {
+        _resolving = false;
+        set({ resolvingConflict: false });
+      }
+    },
+
+    conflictBlockReason: () => blockReason(),
+
+    restoreConflictBackup: () => {
+      const b = get().conflictBackup;
+      const cur = get().player;
+      if (!b || !cur || b.key !== cur.key) {
+        return { ok: false, error: "NO_BACKUP" };
+      }
+      if (currentConflict()) return { ok: false, error: "REV_CONFLICT" };
+      const block = blockReason();
+      if (block) return { ok: false, error: block };
+      // 放回被放棄（採用雲端時）或被覆蓋（保留這個分頁時）的那一份，版本是它當時根據的雲端版本
+      const data = b.choice === "server" ? b.local : b.cloud;
+      const base = b.choice === "server" ? b.localBaseRev : b.cloudRev;
+      if (!data) return { ok: false, error: "NO_BACKUP" };
+      // 沒有版本時無法條件寫入：放回後的保存會直接覆蓋雲端，所以不放回
+      if (base === null) return { ok: false, error: "NO_VERSION" };
+      clearDebounce();
+      _dataGen += 1;
+      commit({
+        ...data,
+        key: cur.key,
+        syncStatus: cur.syncStatus,
+        rev: revOf(cur) + 1,
+        syncedRev: syncedRevOf(cur),
+        serverRev: base,
+        pendingUpgrade: null,
+        migrationHold: cur.migrationHold ?? null,
+      });
+      get()._scheduleSync(0);
+      return { ok: true };
+    },
+
+    dismissConflictBackup: () => {
+      writeBackup(null);
+      set({ conflictBackup: null });
     },
 
     clearError: () => set({ error: null }),

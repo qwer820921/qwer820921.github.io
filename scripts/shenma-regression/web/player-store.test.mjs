@@ -108,12 +108,178 @@ function makeEnv() {
     calls: [],
     held: new Set(),
     battleLogs: [],
+    // 新版後端的存檔版本契約（revMode 時啟用；關閉時就是舊版後端，上面所有測試都在舊版模式）：
+    // - get／save／升級的回應帶雲端版本 rev；整份保存與升級的 base_rev 不符回 409（附雲端資料），沒帶且 requireBase 時回 428
+    // - 結算是雲端上的增量，不拒絕；只有 base_rev 等於寫入前的版本（prev_rev）時才回新的 rev，否則標 base_mismatch
+    // - request_id 重送回傳第一次的結果（duplicate）；corrupt 內的存檔一律 DATA_CORRUPT、不寫入
+    revMode: false,
+    requireBase: false,
+    revs: new Map(),
+    resultIds: new Map(),
+    corrupt: new Set(),
+    handleRev(c) {
+      const key = c.key;
+      const p = this.profiles.get(key);
+      const rev = () => this.revs.get(key) ?? 0;
+      const bump = () => {
+        const r = rev() + 1;
+        this.revs.set(key, r);
+        return r;
+      };
+      const base = c.payload?.base_rev;
+      const hasBase = base !== undefined && base !== null;
+      const current = () => ({ rev: rev(), data: structuredClone(p) });
+      const reject = () =>
+        hasBase
+          ? { status: 409, error: "REV_CONFLICT", ...current() }
+          : { status: 428, error: "BASE_REV_REQUIRED", ...current() };
+      const mismatch = () =>
+        (hasBase && base !== rev()) || (!hasBase && this.requireBase);
+      const corrupt = () => {
+        c.respond({ status: 500, error: "DATA_CORRUPT", rev: rev() });
+        return true;
+      };
+      const stageNum = (id) => {
+        const m = /chapter(\d+)_(\d+)/.exec(id || "");
+        return m ? Number(m[1]) * 100 + Number(m[2]) : 0;
+      };
+      const nextStage = (id) => {
+        const m = /chapter(\d+)_(\d+)/.exec(id || "");
+        if (!m) return id;
+        let ch = Number(m[1]);
+        let st = Number(m[2]) + 1;
+        if (st > 10) {
+          ch += 1;
+          st = 1;
+        }
+        return `chapter${ch}_${st}`;
+      };
+      switch (c.action) {
+        case "get_profile":
+          if (!p) c.respond({ status: 404, error: "PROFILE_NOT_FOUND" });
+          else if (this.corrupt.has(key)) corrupt();
+          else c.respond({ status: 200, data: structuredClone(p), rev: rev() });
+          return true;
+        case "create_profile":
+          this.profiles.set(key, baseProfile(c.payload?.nickname));
+          this.revs.set(key, 1);
+          c.respond({ status: 200, rev: 1 });
+          return true;
+        case "save_profile": {
+          if (this.corrupt.has(key)) return corrupt();
+          if (mismatch()) {
+            c.respond(reject());
+            return true;
+          }
+          const prev = rev();
+          this.profiles.set(key, structuredClone(c.payload.data));
+          c.respond({
+            status: 200,
+            success: true,
+            rev: bump(),
+            prev_rev: prev,
+          });
+          return true;
+        }
+        case "save_result": {
+          if (this.corrupt.has(key)) return corrupt();
+          const ids = this.resultIds.get(key) ?? new Map();
+          this.resultIds.set(key, ids);
+          const id = c.payload?.request_id;
+          const body = (entry) => {
+            const out = {
+              status: 200,
+              success: true,
+              log_id: entry.log_id,
+              prev_rev: entry.prev_rev,
+            };
+            if (hasBase && base === entry.prev_rev) out.rev = entry.rev;
+            else if (hasBase) out.base_mismatch = true;
+            return out;
+          };
+          if (id && ids.has(id)) {
+            c.respond({ ...body(ids.get(id)), duplicate: true });
+            return true;
+          }
+          this.battleLogs.push({ key, ...c.payload });
+          const prev = rev();
+          let changed = false;
+          if (c.payload?.result === "WIN" && p) {
+            const gold = (c.payload.loots || [])
+              .filter((l) => l.item === "gold")
+              .reduce((s, l) => s + l.count, 0);
+            if (gold > 0) {
+              p.gold += gold;
+              changed = true;
+            }
+            const next = nextStage(c.payload.stage_id);
+            if (stageNum(next) > stageNum(p.max_stage)) {
+              p.max_stage = next;
+              changed = true;
+            }
+          }
+          const entry = {
+            log_id: "log-" + this.battleLogs.length,
+            prev_rev: prev,
+            rev: changed ? bump() : prev,
+          };
+          if (id) ids.set(id, entry);
+          c.respond(body(entry));
+          return true;
+        }
+        case "upgrade_hero": {
+          if (this.corrupt.has(key)) return corrupt();
+          if (mismatch()) {
+            c.respond(reject());
+            return true;
+          }
+          const cur = p.heroes.find((h) => h.hero_id === c.payload.hero_id) || {
+            hero_id: c.payload.hero_id,
+            level: 1,
+            star: 0,
+            atk: 150,
+            def: 120,
+            hp: 1500,
+          };
+          const cost = 100 * cur.level;
+          if (p.gold < cost) {
+            c.respond({ status: 400, error: "GOLD_NOT_ENOUGH", rev: rev() });
+            return true;
+          }
+          const hero = {
+            ...cur,
+            level: cur.level + 1,
+            atk: cur.atk + 10,
+            def: cur.def + 8,
+            hp: cur.hp + 100,
+          };
+          p.gold -= cost;
+          p.heroes = [
+            ...p.heroes.filter((h) => h.hero_id !== hero.hero_id),
+            hero,
+          ];
+          const prev = rev();
+          c.respond({
+            status: 200,
+            success: true,
+            hero,
+            gold_remaining: p.gold,
+            cost,
+            rev: bump(),
+            prev_rev: prev,
+          });
+          return true;
+        }
+      }
+      return false;
+    },
     count(action, key) {
       return this.calls.filter(
         (c) => c.action === action && (key === undefined || c.key === key)
       ).length;
     },
     handle(c) {
+      if (this.revMode && this.handleRev(c)) return;
       let res;
       switch (c.action) {
         case "get_profile":
@@ -3201,6 +3367,860 @@ await test("R20-W1", async () => {
         JSON.stringify([true, true, true, false, false, false, false, false]) &&
       /暫停/.test(text),
     { paused, can, text }
+  );
+});
+
+// ══════════════════════════════════════════════════════════════
+//  存檔版本保護（新版後端）：get／save／結算／升級帶雲端版本，整份保存與升級帶 base_rev，
+//  版本不符時後端拒絕；結算的回應只在 base_rev 等於寫入前的版本時才給新版本。
+//  mock 後端的 revMode 模擬新版後端；「另一個分頁／裝置」的寫入直接改 mock 後端的資料並前進版本
+// ══════════════════════════════════════════════════════════════
+const revEnv = (env, key, rev = 5, profile = baseProfile()) => {
+  env.server.revMode = true;
+  env.server.revs.set(key, rev);
+  env.server.profiles.set(key, profile);
+};
+const savesOf = (env, key) =>
+  env.server.calls.filter((c) => c.action === "save_profile" && c.key === key);
+/** 另一個分頁或裝置保存了（雲端資料改變、版本 +1） */
+const otherTabSaves = (env, key, patch) => {
+  env.server.profiles.set(key, {
+    ...structuredClone(env.server.profiles.get(key)),
+    ...patch,
+  });
+  env.server.revs.set(key, (env.server.revs.get(key) ?? 0) + 1);
+};
+/** 伺服器照常處理並寫入，但頁面收到網路錯誤（回應遺失） */
+const appliedButNetworkError = (env, call) => {
+  const respond = call.respond;
+  call.respond = () => {};
+  env.server.handle(call);
+  call.respond = respond;
+  call.networkError();
+};
+/** 版本 5 載入 → 另一個分頁改了點數與暱稱（版本 6）→ 這個分頁改暱稱後保存被拒，形成衝突 */
+const makeConflict = async (env, S, key) => {
+  revEnv(env, key, 5);
+  await loaded(env, S, key, env.server.profiles.get(key));
+  otherTabSaves(env, key, { gold: 1500, nickname: "B" });
+  S().updateNickname("A改");
+  await env.clock.advance(30_000);
+  await settle();
+  return S().saveConflict;
+};
+const expectNow = (S, c = S().saveConflict) => ({
+  conflictId: c?.id,
+  localRev: S().player?.rev,
+});
+
+await test("版本-1", async ({ env, S }) => {
+  const K = "test_ver1";
+  revEnv(env, K);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  const rev0 = S().player?.serverRev;
+  const inSession = readSession(env)?.serverRev;
+  S().updateNickname("甲");
+  await env.clock.advance(30_000);
+  const save = savesOf(env, K)[0];
+  const sent = save?.payload.data || {};
+  check(
+    "版本-1 讀取存檔記下雲端版本 5（session 也有）；保存帶 base_rev 5，成功後改成回應的 6；送出的資料不含本機的版本欄位",
+    rev0 === 5 &&
+      inSession === 5 &&
+      save?.payload.base_rev === 5 &&
+      S().player?.serverRev === 6 &&
+      readSession(env)?.serverRev === 6 &&
+      status(S) === "idle" &&
+      !("serverRev" in sent) &&
+      !("rev" in sent) &&
+      !("key" in sent) &&
+      env.server.profiles.get(K).nickname === "甲",
+    {
+      rev0,
+      inSession,
+      base: save?.payload.base_rev,
+      after: S().player?.serverRev,
+    }
+  );
+});
+
+await test("版本-2", async ({ env, S }) => {
+  const K = "test_ver2";
+  revEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  // 另一個分頁：點數、暱稱、隊伍、武將都改了（版本 6）
+  otherTabSaves(env, K, {
+    gold: 1500,
+    nickname: "B-new",
+    team: [{ hero_id: "zhao_yun", slot: 1 }],
+    heroes: [
+      { hero_id: "zhao_yun", level: 3, star: 0, atk: 170, def: 136, hp: 1700 },
+    ],
+  });
+  const ticket = S().beginBattle();
+  const r = S().applyBattleResult(winResult(300), ticket);
+  await settle(60);
+  const result = env.server.calls.find(
+    (c) => c.action === "save_result" && c.key === K
+  );
+  const n1 = savesOf(env, K).length;
+  await env.clock.advance(120_000);
+  const server = env.server.profiles.get(K);
+  check(
+    "版本-2 舊快照結算：A 讀到版本 5 後 B 改了點數／暱稱／隊伍／武將（版本 6）；A 結算帶 base_rev 5，雲端照樣推進關卡（版本 7）但回應沒有新版本，A 的版本仍是 5；A 保存帶 5 被拒 → 衝突（雲端版本 7）、暫停保存（之後 2 分鐘沒有再送）；雲端保留 B 的所有修改與推進的關卡，A 的結算留在本機",
+    r.ok === true &&
+      result?.payload.request_id === ticket.id &&
+      result?.payload.base_rev === 5 &&
+      !("battle_id" in (result?.payload || {})) &&
+      n1 === 1 &&
+      savesOf(env, K).length === 1 &&
+      savesOf(env, K)[0].payload.base_rev === 5 &&
+      S().saveConflict?.serverRev === 7 &&
+      S().saveConflict?.server?.nickname === "B-new" &&
+      S().player?.serverRev === 5 &&
+      S().syncError === "REV_CONFLICT" &&
+      status(S) === "pending" &&
+      server.gold === 1500 &&
+      server.nickname === "B-new" &&
+      server.team[0].hero_id === "zhao_yun" &&
+      server.heroes[0].level === 3 &&
+      server.max_stage === "chapter1_2" &&
+      S().player?.gold === 1300 &&
+      S().player?.max_stage === "chapter1_2" &&
+      S().player?.nickname === "旅行者",
+    { conflict: S().saveConflict, result: result?.payload, server }
+  );
+});
+
+await test("版本-3", async ({ env, S }) => {
+  const K = "test_ver3";
+  revEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  otherTabSaves(env, K, { gold: 700, nickname: "B-new" });
+  const up = await S().upgradeHero("guan_yu", heroCfg);
+  await settle();
+  const server = env.server.profiles.get(K);
+  check(
+    "版本-3 舊快照升級：B 改過雲端（版本 6）後 A 帶 5 升級 → 後端拒絕、沒有扣點數；A 沒有其他修改，直接換成雲端最新資料（版本 6），回報 REV_CONFLICT_RELOADED；沒有送出整份保存",
+    up.success === false &&
+      up.error === "REV_CONFLICT_RELOADED" &&
+      server.gold === 700 &&
+      server.heroes.length === 0 &&
+      S().player?.nickname === "B-new" &&
+      S().player?.gold === 700 &&
+      S().player?.serverRev === 6 &&
+      S().saveConflict === null &&
+      !S().player?.pendingUpgrade &&
+      status(S) === "idle" &&
+      savesOf(env, K).length === 0,
+    { up, player: brief(S().player), serverRev: S().player?.serverRev }
+  );
+  const up2 = await S().upgradeHero("guan_yu", heroCfg);
+  await settle();
+  const call2 = env.server.calls.filter((c) => c.action === "upgrade_hero")[1];
+  check(
+    "版本-3b 再升級一次：帶版本 6，雲端在 6 上升級（7），回應證明是同一個版本 → A 前進到 7；點數 700 − 100",
+    up2.success === true &&
+      call2?.payload.base_rev === 6 &&
+      S().player?.serverRev === 7 &&
+      S().player?.gold === 600 &&
+      env.server.profiles.get(K).gold === 600 &&
+      heroOf(S().player)?.level === 2,
+    { up2, serverRev: S().player?.serverRev, gold: S().player?.gold }
+  );
+});
+
+await test("版本-4", async ({ env, S }) => {
+  const K = "test_ver4";
+  revEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  await settle(60);
+  const result = env.server.calls.find(
+    (c) => c.action === "save_result" && c.key === K
+  );
+  const save = savesOf(env, K)[0];
+  const server = env.server.profiles.get(K);
+  check(
+    "版本-4 一般結算：雲端在版本 5 上推進關卡（6），回應證明是同一個版本 → A 前進到 6；之後的保存帶 6、沒有衝突（7，點數 1300、進度 chapter1_2）",
+    result?.payload.base_rev === 5 &&
+      save?.payload.base_rev === 6 &&
+      S().saveConflict === null &&
+      S().player?.serverRev === 7 &&
+      server.gold === 1300 &&
+      server.max_stage === "chapter1_2" &&
+      status(S) === "idle",
+    { base: save?.payload.base_rev, serverRev: S().player?.serverRev, server }
+  );
+});
+
+await test("版本-5", async ({ env, S }) => {
+  const K = "test_ver5";
+  revEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("save_profile");
+  S().updateNickname("甲");
+  await env.clock.advance(30_000);
+  const save1 = await env.server.waitFor("save_profile", K);
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  await settle(40);
+  const resultsBefore = env.server.count("save_result", K);
+  env.server.held.delete("save_profile");
+  env.server.handle(save1);
+  await settle(80);
+  const result = env.server.calls.find(
+    (c) => c.action === "save_result" && c.key === K
+  );
+  const saves = savesOf(env, K);
+  const server = env.server.profiles.get(K);
+  check(
+    "版本-5 保存在途時結算：save_result 等保存完成才送（期間 0 筆），帶保存後的版本 6；雲端在 6 上推進（7），之後的保存帶 7、沒有衝突；雲端最後是本機的內容",
+    resultsBefore === 0 &&
+      result?.payload.base_rev === 6 &&
+      saves.length === 2 &&
+      saves[1].payload.base_rev === 7 &&
+      S().saveConflict === null &&
+      S().player?.serverRev === 8 &&
+      server.nickname === "甲" &&
+      server.gold === 1300 &&
+      server.max_stage === "chapter1_2",
+    {
+      resultsBefore,
+      bases: saves.map((c) => c.payload.base_rev),
+      result: result?.payload.base_rev,
+    }
+  );
+});
+
+await test("版本-6", async ({ env, S }) => {
+  const K = "test_ver6";
+  revEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("upgrade_hero");
+  const up = S().upgradeHero("guan_yu", heroCfg);
+  const upCall = await env.server.waitFor("upgrade_hero", K);
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  await settle(40);
+  const before = env.server.count("save_result", K);
+  env.server.held.delete("upgrade_hero");
+  env.server.handle(upCall);
+  const r = await up;
+  await settle(80);
+  const result = env.server.calls.find(
+    (c) => c.action === "save_result" && c.key === K
+  );
+  const saves = savesOf(env, K);
+  const server = env.server.profiles.get(K);
+  check(
+    "版本-6 升級在途時結算（兩個寫入穿插）：save_result 等升級完成才送（期間 0 筆），帶升級後的版本 6；雲端在 6 上推進（7），之後的保存帶 7、沒有衝突；雲端有升級、點數 1000−100+300、關卡",
+    r.success === true &&
+      before === 0 &&
+      result?.payload.base_rev === 6 &&
+      saves.length === 1 &&
+      saves[0].payload.base_rev === 7 &&
+      S().saveConflict === null &&
+      S().player?.serverRev === 8 &&
+      server.gold === 1200 &&
+      heroOf(server)?.level === 2 &&
+      server.max_stage === "chapter1_2",
+    {
+      before,
+      result: result?.payload.base_rev,
+      bases: saves.map((c) => c.payload.base_rev),
+      server: brief(server),
+    }
+  );
+});
+
+await test("版本-7", async ({ env, S }) => {
+  const K = "test_ver7";
+  revEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("save_profile");
+  S().updateNickname("甲");
+  await env.clock.advance(30_000);
+  appliedButNetworkError(env, await env.server.waitFor("save_profile", K));
+  await settle();
+  const afterLost = { rev: env.server.revs.get(K), err: S().syncError };
+  // 回應遺失之後又改了隊伍；30 秒後重試
+  S().updateTeam([{ hero_id: "zhao_yun", slot: 1 }]);
+  env.server.held.delete("save_profile");
+  await env.clock.advance(30_000);
+  await env.clock.advance(0);
+  await settle(40);
+  const saves = savesOf(env, K);
+  const server = env.server.profiles.get(K);
+  check(
+    "版本-7 保存的回應遺失（伺服器其實已寫入版本 6）、之後又改了隊伍：重試帶 5 被拒，但雲端正好是上一次送出的內容（版本 +1）→ 認得是自己的保存，採用版本 6 後再保存隊伍（7）；沒有出現衝突",
+    afterLost.rev === 6 &&
+      afterLost.err === "NETWORK_ERROR" &&
+      saves.length === 3 &&
+      saves[1].payload.base_rev === 5 &&
+      saves[2].payload.base_rev === 6 &&
+      S().saveConflict === null &&
+      S().player?.serverRev === 7 &&
+      status(S) === "idle" &&
+      server.nickname === "甲" &&
+      server.team[0].hero_id === "zhao_yun",
+    {
+      afterLost,
+      bases: saves.map((c) => c.payload.base_rev),
+      conflict: S().saveConflict,
+    }
+  );
+});
+
+await test("版本-7b", async ({ env, S }) => {
+  const K = "test_ver7b";
+  revEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("save_profile");
+  S().updateNickname("甲");
+  await env.clock.advance(30_000);
+  appliedButNetworkError(env, await env.server.waitFor("save_profile", K));
+  await settle();
+  env.server.held.delete("save_profile");
+  await env.clock.advance(30_000);
+  await settle(40);
+  const saves = savesOf(env, K);
+  check(
+    "版本-7b 保存的回應遺失、之後沒有其他修改：重試帶 5 被拒，但雲端內容和本機完全相同 → 直接採用雲端版本 6、已同步，沒有衝突、沒有再寫入",
+    saves.length === 2 &&
+      S().saveConflict === null &&
+      S().player?.serverRev === 6 &&
+      status(S) === "idle" &&
+      env.server.revs.get(K) === 6,
+    { n: saves.length, serverRev: S().player?.serverRev, status: status(S) }
+  );
+});
+
+await test("版本-8", async ({ env, S }) => {
+  const K = "test_ver8";
+  revEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("save_result");
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(300), ticket);
+  appliedButNetworkError(env, await env.server.waitFor("save_result", K));
+  await settle(60);
+  const server = env.server.profiles.get(K);
+  check(
+    "版本-8 結算的回應遺失（伺服器其實已推進到版本 6）：本機無法確認雲端的新版本是否只多了這一場，保存被拒後停下來請玩家選擇（不自動判斷、不重送結算）；雲端沒有被覆蓋",
+    S().saveConflict?.serverRev === 6 &&
+      env.server.count("save_result", K) === 1 &&
+      savesOf(env, K).length === 1 &&
+      server.gold === 1000 &&
+      server.max_stage === "chapter1_2" &&
+      S().player?.gold === 1300,
+    { conflict: S().saveConflict, server: brief(server) }
+  );
+});
+
+await test("版本-9", async ({ env, S }) => {
+  // 舊版後端（不回報版本）：和以前一樣，保存不帶 base_rev
+  const K = "test_ver9";
+  await loaded(env, S, K);
+  S().updateNickname("舊後端");
+  await env.clock.advance(30_000);
+  const save = savesOf(env, K)[0];
+  const up = await S().upgradeHero("guan_yu", heroCfg);
+  const upCall = env.server.calls.find((c) => c.action === "upgrade_hero");
+  const ticket = S().beginBattle();
+  S().applyBattleResult(winResult(100), ticket);
+  await settle(60);
+  const result = env.server.calls.find((c) => c.action === "save_result");
+  check(
+    "版本-9 舊版後端（不回報版本）：雲端版本是 null；保存只送 data、升級只送 hero_id（都沒有 base_rev）；結算帶 request_id（這一場的識別碼）但沒有 base_rev；照常成功、沒有衝突",
+    S().player?.serverRev === null &&
+      save &&
+      Object.keys(save.payload).join() === "data" &&
+      up.success === true &&
+      Object.keys(upCall.payload).join() === "hero_id" &&
+      result?.payload.request_id === ticket.id &&
+      !("base_rev" in result.payload) &&
+      !("battle_id" in result.payload) &&
+      S().saveConflict === null,
+    {
+      payloadKeys: save && Object.keys(save.payload),
+      up: upCall && Object.keys(upCall.payload),
+      result: result && Object.keys(result.payload),
+    }
+  );
+});
+
+await test("版本-10", async ({ env, S }) => {
+  const K = "test_ver10";
+  revEnv(env, K, 5);
+  env.server.requireBase = true;
+  // 舊版前端留下的 session：有未同步的修改、沒有雲端版本
+  env.local.setItem("shenma_player_key", K);
+  env.session.setItem(
+    SESSION_KEY,
+    JSON.stringify({
+      ...baseProfile("舊分頁"),
+      key: K,
+      syncStatus: "pending",
+      rev: 1,
+      syncedRev: 0,
+    })
+  );
+  S().loadFromSession(K);
+  await env.clock.advance(0);
+  await settle(40);
+  const c = S().saveConflict;
+  const first = savesOf(env, K)[0];
+  const r = await S().resolveSaveConflict("local", expectNow(S));
+  await settle();
+  const saves = savesOf(env, K);
+  check(
+    "版本-10 版本不明（舊版 session）而且後端要求版本：保存不帶 base_rev 被拒（428）→ 衝突（原因：版本不明，雲端版本 5），不會預設成 0 硬寫；玩家選「保留這個分頁」後以版本 5 條件寫入成功（6）",
+    first &&
+      !("base_rev" in first.payload) &&
+      c?.reason === "base_unknown" &&
+      c?.serverRev === 5 &&
+      r.ok === true &&
+      saves.length === 2 &&
+      saves[1].payload.base_rev === 5 &&
+      env.server.profiles.get(K).nickname === "舊分頁" &&
+      S().player?.serverRev === 6 &&
+      S().saveConflict === null,
+    { c, r, bases: saves.map((x) => x.payload.base_rev) }
+  );
+});
+
+await test("版本-11", async ({ env, S }) => {
+  const K = "test_ver11";
+  revEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("upgrade_hero");
+  const p = S().upgradeHero("guan_yu", heroCfg);
+  const c = await env.server.waitFor("upgrade_hero", K);
+  c.networkError(); // 伺服器沒有處理
+  const r = await p;
+  otherTabSaves(env, K, { nickname: "B" }); // 版本 6
+  env.server.held.delete("upgrade_hero");
+  const rc = await S().recheckPendingUpgrade();
+  await settle();
+  // 舊請求之後才被伺服器處理：版本不符，被拒
+  let late = null;
+  c.respond = (j) => {
+    late = j;
+  };
+  env.server.handle(c);
+  check(
+    "版本-11 升級帶版本 5 送出後連線中斷、伺服器沒處理；B 把雲端改到 6。重新確認時看不到升級、雲端版本也已不是 5 → 確定沒有套用（not_applied），待確認解除；本機沒有修改就換成雲端資料（版本 6）。舊請求之後才被處理也因版本不符被拒，點數不變",
+    r.error === "UPGRADE_UNCONFIRMED" &&
+      rc.ok === true &&
+      rc.outcome === "not_applied" &&
+      !S().player?.pendingUpgrade &&
+      S().player?.nickname === "B" &&
+      S().player?.serverRev === 6 &&
+      late?.status === 409 &&
+      env.server.profiles.get(K).gold === 1000,
+    { r, rc, late: late?.error, serverRev: S().player?.serverRev }
+  );
+});
+
+await test("版本-12", async ({ env, S }) => {
+  const K = "test_ver12";
+  revEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("upgrade_hero");
+  const p = S().upgradeHero("guan_yu", heroCfg);
+  appliedButNetworkError(env, await env.server.waitFor("upgrade_hero", K)); // 伺服器已升級（版本 6）
+  const r = await p;
+  S().updateNickname("本機改名");
+  otherTabSaves(env, K, { team: [{ hero_id: "zhao_yun", slot: 1 }] }); // 版本 7
+  env.server.held.delete("upgrade_hero");
+  const rc = await S().recheckPendingUpgrade();
+  await settle(40);
+  const server = env.server.profiles.get(K);
+  check(
+    "版本-12 升級其實成功（6），之後 B 又改了隊伍（7），本機期間改了暱稱：重新確認看得到升級並合併，但雲端不只多了這次升級，版本維持送出時的 5；接著保存被拒 → 衝突比較（雲端版本 7），B 的隊伍沒有被蓋掉",
+    r.error === "UPGRADE_UNCONFIRMED" &&
+      rc.ok === true &&
+      rc.outcome === "applied" &&
+      S().saveConflict?.serverRev === 7 &&
+      server.team[0].hero_id === "zhao_yun" &&
+      server.nickname === "旅行者" &&
+      heroOf(S().player)?.level === 2,
+    { rc, conflict: S().saveConflict?.serverRev, server: brief(server) }
+  );
+});
+
+await test("版本-12b", async ({ env, S }) => {
+  const K = "test_ver12b";
+  revEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.held.add("upgrade_hero");
+  const p = S().upgradeHero("guan_yu", heroCfg);
+  appliedButNetworkError(env, await env.server.waitFor("upgrade_hero", K)); // 版本 6
+  await p;
+  S().updateNickname("本機改名");
+  env.server.held.delete("upgrade_hero");
+  const rc = await S().recheckPendingUpgrade();
+  await settle(40);
+  const saves = savesOf(env, K);
+  check(
+    "版本-12b 升級其實成功（6），雲端之後沒有其他寫入：重新確認時版本正好是送出時 +1 → 採用 6，保存本機的改名帶 6、沒有衝突（7）",
+    rc.outcome === "applied" &&
+      saves.length === 1 &&
+      saves[0].payload.base_rev === 6 &&
+      S().saveConflict === null &&
+      S().player?.serverRev === 7 &&
+      env.server.profiles.get(K).nickname === "本機改名",
+    { rc, bases: saves.map((c) => c.payload.base_rev) }
+  );
+});
+
+await test("版本-13", async ({ env, S }) => {
+  const K = "test_ver13";
+  revEnv(env, K, 5);
+  await loaded(env, S, K, env.server.profiles.get(K));
+  env.server.corrupt.add(K);
+  S().updateNickname("甲");
+  await env.clock.advance(30_000);
+  const n1 = savesOf(env, K).length;
+  await env.clock.advance(120_000);
+  check(
+    "版本-13 雲端存檔損毀：保存回 DATA_CORRUPT，不自動重試（重送也不會成功），本機修改保留",
+    n1 === 1 &&
+      savesOf(env, K).length === 1 &&
+      S().syncError === "DATA_CORRUPT" &&
+      S().player?.nickname === "甲" &&
+      status(S) === "pending",
+    { n1, n2: savesOf(env, K).length, err: S().syncError }
+  );
+});
+
+await test("版本-14", async ({ env, S }) => {
+  const K = "test_ver14";
+  revEnv(env, K, 5);
+  // 舊版前端留下的 session：已同步、但沒有雲端版本；之後另一個分頁改了雲端（6）
+  env.local.setItem("shenma_player_key", K);
+  env.session.setItem(
+    SESSION_KEY,
+    JSON.stringify({
+      ...baseProfile(),
+      key: K,
+      syncStatus: "idle",
+      rev: 1,
+      syncedRev: 1,
+    })
+  );
+  S().loadFromSession(K);
+  await settle();
+  otherTabSaves(env, K, { nickname: "B" });
+  const up = await S().upgradeHero("guan_yu", heroCfg);
+  await settle();
+  const call = env.server.calls.find(
+    (c) => c.action === "upgrade_hero" && c.key === K
+  );
+  check(
+    "版本-14 版本不明（舊版 session）時升級：不帶 base_rev（後端在目前資料上升級並回報版本 7），但本機不知道自己的資料根據哪個版本，不把回應的版本當成基準（仍是 null）",
+    up.success === true &&
+      call &&
+      !("base_rev" in call.payload) &&
+      env.server.revs.get(K) === 7 &&
+      S().player?.serverRev === null,
+    { up, serverRev: S().player?.serverRev }
+  );
+});
+
+// ── 衝突的比較與選擇 ───────────────────────────────────────────
+await test("衝突-1", async ({ env, S }) => {
+  const K = "test_cf1";
+  const c = await makeConflict(env, S, K);
+  const gets0 = env.server.count("get_profile", K);
+  const r1 = await S().refreshProfile();
+  env.server.profiles.set("test_cf1_other", baseProfile("別人"));
+  env.server.revs.set("test_cf1_other", 1);
+  const r2 = await S().initFromGAS("test_cf1_other");
+  await S().backgroundRefresh(K);
+  await env.clock.advance(120_000);
+  check(
+    "衝突-1 衝突期間：手動同步、切換帳號都停下（REV_CONFLICT），背景刷新不採用雲端，不再自動保存；本機修改與同一份衝突都保留",
+    c?.serverRev === 6 &&
+      r1.ok === false &&
+      r1.error === "REV_CONFLICT" &&
+      r2.ok === false &&
+      r2.error === "REV_CONFLICT" &&
+      S().player?.key === K &&
+      S().player?.nickname === "A改" &&
+      S().saveConflict?.id === c?.id &&
+      env.server.count("get_profile", K) === gets0 &&
+      env.server.count("get_profile", "test_cf1_other") === 0 &&
+      savesOf(env, K).length === 1,
+    { r1, r2, gets: env.server.count("get_profile", K) - gets0 }
+  );
+});
+
+await test("衝突-2", async ({ env, S }) => {
+  const K = "test_cf2";
+  const c = await makeConflict(env, S, K);
+  const gets0 = env.server.count("get_profile", K);
+  const bad = await S().resolveSaveConflict("server", {
+    conflictId: "old",
+    localRev: S().player.rev,
+  });
+  const bad2 = await S().resolveSaveConflict("server", {
+    conflictId: c.id,
+    localRev: S().player.rev - 1,
+  });
+  const gets1 = env.server.count("get_profile", K);
+  const ok = await S().resolveSaveConflict("server", expectNow(S));
+  await settle();
+  const backup = JSON.parse(
+    env.session.getItem("shenma_conflict_backup") || "null"
+  );
+  check(
+    "衝突-2 使用雲端：衝突 id 或本機版本和確認時不同 → CONFLICT_CHANGED、沒有送出任何請求；正確確認後先重新讀取雲端（版本仍是 6）才採用：換成 B 的資料、已同步、衝突清除、沒有送出保存；選擇前的兩份資料都備份在 session（本機 A改、雲端 B）",
+    bad.error === "CONFLICT_CHANGED" &&
+      bad2.error === "CONFLICT_CHANGED" &&
+      gets1 === gets0 &&
+      ok.ok === true &&
+      env.server.count("get_profile", K) === gets0 + 1 &&
+      S().player?.nickname === "B" &&
+      S().player?.gold === 1500 &&
+      S().player?.serverRev === 6 &&
+      status(S) === "idle" &&
+      S().saveConflict === null &&
+      savesOf(env, K).length === 1 &&
+      backup?.choice === "server" &&
+      backup?.local?.nickname === "A改" &&
+      backup?.cloud?.nickname === "B" &&
+      backup?.cloudRev === 6 &&
+      !("key" in (backup?.local || {})) &&
+      S().conflictBackup?.choice === "server",
+    { bad, bad2, ok, backup }
+  );
+});
+
+await test("衝突-3", async ({ env, S }) => {
+  const K = "test_cf3";
+  const c = await makeConflict(env, S, K);
+  const shown = expectNow(S);
+  otherTabSaves(env, K, { gold: 2000 }); // 玩家確認期間雲端又更新（7）
+  const r = await S().resolveSaveConflict("server", shown);
+  const c2 = S().saveConflict;
+  const still = { nickname: S().player?.nickname, status: status(S) };
+  const r2 = await S().resolveSaveConflict("server", expectNow(S));
+  check(
+    "衝突-3 使用雲端、確認期間雲端又更新（7）：不採用玩家沒看過的版本 → CONFLICT_CHANGED，用剛讀到的雲端刷新比較（新 id、版本 7、點數 2000），本機修改仍在；用新的比較再確認才採用",
+    r.error === "CONFLICT_CHANGED" &&
+      c2?.id !== c.id &&
+      c2?.serverRev === 7 &&
+      c2?.server?.gold === 2000 &&
+      still.nickname === "A改" &&
+      still.status === "pending" &&
+      r2.ok === true &&
+      S().player?.gold === 2000 &&
+      S().player?.serverRev === 7,
+    { r, c2, r2 }
+  );
+});
+
+await test("衝突-4", async ({ env, S }) => {
+  const K = "test_cf4";
+  await makeConflict(env, S, K);
+  const r = await S().resolveSaveConflict("local", expectNow(S));
+  await settle();
+  const saves = savesOf(env, K);
+  const backup = JSON.parse(
+    env.session.getItem("shenma_conflict_backup") || "null"
+  );
+  check(
+    "衝突-4 保留這個分頁：只覆蓋玩家看到的雲端版本（base_rev 6 條件寫入）→ 雲端變成 A改（版本 7）、衝突清除、已同步；被覆蓋的雲端資料（B）備份在 session",
+    r.ok === true &&
+      saves.length === 2 &&
+      saves[1].payload.base_rev === 6 &&
+      env.server.profiles.get(K).nickname === "A改" &&
+      env.server.revs.get(K) === 7 &&
+      S().player?.serverRev === 7 &&
+      S().saveConflict === null &&
+      status(S) === "idle" &&
+      backup?.choice === "local" &&
+      backup?.cloud?.nickname === "B" &&
+      backup?.cloudRev === 6,
+    { r, bases: saves.map((x) => x.payload.base_rev), backup }
+  );
+});
+
+await test("衝突-5", async ({ env, S }) => {
+  const K = "test_cf5";
+  const c = await makeConflict(env, S, K);
+  const shown = expectNow(S);
+  otherTabSaves(env, K, { gold: 2000 }); // 7
+  const r = await S().resolveSaveConflict("local", shown);
+  const n = savesOf(env, K).length;
+  await env.clock.advance(120_000);
+  const server = env.server.profiles.get(K);
+  check(
+    "衝突-5 保留這個分頁、確認期間雲端又更新（7）：條件寫入被拒，不自動重試覆蓋 → CONFLICT_CHANGED、刷新比較（版本 7）；雲端的 B 與點數 2000 保留；之後 2 分鐘沒有再送",
+    r.error === "CONFLICT_CHANGED" &&
+      S().saveConflict?.id !== c.id &&
+      S().saveConflict?.serverRev === 7 &&
+      server.nickname === "B" &&
+      server.gold === 2000 &&
+      savesOf(env, K).length === n &&
+      S().player?.nickname === "A改",
+    { r, conflict: S().saveConflict, server: brief(server) }
+  );
+});
+
+await test("衝突-6", async ({ env, S }) => {
+  const K = "test_cf6";
+  await makeConflict(env, S, K);
+  const exp = expectNow(S);
+  env.server.held.add("get_profile");
+  const gets0 = env.server.count("get_profile", K);
+  const p1 = S().resolveSaveConflict("server", exp);
+  const busy = S().resolvingConflict;
+  const p2 = await S().resolveSaveConflict("server", exp);
+  const p3 = await S().resolveSaveConflict("local", exp);
+  const saves0 = savesOf(env, K).length;
+  env.server.held.delete("get_profile");
+  env.server.handle(await env.server.waitFor("get_profile", K, gets0 + 1));
+  const r1 = await p1;
+  check(
+    "衝突-6 連按：處理中（resolvingConflict）再按兩種選擇都回 RESOLVE_IN_PROGRESS，只送出一次讀取、沒有保存；第一次照常完成",
+    busy === true &&
+      p2.error === "RESOLVE_IN_PROGRESS" &&
+      p3.error === "RESOLVE_IN_PROGRESS" &&
+      savesOf(env, K).length === saves0 &&
+      env.server.count("get_profile", K) === gets0 + 1 &&
+      r1.ok === true &&
+      S().resolvingConflict === false,
+    { busy, p2, p3, r1 }
+  );
+});
+
+await test("衝突-7", async ({ env, S }) => {
+  const K = "test_cf7";
+  const c = await makeConflict(env, S, K);
+  const reqs0 = env.server.calls.length;
+  const t = S().beginBattle();
+  const prep = S().conflictBlockReason(); // 備戰中（還沒開打）可以處理
+  S().lockBattle(t); // 開打
+  const inBattle = await S().resolveSaveConflict("server", expectNow(S));
+  const reason1 = S().conflictBlockReason();
+  S().endBattle(t);
+  S().setSessionBlocked(true);
+  const blocked = await S().resolveSaveConflict("local", expectNow(S));
+  S().setSessionBlocked(false);
+  // 結算紀錄在途（戰鬥還沒真正結束）
+  env.server.held.add("save_result");
+  const t2 = S().beginBattle();
+  S().applyBattleResult(winResult(10), t2);
+  const settling = await S().resolveSaveConflict("server", expectNow(S));
+  const reqsMid = env.server.calls.filter(
+    (x) => x.action !== "save_result"
+  ).length;
+  env.server.held.delete("save_result");
+  env.server.handle(await env.server.waitFor("save_result", K));
+  await settle(40);
+  S().holdMigrationWrites();
+  const held = await S().resolveSaveConflict("server", expectNow(S));
+  const heldLocal = await S().resolveSaveConflict("local", expectNow(S));
+  check(
+    "衝突-7 解決衝突也遵守既有保護：備戰中可以處理；已開打 → BATTLE_IN_PROGRESS；存檔處理暫停 → SESSION_BLOCKED；結算紀錄在途 → BATTLE_IN_PROGRESS；寫入限制 → MIGRATION_HOLD（兩種選擇都是）；都沒有送出讀取或保存、雲端與衝突不變",
+    prep === null &&
+      inBattle.error === "BATTLE_IN_PROGRESS" &&
+      reason1 === "BATTLE_IN_PROGRESS" &&
+      blocked.error === "SESSION_BLOCKED" &&
+      settling.error === "BATTLE_IN_PROGRESS" &&
+      held.error === "MIGRATION_HOLD" &&
+      heldLocal.error === "MIGRATION_HOLD" &&
+      reqsMid === reqs0 &&
+      env.server.calls.filter((x) => x.action === "get_profile").length ===
+        env.server.calls
+          .slice(0, reqs0)
+          .filter((x) => x.action === "get_profile").length &&
+      env.server.profiles.get(K).nickname === "B" &&
+      S().saveConflict?.serverRev >= c.serverRev,
+    { inBattle, reason1, blocked, settling, held, heldLocal }
+  );
+});
+
+await test("衝突-8", async ({ env, S }) => {
+  const K = "test_cf8";
+  const c = await makeConflict(env, S, K);
+  const localRev = S().player?.rev;
+  const S2 = reloadPage(env);
+  S2().loadFromSession(K);
+  const right = S2().saveConflict;
+  await env.clock.advance(0);
+  await settle(40);
+  const c2 = S2().saveConflict;
+  const old = await S2().resolveSaveConflict("server", {
+    conflictId: c.id,
+    localRev,
+  });
+  check(
+    "衝突-8 重新整理：衝突只在記憶體，新頁面一開始沒有衝突；從 session 補送保存（仍帶版本 5）再次被拒 → 新的衝突（新 id）；用重新整理前的衝突 id 確認不會被接受（CONFLICT_CHANGED）",
+    right === null &&
+      c2 &&
+      c2.id !== c.id &&
+      c2.serverRev === 6 &&
+      savesOf(env, K).length === 2 &&
+      savesOf(env, K)[1].payload.base_rev === 5 &&
+      old.error === "CONFLICT_CHANGED" &&
+      S2().player?.nickname === "A改",
+    { right, c2, old }
+  );
+});
+
+await test("衝突-9", async ({ env, S }) => {
+  const K = "test_cf9";
+  await makeConflict(env, S, K);
+  await S().resolveSaveConflict("server", expectNow(S));
+  const r = S().restoreConflictBackup();
+  await env.clock.advance(0);
+  await settle(40);
+  const saves = savesOf(env, K);
+  check(
+    "衝突-9 放回被放棄的本機資料：當成尚未保存的修改、版本是它原本根據的 5；保存時再次被拒 → 新的衝突比較，雲端的 B 沒有被直接覆蓋；備份仍在",
+    r.ok === true &&
+      S().player?.nickname === "A改" &&
+      saves.length === 2 &&
+      saves[1].payload.base_rev === 5 &&
+      S().saveConflict?.serverRev === 6 &&
+      env.server.profiles.get(K).nickname === "B" &&
+      S().conflictBackup !== null,
+    {
+      r,
+      bases: saves.map((x) => x.payload.base_rev),
+      conflict: S().saveConflict,
+    }
+  );
+});
+
+await test("衝突-10", async ({ env, S }) => {
+  const K = "test_cf10";
+  const c = await makeConflict(env, S, K);
+  const exp = expectNow(S);
+  env.server.held.add("save_profile");
+  const p = S().resolveSaveConflict("local", exp);
+  appliedButNetworkError(env, await env.server.waitFor("save_profile", K, 2)); // 雲端其實已寫入（7）
+  const r = await p;
+  const still = S().saveConflict?.id === c.id;
+  env.server.held.delete("save_profile");
+  const r2 = await S().resolveSaveConflict("local", exp);
+  await settle();
+  check(
+    "衝突-10 保留這個分頁、回應遺失（雲端其實已寫入 7）：回報網路錯誤、衝突保留；再按一次帶 6 被拒，但雲端內容就是本機 → 直接採用版本 7、衝突清除，沒有重複覆蓋",
+    r.ok === false &&
+      r.error === "NETWORK_ERROR" &&
+      still &&
+      r2.ok === true &&
+      S().saveConflict === null &&
+      S().player?.serverRev === 7 &&
+      env.server.revs.get(K) === 7 &&
+      status(S) === "idle",
+    { r, r2, serverRev: S().player?.serverRev }
   );
 });
 

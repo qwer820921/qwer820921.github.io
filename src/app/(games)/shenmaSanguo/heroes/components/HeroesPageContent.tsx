@@ -110,6 +110,10 @@ function UpgradeModal({
         UPGRADE_UNCONFIRMED:
           "連線中斷，無法確定升級是否完成。請先用畫面下方的「重新確認」，不要重複升級",
         MIGRATION_HOLD: "這個分頁的存檔暫停保存，不能升級（見畫面下方的說明）",
+        REV_CONFLICT:
+          "雲端存檔在其他分頁或裝置更新過，這次升級沒有扣點數。請先用畫面下方的提示比較並選擇要保留的存檔",
+        REV_CONFLICT_RELOADED:
+          "雲端存檔在其他分頁或裝置更新過，已載入最新的資料，這次升級沒有扣點數。請確認後再升級一次",
       };
       setFeedback({
         type: "danger",

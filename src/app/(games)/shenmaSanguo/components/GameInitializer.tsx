@@ -13,6 +13,9 @@ import { useStaticConfigStore } from "../store/staticConfigStore";
 import { SyncStatus } from "../types";
 import { findIsolationRecovery } from "../utils/isolationRecovery";
 import UpgradeUnconfirmedNotice from "./UpgradeUnconfirmedNotice";
+import SaveConflictNotice from "./SaveConflictNotice";
+import ConflictBackupNotice from "./ConflictBackupNotice";
+import SaveConflictModal from "./modals/SaveConflictModal";
 import SwitchFailedNotice from "./SwitchFailedNotice";
 import MigrationHoldNotice from "./MigrationHoldNotice";
 import IsolationProblemNotice from "./IsolationProblemNotice";
@@ -37,6 +40,10 @@ export default function GameInitializer() {
   const switchFailed = usePlayerStore((s) => s.switchNotice !== null);
   // 遷移狀態不明的寫入限制（見 types 的 MigrationHold）：一直顯示，不能關閉
   const writeHold = usePlayerStore((s) => s.writeHold);
+  // 存檔版本衝突：暫停自動保存，等玩家比較後選擇；處理後的備份提示（沒有衝突時才顯示）
+  const saveConflict = usePlayerStore((s) => s.saveConflict !== null);
+  const conflictBackup = usePlayerStore((s) => s.conflictBackup !== null);
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const hasConfig = useStaticConfigStore(
     (s) => (s.config?.heroesConfig?.length ?? 0) > 0
@@ -151,8 +158,13 @@ export default function GameInitializer() {
           </div>
         </div>
       )}
-      {/* 固定在頁面底部，不擋住上方的 HUD 按鈕：存檔處理暫停、切換存檔失敗、存檔暫停保存（含網站更新前的暫存）、武將升級結果待確認 */}
-      {(isolationProblem || unconfirmed || switchFailed || writeHold) && (
+      {/* 固定在頁面底部，不擋住上方的 HUD 按鈕：存檔處理暫停、切換存檔失敗、存檔暫停保存（含網站更新前的暫存）、武將升級結果待確認、存檔版本衝突與處理後的備份 */}
+      {(isolationProblem ||
+        unconfirmed ||
+        switchFailed ||
+        writeHold ||
+        saveConflict ||
+        conflictBackup) && (
         <div className={styles.bottomNotices}>
           {isolationProblem && (
             <IsolationProblemNotice problem={isolationProblem} />
@@ -160,7 +172,14 @@ export default function GameInitializer() {
           <SwitchFailedNotice />
           {writeHold && <MigrationHoldNotice item={recovery} />}
           {unconfirmed && <UpgradeUnconfirmedNotice />}
+          {saveConflict && (
+            <SaveConflictNotice onCompare={() => setCompareOpen(true)} />
+          )}
+          {conflictBackup && !saveConflict && <ConflictBackupNotice />}
         </div>
+      )}
+      {saveConflict && compareOpen && (
+        <SaveConflictModal onClose={() => setCompareOpen(false)} />
       )}
     </>
   );

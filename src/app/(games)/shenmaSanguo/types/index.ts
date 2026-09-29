@@ -153,6 +153,14 @@ export interface SessionPlayerState extends PlayerState {
   rev?: number;
   /** 伺服器已確認保存的本機版本；與 rev 不同代表有未同步的修改 */
   syncedRev?: number;
+  /**
+   * 雲端存檔的版本基準（後端回報的 rev，只存在本機，不送到伺服器）：
+   * 這個分頁已同步的資料等於雲端這個版本的內容，未同步的修改都在它之上。
+   * 保存、升級、結算時當作 base_rev 送出；雲端在這之後被其他分頁或裝置改過，整份保存與升級會被拒絕（版本衝突），
+   * 不會互相覆蓋。只能在確定雲端的新版本已包含在本機資料裡時才前進（寧可舊，不可新）。
+   * 舊版後端不回報版本（或舊版 session 沒有這個欄位）時是 null／沒有：保存不帶 base_rev，沒有版本保護
+   */
+  serverRev?: number | null;
   /** 已送出、還沒確認結果的伺服器升級（只存在本機，不送到伺服器） */
   pendingUpgrade?: PendingUpgrade | null;
   /** 遷移狀態不明的寫入限制（只存在本機，不送到伺服器）：見 MigrationHold */
@@ -197,6 +205,8 @@ export interface PendingUpgrade {
   hero_id: string;
   /** 送出前的伺服器資料（送出前要求沒有未同步修改，所以等於伺服器已確認的資料） */
   base: PlayerState;
+  /** 送出時帶的雲端版本（base_rev）；舊版後端沒有版本時是 null */
+  base_rev?: number | null;
   /** 送出時間（毫秒） */
   sent_at: number;
   /**

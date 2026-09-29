@@ -4,6 +4,7 @@ import { Container } from "react-bootstrap";
 import styles from "../styles/mapEditor.module.css";
 import MapTab from "./mapTab";
 import ObjectTabPage from "./objectTab/objectTabPage";
+import AdminTokenPrompt from "./adminTokenPrompt";
 import PageWrapper from "@/components/common/PageWrapper";
 
 type PageTab = "map" | "object";
@@ -48,6 +49,8 @@ export default function MapEditorPage({
           <MapTab tileImages={tileImages} mapImages={mapImages} />
         )}
         {activeTab === "object" && <ObjectTabPage />}
+        {/* 設定寫入需要管理密碼時的輸入框（遮蔽輸入，只存在這個頁面的記憶體） */}
+        <AdminTokenPrompt />
       </Container>
     </PageWrapper>
   );
