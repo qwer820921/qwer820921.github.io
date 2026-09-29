@@ -15,7 +15,14 @@ import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { HeroState, HeroConfig, Rarity, JobClass } from "../../types";
 import HeroSkillInfo from "../../components/HeroSkillInfo";
+import HeroFilterBar from "../../components/HeroFilterBar";
 import { attackIntervalSec, formatSec } from "../../utils/heroStats";
+import {
+  DEFAULT_HERO_FILTER,
+  HeroFilterCriteria,
+  filterAndSortHeroes,
+  resolveHeroState,
+} from "../../utils/heroFilter";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 // ── 顯示設定 ──────────────────────────────────────────────
@@ -49,22 +56,6 @@ const rarityBgClass: Record<Rarity, string> = {
   [Rarity.Blue]: styles.rarityBlue,
   [Rarity.Green]: styles.rarityGreen,
 };
-
-function resolveHeroState(
-  config: HeroConfig,
-  playerHeroes: HeroState[]
-): HeroState {
-  return (
-    playerHeroes.find((h) => h.hero_id === config.hero_id) ?? {
-      hero_id: config.hero_id,
-      level: 1,
-      star: 0,
-      atk: config.base_atk,
-      def: config.base_def,
-      hp: config.base_hp,
-    }
-  );
-}
 
 // ── 升級 Modal ────────────────────────────────────────────
 interface UpgradeModalProps {
@@ -153,6 +144,9 @@ function UpgradeModal({
           color: C.text,
           overflow: "hidden",
         }}
+        data-testid="hero-detail"
+        data-hero-id={config.hero_id}
+        data-hero-level={hero.level}
       >
         {/* Header */}
         <div
@@ -456,6 +450,7 @@ function HeroCard({
   return (
     <div
       className={`${styles.heroCard} ${rarityBgClass[config.rarity as Rarity]}`}
+      data-hero-id={config.hero_id}
       onClick={onClick}
       style={{ borderColor: `${color}30` }}
     >
@@ -532,6 +527,9 @@ export default function HeroesPageContent() {
   const { config: staticConfig, isLoading: configLoading } =
     useStaticConfigStore();
   const [selectedHeroId, setSelectedHeroId] = useState<string | null>(null);
+  // 搜尋／職業／排序只影響這一頁的顯示；離開頁面（元件卸載）就回到預設
+  const [criteria, setCriteria] =
+    useState<HeroFilterCriteria>(DEFAULT_HERO_FILTER);
 
   if (!player || configLoading || !staticConfig) {
     return (
@@ -557,6 +555,12 @@ export default function HeroesPageContent() {
   const selectedHero = selectedConfig
     ? resolveHeroState(selectedConfig, player.heroes)
     : null;
+  // 每次都用目前的玩家資料計算（升級、切換帳號後立即反映）；在隊中的武將也照常顯示
+  const listed = filterAndSortHeroes(
+    staticConfig.heroesConfig,
+    player.heroes,
+    criteria
+  );
 
   return (
     <Container fluid className={styles.pageContainer}>
@@ -570,9 +574,15 @@ export default function HeroesPageContent() {
         </p>
       </div>
 
+      <HeroFilterBar
+        criteria={criteria}
+        onChange={setCriteria}
+        matched={listed.matched}
+        total={listed.total}
+      />
+
       <Row className="g-2 w-100">
-        {staticConfig.heroesConfig.map((config) => {
-          const hero = resolveHeroState(config, player.heroes);
+        {listed.items.map(({ config, hero }) => {
           return (
             <Col xs={6} sm={4} md={3} key={config.hero_id}>
               <HeroCard

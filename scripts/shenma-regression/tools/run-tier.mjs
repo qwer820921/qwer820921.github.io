@@ -4,7 +4,7 @@
 //   node scripts/shenma-regression/tools/run-tier.mjs related <功能...>   例：related save-conflict backup-preview
 //   node scripts/shenma-regression/tools/run-tier.mjs full
 //   node scripts/shenma-regression/tools/run-tier.mjs list              列出功能與對應的瀏覽器腳本
-// - quick：型別檢查、神馬三國與地圖編輯器的 ESLint、Node 測試（store、備份檔、跨來源隔離開機腳本）、harness 雜訊規則、
+// - quick：型別檢查、神馬三國與地圖編輯器的 ESLint、Node 測試（store、備份檔、武將列表篩選、地圖編輯器的錯誤說明、跨來源隔離開機腳本）、harness 雜訊規則、
 //   工具自我測試、素材引用檢查。不需要 dev server 與 Godot
 // - related：quick 之後，只跑指定功能的瀏覽器腳本；full：quick 之後跑全部瀏覽器腳本（約 35 分鐘）
 //   瀏覽器腳本需要 npm run dev 與 PLAYWRIGHT_DIR（見 README）；Godot 端另外用 godot-check.sh
@@ -39,6 +39,16 @@ const QUICK = [
     "備份檔讀取與驗證測試",
     "node",
     ["scripts/shenma-regression/web/backup-file.test.mjs"],
+  ],
+  [
+    "武將列表搜尋、篩選與排序測試",
+    "node",
+    ["scripts/shenma-regression/web/hero-filter.test.mjs"],
+  ],
+  [
+    "地圖編輯器設定寫入的錯誤說明測試",
+    "node",
+    ["scripts/shenma-regression/web/admin-error-text.test.mjs"],
   ],
   [
     "跨來源隔離開機腳本測試",
@@ -106,6 +116,10 @@ const AREAS = {
     what: "武將技能（趙雲、黃忠、周瑜、關羽）",
     scripts: ["r12-web.js", "r14-web.js", "r15-web.js", "skill-sweep-web.js"],
   },
+  heroes: {
+    what: "武將列表的搜尋、職業篩選與排序（主頁武將視窗、武將頁），升級後重新排序與切換帳號後重算",
+    scripts: ["hero-filter-web.js"],
+  },
   "stage-preview": { what: "攻速成長、關卡敵軍預覽", scripts: ["r16-web.js"] },
   "floating-ui": {
     what: "全站浮動入口在神馬三國視窗上的隱藏、敵軍預覽鍵盤操作、防禦塔目標優先",
@@ -151,6 +165,7 @@ const FULL = [
   "backup-preview-web.js",
   "map-editor-web.js",
   "skill-sweep-web.js",
+  "hero-filter-web.js",
 ];
 
 const [mode, ...rest] = process.argv.slice(2);

@@ -57,6 +57,12 @@ export function adminErrorText(code: string): string {
       return "失敗留下的備份已到上限，請管理者在試算表的 _config_backups 確認後再儲存；這次沒有寫入";
     case "CONFIG_NEEDS_REPAIR":
       return "上一次寫入的結果不明，為了不蓋掉可以恢復的內容暫停寫入；請管理者依 _config_backups 處理";
+    case "UNSUPPORTED_TEXT":
+      return "有設定值以「=」或「'」開頭（試算表會當成公式，或去掉開頭的「'」），這次沒有寫入；請修改這些值後再儲存";
+    case "CONFIG_HAS_FORMULAS":
+      return "試算表的這張設定表裡有公式，為了不把公式換成固定值，這次沒有寫入；請管理者把公式改成值後再儲存";
+    case "CONFIG_VERIFY_FAILED":
+      return "寫入後讀回的內容和預期不同（可能是資料驗證、格式或保護範圍），寫入前的內容已備份；再儲存一次會先恢復備份再寫入";
     default:
       return code;
   }

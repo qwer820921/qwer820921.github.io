@@ -2319,6 +2319,77 @@
   flex-shrink: 0;
 }
 
+/* ── 武將列表的搜尋、職業篩選與排序（主頁武將視窗、武將頁共用）── */
+.heroFilterPanel {
+  width: 100%;
+  margin-bottom: 0.85rem;
+}
+
+.heroFilterLabel {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sg-muted);
+  margin-bottom: 0.2rem;
+}
+
+.heroSearchInput,
+.heroSortField {
+  background-color: var(--sg-surface2);
+  border: 1px solid var(--sg-border);
+  color: var(--sg-text);
+  font-size: 0.8rem;
+  min-width: 0;
+}
+
+.heroSearchInput:focus,
+.heroSortField:focus {
+  border-color: var(--sg-border-hi);
+  box-shadow: 0 0 0 0.2rem rgba(99, 102, 241, 0.2);
+}
+
+.heroClearBtn {
+  background: transparent;
+  border: 1px solid var(--sg-border);
+  color: var(--sg-primary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.heroClearBtn:hover:not(:disabled),
+.heroClearBtn:focus-visible {
+  border-color: var(--sg-border-hi);
+  color: var(--sg-primary);
+}
+
+.heroClearBtn:disabled {
+  color: var(--sg-muted);
+  opacity: 0.6;
+}
+
+.heroFilterBtn:focus-visible,
+.heroClearBtn:focus-visible {
+  outline: 2px solid var(--sg-primary);
+  outline-offset: 1px;
+}
+
+.heroFilterCount {
+  margin-top: 0.45rem;
+  font-size: 0.75rem;
+  color: var(--sg-muted);
+}
+
+.heroFilterEmpty {
+  margin-top: 0.45rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px dashed var(--sg-border-hi);
+  border-radius: 8px;
+  background: var(--sg-surface2);
+  color: var(--sg-text);
+  font-size: 0.8rem;
+}
+
 /* ── Affordable upgrade button ──────────────────────────── */
 .heroHintAffordable {
   display: block;

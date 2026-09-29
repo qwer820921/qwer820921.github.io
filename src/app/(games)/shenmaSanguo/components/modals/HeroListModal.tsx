@@ -6,7 +6,14 @@ import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { HeroState, HeroConfig, Rarity, JobClass } from "../../types";
 import HeroSkillInfo from "../HeroSkillInfo";
+import HeroFilterBar from "../HeroFilterBar";
 import { attackIntervalSec, formatSec } from "../../utils/heroStats";
+import {
+  DEFAULT_HERO_FILTER,
+  HeroFilterCriteria,
+  filterAndSortHeroes,
+  resolveHeroState,
+} from "../../utils/heroFilter";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 const rarityColor: Record<Rarity, string> = {
@@ -35,22 +42,6 @@ const jobColor: Record<JobClass, string> = {
 };
 
 const r = (n: number) => Math.round(n);
-
-function resolveHeroState(
-  config: HeroConfig,
-  playerHeroes: HeroState[]
-): HeroState {
-  return (
-    playerHeroes.find((h) => h.hero_id === config.hero_id) ?? {
-      hero_id: config.hero_id,
-      level: 1,
-      star: 0,
-      atk: config.base_atk,
-      def: config.base_def,
-      hp: config.base_hp,
-    }
-  );
-}
 
 // ── 升級詳情：純內容，無外框，由 HeroListModal 的 detail modal 包裹 ──
 function HeroDetailContent({
@@ -320,32 +311,20 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
   const { player, upgradeHero } = usePlayerStore();
   const { config: staticConfig } = useStaticConfigStore();
   const [selectedHeroId, setSelectedHeroId] = useState<string | null>(null);
-  const [filterJob, setFilterJob] = useState<JobClass | null>(null);
-  const [sortBy, setSortBy] = useState<"default" | "level" | "atk">("default");
+  // 搜尋／職業／排序只影響這個視窗的顯示；關閉視窗（元件卸載）就回到預設
+  const [criteria, setCriteria] =
+    useState<HeroFilterCriteria>(DEFAULT_HERO_FILTER);
 
   if (!player || !staticConfig) return null;
 
   const teamHeroIds = new Set((player.team || []).map((s) => s.hero_id));
 
-  let heroes = staticConfig.heroesConfig;
-  if (filterJob !== null) {
-    heroes = heroes.filter((c) => c.job === filterJob);
-  }
-  heroes = [...heroes].sort((a, b) => {
-    if (sortBy === "level") {
-      return (
-        resolveHeroState(b, player.heroes).level -
-        resolveHeroState(a, player.heroes).level
-      );
-    }
-    if (sortBy === "atk") {
-      return (
-        resolveHeroState(b, player.heroes).atk -
-        resolveHeroState(a, player.heroes).atk
-      );
-    }
-    return 0;
-  });
+  // 每次都用目前的玩家資料計算（升級、切換帳號後立即反映）；在隊中的武將也照常顯示
+  const listed = filterAndSortHeroes(
+    staticConfig.heroesConfig,
+    player.heroes,
+    criteria
+  );
 
   const selectedConfig = selectedHeroId
     ? (staticConfig.heroesConfig.find((c) => c.hero_id === selectedHeroId) ??
@@ -375,58 +354,26 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
             </button>
           </div>
           <div className={styles.modalBody}>
-            {/* Filter / sort bar */}
-            <div className={styles.heroFilterBar}>
-              <div className={styles.heroFilterGroup}>
-                <button
-                  className={`${styles.heroFilterBtn} ${filterJob === null ? styles.heroFilterBtnActive : ""}`}
-                  onClick={() => setFilterJob(null)}
-                >
-                  全部
-                </button>
-                {(Object.values(JobClass) as JobClass[]).map((job) => (
-                  <button
-                    key={job}
-                    className={`${styles.heroFilterBtn} ${filterJob === job ? styles.heroFilterBtnActive : ""}`}
-                    style={
-                      filterJob === job
-                        ? {
-                            borderColor: jobColor[job],
-                            color: jobColor[job],
-                          }
-                        : undefined
-                    }
-                    onClick={() => setFilterJob(filterJob === job ? null : job)}
-                  >
-                    {jobLabel[job]}
-                  </button>
-                ))}
-              </div>
-              <select
-                className={styles.heroSortSelect}
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-              >
-                <option value="default">預設</option>
-                <option value="level">等級↓</option>
-                <option value="atk">攻擊↓</option>
-              </select>
-            </div>
+            <HeroFilterBar
+              criteria={criteria}
+              onChange={setCriteria}
+              matched={listed.matched}
+              total={listed.total}
+            />
 
             {/* Hero grid */}
             <Row className="g-2">
-              {heroes.map((config) => {
-                const hero = resolveHeroState(config, player.heroes);
+              {listed.items.map(({ config, hero, cost: upgradeCost }) => {
                 const color = rarityColor[config.rarity as Rarity];
                 const jColor = jobColor[config.job as JobClass];
                 const isSelected = config.hero_id === selectedHeroId;
                 const inTeam = teamHeroIds.has(config.hero_id);
-                const upgradeCost = config.upgrade_cost_base * hero.level;
                 const canAfford = player.gold >= upgradeCost;
                 return (
                   <Col xs={6} sm={4} key={config.hero_id}>
                     <div
                       className={styles.heroCard}
+                      data-hero-id={config.hero_id}
                       style={{
                         flexDirection: "column",
                         borderTopColor: color,
@@ -544,6 +491,9 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                 className={styles.modalPanel}
                 style={{ maxWidth: 380 }}
                 onClick={(e) => e.stopPropagation()}
+                data-testid="hero-detail"
+                data-hero-id={selectedConfig.hero_id}
+                data-hero-level={selectedHero.level}
               >
                 {/* 頭像 banner */}
                 {selectedConfig.image && (
