@@ -4,7 +4,7 @@
 //   node scripts/shenma-regression/tools/run-tier.mjs related <功能...>   例：related save-conflict backup-preview
 //   node scripts/shenma-regression/tools/run-tier.mjs full
 //   node scripts/shenma-regression/tools/run-tier.mjs list              列出功能與對應的瀏覽器腳本
-// - quick：型別檢查、神馬三國與地圖編輯器的 ESLint、Node 測試（store、備份檔、跨來源隔離開機腳本）、
+// - quick：型別檢查、神馬三國與地圖編輯器的 ESLint、Node 測試（store、備份檔、跨來源隔離開機腳本）、harness 雜訊規則、
 //   工具自我測試、素材引用檢查。不需要 dev server 與 Godot
 // - related：quick 之後，只跑指定功能的瀏覽器腳本；full：quick 之後跑全部瀏覽器腳本（約 35 分鐘）
 //   瀏覽器腳本需要 npm run dev 與 PLAYWRIGHT_DIR（見 README）；Godot 端另外用 godot-check.sh
@@ -58,6 +58,11 @@ const QUICK = [
     "node",
     ["scripts/shenma-regression/tools/check-assets.mjs"],
   ],
+  [
+    "harness 已知雜訊規則的正反案例",
+    "node",
+    ["scripts/shenma-regression/tools/harness-noise.test.mjs"],
+  ],
 ];
 
 // 功能 → 瀏覽器腳本（改到哪些功能就跑哪幾組；README 有「改了什麼 → 跑哪幾組」的對照）
@@ -98,8 +103,8 @@ const AREAS = {
     scripts: ["r13-web.js"],
   },
   skills: {
-    what: "武將技能（趙雲、黃忠、周瑜）",
-    scripts: ["r12-web.js", "r14-web.js", "r15-web.js"],
+    what: "武將技能（趙雲、黃忠、周瑜、關羽）",
+    scripts: ["r12-web.js", "r14-web.js", "r15-web.js", "skill-sweep-web.js"],
   },
   "stage-preview": { what: "攻速成長、關卡敵軍預覽", scripts: ["r16-web.js"] },
   "floating-ui": {
@@ -145,6 +150,7 @@ const FULL = [
   "save-conflict-web.js",
   "backup-preview-web.js",
   "map-editor-web.js",
+  "skill-sweep-web.js",
 ];
 
 const [mode, ...rest] = process.argv.slice(2);

@@ -10,7 +10,9 @@ async (page) => {
   if ((await page.locator('[title="切換關卡"]').count()) === 0) {
     await page.goto(H.BASE + "/shenmaSanguo");
     const input = page.getByPlaceholder("例：eric_sanguo_2026");
-    if (await input.isVisible({ timeout: 15000 }).catch(() => false)) {
+    // isVisible 不會等待（timeout 參數無效）：直接接在 harness 後面執行時頁面還沒畫出登入框，會略過登入而一直等不到 HUD。
+    // 改成最多等 15 秒；已經有 session 直接進到 HUD 時不會出現登入框
+    if (await input.waitFor({ state: "visible", timeout: 15000 }).then(() => true, () => false)) {
       await input.fill(KEY);
       await page.getByRole("button", { name: "進入遊戲" }).click();
     }

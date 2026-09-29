@@ -251,6 +251,15 @@ export type HeroSkillPayload =
       burn_ticks: number;
       /** 每跳間隔（秒） */
       burn_interval: number;
+    }
+  | {
+      id: "sweep";
+      /** 範圍半徑（格，含邊界），以主目標被打中時的位置為中心 */
+      sweep_radius: number;
+      /** 每次最多打到幾名其他敵人 */
+      sweep_max_targets: number;
+      /** 每名副目標受到的傷害＝這一擊的傷害 × sweep_ratio */
+      sweep_ratio: number;
     };
 
 export interface ExpeditionPayload {

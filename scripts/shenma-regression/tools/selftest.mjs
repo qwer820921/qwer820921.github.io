@@ -166,13 +166,22 @@ const logCases = [
     "test",
     "測試全部通過（含允許的 ERROR）",
     writeLog("test-ok.log", [
-      "ERROR: Resource file not found: res://assets/tiles/tile_dirt.webp (expected type: unknown)",
       "ERROR: [BattleManager] 拒絕開始第 1 波：selftest",
       "PASS  a",
       "PASS  b",
       okResult(2),
     ]),
     0,
+  ],
+  [
+    "test",
+    "測試有找不到的貼圖（內建測試資料改用實際素材後不再允許）",
+    writeLog("test-missing-tile.log", [
+      "ERROR: Resource file not found: res://assets/tiles/tile_dirt.webp (expected type: unknown)",
+      "PASS  a",
+      okResult(1),
+    ]),
+    1,
   ],
   [
     "test",

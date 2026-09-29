@@ -12,19 +12,8 @@ const WEB_ASSETS = join(ROOT, "public/images/shenmaSanguo");
 const GODOT_ASSETS = join(ROOT, "godot/shenmaSanguo/assets");
 const REF = /\b(tiles|maps)\/[A-Za-z0-9_-]+\.(webp|png|jpg|jpeg|gif)\b/g;
 
-// 已知例外：[檔案（倉庫相對路徑）, 引用, 原因]
-const KNOWN = [
-  [
-    "godot/shenmaSanguo/main/Main.gd",
-    "tiles/tile_dirt.webp",
-    "單獨執行 Godot 時的測試資料（_inject_test_payload），網頁不會用到；讀不到的貼圖會略過，改 GDScript 時再一併處理",
-  ],
-  [
-    "godot/shenmaSanguo/main/Main.gd",
-    "tiles/tile_grass.webp",
-    "同上（_inject_test_payload 的測試資料）",
-  ],
-];
+// 已知例外：[檔案（倉庫相對路徑）, 引用, 原因]。目前沒有例外；新增時要寫明網址或引用位置與原因
+const KNOWN = [];
 
 function walk(dir, exts, out = []) {
   for (const name of readdirSync(dir)) {

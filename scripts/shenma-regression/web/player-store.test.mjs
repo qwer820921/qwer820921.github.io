@@ -2446,7 +2446,8 @@ await test("R12-S1", async () => {
   );
   const zhao = heroSkillOf("zhao_yun");
   const payload = heroSkillPayload("zhao_yun");
-  const none = heroSkillPayload("guan_yu");
+  // 沒有技能的武將：關羽加上橫掃後改用張飛對照
+  const none = heroSkillPayload("zhang_fei");
   check(
     "R12-S1 趙雲的奇襲：送進 Godot 的參數（first_strike、2 倍）與說明文字出自同一份定義；沒有技能的武將不帶 skill 欄位",
     zhao?.name === "奇襲" &&
@@ -2454,7 +2455,7 @@ await test("R12-S1", async () => {
       payload.skill?.id === "first_strike" &&
       payload.skill?.first_attack_multiplier === zhao.firstAttackMultiplier &&
       describeHeroSkill(zhao).includes(`${zhao.firstAttackMultiplier} 倍`) &&
-      heroSkillOf("guan_yu") === null &&
+      heroSkillOf("zhang_fei") === null &&
       !("skill" in none),
     { zhao, payload, none }
   );
@@ -2503,7 +2504,7 @@ await test("R15-S1", async () => {
   const zhou = heroSkillOf("zhou_yu");
   const payload = heroSkillPayload("zhou_yu");
   const text = describeHeroSkill(zhou, 4, 122);
-  const others = ["zhao_yun", "huang_zhong", "guan_yu"].map((id) =>
+  const others = ["zhao_yun", "huang_zhong", "guan_yu", "zhang_fei"].map((id) =>
     Object.keys(heroSkillPayload(id).skill || {}).sort()
   );
   check(
@@ -2523,6 +2524,7 @@ await test("R15-S1", async () => {
         JSON.stringify([
           ["first_attack_multiplier", "id"],
           ["id", "range_multiplier"],
+          ["id", "sweep_max_targets", "sweep_radius", "sweep_ratio"],
           [],
         ]) &&
       burnTickDamage(zhou, 100) === 20 &&
@@ -2534,6 +2536,50 @@ await test("R15-S1", async () => {
       text.includes("目前攻擊力 122：每次灼燒 24.4") &&
       text.includes("不會疊加"),
     { zhou, payload, others, text }
+  );
+});
+
+// 關羽「橫掃」：參數、說明文字與副目標傷害出自同一份定義（utils/heroSkills）
+await test("橫掃-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    sweepDamage,
+    burnTickDamage,
+    effectiveRange,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const guan = heroSkillOf("guan_yu");
+  const payload = heroSkillPayload("guan_yu");
+  const text = describeHeroSkill(guan, 1.5, 160);
+  const plain = describeHeroSkill(guan);
+  check(
+    "橫掃-S1 關羽的橫掃：送進 Godot 的參數（sweep、半徑 1 格、最多 2 名、50%）、說明文字與副目標傷害出自同一份定義；參數只帶橫掃欄位，射程與其他技能的計算不受影響",
+    guan?.id === "sweep" &&
+      guan.name === "橫掃" &&
+      guan.radiusTiles === 1 &&
+      guan.maxTargets === 2 &&
+      guan.damageRatio === 0.5 &&
+      payload.skill?.id === "sweep" &&
+      payload.skill.sweep_radius === guan.radiusTiles &&
+      payload.skill.sweep_max_targets === guan.maxTargets &&
+      payload.skill.sweep_ratio === guan.damageRatio &&
+      JSON.stringify(Object.keys(payload.skill).sort()) ===
+        '["id","sweep_max_targets","sweep_radius","sweep_ratio"]' &&
+      sweepDamage(guan, 160) === 80 &&
+      sweepDamage(guan, 155) === 77.5 &&
+      sweepDamage(heroSkillOf("zhou_yu"), 100) === 0 &&
+      sweepDamage(null, 100) === 0 &&
+      burnTickDamage(guan, 100) === 0 &&
+      effectiveRange(guan, 1.5) === 1.5 &&
+      text.includes("半徑 1 格內（含邊界）") &&
+      text.includes("最多 2 名其他敵人") &&
+      text.includes("50%") &&
+      text.includes("目前攻擊力 160：每名其他敵人受到 80") &&
+      text.includes("距離相同時先出現在戰場上的敵人優先") &&
+      text.includes("不會再引發橫掃") &&
+      !plain.includes("目前攻擊力"),
+    { guan, payload, text }
   );
 });
 

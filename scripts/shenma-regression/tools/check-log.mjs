@@ -16,10 +16,6 @@ if (!["import", "export", "test"].includes(kind) || !logPath) {
 // 測試 log 中「預期會出現」的 ERROR（其他 ERROR 一律視為失敗）
 const ALLOWED_TEST_ERRORS = [
   {
-    re: /^ERROR: Resource file not found: res:\/\/assets\/tiles\/tile_(dirt|grass)\.webp \(expected type: unknown\)$/,
-    why: "Main.gd 在非 Web 平台會自動注入內建測試 payload，其中的貼圖名稱不存在（實際檔名帶編號）；正式 Web 產物不會走到",
-  },
-  {
     re: /^ERROR: \[BattleManager\] 拒絕開始第 \d+ 波：/,
     why: "R3-E 系列測試刻意載入無效波次，驗證拒絕開戰時輸出的錯誤",
   },

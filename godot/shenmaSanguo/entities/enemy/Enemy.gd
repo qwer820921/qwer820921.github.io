@@ -10,6 +10,8 @@ signal reached_base(enemy: Node)
 
 # ── 屬性 ──────────────────────────────────────────────────────
 var enemy_id: String  = "soldier"
+## 生成序號：這一場第幾個生成的敵人（WaveManager 設定，從 0 起算）。橫掃的副目標距離相同時用它決定順序
+var spawn_seq: int    = 0
 var max_hp: float     = 100.0
 var current_hp: float = 100.0
 var base_speed: float = 1.5        # 像素/秒

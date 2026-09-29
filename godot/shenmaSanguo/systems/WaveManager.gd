@@ -30,6 +30,8 @@ var _active_spawning_groups: int = 0
 # 出兵 coroutine 與敵人都記住自己建立時的世代；世代不符代表屬於已結束的關卡，
 # 不得再生成敵人、修改計數或發出信號。
 var _generation: int = 0
+## 這一場已生成的敵人數：新敵人的生成序號（Enemy.spawn_seq），每次 setup／stop_all 從 0 重新計算
+var _spawn_count: int = 0
 
 # ── 初始化 ────────────────────────────────────────────────────
 func setup(waves: Array, enemies_config: Array, game_map: Node, units_layer: Node, enemy_scene: PackedScene, tile_size: int = 48) -> void:
@@ -46,6 +48,7 @@ func stop_all() -> void:
 
 func _begin_new_generation() -> void:
 	_generation += 1
+	_spawn_count = 0
 	_active_enemies.clear()
 	_active_spawning_groups = 0
 	_current_wave_num = 0
@@ -165,6 +168,8 @@ func _create_enemy(cfg: Dictionary, waypoints: Array, gen: int) -> Node:
 
 	var enemy: Node = _enemy_scene.instantiate()
 	enemy.set_meta("wave_gen", gen)
+	enemy.spawn_seq = _spawn_count
+	_spawn_count += 1
 	_units_layer.add_child(enemy)
 	enemy.tile_size = _tile_size
 	enemy._game_map = _game_map

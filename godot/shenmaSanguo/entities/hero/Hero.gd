@@ -46,6 +46,19 @@ var range_multiplier: float = 1.0
 var burn_ratio: float = 0.0
 var burn_ticks: int = 0
 var burn_interval: float = 1.0
+## 橫掃（sweep）：每次有效普通攻擊命中後，以主目標被打中時的位置為中心、半徑 sweep_radius 格（含邊界）內，
+## 對最多 sweep_max_targets 名其他仍存活的敵人各造成這一擊傷害 × sweep_ratio（由近到遠，距離相同時生成序號小的優先）。
+## sweep_ratio 0 代表沒有這個技能；橫掃的傷害走敵人一般的受傷／死亡流程，不再觸發橫掃或其他普通攻擊技能，也不增加攻擊次數
+var sweep_ratio: float = 0.0
+var sweep_radius: float = 0.0
+var sweep_max_targets: int = 0
+## 測試用唯讀統計（debug_snapshot）：這位武將的橫掃次數（有打到副目標的普通攻擊）與打到的副目標總數
+var sweep_count: int = 0
+var sweep_hits: int = 0
+## 橫掃範圍效果顯示的時間（秒，遊戲時間）
+const SWEEP_FX_TIME: float = 0.3
+## 範圍邊界的容許誤差（像素）：距離正好是半徑的敵人算在範圍內
+const SWEEP_EDGE_EPS: float = 0.001
 ## BattleManager：記錄這一場哪些武將已用過奇襲（記在這裡而不是武將節點，移位、重新放置都不會重置）
 var _battle_mgr: Node     = null
 
@@ -131,6 +144,9 @@ func _read_skill(state: Dictionary) -> void:
 	burn_ratio = 0.0
 	burn_ticks = 0
 	burn_interval = 1.0
+	sweep_ratio = 0.0
+	sweep_radius = 0.0
+	sweep_max_targets = 0
 	var skill = state.get("skill", null)
 	if not (skill is Dictionary):
 		return
@@ -147,6 +163,15 @@ func _read_skill(state: Dictionary) -> void:
 				burn_ratio = max(0.0, float(skill.get("burn_ratio", 0.0)))
 				burn_ticks = ticks
 				burn_interval = interval
+		"sweep":
+			var radius: float = float(skill.get("sweep_radius", 0.0))
+			var max_targets: int = int(skill.get("sweep_max_targets", 0))
+			var ratio: float = float(skill.get("sweep_ratio", 0.0))
+			# 參數不合理（半徑、人數或比例非正數）時不啟用，當作普通攻擊
+			if radius > 0.0 and max_targets > 0 and ratio > 0.0:
+				sweep_radius = radius
+				sweep_max_targets = max_targets
+				sweep_ratio = ratio
 
 ## 有效射程（格）＝（基礎射程 + (等級-1) × 射程成長）× 技能倍率。
 ## 每次都從設定重新計算，不在目前的值上再乘：更新隊伍、升級、移位、重新放置都不會疊乘
@@ -196,10 +221,14 @@ func _process(delta: float) -> void:
 			# Godot 專案沒有中文字型（中文會顯示成方框），用一定顯示得出來的倍率標記（例如「x2!」）；技能說明裡寫明這個標記
 			var m: float = first_strike_multiplier
 			_show_skill_text("x%s!" % (str(int(m)) if is_equal_approx(m, roundf(m)) else String.num(m, 2)))
+	# 橫掃以主目標被打中時的位置為中心：先記下位置，主目標被這一擊打倒也照樣生效
+	var hit_pos: Vector2 = target.global_position
 	target.take_damage(damage)
 	# 火攻：這一擊命中後附加灼燒（快照是這次命中時的攻擊力）；目標被這一擊打倒時不附加
 	if burn_ratio > 0.0 and is_instance_valid(target) and not target.is_dead():
 		target.apply_burn(atk * burn_ratio, burn_ticks, burn_interval)
+	if sweep_ratio > 0.0:
+		_sweep(hit_pos, target, damage * sweep_ratio)
 	_is_attacking = true
 	_anim_timer   = 0.22
 	# 保留這一幀越過零點的時間（零頭）；待命後的第一擊、或零頭長過一個間隔（極長的一幀）時從這一擊起算完整的間隔
@@ -223,6 +252,43 @@ func _find_target(enemies: Array, range_px: float) -> Node:
 			best_progress = e.get_progress_ratio()
 			best = e
 	return best
+
+## 橫掃：先選好副目標再造成傷害（受傷可能讓敵人死亡並從 WaveManager 的清單移除，不能邊走訪邊打）。
+## 候選是目前關卡仍存活的其他敵人，距離中心不超過半徑（含邊界）；由近到遠，距離相同時生成序號小的優先，每個敵人最多一次
+func _sweep(center: Vector2, primary: Node, sweep_damage: float) -> void:
+	if not _wave_mgr or sweep_damage <= 0.0:
+		return
+	var radius_px: float = sweep_radius * tile_size
+	var picks: Array = []
+	for e in _wave_mgr.get_active_enemies():
+		if e == primary or not is_instance_valid(e) or e.is_queued_for_deletion() or e.is_dead():
+			continue
+		var d: float = center.distance_to(e.global_position)
+		if d <= radius_px + SWEEP_EDGE_EPS:
+			# 距離取到 0.001 像素再比較：浮點誤差造成的極小差距視為等距，交給生成序號決定
+			picks.append({"e": e, "d": snappedf(d, 0.001), "seq": int(e.spawn_seq)})
+	picks.sort_custom(func(a, b): return a.d < b.d or (a.d == b.d and a.seq < b.seq))
+	picks = picks.slice(0, sweep_max_targets)
+	# 附近沒有其他敵人：就是一般的普通攻擊（不顯示效果、不計次）
+	if picks.is_empty():
+		return
+	sweep_count += 1
+	_show_sweep_fx(center, radius_px)
+	for p in picks:
+		var e: Node = p.e
+		if is_instance_valid(e) and not e.is_dead():
+			e.take_damage(sweep_damage)
+			sweep_hits += 1
+
+## 橫掃的範圍效果：以主目標位置為中心的金色弧光，SWEEP_FX_TIME 秒（遊戲時間）後消失。
+## 掛在武將底下（不跟著武將移動）：手動暫停時跟著停住，武將被移除或切換關卡時一起清除
+func _show_sweep_fx(center: Vector2, radius_px: float) -> void:
+	var fx := SweepFx.new()
+	fx.radius = radius_px
+	fx.duration = SWEEP_FX_TIME
+	fx.top_level = true
+	add_child(fx)
+	fx.global_position = center
 
 ## 技能觸發時在武將上方顯示的文字（金色、放大，和一般的傷害數字區分）
 func _show_skill_text(text: String) -> void:
@@ -355,3 +421,25 @@ func reposition(new_cell: Vector2i, world_pos: Vector2, game_map: Node) -> void:
 	position = world_pos
 	is_on_road = (game_map.get_tile_type(new_cell) == game_map.TileType.ROAD)
 	queue_redraw()
+
+## 橫掃的範圍效果（不用文字，Godot 專案沒有中文字型）
+class SweepFx extends Node2D:
+	var radius: float = 48.0
+	var duration: float = 0.3
+	## 已經過的遊戲時間（秒）：_process 的 delta，受時間倍率影響、手動暫停時不前進
+	var elapsed: float = 0.0
+
+	func _ready() -> void:
+		z_index = 50
+
+	func _process(delta: float) -> void:
+		elapsed += delta
+		if elapsed >= duration:
+			queue_free()
+			return
+		queue_redraw()
+
+	func _draw() -> void:
+		var k: float = clampf(1.0 - elapsed / duration, 0.0, 1.0)
+		draw_circle(Vector2.ZERO, radius, Color(1.0, 0.85, 0.2, 0.18 * k))
+		draw_arc(Vector2.ZERO, radius, -PI * 0.85, PI * 0.35, 24, Color(1.0, 0.9, 0.3, 0.95 * k), 4.0)

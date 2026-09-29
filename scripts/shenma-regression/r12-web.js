@@ -116,8 +116,9 @@ async (page) => {
     await page.locator('div[class*="heroName"]', { hasText: "趙雲" }).first().click();
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { zhaoCard, guanCard, detail };
-    run.check("A-1 主頁武將視窗：趙雲的卡片顯示「技能：奇襲」，關羽沒有技能標籤",
-      /技能：奇襲/.test(zhaoCard) && !/技能：/.test(guanCard), out.A_modal);
+    // 關羽加上「橫掃」之後，關羽的卡片是自己的技能（不是奇襲）
+    run.check("A-1 主頁武將視窗：趙雲的卡片顯示「技能：奇襲」，關羽的卡片是「技能：橫掃」（不是奇襲）",
+      /技能：奇襲/.test(zhaoCard) && /技能：橫掃/.test(guanCard) && !/技能：奇襲/.test(guanCard), out.A_modal);
     run.check("A-2 趙雲的詳情顯示完整規則：第一次命中 2 倍、沒有目標不會用掉、同一場不再觸發、換關或重來才重置",
       /技能：奇襲/.test(detail) && /第一次命中敵人的普通攻擊造成 2 倍傷害/.test(detail) && /沒有目標時不會用掉/.test(detail) && /切換關卡或重新開始才會重置/.test(detail),
       out.A_modal);
@@ -125,11 +126,11 @@ async (page) => {
     await page.goto(H.BASE + "/shenmaSanguo/heroes");
     await page.waitForSelector('[data-testid="hero-skill-tag"]', { timeout: 60000 });
     const tags = await page.locator('[data-testid="hero-skill-tag"]').allInnerTexts();
-    await page.locator('[data-testid="hero-skill-tag"]').first().click();
+    await page.locator('[data-testid="hero-skill-tag"]', { hasText: "奇襲" }).first().click();
     const detail2 = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_page = { tags, detail2 };
-    // Round 14 起 mock 名單多了黃忠（百步穿楊）、Round 15 起多了周瑜（火攻）：武將頁依序是趙雲、黃忠、周瑜三個技能標籤；第一個是趙雲
-    run.check("A-3 武將頁：趙雲的技能標籤是奇襲（關羽沒有），點開後顯示同樣的完整規則", tags.length === 3 && tags[0] === "技能：奇襲" && tags[1] === "技能：百步穿楊" && tags[2] === "技能：火攻" && detail2 === detail, out.A_page);
+    // mock 名單的四位武將都有技能：武將頁依序是關羽（橫掃）、趙雲（奇襲）、黃忠（百步穿楊）、周瑜（火攻）四個技能標籤
+    run.check("A-3 武將頁：技能標籤依序是橫掃（關羽）、奇襲（趙雲）、百步穿楊、火攻；點開趙雲的奇襲顯示同樣的完整規則", tags.length === 4 && tags[0] === "技能：橫掃" && tags[1] === "技能：奇襲" && tags[2] === "技能：百步穿楊" && tags[3] === "技能：火攻" && detail2 === detail, out.A_page);
   });
 
   // ── B. 主頁：實際開戰，第一擊 2 倍、之後恢復；這一場只觸發一次 ──

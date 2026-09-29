@@ -159,6 +159,22 @@ func _run() -> void:
 		battle_ended_count += 1
 		last_result = r)
 
+	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃；skills 跑四位武將的技能與攻速成長
+	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
+	if only != "":
+		if only == "skills":
+			await _r12_first_strike_cases()
+			await _r14_long_range_cases()
+			await _r15_burn_cases()
+			await _r16_attack_speed_cases()
+			await _sweep_cases()
+		elif only == "sweep":
+			await _sweep_cases()
+		else:
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills）", false)
+		_finish()
+		return
+
 	# I2-1：A 出兵間隔內切到 B，超過 A 的出兵間隔後 B 必須乾淨
 	_load(_stage_a())
 	_bm().player_start_battle()
@@ -333,7 +349,13 @@ func _run() -> void:
 	await _r20_cooldown_cases()
 	await _r20_pause_cases()
 
-	# ── 輸出 ──
+	# ── 關羽「橫掃」（普通攻擊命中後，主目標附近 1 格內最多 2 名其他敵人各受 50%）──
+	await _sweep_cases()
+
+	_finish()
+
+# ── 輸出 ──
+func _finish() -> void:
 	var failed: int = 0
 	for r in results:
 		if not r.ok:
@@ -615,12 +637,12 @@ func _r12_first_strike_cases() -> void:
 	var again: Array = await _record_hits(1.2)
 	_check("R12-7 新的一場（新 battle_id）重置：第一擊 200，之後 100", again.size() >= 2 and again[0] == 200.0 and _all_equal(again.slice(1), 100.0), again)
 
-	# R12-8：其他武將（關羽，沒有技能）不受影響
+	# R12-8：沒有帶技能參數的武將（這裡的關羽不帶 skill）不受影響
 	_load(_r12_payload("r12_c", [tank], "r12-c1", [_r12_hero("guan_yu", null)]))
 	_r12_place("guan_yu")
 	_bm().player_start_battle()
 	var guan: Array = await _record_hits(1.2)
-	_check("R12-8 沒有技能的武將（關羽）：第一擊就是 100", guan.size() >= 2 and _all_equal(guan, 100.0), guan)
+	_check("R12-8 沒有帶技能參數的武將（關羽）：第一擊就是 100", guan.size() >= 2 and _all_equal(guan, 100.0), guan)
 
 	# R12-9：不認得的技能一律當作普通攻擊
 	_load(_r12_payload("r12_d", [tank], "r12-d1", [_r12_zhao("unknown_skill")]))
@@ -2866,6 +2888,399 @@ func _r20_pause_cases() -> void:
 	rec.start_battle_requested.disconnect(main._on_start_btn_pressed)
 	rec.auto_toggle_requested.disconnect(main._on_auto_btn_pressed)
 	rec.move_unit_requested.disconnect(main._on_web_move_unit)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 橫掃：關羽（普通攻擊命中後，主目標附近半徑 1 格內最多 2 名其他敵人各受這一擊的 50%）──
+# 關羽攻擊力 100、射程 3 格、攻擊間隔 0.5 秒（_r12_payload 的設定）；敵人是不會移動、血量 99999 的 post（需要時直接改血量）。
+# 確定性的單次攻擊：放置後停掉關羽自己的 _process，敵人放好位置後由測試呼叫一次 _process（冷卻為 0 → 立刻攻擊一次），
+# 用每個敵人的血量變化、擊殺數與戰鬥金幣判斷。主目標是第一個生成的敵人（放在關羽右邊 2 格；路線進度相同時打清單裡的第一個）
+func _sw_skill() -> Dictionary:
+	return {"id": "sweep", "sweep_radius": 1.0, "sweep_max_targets": 2, "sweep_ratio": 0.5}
+
+func _sw_guan(skill: Variant) -> Dictionary:
+	return _r12_hero("guan_yu", skill)
+
+## 目前關卡仍存活的敵人，依生成序號排列
+func _sw_enemies() -> Array:
+	var out: Array = []
+	for e in _wm().get_active_enemies():
+		if is_instance_valid(e) and not e.is_queued_for_deletion() and not e.is_dead():
+			out.append(e)
+	out.sort_custom(func(a, b): return a.spawn_seq < b.spawn_seq)
+	return out
+
+## 載入一場只有 n 個 post 的關卡、放置關羽、開戰並等 n 個敵人都出現（出生點離關羽 3.16 格，在射程外）。
+## manual 為 true 時停掉關羽自己的 _process，由測試決定何時攻擊。team 是 null 時用帶橫掃的關羽
+func _sw_start(battle_id: String, n: int, team: Variant = null, manual: bool = true) -> Array:
+	var t: Array = team if team != null else [_sw_guan(_sw_skill())]
+	_load(_r12_payload("sweep_a", [[_grp("post", n, 0.02)]], battle_id, t))
+	_r12_place("guan_yu", Vector2i(3, 4))
+	if manual and _guan() != null:
+		_guan().set_process(false)
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == n, 5.0)
+	return _sw_enemies()
+
+## 主目標（第一個）放在關羽右邊 2 格；其他敵人放在主目標加上 offs[i]（格）的位置。回傳中心（主目標的位置）
+func _sw_place(es: Array, offs: Array) -> Vector2:
+	var g: Node = _guan()
+	var t: float = float(g.tile_size)
+	var center: Vector2 = g.global_position + Vector2(2.0 * t, 0.0)
+	for i in range(es.size()):
+		var o: Vector2 = offs[i] if i < offs.size() else Vector2(6.0, 0.0)
+		es[i].global_position = center + o * t
+	return center
+
+## 場上所有武將底下的橫掃範圍效果
+func _sw_fx() -> Array:
+	var out: Array = []
+	for c in main.units_layer.get_children():
+		if c is Hero:
+			for k in c.get_children():
+				if k is Hero.SweepFx and not k.is_queued_for_deletion():
+					out.append(k)
+	return out
+
+## 關羽打一次（呼叫一次 _process；冷卻為 0 時 delta 0 就會攻擊，之後每次給一個攻擊間隔）。
+## 回傳每個敵人這一次受到的傷害（被打倒的記成倒下前的血量）、擊殺數與戰鬥金幣的變化、橫掃統計與範圍效果數的變化
+func _sw_hit(es: Array, delta: float = 0.0) -> Dictionary:
+	var g: Node = _guan()
+	var before: Array = []
+	for e in es:
+		before.append(e.current_hp if is_instance_valid(e) and not e.is_dead() else 0.0)
+	var k0: int = _bm().kills
+	var gold0: int = _bm().battle_gold
+	var c0: int = g.sweep_count
+	var h0: int = g.sweep_hits
+	var fx0: int = _sw_fx().size()
+	g._process(delta)
+	var dmg: Array = []
+	for i in range(es.size()):
+		# 已被釋放的敵人不能指定給有型別的變數：先檢查再取血量
+		var now: float = es[i].current_hp if is_instance_valid(es[i]) else 0.0
+		dmg.append(snappedf(float(before[i]) - now, 0.01))
+	return {"dmg": dmg, "kills": _bm().kills - k0, "gold": _bm().battle_gold - gold0, "count": g.sweep_count - c0, "hits": g.sweep_hits - h0, "fx": _sw_fx().size() - fx0}
+
+## 同一次攻擊（同一幀）的血量下降：主目標 100 一筆、副目標 50 各一筆。回傳每次攻擊的時間與副目標數，以及不是 100／50 的下降
+func _sw_attacks(r: Dictionary) -> Dictionary:
+	var by_t: Dictionary = {}
+	var bad: Array = []
+	for h in r.hits:
+		if not by_t.has(h.t):
+			by_t[h.t] = {"main": 0, "side": 0}
+		if is_equal_approx(float(h.dmg), 100.0):
+			by_t[h.t]["main"] += 1
+		elif is_equal_approx(float(h.dmg), 50.0):
+			by_t[h.t]["side"] += 1
+		else:
+			bad.append(h)
+	var ts: Array = by_t.keys()
+	ts.sort()
+	var sides: Array = []
+	for t in ts:
+		sides.append([by_t[t]["main"], by_t[t]["side"]])
+	return {"t": ts, "per_attack": sides, "bad": bad}
+
+## 真引擎：三個敵人（主目標與兩名 0.5 格內的副目標），記錄 sec 秒遊戲時間內每一次攻擊。回傳攻擊時間、每次的 [主, 副] 筆數、橫掃次數
+func _sw_run(es: Array, sec: float) -> Dictionary:
+	var c0: int = _guan().sweep_count
+	var r: Dictionary = await _r19_hits(es, sec)
+	var a: Dictionary = _sw_attacks(r)
+	return {"t": a.t, "per_attack": a.per_attack, "bad": a.bad, "dmax": r.dmax, "count": _guan().sweep_count - c0}
+
+## 每次攻擊都是主目標 100 一筆＋副目標 50 兩筆、攻擊時間符合累積時程（第一擊＋k × 0.5 秒，一幀之內）、橫掃次數等於攻擊次數
+func _sw_run_ok(r: Dictionary, n_min: int, n_max: int) -> bool:
+	if r.t.size() < n_min or r.t.size() > n_max or not r.bad.is_empty() or r.count != r.t.size():
+		return false
+	for p in r.per_attack:
+		if p != [1, 2]:
+			return false
+	return _r16_interval_ok({"hits": r.t, "dmax": r.dmax}, 0.5)
+
+func _sweep_cases() -> void:
+	# 橫掃-0、1：Godot 讀到的參數；附近沒有其他敵人時就是普通攻擊
+	var es: Array = await _sw_start("sweep-1", 2)
+	if es.size() != 2 or _guan() == null:
+		_check("橫掃 前置：等不到敵人或關羽沒有放置", false, {"enemies": es.size()})
+		return
+	var g: Node = _guan()
+	var tile: float = float(g.tile_size)
+	_check("橫掃-0 Godot 讀到關羽的橫掃參數（半徑 1 格、最多 2 名、50%）；敵人依出現順序帶生成序號 0、1",
+		is_equal_approx(g.sweep_radius, 1.0) and g.sweep_max_targets == 2 and is_equal_approx(g.sweep_ratio, 0.5) and es[0].spawn_seq == 0 and es[1].spawn_seq == 1,
+		{"radius": g.sweep_radius, "max": g.sweep_max_targets, "ratio": g.sweep_ratio, "seq": es.map(func(e): return e.spawn_seq)})
+	_sw_place(es, [Vector2.ZERO, Vector2(6.0, 0.0)])
+	var r1: Dictionary = _sw_hit(es)
+	_check("橫掃-1 附近沒有其他敵人（另一個在 6 格外）：等同普通攻擊，主目標 100、其他 0；沒有橫掃、沒有範圍效果",
+		r1.dmg == [100.0, 0.0] and r1.count == 0 and r1.hits == 0 and r1.fx == 0, r1)
+
+	# 橫掃-2：一名其他敵人在 0.5 格 → 50；範圍效果在主目標被打中的位置、半徑 1 格
+	var center: Vector2 = _sw_place(es, [Vector2.ZERO, Vector2(0.5, 0.0)])
+	var r2: Dictionary = _sw_hit(es, g.attack_speed)
+	var fx: Array = _sw_fx()
+	_check("橫掃-2 一名其他敵人在 0.5 格：主目標 100、副目標 50（這一擊的 50%）；橫掃 1 次、打到 1 名",
+		r2.dmg == [100.0, 50.0] and r2.count == 1 and r2.hits == 1, r2)
+	_check("橫掃-2b 出現一個範圍效果：中心是主目標被打中的位置、半徑 1 格（%d 像素）" % int(tile),
+		r2.fx == 1 and fx.size() == 1 and fx[0].global_position.is_equal_approx(center) and is_equal_approx(fx[0].radius, tile),
+		{"fx": fx.size(), "pos": fx[0].global_position if fx.size() > 0 else null, "center": center, "radius": fx[0].radius if fx.size() > 0 else null})
+
+	# 橫掃-3：範圍內 3 名 → 只打最近的 2 名（和出現順序無關）
+	es = await _sw_start("sweep-3", 4)
+	var r3: Dictionary = {}
+	if es.size() == 4:
+		_sw_place(es, [Vector2.ZERO, Vector2(0.9, 0.0), Vector2(0.0, 0.6), Vector2(0.0, -0.3)])
+		r3 = _sw_hit(es)
+	_check("橫掃-3 範圍內有 3 名其他敵人（0.9、0.6、0.3 格；先出現的最遠）：只打最近的 2 名（0.3、0.6 格各 50），0.9 格的 0",
+		r3.get("dmg") == [100.0, 0.0, 50.0, 50.0] and r3.get("count") == 1 and r3.get("hits") == 2, r3)
+
+	# 橫掃-4：邊界（正好 1 格算在內，1.02 格不算）；範圍外的不佔名額也不受傷
+	es = await _sw_start("sweep-4", 3)
+	var r4: Dictionary = {}
+	var r4b: Dictionary = {}
+	if es.size() == 3:
+		_sw_place(es, [Vector2.ZERO, Vector2(0.0, 1.0), Vector2(1.02, 0.0)])
+		r4 = _sw_hit(es)
+		_sw_place(es, [Vector2.ZERO, Vector2(-0.6, -0.8), Vector2(0.0, -1.05)])
+		r4b = _sw_hit(es, _guan().attack_speed)
+	_check("橫掃-4 半徑含邊界：正下方正好 1 格的敵人受到 50；1.02 格的敵人 0（還有空的名額也不打）",
+		r4.get("dmg") == [100.0, 50.0, 0.0] and r4.get("hits") == 1, r4)
+	_check("橫掃-4b 斜向正好 1 格（0.6, 0.8）受到 50；1.05 格的 0",
+		r4b.get("dmg") == [100.0, 50.0, 0.0] and r4b.get("hits") == 1, r4b)
+
+	# 橫掃-5：距離相同時用生成序號（不是清單順序）：把副目標在 WaveManager 清單裡的順序倒過來
+	es = await _sw_start("sweep-5", 4)
+	var r5: Dictionary = {}
+	if es.size() == 4:
+		_sw_place(es, [Vector2.ZERO, Vector2(0.5, 0.0), Vector2(0.0, 0.5), Vector2(0.0, -0.5)])
+		var act: Array = _wm().get_active_enemies()
+		act.clear()
+		act.append_array([es[0], es[3], es[2], es[1]])
+		r5 = _sw_hit(es)
+	_check("橫掃-5 三名其他敵人都在 0.5 格：打生成序號最小的 2 名（清單順序倒過來也一樣），序號最大的 0",
+		r5.get("dmg") == [100.0, 50.0, 50.0, 0.0] and r5.get("hits") == 2, r5)
+
+	# 橫掃-6：主目標被這一擊打倒，仍以它剛才的位置橫掃；擊殺與金幣只算一次
+	es = await _sw_start("sweep-6", 3)
+	var r6: Dictionary = {}
+	if es.size() == 3:
+		es[0].current_hp = 100.0
+		_sw_place(es, [Vector2.ZERO, Vector2(0.5, 0.0), Vector2(0.0, 0.8)])
+		r6 = _sw_hit(es)
+		var k_hit: int = _bm().kills
+		await process_frame
+		await process_frame
+		r6["kills_later"] = _bm().kills - k_hit
+		r6["active_later"] = _wm().get_active_enemy_count()
+	_check("橫掃-6 主目標被這一擊打倒（血量 100）：仍以它的位置橫掃，兩名副目標各 50；擊殺 1、金幣 +5，之後不再增加",
+		r6.get("dmg") == [100.0, 50.0, 50.0] and r6.get("kills") == 1 and r6.get("gold") == BattleManager.GOLD_PER_KILL and r6.get("hits") == 2 and r6.get("kills_later") == 0 and r6.get("active_later") == 2, r6)
+
+	# 橫掃-7：副目標被橫掃打倒：獎勵一次；下一擊不再選到它，名額給下一個
+	es = await _sw_start("sweep-7", 4)
+	var r7: Dictionary = {}
+	var r7b: Dictionary = {}
+	if es.size() == 4:
+		es[1].current_hp = 50.0
+		_sw_place(es, [Vector2.ZERO, Vector2(0.3, 0.0), Vector2(0.0, 0.6), Vector2(0.0, -0.9)])
+		r7 = _sw_hit(es)
+		await process_frame
+		r7b = _sw_hit(es, _guan().attack_speed)
+	_check("橫掃-7 副目標（血量 50）被橫掃打倒：擊殺 1、金幣 +5（只一次）；這一擊打 0.3、0.6 格，0.9 格的 0",
+		r7.get("dmg") == [100.0, 50.0, 50.0, 0.0] and r7.get("kills") == 1 and r7.get("gold") == BattleManager.GOLD_PER_KILL, r7)
+	_check("橫掃-7b 下一擊：已倒下的敵人不再被選到（不重複擊殺、不重複金幣），名額給 0.9 格的敵人",
+		r7b.get("dmg") == [100.0, 0.0, 50.0, 50.0] and r7b.get("kills") == 0 and r7b.get("gold") == 0 and r7b.get("hits") == 2, r7b)
+
+	# 橫掃-8：主目標與兩名副目標在同一擊全部倒下：擊殺 3、金幣 3 份、結算的擊殺數 3、只結算一次
+	var ended0: int = battle_ended_count
+	es = await _sw_start("sweep-8", 3)
+	var r8: Dictionary = {}
+	if es.size() == 3:
+		es[0].current_hp = 100.0
+		es[1].current_hp = 50.0
+		es[2].current_hp = 30.0
+		_sw_place(es, [Vector2.ZERO, Vector2(0.5, 0.0), Vector2(0.0, 0.5)])
+		r8 = _sw_hit(es)
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 3.0)
+		await _wait(0.3)
+		r8["ended"] = battle_ended_count - ended0
+		r8["result_kills"] = last_result.get("kills")
+		r8["result_bid"] = last_result.get("battle_id")
+	_check("橫掃-8 主目標與兩名副目標同一擊全部倒下：擊殺 3、金幣 +15；清波後只結算一次，結算的擊殺數是 3",
+		r8.get("dmg") == [100.0, 50.0, 30.0] and r8.get("kills") == 3 and r8.get("gold") == 3 * BattleManager.GOLD_PER_KILL and r8.get("ended") == 1 and int(r8.get("result_kills", -1)) == 3 and r8.get("result_bid") == "sweep-8", r8)
+
+	# 橫掃-9：不連鎖：六個敵人擠在一起，一擊只有主目標 100＋2 名副目標各 50（副目標受到的傷害不再引發橫掃）
+	es = await _sw_start("sweep-9", 6)
+	var r9: Dictionary = {}
+	if es.size() == 6:
+		_sw_place(es, [Vector2.ZERO, Vector2(0.2, 0.0), Vector2(0.0, 0.2), Vector2(-0.2, 0.0), Vector2(0.0, -0.2), Vector2(0.3, 0.0)])
+		r9 = _sw_hit(es)
+	_check("橫掃-9 不連鎖、不加攻擊：六個敵人擠在 0.3 格內，一擊只有主目標 100 與生成序號最小的 2 名各 50，其他 0（總傷害 200）",
+		r9.get("dmg") == [100.0, 50.0, 50.0, 0.0, 0.0, 0.0] and r9.get("count") == 1 and r9.get("hits") == 2, r9)
+
+	# 橫掃-10：不認得的技能 id（帶了橫掃參數）、沒有技能、參數不合理：都是普通攻擊
+	var plain: Dictionary = {}
+	var variants: Dictionary = {
+		"unknown": {"id": "unknown_skill", "sweep_radius": 1.0, "sweep_max_targets": 2, "sweep_ratio": 0.5},
+		"none": null,
+		"radius0": {"id": "sweep", "sweep_radius": 0.0, "sweep_max_targets": 2, "sweep_ratio": 0.5},
+		"max0": {"id": "sweep", "sweep_radius": 1.0, "sweep_max_targets": 0, "sweep_ratio": 0.5},
+		"ratio0": {"id": "sweep", "sweep_radius": 1.0, "sweep_max_targets": 2, "sweep_ratio": 0.0},
+	}
+	for k in variants:
+		es = await _sw_start("sweep-10-" + k, 2, [_sw_guan(variants[k])])
+		if es.size() == 2:
+			_sw_place(es, [Vector2.ZERO, Vector2(0.5, 0.0)])
+			var rv: Dictionary = _sw_hit(es)
+			plain[k] = {"dmg": rv.dmg, "ratio": _guan().sweep_ratio}
+	var plain_ok: bool = plain.size() == variants.size()
+	for k in plain:
+		plain_ok = plain_ok and plain[k].dmg == [100.0, 0.0] and plain[k].ratio == 0.0
+	_check("橫掃-10 不認得的技能 id（即使帶了橫掃參數）、沒有技能、半徑／人數／比例為 0：都當作普通攻擊（0.5 格的敵人 0）", plain_ok, plain)
+
+	# 橫掃-11：移除關羽、切換關卡、新的一場：範圍效果跟著清除、不再有橫掃傷害、統計從 0 開始
+	es = await _sw_start("sweep-11", 2)
+	var d11: Dictionary = {}
+	if es.size() == 2:
+		_sw_place(es, [Vector2.ZERO, Vector2(0.5, 0.0)])
+		_sw_hit(es)
+		var fx_a: Array = _sw_fx()
+		d11["fx_before"] = fx_a.size()
+		main._on_payload_received({"type": "update_team", "team_list": []})
+		await process_frame
+		await process_frame
+		d11["fx_after_remove"] = _sw_fx().size()
+		d11["fx_node_freed"] = fx_a.size() == 1 and not is_instance_valid(fx_a[0])
+		var hp_before: Array = es.map(func(e): return e.current_hp)
+		await _wait(1.2)
+		d11["no_damage_after_remove"] = es.map(func(e): return e.current_hp) == hp_before
+		main._on_payload_received({"type": "update_team", "team_list": [_sw_guan(_sw_skill())]})
+		_r12_place("guan_yu", Vector2i(3, 4))
+		d11["replaced_count"] = _guan().sweep_count if _guan() != null else -1
+		# 放回後照常橫掃（新的武將節點，統計從 0 開始）
+		if _guan() != null:
+			_guan().set_process(false)
+			_sw_place(es, [Vector2.ZERO, Vector2(0.5, 0.0)])
+			d11["replaced_hit"] = _sw_hit(es).dmg
+	_check("橫掃-11 戰鬥中移除關羽：範圍效果跟著清除、之後 1.2 秒沒有任何傷害；放回後統計從 0 開始、照常橫掃",
+		d11.get("fx_before") == 1 and d11.get("fx_after_remove") == 0 and d11.get("fx_node_freed") == true and d11.get("no_damage_after_remove") == true and d11.get("replaced_count") == 0 and d11.get("replaced_hit") == [100.0, 50.0], d11)
+	var d11b: Dictionary = {}
+	if _guan() != null:
+		var fx_b: Array = _sw_fx()
+		d11b["fx_alive"] = fx_b.size()
+		_load(_stage_b())
+		d11b["fx_out_of_tree"] = fx_b.size() == 1 and not fx_b[0].is_inside_tree()
+		await process_frame
+		d11b["fx_freed"] = fx_b.size() == 1 and not is_instance_valid(fx_b[0])
+		es = await _sw_start("sweep-11b", 2)
+		d11b["new_battle_count"] = _guan().sweep_count if _guan() != null else -1
+		d11b["new_battle_fx"] = _sw_fx().size()
+	_check("橫掃-11b 範圍效果還在時切換關卡：效果隨單位一起清除；新的一場的關羽橫掃次數從 0 開始、沒有殘留的效果",
+		d11b.get("fx_alive") == 1 and d11b.get("fx_out_of_tree") == true and d11b.get("fx_freed") == true and d11b.get("new_battle_count") == 0 and d11b.get("new_battle_fx") == 0, d11b)
+
+	# ── 真引擎（關羽自己攻擊）：倍率、部署慢速、暫停都用遊戲時間 ──
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+	var offs3: Array = [Vector2.ZERO, Vector2(0.5, 0.0), Vector2(0.0, 0.5)]
+
+	# 橫掃-12：1× 與 2× 各記錄 3 秒遊戲時間：每次攻擊都是主目標 100＋兩名副目標 50（同一幀），
+	# 攻擊時間符合累積時程（冷卻保留零頭），攻擊次數和理想（7 次）相差不超過 1、兩種倍率相差不超過 1
+	var runs: Dictionary = {}
+	for sp in [1.0, 2.0]:
+		es = await _sw_start("sweep-12-x%d" % int(sp), 3, null, false)
+		if es.size() != 3:
+			continue
+		_r19_speed(rec, sp)
+		_sw_place(es, offs3)
+		runs[sp] = await _sw_run(es, 3.0)
+		runs[sp]["time_scale"] = Engine.time_scale
+	var ok12: bool = runs.size() == 2
+	for sp in runs:
+		ok12 = ok12 and _sw_run_ok(runs[sp], 6, 8)
+	if ok12:
+		ok12 = absi(runs[1.0].t.size() - runs[2.0].t.size()) <= 1 and runs[2.0].time_scale == 2.0
+	_check("橫掃-12 1× 與 2× 各 3 秒遊戲時間：每次攻擊都是主目標 100＋兩名副目標各 50，攻擊時間符合累積時程（第一擊＋k × 0.5 秒），次數 6～8 且兩種倍率相差不超過 1，橫掃次數＝攻擊次數", ok12, runs)
+
+	# 橫掃-13：部署選單的暫時慢速（0.1×）：0.6 秒遊戲時間（約 6 秒）內攻擊 1～2 次，照樣是主目標 100＋兩名副目標 50
+	es = await _sw_start("sweep-13", 3, null, false)
+	var r13: Dictionary = {}
+	if es.size() == 3:
+		var menu: Dictionary = _r19_open(rec)
+		r13["time_scale"] = Engine.time_scale
+		_sw_place(es, offs3)
+		r13["run"] = await _sw_run(es, 0.6)
+		_r19_close(rec, menu)
+	var ok13: bool = r13.has("run") and is_equal_approx(float(r13.time_scale), 0.1) and not r13.run.t.is_empty() and r13.run.t.size() <= 2 and r13.run.bad.is_empty() and r13.run.count == r13.run.t.size()
+	if ok13:
+		for p in r13.run.per_attack:
+			ok13 = ok13 and p == [1, 2]
+		if r13.run.t.size() == 2:
+			ok13 = ok13 and float(r13.run.t[1]) - float(r13.run.t[0]) >= 0.5 - float(r13.run.dmax) - 0.0005
+	_check("橫掃-13 部署選單開著（0.1×）：0.6 秒遊戲時間內攻擊 1～2 次，每次主目標 100＋兩名副目標 50，攻擊間隔照遊戲時間", ok13, r13)
+
+	# 橫掃-14：範圍效果的時間是遊戲時間：1× 與 2× 都在 0.3 秒遊戲時間（± 一幀）後消失
+	var life: Dictionary = {}
+	for sp in [1.0, 2.0]:
+		es = await _sw_start("sweep-14-x%d" % int(sp), 3, null, false)
+		if es.size() != 3:
+			continue
+		_r19_speed(rec, sp)
+		var c0: int = _guan().sweep_count
+		_sw_place(es, offs3)
+		await _wait_until(func(): return _guan().sweep_count > c0, 3.0)
+		var fxs: Array = _sw_fx()
+		if fxs.is_empty():
+			continue
+		var f: Node = fxs[0]
+		var t0: float = _gt() - float(f.elapsed)
+		var prev: float = _gt()
+		var dmax: float = 0.0
+		var wall_end: int = Time.get_ticks_msec() + 5000
+		while is_instance_valid(f) and not f.is_queued_for_deletion() and Time.get_ticks_msec() < wall_end:
+			await process_frame
+			dmax = maxf(dmax, _gt() - prev)
+			prev = _gt()
+		life[sp] = {"life": snappedf(_gt() - t0, 0.0001), "dmax": snappedf(dmax, 0.0001), "time_scale": Engine.time_scale}
+	var ok14: bool = life.size() == 2
+	for sp in life:
+		ok14 = ok14 and float(life[sp].life) >= 0.3 - 0.0005 and float(life[sp].life) <= 0.3 + float(life[sp].dmax) + 0.0005
+	_check("橫掃-14 範圍效果 0.3 秒遊戲時間後消失：1× 與 2× 都在 0.3 秒到＋一幀之間", ok14, life)
+
+	# 橫掃-15：手動暫停：範圍效果、攻擊冷卻、敵人血量、遊戲時間都不前進；繼續後效果照剩下的時間消失、攻擊照冷卻恢復
+	es = await _sw_start("sweep-15", 3, null, false)
+	var d15: Dictionary = {}
+	if es.size() == 3:
+		var c0: int = _guan().sweep_count
+		_sw_place(es, offs3)
+		await _wait_until(func(): return _guan().sweep_count > c0, 3.0)
+		var fxs: Array = _sw_fx()
+		d15["fx"] = fxs.size()
+		if fxs.size() == 1:
+			var f: Node = fxs[0]
+			var p: Dictionary = _r20_pause(rec, true)
+			d15["paused_reply"] = p.get("paused")
+			var b: Array = [f.elapsed, _guan()._atk_timer, es.map(func(e): return e.current_hp), _gt(), _guan().sweep_count]
+			await _wait_real(0.6)
+			var a: Array = [f.elapsed if is_instance_valid(f) else -1.0, _guan()._atk_timer, es.map(func(e): return e.current_hp), _gt(), _guan().sweep_count]
+			d15["frozen"] = is_instance_valid(f) and b == a
+			d15["before"] = b
+			d15["after"] = a
+			_r20_pause(rec, false)
+			var left: float = 0.3 - float(b[0])
+			var tr: float = _gt()
+			# 效果節點會被釋放：lambda 不直接捕捉它（捕捉到已釋放的物件會印出錯誤），改用 weakref
+			var wr: WeakRef = weakref(f)
+			await _wait_until_real(func(): return wr.get_ref() == null or wr.get_ref().is_queued_for_deletion(), 3.0)
+			d15["fx_left"] = snappedf(left, 0.0001)
+			d15["fx_gone_after"] = snappedf(_gt() - tr, 0.0001)
+			var c1: int = _guan().sweep_count
+			await _wait_until(func(): return _guan().sweep_count > c1, 3.0)
+			d15["resumed_sweep"] = _guan().sweep_count > c1
+	_check("橫掃-15 手動暫停 0.6 秒：範圍效果、攻擊冷卻、三個敵人的血量、遊戲時間與橫掃次數都不變；繼續後效果照剩下的時間消失，之後照常橫掃",
+		d15.get("fx") == 1 and d15.get("paused_reply") == true and d15.get("frozen") == true and float(d15.get("fx_gone_after", 99.0)) <= float(d15.get("fx_left", 0.0)) + 0.1 and d15.get("resumed_sweep") == true, d15)
+
+	rec.payload_received.disconnect(main._on_payload_received)
 	main.web_bridge = original
 	rec.free()
 	_load(_stage_b())

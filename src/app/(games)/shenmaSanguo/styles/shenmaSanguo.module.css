@@ -447,7 +447,8 @@
   margin-bottom: 0.2rem;
 }
 .heroSkillText {
-  font-size: 0.72rem;
+  /* 技能說明較長：手機寬度下至少 12px 才讀得清楚 */
+  font-size: 0.8rem;
   line-height: 1.55;
   color: var(--sg-text);
 }

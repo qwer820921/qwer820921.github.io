@@ -1,7 +1,7 @@
 import { HeroSkillPayload } from "../types";
 
 /**
- * 武將技能（趙雲「奇襲」、黃忠「百步穿楊」、周瑜「火攻」）
+ * 武將技能（趙雲「奇襲」、黃忠「百步穿楊」、周瑜「火攻」、關羽「橫掃」）
  * 這裡是技能規則的唯一來源：武將列表／詳情的說明，與隨出征資料送進 Godot 的參數都由這裡產生。
  * 技能是戰場效果：不寫進玩家存檔，也不需要後端（GAS）支援。
  * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊
@@ -31,6 +31,17 @@ export type HeroSkill =
       burnTicks: number;
       /** 每跳間隔（秒，遊戲時間） */
       burnIntervalSec: number;
+    }
+  | {
+      /** 橫掃：每次有效普通攻擊命中後，對主目標附近的其他敵人造成部分傷害 */
+      id: "sweep";
+      name: string;
+      /** 範圍半徑（格，含邊界），以主目標被打中時的位置為中心 */
+      radiusTiles: number;
+      /** 每次最多打到幾名其他敵人 */
+      maxTargets: number;
+      /** 每名副目標受到的傷害＝這一擊普通攻擊的傷害 × damageRatio */
+      damageRatio: number;
     };
 
 const HERO_SKILLS: Record<string, HeroSkill> = {
@@ -44,6 +55,14 @@ const HERO_SKILLS: Record<string, HeroSkill> = {
     burnRatio: 0.2,
     burnTicks: 3,
     burnIntervalSec: 1,
+  },
+  // 第一版的暫定值，尚未做過平衡：半徑 1 格、最多 2 名、各 50%；主目標的傷害與攻擊間隔不變
+  guan_yu: {
+    id: "sweep",
+    name: "橫掃",
+    radiusTiles: 1,
+    maxTargets: 2,
+    damageRatio: 0.5,
   },
 };
 
@@ -68,10 +87,15 @@ export function burnTickDamage(skill: HeroSkill | null, atk: number): number {
   return skill?.id === "burn" ? round3(atk * skill.burnRatio) : 0;
 }
 
+/** 橫掃每名副目標受到的傷害：這一擊的傷害 × 比例（沒有橫掃時是 0） */
+export function sweepDamage(skill: HeroSkill | null, atk: number): number {
+  return skill?.id === "sweep" ? round3(atk * skill.damageRatio) : 0;
+}
+
 /**
  * 技能的完整規則（顯示在武將詳情）
  * - rawRange：這位武將目前等級屬性表上的射程；有提供時，射程技能會寫出戰場上的實際射程
- * - atk：這位武將目前的攻擊力；有提供時，火攻會寫出每次灼燒的傷害
+ * - atk：這位武將目前的攻擊力；有提供時，火攻會寫出每次灼燒的傷害，橫掃會寫出每名副目標受到的傷害
  */
 export function describeHeroSkill(
   skill: HeroSkill,
@@ -89,6 +113,22 @@ export function describeHeroSkill(
       current +
       "只在戰場生效，存檔與屬性表的「範圍」仍是原本的數值；在戰場選取武將時，射程圈顯示的是實際射程。" +
       "移動位置、調整隊伍或重新放置都不會重複加成。"
+    );
+  }
+  if (skill.id === "sweep") {
+    const r = skill.radiusTiles;
+    const n = skill.maxTargets;
+    const pct = round3(skill.damageRatio * 100);
+    const current =
+      atk === undefined
+        ? ""
+        : `目前攻擊力 ${round3(atk)}：每名其他敵人受到 ${sweepDamage(skill, atk)}。`;
+    return (
+      `每次普通攻擊命中後，以被打中的敵人所在位置為中心、半徑 ${r} 格內（含邊界），最多 ${n} 名其他敵人各受到這一擊傷害的 ${pct}%；被打中的敵人仍受到完整傷害。` +
+      current +
+      "範圍內超過人數時先打離中心最近的，距離相同時先出現在戰場上的敵人優先；每個敵人最多被橫掃一次。" +
+      "主要目標被這一擊打倒時照樣橫掃；橫掃的傷害不會再引發橫掃，也不會增加攻擊次數或改變攻擊間隔。附近沒有其他敵人時就是一般的普通攻擊。" +
+      "橫掃時主要目標周圍會閃過金色的範圍光圈，傷害數字和普通攻擊一樣。只在戰場生效，不影響存檔。"
     );
   }
   if (skill.id === "burn") {
@@ -128,6 +168,16 @@ export function heroSkillPayload(heroId: string): { skill?: HeroSkillPayload } {
         burn_ratio: skill.burnRatio,
         burn_ticks: skill.burnTicks,
         burn_interval: skill.burnIntervalSec,
+      },
+    };
+  }
+  if (skill.id === "sweep") {
+    return {
+      skill: {
+        id: skill.id,
+        sweep_radius: skill.radiusTiles,
+        sweep_max_targets: skill.maxTargets,
+        sweep_ratio: skill.damageRatio,
       },
     };
   }
