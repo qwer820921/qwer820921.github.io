@@ -172,9 +172,10 @@ func _run() -> void:
 		battle_ended_count += 1
 		last_result = r)
 
-	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃；skills 跑四位武將的技能與攻速成長；
+	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃；skills 跑五位武將的技能（馬超的首擊加倍、黃忠、周瑜、關羽、趙雲的閃避）與攻速成長；
 	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行；
-	# route 跑飛行與地面的路線無效（出兵前擋下）
+	# route 跑飛行與地面的路線無效（出兵前擋下）；blocker 只跑敵人攻擊阻路武將的冷卻；
+	# dodge 只跑趙雲「閃避」；firststrike 只跑首擊加倍（馬超「衝鋒」）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -183,6 +184,13 @@ func _run() -> void:
 			await _r15_burn_cases()
 			await _r16_attack_speed_cases()
 			await _sweep_cases()
+			await _dodge_cases()
+		elif only == "blocker":
+			await _blocker_cases()
+		elif only == "dodge":
+			await _dodge_cases()
+		elif only == "firststrike":
+			await _r12_first_strike_cases()
 		elif only == "sweep":
 			await _sweep_cases()
 		elif only == "flying":
@@ -197,7 +205,7 @@ func _run() -> void:
 			await _flight_route_cases()
 			await _ground_route_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike）", false)
 		_finish()
 		return
 
@@ -342,7 +350,7 @@ func _run() -> void:
 	var ready: Dictionary = bridge.ready_message() if bridge.has_method("ready_message") else {}
 	_check("R10-1 game_ready 帶協定版本 7（加入飛行敵人與對空後的版本；Web 只在版本相同時送出關卡資料）", ready.get("type") == "game_ready" and ready.get("__godot_bridge") == true and typeof(ready.get("protocol")) == TYPE_INT and ready.get("protocol") == 7, ready)
 
-	# ── R12：趙雲「奇襲」（每場戰鬥首次有效普通攻擊 2 倍傷害）──
+	# ── R12：首擊加倍，馬超「衝鋒」（每場戰鬥首次有效普通攻擊 2 倍傷害）──
 	await _r12_first_strike_cases()
 
 	# R12-10：Web 請遊戲再送一次就緒訊息（request_ready）：只回覆 game_ready，不當成關卡資料
@@ -387,6 +395,12 @@ func _run() -> void:
 
 	# ── 地面路線沒有路程（出兵前擋下）──
 	await _ground_route_cases()
+
+	# ── 敵人攻擊阻路武將的冷卻（每個敵人共享一份、保留零頭、換目標不重設）──
+	await _blocker_cases()
+
+	# ── 趙雲「閃避」（每次受到敵人的直接攻擊各自判定，u < 0.15 閃避）──
+	await _dodge_cases()
 
 	_finish()
 
@@ -561,21 +575,23 @@ func _r9_battle_id_cases() -> void:
 	main.web_bridge = original
 	rec.free()
 
-# ── R12 輔助：趙雲「奇襲」 ─────────────────────────────────────
+# ── R12 輔助：首擊加倍，馬超「衝鋒」 ─────────────────────────────
 func _r12_hero(hero_id: String, skill: Variant) -> Dictionary:
 	var h: Dictionary = {"hero_id": hero_id, "level": 1, "star": 0, "atk": 100.0, "def": 50.0, "hp": 1000.0, "slot": 1}
 	if skill != null:
 		h["skill"] = skill
 	return h
 
-func _r12_zhao(skill_id: String = "first_strike") -> Dictionary:
-	return _r12_hero("zhao_yun", {"id": skill_id, "first_attack_multiplier": 2})
+func _r12_ma(skill_id: String = "first_strike") -> Dictionary:
+	return _r12_hero("ma_chao", {"id": skill_id, "first_attack_multiplier": 2})
 
 func _r12_payload(stage_id: String, waves: Array, battle_id: String, team: Array) -> Dictionary:
 	var p: Dictionary = _with_id(_payload(stage_id, waves), battle_id)
 	p["team_list"] = team
 	p["heroes_config"] = [
+		{"hero_id": "ma_chao", "name": "馬超", "job": "cavalry", "attack_range": 3.0, "attack_speed": 0.5},
 		{"hero_id": "zhao_yun", "name": "趙雲", "job": "cavalry", "attack_range": 3.0, "attack_speed": 0.5},
+		{"hero_id": "gan_ning", "name": "甘寧", "job": "cavalry", "attack_range": 3.0, "attack_speed": 0.5},
 		{"hero_id": "guan_yu", "name": "關羽", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5},
 	]
 	return p
@@ -613,11 +629,11 @@ func _r12_first_strike_cases() -> void:
 	var tank: Array = [_grp("tank", 1, 1.0)]
 
 	# R12-1、R12-2：放置後沒有敵人時不會用掉；開戰後第一擊 200（攻擊力 100 的 2 倍），之後恢復 100
-	_load(_r12_payload("r12_a", [tank], "r12-a1", [_r12_zhao()]))
-	_r12_place("zhao_yun")
+	_load(_r12_payload("r12_a", [tank], "r12-a1", [_r12_ma()]))
+	_r12_place("ma_chao")
 	await _wait(1.5)  # 超過 3 次攻擊間隔，場上沒有敵人
 	var unused: Dictionary = _bm().get_debug_state().get("first_strike_used", {})
-	_check("R12-2 放置後沒有目標（備戰中）：奇襲沒有被用掉", unused.is_empty(), unused)
+	_check("R12-2 放置後沒有目標（備戰中）：首擊加倍沒有被用掉", unused.is_empty(), unused)
 	# 記下這段期間出現的浮動文字（武將上方的技能標記、敵人的傷害數字）
 	var float_texts: Array = []
 	var on_child := func(n: Node) -> void:
@@ -631,13 +647,13 @@ func _r12_first_strike_cases() -> void:
 	var hits1: Array = await _record_hits(2.2)
 	main.units_layer.child_entered_tree.disconnect(on_child)
 	_check("R12-1 觸發時武將上方出現「x2!」，整段只出現一次（第一擊）", float_texts.count("x2!") == 1, float_texts)
-	_check("R12-1 趙雲第一擊造成 200（攻擊力 100 的 2 倍），之後恢復 100", hits1.size() >= 3 and hits1[0] == 200.0 and _all_equal(hits1.slice(1), 100.0), hits1)
+	_check("R12-1 馬超第一擊造成 200（攻擊力 100 的 2 倍），之後恢復 100", hits1.size() >= 3 and hits1[0] == 200.0 and _all_equal(hits1.slice(1), 100.0), hits1)
 	var used: Dictionary = _bm().get_debug_state().get("first_strike_used", {})
-	_check("R12-1 這一場只記下一次奇襲（趙雲，傷害 200）", used.size() == 1 and float(used.get("zhao_yun", 0)) == 200.0, used)
+	_check("R12-1 這一場只記下一次首擊加倍（馬超，傷害 200）", used.size() == 1 and float(used.get("ma_chao", 0)) == 200.0, used)
 
 	# R12-3：同一場的下一波不重置（第 1 波的敵人兩擊打倒後清波，第 2 波第一擊是 100）
-	_load(_r12_payload("r12_b", [[_grp("soft", 1, 1.0)], tank], "r12-b1", [_r12_zhao()]))
-	_r12_place("zhao_yun")
+	_load(_r12_payload("r12_b", [[_grp("soft", 1, 1.0)], tank], "r12-b1", [_r12_ma()]))
+	_r12_place("ma_chao")
 	_bm().player_start_battle()
 	var w1: Array = await _record_hits(0.8)
 	await _wait_until(func(): return _bm().game_state == 1, 5.0)
@@ -647,28 +663,28 @@ func _r12_first_strike_cases() -> void:
 	_check("R12-3 同一場的第 2 波不重置：每一擊都是 100", w2.size() >= 2 and _all_equal(w2, 100.0), w2)
 
 	# R12-4：同一場移動位置不重置
-	var zhao: Node = main._placed_heroes.get("zhao_yun")
-	zhao.reposition(Vector2i(2, 4), main.game_map.grid_to_world(Vector2i(2, 4)), main.game_map)
+	var ma: Node = main._placed_heroes.get("ma_chao")
+	ma.reposition(Vector2i(2, 4), main.game_map.grid_to_world(Vector2i(2, 4)), main.game_map)
 	var moved: Array = await _record_hits(1.2)
 	_check("R12-4 同一場移動位置後：每一擊都是 100", moved.size() >= 2 and _all_equal(moved, 100.0), moved)
 
 	# R12-5：同一場更新隊伍／屬性不重置
-	main._on_payload_received({"type": "update_team", "team_list": [_r12_zhao()]})
+	main._on_payload_received({"type": "update_team", "team_list": [_r12_ma()]})
 	var updated: Array = await _record_hits(1.2)
 	_check("R12-5 同一場更新隊伍資料後：每一擊都是 100", updated.size() >= 2 and _all_equal(updated, 100.0), updated)
 
 	# R12-6：同一場移除後重新放置不重置
 	main._on_payload_received({"type": "update_team", "team_list": []})
 	await _wait(0.2)
-	var removed: bool = not main._placed_heroes.has("zhao_yun")
-	main._on_payload_received({"type": "update_team", "team_list": [_r12_zhao()]})
-	_r12_place("zhao_yun", Vector2i(3, 4))
+	var removed: bool = not main._placed_heroes.has("ma_chao")
+	main._on_payload_received({"type": "update_team", "team_list": [_r12_ma()]})
+	_r12_place("ma_chao", Vector2i(3, 4))
 	var replaced: Array = await _record_hits(1.2)
-	_check("R12-6 同一場移除後重新放置：每一擊都是 100", removed and main._placed_heroes.has("zhao_yun") and replaced.size() >= 2 and _all_equal(replaced, 100.0), {"removed": removed, "hits": replaced})
+	_check("R12-6 同一場移除後重新放置：每一擊都是 100", removed and main._placed_heroes.has("ma_chao") and replaced.size() >= 2 and _all_equal(replaced, 100.0), {"removed": removed, "hits": replaced})
 
 	# R12-7：新的一場（同一關重來，新的 battle_id）重置，第一擊又是 200
-	_load(_r12_payload("r12_b", [tank], "r12-b2", [_r12_zhao()]))
-	_r12_place("zhao_yun")
+	_load(_r12_payload("r12_b", [tank], "r12-b2", [_r12_ma()]))
+	_r12_place("ma_chao")
 	_bm().player_start_battle()
 	var again: Array = await _record_hits(1.2)
 	_check("R12-7 新的一場（新 battle_id）重置：第一擊 200，之後 100", again.size() >= 2 and again[0] == 200.0 and _all_equal(again.slice(1), 100.0), again)
@@ -681,11 +697,30 @@ func _r12_first_strike_cases() -> void:
 	_check("R12-8 沒有帶技能參數的武將（關羽）：第一擊就是 100", guan.size() >= 2 and _all_equal(guan, 100.0), guan)
 
 	# R12-9：不認得的技能一律當作普通攻擊
-	_load(_r12_payload("r12_d", [tank], "r12-d1", [_r12_zhao("unknown_skill")]))
-	_r12_place("zhao_yun")
+	_load(_r12_payload("r12_d", [tank], "r12-d1", [_r12_ma("unknown_skill")]))
+	_r12_place("ma_chao")
 	_bm().player_start_battle()
 	var unknown: Array = await _record_hits(1.2)
 	_check("R12-9 不認得的技能 id：當作普通攻擊，第一擊就是 100", unknown.size() >= 2 and _all_equal(unknown, 100.0), unknown)
+	# 首擊加倍-1：趙雲帶的是閃避，沒有首擊加倍：第一擊就是 100，這一場沒有首擊加倍的紀錄
+	_load(_r12_payload("r12_e", [tank], "r12-e1", [_r12_hero("zhao_yun", {"id": "dodge", "dodge_chance": 0.15})]))
+	_r12_place("zhao_yun")
+	_bm().player_start_battle()
+	var zhao_hits: Array = await _record_hits(1.2)
+	var zhao_node: Node = main._placed_heroes.get("zhao_yun")
+	var zhao_used: Dictionary = _bm().get_debug_state().get("first_strike_used", {})
+	_check("首擊加倍-1 趙雲（技能是閃避）：沒有首擊加倍，第一擊就是 100，這一場沒有首擊加倍的紀錄",
+		zhao_hits.size() >= 2 and _all_equal(zhao_hits, 100.0) and zhao_node != null and zhao_node.first_strike_multiplier == 1.0 and zhao_used.is_empty(),
+		{"hits": zhao_hits, "used": zhao_used})
+
+	# 首擊加倍-2：甘寧沒有技能參數（「首擊必殺」的意思還沒決定，不借用首擊加倍）：第一擊就是 100
+	_load(_r12_payload("r12_f", [tank], "r12-f1", [_r12_hero("gan_ning", null)]))
+	_r12_place("gan_ning")
+	_bm().player_start_battle()
+	var gan_hits: Array = await _record_hits(1.2)
+	var gan_used: Dictionary = _bm().get_debug_state().get("first_strike_used", {})
+	_check("首擊加倍-2 甘寧（沒有技能參數）：第一擊就是 100，這一場沒有首擊加倍的紀錄",
+		gan_hits.size() >= 2 and _all_equal(gan_hits, 100.0) and gan_used.is_empty(), {"hits": gan_hits, "used": gan_used})
 	_load(_stage_b())
 
 # ── R14 輔助：黃忠「百步穿楊」（有效射程 ×1.5） ──────────────────
@@ -764,7 +799,7 @@ func _r14_long_range_cases() -> void:
 	_bm().player_start_battle()
 	var e: Node = await _r14_enemy()
 	var at6: Array = await _hits_at(e, 6.0, 1.6)
-	_check("R14-2 敵人在 6 格（原射程 5 格外、新射程 7.5 格內）：實際扣血，每一擊都是攻擊力 100（傷害不變、不是奇襲）", at6.size() >= 2 and _all_equal(_dmgs(at6), 100.0), at6)
+	_check("R14-2 敵人在 6 格（原射程 5 格外、新射程 7.5 格內）：實際扣血，每一擊都是攻擊力 100（傷害不變、不是首擊加倍）", at6.size() >= 2 and _all_equal(_dmgs(at6), 100.0), at6)
 	var itv_skill: float = _avg_interval(at6)
 	var at74: Array = await _hits_at(e, 7.4, 1.2)
 	var at752: Array = await _hits_at(e, 7.52, 1.2)
@@ -824,12 +859,12 @@ func _r14_long_range_cases() -> void:
 	_r12_place("huang_zhong", Vector2i(3, 4))
 	_check("R14-10 新的一場：射程 7.5", is_equal_approx(_huang().attack_range, 7.5), _huang().attack_range)
 
-	# R14-11：不認得的技能 id（帶了 range_multiplier 也一樣）當作普通攻擊；奇襲不影響射程
-	_load(_r14_payload("r14_d", "r14-d1", [_r14_huang(1, {"id": "unknown_skill", "range_multiplier": 1.5}), _r12_zhao()]))
+	# R14-11：不認得的技能 id（帶了 range_multiplier 也一樣）當作普通攻擊；首擊加倍不影響射程
+	_load(_r14_payload("r14_d", "r14-d1", [_r14_huang(1, {"id": "unknown_skill", "range_multiplier": 1.5}), _r12_ma()]))
 	_r12_place("huang_zhong", Vector2i(3, 4))
-	_r12_place("zhao_yun", Vector2i(8, 4))
-	var zhao: Node = main._placed_heroes.get("zhao_yun")
-	_check("R14-11 不認得的技能 id：射程維持 5；趙雲（奇襲）的射程不受影響（3）", is_equal_approx(_huang().attack_range, 5.0) and zhao != null and is_equal_approx(zhao.attack_range, 3.0) and is_equal_approx(zhao.first_strike_multiplier, 2.0), {"huang": _huang().attack_range, "zhao": zhao.attack_range if zhao else null})
+	_r12_place("ma_chao", Vector2i(8, 4))
+	var ma: Node = main._placed_heroes.get("ma_chao")
+	_check("R14-11 不認得的技能 id：射程維持 5；馬超（首擊加倍）的射程不受影響（3）", is_equal_approx(_huang().attack_range, 5.0) and ma != null and is_equal_approx(ma.attack_range, 3.0) and is_equal_approx(ma.first_strike_multiplier, 2.0), {"huang": _huang().attack_range, "ma": ma.attack_range if ma else null})
 	_load(_stage_b())
 
 # ── R15 輔助：周瑜「火攻」（每次有效普通攻擊附加 3 跳灼燒，每跳＝命中時攻擊力 × 20%，間隔 1 秒） ──
@@ -4220,6 +4255,951 @@ func _air_first_cases() -> void:
 		d8.get("stale", {1: 1}).is_empty() and d8.get("after_stale") == "first" and d8.get("new_battle") == "first", d8)
 
 	rec.upgrade_unit_requested.disconnect(main._on_web_upgrade_unit)
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 敵人攻擊阻路武將的冷卻 ─────────────────────────────────────
+# 每個敵人只有一份攻擊冷卻：阻擋中保留越過零點的零頭、沒有阻擋時停在 0（不囤積）、換阻擋對象不重設；
+# 第一次接觸的時機不變（偵測到阻擋的那一步不攻擊，下一步打第一擊）
+
+## 阻路武將（防禦 50）每被打一次實際扣的血：20 ×（1 − 50 ÷ 150）
+const BLK_DMG: float = 20.0 * (1.0 - 50.0 / 150.0)
+
+## 固定步進用的假地圖：world_to_grid 依 x 座標換算格子（每格 tile 像素，一律第 5 列）；get_occupant 回傳 cells 登記的單位
+class BlkMap extends Node:
+	var tile: float = 48.0
+	var cells: Dictionary = {}
+
+	func world_to_grid(p: Vector2) -> Vector2i:
+		return Vector2i(int(floor(p.x / tile)), 5)
+
+	func get_occupant(c: Vector2i) -> Node:
+		var n = cells.get(c, null)
+		return n if n != null and is_instance_valid(n) else null
+
+## 真正的 Enemy 腳本（地面、速度 0：停在第 cell_x 格），不經過場景樹的物理處理：測試自己用固定的 delta 呼叫 _physics_process
+func _blk_enemy(holder: Node, map: BlkMap, cell_x: int = 3) -> Node:
+	var e: Node = load("res://entities/enemy/Enemy.gd").new()
+	holder.add_child(e)
+	e.set_physics_process(false)
+	e.setup({"enemy_id": "blk", "hp": 99999.0, "speed": 0.0}, [Vector2(0.5 * map.tile, 0.0), Vector2(12.5 * map.tile, 0.0)])
+	e.position = Vector2((float(cell_x) + 0.5) * map.tile, 0.0)
+	e._game_map = map
+	return e
+
+## 真正的 Hero 腳本當作阻路武將：放在第 cell_x 格（第 5 列）、防禦 50、不攻擊（不處理 _process）；死亡時從假地圖移除（和 Main 相同）
+func _blk_hero(holder: Node, map: BlkMap, cell_x: int, hp: float = 1000000.0) -> Node:
+	var h: Node = load("res://entities/hero/Hero.gd").new()
+	holder.add_child(h)
+	h.set_process(false)
+	h.grid_cell = Vector2i(cell_x, 5)
+	h.max_hp = hp
+	h.current_hp = hp
+	h.def_stat = 50.0
+	map.cells[h.grid_cell] = h
+	h.hero_died.connect(func(x): map.cells.erase(x.grid_cell))
+	return h
+
+## 用固定的 delta 呼叫 steps 次 _physics_process（步數從 first 起算）：每一擊發生在第幾步、打到第幾位武將（[步, 武將]）；
+## 同一步打到兩下以上時 multi 為 true；每擊實際扣血不是 BLK_DMG 的記在 bad；detect 是偵測到阻擋的第一步。
+## ev 是從敵人的攻擊次數（blocker_attacks）記下的每一次攻擊 [步, 武將]，不看血量：被閃避、沒有扣血的攻擊也算（武將 -1 表示不在 hs 裡）。
+## before 在每一步之前呼叫（測試在這裡移動、移除或新增武將）
+func _blk_steps(e: Node, hs: Array, delta: float, steps: int, first: int = 1, before: Callable = Callable()) -> Dictionary:
+	var at: Array = []
+	var ev: Array = []
+	var multi: bool = false
+	var bad: Array = []
+	var detect: int = -1
+	for i in range(first, first + steps):
+		if before.is_valid():
+			before.call(i)
+		var last: Array = []
+		for h in hs:
+			last.append(h.current_hp if is_instance_valid(h) else 0.0)
+		var was_blocked: bool = e._blocker != null
+		var n_atk: int = e.blocker_attacks
+		e._physics_process(delta)
+		if detect < 0 and not was_blocked and e._blocker != null:
+			detect = i
+		if e.blocker_attacks > n_atk:
+			ev.append([i, hs.find(e._blocker)])
+			if e.blocker_attacks > n_atk + 1:
+				multi = true
+		var n: int = 0
+		for k in range(hs.size()):
+			var now: float = hs[k].current_hp if is_instance_valid(hs[k]) else 0.0
+			var drop: float = float(last[k]) - now
+			if drop > 0.0001:
+				n += 1
+				at.append([i, k])
+				if absf(drop - BLK_DMG) > 0.0001:
+					bad.append(snappedf(drop, 0.0001))
+		if n > 1:
+			multi = true
+	return {"at": at, "multi": multi, "bad": bad, "detect": detect, "ev": ev}
+
+## 舊寫法的對照（只記錄，不影響判定）：第 1 步偵測、第 2 步打第一擊，之後每擊設回完整的 1 秒（丟掉零頭）
+func _blk_old_rule(delta: float, steps: int) -> int:
+	var timer: float = 0.0
+	var n: int = 0
+	for i in range(2, steps + 1):
+		timer -= delta
+		if timer <= 0.0:
+			n += 1
+			timer = 1.0
+	return n
+
+## 時間矩陣：一直被同一位武將擋住 30 秒遊戲時間。步長：1 倍（1/60）、2 倍（2/60）、部署慢速（0.1/60），
+## 以及不整除攻擊間隔的步長（0.03、0.07、0.013，對照一幀長短不一）。
+## 偵測到阻擋的第 1 步不攻擊、第 2 步打第一擊；第 k 擊和「第一擊＋k × 1 秒」相差 0 到一步；
+## 總擊數和理想 1 + floor((總時間 − 第一擊的時間) ÷ 1) 相差不超過 1；每擊扣 BLK_DMG、一步最多一擊；1 倍與 2 倍相差不超過 1
+func _blk_matrix(holder: Node) -> Dictionary:
+	var bad: Array = []
+	var rows: Array = []
+	var n_by: Dictionary = {}
+	for delta in [1.0 / 60.0, 2.0 / 60.0, 0.1 / 60.0, 0.03, 0.07, 0.013]:
+		var map := BlkMap.new()
+		holder.add_child(map)
+		var e: Node = _blk_enemy(holder, map)
+		var h: Node = _blk_hero(holder, map, 3)
+		var steps: int = int(round(30.0 / delta))
+		var r: Dictionary = _blk_steps(e, [h], delta, steps)
+		var at: Array = r.at.map(func(x): return int(x[0]))
+		var lo: float = 0.0
+		var hi: float = 0.0
+		var first_ok: bool = r.detect == 1 and not at.is_empty() and at[0] == 2
+		if first_ok:
+			for k in range(at.size()):
+				var off: float = float(at[k] - at[0]) * delta - float(k) * 1.0
+				lo = minf(lo, off)
+				hi = maxf(hi, off)
+		var ideal: int = int(floor((float(steps) * delta - 2.0 * delta) / 1.0 + 1e-9)) + 1
+		var row: Dictionary = {"step": snappedf(delta, 0.000001), "detect": r.detect, "first": at[0] if not at.is_empty() else -1, "hits": at.size(), "ideal": ideal,
+			"off": [snappedf(lo, 0.000001), snappedf(hi, 0.000001)], "old_rule": _blk_old_rule(delta, steps)}
+		rows.append(row)
+		if not first_ok or r.multi or not r.bad.is_empty() or lo < -1e-9 or hi > delta + 1e-9 or absi(at.size() - ideal) > 1:
+			bad.append(row)
+		n_by[snappedf(delta, 0.000001)] = at.size()
+	var x1: int = int(n_by.get(snappedf(1.0 / 60.0, 0.000001), -99))
+	var x2: int = int(n_by.get(snappedf(2.0 / 60.0, 0.000001), -99))
+	if absi(x1 - x2) > 1:
+		bad.append({"x1": x1, "x2": x2})
+	return {"rows": rows, "bad": bad}
+
+## 冷卻途中換阻擋對象（每秒 60 步）：A 擋住、第 2 步打第一擊，第 26 步（第一擊後 0.4 秒）之前讓 A 離開（how：died 死亡、moved 移位、removed 被移除），
+## 同一格換成 B。之後不再打 A；B 的第一擊在 A 那一擊之後 1 秒（第 62 步，浮點誤差可能多一步），不是換目標後立即打
+func _blk_retarget(holder: Node, how: String) -> Dictionary:
+	var map := BlkMap.new()
+	holder.add_child(map)
+	var e: Node = _blk_enemy(holder, map)
+	var a: Node = _blk_hero(holder, map, 3)
+	var hs: Array = [a]
+	var r1: Dictionary = _blk_steps(e, hs, 1.0 / 60.0, 25)
+	var timer_before: float = e._blocker_atk_timer
+	match how:
+		"died":
+			a.take_damage(1e12)
+		"moved":
+			map.cells.erase(a.grid_cell)
+			a.grid_cell = Vector2i(3, 4)
+		"removed":
+			map.cells.erase(a.grid_cell)
+			a.queue_free()
+	var b: Node = _blk_hero(holder, map, 3)
+	hs.append(b)
+	var r2: Dictionary = _blk_steps(e, hs, 1.0 / 60.0, 100, 26)
+	var a_after: Array = r2.at.filter(func(x): return int(x[1]) == 0)
+	var b_hits: Array = r2.at.filter(func(x): return int(x[1]) == 1).map(func(x): return int(x[0]))
+	var ok: bool = r1.detect == 1 and r1.at.size() == 1 and int(r1.at[0][0]) == 2 and a_after.is_empty() and b_hits.size() >= 2 \
+		and b_hits[0] >= 62 and b_hits[0] <= 63 and b_hits[1] - b_hits[0] >= 59 and b_hits[1] - b_hits[0] <= 61 and not r2.multi and r2.bad.is_empty()
+	var d: Dictionary = {"how": how, "a_first": r1.at, "timer_at_swap": snappedf(timer_before, 0.0001), "a_after": a_after, "b_hits": b_hits, "multi": r2.multi, "bad": r2.bad}
+	return {"ok": ok, "d": d}
+
+## 沒有阻擋的空檔不囤積（每秒 60 步）：A 擋住、第 2 步打第一擊，第 26 步之前 A 死亡；之後 180 步（3 秒）沒有武將：不攻擊、冷卻停在 0；
+## 第 207 步之前放上 B：偵測的那一步不打、下一步（第 208 步）打一擊，再下一擊在 1 秒之後（60 步，浮點誤差可能多一步），不是一次補打好幾下
+func _blk_idle(holder: Node) -> Dictionary:
+	var map := BlkMap.new()
+	holder.add_child(map)
+	var e: Node = _blk_enemy(holder, map)
+	var a: Node = _blk_hero(holder, map, 3)
+	var r1: Dictionary = _blk_steps(e, [a], 1.0 / 60.0, 25)
+	a.take_damage(1e12)
+	var r2: Dictionary = _blk_steps(e, [a], 1.0 / 60.0, 181, 26)
+	var idle_timer: float = e._blocker_atk_timer
+	var b: Node = _blk_hero(holder, map, 3)
+	var r3: Dictionary = _blk_steps(e, [b], 1.0 / 60.0, 100, 207)
+	var bh: Array = r3.at.map(func(x): return int(x[0]))
+	var ok: bool = r1.at.size() == 1 and r2.at.is_empty() and idle_timer == 0.0 and r3.detect == 207 and bh.size() >= 2 and bh[0] == 208 \
+		and bh[1] - bh[0] >= 60 and bh[1] - bh[0] <= 61 and not r3.multi
+	var d: Dictionary = {"first": r1.at, "idle_hits": r2.at, "idle_timer": idle_timer, "b_detect": r3.detect, "b_hits": bh}
+	return {"ok": ok, "d": d}
+
+## 反覆移入移出（每秒 60 步、5 秒）：A 擋住之後，每 6 步把 A 移到旁邊一步再移回原格。每次移回都是新的接觸，
+## 但冷卻是這個敵人共享的：擊數不超過 1 + floor((300 − 2) ÷ 60) + 1，相鄰兩擊至少隔 59 步
+func _blk_toggle(holder: Node) -> Dictionary:
+	var map := BlkMap.new()
+	holder.add_child(map)
+	var e: Node = _blk_enemy(holder, map)
+	var a: Node = _blk_hero(holder, map, 3)
+	var contacts: Array = [0]
+	var toggle := func(i: int) -> void:
+		if i < 3:
+			return
+		if i % 6 == 0:
+			map.cells.erase(a.grid_cell)
+			a.grid_cell = Vector2i(3, 4)
+		elif i % 6 == 1:
+			a.grid_cell = Vector2i(3, 5)
+			map.cells[a.grid_cell] = a
+			contacts[0] += 1
+	var r: Dictionary = _blk_steps(e, [a], 1.0 / 60.0, 300, 1, toggle)
+	var at: Array = r.at.map(func(x): return int(x[0]))
+	var min_gap: int = 9999
+	for k in range(1, at.size()):
+		min_gap = mini(min_gap, at[k] - at[k - 1])
+	var ok: bool = contacts[0] >= 40 and at.size() >= 2 and at.size() <= 1 + int(floor(298.0 / 60.0)) + 1 and min_gap >= 59 and not r.multi
+	var d: Dictionary = {"contacts": contacts[0], "hits": at, "min_gap_steps": min_gap}
+	return {"ok": ok, "d": d}
+
+## 依序回傳 st.us 的抽樣值（循環使用），st.i 是已經抽了幾次：閃避的測試替身（Hero.dodge_roll_override）
+func _dodge_seq(st: Dictionary) -> Callable:
+	var f := func() -> float:
+		var u: float = float(st.us[int(st.i) % st.us.size()])
+		st.i = int(st.i) + 1
+		return u
+	return f
+
+## 被閃避的攻擊照樣用掉冷卻（每秒 60 步、10 秒）：同一個固定步進的情境跑兩次，阻路的武將分別是普通武將，
+## 以及會閃避的武將（機率 0.15、抽樣值依序 0、0.9、0.1、0.5 循環：第 1、3、5… 擊閃避）。
+## 兩邊的攻擊事件（敵人的攻擊次數）發生在完全相同的步數、每一步的冷卻完全相同（閃避後不會因為沒扣血而提早再打）；
+## 會閃避的那一邊：閃避的那幾擊不扣血、其餘每擊扣 13.333，判定次數＝攻擊次數
+func _blk_dodge_cadence(holder: Node) -> Dictionary:
+	var runs: Dictionary = {}
+	for kind in ["plain", "dodge"]:
+		var map := BlkMap.new()
+		holder.add_child(map)
+		var e: Node = _blk_enemy(holder, map)
+		var h: Node = _blk_hero(holder, map, 3)
+		var st: Dictionary = {"i": 0, "us": [0.0, 0.9, 0.1, 0.5]}
+		if kind == "dodge":
+			h.dodge_chance = 0.15
+			h.dodge_roll_override = _dodge_seq(st)
+		var timers: Array = []
+		var ref: Dictionary = {"e": e}
+		var rec_t := func(_i: int) -> void:
+			timers.append(ref.e._blocker_atk_timer)
+		var r: Dictionary = _blk_steps(e, [h], 1.0 / 60.0, 600, 1, rec_t)
+		runs[kind] = {"ev": r.ev.map(func(x): return int(x[0])), "hp_at": r.at.map(func(x): return int(x[0])), "timers": timers,
+			"multi": r.multi, "bad": r.bad, "rolls": h.dodge_rolls, "dodges": h.dodge_count, "hp": h.current_hp, "calls": st.i}
+	var p: Dictionary = runs.plain
+	var q: Dictionary = runs.dodge
+	var n: int = q.ev.size()
+	var hit_steps: Array = []
+	for k in range(n):
+		if k % 2 == 1:
+			hit_steps.append(q.ev[k])
+	var n_dodged: int = int(ceil(float(n) / 2.0))
+	var n_hit: int = n - n_dodged
+	var ok: bool = n >= 10 and p.ev == q.ev and p.ev[0] == 2 and p.timers == q.timers and p.hp_at == p.ev and q.hp_at == hit_steps \
+		and q.rolls == n and q.calls == n and q.dodges == n_dodged and is_equal_approx(float(q.hp), 1000000.0 - float(n_hit) * BLK_DMG) \
+		and not p.multi and not q.multi and p.bad.is_empty() and q.bad.is_empty()
+	var d: Dictionary = {"attacks": n, "same_steps": p.ev == q.ev, "same_timers": p.timers == q.timers, "first_steps": p.ev.slice(0, 3),
+		"hp_drop_steps": q.hp_at.slice(0, 3), "rolls": q.rolls, "dodges": q.dodges, "lost": snappedf(1000000.0 - float(q.hp), 0.0001)}
+	return {"ok": ok, "d": d}
+
+## 換成會閃避的武將、或從它換走，都不會多打（每秒 60 步，用攻擊事件計數）。會閃避的武將的抽樣值一律 0（每擊都閃避）：
+## - dodger_first：A 會閃避，第 2 步的第一擊被閃避；第 26 步之前 A 被移除，同一格換成普通的 B
+## - 否則：A 是普通武將，第 2 步打第一擊之後 A 死亡，同一格換成會閃避的 B
+## 之後不再攻擊 A；B 的第一次攻擊在上一擊的 1 秒後（第 62 步，浮點誤差可能多一步），100 步內共 2 次
+func _blk_dodge_retarget(holder: Node, dodger_first: bool) -> Dictionary:
+	var map := BlkMap.new()
+	holder.add_child(map)
+	var e: Node = _blk_enemy(holder, map)
+	var a: Node = _blk_hero(holder, map, 3)
+	var st: Dictionary = {"i": 0, "us": [0.0]}
+	if dodger_first:
+		a.dodge_chance = 0.15
+		a.dodge_roll_override = _dodge_seq(st)
+	var hs: Array = [a]
+	var r1: Dictionary = _blk_steps(e, hs, 1.0 / 60.0, 25)
+	var a_hp: float = a.current_hp
+	if dodger_first:
+		map.cells.erase(a.grid_cell)
+		a.queue_free()
+	else:
+		a.take_damage(1e12)
+	var b: Node = _blk_hero(holder, map, 3)
+	if not dodger_first:
+		b.dodge_chance = 0.15
+		b.dodge_roll_override = _dodge_seq(st)
+	hs.append(b)
+	var r2: Dictionary = _blk_steps(e, hs, 1.0 / 60.0, 100, 26)
+	var ev_a: Array = r2.ev.filter(func(x): return int(x[1]) == 0)
+	var ev_b: Array = r2.ev.filter(func(x): return int(x[1]) == 1).map(func(x): return int(x[0]))
+	var ok: bool = r1.ev.size() == 1 and int(r1.ev[0][0]) == 2 and ev_a.is_empty() and r2.ev.size() == 2 and ev_b.size() == 2 \
+		and ev_b[0] >= 62 and ev_b[0] <= 63 and ev_b[1] - ev_b[0] >= 59 and ev_b[1] - ev_b[0] <= 61 and not r2.multi
+	var d: Dictionary = {"a_first": r1.ev, "a_after": ev_a, "b_attacks": ev_b, "a_hp": a_hp, "b_hp": b.current_hp, "calls": st.i}
+	if dodger_first:
+		# A 的第一擊被閃避（血量不變）、只判定一次；B 是普通武將，每擊扣 13.333
+		ok = ok and a_hp == 1000000.0 and st.i == 1 and is_equal_approx(b.current_hp, 1000000.0 - 2.0 * BLK_DMG)
+	else:
+		# A 被打了一擊；B 的兩次攻擊都被閃避（血量不變）、判定 2 次
+		ok = ok and is_equal_approx(a_hp, 1000000.0 - BLK_DMG) and b.current_hp == 1000000.0 and b.dodge_rolls == 2 and b.dodge_count == 2 and st.i == 2
+	return {"ok": ok, "d": d}
+
+## 實際引擎用的關卡：直線路線（第 5 列），阻路的武將射程 0.3 格：敵人走進武將的格子被擋下時（離中心約半格）武將打不到它，不會緩速或打倒它
+func _blk_payload(battle_id: String, waves: Array, hp: float, skill_a: Variant = null) -> Dictionary:
+	var a: Dictionary = _r12_hero("blk_a", skill_a)
+	a["hp"] = hp
+	var b: Dictionary = _r12_hero("blk_b", null)
+	b["hp"] = hp
+	b["slot"] = 2
+	var p: Dictionary = _r12_payload("blk_a", waves, battle_id, [a, b])
+	p["heroes_config"] = [
+		{"hero_id": "blk_a", "name": "A", "job": "infantry", "attack_range": 0.3, "attack_speed": 0.5},
+		{"hero_id": "blk_b", "name": "B", "job": "infantry", "attack_range": 0.3, "attack_speed": 0.5},
+	]
+	return p
+
+## 載入一場（一波）、放置武將（cells：hero_id → 格子）、speed 不是 1 時切換速度、開戰並等第一個敵人出現。
+## skill_a 是武將 A 的技能參數；setup 在放置之後、開戰之前呼叫（測試在這裡換上閃避的測試替身）
+func _blk_start(rec: Node, battle_id: String, groups: Array, cells: Dictionary, speed: int = 1, hp: float = 1000000.0, skill_a: Variant = null, setup: Callable = Callable()) -> Node:
+	_load(_blk_payload(battle_id, [groups], hp, skill_a))
+	for hid in cells:
+		_r12_place(hid, cells[hid])
+	if setup.is_valid():
+		setup.call()
+	if speed != 1:
+		_r19_speed(rec, float(speed))
+	_bm().player_start_battle()
+	await _wait_until(func(): return _first_enemy() != null, 5.0)
+	return _first_enemy()
+
+## 實際引擎：逐個物理步進記錄這些武將被敵人打的時間（敵人攻擊武將在物理步進裡）。在 physics_frame 信號當下讀取：
+## 這一步的節點還沒處理，讀到的血量與物理時鐘都是到上一步為止，所以每一擊記到的是它發生那一步結束時的物理時鐘。
+## 記錄到物理時鐘前進 sec 秒為止；wall_ms ≥ 0 時改成等牆鐘 wall_ms 毫秒（暫停中物理時鐘不前進）。
+## 血量歸零（死亡）不算一擊；each(tr) 在每一步讀取之後呼叫（測試在這裡移動、打倒或放置武將；設 tr.stop 為 true 就提前結束）
+func _blk_track(hs: Array, sec: float, wall_ms: int = -1, each: Callable = Callable()) -> Dictionary:
+	var tr: Dictionary = {"hits": [], "multi": false, "bad": [], "smax": 0.0, "steps": 0}
+	var last: Array = []
+	for h in hs:
+		last.append(h.current_hp if is_instance_valid(h) else 0.0)
+	var p_end: float = _pt() + sec
+	var w_end: int = Time.get_ticks_msec() + (wall_ms if wall_ms >= 0 else int(sec * 4000.0) + 15000)
+	var prev: float = _pt()
+	while (wall_ms >= 0 or _pt() < p_end) and Time.get_ticks_msec() < w_end:
+		await physics_frame
+		tr.steps += 1
+		tr.smax = maxf(float(tr.smax), _pt() - prev)
+		prev = _pt()
+		var n: int = 0
+		for k in range(hs.size()):
+			var alive: bool = is_instance_valid(hs[k]) and hs[k].current_hp > 0.0
+			var now: float = hs[k].current_hp if alive else 0.0
+			var drop: float = float(last[k]) - now
+			if alive and drop > 0.0001:
+				n += 1
+				tr.hits.append({"t": _pt(), "k": k})
+				if absf(drop - BLK_DMG) > 0.0001:
+					tr.bad.append(snappedf(drop, 0.0001))
+			last[k] = now
+		if n > 1:
+			tr.multi = true
+		if each.is_valid():
+			each.call(tr)
+		if tr.get("stop", false):
+			break
+	return tr
+
+func _blk_times(tr: Dictionary, k: int = -1) -> Array:
+	return tr.hits.filter(func(h): return k < 0 or int(h.k) == k).map(func(h): return float(h.t))
+
+## 把武將移到另一格（和 Main 的移位相同：釋放舊格子、reposition、佔用新格子）。遊戲裡移位只在備戰；測試直接呼叫
+func _blk_move(h: Node, cell: Vector2i) -> void:
+	main.game_map.clear_occupied(h.get_cell())
+	h.reposition(cell, main.game_map.grid_to_world(cell), main.game_map)
+	main.game_map.set_occupied(cell, h)
+
+func _blocker_cases() -> void:
+	var holder := Node2D.new()
+	holder.visible = false
+	root.add_child(holder)
+
+	# 阻路-1：時間矩陣（固定步進、真正的 Enemy／Hero 程式）
+	var m: Dictionary = _blk_matrix(holder)
+	_check("阻路-1 冷卻保留零頭（固定步進 30 秒遊戲時間，步長 1 倍／2 倍／部署慢速與 0.03／0.07／0.013 秒）：偵測的那一步不打、下一步打第一擊（第一次接觸的時機不變）；每一擊和「第一擊＋k × 1 秒」只差不到一步、總擊數和理想相差不超過 1、每擊扣 13.333、一步最多一擊；1 倍與 2 倍相差不超過 1",
+		m.bad.is_empty() and m.rows.size() == 6, m)
+
+	# 阻路-2：冷卻途中換阻擋對象（A 死亡、移位、被移除）不重設冷卻
+	var r2a: Dictionary = _blk_retarget(holder, "died")
+	var r2b: Dictionary = _blk_retarget(holder, "moved")
+	var r2c: Dictionary = _blk_retarget(holder, "removed")
+	_check("阻路-2a 冷卻途中阻擋的武將死亡、同一格換成 B：之後不再打 A；B 的第一擊在 A 那一擊的 1 秒後（第 62 步），不是換目標就立即打", r2a.ok, r2a.d)
+	_check("阻路-2b 冷卻途中阻擋的武將移位、同一格換成 B：之後不再打 A；B 的第一擊在 A 那一擊的 1 秒後", r2b.ok, r2b.d)
+	_check("阻路-2c 冷卻途中阻擋的武將被移除（排入刪除、這一幀還沒釋放）、同一格換成 B：同一幀之內也不再打被移除的 A；B 的第一擊在 A 那一擊的 1 秒後", r2c.ok, r2c.d)
+
+	# 阻路-3：空檔不囤積
+	var r3: Dictionary = _blk_idle(holder)
+	_check("阻路-3 沒有阻擋的 3 秒不攻擊、冷卻停在 0；再被擋住時偵測的那一步不打、下一步打一擊，之後照 1 秒，不補打", r3.ok, r3.d)
+
+	# 阻路-4：反覆移入移出不能連擊
+	var r4: Dictionary = _blk_toggle(holder)
+	_check("阻路-4 反覆移入移出（5 秒內重新接觸 40 次以上）：冷卻是這個敵人共享的，擊數不超過 7、相鄰兩擊至少隔 59 步", r4.ok, r4.d)
+	# 阻路-13：被閃避的攻擊照樣用掉冷卻（用敵人的攻擊次數計數，不看血量）
+	var r13: Dictionary = _blk_dodge_cadence(holder)
+	_check("阻路-13 被閃避的攻擊照樣用掉冷卻（固定步進 10 秒，用敵人的攻擊次數計數）：阻路的武將會閃避時，攻擊發生的步數與每一步的冷卻都和普通武將完全相同（第 2 步起每 60 步一次）；閃避的那幾擊不扣血、其餘每擊扣 13.333，判定次數＝攻擊次數", r13.ok, r13.d)
+
+	# 阻路-14：換成會閃避的武將、或從它換走，都不會多打
+	var r14a: Dictionary = _blk_dodge_retarget(holder, true)
+	var r14b: Dictionary = _blk_dodge_retarget(holder, false)
+	_check("阻路-14a 會閃避的武將閃避第一擊後被移除、同一格換成普通武將：不再攻擊被移除的武將；下一次攻擊在上一擊的 1 秒後（第 62～63 步），100 步內共 2 次（用攻擊事件計數）", r14a.ok, r14a.d)
+	_check("阻路-14b 普通武將死亡、同一格換成會閃避的武將：下一次攻擊在上一擊的 1 秒後，100 步內共 2 次，兩次都被閃避（血量不變）、判定 2 次（用攻擊事件計數）", r14b.ok, r14b.d)
+	holder.queue_free()
+
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+	var step: float = 1.0 / float(Engine.physics_ticks_per_second)
+
+	# 阻路-5：實際引擎的第一次接觸：地面敵人走進武將的格子被擋下，偵測到阻擋的那一步之後的下一步打第一擊（時機不變），
+	# 第二擊在第一擊的 1 秒後（一步之內）；每擊扣 13.333
+	var e5: Node = await _blk_start(rec, "blk-5", [_grp("gnd_run", 1, 0.02)], {"blk_a": Vector2i(4, 5)})
+	var d5: Dictionary = {}
+	var ok5: bool = false
+	var a5: Node = _fly_hero("blk_a")
+	if e5 != null and a5 != null:
+		var det5: Array = [-1.0]
+		var tr5_each := func(_tr) -> void:
+			if det5[0] < 0.0 and is_instance_valid(e5) and e5._blocker != null:
+				det5[0] = _pt()
+		var tr5: Dictionary = await _blk_track([a5], 3.0, -1, tr5_each)
+		var t5: Array = _blk_times(tr5)
+		ok5 = det5[0] > 0.0 and t5.size() >= 2 and absf(t5[0] - det5[0] - step) < 1e-6 and t5[1] - t5[0] >= 1.0 - 0.0005 and t5[1] - t5[0] <= 1.0 + float(tr5.smax) + 0.0005 and tr5.bad.is_empty() and not tr5.multi
+		d5 = {"detect": snappedf(det5[0], 0.0001), "hits": t5.map(func(t): return snappedf(t - det5[0], 0.0001)), "step": step, "bad": tr5.bad}
+	_check("阻路-5 實際引擎第一次接觸：偵測到阻擋的下一個物理步進打第一擊（時機不變），第二擊在 1 秒後（一步之內），每擊扣 13.333", ok5, d5)
+
+	# 阻路-6：實際引擎長時間 1× 與 2×：從第一擊起 10.5 秒遊戲時間內都是 11 擊；整段追蹤（12 秒）的扣血＝整段的擊數 × 13.333；
+	# 每一擊和「第一擊＋k × 1 秒」的差距不超過一步（累積時程不漂移）、一步最多一擊
+	var d6: Dictionary = {}
+	for sp in [1, 2]:
+		var e6: Node = await _blk_start(rec, "blk-6x%d" % sp, [_grp("gnd_run", 1, 0.02)], {"blk_a": Vector2i(4, 5)}, sp)
+		var a6: Node = _fly_hero("blk_a")
+		if e6 == null or a6 == null:
+			d6[sp] = {"setup": false}
+			continue
+		await _wait_until(func(): return is_instance_valid(e6) and e6._blocker != null, 5.0)
+		var hp0: float = a6.current_hp
+		var tr6: Dictionary = await _blk_track([a6], 12.0)
+		var t6: Array = _blk_times(tr6)
+		var win: Array = t6.filter(func(t): return t - t6[0] < 10.5) if not t6.is_empty() else []
+		var lost: float = hp0 - a6.current_hp
+		d6[sp] = {"in_window": win.size(), "total_hits": t6.size(), "lost": snappedf(lost, 0.0001), "spread": snappedf(_r20_spread(t6, 1.0), 0.0001), "smax": snappedf(float(tr6.smax), 0.0001),
+			"multi": tr6.multi, "bad": tr6.bad, "lost_ok": is_equal_approx(lost, float(t6.size()) * BLK_DMG)}
+	var ok6: bool = true
+	for sp in [1, 2]:
+		var r: Dictionary = d6.get(sp, {})
+		ok6 = ok6 and r.get("in_window") == 11 and r.get("lost_ok") == true and float(r.get("spread", 99.0)) >= 0.0 and float(r.get("spread", 99.0)) <= float(r.get("smax", 0.0)) + 0.0005 and r.get("multi") == false and r.get("bad", [1]).is_empty()
+	_check("阻路-6 實際引擎長時間 1× 與 2×：從第一擊起 10.5 秒遊戲時間內都是 11 擊、扣血＝擊數 × 13.333；累積時程（第一擊＋k × 1 秒）的差距不超過一步、一步最多一擊", ok6, d6)
+	_r19_speed(rec, 1.0)
+
+	# 阻路-7：實際引擎跨暫停、部署慢速與倍率：命令當下冷卻與武將血量不變；暫停 1.2 秒（牆鐘）期間不攻擊、冷卻不動；
+	# 整段每一擊和累積時程的差距不超過一步，擊數和經過的遊戲時間相符
+	var e7: Node = await _blk_start(rec, "blk-7", [_grp("gnd_run", 1, 0.02)], {"blk_a": Vector2i(4, 5)})
+	var a7: Node = _fly_hero("blk_a")
+	var d7: Dictionary = {}
+	var ok7: bool = false
+	if e7 != null and a7 != null:
+		await _wait_until(func(): return is_instance_valid(e7) and e7._blocker != null, 5.0)
+		var all_t: Array = []
+		var tr7: Dictionary = await _blk_track([a7], 1.5)
+		all_t.append_array(_blk_times(tr7))
+		var smax: float = float(tr7.smax)
+		var cmds: Array = []
+		var seq: Array = [
+			["pause", func(): _r20_pause(rec, true), [0.0, 1200]],
+			["resume", func(): _r20_pause(rec, false), [1.3, -1]],
+			["menu", func(): d7["menu"] = _r19_open(rec), [0.0, 1500]],
+			["close", func(): _r19_close(rec, d7.get("menu", {})), [1.2, -1]],
+			["speed2", func(): _r19_speed(rec, 2.0), [2.5, -1]],
+			["speed1", func(): _r19_speed(rec, 1.0), [1.5, -1]],
+		]
+		for st in seq:
+			var b: Array = [e7._blocker_atk_timer, a7.current_hp]
+			st[1].call()
+			var a: Array = [e7._blocker_atk_timer, a7.current_hp]
+			var w: Array = st[2]
+			var p0: float = _pt()
+			var trs: Dictionary = await _blk_track([a7], float(w[0]), int(w[1]))
+			var ts: Array = _blk_times(trs)
+			all_t.append_array(ts)
+			smax = maxf(smax, float(trs.smax))
+			cmds.append({"cmd": st[0], "timer_same": b[0] == a[0], "hp_same": b[1] == a[1], "hits": ts.size(), "game_s": snappedf(_pt() - p0, 0.001),
+				"timer_after": snappedf(e7._blocker_atk_timer, 0.0001), "timer_cmd": snappedf(float(a[0]), 0.0001)})
+		var paused: Dictionary = cmds[0]
+		var el: float = all_t.back() - all_t[0] if all_t.size() >= 2 else -1.0
+		var expect_n: int = int(floor(el / 1.0 + 1e-9)) + 1
+		var spread: float = _r20_spread(all_t, 1.0)
+		var cmd_ok: bool = true
+		for c in cmds:
+			cmd_ok = cmd_ok and c.timer_same and c.hp_same
+		ok7 = cmd_ok and paused.hits == 0 and paused.game_s == 0.0 and paused.timer_after == paused.timer_cmd and all_t.size() >= 6 and absi(all_t.size() - expect_n) <= 1 and spread >= 0.0 and spread <= smax + 0.0005
+		d7 = {"cmds": cmds, "hits": all_t.size(), "expect": expect_n, "spread": snappedf(spread, 0.0001), "smax": snappedf(smax, 0.0001)}
+	_check("阻路-7 實際引擎跨暫停／部署慢速／倍率：命令當下冷卻與武將血量不變；暫停 1.2 秒不攻擊、冷卻不動；整段每一擊和累積時程（第一擊＋k × 1 秒）的差距不超過一步、擊數和遊戲時間相符", ok7, d7)
+
+	# 阻路-8：實際引擎的阻擋武將死亡後換目標：A（第 4 格）打過一擊後 0.3 秒被打倒，敵人往前走進第 5 格被 B 擋住（在冷卻結束之前）；
+	# B 的第一擊在 A 最後一擊的 1 秒後（一步之內），不是接觸就立即打；A 死亡後不再被打
+	var e8: Node = await _blk_start(rec, "blk-8", [_grp("gnd_run", 1, 0.02)], {"blk_a": Vector2i(4, 5), "blk_b": Vector2i(5, 5)})
+	var a8: Node = _fly_hero("blk_a")
+	var b8: Node = _fly_hero("blk_b")
+	var d8: Dictionary = {}
+	var ok8: bool = false
+	if e8 != null and a8 != null and b8 != null:
+		# 會被打倒釋放的節點放在字典裡引用（lambda 直接捕捉的物件被釋放後，每次呼叫都會印錯誤）
+		var st8: Dictionary = {"killed_at": -1.0, "det_b": -1.0, "a": a8, "b": b8, "e": e8}
+		var tr8_each := func(tr) -> void:
+			var ah: Array = tr.hits.filter(func(h): return int(h.k) == 0)
+			if st8.killed_at < 0.0 and not ah.is_empty() and _pt() - float(ah[0].t) >= 0.3:
+				st8.killed_at = _pt()
+				st8.a.take_damage(1e12)
+			if st8.det_b < 0.0 and is_instance_valid(st8.e) and is_instance_valid(st8.b) and st8.e._blocker == st8.b:
+				st8.det_b = _pt()
+		var tr8: Dictionary = await _blk_track([a8, b8], 4.0, -1, tr8_each)
+		var ta: Array = _blk_times(tr8, 0)
+		var tb: Array = _blk_times(tr8, 1)
+		var gap: float = tb[0] - ta.back() if not ta.is_empty() and not tb.is_empty() else -1.0
+		ok8 = ta.size() == 1 and st8.killed_at > 0.0 and st8.det_b > 0.0 and st8.det_b < ta.back() + 0.9 and tb.size() >= 2 and gap >= 1.0 - 0.0005 and gap <= 1.0 + float(tr8.smax) + 0.0005 and tr8.bad.is_empty()
+		d8 = {"a_hits": ta.size(), "killed_after_hit": snappedf(st8.killed_at - (ta[0] if not ta.is_empty() else 0.0), 0.0001), "b_detect_after_a": snappedf(st8.det_b - (ta.back() if not ta.is_empty() else 0.0), 0.0001),
+			"b_first_after_a": snappedf(gap, 0.0001), "b_hits": tb.size(), "smax": snappedf(float(tr8.smax), 0.0001), "bad": tr8.bad}
+	_check("阻路-8 實際引擎：阻擋的武將死亡後，敵人在冷卻結束前被下一位武將擋住；下一位的第一擊在上一擊的 1 秒後（一步之內），死亡的武將不再被打", ok8, d8)
+
+	# 阻路-9：實際引擎反覆移入移出：A 擋住並打過一擊後，4 秒內每 6 步把 A 移到上方的建築格、下一步移回敵人所在的格子（重新接觸 30 次以上）；
+	# 擊數不超過 1 + 4 + 1，相鄰兩擊至少隔 1 秒減一步
+	var e9: Node = await _blk_start(rec, "blk-9", [_grp("gnd_walk", 1, 0.02)], {"blk_a": Vector2i(1, 5)})
+	var a9: Node = _fly_hero("blk_a")
+	var d9: Dictionary = {}
+	var ok9: bool = false
+	if e9 != null and a9 != null:
+		# 先等 A 被打第一擊
+		var tr9a_each := func(tr) -> void:
+			if not tr.hits.is_empty():
+				tr["stop"] = true
+		var tr9a: Dictionary = await _blk_track([a9], 4.0, -1, tr9a_each)
+		var st9: Dictionary = {"n": 0, "contacts": 0}
+		var tr9_each := func(_tr) -> void:
+			if not is_instance_valid(e9) or not is_instance_valid(a9):
+				return
+			st9.n += 1
+			if st9.n % 6 == 0:
+				_blk_move(a9, Vector2i(a9.get_cell().x, 4))
+			elif st9.n % 6 == 1 and st9.n > 1:
+				_blk_move(a9, main.game_map.world_to_grid(e9.position))
+				st9.contacts += 1
+		var tr9: Dictionary = await _blk_track([a9], 4.0, -1, tr9_each)
+		var t9: Array = _blk_times(tr9)
+		var first9: Array = _blk_times(tr9a)
+		var all9: Array = first9.slice(0, 1) + t9
+		var gap9: float = 99.0
+		for k in range(1, all9.size()):
+			gap9 = minf(gap9, all9[k] - all9[k - 1])
+		ok9 = not first9.is_empty() and st9.contacts >= 30 and t9.size() <= 5 and gap9 >= 1.0 - float(tr9.smax) - 0.0005 and not tr9.multi
+		d9 = {"contacts": st9.contacts, "hits_in_4s": t9.size(), "min_gap": snappedf(gap9, 0.0001), "smax": snappedf(float(tr9.smax), 0.0001)}
+	_check("阻路-9 實際引擎反覆移入移出（4 秒內重新接觸 30 次以上）：4 秒內最多 5 擊、相鄰兩擊至少隔 1 秒減一步，不會每次接觸都立即打", ok9, d9)
+
+	# 阻路-10：實際引擎空檔不囤積：A（第 1 格）打過一擊後 0.2 秒被打倒，同時在第 4 格放上 B；敵人往前走 3 格（約 3.8 秒）才被 B 擋住。
+	# 走路期間冷卻停在 0；B 被偵測後的下一步打一擊，第二擊在 1 秒後（一步之內），1.5 秒內共 2 擊（不補打）
+	var e10: Node = await _blk_start(rec, "blk-10", [_grp("gnd_walk", 1, 0.02)], {"blk_a": Vector2i(1, 5)})
+	var a10: Node = _fly_hero("blk_a")
+	var d10: Dictionary = {}
+	var ok10: bool = false
+	if e10 != null and a10 != null:
+		# 會被打倒釋放的節點放在字典裡引用（同阻路-8）
+		var st10: Dictionary = {"killed": false, "det_b": -1.0, "timer_before_b": -1.0, "b": null, "a": a10, "e": e10}
+		var tr10_each := func(tr) -> void:
+			if not st10.killed and not tr.hits.is_empty() and _pt() - float(tr.hits[0].t) >= 0.2:
+				st10.killed = true
+				st10.a.take_damage(1e12)
+				_r12_place("blk_b", Vector2i(4, 5))
+				st10.b = _fly_hero("blk_b")
+			if st10.b != null and is_instance_valid(st10.e):
+				if st10.e._blocker == st10.b:
+					st10.det_b = _pt()
+					tr["stop"] = true
+				else:
+					st10.timer_before_b = st10.e._blocker_atk_timer
+		var tr10: Dictionary = await _blk_track([a10], 9.0, -1, tr10_each)
+		var b10: Node = st10.b
+		var tb: Array = []
+		var smax10: float = 0.0
+		if b10 != null and is_instance_valid(b10) and st10.det_b > 0.0:
+			var tr10b: Dictionary = await _blk_track([b10], 1.5)
+			tb = _blk_times(tr10b)
+			smax10 = float(tr10b.smax)
+		ok10 = st10.killed and st10.det_b > 0.0 and st10.timer_before_b == 0.0 and _blk_times(tr10).size() == 1 and tb.size() == 2 			and absf(tb[0] - st10.det_b - step) < 1e-6 and tb[1] - tb[0] >= 1.0 - 0.0005 and tb[1] - tb[0] <= 1.0 + smax10 + 0.0005
+		d10 = {"a_hits": _blk_times(tr10).size(), "timer_before_b": st10.timer_before_b, "walk_s": snappedf(st10.det_b - (float(tr10.hits[0].t) if not tr10.hits.is_empty() else 0.0), 0.001),
+			"b_hits_after_detect": tb.map(func(t): return snappedf(t - st10.det_b, 0.0001))}
+	_check("阻路-10 實際引擎空檔不囤積：阻擋的武將死亡後走了 3 秒多才被下一位擋住，走路期間冷卻停在 0；被擋住後下一步只打一擊，1 秒後才打第二擊（1.5 秒內共 2 擊）", ok10, d10)
+
+	# 阻路-11：新的一場乾淨：上一場的敵人冷卻途中切換關卡，新的一場的敵人第一次接觸照樣在偵測後的下一步打
+	var e11: Node = await _blk_start(rec, "blk-11", [_grp("gnd_run", 1, 0.02)], {"blk_a": Vector2i(4, 5)})
+	var a11: Node = _fly_hero("blk_a")
+	var d11: Dictionary = {}
+	var ok11: bool = false
+	if e11 != null and a11 != null:
+		var det11: Array = [-1.0]
+		var tr11_each := func(_tr) -> void:
+			if det11[0] < 0.0 and is_instance_valid(e11) and e11._blocker != null:
+				det11[0] = _pt()
+		var tr11: Dictionary = await _blk_track([a11], 2.5, -1, tr11_each)
+		var t11: Array = _blk_times(tr11)
+		ok11 = det11[0] > 0.0 and t11.size() >= 1 and absf(t11[0] - det11[0] - step) < 1e-6
+		d11 = {"prev_battle": "blk-10 的敵人冷卻途中", "first_after_detect": snappedf(t11[0] - det11[0], 0.000001) if not t11.is_empty() else -1.0}
+	_check("阻路-11 新的一場：上一場冷卻途中切換關卡，新的一場的敵人第一次接觸照樣在偵測後的下一步打", ok11, d11)
+
+	# 阻路-12：飛行敵人不阻路、不打地面武將：飛行敵人飛過武將的格子，3 秒內武將血量不變、敵人一直沒有阻擋對象
+	var e12: Node = await _blk_start(rec, "blk-12", [_grp("fly_walk", 1, 0.02)], {"blk_a": Vector2i(1, 5)})
+	var a12: Node = _fly_hero("blk_a")
+	var d12: Dictionary = {}
+	var ok12: bool = false
+	if e12 != null and a12 != null:
+		var ever: Array = [false]
+		var tr12_each := func(_tr) -> void:
+			if is_instance_valid(e12) and e12._blocker != null:
+				ever[0] = true
+		var tr12: Dictionary = await _blk_track([a12], 3.0, -1, tr12_each)
+		var passed: float = (e12.position.x - a12.position.x) / float(a12.tile_size) if is_instance_valid(e12) else -99.0
+		ok12 = tr12.hits.is_empty() and not ever[0] and a12.current_hp == a12.max_hp and passed > 0.5
+		d12 = {"hits": tr12.hits.size(), "blocked": ever[0], "passed_tiles": snappedf(passed, 0.01)}
+	_check("阻路-12 飛行敵人不阻路、不打地面武將：飛過武將的格子，3 秒內武將血量不變、一直沒有阻擋對象", ok12, d12)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+
+# ── 趙雲「閃避」（每次受到敵人的直接攻擊各自判定：抽樣值 u < 0.15 就閃避，這一擊不扣血）──────
+## 趙雲的技能參數（和 heroSkills 的 zhao_yun 相同）
+func _dodge_skill(chance: Variant = 0.15) -> Dictionary:
+	return {"id": "dodge", "dodge_chance": chance}
+
+## 放單獨武將的節點（不顯示）：浮動文字也加在這裡
+func _dodge_holder() -> Node:
+	var holder := Node2D.new()
+	holder.visible = false
+	root.add_child(holder)
+	return holder
+
+## 單獨的趙雲（真正的 Hero 腳本，不經過 Main、不攻擊）：防禦 50、血量 1000；skill 是 null 時帶 heroSkills 的閃避參數
+func _dodge_hero(holder: Node, skill: Variant = null) -> Node:
+	var h: Node = load("res://entities/hero/Hero.gd").new()
+	holder.add_child(h)
+	h.set_process(false)
+	h.hero_id = "zhao_yun"
+	h.max_hp = 1000.0
+	h.current_hp = 1000.0
+	h.def_stat = 50.0
+	h._read_skill({"skill": _dodge_skill() if skill == null else skill})
+	return h
+
+## parent 底下還在顯示的浮動文字（先等一幀：文字是延遲設定的）
+func _dodge_texts(parent: Node) -> Array:
+	await process_frame
+	var out: Array = []
+	for c in parent.get_children():
+		if c is FloatingText and not c.is_queued_for_deletion() and c._label != null:
+			out.append(c._label.text)
+	return out
+
+## 實際引擎：逐個物理步進記錄敵人 e 的每一次攻擊（敵人的攻擊次數增加的地方，不看血量）：時間（物理時鐘）、
+## 這一擊讓阻路的武將 h 扣了多少血、這一步的判定次數與 Godot 判定的抽樣值、是否閃避。記錄到物理時鐘前進 sec 秒為止；
+## wall_ms ≥ 0 時改成等牆鐘 wall_ms 毫秒（暫停中物理時鐘不前進）；stop_n ≥ 0 時記到第 stop_n 次攻擊就結束
+func _dodge_track(e: Node, h: Node, sec: float, wall_ms: int = -1, stop_n: int = -1) -> Dictionary:
+	var tr: Dictionary = {"ev": [], "multi": false, "smax": 0.0}
+	var n0: int = e.blocker_attacks
+	var hp0: float = h.current_hp
+	var rolls0: int = h.dodge_rolls
+	var p_end: float = _pt() + sec
+	var w_end: int = Time.get_ticks_msec() + (wall_ms if wall_ms >= 0 else int(sec * 4000.0) + 15000)
+	var prev: float = _pt()
+	while (wall_ms >= 0 or _pt() < p_end) and Time.get_ticks_msec() < w_end:
+		await physics_frame
+		tr.smax = maxf(float(tr.smax), _pt() - prev)
+		prev = _pt()
+		if not is_instance_valid(e) or not is_instance_valid(h):
+			break
+		var n: int = e.blocker_attacks
+		if n > n0:
+			if n > n0 + 1:
+				tr.multi = true
+			var last: Dictionary = h.dodge_log.back() if h.dodge_rolls > rolls0 else {}
+			tr.ev.append({"t": _pt(), "lost": snappedf(hp0 - h.current_hp, 0.0001), "rolled": h.dodge_rolls - rolls0,
+				"u": last.get("u", -1.0), "dodged": last.get("dodged", null)})
+			n0 = n
+		hp0 = h.current_hp
+		rolls0 = h.dodge_rolls
+		if stop_n >= 0 and tr.ev.size() >= stop_n:
+			break
+	return tr
+
+## 場上（UnitsLayer）還在顯示的「MISS」
+func _dodge_miss_nodes() -> Array:
+	return main.units_layer.get_children().filter(func(c): return c is FloatingText and not c.is_queued_for_deletion() and c._label != null and c._label.text == "MISS")
+
+func _dodge_cases() -> void:
+	# 閃避-0：Godot 讀到的機率。0～1 的有限數字才啟用（1 也算）；其他值與不認得的技能 id 都不啟用。換技能時舊的參數清掉
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var vals: Dictionary = {"0.15": 0.15, "int_1": 1, "one": 1.0, "tiny": 0.000001, "zero": 0.0, "neg": -0.1, "over": 1.5, "over_int": 2,
+		"nan": NAN, "inf": INF, "ninf": -INF, "str": "0.15", "bool": true, "null": null}
+	var got0: Dictionary = {}
+	for k in vals:
+		h0._read_skill({"skill": _dodge_skill(vals[k])})
+		got0[k] = h0.dodge_chance
+	h0._read_skill({"skill": {"id": "dodge"}})
+	got0["missing"] = h0.dodge_chance
+	h0._read_skill({"skill": {"id": "evade", "dodge_chance": 0.15}})
+	got0["unknown_id"] = h0.dodge_chance
+	h0._read_skill({"skill": _dodge_skill()})
+	h0._read_skill({"skill": {"id": "first_strike", "first_attack_multiplier": 2}})
+	var to_fs: Array = [h0.dodge_chance, h0.first_strike_multiplier]
+	h0._read_skill({"skill": _dodge_skill()})
+	var to_dodge: Array = [h0.dodge_chance, h0.first_strike_multiplier]
+	h0.free()
+	var want0: Dictionary = {"0.15": 0.15, "int_1": 1.0, "one": 1.0, "tiny": 0.000001}
+	var ok0: bool = got0.size() == 16 and to_fs == [0.0, 2.0] and to_dodge == [0.15, 1.0]
+	for k in got0:
+		ok0 = ok0 and got0[k] == float(want0.get(k, 0.0))
+	_check("閃避-0 Godot 讀到的閃避機率：0.15、1、0.000001 照用；0、負數、超過 1、NaN、無限大、字串、布林、null、缺欄位、不認得的技能 id 都不啟用（0）；首擊加倍與閃避互換時舊的參數清掉",
+		ok0, {"got": got0, "to_first_strike": to_fs, "to_dodge": to_dodge})
+
+	# 閃避-1：機率邊界。測試替身依序給抽樣值 0、0.149999、0.15、0.999999、0.5、0.1499999999：
+	# 小於 0.15 閃避（血量不變、出現「MISS」），0.15 以上照原本的防禦公式扣 20 × (1 − 50 ÷ 150) = 13.333（出現紅色的「13」）
+	var hd1: Node = _dodge_holder()
+	var h1: Node = _dodge_hero(hd1)
+	var st1: Dictionary = {"i": 0, "us": [0.0, 0.149999, 0.15, 0.999999, 0.5, 0.1499999999]}
+	h1.dodge_roll_override = _dodge_seq(st1)
+	var rows1: Array = []
+	for k in range(st1.us.size()):
+		var before: float = h1.current_hp
+		h1.take_damage(20.0)
+		rows1.append({"u": st1.us[k], "lost": snappedf(before - h1.current_hp, 0.0001), "dodged": h1.dodge_log.back().get("dodged"), "logged_u": h1.dodge_log.back().get("u")})
+	var texts1: Array = await _dodge_texts(hd1)
+	var want1: Array = [true, true, false, false, false, true]
+	var ok1: bool = h1.dodge_rolls == 6 and h1.dodge_count == 3 and st1.i == 6 and is_equal_approx(h1.current_hp, 1000.0 - 3.0 * BLK_DMG) \
+		and texts1.count("MISS") == 3 and texts1.count("13") == 3 and texts1.size() == 6
+	for k in range(rows1.size()):
+		var lost_ok: bool = (rows1[k].lost == 0.0) if want1[k] else (absf(rows1[k].lost - BLK_DMG) < 0.001)
+		ok1 = ok1 and rows1[k].dodged == want1[k] and rows1[k].logged_u == st1.us[k] and lost_ok
+	_check("閃避-1 機率邊界（抽樣值 0、0.149999、0.15、0.999999、0.5、0.1499999999）：小於 0.15 的閃避（血量不變、出現「MISS」），0.15 以上照原本的防禦公式扣 13.333（出現「13」）；判定 6 次、閃避 3 次",
+		ok1, {"rows": rows1, "texts": texts1, "hp": h1.current_hp})
+	hd1.queue_free()
+
+	# 閃避-2：無效的傷害不判定、不扣血（沒有閃避技能的武將也一樣）：不抽亂數、血量維持 1000（不會變成 NaN）；之後有效的一擊照常判定
+	var hd2: Node = _dodge_holder()
+	var h2: Node = _dodge_hero(hd2)
+	var p2: Node = _dodge_hero(hd2, {})
+	var st2: Dictionary = {"i": 0, "us": [0.0]}
+	h2.dodge_roll_override = _dodge_seq(st2)
+	for amt in [0.0, -5.0, NAN, INF, -INF]:
+		h2.take_damage(amt)
+		p2.take_damage(amt)
+	var mid2: Array = [st2.i, h2.dodge_rolls, h2.current_hp, p2.current_hp]
+	h2.take_damage(20.0)
+	var texts2: Array = await _dodge_texts(hd2)
+	var ok2: bool = mid2 == [0, 0, 1000.0, 1000.0] and st2.i == 1 and h2.dodge_rolls == 1 and h2.dodge_count == 1 and h2.current_hp == 1000.0 and texts2 == ["MISS"]
+	_check("閃避-2 無效的傷害（0、負數、NaN、無限大、負無限大）：不判定（不抽亂數）、不扣血，血量維持 1000、不是 NaN（沒有閃避技能的武將也一樣）；之後有效的一擊照常判定",
+		ok2, {"before_valid": mid2, "calls": st2.i, "hp": h2.current_hp, "texts": texts2})
+	hd2.queue_free()
+
+	# 閃避-3：已死亡、已被移除（排入刪除）的武將不判定：被打倒之後再受到攻擊不抽亂數、血量維持 0（不復活）；被移除的武將在同一幀之內受到攻擊也不抽亂數
+	var hd3: Node = _dodge_holder()
+	var h3: Node = _dodge_hero(hd3)
+	var st3: Dictionary = {"i": 0, "us": [0.9]}
+	h3.dodge_roll_override = _dodge_seq(st3)
+	h3.take_damage(1e12)
+	var dead3: Array = [st3.i, h3.current_hp, h3.is_queued_for_deletion()]
+	h3.take_damage(20.0)
+	var after3: Array = [st3.i, h3.current_hp, h3.dodge_rolls]
+	var h3b: Node = _dodge_hero(hd3)
+	var st3b: Dictionary = {"i": 0, "us": [0.0]}
+	h3b.dodge_roll_override = _dodge_seq(st3b)
+	h3b.queue_free()
+	h3b.take_damage(20.0)
+	var removed3: Array = [st3b.i, h3b.dodge_rolls, h3b.dodge_count]
+	var ok3: bool = dead3 == [1, 0.0, true] and after3 == [1, 0.0, 1] and removed3 == [0, 0, 0]
+	_check("閃避-3 已死亡、已被移除的武將不判定：被打倒（判定 1 次、沒閃避）之後再受到攻擊不抽亂數、血量維持 0（不復活）；被移除（排入刪除）的武將同一幀之內受到攻擊也不抽亂數",
+		ok3, {"dead": dead3, "after": after3, "removed": removed3})
+	hd3.queue_free()
+
+	# 閃避-4：不合理的機率不會讓武將無敵：機率是 0、負數、超過 1、NaN、無限大、字串、布林、null 時，
+	# 測試替身一律給 0（啟用時必定閃避），兩擊仍各扣 13.333、不抽亂數
+	var hd4: Node = _dodge_holder()
+	var got4: Dictionary = {}
+	for v in [0.0, -0.1, 1.5, 2, NAN, INF, "0.15", true, null]:
+		var h4: Node = _dodge_hero(hd4, _dodge_skill(v))
+		var st4: Dictionary = {"i": 0, "us": [0.0]}
+		h4.dodge_roll_override = _dodge_seq(st4)
+		h4.take_damage(20.0)
+		h4.take_damage(20.0)
+		got4[type_string(typeof(v)) + ":" + str(v)] = {"lost": snappedf(1000.0 - h4.current_hp, 0.0001), "calls": st4.i, "chance": h4.dodge_chance}
+	var ok4: bool = got4.size() == 9
+	for k in got4:
+		ok4 = ok4 and absf(float(got4[k].lost) - 2.0 * BLK_DMG) < 0.001 and got4[k].calls == 0 and got4[k].chance == 0.0
+	_check("閃避-4 不合理的機率不會讓武將無敵：0、負數、超過 1、NaN、無限大、字串、布林、null 時，測試替身給 0 也不閃避，兩擊各扣 13.333、不抽亂數", ok4, got4)
+	hd4.queue_free()
+
+	# 閃避-5：正式的亂數：每位武將建立時各自隨機取種子（種子不同），沒有測試替身時抽樣值都在 [0, 1)、2000 次幾乎沒有重複；
+	# 測試替身只有 Godot 測試直接設定：遊戲程式（Main、WebBridge、BattleManager、WaveManager、Enemy）沒有任何地方寫到它
+	var ra: Node = load("res://entities/hero/Hero.gd").new()
+	var rb: Node = load("res://entities/hero/Hero.gd").new()
+	var us5: Array = []
+	for k in range(2000):
+		us5.append(ra._dodge_roll())
+	var uniq5: Dictionary = {}
+	for u in us5:
+		uniq5[u] = true
+	var seeds5: Array = [ra._dodge_rng.seed, rb._dodge_rng.seed]
+	ra.free()
+	rb.free()
+	var refs5: Dictionary = {}
+	for path in ["res://main/Main.gd", "res://bridge/WebBridge.gd", "res://systems/BattleManager.gd", "res://systems/WaveManager.gd", "res://entities/enemy/Enemy.gd"]:
+		refs5[path] = FileAccess.get_file_as_string(path).contains("dodge_roll_override")
+	var ok5: bool = seeds5[0] != seeds5[1] and float(us5.min()) >= 0.0 and float(us5.max()) < 1.0 and uniq5.size() >= 1990 and not refs5.values().has(true)
+	_check("閃避-5 正式的亂數：兩位武將的種子不同（不固定種子），抽樣值都在 [0, 1)、2000 次幾乎不重複；遊戲程式沒有任何地方設定測試替身（沒有訊息能控制必定閃避）",
+		ok5, {"seeds_differ": seeds5[0] != seeds5[1], "min": us5.min(), "max": us5.max(), "unique": uniq5.size(), "refs": refs5})
+
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 閃避-6：實際引擎 1× 與 2×：阻路的趙雲（閃避 0.15，測試替身依序給 0、0.9：第 1、3、5… 擊閃避）被地面敵人攻擊。
+	# 用敵人的攻擊次數計數：從第一擊起 10.5 秒遊戲時間內都是 11 次攻擊、相鄰兩次隔 1 秒（一步之內），閃避不會讓敵人提早再打；
+	# 每次攻擊判定一次，閃避的不扣血、其餘扣 13.333；沒有擊殺、戰鬥金幣不變。快照的 hero_dodge、enemy_blocker_attacks 和 Godot 相同
+	var d6: Dictionary = {}
+	for sp in [1, 2]:
+		var st6: Dictionary = {"i": 0, "us": [0.0, 0.9]}
+		var set6 := func() -> void:
+			var z: Node = _fly_hero("blk_a")
+			if z != null:
+				z.dodge_roll_override = _dodge_seq(st6)
+		var e6: Node = await _blk_start(rec, "dodge-6x%d" % sp, [_grp("gnd_run", 1, 0.02)], {"blk_a": Vector2i(4, 5)}, sp, 1000000.0, _dodge_skill(), set6)
+		var z6: Node = _fly_hero("blk_a")
+		if e6 == null or z6 == null:
+			d6[sp] = {"setup": false}
+			continue
+		var gold0: int = _bm().battle_gold
+		var tr6: Dictionary = await _dodge_track(e6, z6, 12.0)
+		var ts: Array = tr6.ev.map(func(x): return float(x.t))
+		var win: Array = ts.filter(func(t): return t - ts[0] < 10.5) if not ts.is_empty() else []
+		var gaps: Array = []
+		for k in range(1, ts.size()):
+			gaps.append(ts[k] - ts[k - 1])
+		var ev_ok: bool = not tr6.ev.is_empty()
+		for k in range(tr6.ev.size()):
+			var x: Dictionary = tr6.ev[k]
+			var want_dodge: bool = k % 2 == 0
+			var lost_ok: bool = (x.lost == 0.0) if want_dodge else (absf(float(x.lost) - BLK_DMG) < 0.001)
+			ev_ok = ev_ok and x.rolled == 1 and x.dodged == want_dodge and lost_ok
+		var snap: Dictionary = _fly_snapshot(rec)
+		var sd: Dictionary = snap.get("hero_dodge", {}).get("blk_a", {})
+		var sa: Dictionary = snap.get("enemy_blocker_attacks", {})
+		d6[sp] = {"in_window": win.size(), "attacks": ts.size(), "enemy_attacks": e6.blocker_attacks,
+			"gap_min": snappedf(float(gaps.min()) if not gaps.is_empty() else -1.0, 0.0001), "gap_max": snappedf(float(gaps.max()) if not gaps.is_empty() else -1.0, 0.0001),
+			"smax": snappedf(float(tr6.smax), 0.0001), "ev_ok": ev_ok, "multi": tr6.multi, "rolls": z6.dodge_rolls, "dodges": z6.dodge_count,
+			"kills": _bm().kills, "gold_same": _bm().battle_gold == gold0,
+			"snap": {"chance": sd.get("chance"), "rolls": sd.get("rolls"), "dodges": sd.get("dodges"), "hp": sd.get("hp"), "log_n": sd.get("log", []).size(),
+				"enemy_attacks": sa.get(str(e6.get_instance_id()))},
+			"hp_same": sd.get("hp") == z6.current_hp}
+	var ok6: bool = true
+	for sp in [1, 2]:
+		var r: Dictionary = d6.get(sp, {})
+		var n6: int = int(r.get("attacks", -1))
+		ok6 = ok6 and r.get("in_window") == 11 and r.get("ev_ok") == true and r.get("multi") == false and r.get("enemy_attacks") == n6 \
+			and float(r.get("gap_min", -1.0)) >= 1.0 - 0.0005 and float(r.get("gap_max", 99.0)) <= 1.0 + float(r.get("smax", 0.0)) + 0.0005 \
+			and r.get("rolls") == n6 and r.get("dodges") == int(ceil(float(n6) / 2.0)) and r.get("kills") == 0 and r.get("gold_same") == true \
+			and r.get("snap", {}).get("chance") == 0.15 and r.get("snap", {}).get("rolls") == n6 and r.get("snap", {}).get("dodges") == r.get("dodges") \
+			and r.get("snap", {}).get("enemy_attacks") == n6 and r.get("hp_same") == true
+	_check("閃避-6 實際引擎 1× 與 2×（用敵人的攻擊次數計數）：從第一擊起 10.5 秒遊戲時間內都是 11 次攻擊、相鄰兩次隔 1 秒（一步之內），被閃避的攻擊照樣用掉冷卻；每次攻擊判定一次，閃避的不扣血、其餘扣 13.333；沒有擊殺、戰鬥金幣不變；快照的閃避與攻擊次數和 Godot 相同",
+		ok6, d6)
+	_r19_speed(rec, 1.0)
+
+	# 閃避-7：暫停與閃避提示：第一擊被閃避、出現「MISS」後立刻手動暫停 1.2 秒（牆鐘）：暫停中沒有攻擊、沒有判定，提示停在原處沒有淡出；
+	# 繼續後下一次攻擊在上一次的 1 秒後（一步之內），提示照遊戲時間在 0.8 秒後消失
+	var st7: Dictionary = {"i": 0, "us": [0.0]}
+	var set7 := func() -> void:
+		var z: Node = _fly_hero("blk_a")
+		if z != null:
+			z.dodge_roll_override = _dodge_seq(st7)
+	var e7: Node = await _blk_start(rec, "dodge-7", [_grp("gnd_run", 1, 0.02)], {"blk_a": Vector2i(4, 5)}, 1, 1000000.0, _dodge_skill(), set7)
+	var z7: Node = _fly_hero("blk_a")
+	var d7: Dictionary = {}
+	var ok7: bool = false
+	if e7 != null and z7 != null:
+		var tr7a: Dictionary = await _dodge_track(e7, z7, 4.0, -1, 1)
+		_r20_pause(rec, true)
+		await process_frame
+		var miss7: Array = _dodge_miss_nodes()
+		var timers7: Array = miss7.map(func(n): return n._timer)
+		var tr7p: Dictionary = await _dodge_track(e7, z7, 0.0, 1200)
+		var still7: Array = miss7.filter(func(n): return is_instance_valid(n) and not n.is_queued_for_deletion())
+		var timers7b: Array = still7.map(func(n): return n._timer)
+		var rolls_paused: int = z7.dodge_rolls
+		_r20_pause(rec, false)
+		var tr7b: Dictionary = await _dodge_track(e7, z7, 1.5, -1, 1)
+		var gap7: float = float(tr7b.ev[0].t) - float(tr7a.ev[0].t) if not tr7a.ev.is_empty() and not tr7b.ev.is_empty() else -1.0
+		var gone7: bool = miss7.all(func(n): return not is_instance_valid(n) or n.is_queued_for_deletion())
+		var smax7: float = maxf(float(tr7a.smax), float(tr7b.smax))
+		ok7 = tr7a.ev.size() == 1 and tr7a.ev[0].dodged == true and miss7.size() == 1 and tr7p.ev.is_empty() and rolls_paused == 1 \
+			and still7.size() == 1 and timers7b == timers7 and gap7 >= 1.0 - 0.0005 and gap7 <= 1.0 + smax7 + 0.0005 and gone7
+		d7 = {"first": tr7a.ev, "miss_at_pause": miss7.size(), "timer_at_pause": timers7, "timer_after_pause": timers7b, "attacks_paused": tr7p.ev.size(),
+			"rolls_paused": rolls_paused, "next_gap": snappedf(gap7, 0.0001), "miss_gone": gone7}
+	_check("閃避-7 暫停與閃避提示：第一擊被閃避出現「MISS」後手動暫停 1.2 秒，暫停中沒有攻擊與判定、提示停住沒有淡出；繼續後下一次攻擊在上一次的 1 秒後（一步之內），提示照遊戲時間消失",
+		ok7, d7)
+
+	# 閃避-8：升級、移位、跨波次不改變機率、不重設判定紀錄；新的一場是新的武將：判定紀錄從 0 開始、上一場的「MISS」不殘留、沒有測試替身
+	# 趙雲（射程 3）在建築位打血量 300 的敵人（三擊打倒、清波）；建築位的武將不會被敵人攻擊，這裡直接呼叫受傷留下判定紀錄與提示
+	var zs: Dictionary = _r12_hero("zhao_yun", _dodge_skill())
+	_load(_r12_payload("dodge_8", [[_grp("soft", 1, 1.0)], [_grp("soft", 1, 1.0)]], "dodge-8a", [zs]))
+	_r12_place("zhao_yun")
+	var z8: Node = _fly_hero("zhao_yun")
+	var d8: Dictionary = {}
+	var ok8: bool = false
+	if z8 != null:
+		var z8_id: int = z8.get_instance_id()
+		z8.dodge_roll_override = _dodge_seq({"i": 0, "us": [0.0]})
+		z8.take_damage(20.0)
+		z8.take_damage(20.0)
+		var b8: Array = [z8.dodge_chance, z8.dodge_rolls, z8.dodge_count]
+		_bm().player_start_battle()
+		await _wait_until(func(): return _bm().game_state == 1 and _bm().kills == 1, 8.0)
+		var wave1: Array = [_bm().current_wave, _bm().kills, _bm().game_state]
+		var up: Dictionary = zs.duplicate(true)
+		up["level"] = 2
+		up["atk"] = 120.0
+		main._on_payload_received({"type": "update_team", "team_list": [up]})
+		_blk_move(z8, Vector2i(2, 4))
+		var after_up: Array = [z8.dodge_chance, z8.dodge_rolls, z8.dodge_count, z8.hero_level, z8.get_cell()]
+		_bm().player_start_battle()
+		await _wait_until(func(): return _bm().current_wave == 2 and _bm().game_state == 2, 3.0)
+		z8.take_damage(20.0)
+		var wave2: Array = [_bm().current_wave, z8.dodge_chance, z8.dodge_rolls, z8.dodge_count]
+		await process_frame
+		var miss_before: int = _dodge_miss_nodes().size()
+		_load(_r12_payload("dodge_8", [[_grp("soft", 1, 1.0)]], "dodge-8b", [zs]))
+		_r12_place("zhao_yun")
+		await process_frame
+		var z8b: Node = _fly_hero("zhao_yun")
+		var fresh: Array = [z8b != null and z8b.get_instance_id() != z8_id, z8b.dodge_chance if z8b else null, z8b.dodge_rolls if z8b else null,
+			z8b.dodge_count if z8b else null, z8b.dodge_log.size() if z8b else null, _dodge_miss_nodes().size(), z8b.dodge_roll_override.is_valid() if z8b else null]
+		ok8 = b8 == [0.15, 2, 2] and wave1 == [1, 1, 1] and after_up == [0.15, 2, 2, 2, Vector2i(2, 4)] and wave2 == [2, 0.15, 3, 3] and miss_before >= 1 \
+			and fresh == [true, 0.15, 0, 0, 0, 0, false]
+		d8 = {"before": b8, "wave1": wave1, "after_upgrade_move": after_up, "wave2": wave2, "miss_before_new": miss_before, "new_battle": fresh}
+	_check("閃避-8 升級（等級 2）、移位、跨到第 2 波：機率維持 0.15、判定紀錄接續（不重設）；新的一場是新的武將：判定與閃避次數從 0 開始、上一場的「MISS」不殘留、沒有測試替身",
+		ok8, d8)
+
 	rec.payload_received.disconnect(main._on_payload_received)
 	main.web_bridge = original
 	rec.free()

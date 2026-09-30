@@ -1,4 +1,4 @@
-// Godot 技能與飛行敵人測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
+// Godot 技能（包括閃避與首擊加倍）、飛行敵人與敵人阻路冷卻測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
 // 對遊戲程式套用一個刻意的錯誤，只跑指定的測試組（SHENMA_TEST_ONLY），確認測試「該失敗時一定失敗」。
 // 用法：GODOT=<Godot 4.6.2 console 執行檔> node scripts/shenma-regression/tools/godot-mutation.mjs <變異名稱|none|list>
 // - none：不改程式，同一組測試必須全部通過、log 也要通過 check-log.mjs 的檢查（確認基準）
@@ -171,6 +171,115 @@ const MUTATIONS = {
     to: "\tif (waypoints[0] as Vector2).distance_to(waypoints[waypoints.size() - 1]) <= FLIGHT_MIN_LEN:\n",
     only: "route",
     expect: ["路線-5 ", "地面路線-6 "],
+  },
+  // 敵人攻擊阻路武將的冷卻（SHENMA_TEST_ONLY=blocker）
+  "blocker-drops-remainder": {
+    why: "敵人攻擊阻路武將後設回完整間隔（丟掉越過零點的零頭，舊寫法）",
+    file: ENEMY,
+    from: "\t\t\t_blocker_atk_timer = BLOCKER_ATK_SPD - (late if late < BLOCKER_ATK_SPD else 0.0)\n",
+    to: "\t\t\t_blocker_atk_timer = BLOCKER_ATK_SPD\n",
+    only: "blocker",
+    expect: ["阻路-1 ", "阻路-6 "],
+  },
+  "blocker-reset-on-retarget": {
+    why: "偵測到新的阻擋對象就把冷卻歸零（換目標、重新接觸立即打，舊寫法）",
+    file: ENEMY,
+    from: "\t\t\t\t_blocker = occ\n\t\t\t\t_blocked_cell = check_cell\n",
+    to: "\t\t\t\t_blocker = occ\n\t\t\t\t_blocked_cell = check_cell\n\t\t\t\t_blocker_atk_timer = 0.0\n",
+    only: "blocker",
+    expect: [
+      "阻路-2a ",
+      "阻路-2b ",
+      "阻路-2c ",
+      "阻路-4 ",
+      "阻路-8 ",
+      "阻路-9 ",
+      "阻路-14a ",
+      "阻路-14b ",
+    ],
+  },
+  "blocker-hits-removed-hero": {
+    why: "阻擋的武將被移除（排入刪除）後，同一幀之內仍繼續打它",
+    file: ENEMY,
+    from: "_blocker.is_queued_for_deletion() or ",
+    to: "",
+    only: "blocker",
+    expect: ["阻路-2c ", "阻路-14a "],
+  },
+  // 被閃避的攻擊照樣用掉冷卻（SHENMA_TEST_ONLY=blocker）
+  "dodge-refunds-enemy-cooldown": {
+    why: "攻擊被閃避（沒有扣血）時退還敵人的冷卻，下一步立刻再打",
+    file: ENEMY,
+    from: "\t\t\tblocker_attacks += 1\n\t\t\t_blocker.take_damage(BLOCKER_ATK)\n",
+    to: "\t\t\tblocker_attacks += 1\n\t\t\tvar hp_before: float = _blocker.current_hp\n\t\t\t_blocker.take_damage(BLOCKER_ATK)\n\t\t\tif is_instance_valid(_blocker) and _blocker.current_hp == hp_before:\n\t\t\t\t_blocker_atk_timer = 0.0\n\t\t\t\tqueue_redraw()\n\t\t\t\treturn\n",
+    only: "blocker",
+    expect: ["阻路-13 ", "阻路-14a ", "阻路-14b "],
+  },
+  // 趙雲「閃避」（SHENMA_TEST_ONLY=dodge）
+  "dodge-boundary-inclusive": {
+    why: "機率邊界錯誤：抽樣值剛好等於機率（0.15）也算閃避",
+    file: HERO,
+    from: "\t\tvar dodged: bool = u < dodge_chance\n",
+    to: "\t\tvar dodged: bool = u <= dodge_chance\n",
+    only: "dodge",
+    expect: ["閃避-1 "],
+  },
+  "dodge-still-damages": {
+    why: "閃避之後仍照防禦公式扣血",
+    file: HERO,
+    from: "\t\t\t_show_dodge()\n\t\t\treturn\n",
+    to: "\t\t\t_show_dodge()\n",
+    only: "dodge",
+    expect: ["閃避-1 ", "閃避-6 "],
+  },
+  "dodge-rolls-invalid-damage": {
+    why: "無效的傷害（0、負數、NaN、無限大）也判定閃避、照公式扣血",
+    file: HERO,
+    from: "\tif not (amount > 0.0 and is_finite(amount)):\n\t\treturn\n",
+    to: "",
+    only: "dodge",
+    expect: ["閃避-2 "],
+  },
+  "dodge-rolls-when-removed": {
+    why: "已被移除（排入刪除）的武將仍判定閃避",
+    file: HERO,
+    from: "\tif dodge_chance > 0.0 and not is_queued_for_deletion():\n",
+    to: "\tif dodge_chance > 0.0:\n",
+    only: "dodge",
+    expect: ["閃避-3 "],
+  },
+  "dodge-accepts-out-of-range": {
+    why: "閃避機率不檢查範圍（超過 1 的機率讓武將每擊都閃避）",
+    file: HERO,
+    from: " and float(c) > 0.0 and float(c) <= 1.0:\n",
+    to: ":\n",
+    only: "dodge",
+    expect: ["閃避-0 ", "閃避-4 "],
+  },
+  "dodge-fixed-seed": {
+    why: "閃避的亂數用固定種子（每位武將的抽樣序列都一樣）",
+    file: HERO,
+    from: "\t_dodge_rng.randomize()\n",
+    to: "\t_dodge_rng.seed = 12345\n",
+    only: "dodge",
+    expect: ["閃避-5 "],
+  },
+  // 首擊加倍，馬超「衝鋒」（SHENMA_TEST_ONLY=firststrike）
+  "first-strike-per-node": {
+    why: "首擊加倍記在武將節點上（同一場移除後重新放置又能再觸發）",
+    file: HERO,
+    from: "_battle_mgr.consume_first_strike(hero_id, boosted)",
+    to: "_battle_mgr.consume_first_strike(hero_id + str(get_instance_id()), boosted)",
+    only: "firststrike",
+    expect: ["R12-1 ", "R12-6 "],
+  },
+  "dodge-keeps-first-strike": {
+    why: "帶閃避技能的武將（趙雲）仍有首擊加倍",
+    file: HERO,
+    from: "\t\t\t\tdodge_chance = float(c)\n",
+    to: "\t\t\t\tdodge_chance = float(c)\n\t\t\t\tfirst_strike_multiplier = 2.0\n",
+    only: "firststrike",
+    expect: ["首擊加倍-1 "],
   },
 };
 

@@ -2585,27 +2585,32 @@ await test("R10-P1", async () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-//  Round 12：武將技能（趙雲「奇襲」）的定義是唯一來源
+//  武將技能（首擊加倍，現在是馬超「衝鋒」）的定義是唯一來源
 //  說明文字與送進 Godot 的參數（出征資料 team_list[].skill）都由 utils/heroSkills 產生
 // ══════════════════════════════════════════════════════════════
 await test("R12-S1", async () => {
   const { heroSkillOf, heroSkillPayload, describeHeroSkill } = require(
     join(GAME, "utils/heroSkills.ts")
   );
-  const zhao = heroSkillOf("zhao_yun");
-  const payload = heroSkillPayload("zhao_yun");
+  // 首擊加倍依正式設定表的被動描述綁在馬超（「衝鋒：首擊傷害翻倍」）；趙雲改成閃避
+  const ma = heroSkillOf("ma_chao");
+  const payload = heroSkillPayload("ma_chao");
   // 沒有技能的武將：關羽加上橫掃後改用張飛對照
   const none = heroSkillPayload("zhang_fei");
   check(
-    "R12-S1 趙雲的奇襲：送進 Godot 的參數（first_strike、2 倍）與說明文字出自同一份定義；沒有技能的武將不帶 skill 欄位",
-    zhao?.name === "奇襲" &&
-      zhao.firstAttackMultiplier === 2 &&
+    "R12-S1 馬超的衝鋒（首擊加倍）：送進 Godot 的參數（first_strike、2 倍）與說明文字出自同一份定義；參數只帶倍率；沒有技能的武將不帶 skill 欄位",
+    ma?.id === "first_strike" &&
+      ma.name === "衝鋒" &&
+      ma.firstAttackMultiplier === 2 &&
       payload.skill?.id === "first_strike" &&
-      payload.skill?.first_attack_multiplier === zhao.firstAttackMultiplier &&
-      describeHeroSkill(zhao).includes(`${zhao.firstAttackMultiplier} 倍`) &&
+      payload.skill?.first_attack_multiplier === ma.firstAttackMultiplier &&
+      JSON.stringify(Object.keys(payload.skill).sort()) ===
+        '["first_attack_multiplier","id"]' &&
+      describeHeroSkill(ma).includes(`${ma.firstAttackMultiplier} 倍`) &&
+      describeHeroSkill(ma).includes("x2!") &&
       heroSkillOf("zhang_fei") === null &&
       !("skill" in none),
-    { zhao, payload, none }
+    { ma, payload, none }
   );
 });
 
@@ -2622,7 +2627,7 @@ await test("R14-S1", async () => {
   const lv1 = describeHeroSkill(huang, 5);
   const lv2 = describeHeroSkill(huang, 5 + 0.03);
   check(
-    "R14-S1 黃忠的百步穿楊：送進 Godot 的參數（long_range、1.5 倍）、說明文字與實際射程出自同一份定義；參數只帶射程倍率，趙雲的參數不受影響",
+    "R14-S1 黃忠的百步穿楊：送進 Godot 的參數（long_range、1.5 倍）、說明文字與實際射程出自同一份定義；參數只帶射程倍率，趙雲（閃避）的參數不受影響",
     huang?.id === "long_range" &&
       huang.name === "百步穿楊" &&
       payload.skill?.id === "long_range" &&
@@ -2630,7 +2635,7 @@ await test("R14-S1", async () => {
       JSON.stringify(Object.keys(payload.skill).sort()) ===
         '["id","range_multiplier"]' &&
       JSON.stringify(Object.keys(zhaoPayload.skill).sort()) ===
-        '["first_attack_multiplier","id"]' &&
+        '["dodge_chance","id"]' &&
       effectiveRange(huang, 5) === 7.5 &&
       effectiveRange(huang, 5.03) === 7.545 &&
       effectiveRange(null, 5) === 5 &&
@@ -2670,7 +2675,7 @@ await test("R15-S1", async () => {
         '["burn_interval","burn_ratio","burn_ticks","id"]' &&
       JSON.stringify(others) ===
         JSON.stringify([
-          ["first_attack_multiplier", "id"],
+          ["dodge_chance", "id"],
           ["id", "range_multiplier"],
           ["id", "sweep_max_targets", "sweep_radius", "sweep_ratio"],
           [],
@@ -2728,6 +2733,86 @@ await test("橫掃-S1", async () => {
       text.includes("不會再引發橫掃") &&
       !plain.includes("目前攻擊力"),
     { guan, payload, text }
+  );
+});
+
+// 趙雲「閃避」：參數與說明文字出自同一份定義（utils/heroSkills）
+await test("閃避-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    sweepDamage,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const zhao = heroSkillOf("zhao_yun");
+  const payload = heroSkillPayload("zhao_yun");
+  const text = describeHeroSkill(zhao, 3, 100);
+  check(
+    "閃避-S1 趙雲的閃避：送進 Godot 的參數（dodge、15%）與說明文字出自同一份定義；參數只帶閃避機率，沒有首擊加倍；射程、火攻、橫掃的計算不受影響",
+    zhao?.id === "dodge" &&
+      zhao.name === "閃避" &&
+      zhao.dodgeChance === 0.15 &&
+      payload.skill?.id === "dodge" &&
+      payload.skill.dodge_chance === zhao.dodgeChance &&
+      JSON.stringify(Object.keys(payload.skill).sort()) ===
+        '["dodge_chance","id"]' &&
+      !("first_attack_multiplier" in payload.skill) &&
+      text.includes("15% 的機率閃避") &&
+      text.includes("這一擊不扣血") &&
+      text.includes("「MISS」") &&
+      text.includes("照原本的防禦計算扣血") &&
+      text.includes("沒有冷卻、不會疊加") &&
+      text.includes("敵人的攻擊間隔照常") &&
+      text.includes("升級、移動位置、換波次都維持同樣的機率") &&
+      !text.includes("目前攻擊力") &&
+      effectiveRange(zhao, 3) === 3 &&
+      burnTickDamage(zhao, 100) === 0 &&
+      sweepDamage(zhao, 100) === 0,
+    { zhao, payload, text }
+  );
+});
+
+// 技能綁定和正式設定表 heroes_config 的被動描述（passive）對照：趙雲是閃避、馬超是衝鋒（首擊加倍）；
+// 甘寧（「奇襲：首擊必殺」，意思還沒決定）、劉備（「光環：提升友軍防禦」，還沒有規格）沒有技能；關羽的橫掃和描述不一致，待對齊
+await test("技能對照-S1", async () => {
+  const { heroSkillOf, heroSkillPayload } = require(
+    join(GAME, "utils/heroSkills.ts")
+  );
+  const ids = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "gan_ning",
+    "liu_bei",
+    "zhang_fei",
+  ];
+  const got = Object.fromEntries(
+    ids.map((id) => [id, heroSkillOf(id)?.id ?? null])
+  );
+  const firstStrike = ids.filter(
+    (id) => heroSkillPayload(id).skill?.id === "first_strike"
+  );
+  check(
+    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 sweep（待對齊）；甘寧、劉備、張飛沒有技能；只有馬超帶首擊加倍",
+    JSON.stringify(got) ===
+      JSON.stringify({
+        ma_chao: "first_strike",
+        zhao_yun: "dodge",
+        huang_zhong: "long_range",
+        zhou_yu: "burn",
+        guan_yu: "sweep",
+        gan_ning: null,
+        liu_bei: null,
+        zhang_fei: null,
+      }) &&
+      JSON.stringify(firstStrike) === '["ma_chao"]' &&
+      !("skill" in heroSkillPayload("gan_ning")) &&
+      !("skill" in heroSkillPayload("liu_bei")),
+    { got, firstStrike }
   );
 });
 

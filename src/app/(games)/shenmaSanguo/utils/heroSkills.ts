@@ -1,14 +1,15 @@
 import { HeroSkillPayload } from "../types";
 
 /**
- * 武將技能（趙雲「奇襲」、黃忠「百步穿楊」、周瑜「火攻」、關羽「橫掃」）
+ * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「橫掃」）
  * 這裡是技能規則的唯一來源：武將列表／詳情的說明，與隨出征資料送進 Godot 的參數都由這裡產生。
  * 技能是戰場效果：不寫進玩家存檔，也不需要後端（GAS）支援。
- * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊
+ * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊。
+ * 正式設定表 heroes_config 的 passive 欄是給人看的自由文字，程式不解析它；技能綁定哪位武將、數值與觸發規則都定義在這裡
  */
 export type HeroSkill =
   | {
-      /** 奇襲：每場戰鬥首次有效普通攻擊的傷害加倍 */
+      /** 首擊加倍（馬超「衝鋒」）：每場戰鬥首次有效普通攻擊的傷害加倍 */
       id: "first_strike";
       name: string;
       /** 每場戰鬥首次有效普通攻擊的傷害倍率 */
@@ -42,10 +43,20 @@ export type HeroSkill =
       maxTargets: number;
       /** 每名副目標受到的傷害＝這一擊普通攻擊的傷害 × damageRatio */
       damageRatio: number;
+    }
+  | {
+      /** 閃避：每次受到敵人的直接攻擊時各自判定，閃避時這一擊不扣血 */
+      id: "dodge";
+      name: string;
+      /** 每次受到直接攻擊時閃避的機率（0～1） */
+      dodgeChance: number;
     };
 
 const HERO_SKILLS: Record<string, HeroSkill> = {
-  zhao_yun: { id: "first_strike", name: "奇襲", firstAttackMultiplier: 2 },
+  // 正式設定表的被動描述「衝鋒：首擊傷害翻倍」；每場一次、沒有目標不用掉等規則沿用首擊加倍的機制
+  ma_chao: { id: "first_strike", name: "衝鋒", firstAttackMultiplier: 2 },
+  // 正式設定表的被動描述「閃避率提升15%」：武將原本沒有閃避，所以閃避率就是 15%
+  zhao_yun: { id: "dodge", name: "閃避", dodgeChance: 0.15 },
   // 第一版的設計值（Round 14 選定），尚未做過平衡；傷害與攻速不變、不加連射
   huang_zhong: { id: "long_range", name: "百步穿楊", rangeMultiplier: 1.5 },
   // 第一版的設計值（Round 15 選定），尚未做過平衡：每跳 20%、3 跳、間隔 1 秒；不疊層、不傳染
@@ -131,6 +142,14 @@ export function describeHeroSkill(
       "橫掃時主要目標周圍會閃過金色的範圍光圈，傷害數字和普通攻擊一樣。只在戰場生效，不影響存檔。"
     );
   }
+  if (skill.id === "dodge") {
+    const pct = round3(skill.dodgeChance * 100);
+    return (
+      `敵人攻擊這位武將時（目前是被武將擋在路上的敵人），每一擊有 ${pct}% 的機率閃避：這一擊不扣血，武將上方出現藍白色的「MISS」；沒有閃避時照原本的防禦計算扣血。` +
+      "每一擊各自判定，沒有冷卻、不會疊加；閃避不會讓敵人馬上再打一次，敵人的攻擊間隔照常。" +
+      "升級、移動位置、換波次都維持同樣的機率。只在戰場生效，不影響存檔。"
+    );
+  }
   if (skill.id === "burn") {
     const sec = skill.burnIntervalSec;
     const n = skill.burnTicks;
@@ -180,6 +199,9 @@ export function heroSkillPayload(heroId: string): { skill?: HeroSkillPayload } {
         sweep_ratio: skill.damageRatio,
       },
     };
+  }
+  if (skill.id === "dodge") {
+    return { skill: { id: skill.id, dodge_chance: skill.dodgeChance } };
   }
   return {
     skill: {

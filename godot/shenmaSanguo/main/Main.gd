@@ -878,6 +878,9 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var enemy_remaining: Dictionary = {}
 	# 文士塔的疊加減速：每個敵人目前的減速量（0 表示沒有）；測試用來看文士塔減速的是哪一個敵人
 	var enemy_slow: Dictionary = {}
+	# 每個敵人攻擊阻路武將的次數（包括被閃避的）；場上還在顯示的「MISS」數（閃避提示）
+	var enemy_blocker_attacks: Dictionary = {}
+	var dodge_texts: int = 0
 	for child in units_layer.get_children():
 		if child is Enemy and not child.is_queued_for_deletion():
 			var eid: String = child.enemy_id
@@ -891,6 +894,9 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			enemy_move[str(child.get_instance_id())] = child.movement_type
 			enemy_remaining[str(child.get_instance_id())] = child.get_remaining_distance() / float(child.tile_size)
 			enemy_slow[str(child.get_instance_id())] = child._stack_slow_amount
+			enemy_blocker_attacks[str(child.get_instance_id())] = child.blocker_attacks
+		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == "MISS":
+			dodge_texts += 1
 		elif child is Tower and not child.is_queued_for_deletion():
 			# screen：塔在畫面上的位置（和升級面板定位用的是同一套座標），測試用來點選塔
 			var sp: Vector2 = child.get_global_transform_with_canvas().origin
@@ -903,12 +909,17 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var hero_sweep: Dictionary = {}
 	# 對空：每位武將能不能攻擊飛行敵人
 	var hero_air: Dictionary = {}
+	# 閃避（趙雲）：Godot 實際讀到的機率（沒有啟用時不列出）、判定次數（＝受到的有效攻擊）、閃避次數、最近幾次的抽樣值與結果、目前血量
+	var hero_dodge: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
 			continue
 		hero_ranges[hid] = hero.attack_range
 		hero_air[hid] = hero.can_hit_air
+		if hero.dodge_chance > 0.0:
+			hero_dodge[hid] = {"chance": hero.dodge_chance, "rolls": hero.dodge_rolls, "dodges": hero.dodge_count,
+				"log": hero.dodge_log.duplicate(true), "hp": hero.current_hp, "max_hp": hero.max_hp}
 		if hero.sweep_ratio > 0.0:
 			var fx_n: int = 0
 			for c in hero.get_children():
@@ -956,6 +967,10 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"enemy_remaining":   enemy_remaining,
 		"enemy_slow":        enemy_slow,
 		"hero_air":          hero_air,
+		# 閃避（趙雲）與敵人攻擊阻路武將的次數
+		"hero_dodge":        hero_dodge,
+		"enemy_blocker_attacks": enemy_blocker_attacks,
+		"dodge_texts":       dodge_texts,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)

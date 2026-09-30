@@ -1,20 +1,42 @@
 async (page) => {
-  // R12（瀏覽器）：趙雲「奇襲」第一版
-  // - 技能說明：主頁的武將視窗、獨立的武將頁，列表顯示技能名稱、詳情顯示完整規則；沒有技能的武將不顯示
-  // - 主頁（用部署選單實際點選）與獨立戰鬥頁（送部署選單的同一個 place_hero 訊息）放置趙雲並開戰，用唯讀快照的敵人血量（enemy_hp）算出每一擊的實際傷害：
+  // R12（瀏覽器）：首擊加倍，馬超「衝鋒」（正式設定表的被動描述「衝鋒：首擊傷害翻倍」；原本綁在趙雲，趙雲改成閃避）
+  // - 技能說明：主頁的武將視窗、獨立的武將頁，列表顯示技能名稱、詳情顯示完整規則；馬超是「衝鋒」、趙雲是「閃避」、關羽是「橫掃」
+  // - 主頁（用部署選單實際點選）與獨立戰鬥頁（送部署選單的同一個 place_hero 訊息）放置馬超並開戰，用唯讀快照的敵人血量（enemy_hp）算出每一擊的實際傷害：
   //   第一擊是攻擊力的 2 倍（150 → 300），之後恢復 150；觸發時武將上方出現金色「x2!」（截圖）；這一場只觸發一次
   // - 同一關重來（新的一場）可以再觸發；結算送到後端的 save_result／save_profile 與 session 都不帶技能或戰場暫態欄位
-  // 全部 mock、虛構金鑰 test_r12_*
+  // 全部 mock、虛構金鑰 test_r12_*；馬超的設定只在這支腳本加進 mock 名單（__shenma_r12_extra，數值和 mock 的趙雲相同、職業騎兵）
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
-  const { H } = S;
+  const { H, config } = S;
+  const ctx = page.context();
   const run = H.begin();
   const out = {};
   const A = "test_r12_a";
   const IFRAME = 'iframe[title="Shenma Sanguo"]';
   const BIFRAME = 'iframe[title="Shenma Sanguo Battle"]';
   const SLOW_HP = 99999; // harness 的 mock_a_slow（Mock A 慢速出兵）
-  const ATK = 150; // harness 的趙雲 base_atk（等級 1）
+  const ATK = 150; // 馬超的 base_atk（等級 1，和 mock 的趙雲相同）
+  const MA = { ...config.heroes.find((h) => h.hero_id === "zhao_yun"), hero_id: "ma_chao", name: "馬超", image: "hero_ma_chao.webp" };
+
+  // 馬超的設定只在這支腳本加進 mock 名單：旗標打開時，mock 後端回應的武將設定多一位馬超
+  await ctx.addInitScript((extra) => {
+    if (window.top !== window) return;
+    const inner = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : (input && input.url) || String(input);
+      if (url.startsWith("https://script.google.com/") && localStorage.getItem("__shenma_r12_extra") === "1") {
+        let body = {};
+        try { body = JSON.parse((init && init.body) || "{}"); } catch { body = {}; }
+        if (body.action === "get_heroes_config") {
+          const res = await inner(input, init);
+          const json = await res.json();
+          const heroes = (json.heroes || []).filter((h) => h.hero_id !== extra.hero_id);
+          return new Response(JSON.stringify({ ...json, heroes: [...heroes, extra] }), { status: 200, headers: { "Content-Type": "application/json" } });
+        }
+      }
+      return inner(input, init);
+    };
+  }, MA);
 
   const log = () => H.gasLog(page);
   const since = async (t, action) => (await log()).filter((e) => e.t >= t && (!action || e.action === action));
@@ -25,7 +47,7 @@ async (page) => {
     page.waitForFunction((st) => document.querySelector(`[data-sync-status="${st}"]`) !== null, st, { timeout, polling: 100 });
   const profile = (nickname) => ({
     nickname, level: 1, exp: 0, gold: 1000, capacity: 11, max_stage: "chapter1_7", heroes: [],
-    team: [{ hero_id: "guan_yu", slot: 1 }, { hero_id: "zhao_yun", slot: 2 }],
+    team: [{ hero_id: "guan_yu", slot: 1 }, { hero_id: "ma_chao", slot: 2 }],
   });
   const snapshot = async (sel) => {
     const id = "r12-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7);
@@ -47,8 +69,8 @@ async (page) => {
     const ox = (vx - cols * tile) / 2, oy = (vy - rows * tile) / 2;
     await page.mouse.click(r.left + (ox + (c + 0.5) * tile) * s, r.top + (oy + (row + 0.5) * tile) * s);
   };
-  // 在建築格 (1,4) 放置趙雲：先點掉載入關卡時的「進入戰場」開場畫面；部署選單預設是防禦塔分頁，先切到武將
-  const placeZhao = async (sel) => {
+  // 在建築格 (1,4) 放置馬超：先點掉載入關卡時的「進入戰場」開場畫面；部署選單預設是防禦塔分頁，先切到武將
+  const placeMa = async (sel) => {
     const r = await page.evaluate((sel) => {
       const b = document.querySelector(sel).getBoundingClientRect();
       return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
@@ -58,11 +80,11 @@ async (page) => {
     await clickCell(sel, 1, 4);
     await page.waitForSelector("text=建築位部署", { timeout: 15000 });
     await page.locator('button[class*="tabBtn"]', { hasText: "武將" }).click();
-    await page.locator('button[class*="menuCard"]', { hasText: "趙雲" }).click();
+    await page.locator('button[class*="menuCard"]', { hasText: "馬超" }).click();
     await H.sleep(500);
   };
-  // 開戰後每次快照比對敵人血量：每一次下降就是一擊的實際傷害（場上只有趙雲在攻擊）。
-  // 第一次看到的敵人以最大血量為基準，才不會漏掉出現當下的那一擊。第一次看到奇襲記錄時立刻截圖
+  // 開戰後每次快照比對敵人血量：每一次下降就是一擊的實際傷害（場上只有馬超在攻擊）。
+  // 第一次看到的敵人以最大血量為基準，才不會漏掉出現當下的那一擊。第一次看到首擊加倍的記錄時立刻截圖
   const trackHits = async (sel, n, shotName, timeoutMs = 60000) => {
     const hits = [];
     const last = {};
@@ -104,33 +126,39 @@ async (page) => {
   await section("A", async () => {
     await H.resetOrigin(page);
     await setMock("__shenma_mock_gas_db", { profiles: { [A]: profile("R12 玩家") }, battle_logs: [] });
-    await page.evaluate((k) => localStorage.setItem("shenma_player_key", k), A);
+    await page.evaluate((k) => {
+      localStorage.setItem("shenma_player_key", k);
+      localStorage.setItem("__shenma_r12_extra", "1");
+    }, A);
     await page.goto(H.BASE + "/shenmaSanguo");
     await H.waitHud(page);
     await waitSync("idle");
     await H.clickButton(page, "武將");
     await page.waitForSelector('div[class*="heroName"]');
     const cardText = (name) => page.locator('div[class*="heroCard"]', { has: page.locator('div[class*="heroName"]', { hasText: name }) }).first().innerText();
+    const maCard = await cardText("馬超");
     const zhaoCard = await cardText("趙雲");
     const guanCard = await cardText("關羽");
-    await page.locator('div[class*="heroName"]', { hasText: "趙雲" }).first().click();
+    await page.locator('div[class*="heroName"]', { hasText: "馬超" }).first().click();
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
-    out.A_modal = { zhaoCard, guanCard, detail };
-    // 關羽加上「橫掃」之後，關羽的卡片是自己的技能（不是奇襲）
-    run.check("A-1 主頁武將視窗：趙雲的卡片顯示「技能：奇襲」，關羽的卡片是「技能：橫掃」（不是奇襲）",
-      /技能：奇襲/.test(zhaoCard) && /技能：橫掃/.test(guanCard) && !/技能：奇襲/.test(guanCard), out.A_modal);
-    run.check("A-2 趙雲的詳情顯示完整規則：第一次命中 2 倍、沒有目標不會用掉、同一場不再觸發、換關或重來才重置",
-      /技能：奇襲/.test(detail) && /第一次命中敵人的普通攻擊造成 2 倍傷害/.test(detail) && /沒有目標時不會用掉/.test(detail) && /切換關卡或重新開始才會重置/.test(detail),
+    out.A_modal = { maCard, zhaoCard, guanCard, detail };
+    // 首擊加倍只給馬超：趙雲的卡片是「閃避」、關羽是「橫掃」，都不是衝鋒
+    run.check("A-1 主頁武將視窗：馬超的卡片顯示「技能：衝鋒」，趙雲是「技能：閃避」、關羽是「技能：橫掃」（都不是衝鋒）",
+      /技能：衝鋒/.test(maCard) && /技能：閃避/.test(zhaoCard) && /技能：橫掃/.test(guanCard) && !/衝鋒/.test(zhaoCard) && !/衝鋒/.test(guanCard), out.A_modal);
+    run.check("A-2 馬超的詳情顯示完整規則：第一次命中 2 倍、沒有目標不會用掉、同一場不再觸發、換關或重來才重置",
+      /技能：衝鋒/.test(detail) && /第一次命中敵人的普通攻擊造成 2 倍傷害/.test(detail) && /沒有目標時不會用掉/.test(detail) && /切換關卡或重新開始才會重置/.test(detail),
       out.A_modal);
     out.A_shot = await H.shot(page, "r12-a-skill-detail");
     await page.goto(H.BASE + "/shenmaSanguo/heroes");
     await page.waitForSelector('[data-testid="hero-skill-tag"]', { timeout: 60000 });
     const tags = await page.locator('[data-testid="hero-skill-tag"]').allInnerTexts();
-    await page.locator('[data-testid="hero-skill-tag"]', { hasText: "奇襲" }).first().click();
+    await page.locator('[data-testid="hero-skill-tag"]', { hasText: "衝鋒" }).first().click();
     const detail2 = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_page = { tags, detail2 };
-    // mock 名單的四位武將都有技能：武將頁依序是關羽（橫掃）、趙雲（奇襲）、黃忠（百步穿楊）、周瑜（火攻）四個技能標籤
-    run.check("A-3 武將頁：技能標籤依序是橫掃（關羽）、奇襲（趙雲）、百步穿楊、火攻；點開趙雲的奇襲顯示同樣的完整規則", tags.length === 4 && tags[0] === "技能：橫掃" && tags[1] === "技能：奇襲" && tags[2] === "技能：百步穿楊" && tags[3] === "技能：火攻" && detail2 === detail, out.A_page);
+    // mock 名單的四位武將加上馬超都有技能：關羽（橫掃）、趙雲（閃避）、黃忠（百步穿楊）、周瑜（火攻）、馬超（衝鋒）各一個技能標籤
+    run.check("A-3 武將頁：五個技能標籤是橫掃、閃避、百步穿楊、火攻、衝鋒（各一個）；點開馬超的衝鋒顯示同樣的完整規則",
+      tags.length === 5 && JSON.stringify([...tags].sort()) === JSON.stringify(["技能：橫掃", "技能：閃避", "技能：百步穿楊", "技能：火攻", "技能：衝鋒"].sort()) && detail2 === detail,
+      out.A_page);
   });
 
   // ── B. 主頁：實際開戰，第一擊 2 倍、之後恢復；這一場只觸發一次 ──
@@ -139,28 +167,28 @@ async (page) => {
     await H.waitHud(page);
     await H.selectStage(page, "Mock A 慢速出兵");
     const before = await snapshot(IFRAME);
-    await placeZhao(IFRAME);
+    await placeMa(IFRAME);
     await H.sleep(2000); // 備戰中、沒有敵人：不會用掉
     const idle = await snapshot(IFRAME);
     await H.clickButton(page, "迎戰");
-    const r = await trackHits(IFRAME, 4, "r12-b-first-strike-main");
+    const r = await trackHits(IFRAME, 4, "r12-b-charge-main");
     out.B = { before: before.first_strike_used, idle: idle.first_strike_used, ...r };
-    run.check("B-1 主頁：放置趙雲後在備戰中等待，奇襲沒有被用掉", Object.keys(idle.first_strike_used || {}).length === 0, out.B);
+    run.check("B-1 主頁：放置馬超後在備戰中等待，首擊加倍沒有被用掉", Object.keys(idle.first_strike_used || {}).length === 0, out.B);
     run.check("B-2 主頁實戰：第一擊造成 300（攻擊力 150 的 2 倍），之後每一擊恢復 150",
       r.hits.length >= 3 && r.hits[0] === ATK * 2 && r.hits.slice(1).every((h) => h === ATK), out.B);
-    run.check("B-3 觸發時記下一次奇襲（趙雲、300），之後的攻擊沒有再觸發；觸發當下有截圖",
-      !!r.shot && JSON.stringify(r.firstStrikeAtEnd) === JSON.stringify({ zhao_yun: ATK * 2 }), out.B);
+    run.check("B-3 觸發時記下一次首擊加倍（馬超、300），之後的攻擊沒有再觸發；觸發當下有截圖",
+      !!r.shot && JSON.stringify(r.firstStrikeAtEnd) === JSON.stringify({ ma_chao: ATK * 2 }), out.B);
   });
 
   // ── C. 同一關重來（新的一場）可以再觸發 ──
   await section("C", async () => {
     await H.selectStage(page, "Mock A 慢速出兵");
     const fresh = await snapshot(IFRAME);
-    await placeZhao(IFRAME);
+    await placeMa(IFRAME);
     await H.clickButton(page, "迎戰");
-    const r = await trackHits(IFRAME, 3, "r12-c-first-strike-restart");
+    const r = await trackHits(IFRAME, 3, "r12-c-charge-restart");
     out.C = { freshUsed: fresh.first_strike_used, freshBattleId: fresh.battle_id, prevBattleId: out.B && out.B.battleId, ...r };
-    run.check("C-1 同一關重來是新的一場（battle_id 不同）：奇襲紀錄清空，第一擊又是 300，之後 150",
+    run.check("C-1 同一關重來是新的一場（battle_id 不同）：首擊加倍的紀錄清空，第一擊又是 300，之後 150",
       Object.keys(fresh.first_strike_used || {}).length === 0 && fresh.battle_id !== out.C.prevBattleId &&
         r.hits.length >= 2 && r.hits[0] === ATK * 2 && r.hits.slice(1).every((h) => h === ATK),
       out.C);
@@ -169,7 +197,7 @@ async (page) => {
   // ── D. 結算與保存：不帶技能或戰場暫態欄位 ──
   await section("D", async () => {
     await H.selectStage(page, "Mock W 勝利兩波");
-    await placeZhao(IFRAME);
+    await placeMa(IFRAME);
     const idx = await H.bridgeLen(page);
     const t0 = Date.now();
     await H.clickButton(page, "自動");
@@ -190,7 +218,7 @@ async (page) => {
       used, resultKeys: res && Object.keys(res), battleLogKeys: logs.map((l) => Object.keys(l)), saveResults: results.map((e) => e.key),
       saves: saves.length, profileTeam: p.team, profileKeys: Object.keys(p), sessionHasSkill: bad.test(sess),
     };
-    run.check("D-1 勝利關卡也觸發了奇襲（趙雲、300）", JSON.stringify(used) === JSON.stringify({ zhao_yun: ATK * 2 }), out.D);
+    run.check("D-1 勝利關卡也觸發了首擊加倍（馬超、300）", JSON.stringify(used) === JSON.stringify({ ma_chao: ATK * 2 }), out.D);
     run.check("D-2 結算只送 1 次 save_result；Godot 的結算與後端的戰鬥紀錄都沒有技能欄位",
       results.length === 1 && results[0].key === A && res && !Object.keys(res).some((k) => bad.test(k)) &&
         logs.length === 1 && !JSON.stringify(logs[0]).match(bad),
@@ -241,15 +269,15 @@ async (page) => {
     await page.mouse.click(center.x, center.y);
     await H.sleep(800);
     await page.evaluate((sel) => {
-      document.querySelector(sel).contentWindow.postMessage({ __godot_bridge: true, type: "place_hero", hero_id: "zhao_yun", cell_x: 1, cell_y: 4 }, "*");
+      document.querySelector(sel).contentWindow.postMessage({ __godot_bridge: true, type: "place_hero", hero_id: "ma_chao", cell_x: 1, cell_y: 4 }, "*");
     }, BIFRAME);
     await H.sleep(500);
     await page.locator("button", { hasText: /^迎戰$/ }).click();
-    const r = await trackHits(BIFRAME, 4, "r12-e-first-strike-battle-route");
+    const r = await trackHits(BIFRAME, 4, "r12-e-charge-battle-route");
     out.E = r;
     run.check("E-1 獨立戰鬥頁實戰：第一擊 300，之後每一擊 150；這一場只觸發一次",
       r.hits.length >= 3 && r.hits[0] === ATK * 2 && r.hits.slice(1).every((h) => h === ATK) &&
-        JSON.stringify(r.firstStrikeAtEnd) === JSON.stringify({ zhao_yun: ATK * 2 }) && !!r.shot,
+        JSON.stringify(r.firstStrikeAtEnd) === JSON.stringify({ ma_chao: ATK * 2 }) && !!r.shot,
       out.E);
     await page.goto(H.BASE + "/shenmaSanguo");
     await H.waitHud(page);

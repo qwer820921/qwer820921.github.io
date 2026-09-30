@@ -145,8 +145,14 @@ const AREAS = {
     scripts: ["r13-web.js"],
   },
   skills: {
-    what: "武將技能（趙雲、黃忠、周瑜、關羽）",
-    scripts: ["r12-web.js", "r14-web.js", "r15-web.js", "skill-sweep-web.js"],
+    what: "武將技能（馬超的首擊加倍、趙雲的閃避、黃忠、周瑜、關羽）：趙雲在兩個入口實際擋路受擊，逐次核對閃避的判定（需要 Godot 產物）",
+    scripts: [
+      "r12-web.js",
+      "r14-web.js",
+      "r15-web.js",
+      "skill-sweep-web.js",
+      "skill-dodge-web.js",
+    ],
   },
   heroes: {
     what: "武將列表的搜尋、職業篩選與排序（主頁武將視窗、武將頁），升級後重新排序與切換帳號後重算；法師與遊戲不認得的職業／稀有度的顯示",
@@ -239,6 +245,7 @@ const FULL = [
   "air-readiness-web.js",
   "air-first-web.js",
   "next-wave-web.js",
+  "skill-dodge-web.js",
 ];
 
 const [mode, ...rest] = process.argv.slice(2);

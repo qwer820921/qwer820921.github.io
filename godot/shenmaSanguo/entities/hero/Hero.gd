@@ -44,7 +44,7 @@ var hero_half: int        = 16
 const SLOW_RATIO: float   = 0.30   # ROAD 英雄對敵人施加的速度倍率
 
 # ── 技能（出征資料 team_list 的 skill，定義在 Web 的 utils/heroSkills）────
-## 奇襲（first_strike）：每場戰鬥首次有效普通攻擊的傷害倍率；1.0 代表沒有這個技能
+## 首擊加倍（first_strike，馬超「衝鋒」）：每場戰鬥首次有效普通攻擊的傷害倍率；1.0 代表沒有這個技能
 var first_strike_multiplier: float = 1.0
 ## 百步穿楊（long_range）：有效射程倍率；1.0 代表沒有這個技能。射程每次都從設定重新計算（_compute_range），不會疊乘
 var range_multiplier: float = 1.0
@@ -66,7 +66,23 @@ var sweep_hits: int = 0
 const SWEEP_FX_TIME: float = 0.3
 ## 範圍邊界的容許誤差（像素）：距離正好是半徑的敵人算在範圍內
 const SWEEP_EDGE_EPS: float = 0.001
-## BattleManager：記錄這一場哪些武將已用過奇襲（記在這裡而不是武將節點，移位、重新放置都不會重置）
+## 閃避（dodge）：每次受到敵人的直接攻擊（有效的正傷害）各自判定一次：抽一個 [0,1) 的亂數 u，u < dodge_chance 就閃避，
+## 這一擊不扣血、上方出現「MISS」；否則照原本的防禦公式扣血。沒有冷卻、不疊加；升級、移位、跨波次都不改變機率。
+## 閃避不取消攻擊：攻擊方照樣用掉這次攻擊的冷卻（由攻擊方處理），也不影響這位武將自己的普通攻擊。
+## dodge_chance 0 代表沒有這個技能；機率不是 0～1 的有限數字時不啟用（不閃避）
+var dodge_chance: float = 0.0
+## 閃避用的亂數：每位武將各自一份，建立時隨機取種子（正式遊戲不固定種子，也沒有訊息或設定欄位可以控制它）
+var _dodge_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+## 測試替身：有設定時用它回傳的值取代亂數。只有 Godot 測試直接設定這個屬性
+var dodge_roll_override: Callable = Callable()
+## 測試用唯讀統計（debug_snapshot）：判定次數（＝受到的有效攻擊次數）、閃避次數、最近 DODGE_LOG_MAX 次的抽樣值與結果
+var dodge_rolls: int = 0
+var dodge_count: int = 0
+var dodge_log: Array = []
+const DODGE_LOG_MAX: int = 40
+## 閃避提示的顏色（藍白色，和金色的技能倍率、紅色的受傷數字區分）
+const DODGE_COLOR: Color = Color(0.6, 0.92, 1.0)
+## BattleManager：記錄這一場哪些武將已用過首擊加倍（記在這裡而不是武將節點，移位、重新放置都不會重置）
 var _battle_mgr: Node     = null
 
 # 顏色（依職業差異）
@@ -75,6 +91,9 @@ var body_color: Color     = Color(0.20, 0.40, 0.80, 1)  # 預設藍
 # ═══════════════════════════════════════════
 #  初始化
 # ═══════════════════════════════════════════
+func _init() -> void:
+	_dodge_rng.randomize()
+
 func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: bool, wave_mgr: Node, battle_mgr: Node = null) -> void:
 	hero_id    = str(state.get("hero_id", ""))
 	_battle_mgr = battle_mgr
@@ -156,6 +175,7 @@ func _read_skill(state: Dictionary) -> void:
 	sweep_ratio = 0.0
 	sweep_radius = 0.0
 	sweep_max_targets = 0
+	dodge_chance = 0.0
 	var skill = state.get("skill", null)
 	if not (skill is Dictionary):
 		return
@@ -181,6 +201,11 @@ func _read_skill(state: Dictionary) -> void:
 				sweep_radius = radius
 				sweep_max_targets = max_targets
 				sweep_ratio = ratio
+		"dodge":
+			# 機率要是 0～1 的有限數字（JSON 的數字在 Godot 是 float）；字串、布林、null、NaN、無限大、負數、超過 1 都不啟用
+			var c: Variant = skill.get("dodge_chance")
+			if (c is float or c is int) and is_finite(float(c)) and float(c) > 0.0 and float(c) <= 1.0:
+				dodge_chance = float(c)
 
 ## 有效射程（格）＝（基礎射程 + (等級-1) × 射程成長）× 技能倍率。
 ## 每次都從設定重新計算，不在目前的值上再乘：更新隊伍、升級、移位、重新放置都不會疊乘
@@ -221,7 +246,7 @@ func _process(delta: float) -> void:
 		_atk_timer = 0.0
 		return
 
-	# 攻擊。奇襲：這一場第一次真的攻擊到有效目標時傷害加倍（沒有目標時不會走到這裡，也就不會用掉）
+	# 攻擊。首擊加倍（衝鋒）：這一場第一次真的攻擊到有效目標時傷害加倍（沒有目標時不會走到這裡，也就不會用掉）
 	var damage: float = atk
 	if first_strike_multiplier > 1.0 and _battle_mgr != null:
 		var boosted: float = atk * first_strike_multiplier
@@ -320,11 +345,26 @@ func _clear_all_slows(enemies: Array) -> void:
 			e.clear_slow()
 
 # ═══════════════════════════════════════════
-#  受傷（目前武將無法被敵人傷害——保留介面）
+#  受傷（被擋住的敵人攻擊阻路武將；閃避見 dodge_chance）
 # ═══════════════════════════════════════════
 func take_damage(amount: float) -> void:
 	if current_hp <= 0.0:
 		return
+	# 無效的傷害（0、負數、NaN、無限大）不處理：不扣血、不判定閃避（不抽亂數），血量不會變成 NaN
+	if not (amount > 0.0 and is_finite(amount)):
+		return
+	# 閃避：仍在場上（沒有被移除）的武將每受到一擊判定一次；閃避的這一擊不扣血
+	if dodge_chance > 0.0 and not is_queued_for_deletion():
+		var u: float = _dodge_roll()
+		var dodged: bool = u < dodge_chance
+		dodge_rolls += 1
+		dodge_log.append({"u": u, "dodged": dodged})
+		if dodge_log.size() > DODGE_LOG_MAX:
+			dodge_log.pop_front()
+		if dodged:
+			dodge_count += 1
+			_show_dodge()
+			return
 
 	var actual_dmg: float = amount * (1.0 - def_stat / (def_stat + 100.0))
 	current_hp -= actual_dmg
@@ -340,6 +380,23 @@ func take_damage(amount: float) -> void:
 		queue_free()
 	else:
 		queue_redraw()
+
+## 閃避判定用的亂數 u（0 ≤ u < 1）：randi 是 32 位元整數，除以 2^32 不會得到 1（randf 可能剛好回傳 1.0）。
+## 有測試替身時改用替身的值（測試用來驗證 0、0.149999、0.15、接近 1 這些邊界）
+func _dodge_roll() -> float:
+	if dodge_roll_override.is_valid():
+		return float(dodge_roll_override.call())
+	return float(_dodge_rng.randi()) / 4294967296.0
+
+## 閃避提示：武將上方出現藍白色的「MISS」（Godot 專案沒有中文字型，不用「閃避」兩個字；技能說明裡寫明這個標記）。
+## FloatingText 照遊戲時間移動、淡出：受時間倍率影響，手動暫停時跟著停住
+func _show_dodge() -> void:
+	var parent: Node = get_parent()
+	if parent == null:
+		return
+	var ft = load("res://ui/FloatingText.gd").new()
+	parent.add_child(ft)
+	ft.setup("MISS", DODGE_COLOR, global_position + Vector2(0, -hero_half - 4))
 
 # ═══════════════════════════════════════════
 #  選取狀態
@@ -408,7 +465,7 @@ func apply_stat_update(new_state: Dictionary, heroes_config: Array) -> void:
 
 	hero_level = int(new_state.get("level", hero_level))
 	atk        = float(new_state.get("atk", atk))
-	# 技能參數跟著隊伍資料更新；這一場是否已用過奇襲記在 BattleManager，不會因此重置
+	# 技能參數跟著隊伍資料更新；這一場是否已用過首擊加倍記在 BattleManager，不會因此重置
 	if new_state.has("skill"):
 		_read_skill(new_state)
 	def_stat   = float(new_state.get("def", def_stat))

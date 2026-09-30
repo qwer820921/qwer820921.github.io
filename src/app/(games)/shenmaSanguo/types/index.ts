@@ -299,6 +299,11 @@ export type HeroSkillPayload =
       sweep_max_targets: number;
       /** 每名副目標受到的傷害＝這一擊的傷害 × sweep_ratio */
       sweep_ratio: number;
+    }
+  | {
+      id: "dodge";
+      /** 每次受到敵人直接攻擊時閃避的機率（0～1）；不是有限數字或超出範圍時 Godot 當作沒有閃避 */
+      dodge_chance: number;
     };
 
 export interface ExpeditionPayload {

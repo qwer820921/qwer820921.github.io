@@ -63,9 +63,16 @@ const BURN_COLOR: Color     = Color(1.0, 0.55, 0.05)  # 橘色：灼燒標記與
 var _game_map: Node        = null
 var _blocker: Node         = null   # 正在阻擋路徑的武將
 var _blocked_cell: Vector2i = Vector2i(-1, -1)
+## 攻擊阻路武將的冷卻：距離下一擊的遊戲時間（物理步進的 delta，受時間倍率影響；手動暫停時節點停住、不前進）。
+## 每個敵人只有一份，換阻擋對象（武將死亡、移位、移除後遇到下一位）不重設：
+## - 阻擋中：越過零點的零頭保留到下一擊（1 倍與 2 倍在相同遊戲時間的擊數相同）；原本就在待命（冷卻已是 0）時打一擊後設回完整間隔
+## - 沒有阻擋：照常倒數但停在 0，不累積欠下的攻擊；恢復阻擋時最多先打一擊，之後照攻擊間隔
+## - 一步最多打一擊；第一次接觸時，偵測到阻擋的那一步不攻擊，下一步冷卻已到（初始 0）就打
 var _blocker_atk_timer: float = 0.0
 const BLOCKER_ATK: float   = 20.0  # 敵人對武將的攻擊力
 const BLOCKER_ATK_SPD: float = 1.0 # 攻擊間隔（秒）
+## 測試用唯讀統計：這個敵人攻擊阻路武將的次數（每次攻擊都算，包括被閃避、沒有扣血的）
+var blocker_attacks: int = 0
 
 # ── 顏色（依 enemy_id 可設不同顏色，預設灰） ──────────────
 var body_color: Color   = Color(0.55, 0.20, 0.20, 1)  # 深紅兵
@@ -158,18 +165,24 @@ func _physics_process(delta: float) -> void:
 		return
 
 	# ── 武將阻路處理 ──────────────────────────────────────────
+	# 武將失效、死亡、已被移除（排入刪除），或者已經不在原本阻擋的格子（被玩家移走）：解除阻擋，攻擊冷卻不重設
+	if _blocker != null and (not is_instance_valid(_blocker) or _blocker.is_queued_for_deletion() or _blocker.current_hp <= 0.0 or _blocker.get_cell() != _blocked_cell):
+		_blocker = null
+		_blocked_cell = Vector2i(-1, -1)
 	if _blocker != null:
-		# 如果武將失效、死亡，或者已經不在原本阻擋的格子（被玩家移走）
-		if not is_instance_valid(_blocker) or _blocker.current_hp <= 0.0 or _blocker.get_cell() != _blocked_cell:
-			_blocker = null
-			_blocked_cell = Vector2i(-1, -1)
-		else:
-			_blocker_atk_timer -= delta
-			if _blocker_atk_timer <= 0.0:
-				_blocker.take_damage(BLOCKER_ATK)
-				_blocker_atk_timer = BLOCKER_ATK_SPD
-			queue_redraw()
-			return  # 停下來等武將死亡或移開
+		var was_ready: bool = _blocker_atk_timer <= 0.0
+		_blocker_atk_timer -= delta
+		if _blocker_atk_timer <= 0.0:
+			# 被閃避（沒有扣血）也是一次攻擊：照樣用掉冷卻
+			blocker_attacks += 1
+			_blocker.take_damage(BLOCKER_ATK)
+			# 保留這一步越過零點的零頭；原本就在待命、或零頭長過一個間隔時從這一擊起算完整的間隔
+			var late: float = 0.0 if was_ready else -_blocker_atk_timer
+			_blocker_atk_timer = BLOCKER_ATK_SPD - (late if late < BLOCKER_ATK_SPD else 0.0)
+		queue_redraw()
+		return  # 停下來等武將死亡或移開
+	# 沒有阻擋：冷卻照遊戲時間倒數，停在 0（待命），不囤積攻擊
+	_blocker_atk_timer = maxf(0.0, _blocker_atk_timer - delta)
 
 	# 檢查前方格子是否有武將阻路（飛行敵人不被武將擋住，也就不會停下來攻擊武將）
 	if _game_map != null and not is_flying():
@@ -177,10 +190,10 @@ func _physics_process(delta: float) -> void:
 		var next_cell: Vector2i = _game_map.world_to_grid(_waypoints[_wp_index])
 		for check_cell in [cur_cell, next_cell]:
 			var occ: Node = _game_map.get_occupant(check_cell)
-			if occ != null and occ is Hero:
+			if occ != null and occ is Hero and not occ.is_queued_for_deletion() and occ.current_hp > 0.0:
+				# 只記下阻擋對象；攻擊冷卻沿用這個敵人目前的剩餘時間（換目標不重設）
 				_blocker = occ
 				_blocked_cell = check_cell
-				_blocker_atk_timer = 0.0
 				queue_redraw()
 				return
 

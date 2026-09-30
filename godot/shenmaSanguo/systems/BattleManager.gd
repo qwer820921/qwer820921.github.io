@@ -45,8 +45,8 @@ var _lifecycle: int = 0
 var _auto_wave_token: int = 0
 var _auto_wave_pending: bool = false
 
-# ── 武將技能：奇襲（first_strike）──────────────────────────────
-## 這一場已用過奇襲的武將：hero_id → 那一擊的傷害。記在這裡而不是武將節點：
+# ── 武將技能：首擊加倍（first_strike，馬超「衝鋒」）──────────────
+## 這一場已用過首擊加倍的武將：hero_id → 那一擊的傷害。記在這裡而不是武將節點：
 ## 跨波次、移位、更新隊伍、同場移除再放回都不會重新取得；initialize（新的一場、新的 battle_id）才清空
 var _first_strike_used: Dictionary = {}
 
@@ -404,7 +404,7 @@ func _reset_pause() -> void:
 	manual_paused = false
 	pause_changed.emit(false)
 
-## 奇襲：這位武將在這一場還沒用過就記下並回傳 true（武將真的攻擊到有效目標時才呼叫）
+## 首擊加倍：這位武將在這一場還沒用過就記下並回傳 true（武將真的攻擊到有效目標時才呼叫）
 func consume_first_strike(hero_id: String, damage: float) -> bool:
 	if hero_id == "" or _first_strike_used.has(hero_id):
 		return false

@@ -31,7 +31,9 @@ signal debug_snapshot_requested(request_id: String)
 ##    沒有 target_modes 的遊戲只會顯示原本三種）、拒絕開戰時的 wave_rejected（沒有這則訊息只是不顯示原因）。
 ##    這兩項對沒有它們的遊戲不會出現按了沒反應的選項，而且和 7 的其他內容一起首次發布，所以沒有另外提升版本；
 ##    網頁與遊戲產物必須同批發布。wave_rejected 的原因代碼後來多了地面路線的 ground_single_point／ground_zero_length
-##    （網頁不認得的代碼顯示成「設定無效」），同樣在 7 首次發布前加入
+##    （網頁不認得的代碼顯示成「設定無效」），同樣在 7 首次發布前加入。
+##    趙雲的閃避（team_list[].skill 的 id dodge、dodge_chance）與首擊加倍改綁馬超也在 7 首次發布前加入：
+##    不認得的技能一律當作普通攻擊，舊產物收到 dodge 不會出錯、只是不閃避；網頁與遊戲產物同批發布，所以沒有另外提升版本
 const BRIDGE_PROTOCOL: int = 7
 
 
