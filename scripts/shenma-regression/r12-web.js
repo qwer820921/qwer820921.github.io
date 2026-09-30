@@ -1,6 +1,6 @@
 async (page) => {
   // R12（瀏覽器）：首擊加倍，馬超「衝鋒」（正式設定表的被動描述「衝鋒：首擊傷害翻倍」；原本綁在趙雲，趙雲改成閃避）
-  // - 技能說明：主頁的武將視窗、獨立的武將頁，列表顯示技能名稱、詳情顯示完整規則；馬超是「衝鋒」、趙雲是「閃避」、關羽是「橫掃」
+  // - 技能說明：主頁的武將視窗、獨立的武將頁，列表顯示技能名稱、詳情顯示完整規則；馬超是「衝鋒」、趙雲是「閃避」、關羽是「減速光環」
   // - 主頁（用部署選單實際點選）與獨立戰鬥頁（送部署選單的同一個 place_hero 訊息）放置馬超並開戰，用唯讀快照的敵人血量（enemy_hp）算出每一擊的實際傷害：
   //   第一擊是攻擊力的 2 倍（150 → 300），之後恢復 150；觸發時武將上方出現金色「x2!」（截圖）；這一場只觸發一次
   // - 同一關重來（新的一場）可以再觸發；結算送到後端的 save_result／save_profile 與 session 都不帶技能或戰場暫態欄位
@@ -142,9 +142,9 @@ async (page) => {
     await page.locator('div[class*="heroName"]', { hasText: "馬超" }).first().click();
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { maCard, zhaoCard, guanCard, detail };
-    // 首擊加倍只給馬超：趙雲的卡片是「閃避」、關羽是「橫掃」，都不是衝鋒
-    run.check("A-1 主頁武將視窗：馬超的卡片顯示「技能：衝鋒」，趙雲是「技能：閃避」、關羽是「技能：橫掃」（都不是衝鋒）",
-      /技能：衝鋒/.test(maCard) && /技能：閃避/.test(zhaoCard) && /技能：橫掃/.test(guanCard) && !/衝鋒/.test(zhaoCard) && !/衝鋒/.test(guanCard), out.A_modal);
+    // 首擊加倍只給馬超：趙雲的卡片是「閃避」、關羽是「減速光環」，都不是衝鋒
+    run.check("A-1 主頁武將視窗：馬超的卡片顯示「技能：衝鋒」，趙雲是「技能：閃避」、關羽是「技能：減速光環」（都不是衝鋒）",
+      /技能：衝鋒/.test(maCard) && /技能：閃避/.test(zhaoCard) && /技能：減速光環/.test(guanCard) && !/衝鋒/.test(zhaoCard) && !/衝鋒/.test(guanCard), out.A_modal);
     run.check("A-2 馬超的詳情顯示完整規則：第一次命中 2 倍、沒有目標不會用掉、同一場不再觸發、換關或重來才重置",
       /技能：衝鋒/.test(detail) && /第一次命中敵人的普通攻擊造成 2 倍傷害/.test(detail) && /沒有目標時不會用掉/.test(detail) && /切換關卡或重新開始才會重置/.test(detail),
       out.A_modal);
@@ -155,9 +155,9 @@ async (page) => {
     await page.locator('[data-testid="hero-skill-tag"]', { hasText: "衝鋒" }).first().click();
     const detail2 = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_page = { tags, detail2 };
-    // mock 名單的四位武將加上馬超都有技能：關羽（橫掃）、趙雲（閃避）、黃忠（百步穿楊）、周瑜（火攻）、馬超（衝鋒）各一個技能標籤
-    run.check("A-3 武將頁：五個技能標籤是橫掃、閃避、百步穿楊、火攻、衝鋒（各一個）；點開馬超的衝鋒顯示同樣的完整規則",
-      tags.length === 5 && JSON.stringify([...tags].sort()) === JSON.stringify(["技能：橫掃", "技能：閃避", "技能：百步穿楊", "技能：火攻", "技能：衝鋒"].sort()) && detail2 === detail,
+    // mock 名單的四位武將加上馬超都有技能：關羽（減速光環）、趙雲（閃避）、黃忠（百步穿楊）、周瑜（火攻）、馬超（衝鋒）各一個技能標籤
+    run.check("A-3 武將頁：五個技能標籤是減速光環、閃避、百步穿楊、火攻、衝鋒（各一個）；點開馬超的衝鋒顯示同樣的完整規則",
+      tags.length === 5 && JSON.stringify([...tags].sort()) === JSON.stringify(["技能：減速光環", "技能：閃避", "技能：百步穿楊", "技能：火攻", "技能：衝鋒"].sort()) && detail2 === detail,
       out.A_page);
   });
 

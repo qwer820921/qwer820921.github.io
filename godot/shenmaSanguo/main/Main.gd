@@ -139,20 +139,25 @@ func _do_initial_setup(payload: Dictionary) -> void:
 	_team_list      = payload.get("team_list", [])
 	_heroes_config  = payload.get("heroes_config", [])
 
-	var map_data: Dictionary  = payload.get("map", {})
+	var raw_map: Variant = payload.get("map", {})
+	var map_data: Dictionary  = raw_map if raw_map is Dictionary else {}
 	var path_json = map_data.get("path_json", {})
 	if path_json is String:
 		print("[Main] path_json is String, parsing...")
-		path_json = JSON.parse_string(path_json)
-	
+		# 無法解析時當作沒有路線（開戰時每一組都會因為路線沒有路點被略過、拒絕開戰）；用 JSON 物件解析，不另外印引擎錯誤
+		var parser := JSON.new()
+		path_json = parser.data if parser.parse(path_json) == OK else null
+
 	if not path_json is Dictionary:
 		print("[Main] Warning: path_json is not a Dictionary! value:", path_json)
 		path_json = {}
 
-	_waves = map_data.get("waves", [])
+	# 關卡資料的波次照原樣使用：沒有波次（空的、不是陣列）時不補任何波次，開戰時 BattleManager 會拒絕第 1 波（wave_rejected），
+	# 不會自動勝利，也不會改用內建的測試波次。開發用的內建關卡只在非 Web 平台由 _inject_test_payload 明確送出
+	var raw_waves: Variant = map_data.get("waves", [])
+	_waves = raw_waves if raw_waves is Array else []
 	if _waves.is_empty():
-		_waves = _build_default_waves()
-		print("[Main] Payload 缺失 waves 資料，已自動載入預設波次供測試。")
+		print("[Main] 關卡資料沒有波次：開戰時會拒絕第 1 波")
 
 	# 取得 enemies_config（若 payload 中有）
 	_enemies_config = payload.get("enemies_config", _build_default_enemies())
@@ -190,26 +195,22 @@ func _do_initial_setup(payload: Dictionary) -> void:
 	battle_hud.update_gold(500)
 
 	# 顯示進入戰場 splash（用戶點擊後解鎖 AudioContext 並開始 PREP）
-	var map_name: String = map_data.get("name", "出征")
+	var map_name: String = str(map_data.get("name", "出征"))
 	if not battle_hud.splash_dismissed.is_connected(_on_splash_dismissed):
 		battle_hud.splash_dismissed.connect(_on_splash_dismissed)
 	battle_hud.show_enter_splash(map_name)
 
 
+## 總波數＝最大的波次編號（不是物件的項目、編號無效的項目不算；見 WaveManager.wave_number）。沒有任何有效波次時是 0
 func _count_waves(waves: Array) -> int:
 	var max_wave: int = 0
 	for w in waves:
-		var wn: int = int(w.get("wave", 0))
+		if not (w is Dictionary):
+			continue
+		var wn: int = WaveManager.wave_number(w)
 		if wn > max_wave:
 			max_wave = wn
 	return max_wave
-
-func _build_default_waves() -> Array:
-	return [
-		{ "wave": 1, "enemies": [{ "enemy_id": "soldier",  "count": 3, "interval": 1.2, "path": "path_a" }] },
-		{ "wave": 2, "enemies": [{ "enemy_id": "cavalry",  "count": 4, "interval": 1.5, "path": "path_a" }] },
-		{ "wave": 3, "enemies": [{ "enemy_id": "general",  "count": 1, "interval": 0.5, "path": "path_a" }] },
-	]
 
 # ═══════════════════════════════════════════
 #  BattleManager signals
@@ -881,8 +882,22 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 每個敵人攻擊阻路武將的次數（包括被閃避的）；場上還在顯示的「MISS」數（閃避提示）
 	var enemy_blocker_attacks: Dictionary = {}
 	var dodge_texts: int = 0
+	# 每個敵人 Godot 實際套用的對武將攻擊力（enemies_config 的 atk 或預設 20）、是否免疫減速、目前的減速倍率（1 表示沒有被武將或步兵塔減速）
+	var enemy_atk: Dictionary = {}
+	var enemy_immune: Dictionary = {}
+	var enemy_speed_mult: Dictionary = {}
+	# 每個敵人的倍率減速來源（來源 → {mult, left}）、實際移動速度（像素／秒，不含時間倍率）、是不是正在攻擊阻路的武將（攻擊圖片）
+	var enemy_slow_src: Dictionary = {}
+	var enemy_speed: Dictionary = {}
+	var enemy_fighting: Dictionary = {}
 	for child in units_layer.get_children():
 		if child is Enemy and not child.is_queued_for_deletion():
+			enemy_slow_src[str(child.get_instance_id())] = child.slow_sources_state()
+			enemy_speed[str(child.get_instance_id())] = child.get_effective_speed()
+			enemy_fighting[str(child.get_instance_id())] = child.is_fighting_blocker()
+			enemy_atk[str(child.get_instance_id())] = child.blocker_atk
+			enemy_immune[str(child.get_instance_id())] = child.immune_slow
+			enemy_speed_mult[str(child.get_instance_id())] = child.speed_mult
 			var eid: String = child.enemy_id
 			enemy_nodes[eid] = int(enemy_nodes.get(eid, 0)) + 1
 			enemy_hp[str(child.get_instance_id())] = child.current_hp
@@ -901,21 +916,27 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			# screen：塔在畫面上的位置（和升級面板定位用的是同一套座標），測試用來點選塔
 			var sp: Vector2 = child.get_global_transform_with_canvas().origin
 			# cell、invested、refund（Round 18）：塔所在的格子、已實際支付的戰鬥金幣、拆除時的返還金額
-			tower_targets[child.tower_uid] = {"type": child.tower_type_key, "mode": child.target_mode, "modes": child.get_target_modes(), "level": child.tower_level, "screen": {"x": sp.x, "y": sp.y}, "cell": [child.grid_cell.x, child.grid_cell.y], "invested": child.invested_gold, "refund": child.get_sell_refund(), "air": child.can_hit_air}
+			tower_targets[child.tower_uid] = {"type": child.tower_type_key, "mode": child.target_mode, "modes": child.get_target_modes(), "level": child.tower_level, "screen": {"x": sp.x, "y": sp.y}, "cell": [child.grid_cell.x, child.grid_cell.y], "invested": child.invested_gold, "refund": child.get_sell_refund(), "air": child.can_hit_air, "slow_source": child.slow_source}
 	# 每位武將目前的有效射程（格），以及到每個敵人的距離（格）：測試用來量射程技能（百步穿楊）
 	var hero_ranges: Dictionary = {}
 	var hero_enemy_dist: Dictionary = {}
-	# 橫掃（關羽）：Godot 實際讀到的參數（沒有啟用時不列出）、橫掃次數與打到的副目標數、目前還在顯示的範圍效果數
+	# 橫掃（未綁定任何正式武將的技能原型，出征資料帶 sweep 時才啟用）：Godot 實際讀到的參數（沒有啟用時不列出）、橫掃次數與打到的副目標數、目前還在顯示的範圍效果數
 	var hero_sweep: Dictionary = {}
 	# 對空：每位武將能不能攻擊飛行敵人
 	var hero_air: Dictionary = {}
 	# 閃避（趙雲）：Godot 實際讀到的機率（沒有啟用時不列出）、判定次數（＝受到的有效攻擊）、閃避次數、最近幾次的抽樣值與結果、目前血量
 	var hero_dodge: Dictionary = {}
+	# 每位武將目前的血量（測試用來核對敵人攻擊阻路武將的實際傷害）
+	var hero_hp: Dictionary = {}
+	# 每位武將的減速：光環的倍率與半徑、目前影響的敵人、道路阻擋目前減速的敵人與兩個來源的識別字串
+	var hero_slow: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
 			continue
 		hero_ranges[hid] = hero.attack_range
+		hero_hp[hid] = hero.current_hp
+		hero_slow[hid] = hero.slow_state()
 		hero_air[hid] = hero.can_hit_air
 		if hero.dodge_chance > 0.0:
 			hero_dodge[hid] = {"chance": hero.dodge_chance, "rolls": hero.dodge_rolls, "dodges": hero.dodge_count,
@@ -959,7 +980,7 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"world_frozen":      units_layer.process_mode == Node.PROCESS_MODE_DISABLED,
 		"tree_paused":       get_tree().paused,
 		"enemy_pos":         enemy_pos,
-		# 橫掃（關羽）：每個敵人的生成序號（副目標等距時的順序）、每位啟用橫掃的武將的參數與統計
+		# 橫掃（技能原型）：每個敵人的生成序號（副目標等距時的順序）、每位啟用橫掃的武將的參數與統計
 		"enemy_seq":         enemy_seq,
 		"hero_sweep":        hero_sweep,
 		# 飛行敵人與對空
@@ -971,6 +992,16 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"hero_dodge":        hero_dodge,
 		"enemy_blocker_attacks": enemy_blocker_attacks,
 		"dodge_texts":       dodge_texts,
+		# 敵人設定的攻擊力與免疫減速
+		"enemy_atk":         enemy_atk,
+		"enemy_immune":      enemy_immune,
+		"enemy_speed_mult":  enemy_speed_mult,
+		"hero_hp":           hero_hp,
+		# 倍率減速的來源、實際移動速度、攻擊圖片的狀態；武將的減速光環與道路阻擋
+		"enemy_slow_src":    enemy_slow_src,
+		"enemy_speed":       enemy_speed,
+		"enemy_fighting":    enemy_fighting,
+		"hero_slow":         hero_slow,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)

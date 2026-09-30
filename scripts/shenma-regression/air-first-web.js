@@ -7,7 +7,8 @@ async (page) => {
   // - V：兩個關卡選擇入口的卡片提醒與敵軍預覽（無效的組「不會出兵」、原因、數量不算、拒絕的波次）和戰場上實際出兵一致
   // - A：主頁實際選塔切到「優先飛行」、觀察弓兵塔打誰、文士塔減速誰；步兵塔沒有這個選項；偽造的面板按了也不會變成選取（Godot 拒絕）；
   //      晚到的其他塔回覆不套用；沒有 target_modes 的舊遊戲只顯示三種
-  // - R：主頁拒絕開戰的提示（原因、仍在備戰、城池 20、沒有結算），Esc 關閉、出口「切換關卡」
+  // - R：主頁拒絕開戰的提示（原因、仍在備戰、城池 20、沒有結算），Esc 關閉、出口「切換關卡」打開的關卡選擇沒有被提示蓋住：
+  //      原本提示範圍內的有效關卡用 hit-test 確認在最上層，再用真實滑鼠點下去換關（新的 battle_id）
   // - M：主頁混合關實際只出 3 隻、城池不變
   // - B：獨立戰鬥頁的優先飛行（鍵盤選取）與拒絕開戰提示（出口回到關卡選擇）
   // - N：390 寬的單位面板（四個選項）與拒絕提示、鍵盤焦點
@@ -223,6 +224,24 @@ async (page) => {
         vw: window.innerWidth, vh: window.innerHeight, scrollW: document.documentElement.scrollWidth,
       };
     });
+  // 關卡選擇視窗裡、和 rect（原本提示的範圍）重疊最多的有效關卡（排除 exclude）：它的「選擇關卡」按鈕和 rect 的交集中心點，
+  // 以及該點最上層的元素是不是這顆按鈕
+  const stageUnder = (rect, exclude) =>
+    page.evaluate(({ rect, exclude }) => {
+      let pick = null;
+      for (const c of document.querySelectorAll('[class*="modalPanel"] [data-testid="stage-card"][data-access="playable"]')) {
+        if (c.getAttribute("data-map-id") === exclude) continue;
+        const btn = c.querySelector('[data-testid="stage-select"]');
+        const r = btn.getBoundingClientRect();
+        const l = Math.max(r.left, rect.left), t = Math.max(r.top, rect.top);
+        const rr = Math.min(r.right, rect.right), b = Math.min(r.bottom, rect.bottom);
+        const area = rr - l > 4 && b - t > 4 ? (rr - l) * (b - t) : 0;
+        if (area > 0 && (!pick || area > pick.area)) pick = { id: c.getAttribute("data-map-id"), btn, x: (l + rr) / 2, y: (t + b) / 2, area };
+      }
+      if (!pick) return null;
+      const top = document.elementFromPoint(pick.x, pick.y);
+      return { id: pick.id, x: Math.round(pick.x), y: Math.round(pick.y), onButton: !!top && pick.btn.contains(top), inReject: !!(top && top.closest('[data-testid="wave-reject"]')) };
+    }, { rect, exclude });
   const section = async (name, fn) => {
     try {
       await fn();
@@ -396,12 +415,32 @@ async (page) => {
     const closedByEsc = (await rejectInfo()) === null;
     await startBattle();
     await page.waitForSelector('[data-testid="wave-reject"]', { timeout: 10000 });
+    await H.sleep(300);
+    const rect = (await rejectInfo()).rect;
+    const from = await snapshot(IFRAME);
     await page.locator('[data-testid="wave-reject-exit"]').click();
     await page.waitForSelector("text=關卡選擇", { timeout: 10000 });
-    out.R2 = { closedByEsc, stageModal: true };
-    run.check("R-2 Esc 關閉提示；再按迎戰又被拒絕、提示再出現；提示的出口「切換關卡」打開關卡選擇", closedByEsc, out.R2);
-    await page.locator('button[class*="modalClose"]').last().click();
     await H.sleep(300);
+    // 出口打開的關卡選擇要真的點得到：原本提示範圍內的有效關卡，該點最上層是它的「選擇關卡」按鈕，真實滑鼠點下去換關
+    const pick = await stageUnder(rect, R.id);
+    let switched = false;
+    if (pick) {
+      const i2 = await H.bridgeLen(page);
+      await page.mouse.click(pick.x, pick.y);
+      switched = await H.waitBridge(page, i2, { type: "update_stats", wave: 0, game_state: 1 }, 20000).then(() => true, () => false);
+    }
+    await H.sleep(500);
+    const to = await snapshot(IFRAME);
+    const modalLeft = await page.locator('[class*="modalPanel"]').count();
+    out.R2 = { closedByEsc, rect, pick, switched, from: { stage: from.stage, battle_id: from.battle_id }, to: { stage: to.stage, battle_id: to.battle_id, gs: to.game_state, wave: to.wave, hp: to.hp }, modalLeft, notice: await rejectInfo(), shot: await H.shot(page, "air-first-r2-switched") };
+    run.check("R-2 Esc 關閉提示；再按迎戰又被拒絕、提示再出現；提示的出口「切換關卡」打開關卡選擇：原本提示範圍內的有效關卡在最上層（hit-test 命中「選擇關卡」按鈕），真實滑鼠點下去換到那一關（新的 battle_id、備戰、波次 0、城池 20），視窗與提示都關閉",
+      closedByEsc && pick && pick.onButton && !pick.inReject && switched && to.stage === pick.id && to.battle_id !== from.battle_id &&
+        to.game_state === 1 && to.wave === 0 && to.hp === 20 && modalLeft === 0 && out.R2.notice === null,
+      out.R2);
+    if (modalLeft > 0) {
+      await page.locator('button[class*="modalClose"]').last().click();
+      await H.sleep(300);
+    }
   });
 
   // ── M. 主頁：混合關實際只出合法的組 ──

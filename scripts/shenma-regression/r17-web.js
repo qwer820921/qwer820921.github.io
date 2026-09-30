@@ -211,6 +211,9 @@ async (page) => {
     await card("Mock P 多路線").locator('[data-testid="enemy-preview-open"]').focus();
     await page.keyboard.press("Enter");
     await page.waitForSelector('[data-testid="enemy-preview"]');
+    // 預覽的內容比畫面高時底部的「關閉」要往下捲才看得到（每組有對武將攻擊力）：先捲進畫面，再確認沒有被底部的提示蓋住
+    await page.locator('[data-testid="enemy-preview-close-bottom"]').scrollIntoViewIfNeeded();
+    await H.sleep(200);
     const state = await page.evaluate(() => {
       const hit = (sel) => {
         const el = document.querySelector(sel);

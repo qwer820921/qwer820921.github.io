@@ -87,7 +87,8 @@ func plan_wave(wave_num: int) -> Array:
 	_last_plan_report = {"wave": wave_num, "missing": false, "skipped": []}
 	var wave_obj: Dictionary = {}
 	for w in _waves_data:
-		if int(w.get("wave", 0)) == wave_num:
+		# 不是物件的項目不是波次（和 Main 計算總波數相同）
+		if w is Dictionary and wave_number(w) == wave_num:
 			wave_obj = w
 			break
 	if wave_obj.is_empty():
@@ -100,8 +101,13 @@ func plan_wave(wave_num: int) -> Array:
 
 	var plans: Array = []
 	var index: int = 0
-	for g in wave_obj.get("enemies", []):
+	# enemies 不是陣列時當作沒有任何組（這一波會被拒絕）；不是物件的組當作空白列
+	var groups: Variant = wave_obj.get("enemies", [])
+	for g in (groups if groups is Array else []):
 		index += 1
+		if not (g is Dictionary):
+			print("[WaveManager] 跳過不是物件的敵人組: ", g)
+			continue
 		var enemy_id: String = str(g.get("enemy_id", "")).strip_edges()
 		if enemy_id.is_empty():
 			print("[WaveManager] 跳過空白敵人組: ", g)  # GAS 空白列
@@ -140,6 +146,15 @@ func plan_wave(wave_num: int) -> Array:
 			"interval": maxf(0.0, float(g.get("interval", 1.0))),
 		})
 	return plans
+
+## 波次的編號：數字取整數部分、字串照 int()（和原本相同）；null、布林、陣列、物件等其他型別不是有效的編號，當作 0（不是任何一波）
+static func wave_number(w: Dictionary) -> int:
+	var raw: Variant = w.get("wave", 0)
+	if raw is int or raw is String:
+		return int(raw)
+	if raw is float:
+		return int(raw) if is_finite(raw) else 0
+	return 0
 
 func _skip(index: int, enemy_id: String, path_id: String, reason: String) -> void:
 	_last_plan_report["skipped"].append({"index": index, "enemy_id": enemy_id, "path": path_id, "reason": reason})

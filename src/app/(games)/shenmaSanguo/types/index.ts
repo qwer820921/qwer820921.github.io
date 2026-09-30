@@ -72,6 +72,10 @@ export interface EnemyConfig {
   speed: number;
   /** 移動方式：flying 是飛行（直線飛向終點、不被武將擋住）；沒有、空白或其他值遊戲都當作地面（見 utils/antiAir） */
   movement_type?: string;
+  /** 被武將擋住時每次攻擊那位武將的攻擊力；只有有限、不小於 0 的數字有效，其他遊戲以 20 計（見 utils/enemyCombat） */
+  atk?: unknown;
+  /** 特性：immune_slow（去掉前後空白後完全相同）是免疫減速，其他值遊戲不使用（見 utils/enemyCombat） */
+  trait?: unknown;
   // 其餘欄位依 enemies_config 表擴充
   [key: string]: unknown;
 }
@@ -292,13 +296,9 @@ export type HeroSkillPayload =
       burn_interval: number;
     }
   | {
-      id: "sweep";
-      /** 範圍半徑（格，含邊界），以主目標被打中時的位置為中心 */
-      sweep_radius: number;
-      /** 每次最多打到幾名其他敵人 */
-      sweep_max_targets: number;
-      /** 每名副目標受到的傷害＝這一擊的傷害 × sweep_ratio */
-      sweep_ratio: number;
+      id: "slow_aura";
+      /** 範圍（目前有效射程內）地面敵人的移動速度倍率（0.9＝降低 10%） */
+      slow_mult: number;
     }
   | {
       id: "dodge";

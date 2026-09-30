@@ -33,7 +33,12 @@ signal debug_snapshot_requested(request_id: String)
 ##    網頁與遊戲產物必須同批發布。wave_rejected 的原因代碼後來多了地面路線的 ground_single_point／ground_zero_length
 ##    （網頁不認得的代碼顯示成「設定無效」），同樣在 7 首次發布前加入。
 ##    趙雲的閃避（team_list[].skill 的 id dodge、dodge_chance）與首擊加倍改綁馬超也在 7 首次發布前加入：
-##    不認得的技能一律當作普通攻擊，舊產物收到 dodge 不會出錯、只是不閃避；網頁與遊戲產物同批發布，所以沒有另外提升版本
+##    不認得的技能一律當作普通攻擊，舊產物收到 dodge 不會出錯、只是不閃避；網頁與遊戲產物同批發布，所以沒有另外提升版本。
+##    同樣在 7 首次發布前加入：敵人設定的 atk（對阻路武將的攻擊力）與 trait 的 immune_slow（免疫減速）開始生效，
+##    關卡沒有波次時拒絕第 1 波（不再改用內建的測試波次）。訊息格式沒有改變（enemies_config 原本就整份送進來），
+##    舊產物只是照舊固定 20、照舊減速；網頁的敵軍資訊照新規則顯示，所以網頁與遊戲產物必須同批發布。
+##    同樣在 7 首次發布前加入：關羽的技能改成減速光環（team_list[].skill 的 id slow_aura、slow_mult），網頁不再送 sweep；
+##    倍率減速改成依來源保存與到期。舊產物收到 slow_aura 只是當作普通攻擊（沒有光環），網頁與遊戲產物同批發布，所以沒有另外提升版本
 const BRIDGE_PROTOCOL: int = 7
 
 

@@ -1,7 +1,7 @@
 import { HeroSkillPayload } from "../types";
 
 /**
- * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「橫掃」）
+ * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」）
  * 這裡是技能規則的唯一來源：武將列表／詳情的說明，與隨出征資料送進 Godot 的參數都由這裡產生。
  * 技能是戰場效果：不寫進玩家存檔，也不需要後端（GAS）支援。
  * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊。
@@ -34,15 +34,14 @@ export type HeroSkill =
       burnIntervalSec: number;
     }
   | {
-      /** 橫掃：每次有效普通攻擊命中後，對主目標附近的其他敵人造成部分傷害 */
-      id: "sweep";
+      /**
+       * 減速光環：戰鬥中，以武將為中心、目前有效射程內（含邊界）的所有地面敵人移動速度降低。
+       * 不需要普通攻擊的目標，也不改變普通攻擊；飛行與免疫減速的敵人不受影響；和其他減速取最強的一個
+       */
+      id: "slow_aura";
       name: string;
-      /** 範圍半徑（格，含邊界），以主目標被打中時的位置為中心 */
-      radiusTiles: number;
-      /** 每次最多打到幾名其他敵人 */
-      maxTargets: number;
-      /** 每名副目標受到的傷害＝這一擊普通攻擊的傷害 × damageRatio */
-      damageRatio: number;
+      /** 範圍內敵人的移動速度倍率（0.9＝移速降低 10%，不是降到 10%） */
+      speedMultiplier: number;
     }
   | {
       /** 閃避：每次受到敵人的直接攻擊時各自判定，閃避時這一擊不扣血 */
@@ -67,14 +66,9 @@ const HERO_SKILLS: Record<string, HeroSkill> = {
     burnTicks: 3,
     burnIntervalSec: 1,
   },
-  // 第一版的暫定值，尚未做過平衡：半徑 1 格、最多 2 名、各 50%；主目標的傷害與攻擊間隔不變
-  guan_yu: {
-    id: "sweep",
-    name: "橫掃",
-    radiusTiles: 1,
-    maxTargets: 2,
-    damageRatio: 0.5,
-  },
+  // 正式設定表的被動描述「周圍敵人減速10%」：移速 × 0.9。設定表沒有寫的部分是遊戲的補充規則：
+  // 「周圍」是目前有效射程（含邊界）、只影響地面敵人（步兵不能對空）、免疫減速的不受影響、和其他減速取最強不疊加
+  guan_yu: { id: "slow_aura", name: "減速光環", speedMultiplier: 0.9 },
 };
 
 export const heroSkillOf = (heroId: string): HeroSkill | null =>
@@ -98,15 +92,17 @@ export function burnTickDamage(skill: HeroSkill | null, atk: number): number {
   return skill?.id === "burn" ? round3(atk * skill.burnRatio) : 0;
 }
 
-/** 橫掃每名副目標受到的傷害：這一擊的傷害 × 比例（沒有橫掃時是 0） */
-export function sweepDamage(skill: HeroSkill | null, atk: number): number {
-  return skill?.id === "sweep" ? round3(atk * skill.damageRatio) : 0;
+/** 減速光環讓移動速度降低的百分比（0.9 → 10；沒有減速光環時是 0） */
+export function slowAuraPercent(skill: HeroSkill | null): number {
+  return skill?.id === "slow_aura"
+    ? round3((1 - skill.speedMultiplier) * 100)
+    : 0;
 }
 
 /**
  * 技能的完整規則（顯示在武將詳情）
- * - rawRange：這位武將目前等級屬性表上的射程；有提供時，射程技能會寫出戰場上的實際射程
- * - atk：這位武將目前的攻擊力；有提供時，火攻會寫出每次灼燒的傷害，橫掃會寫出每名副目標受到的傷害
+ * - rawRange：這位武將目前等級屬性表上的射程；有提供時，射程技能會寫出戰場上的實際射程，減速光環會寫出目前的範圍半徑
+ * - atk：這位武將目前的攻擊力；有提供時，火攻會寫出每次灼燒的傷害
  */
 export function describeHeroSkill(
   skill: HeroSkill,
@@ -126,20 +122,19 @@ export function describeHeroSkill(
       "移動位置、調整隊伍或重新放置都不會重複加成。"
     );
   }
-  if (skill.id === "sweep") {
-    const r = skill.radiusTiles;
-    const n = skill.maxTargets;
-    const pct = round3(skill.damageRatio * 100);
+  if (skill.id === "slow_aura") {
+    const pct = slowAuraPercent(skill);
     const current =
-      atk === undefined
+      rawRange === undefined
         ? ""
-        : `目前攻擊力 ${round3(atk)}：每名其他敵人受到 ${sweepDamage(skill, atk)}。`;
+        : `目前等級的範圍半徑是 ${effectiveRange(skill, rawRange)} 格。`;
     return (
-      `每次普通攻擊命中後，以被打中的敵人所在位置為中心、半徑 ${r} 格內（含邊界），最多 ${n} 名其他敵人各受到這一擊傷害的 ${pct}%；被打中的敵人仍受到完整傷害。` +
+      `戰鬥中，以這位武將為中心、目前射程內（含邊界）的所有地面敵人移動速度降低 ${pct}%（變成原本的 ${round3(skill.speedMultiplier * 100)}%）。` +
       current +
-      "範圍內超過人數時先打離中心最近的，距離相同時先出現在戰場上的敵人優先；每個敵人最多被橫掃一次。" +
-      "主要目標被這一擊打倒時照樣橫掃；橫掃的傷害不會再引發橫掃，也不會增加攻擊次數或改變攻擊間隔。附近沒有其他敵人時就是一般的普通攻擊。" +
-      "橫掃時主要目標周圍會閃過金色的範圍光圈，傷害數字和普通攻擊一樣。只在戰場生效，不影響存檔。"
+      "範圍跟著射程：升級射程變長時範圍一起變大。不需要普通攻擊的目標，也不改變普通攻擊的傷害與攻擊間隔。" +
+      "飛行敵人與免疫減速的敵人不受影響（普通攻擊照常打得到地面上免疫減速的敵人）。" +
+      "敵人離開範圍，或武將移位、被移除、陣亡時減速就解除；和其他減速（武將在道路上的阻擋、步兵塔、另一個減速光環）同時作用時取最強的一個，不會疊加，文士塔的減速另外計算。" +
+      "戰鬥中武將周圍會顯示淺藍色的範圍圈，被減速的敵人有淺藍色的虛線外圈。只在戰場生效，不影響存檔。"
     );
   }
   if (skill.id === "dodge") {
@@ -190,15 +185,8 @@ export function heroSkillPayload(heroId: string): { skill?: HeroSkillPayload } {
       },
     };
   }
-  if (skill.id === "sweep") {
-    return {
-      skill: {
-        id: skill.id,
-        sweep_radius: skill.radiusTiles,
-        sweep_max_targets: skill.maxTargets,
-        sweep_ratio: skill.damageRatio,
-      },
-    };
+  if (skill.id === "slow_aura") {
+    return { skill: { id: skill.id, slow_mult: skill.speedMultiplier } };
   }
   if (skill.id === "dodge") {
     return { skill: { id: skill.id, dodge_chance: skill.dodgeChance } };

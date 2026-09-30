@@ -21,6 +21,11 @@ import {
   isCompatibleEngine,
 } from "../../utils/gameEngine";
 import { heroSkillPayload } from "../../utils/heroSkills";
+import {
+  isPlayable,
+  stageAccess,
+  stageAccessMessage,
+} from "../../utils/stagePlayability";
 import { toBattleRecord } from "../../utils/battleReward";
 import {
   DeployMenuRef,
@@ -42,6 +47,7 @@ import styles from "../../styles/shenmaSanguo.module.css";
 import PlacementMenu from "./PlacementMenu";
 import UpgradePanel from "./UpgradePanel";
 import WaveRejectNotice from "../../components/WaveRejectNotice";
+import StageBlockedNotice from "../../components/StageBlockedNotice";
 import {
   WaveRejectNotice as WaveRejectData,
   waveRejectNotice,
@@ -89,7 +95,12 @@ export default function BattlePageContent() {
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { player, applyBattleResult, writeHold } = usePlayerStore();
-  const { config: staticConfig } = useStaticConfigStore();
+  const {
+    config: staticConfig,
+    error: configError,
+    loadConfig,
+    clearError: clearConfigError,
+  } = useStaticConfigStore();
   const { sfxEnabled, sfxPolyphony } = useSoundSettingsStore();
 
   const [iframeLoading, setIframeLoading] = useState(true);
@@ -137,8 +148,15 @@ export default function BattlePageContent() {
 
   const sendPayload = useCallback(() => {
     if (payloadSent || !player || !staticConfig || !mapId) return;
-    const map = staticConfig.maps.find((m) => m.map_id === mapId);
-    if (!map) return;
+    // 直接進入戰鬥頁也用同一份判斷（utils/stagePlayability）：資料未完成、未解鎖、設定裡沒有的關卡
+    // 不送關卡資料、不開新的一場，畫面顯示原因與返回關卡選擇
+    const target = stageAccess({
+      mapId,
+      config: staticConfig,
+      maxStage: player.max_stage,
+    });
+    if (!isPlayable(target)) return;
+    const map = target.map;
     const iframe = iframeRef.current;
     if (!iframe?.contentWindow) return;
 
@@ -588,6 +606,26 @@ export default function BattlePageContent() {
   const mapName =
     staticConfig?.maps.find((m) => m.map_id === mapId)?.name ?? mapId;
 
+  // 這一關能不能出征（還沒送出關卡資料時才擋；已經在打的一場不受之後的設定更新影響）
+  const access = stageAccess({
+    mapId,
+    config: staticConfig,
+    configError,
+    maxStage: player?.max_stage ?? null,
+  });
+  const blocked =
+    !payloadSent &&
+    (access.status === "config_failed" ||
+      (!!player &&
+        (access.status === "incomplete" || access.status === "locked")));
+  const blockedMessage = blocked
+    ? stageAccessMessage(access, {
+        progressName:
+          staticConfig?.maps.find((m) => m.map_id === player?.max_stage)
+            ?.name ?? player?.max_stage,
+      })
+    : null;
+
   // Godot 的結算不合規則（和 store 結算時同一個驗證）：結算視窗只說明沒有領取，不顯示星數與獎勵
   const resultInvalid = !!battleResult && !toBattleRecord(battleResult);
 
@@ -601,9 +639,15 @@ export default function BattlePageContent() {
       : ""
     : writeHold
       ? "存檔暫停保存"
-      : iframeLoading
-        ? "載入中..."
-        : "準備中...";
+      : blocked
+        ? access.status === "config_failed"
+          ? "設定讀取失敗"
+          : access.status === "locked"
+            ? "尚未解鎖"
+            : "尚未開放"
+        : iframeLoading
+          ? "載入中..."
+          : "準備中...";
 
   return (
     <Container fluid className={styles.battleContainer}>
@@ -740,11 +784,41 @@ export default function BattlePageContent() {
             />
           )}
           <div className={styles.gameWrapper}>
-            {iframeLoading && (
+            {iframeLoading && !blocked && (
               <div className={styles.loadingOverlay}>
                 <Spinner animation="border" variant="light" />
                 <p className={styles.loadingText}>載入戰場中...</p>
               </div>
+            )}
+            {/* 不能出征（關卡資料未完成、未解鎖、遊戲設定讀取失敗）：沒有送出關卡資料、沒有開新的一場 */}
+            {blocked && blockedMessage && !writeHold && (
+              <StageBlockedNotice
+                status={access.status}
+                title={blockedMessage.title}
+                lines={blockedMessage.lines}
+                focusKey={engineStatus}
+                actions={[
+                  ...(access.status === "config_failed"
+                    ? [
+                        {
+                          label: "重新讀取設定",
+                          testId: "stage-blocked-retry",
+                          primary: true,
+                          onClick: () => {
+                            clearConfigError();
+                            void loadConfig();
+                          },
+                        },
+                      ]
+                    : []),
+                  {
+                    label: "返回關卡選擇",
+                    testId: "stage-blocked-back",
+                    primary: access.status !== "config_failed",
+                    onClick: () => router.push("/shenmaSanguo/stages"),
+                  },
+                ]}
+              />
             )}
             {/* 寫入限制中不開戰：不送關卡資料，說明原因（見 types 的 MigrationHold） */}
             {writeHold && !payloadSent && !iframeLoading && (

@@ -172,10 +172,12 @@ func _run() -> void:
 		battle_ended_count += 1
 		last_result = r)
 
-	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃；skills 跑五位武將的技能（馬超的首擊加倍、黃忠、周瑜、關羽、趙雲的閃避）與攻速成長；
+	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜、趙雲的閃避、關羽的減速光環）、橫掃原型與攻速成長；
 	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行；
 	# route 跑飛行與地面的路線無效（出兵前擋下）；blocker 只跑敵人攻擊阻路武將的冷卻；
-	# dodge 只跑趙雲「閃避」；firststrike 只跑首擊加倍（馬超「衝鋒」）
+	# dodge 只跑趙雲「閃避」；firststrike 只跑首擊加倍（馬超「衝鋒」）；
+	# stagedata 跑關卡資料未完成（沒有波次、波次或路線的格式不對）；enemyatk 跑敵人設定的對武將攻擊力；immune 跑免疫減速；
+	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -185,6 +187,7 @@ func _run() -> void:
 			await _r16_attack_speed_cases()
 			await _sweep_cases()
 			await _dodge_cases()
+			await _slow_aura_cases()
 		elif only == "blocker":
 			await _blocker_cases()
 		elif only == "dodge":
@@ -204,8 +207,19 @@ func _run() -> void:
 		elif only == "route":
 			await _flight_route_cases()
 			await _ground_route_cases()
+		elif only == "stagedata":
+			await _stage_data_cases()
+		elif only == "enemyatk":
+			await _enemy_atk_cases()
+		elif only == "immune":
+			await _slow_immune_cases()
+		elif only == "slow":
+			await _slow_source_cases()
+			await _slow_aura_cases()
+		elif only == "aura":
+			await _slow_aura_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura）", false)
 		_finish()
 		return
 
@@ -402,6 +416,17 @@ func _run() -> void:
 	# ── 趙雲「閃避」（每次受到敵人的直接攻擊各自判定，u < 0.15 閃避）──
 	await _dodge_cases()
 
+	# ── 關卡資料未完成（沒有波次時拒絕第 1 波、不改用內建的測試波次）──
+	await _stage_data_cases()
+
+	# ── 敵人設定的對武將攻擊力與免疫減速 ──
+	await _enemy_atk_cases()
+	await _slow_immune_cases()
+
+	# ── 倍率減速的來源與有效期、關羽的減速光環 ──
+	await _slow_source_cases()
+	await _slow_aura_cases()
+
 	_finish()
 
 # ── 輸出 ──
@@ -593,6 +618,8 @@ func _r12_payload(stage_id: String, waves: Array, battle_id: String, team: Array
 		{"hero_id": "zhao_yun", "name": "趙雲", "job": "cavalry", "attack_range": 3.0, "attack_speed": 0.5},
 		{"hero_id": "gan_ning", "name": "甘寧", "job": "cavalry", "attack_range": 3.0, "attack_speed": 0.5},
 		{"hero_id": "guan_yu", "name": "關羽", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5},
+		# 橫掃原型的合成武將（步兵，數值和關羽相同）
+		{"hero_id": "sweep_proto", "name": "原型", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5},
 	]
 	return p
 
@@ -2326,6 +2353,11 @@ class R20Target extends Node2D:
 		pass
 	func clear_slow() -> void:
 		pass
+	## 倍率減速（依來源）：固定步進的目標不移動，只接受呼叫
+	func apply_slow_from(_source: String, _mult: float, _duration: float) -> void:
+		pass
+	func remove_slow_from(_source: String) -> void:
+		pass
 	func apply_stackable_slow(_amount: float, _duration: float) -> void:
 		hits += 1
 	func apply_burn(_damage: float, _ticks: int, _interval: float) -> void:
@@ -2970,15 +3002,21 @@ func _r20_pause_cases() -> void:
 	rec.free()
 	_load(_stage_b())
 
-# ── 橫掃：關羽（普通攻擊命中後，主目標附近半徑 1 格內最多 2 名其他敵人各受這一擊的 50%）──
-# 關羽攻擊力 100、射程 3 格、攻擊間隔 0.5 秒（_r12_payload 的設定）；敵人是不會移動、血量 99999 的 post（需要時直接改血量）。
-# 確定性的單次攻擊：放置後停掉關羽自己的 _process，敵人放好位置後由測試呼叫一次 _process（冷卻為 0 → 立刻攻擊一次），
-# 用每個敵人的血量變化、擊殺數與戰鬥金幣判斷。主目標是第一個生成的敵人（放在關羽右邊 2 格；路線進度相同時打清單裡的第一個）
+# ── 橫掃（技能原型，沒有綁定任何正式武將）：合成的測試武將 sweep_proto（步兵）帶 sweep 參數（普通攻擊命中後，主目標附近半徑 1 格內最多 2 名其他敵人各受這一擊的 50%）──
+# 測試武將攻擊力 100、射程 3 格、攻擊間隔 0.5 秒（_r12_payload 的設定）；敵人是不會移動、血量 99999 的 post（需要時直接改血量）。
+# 確定性的單次攻擊：放置後停掉測試武將自己的 _process，敵人放好位置後由測試呼叫一次 _process（冷卻為 0 → 立刻攻擊一次），
+# 用每個敵人的血量變化、擊殺數與戰鬥金幣判斷。主目標是第一個生成的敵人（放在測試武將右邊 2 格；路線進度相同時打清單裡的第一個）
 func _sw_skill() -> Dictionary:
 	return {"id": "sweep", "sweep_radius": 1.0, "sweep_max_targets": 2, "sweep_ratio": 0.5}
 
+## 橫掃測試用的合成武將（不是正式武將；heroes_config 在 _r12_payload、_fly_payload）
+const SW_HERO: String = "sweep_proto"
+
+func _sw_hero() -> Node:
+	return main._placed_heroes.get(SW_HERO)
+
 func _sw_guan(skill: Variant) -> Dictionary:
-	return _r12_hero("guan_yu", skill)
+	return _r12_hero(SW_HERO, skill)
 
 ## 目前關卡仍存活的敵人，依生成序號排列
 func _sw_enemies() -> Array:
@@ -2989,21 +3027,21 @@ func _sw_enemies() -> Array:
 	out.sort_custom(func(a, b): return a.spawn_seq < b.spawn_seq)
 	return out
 
-## 載入一場只有 n 個 post 的關卡、放置關羽、開戰並等 n 個敵人都出現（出生點離關羽 3.16 格，在射程外）。
-## manual 為 true 時停掉關羽自己的 _process，由測試決定何時攻擊。team 是 null 時用帶橫掃的關羽
+## 載入一場只有 n 個 post 的關卡、放置測試武將、開戰並等 n 個敵人都出現（出生點離測試武將 3.16 格，在射程外）。
+## manual 為 true 時停掉測試武將自己的 _process，由測試決定何時攻擊。team 是 null 時用帶橫掃的測試武將
 func _sw_start(battle_id: String, n: int, team: Variant = null, manual: bool = true) -> Array:
 	var t: Array = team if team != null else [_sw_guan(_sw_skill())]
 	_load(_r12_payload("sweep_a", [[_grp("post", n, 0.02)]], battle_id, t))
-	_r12_place("guan_yu", Vector2i(3, 4))
-	if manual and _guan() != null:
-		_guan().set_process(false)
+	_r12_place(SW_HERO, Vector2i(3, 4))
+	if manual and _sw_hero() != null:
+		_sw_hero().set_process(false)
 	_bm().player_start_battle()
 	await _wait_until(func(): return _sw_enemies().size() == n, 5.0)
 	return _sw_enemies()
 
-## 主目標（第一個）放在關羽右邊 2 格；其他敵人放在主目標加上 offs[i]（格）的位置。回傳中心（主目標的位置）
+## 主目標（第一個）放在測試武將右邊 2 格；其他敵人放在主目標加上 offs[i]（格）的位置。回傳中心（主目標的位置）
 func _sw_place(es: Array, offs: Array) -> Vector2:
-	var g: Node = _guan()
+	var g: Node = _sw_hero()
 	var t: float = float(g.tile_size)
 	var center: Vector2 = g.global_position + Vector2(2.0 * t, 0.0)
 	for i in range(es.size()):
@@ -3021,10 +3059,10 @@ func _sw_fx() -> Array:
 					out.append(k)
 	return out
 
-## 關羽打一次（呼叫一次 _process；冷卻為 0 時 delta 0 就會攻擊，之後每次給一個攻擊間隔）。
+## 測試武將打一次（呼叫一次 _process；冷卻為 0 時 delta 0 就會攻擊，之後每次給一個攻擊間隔）。
 ## 回傳每個敵人這一次受到的傷害（被打倒的記成倒下前的血量）、擊殺數與戰鬥金幣的變化、橫掃統計與範圍效果數的變化
 func _sw_hit(es: Array, delta: float = 0.0) -> Dictionary:
-	var g: Node = _guan()
+	var g: Node = _sw_hero()
 	var before: Array = []
 	for e in es:
 		before.append(e.current_hp if is_instance_valid(e) and not e.is_dead() else 0.0)
@@ -3063,10 +3101,10 @@ func _sw_attacks(r: Dictionary) -> Dictionary:
 
 ## 真引擎：三個敵人（主目標與兩名 0.5 格內的副目標），記錄 sec 秒遊戲時間內每一次攻擊。回傳攻擊時間、每次的 [主, 副] 筆數、橫掃次數
 func _sw_run(es: Array, sec: float) -> Dictionary:
-	var c0: int = _guan().sweep_count
+	var c0: int = _sw_hero().sweep_count
 	var r: Dictionary = await _r19_hits(es, sec)
 	var a: Dictionary = _sw_attacks(r)
-	return {"t": a.t, "per_attack": a.per_attack, "bad": a.bad, "dmax": r.dmax, "count": _guan().sweep_count - c0}
+	return {"t": a.t, "per_attack": a.per_attack, "bad": a.bad, "dmax": r.dmax, "count": _sw_hero().sweep_count - c0}
 
 ## 每次攻擊都是主目標 100 一筆＋副目標 50 兩筆、攻擊時間符合累積時程（第一擊＋k × 0.5 秒，一幀之內）、橫掃次數等於攻擊次數
 func _sw_run_ok(r: Dictionary, n_min: int, n_max: int) -> bool:
@@ -3080,12 +3118,12 @@ func _sw_run_ok(r: Dictionary, n_min: int, n_max: int) -> bool:
 func _sweep_cases() -> void:
 	# 橫掃-0、1：Godot 讀到的參數；附近沒有其他敵人時就是普通攻擊
 	var es: Array = await _sw_start("sweep-1", 2)
-	if es.size() != 2 or _guan() == null:
-		_check("橫掃 前置：等不到敵人或關羽沒有放置", false, {"enemies": es.size()})
+	if es.size() != 2 or _sw_hero() == null:
+		_check("橫掃 前置：等不到敵人或測試武將沒有放置", false, {"enemies": es.size()})
 		return
-	var g: Node = _guan()
+	var g: Node = _sw_hero()
 	var tile: float = float(g.tile_size)
-	_check("橫掃-0 Godot 讀到關羽的橫掃參數（半徑 1 格、最多 2 名、50%）；敵人依出現順序帶生成序號 0、1",
+	_check("橫掃-0 Godot 讀到測試武將的橫掃參數（半徑 1 格、最多 2 名、50%）；敵人依出現順序帶生成序號 0、1",
 		is_equal_approx(g.sweep_radius, 1.0) and g.sweep_max_targets == 2 and is_equal_approx(g.sweep_ratio, 0.5) and es[0].spawn_seq == 0 and es[1].spawn_seq == 1,
 		{"radius": g.sweep_radius, "max": g.sweep_max_targets, "ratio": g.sweep_ratio, "seq": es.map(func(e): return e.spawn_seq)})
 	_sw_place(es, [Vector2.ZERO, Vector2(6.0, 0.0)])
@@ -3120,7 +3158,7 @@ func _sweep_cases() -> void:
 		_sw_place(es, [Vector2.ZERO, Vector2(0.0, 1.0), Vector2(1.02, 0.0)])
 		r4 = _sw_hit(es)
 		_sw_place(es, [Vector2.ZERO, Vector2(-0.6, -0.8), Vector2(0.0, -1.05)])
-		r4b = _sw_hit(es, _guan().attack_speed)
+		r4b = _sw_hit(es, _sw_hero().attack_speed)
 	_check("橫掃-4 半徑含邊界：正下方正好 1 格的敵人受到 50；1.02 格的敵人 0（還有空的名額也不打）",
 		r4.get("dmg") == [100.0, 50.0, 0.0] and r4.get("hits") == 1, r4)
 	_check("橫掃-4b 斜向正好 1 格（0.6, 0.8）受到 50；1.05 格的 0",
@@ -3162,7 +3200,7 @@ func _sweep_cases() -> void:
 		_sw_place(es, [Vector2.ZERO, Vector2(0.3, 0.0), Vector2(0.0, 0.6), Vector2(0.0, -0.9)])
 		r7 = _sw_hit(es)
 		await process_frame
-		r7b = _sw_hit(es, _guan().attack_speed)
+		r7b = _sw_hit(es, _sw_hero().attack_speed)
 	_check("橫掃-7 副目標（血量 50）被橫掃打倒：擊殺 1、金幣 +5（只一次）；這一擊打 0.3、0.6 格，0.9 格的 0",
 		r7.get("dmg") == [100.0, 50.0, 50.0, 0.0] and r7.get("kills") == 1 and r7.get("gold") == BattleManager.GOLD_PER_KILL, r7)
 	_check("橫掃-7b 下一擊：已倒下的敵人不再被選到（不重複擊殺、不重複金幣），名額給 0.9 格的敵人",
@@ -3209,13 +3247,13 @@ func _sweep_cases() -> void:
 		if es.size() == 2:
 			_sw_place(es, [Vector2.ZERO, Vector2(0.5, 0.0)])
 			var rv: Dictionary = _sw_hit(es)
-			plain[k] = {"dmg": rv.dmg, "ratio": _guan().sweep_ratio}
+			plain[k] = {"dmg": rv.dmg, "ratio": _sw_hero().sweep_ratio}
 	var plain_ok: bool = plain.size() == variants.size()
 	for k in plain:
 		plain_ok = plain_ok and plain[k].dmg == [100.0, 0.0] and plain[k].ratio == 0.0
 	_check("橫掃-10 不認得的技能 id（即使帶了橫掃參數）、沒有技能、半徑／人數／比例為 0：都當作普通攻擊（0.5 格的敵人 0）", plain_ok, plain)
 
-	# 橫掃-11：移除關羽、切換關卡、新的一場：範圍效果跟著清除、不再有橫掃傷害、統計從 0 開始
+	# 橫掃-11：移除測試武將、切換關卡、新的一場：範圍效果跟著清除、不再有橫掃傷害、統計從 0 開始
 	es = await _sw_start("sweep-11", 2)
 	var d11: Dictionary = {}
 	if es.size() == 2:
@@ -3232,17 +3270,17 @@ func _sweep_cases() -> void:
 		await _wait(1.2)
 		d11["no_damage_after_remove"] = es.map(func(e): return e.current_hp) == hp_before
 		main._on_payload_received({"type": "update_team", "team_list": [_sw_guan(_sw_skill())]})
-		_r12_place("guan_yu", Vector2i(3, 4))
-		d11["replaced_count"] = _guan().sweep_count if _guan() != null else -1
+		_r12_place(SW_HERO, Vector2i(3, 4))
+		d11["replaced_count"] = _sw_hero().sweep_count if _sw_hero() != null else -1
 		# 放回後照常橫掃（新的武將節點，統計從 0 開始）
-		if _guan() != null:
-			_guan().set_process(false)
+		if _sw_hero() != null:
+			_sw_hero().set_process(false)
 			_sw_place(es, [Vector2.ZERO, Vector2(0.5, 0.0)])
 			d11["replaced_hit"] = _sw_hit(es).dmg
-	_check("橫掃-11 戰鬥中移除關羽：範圍效果跟著清除、之後 1.2 秒沒有任何傷害；放回後統計從 0 開始、照常橫掃",
+	_check("橫掃-11 戰鬥中移除測試武將：範圍效果跟著清除、之後 1.2 秒沒有任何傷害；放回後統計從 0 開始、照常橫掃",
 		d11.get("fx_before") == 1 and d11.get("fx_after_remove") == 0 and d11.get("fx_node_freed") == true and d11.get("no_damage_after_remove") == true and d11.get("replaced_count") == 0 and d11.get("replaced_hit") == [100.0, 50.0], d11)
 	var d11b: Dictionary = {}
-	if _guan() != null:
+	if _sw_hero() != null:
 		var fx_b: Array = _sw_fx()
 		d11b["fx_alive"] = fx_b.size()
 		_load(_stage_b())
@@ -3250,12 +3288,12 @@ func _sweep_cases() -> void:
 		await process_frame
 		d11b["fx_freed"] = fx_b.size() == 1 and not is_instance_valid(fx_b[0])
 		es = await _sw_start("sweep-11b", 2)
-		d11b["new_battle_count"] = _guan().sweep_count if _guan() != null else -1
+		d11b["new_battle_count"] = _sw_hero().sweep_count if _sw_hero() != null else -1
 		d11b["new_battle_fx"] = _sw_fx().size()
-	_check("橫掃-11b 範圍效果還在時切換關卡：效果隨單位一起清除；新的一場的關羽橫掃次數從 0 開始、沒有殘留的效果",
+	_check("橫掃-11b 範圍效果還在時切換關卡：效果隨單位一起清除；新的一場的測試武將橫掃次數從 0 開始、沒有殘留的效果",
 		d11b.get("fx_alive") == 1 and d11b.get("fx_out_of_tree") == true and d11b.get("fx_freed") == true and d11b.get("new_battle_count") == 0 and d11b.get("new_battle_fx") == 0, d11b)
 
-	# ── 真引擎（關羽自己攻擊）：倍率、部署慢速、暫停都用遊戲時間 ──
+	# ── 真引擎（測試武將自己攻擊）：倍率、部署慢速、暫停都用遊戲時間 ──
 	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
 	var original: Node = main.web_bridge
 	main.web_bridge = rec
@@ -3304,9 +3342,9 @@ func _sweep_cases() -> void:
 		if es.size() != 3:
 			continue
 		_r19_speed(rec, sp)
-		var c0: int = _guan().sweep_count
+		var c0: int = _sw_hero().sweep_count
 		_sw_place(es, offs3)
-		await _wait_until(func(): return _guan().sweep_count > c0, 3.0)
+		await _wait_until(func(): return _sw_hero().sweep_count > c0, 3.0)
 		var fxs: Array = _sw_fx()
 		if fxs.is_empty():
 			continue
@@ -3329,18 +3367,18 @@ func _sweep_cases() -> void:
 	es = await _sw_start("sweep-15", 3, null, false)
 	var d15: Dictionary = {}
 	if es.size() == 3:
-		var c0: int = _guan().sweep_count
+		var c0: int = _sw_hero().sweep_count
 		_sw_place(es, offs3)
-		await _wait_until(func(): return _guan().sweep_count > c0, 3.0)
+		await _wait_until(func(): return _sw_hero().sweep_count > c0, 3.0)
 		var fxs: Array = _sw_fx()
 		d15["fx"] = fxs.size()
 		if fxs.size() == 1:
 			var f: Node = fxs[0]
 			var p: Dictionary = _r20_pause(rec, true)
 			d15["paused_reply"] = p.get("paused")
-			var b: Array = [f.elapsed, _guan()._atk_timer, es.map(func(e): return e.current_hp), _gt(), _guan().sweep_count]
+			var b: Array = [f.elapsed, _sw_hero()._atk_timer, es.map(func(e): return e.current_hp), _gt(), _sw_hero().sweep_count]
 			await _wait_real(0.6)
-			var a: Array = [f.elapsed if is_instance_valid(f) else -1.0, _guan()._atk_timer, es.map(func(e): return e.current_hp), _gt(), _guan().sweep_count]
+			var a: Array = [f.elapsed if is_instance_valid(f) else -1.0, _sw_hero()._atk_timer, es.map(func(e): return e.current_hp), _gt(), _sw_hero().sweep_count]
 			d15["frozen"] = is_instance_valid(f) and b == a
 			d15["before"] = b
 			d15["after"] = a
@@ -3352,9 +3390,9 @@ func _sweep_cases() -> void:
 			await _wait_until_real(func(): return wr.get_ref() == null or wr.get_ref().is_queued_for_deletion(), 3.0)
 			d15["fx_left"] = snappedf(left, 0.0001)
 			d15["fx_gone_after"] = snappedf(_gt() - tr, 0.0001)
-			var c1: int = _guan().sweep_count
-			await _wait_until(func(): return _guan().sweep_count > c1, 3.0)
-			d15["resumed_sweep"] = _guan().sweep_count > c1
+			var c1: int = _sw_hero().sweep_count
+			await _wait_until(func(): return _sw_hero().sweep_count > c1, 3.0)
+			d15["resumed_sweep"] = _sw_hero().sweep_count > c1
 	_check("橫掃-15 手動暫停 0.6 秒：範圍效果、攻擊冷卻、三個敵人的血量、遊戲時間與橫掃次數都不變；繼續後效果照剩下的時間消失，之後照常橫掃",
 		d15.get("fx") == 1 and d15.get("paused_reply") == true and d15.get("frozen") == true and float(d15.get("fx_gone_after", 99.0)) <= float(d15.get("fx_left", 0.0)) + 0.1 and d15.get("resumed_sweep") == true, d15)
 
@@ -3366,7 +3404,8 @@ func _sweep_cases() -> void:
 # ── 飛行敵人與對空 ──
 # 地圖：path_a 從 (0,5) 往右到 (4,5)、往上繞到第 2 列、再回到第 5 列到終點 (13,5)。飛行敵人沿第 5 列直線飛（13 格），
 # 地面沿折線走（19 格）；(2,5) 是兩者都會經過的道路格。建築格：第 7 列、第 4 列的 5～8 欄、第 0 列的 3～10 欄
-# 武將：每種職業一位（射程 3 格、攻擊間隔 0.5 秒、攻擊力 100）；周瑜（法師）與關羽（步兵）另外用來測火攻與橫掃
+# 武將：每種職業一位（射程 3 格、攻擊間隔 0.5 秒、攻擊力 100）；周瑜（法師）另外用來測火攻、合成的 sweep_proto（步兵）測橫掃原型，
+# 關羽（步兵）用在免疫減速與減速光環
 const FLY_JOBS: Dictionary = {
 	"fly_archer": "archer", "fly_mage": "mage", "fly_inf": "infantry", "fly_cav": "cavalry",
 	"fly_art": "artillery", "fly_odd": "spear", "fly_none": null,
@@ -3400,6 +3439,7 @@ func _fly_payload(battle_id: String, waves: Array, team: Array = []) -> Dictiona
 		hc.append(_fly_hero_cfg(hid, FLY_JOBS[hid]))
 	hc.append(_fly_hero_cfg("zhou_yu", "mage"))
 	hc.append(_fly_hero_cfg("guan_yu", "infantry"))
+	hc.append(_fly_hero_cfg(SW_HERO, "infantry"))
 	p["heroes_config"] = hc
 	p["map"]["path_json"] = _fly_path_json()
 	return p
@@ -3631,9 +3671,9 @@ func _flying_cases() -> void:
 	_check("飛行-5a 砲兵塔的範圍傷害：主要目標與 0.5 格內的另一個地面各受 80，0.5 格內的飛行 0（範圍傷害先過能否攻擊）",
 		d5.has("artillery") and float(d5.artillery.dmg.g1) > 0.0 and is_equal_approx(float(d5.artillery.dmg.g1), float(d5.artillery.dmg.g2)) and float(d5.artillery.dmg.f) == 0.0, d5.get("artillery"))
 
-	# 飛行-5b：關羽（步兵）的橫掃不掃到飛行：主目標（地面）0.5 格內有一個飛行、一個地面 → 地面副目標 50、飛行 0，橫掃 1 次只打到 1 名
-	es = await _fly_start("fly-5b", [_grp("gnd_post", 2, 0.02), _grp("fly_post", 1, 0.02)], 3, [_r12_hero("guan_yu", _sw_skill())], {"guan_yu": Vector2i(6, 4)})
-	var g5: Node = _fly_hero("guan_yu")
+	# 飛行-5b：步兵的橫掃（合成的測試武將）不掃到飛行：主目標（地面）0.5 格內有一個飛行、一個地面 → 地面副目標 50、飛行 0，橫掃 1 次只打到 1 名
+	es = await _fly_start("fly-5b", [_grp("gnd_post", 2, 0.02), _grp("fly_post", 1, 0.02)], 3, [_r12_hero(SW_HERO, _sw_skill())], {SW_HERO: Vector2i(6, 4)})
+	var g5: Node = _fly_hero(SW_HERO)
 	var r5b: Dictionary = {}
 	if es.size() == 3 and g5 != null:
 		g5.set_process(false)
@@ -3649,7 +3689,7 @@ func _flying_cases() -> void:
 		var h0: int = g5.sweep_hits
 		g5._process(0.0)
 		r5b = {"dmg": [before[0] - gs[0].current_hp, before[1] - gs[1].current_hp, before[2] - fs[0].current_hp], "count": g5.sweep_count - c0, "hits": g5.sweep_hits - h0}
-	_check("飛行-5b 關羽（步兵）的橫掃：主目標 100、0.5 格內的地面副目標 50、0.5 格內的飛行 0；橫掃 1 次、只打到 1 名（飛行不佔名額）",
+	_check("飛行-5b 步兵的橫掃（測試武將）：主目標 100、0.5 格內的地面副目標 50、0.5 格內的飛行 0；橫掃 1 次、只打到 1 名（飛行不佔名額）",
 		r5b.get("dmg") == [100.0, 50.0, 0.0] and r5b.get("count") == 1 and r5b.get("hits") == 1, r5b)
 
 	# 飛行-6：周瑜（法師）打得到飛行，火攻照樣附加：第一擊後就在灼燒（每跳 20＝攻擊力 100 × 20%）；
@@ -5199,6 +5239,1278 @@ func _dodge_cases() -> void:
 		d8 = {"before": b8, "wave1": wave1, "after_upgrade_move": after_up, "wave2": wave2, "miss_before_new": miss_before, "new_battle": fresh}
 	_check("閃避-8 升級（等級 2）、移位、跨到第 2 波：機率維持 0.15、判定紀錄接續（不重設）；新的一場是新的武將：判定與閃避次數從 0 開始、上一場的「MISS」不殘留、沒有測試替身",
 		ok8, d8)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+
+# ── 關卡資料未完成：沒有波次、波次或路線的格式不對 ───────────────────────
+# 遊戲收到沒有波次的關卡資料時，不改用內建的測試波次、不自動勝利、也不會按了迎戰沒有反應：開戰（迎戰或開啟自動）時拒絕第 1 波，
+# 送出可辨識的 wave_rejected（missing），留在備戰、城池不扣血、沒有結算；切到有效關卡照常。
+# 路線空白、無法解析或格式不對時，每一組都因為路線沒有路點被略過（沿用既有的拒絕）。開發用的內建關卡只在非 Web 平台明確送出
+
+## 關卡資料：路線與波次可以是任何值（照原樣放進 map），extra_enemies 加在敵人設定後面
+func _sd_payload(battle_id: String, path_json: Variant, waves: Variant, extra_enemies: Array = []) -> Dictionary:
+	var p: Dictionary = _with_id(_payload("sd_" + battle_id, []), battle_id)
+	p["map"]["path_json"] = path_json
+	p["map"]["waves"] = waves
+	for e in extra_enemies:
+		p["enemies_config"].append(e)
+	return p
+
+## 經過真實的 JSON 路徑（數字都是 float）載入一場，再開戰 presses 次（auto 時改成開啟自動），
+## 回傳 Godot 讀到的總波數與波次資料數、之後的狀態、拒絕信號、wave_rejected、結算與場上的敵人
+func _sd_run(rec: Node, payload: Dictionary, presses: int = 1, auto: bool = false) -> Dictionary:
+	var n_msg: int = rec.sent_wave_rejects.size()
+	var n_res: int = rec.sent_results.size()
+	var ended0: int = battle_ended_count
+	_r19_js(rec, payload.duplicate(true))
+	var loaded: Dictionary = {"bid": _bm().battle_id, "total": _bm().total_waves, "waves": _wm()._waves_data.size(), "state": _bm().game_state}
+	var sig: Array = []
+	var on_reject := func(n: int, _r: String): sig.append(n)
+	_bm().wave_start_rejected.connect(on_reject)
+	for i in range(presses):
+		if auto:
+			_bm().toggle_auto_mode()
+		else:
+			_bm().player_start_battle()
+		await _wait(0.3)
+	await _wait(0.5)
+	_bm().wave_start_rejected.disconnect(on_reject)
+	return {"loaded": loaded, "state": _state(), "sig": sig, "msgs": rec.sent_wave_rejects.slice(n_msg),
+		"results": rec.sent_results.size() - n_res, "ended": battle_ended_count - ended0, "nodes": _sw_enemies().size()}
+
+## 拒絕了第 1 波 n 次：備戰、波次 0、城池 20、沒有自動、場上沒有敵人、沒有結算；每次的拒絕信號與 wave_rejected 都是這一場的第 1 波，
+## missing 與逐組的原因代碼符合
+func _sd_rejected(r: Dictionary, bid: String, n: int, missing: bool, reasons: Array = []) -> bool:
+	var s: Dictionary = r.state
+	if not (s.state == 1 and s.wave == 0 and s.hp == MAX_HP and not s.auto and s.active == 0 and r.nodes == 0 and r.results == 0 and r.ended == 0):
+		return false
+	if r.sig.size() != n or r.msgs.size() != n:
+		return false
+	for k in range(n):
+		var m: Dictionary = r.msgs[k]
+		if r.sig[k] != 1 or m.get("battle_id") != bid or int(m.get("wave", -1)) != 1 or m.get("missing") != missing:
+			return false
+		if _route_reasons(m).map(func(x): return x[3]) != reasons:
+			return false
+	return true
+
+func _stage_data_cases() -> void:
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+	var good_wave: Array = [{"wave": 1, "enemies": [_grp("c_fast", 1, 0.1)]}]
+	# 內建測試波次用過的敵人（soldier、cavalry、general）：如果遊戲偷偷改用內建的波次，有了這些設定就會真的開戰
+	var builtin: Array = [{"enemy_id": "soldier", "name": "兵", "hp": 100.0, "speed": 60.0}, {"enemy_id": "cavalry", "name": "騎", "hp": 100.0, "speed": 60.0},
+		{"enemy_id": "general", "name": "將", "hp": 100.0, "speed": 60.0}]
+
+	# 資料-9：開發用的內建關卡保留明確的入口（非 Web 平台的測試 payload，自己帶 3 波），不是替補。
+	# 放在最前面：它沒有音效設定，會開始播背景音樂，之後的關卡資料（音效關閉）會停掉，不留到測試結束
+	await main._inject_test_payload()
+	var d9: Dictionary = {"stage": _bm().stage_id, "total": _bm().total_waves, "waves": _wm()._waves_data.size()}
+	_check("資料-9 開發用的內建關卡保留明確的入口（非 Web 平台的測試 payload，自己帶 3 波）：載入後關卡 chapter1_1、總波數 3", d9.stage == "chapter1_1" and d9.total == 3 and d9.waves == 3, d9)
+
+	# 資料-1：沒有波次（空陣列）、路線有效：總波數 0、波次資料 0 筆（沒有補上內建的測試波次）；按迎戰拒絕第 1 波（missing）
+	var r1: Dictionary = await _sd_run(rec, _sd_payload("sd-1", _path_json(), []))
+	_check("資料-1 沒有波次的關卡：Godot 的總波數 0、沒有補上內建的測試波次；按迎戰拒絕第 1 波（wave_rejected 帶這一場的 battle_id、第 1 波、missing、沒有逐組原因），備戰、城池 20、沒有敵人、沒有結算",
+		r1.loaded.bid == "sd-1" and r1.loaded.total == 0 and r1.loaded.waves == 0 and r1.loaded.state == 1 and _sd_rejected(r1, "sd-1", 1, true), r1)
+
+	# 資料-2：同上，但敵人設定裡有內建測試波次用的敵人：照樣拒絕、不出兵（改用內建的波次時這一關會真的開戰）
+	var r2: Dictionary = await _sd_run(rec, _sd_payload("sd-2", _path_json(), [], builtin))
+	_check("資料-2 沒有波次、敵人設定裡有內建測試波次的敵人（soldier、cavalry、general）：照樣拒絕第 1 波、不出兵、沒有結算（不偷偷用內建的波次開戰）",
+		r2.loaded.total == 0 and _sd_rejected(r2, "sd-2", 1, true), r2)
+
+	# 資料-3：開啟自動：拒絕第 1 波並關閉自動，不自動勝利
+	var r3: Dictionary = await _sd_run(rec, _sd_payload("sd-3", _path_json(), [], builtin), 1, true)
+	_check("資料-3 沒有波次、開啟自動：拒絕第 1 波並關閉自動、備戰、沒有結算（不自動勝利）", _sd_rejected(r3, "sd-3", 1, true), r3)
+
+	# 資料-4：不會一直無聲備戰：連按三次迎戰，每次都拒絕並送出原因
+	var r4: Dictionary = await _sd_run(rec, _sd_payload("sd-4", _path_json(), []), 3)
+	_check("資料-4 沒有波次、連按三次迎戰：每次都拒絕並送出 wave_rejected（3 則，都是第 1 波、missing），不會按了沒有反應；仍在備戰、沒有結算", _sd_rejected(r4, "sd-4", 3, true), r4)
+
+	# 資料-5：波次的格式不對：載入不出錯、總波數 0，按迎戰拒絕第 1 波
+	var bad_waves: Array = [null, "wave1", 123, [1, "x", null], [{"wave": null, "enemies": [_grp("c_fast", 1, 0.1)]}], [{"wave": 0, "enemies": [_grp("c_fast", 1, 0.1)]}]]
+	var d5: Array = []
+	var ok5: bool = true
+	for k in range(bad_waves.size()):
+		var bid5: String = "sd-5-%d" % k
+		var r5: Dictionary = await _sd_run(rec, _sd_payload(bid5, _path_json(), bad_waves[k]))
+		var ok: bool = r5.loaded.bid == bid5 and r5.loaded.total == 0 and _sd_rejected(r5, bid5, 1, true)
+		ok5 = ok5 and ok
+		d5.append({"waves": str(bad_waves[k]), "ok": ok, "total": r5.loaded.total, "sig": r5.sig, "state": r5.state.state, "msgs": r5.msgs})
+	_check("資料-5 波次的格式不對（null、字串、數字、只有不是物件的項目、編號 null、編號 0）：載入不出錯、總波數 0；按迎戰拒絕第 1 波（missing）、沒有結算", ok5, d5)
+
+	# 資料-6：第 1 波的敵人組格式不對：當作沒有組 → 拒絕第 1 波（有這一波，不是 missing）
+	var r6a: Dictionary = await _sd_run(rec, _sd_payload("sd-6a", _path_json(), [{"wave": 1, "enemies": "c_fast"}]))
+	var r6b: Dictionary = await _sd_run(rec, _sd_payload("sd-6b", _path_json(), [{"wave": 1, "enemies": [1, "c_fast", null, []]}]))
+	_check("資料-6 第 1 波的敵人組格式不對（enemies 是字串；組是數字、字串、null、陣列）：載入與開戰都不出錯，總波數 1、拒絕第 1 波（不是缺波次、沒有逐組原因）、沒有結算",
+		r6a.loaded.total == 1 and _sd_rejected(r6a, "sd-6a", 1, false) and r6b.loaded.total == 1 and _sd_rejected(r6b, "sd-6b", 1, false), {"a": r6a, "b": r6b})
+
+	# 資料-7：路線空白或格式不對、波次有效：每一組都因為路線沒有路點被略過 → 拒絕第 1 波（path_empty）
+	var bad_paths: Array = [{"paths": [], "spawn": [], "base": []}, {}, null, "{bad json", 123, {"paths": {"path_a": "x"}}, {"paths": {"path_a": [7, [1], ["a", null]]}}]
+	var d7: Array = []
+	var ok7: bool = true
+	for k in range(bad_paths.size()):
+		var bid7: String = "sd-7-%d" % k
+		var r7: Dictionary = await _sd_run(rec, _sd_payload(bid7, bad_paths[k], good_wave))
+		var ok: bool = r7.loaded.total == 1 and _sd_rejected(r7, bid7, 1, false, ["path_empty"])
+		ok7 = ok7 and ok
+		d7.append({"path_json": str(bad_paths[k]), "ok": ok, "sig": r7.sig, "msgs": r7.msgs, "state": r7.state})
+	_check("資料-7 路線空白或格式不對（GAS 的空白形狀、空物件、null、無法解析的字串、數字、路線不是陣列、路點的格式不對），波次有效：載入不出錯；按迎戰時這一組因為路線沒有路點被略過 → 拒絕第 1 波（path_empty）、沒有結算", ok7, d7)
+
+	# 資料-8：拒絕之後切到有效關卡照常開戰
+	_r19_js(rec, _sd_payload("sd-8", _path_json(), good_wave))
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() >= 1 or _bm().game_state == 3, 3.0)
+	var d8: Dictionary = {"bid": _bm().battle_id, "state": _bm().game_state, "wave": _bm().current_wave, "total": _bm().total_waves}
+	_check("資料-8 拒絕之後切到有效關卡：新的一場照常開戰（第 1 波、總波數 1）", d8.bid == "sd-8" and d8.total == 1 and d8.wave == 1 and (d8.state == 2 or d8.state == 3), d8)
+	await _wait_until(func(): return _bm().game_state == 3, 5.0)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 敵人設定的對武將攻擊力（atk）────────────────────────────────────────
+# 被武將擋住的敵人每次攻擊那位武將的攻擊力：有限、不小於 0 的數字照用（包括 0），其他一律 20；傷害照武將的防禦公式、趙雲可以閃避；
+# 每次攻擊照樣用掉冷卻（atk 0 也是），攻擊間隔不變；攻城、擊殺金幣、結算不受影響
+
+## 實際引擎用的敵人設定（全部經過 JSON 路徑送進去）
+const ATK_ENEMIES: Array = [
+	{"enemy_id": "atk32_run", "name": "A", "hp": 99999.0, "speed": 240.0, "atk": 32},
+	{"enemy_id": "atk120_run", "name": "B", "hp": 99999.0, "speed": 240.0, "atk": 120},
+	{"enemy_id": "atk0_run", "name": "C", "hp": 99999.0, "speed": 240.0, "atk": 0},
+	{"enemy_id": "atkstr_run", "name": "D", "hp": 99999.0, "speed": 240.0, "atk": "32"},
+	{"enemy_id": "atk120_fly", "name": "E", "hp": 99999.0, "speed": 40.0, "atk": 120, "movement_type": "flying"},
+	{"enemy_id": "atk120_leak", "name": "F", "hp": 99999.0, "speed": 2000.0, "atk": 120},
+	{"enemy_id": "atk120_soft", "name": "G", "hp": 50.0, "speed": 240.0, "atk": 120},
+]
+
+## 兩個清單逐項近似相等
+func _approx_list(a: Array, b: Array) -> bool:
+	if a.size() != b.size():
+		return false
+	for i in range(a.size()):
+		if not is_equal_approx(float(a[i]), float(b[i])):
+			return false
+	return true
+
+## 固定步進用的敵人（和阻路測試相同，停在第 3 格）：cfg 另外帶 atk 等欄位
+func _atk_enemy(holder: Node, map: BlkMap, extra: Dictionary) -> Node:
+	var e: Node = load("res://entities/enemy/Enemy.gd").new()
+	holder.add_child(e)
+	e.set_physics_process(false)
+	var cfg: Dictionary = {"enemy_id": "atk", "hp": 99999.0, "speed": 0.0}
+	cfg.merge(extra, true)
+	e.setup(cfg, [Vector2(0.5 * map.tile, 0.0), Vector2(12.5 * map.tile, 0.0)])
+	e.position = Vector2(3.5 * map.tile, 0.0)
+	e._game_map = map
+	return e
+
+## 固定步進 10 秒（每秒 60 步）被同一位武將（防禦 50）擋住：每一次攻擊（敵人的攻擊次數）發生的步數與這一擊扣的血；
+## 沒有攻擊卻扣血時記 -1。dodge_us 不是空的時，武將會閃避（機率 0.15，抽樣值依序循環）
+func _atk_steps(holder: Node, extra: Dictionary, dodge_us: Array = []) -> Dictionary:
+	var map := BlkMap.new()
+	holder.add_child(map)
+	var e: Node = _atk_enemy(holder, map, extra)
+	var h: Node = _blk_hero(holder, map, 3)
+	var st: Dictionary = {"i": 0, "us": dodge_us}
+	if not dodge_us.is_empty():
+		h.dodge_chance = 0.15
+		h.dodge_roll_override = _dodge_seq(st)
+	var ev: Array = []
+	var drops: Array = []
+	for i in range(1, 601):
+		var hp0: float = h.current_hp
+		var n0: int = e.blocker_attacks
+		e._physics_process(1.0 / 60.0)
+		if e.blocker_attacks > n0:
+			ev.append(i)
+			drops.append(snappedf(hp0 - h.current_hp, 0.0001))
+		elif h.current_hp != hp0:
+			drops.append(-1.0)
+	return {"atk": e.blocker_atk, "ev": ev, "drops": drops, "rolls": h.dodge_rolls, "hp": h.current_hp}
+
+## 實際引擎（經過真實的 JSON 路徑：數字是 float）：一波、放置阻路的武將（防禦 50、射程 0.3 格，打不到擋住的敵人）、
+## speed 不是 1 時切換速度、開戰並等第一個敵人被擋住
+func _atk_start(rec: Node, battle_id: String, groups: Array, cells: Dictionary, speed: int = 1, wait_block: bool = true) -> Node:
+	var p: Dictionary = _blk_payload(battle_id, [groups], 1000000.0)
+	for c in ATK_ENEMIES:
+		p["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p)
+	for hid in cells:
+		_r12_place(hid, cells[hid])
+	if speed != 1:
+		_r19_speed(rec, float(speed))
+	_bm().player_start_battle()
+	await _wait_until(func(): return _first_enemy() != null, 5.0)
+	var e: Node = _first_enemy()
+	if e != null and wait_block and not cells.is_empty():
+		await _wait_until(func(): return is_instance_valid(e) and e._blocker != null, 5.0)
+	return e
+
+func _enemy_atk_cases() -> void:
+	var holder := Node2D.new()
+	holder.visible = false
+	root.add_child(holder)
+
+	# 攻擊-0：設定值的判讀（和 Web 的 utils/enemyCombat 相同）
+	var parse_cases: Array = [
+		[{"atk": 20.0}, 20.0], [{"atk": 32}, 32.0], [{"atk": 120.0}, 120.0], [{"atk": 0}, 0.0], [{"atk": 0.0}, 0.0], [{"atk": 12.5}, 12.5], [{"atk": 1000000.0}, 1000000.0],
+		[{}, 20.0], [{"atk": null}, 20.0], [{"atk": ""}, 20.0], [{"atk": "32"}, 20.0], [{"atk": -5.0}, 20.0], [{"atk": NAN}, 20.0], [{"atk": INF}, 20.0], [{"atk": -INF}, 20.0],
+		[{"atk": true}, 20.0], [{"atk": [32]}, 20.0], [{"atk": {"v": 32}}, 20.0],
+		[JSON.parse_string("{\"atk\": 32}"), 32.0], [JSON.parse_string("{\"atk\": 0}"), 0.0], [JSON.parse_string("{\"atk\": \"32\"}"), 20.0],
+	]
+	var bad0: Array = []
+	for c in parse_cases:
+		var got: float = Enemy.blocker_atk_of(c[0])
+		if not (got == float(c[1])):
+			bad0.append({"cfg": str(c[0]), "got": got, "want": c[1]})
+	_check("攻擊-0 設定的 atk 判讀（和 Web 相同）：20、32（整數）、120、0（整數與小數）、12.5、1000000 照用、不設上限；沒有欄位、null、空白、字串 \"32\"、負數、NaN、無限大、布林、陣列、物件一律 20；經過 JSON 的數字照用",
+		bad0.is_empty(), bad0)
+
+	# 攻擊-1：固定步進 10 秒、阻路的武將防禦 50：每擊扣 atk ×（1 − 50 ÷ 150）；攻擊的步數和預設完全相同（atk 0 也照樣每 1 秒一次）
+	var base: Dictionary = _atk_steps(holder, {})
+	var d1: Dictionary = {"default_steps": base.ev}
+	var ok1: bool = base.ev.size() >= 9 and base.ev[0] == 2 and base.atk == 20.0
+	for atk in [20.0, 32.0, 120.0, 0.0]:
+		var r: Dictionary = _atk_steps(holder, {"atk": atk})
+		var per: float = atk * (1.0 - 50.0 / 150.0)
+		var all_per: bool = r.drops.all(func(x): return is_equal_approx(float(x), snappedf(per, 0.0001)))
+		var lost: float = 1000000.0 - float(r.hp)
+		var ok: bool = r.atk == atk and r.ev == base.ev and all_per and is_equal_approx(lost + 1.0, float(r.ev.size()) * per + 1.0)
+		ok1 = ok1 and ok
+		d1[str(atk)] = {"atk": r.atk, "attacks": r.ev.size(), "same_steps": r.ev == base.ev, "per_hit": r.drops.slice(0, 3), "lost": snappedf(lost, 0.0001)}
+	_check("攻擊-1 固定步進 10 秒、阻路的武將防禦 50：atk 20／32／120／0 每擊各扣 13.333／21.333／80／0（照防禦公式）；攻擊的步數和預設完全相同（第 2 步起每 1 秒一次），atk 0 也照樣用掉冷卻、不高速重試",
+		ok1, d1)
+
+	# 攻擊-2：沒有有效 atk 的設定照預設 20
+	var ok2: bool = true
+	var d2: Dictionary = {}
+	for k in [["missing", {}], ["blank", {"atk": ""}], ["str", {"atk": "32"}], ["neg", {"atk": -5.0}], ["nan", {"atk": NAN}], ["inf", {"atk": INF}], ["null", {"atk": null}]]:
+		var r: Dictionary = _atk_steps(holder, k[1])
+		var ok: bool = r.atk == 20.0 and r.ev == base.ev and r.drops.all(func(x): return is_equal_approx(float(x), 13.3333))
+		ok2 = ok2 and ok
+		d2[k[0]] = {"atk": r.atk, "attacks": r.ev.size(), "per_hit": r.drops.slice(0, 2)}
+	_check("攻擊-2 沒有有效的 atk（沒有欄位、空白、字串 \"32\"、負數、NaN、無限大、null）：照預設 20，每擊 13.333、攻擊的步數相同", ok2, d2)
+
+	# 攻擊-3：會閃避的武將（抽樣值 0、0.9 交替）：atk 32 時閃避的那幾擊不扣血、其餘 21.333；atk 0 的攻擊不判定閃避
+	var r3a: Dictionary = _atk_steps(holder, {"atk": 32.0}, [0.0, 0.9])
+	var r3b: Dictionary = _atk_steps(holder, {"atk": 0.0}, [0.0, 0.9])
+	var want3: Array = []
+	for k in range(r3a.ev.size()):
+		want3.append(0.0 if k % 2 == 0 else 21.3333)
+	var ok3: bool = r3a.ev == base.ev and _approx_list(r3a.drops, want3) and r3a.rolls == r3a.ev.size() and r3b.ev == base.ev and r3b.rolls == 0 and r3b.hp == 1000000.0
+	_check("攻擊-3 會閃避的武將（抽樣值 0、0.9 交替）：atk 32 時閃避的那幾擊不扣血、其餘每擊 21.333、判定次數＝攻擊次數、步數不變；atk 0 的攻擊照樣每 1 秒一次，但沒有有效傷害、不判定閃避（不抽亂數）、血量不變",
+		ok3, {"a": {"attacks": r3a.ev.size(), "drops": r3a.drops.slice(0, 4), "rolls": r3a.rolls}, "b": {"attacks": r3b.ev.size(), "rolls": r3b.rolls, "hp": r3b.hp}})
+
+	# 攻擊-4：冷卻途中阻擋的武將死亡、同一格換成另一位：下一位的第一擊在上一擊的 1 秒後，照樣扣 21.333（換目標不重設冷卻、不改攻擊力）
+	var map4 := BlkMap.new()
+	holder.add_child(map4)
+	var e4: Node = _atk_enemy(holder, map4, {"atk": 32.0})
+	var a4: Node = _blk_hero(holder, map4, 3)
+	var r4a: Dictionary = _blk_steps(e4, [a4], 1.0 / 60.0, 25)
+	a4.take_damage(1e12)
+	var b4: Node = _blk_hero(holder, map4, 3)
+	var r4b: Dictionary = _blk_steps(e4, [a4, b4], 1.0 / 60.0, 100, 26)
+	var b_ev: Array = r4b.ev.filter(func(x): return int(x[1]) == 1).map(func(x): return int(x[0]))
+	var ok4: bool = r4a.ev.size() == 1 and int(r4a.ev[0][0]) == 2 and b_ev.size() == 2 and b_ev[0] >= 62 and b_ev[0] <= 63 and is_equal_approx(1000000.0 - b4.current_hp, 2.0 * 32.0 * (1.0 - 50.0 / 150.0))
+	_check("攻擊-4 冷卻途中阻擋的武將死亡、同一格換成另一位：下一位的第一擊在上一擊的 1 秒後（第 62～63 步），兩擊各扣 21.333（換目標不重設冷卻、不改攻擊力）",
+		ok4, {"first": r4a.ev, "b_attacks": b_ev, "b_lost": snappedf(1000000.0 - b4.current_hp, 0.0001)})
+	holder.queue_free()
+
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 攻擊-5：實際引擎（經過 JSON，atk 是 32.0）1× 與 2×：從第一擊起 10.5 秒遊戲時間內都是 11 次、每次扣 21.333；累積時程不漂移；快照的 enemy_atk 是 32
+	var d5: Dictionary = {}
+	var ok5: bool = true
+	for sp in [1, 2]:
+		var e5: Node = await _atk_start(rec, "atk-5x%d" % sp, [_grp("atk32_run", 1, 0.02)], {"blk_a": Vector2i(4, 5)}, sp)
+		var a5: Node = _fly_hero("blk_a")
+		if e5 == null or a5 == null:
+			ok5 = false
+			d5[sp] = {"setup": false}
+			continue
+		var snap5: Dictionary = _fly_snapshot(rec)
+		var snap_atk: Variant = snap5.get("enemy_atk", {}).get(str(e5.get_instance_id()), null)
+		var tr5: Dictionary = await _dodge_track(e5, a5, 11.5)
+		var ts: Array = tr5.ev.map(func(x): return float(x.t))
+		var win: Array = ts.filter(func(t): return t - ts[0] < 10.5) if not ts.is_empty() else []
+		var per_ok: bool = not tr5.ev.is_empty() and tr5.ev.all(func(x): return is_equal_approx(float(x.lost), 21.3333))
+		var spread: float = _r20_spread(ts, 1.0)
+		ok5 = ok5 and win.size() == 11 and per_ok and not tr5.multi and is_instance_valid(e5) and e5.blocker_atk == 32.0 and snap_atk == 32.0 and spread >= 0.0 and spread <= float(tr5.smax) + 0.0005
+		d5[sp] = {"in_window": win.size(), "per_hit": tr5.ev.slice(0, 3).map(func(x): return x.lost), "snapshot_atk": snap_atk,
+			"spread": snappedf(spread, 0.0001), "smax": snappedf(float(tr5.smax), 0.0001), "multi": tr5.multi}
+	_r19_speed(rec, 1.0)
+	_check("攻擊-5 實際引擎（經過 JSON，atk 32）1× 與 2×：從第一擊起 10.5 秒遊戲時間內都是 11 次攻擊、每次扣 21.333（防禦 50）；累積時程（第一擊＋k × 1 秒）不漂移、一步最多一擊；快照的 enemy_atk 是 32",
+		ok5, d5)
+
+	# 攻擊-6：實際引擎 atk 0：武將的血量一直不變、沒有閃避判定；攻擊照樣每 1 秒一次（3.2 秒內 3～4 次），不會每一步都攻擊
+	var e6: Node = await _atk_start(rec, "atk-6", [_grp("atk0_run", 1, 0.02)], {"blk_a": Vector2i(4, 5)})
+	var a6: Node = _fly_hero("blk_a")
+	var d6: Dictionary = {}
+	var ok6: bool = false
+	if e6 != null and a6 != null:
+		var tr6: Dictionary = await _dodge_track(e6, a6, 3.2)
+		ok6 = e6.blocker_atk == 0.0 and tr6.ev.size() >= 3 and tr6.ev.size() <= 4 and not tr6.multi and a6.current_hp == a6.max_hp and tr6.ev.all(func(x): return float(x.lost) == 0.0)
+		d6 = {"atk": e6.blocker_atk, "attacks": tr6.ev.size(), "hp": a6.current_hp, "max_hp": a6.max_hp}
+	_check("攻擊-6 實際引擎 atk 0：3.2 秒內照樣每 1 秒攻擊一次（3～4 次，不會每一步都攻擊），武將的血量不變", ok6, d6)
+
+	# 攻擊-7：實際引擎 atk 120 跨手動暫停：每擊扣 80；暫停 1.2 秒（牆鐘）期間沒有攻擊，繼續後下一擊在上一擊的 1 秒後
+	var e7: Node = await _atk_start(rec, "atk-7", [_grp("atk120_run", 1, 0.02)], {"blk_a": Vector2i(4, 5)})
+	var a7: Node = _fly_hero("blk_a")
+	var d7: Dictionary = {}
+	var ok7: bool = false
+	if e7 != null and a7 != null:
+		var tr7a: Dictionary = await _dodge_track(e7, a7, 3.0, -1, 1)
+		_r20_pause(rec, true)
+		var tr7p: Dictionary = await _dodge_track(e7, a7, 0.0, 1200)
+		_r20_pause(rec, false)
+		var tr7b: Dictionary = await _dodge_track(e7, a7, 3.0, -1, 1)
+		var gap7: float = float(tr7b.ev[0].t) - float(tr7a.ev[0].t) if not tr7a.ev.is_empty() and not tr7b.ev.is_empty() else -1.0
+		var smax7: float = maxf(float(tr7a.smax), float(tr7b.smax))
+		ok7 = tr7a.ev.size() == 1 and is_equal_approx(float(tr7a.ev[0].lost), 80.0) and tr7p.ev.is_empty() and tr7b.ev.size() == 1 and is_equal_approx(float(tr7b.ev[0].lost), 80.0) \
+			and gap7 >= 1.0 - 0.0005 and gap7 <= 1.0 + smax7 + 0.0005
+		d7 = {"first": tr7a.ev, "paused_attacks": tr7p.ev.size(), "after": tr7b.ev, "gap": snappedf(gap7, 0.0001)}
+	_check("攻擊-7 實際引擎 atk 120 跨手動暫停：每擊扣 80（防禦 50）；暫停 1.2 秒期間沒有攻擊，繼續後下一擊在上一擊的 1 秒後（一步之內）", ok7, d7)
+
+	# 攻擊-8：同一波三種敵人各自用自己的攻擊力（32、字串 "32" 當作 20、120）；新的一場沒有 atk 的敵人是 20，不沿用上一場
+	var p8: Dictionary = _blk_payload("atk-8", [[_grp("atk32_run", 1, 0.02), _grp("atkstr_run", 1, 0.02), _grp("atk120_run", 1, 0.02)]], 1000000.0)
+	for c in ATK_ENEMIES:
+		p8["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p8)
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == 3, 3.0)
+	var s8: Dictionary = _fly_snapshot(rec)
+	var by8: Dictionary = {}
+	for e in _sw_enemies():
+		by8[e.enemy_id] = s8.get("enemy_atk", {}).get(str(e.get_instance_id()), null)
+	_r19_js(rec, _blk_payload("atk-8b", [[_grp("gnd_run", 1, 0.02)]], 1000000.0))
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == 1, 3.0)
+	var s8b: Dictionary = _fly_snapshot(rec)
+	var next8: Variant = s8b.get("enemy_atk", {}).values()
+	_check("攻擊-8 同一波三種敵人各自用自己的攻擊力（32、字串 \"32\" 當作預設 20、120，快照 enemy_atk）；新的一場沒有 atk 的敵人是 20，不沿用上一場",
+		by8 == {"atk32_run": 32.0, "atkstr_run": 20.0, "atk120_run": 120.0} and next8 == [20.0], {"wave": by8, "next_battle": next8})
+	await _wait_until(func(): return _bm().game_state == 3, 5.0)
+
+	# 攻擊-9：飛行敵人（atk 120）不阻路、不攻擊地面武將；抵達城池只扣 1；打倒 atk 120 的敵人照樣 +5 金幣；結算的戰場點數照原公式
+	var e9: Node = await _atk_start(rec, "atk-9a", [_grp("atk120_fly", 1, 0.02)], {"blk_a": Vector2i(1, 5)}, 1, false)
+	var a9: Node = _fly_hero("blk_a")
+	var d9: Dictionary = {}
+	var ok9a: bool = false
+	if e9 != null and a9 != null:
+		var ever: Array = [false]
+		var tr9_each := func(_tr) -> void:
+			if is_instance_valid(e9) and e9._blocker != null:
+				ever[0] = true
+		var tr9: Dictionary = await _blk_track([a9], 3.0, -1, tr9_each)
+		ok9a = tr9.hits.is_empty() and not ever[0] and a9.current_hp == a9.max_hp and e9.blocker_attacks == 0
+		d9["fly"] = {"hits": tr9.hits.size(), "blocked": ever[0], "attacks": e9.blocker_attacks if is_instance_valid(e9) else -1}
+	var p9: Dictionary = _r12_payload("atk_9b", [[_grp("atk120_leak", 1, 0.02), _grp("atk120_soft", 1, 0.02)]], "atk-9b", [_r12_hero("gan_ning", null)])
+	for c in ATK_ENEMIES:
+		p9["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p9)
+	_r12_place("gan_ning")
+	var gold0: int = _bm().battle_gold
+	var n_res: int = rec.sent_results.size()
+	_bm().player_start_battle()
+	await _wait_until(func(): return _bm().game_state == 3, 10.0)
+	var res9: Dictionary = rec.sent_results[n_res] if rec.sent_results.size() > n_res else {}
+	var pts9: int = 0
+	for l in res9.get("loots", []):
+		if l.get("item") == "battle_points":
+			pts9 = int(l.get("count", 0))
+	d9["base"] = {"hp": _bm().base_hp, "kills": _bm().kills, "gold": _bm().battle_gold - gold0, "result": res9.get("result"), "stars": res9.get("stars_earned"), "points": pts9}
+	var ok9b: bool = _bm().base_hp == MAX_HP - 1 and _bm().kills == 1 and _bm().battle_gold - gold0 == 5 and res9.get("result") == "WIN" and int(res9.get("stars_earned", 0)) == 3 and pts9 == 1 * 10 + 19 * 20 + 600
+	_check("攻擊-9 飛行敵人（atk 120）不阻路、不攻擊地面武將；atk 120 的敵人抵達城池只扣 1、被打倒照樣 +5 金幣；結算勝利 3 星、戰場點數照原公式（擊殺 1 × 10＋城池 19 × 20＋600）",
+		ok9a and ok9b, d9)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 敵人設定的免疫減速（trait 是 immune_slow）─────────────────────────────
+# 免疫減速的敵人不受任何減速：武將在道路上的阻擋減速、步兵塔的緩速光環（apply_slow）、文士塔的疊加減速（apply_stackable_slow），
+# 也不顯示「緩」。只看 trait，不看敵人的 id；仍會被地面武將擋住並攻擊武將；時間倍率與手動暫停照常。
+# 測試刻意讓 id 和 trait 不一致：免疫的敵人 id 沒有 cavalry，id 有 cavalry 的敵人沒有這個 trait
+
+## 固定步進用的敵人：沿直線走（沒有地圖，不會被擋住），速度 60；extra 另外帶 trait 等欄位
+func _imm_enemy(holder: Node, extra: Dictionary) -> Node:
+	var e: Node = load("res://entities/enemy/Enemy.gd").new()
+	holder.add_child(e)
+	e.set_physics_process(false)
+	var cfg: Dictionary = {"enemy_id": "imm_unit", "hp": 99999.0, "speed": 60.0}
+	cfg.merge(extra, true)
+	e.setup(cfg, [Vector2(0.0, 0.0), Vector2(100000.0, 0.0)])
+	return e
+
+## 實際引擎用的敵人設定：速度 120（免疫、普通、id 有 cavalry 但沒有 trait、免疫的飛行）
+const IMM_ENEMIES: Array = [
+	{"enemy_id": "imm_walk", "name": "I", "hp": 99999.0, "speed": 120.0, "atk": 30, "trait": "immune_slow"},
+	{"enemy_id": "cavalry_plain", "name": "N", "hp": 99999.0, "speed": 120.0, "atk": 30},
+	{"enemy_id": "imm_pad", "name": "P", "hp": 99999.0, "speed": 120.0, "atk": 30, "trait": " immune_slow "},
+]
+
+## 實際引擎：載入一場（經過 JSON）、放置武將（hero_id → 格子）與防禦塔（種類 → 格子）、開戰並等 n 個敵人出現
+func _imm_start(rec: Node, battle_id: String, groups: Array, n: int, heroes: Dictionary = {}, towers: Dictionary = {}) -> Array:
+	var team: Array = []
+	for hid in heroes:
+		team.append(_r12_hero(hid, null))
+	var p: Dictionary = _r12_payload("imm_" + battle_id, [groups], battle_id, team)
+	p["team_list"] = team
+	for c in IMM_ENEMIES:
+		p["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p)
+	for hid in heroes:
+		_r12_place(hid, heroes[hid])
+	for tt in towers:
+		main._on_web_place_tower({"tower_type": tt, "cell_x": towers[tt].x, "cell_y": towers[tt].y})
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() >= n, 5.0)
+	return _sw_enemies()
+
+## 實際引擎：逐個物理步進追蹤這些敵人，直到全部離場或 sec 秒（物理時鐘）：每個敵人的最低減速倍率、最高疊加減速、
+## 被擋住的時間（從開始追蹤算起；沒有被擋住是 -1）、攻擊次數；場上出現過的「緩」（不重複計算同一個提示）
+func _imm_track(es: Array, sec: float) -> Dictionary:
+	var st: Dictionary = {}
+	for e in es:
+		st[e.get_instance_id()] = {"id": e.enemy_id, "min_mult": e.speed_mult, "max_stack": e._stack_slow_amount, "blocked_at": -1.0, "attacks": 0, "immune": e.immune_slow, "flying": e.is_flying()}
+	var slow_texts: Dictionary = {}
+	var t0: float = _pt()
+	var w_end: int = Time.get_ticks_msec() + int(sec * 4000.0) + 15000
+	while _pt() - t0 < sec and Time.get_ticks_msec() < w_end:
+		await physics_frame
+		var alive: int = 0
+		for e in es:
+			if not is_instance_valid(e) or e.is_queued_for_deletion():
+				continue
+			alive += 1
+			var r: Dictionary = st[e.get_instance_id()]
+			r.min_mult = minf(float(r.min_mult), e.speed_mult)
+			r.max_stack = maxf(float(r.max_stack), e._stack_slow_amount)
+			r.attacks = e.blocker_attacks
+			if float(r.blocked_at) < 0.0 and e._blocker != null:
+				r.blocked_at = snappedf(_pt() - t0, 0.001)
+		for c in main.units_layer.get_children():
+			if c is FloatingText and not c.is_queued_for_deletion() and c._label != null and c._label.text == "緩":
+				slow_texts[c.get_instance_id()] = true
+		if alive == 0:
+			break
+	var by: Dictionary = {}
+	for k in st:
+		by[st[k].id] = st[k]
+	return {"by": by, "slow_texts": slow_texts.size()}
+
+func _slow_immune_cases() -> void:
+	var holder := _dodge_holder()
+
+	# 免疫-0：trait 的判讀（和 Web 相同）：只有字串 immune_slow（前後空白可以）
+	var tcases: Array = [["immune_slow", true], ["  immune_slow\t", true], ["Immune_Slow", false], ["immune_slow,armored", false], ["armored", false], ["", false],
+		[null, false], [1, false], [true, false], [["immune_slow"], false]]
+	var bad0: Array = []
+	for c in tcases:
+		if Enemy.is_immune_slow_cfg({"trait": c[0]}) != c[1]:
+			bad0.append(str(c[0]))
+	if Enemy.is_immune_slow_cfg({}) or not Enemy.is_immune_slow_cfg(JSON.parse_string("{\"trait\": \"immune_slow\"}")):
+		bad0.append("missing/json")
+	_check("免疫-0 trait 的判讀（和 Web 相同）：immune_slow 與前後有空白的是免疫；大小寫不同、合在一起寫的、其他值、空白、null、數字、布林、陣列、沒有欄位都不是；經過 JSON 的字串照用",
+		bad0.is_empty(), bad0)
+
+	# 免疫-1：兩個減速 API 對免疫的敵人都不套用、不顯示「緩」；普通的敵人照舊（id 有 cavalry 但沒有 trait 的也是普通）；傷害與灼燒照常
+	var imm: Node = _imm_enemy(holder, {"trait": "immune_slow"})
+	var nor: Node = _imm_enemy(holder, {"enemy_id": "cavalry_plain"})
+	imm.apply_slow(0.3, 0.5)
+	nor.apply_slow(0.3, 0.5)
+	var after_slow: Array = [imm.speed_mult, nor.speed_mult]
+	imm.apply_stackable_slow(0.05, 3.5)
+	nor.apply_stackable_slow(0.05, 3.5)
+	var after_stack: Array = [imm._stack_slow_amount, imm._stack_slow_timer, nor._stack_slow_amount, nor._stack_slow_timer]
+	var texts1: Array = await _dodge_texts(holder)
+	imm.take_damage(100.0)
+	imm.apply_burn(20.0, 3, 1.0)
+	var hp_burn: Array = [imm.current_hp, imm.is_burning()]
+	# 61 步：第一跳在 1 秒（60 步）後，多一步避免浮點誤差讓第一跳落在下一步
+	for i in range(61):
+		imm._physics_process(1.0 / 60.0)
+	var hp_after_tick: float = imm.current_hp
+	var ok1: bool = imm.immune_slow and not nor.immune_slow and after_slow == [1.0, 0.3] and _approx_list(after_stack, [0.0, 0.0, 0.05, 3.5]) \
+		and texts1.count("緩") == 1 and is_equal_approx(float(hp_burn[0]), 99899.0) and hp_burn[1] == true and is_equal_approx(hp_after_tick, 99879.0)
+	_check("免疫-1 免疫的敵人：阻擋減速／緩速光環（apply_slow）與疊加減速（apply_stackable_slow）都不套用、不顯示「緩」；普通的敵人（id 有 cavalry 但沒有 trait）照舊 0.3 與 0.05、顯示「緩」；免疫的敵人照常受傷與灼燒",
+		ok1, {"immune": [imm.immune_slow, nor.immune_slow], "after_slow": after_slow, "after_stack": after_stack, "texts": texts1, "hp_burn": hp_burn, "hp_after_tick": hp_after_tick})
+
+	# 免疫-2：作用的先後：先疊加減速再光環、先光環再疊加減速、連續兩種光環（0.3 → 0.55），免疫的敵人都不受影響；普通的敵人照舊（最後一次光環的倍率）
+	var ok2: bool = true
+	var d2: Array = []
+	for order in [["stack", "slow"], ["slow", "stack"], ["slow", "aura"]]:
+		var a: Node = _imm_enemy(holder, {"trait": " immune_slow "})
+		var b: Node = _imm_enemy(holder, {})
+		for step_name in order:
+			for x in [a, b]:
+				match step_name:
+					"stack":
+						x.apply_stackable_slow(0.05, 3.5)
+					"slow":
+						x.apply_slow(0.3, 0.5)
+					"aura":
+						x.apply_slow(0.55, 0.2)
+		var want_b: float = 0.55 if order.has("aura") else 0.3
+		var want_bs: float = 0.05 if order.has("stack") else 0.0
+		var ok: bool = a.speed_mult == 1.0 and a._stack_slow_amount == 0.0 and b.speed_mult == want_b and is_equal_approx(b._stack_slow_amount + 1.0, want_bs + 1.0)
+		ok2 = ok2 and ok
+		d2.append({"order": order, "immune": [a.speed_mult, a._stack_slow_amount], "normal": [b.speed_mult, b._stack_slow_amount]})
+	_check("免疫-2 作用的先後（疊加減速→光環、光環→疊加減速、光環 0.3→0.55）：免疫的敵人（trait 前後有空白）都維持倍率 1、疊加 0；普通的敵人照舊", ok2, d2)
+
+	# 免疫-3：移動距離（固定步進）：套用兩種減速後各走 60 步。1 倍（每步 1/60 秒）免疫的走 60 像素、普通的 60 × 0.3 × 0.95 = 17.1 像素；
+	# 2 倍（每步 2/60 秒）免疫的走 120 像素（時間倍率照常作用，不是減速）。倍率減速照有效期到期：這裡的有效期（10 秒）涵蓋整段移動
+	var d3: Dictionary = {}
+	var ok3: bool = true
+	for scale in [1.0, 2.0]:
+		var a: Node = _imm_enemy(holder, {"trait": "immune_slow"})
+		var b: Node = _imm_enemy(holder, {"enemy_id": "cavalry_plain"})
+		for x in [a, b]:
+			x.apply_slow(0.3, 10.0)
+			x.apply_stackable_slow(0.05, 3.5)
+		var ax: float = a.position.x
+		var bx: float = b.position.x
+		for i in range(60):
+			a._physics_process(scale / 60.0)
+			b._physics_process(scale / 60.0)
+		var da: float = a.position.x - ax
+		var db: float = b.position.x - bx
+		ok3 = ok3 and absf(da - 60.0 * scale) < 0.01 and absf(db - 60.0 * scale * 0.3 * 0.95) < 0.01
+		d3[str(scale)] = {"immune_px": snappedf(da, 0.001), "normal_px": snappedf(db, 0.001)}
+	_check("免疫-3 固定步進 60 步、兩種減速都套用過：1 倍時免疫的走 60 像素、普通的 17.1 像素（60 × 0.3 × 0.95）；2 倍時免疫的走 120 像素（時間倍率照常）",
+		ok3, d3)
+	holder.queue_free()
+
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 免疫-4：實際引擎的道路武將（關羽，步兵、射程 3 格，在第 6 格）：免疫的敵人一路都不被減速（倍率 1），但照樣被擋住並攻擊武將（每擊 30 × 2/3 = 20）；
+	# 之後新的一場，普通的敵人（id 有 cavalry、沒有 trait）被打中後倍率 0.3、比較晚才走到武將的格子（新場次不沿用免疫）
+	var es4a: Array = await _imm_start(rec, "imm-4a", [_grp("imm_walk", 1, 0.02)], 1, {"guan_yu": Vector2i(6, 5)})
+	var g4a: Node = _fly_hero("guan_yu")
+	var tr4a: Dictionary = await _imm_track(es4a, 7.0) if es4a.size() == 1 else {"by": {}}
+	var snap4: Dictionary = _fly_snapshot(rec)
+	var hp4a: float = g4a.current_hp if g4a != null else -1.0
+	var ia: Dictionary = tr4a.by.get("imm_walk", {})
+	var imm_snap: Variant = snap4.get("enemy_immune", {}).values()
+	var es4b: Array = await _imm_start(rec, "imm-4b", [_grp("cavalry_plain", 1, 0.02)], 1, {"guan_yu": Vector2i(6, 5)})
+	var tr4b: Dictionary = await _imm_track(es4b, 12.0) if es4b.size() == 1 else {"by": {}}
+	var nb: Dictionary = tr4b.by.get("cavalry_plain", {})
+	var ok4: bool = ia.get("immune") == true and ia.get("flying") == false and float(ia.get("min_mult", 0.0)) == 1.0 and float(ia.get("max_stack", 1.0)) == 0.0 \
+		and float(ia.get("blocked_at", -1.0)) > 0.0 and int(ia.get("attacks", 0)) >= 2 and is_equal_approx(1000.0 - hp4a, float(ia.get("attacks", 0)) * 20.0) and imm_snap == [true] \
+		and nb.get("immune") == false and is_equal_approx(float(nb.get("min_mult", 1.0)), 0.3) and float(nb.get("blocked_at", -1.0)) > float(ia.get("blocked_at", 99.0)) + 1.0
+	_check("免疫-4 實際引擎的道路武將：免疫的敵人（地面）一路倍率 1、疊加 0，照樣被擋住並攻擊武將（每擊 20）、快照 enemy_immune 是 true；新的一場普通的敵人（id 有 cavalry、沒有 trait）被打中後倍率 0.3、比免疫的晚 1 秒以上才被擋住",
+		ok4, {"immune": ia, "hero_lost": snappedf(1000.0 - hp4a, 0.001), "snapshot": imm_snap, "normal": nb})
+
+	# 免疫-5：實際引擎的防禦塔（步兵塔的緩速光環在第 3 格上方、文士塔在第 6 格上方）：
+	# a 只有免疫的敵人：倍率一直 1、疊加 0、場上從來沒有「緩」；b 只有普通的敵人：倍率 0.55、疊加大於 0、出現「緩」；
+	# c 同一波普通的先出、免疫的後出：普通的照樣被減速、免疫的不受影響（不會因為有免疫的敵人讓所有人都免疫）
+	var towers5: Dictionary = {"infantry": Vector2i(3, 4), "scholar": Vector2i(6, 4)}
+	var es5a: Array = await _imm_start(rec, "imm-5a", [_grp("imm_walk", 1, 0.02)], 1, {}, towers5)
+	var tr5a: Dictionary = await _imm_track(es5a, 12.0)
+	var es5b: Array = await _imm_start(rec, "imm-5b", [_grp("cavalry_plain", 1, 0.02)], 1, {}, towers5)
+	var tr5b: Dictionary = await _imm_track(es5b, 14.0)
+	var es5c: Array = await _imm_start(rec, "imm-5c", [_grp("cavalry_plain", 1, 0.02), _grp("imm_pad", 1, 0.02)], 2, {}, towers5)
+	var tr5c: Dictionary = await _imm_track(es5c, 14.0)
+	var a5: Dictionary = tr5a.by.get("imm_walk", {})
+	var b5: Dictionary = tr5b.by.get("cavalry_plain", {})
+	var cn: Dictionary = tr5c.by.get("cavalry_plain", {})
+	var ci: Dictionary = tr5c.by.get("imm_pad", {})
+	var ok5: bool = float(a5.get("min_mult", 0.0)) == 1.0 and float(a5.get("max_stack", 1.0)) == 0.0 and tr5a.slow_texts == 0 \
+		and is_equal_approx(float(b5.get("min_mult", 1.0)), 0.55) and float(b5.get("max_stack", 0.0)) > 0.0 and tr5b.slow_texts >= 1 \
+		and is_equal_approx(float(cn.get("min_mult", 1.0)), 0.55) and float(ci.get("min_mult", 0.0)) == 1.0 and float(ci.get("max_stack", 1.0)) == 0.0 and ci.get("immune") == true and cn.get("immune") == false
+	_check("免疫-5 實際引擎的步兵塔光環與文士塔：只有免疫的敵人時倍率一直 1、疊加 0、從來沒有「緩」；只有普通的敵人時倍率 0.55、疊加大於 0、出現「緩」；同一波普通的先出、免疫的後出：普通的照樣被減速、免疫的不受影響",
+		ok5, {"a_immune": a5, "a_texts": tr5a.slow_texts, "b_normal": b5, "b_texts": tr5b.slow_texts, "c_normal": cn, "c_immune": ci})
+
+	# 免疫-6：時間倍率與暫停照常：免疫的敵人在直線上每個物理步進前進 速度 × 倍率 ÷ 60（1×、2×、部署選單的 0.1×），手動暫停時不動
+	var es6: Array = await _imm_start(rec, "imm-6", [_grp("imm_walk", 1, 0.02)], 1)
+	var d6: Dictionary = {}
+	var ok6: bool = false
+	if es6.size() == 1:
+		var e6: Node = es6[0]
+		# 先等 0.3 秒再量（和 R19-8 相同：剛出現的那一步不算在量測裡）
+		await _wait(0.3)
+		var m1: Dictionary = await _r19_move(e6, 0.5)
+		_r19_speed(rec, 2.0)
+		var m2: Dictionary = await _r19_move(e6, 0.5)
+		_r19_speed(rec, 1.0)
+		var menu: Dictionary = _r19_open(rec)
+		var m01: Dictionary = await _r19_move(e6, 0.5)
+		_r19_close(rec, menu)
+		_r20_pause(rec, true)
+		var mp: Dictionary = await _r19_move(e6, 0.5)
+		_r20_pause(rec, false)
+		var per: float = 120.0 / float(Engine.physics_ticks_per_second)
+		ok6 = e6.immune_slow and e6.speed_mult == 1.0 and absf(float(m1.per_step) - per) < 1e-3 and absf(float(m2.per_step) - 2.0 * per) < 1e-3 and absf(float(m01.per_step) - 0.1 * per) < 1e-3 			and absf(float(m1.per_sec) - 120.0) < 0.1 and absf(float(m2.per_sec) - 120.0) < 0.1 and float(mp.dx) == 0.0
+		d6 = {"x1": [snappedf(float(m1.per_step), 0.0001), snappedf(float(m1.per_sec), 0.01)], "x2": [snappedf(float(m2.per_step), 0.0001), snappedf(float(m2.per_sec), 0.01)],
+			"x0_1": snappedf(float(m01.per_step), 0.0001), "paused_dx": mp.get("dx"), "expect_x1": per}
+	_check("免疫-6 時間倍率與手動暫停照常作用在免疫的敵人：每個物理步進前進 速度 × 倍率 ÷ 每秒步數（1×、2×、部署選單的 0.1×）、換算成每秒遊戲時間都是 120 px，暫停時不動",
+		ok6, d6)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 倍率減速的來源與有效期（武將在道路上的阻擋、步兵塔的緩速光環、武將的減速光環）──
+# 每個來源各自保存 {倍率, 有效期}：生效的是最強的一個（最小倍率，和套用的先後無關），同一來源再次套用只刷新、不累加；
+# 有效期照遊戲時間到期（固定步進與物理時鐘量）；撤除只撤自己的來源（舊的 clear_slow 只撤 apply_slow 的效果）；
+# 文士塔的疊加減速另外計算：移動速度＝基礎速度 × 倍率 × (1 − 疊加量)，最少基礎速度的 15%
+
+## 實際引擎用的敵人：速度 120 的普通／免疫，以及不會移動的普通／免疫
+const SLW_ENEMIES: Array = [
+	{"enemy_id": "slw_walk", "name": "W", "hp": 99999.0, "speed": 120.0, "atk": 30},
+	{"enemy_id": "slw_imm", "name": "I", "hp": 99999.0, "speed": 120.0, "atk": 30, "trait": "immune_slow"},
+	{"enemy_id": "slw_post", "name": "P", "hp": 99999.0, "speed": 0.0},
+	{"enemy_id": "slw_post_imm", "name": "Q", "hp": 99999.0, "speed": 0.0, "trait": "immune_slow"},
+]
+## 關羽的減速光環（和網頁 utils/heroSkills 的出征參數相同）
+const AURA_SKILL: Dictionary = {"id": "slow_aura", "slow_mult": 0.9}
+
+## 固定步進：走 n 步（每步 dt 秒），回傳前進的距離
+func _slw_steps(e: Node, n: int, dt: float) -> float:
+	var x0: float = e.position.x
+	for i in range(n):
+		e._physics_process(dt)
+	return e.position.x - x0
+
+## 實際引擎：載入一場（經過 JSON），team 是出征的武將、cells 是放置的格子（hero_id → 格子）、towers 是防禦塔（[種類, 格子] 的清單），
+## heroes_config 可以另外指定；開戰並等 n 個敵人出現
+func _slw_start(rec: Node, battle_id: String, groups: Array, n: int, team: Array, cells: Dictionary = {}, towers: Array = [], heroes_config: Variant = null) -> Array:
+	var p: Dictionary = _r12_payload("slw_" + battle_id, [groups], battle_id, team)
+	if heroes_config != null:
+		p["heroes_config"] = heroes_config
+	for c in SLW_ENEMIES:
+		p["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p)
+	for hid in cells:
+		_r12_place(hid, cells[hid])
+	for t in towers:
+		main._on_web_place_tower({"tower_type": t[0], "cell_x": t[1].x, "cell_y": t[1].y})
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() >= n, 5.0)
+	return _sw_enemies()
+
+## 場上的防禦塔（依放置順序）
+func _slw_towers() -> Array:
+	var out: Array = []
+	for c in main.units_layer.get_children():
+		if c is Tower and not c.is_queued_for_deletion():
+			out.append(c)
+	return out
+
+## 逐個物理步進記錄一個敵人（在 stop 回傳 true 或 sec 秒物理時鐘後停止）：位置（格）、到 ref 的距離（格）、倍率、來源、攻擊圖片的狀態、這一步前進的距離
+func _slw_track(e: Node, ref: Vector2, sec: float, stop: Callable = Callable()) -> Array:
+	var rows: Array = []
+	var t: float = float(main._tile_size)
+	var t0: float = _pt()
+	var w_end: int = Time.get_ticks_msec() + int(sec * 4000.0) + 15000
+	var last_x: float = e.global_position.x if is_instance_valid(e) else 0.0
+	while _pt() - t0 < sec and Time.get_ticks_msec() < w_end:
+		await physics_frame
+		if not is_instance_valid(e) or e.is_queued_for_deletion():
+			break
+		var x: float = e.global_position.x
+		rows.append({"x": x / t, "d": e.global_position.distance_to(ref) / t, "m": e.speed_mult, "src": e.slow_sources_state().keys(),
+			"fight": e.is_fighting_blocker(), "dx": x - last_x})
+		last_x = x
+		if stop.is_valid() and stop.call(e):
+			break
+	return rows
+
+func _slow_source_cases() -> void:
+	var holder := _dodge_holder()
+
+	# 減速-0：來源 API 的參數檢查：空的來源、倍率不在 0～1 之間（0、1、1.2、負數、NaN、無限大）、有效期不是正的有限數字（0、負數、NaN、無限大）
+	# 都不套用；已經倒下的敵人不套用；合理的參數照常套用
+	var e0: Node = _imm_enemy(holder, {})
+	var bad0: Array = []
+	for c in [["", 0.5, 1.0], ["s", 0.0, 1.0], ["s", 1.0, 1.0], ["s", 1.2, 1.0], ["s", -0.1, 1.0], ["s", NAN, 1.0], ["s", INF, 1.0],
+			["s", 0.5, 0.0], ["s", 0.5, -1.0], ["s", 0.5, NAN], ["s", 0.5, INF]]:
+		e0.apply_slow_from(c[0], c[1], c[2])
+		if e0.speed_mult != 1.0 or not e0.slow_sources_state().is_empty():
+			bad0.append(str(c))
+			e0.remove_slow_from(c[0])
+	var dead: Node = _imm_enemy(holder, {})
+	dead._is_dead = true
+	dead.apply_slow_from("s", 0.5, 1.0)
+	e0.apply_slow_from("s", 0.5, 1.0)
+	_check("減速-0 來源 API 的參數檢查：空的來源、倍率 0／1／1.2／負數／NaN／無限大、有效期 0／負數／NaN／無限大都不套用；倒下的敵人不套用；合理的參數照常（倍率 0.5、一個來源）",
+		bad0.is_empty() and dead.speed_mult == 1.0 and dead.slow_sources_state().is_empty() and e0.speed_mult == 0.5 and e0.slow_sources_state().keys() == ["s"],
+		{"bad": bad0, "dead": dead.speed_mult, "ok": [e0.speed_mult, e0.slow_sources_state()]})
+
+	# 減速-1：兩個來源（0.9 與 0.3）不論先後都是 0.3（最強），兩個來源都保留；各走 60 步（1 秒）都是 60 × 0.3 = 18 像素
+	var a1: Node = _imm_enemy(holder, {})
+	var b1: Node = _imm_enemy(holder, {})
+	a1.apply_slow_from("A", 0.9, 5.0)
+	a1.apply_slow_from("B", 0.3, 5.0)
+	b1.apply_slow_from("B", 0.3, 5.0)
+	b1.apply_slow_from("A", 0.9, 5.0)
+	var da1: float = _slw_steps(a1, 60, 1.0 / 60.0)
+	var db1: float = _slw_steps(b1, 60, 1.0 / 60.0)
+	_check("減速-1 兩個來源 0.9 與 0.3：先 0.9 後 0.3、先 0.3 後 0.9 都是 0.3（取最強，和先後無關），兩個來源都保留；1 秒各走 18 像素",
+		is_equal_approx(a1.speed_mult, 0.3) and is_equal_approx(b1.speed_mult, 0.3) and a1.slow_sources_state().size() == 2 and b1.slow_sources_state().size() == 2 \
+			and absf(da1 - 18.0) < 0.01 and absf(db1 - 18.0) < 0.01,
+		{"a": [a1.speed_mult, snappedf(da1, 0.001)], "b": [b1.speed_mult, snappedf(db1, 0.001)]})
+
+	# 減速-2：同一個來源刷新不累加：0.9 套用三次仍是 0.9（不是 0.729）、只有一個來源；同一來源先 0.5 再 0.8 → 0.8（刷新成新的倍率）；
+	# 有效期刷新成新的值（不相加）：1 秒的效果過了 0.5 秒再套用 1 秒 → 之後 0.9 秒仍有效、1.1 秒時已到期
+	var e2: Node = _imm_enemy(holder, {})
+	for i in range(3):
+		e2.apply_slow_from("A", 0.9, 1.0)
+	var m2a: Array = [e2.speed_mult, e2.slow_sources_state().size()]
+	var e2b: Node = _imm_enemy(holder, {})
+	e2b.apply_slow_from("A", 0.5, 1.0)
+	e2b.apply_slow_from("A", 0.8, 1.0)
+	_slw_steps(e2, 30, 1.0 / 60.0)
+	e2.apply_slow_from("A", 0.9, 1.0)
+	_slw_steps(e2, 54, 1.0 / 60.0)
+	var still2: bool = e2.has_slow_from("A")
+	_slw_steps(e2, 12, 1.0 / 60.0)
+	var gone2: bool = not e2.has_slow_from("A") and e2.speed_mult == 1.0
+	_check("減速-2 同一個來源刷新不累加：0.9 套用三次仍是 0.9、只有一個來源；先 0.5 再 0.8 是 0.8；有效期刷新成新的 1 秒（不是剩下的 0.5 加 1）：再過 0.9 秒仍有效、1.1 秒時已到期、倍率回到 1",
+		is_equal_approx(float(m2a[0]), 0.9) and m2a[1] == 1 and is_equal_approx(e2b.speed_mult, 0.8) and e2b.slow_sources_state().size() == 1 and still2 and gone2,
+		{"triple": m2a, "refresh": e2b.speed_mult, "still_0_9s": still2, "gone_1_1s": gone2})
+
+	# 減速-3：強的來源先到期、弱的仍有效：0.3（0.51 秒）與 0.9（1.51 秒），兩種套用順序 × 1 倍／2 倍／部署選單的 0.1 倍（每步 倍率 ÷ 60 秒）：
+	# 遊戲時間 0.45 秒時 0.3、0.6 秒時 0.9、1.45 秒時 0.9、1.6 秒時 1；1.6 秒走的距離 ≈ 60 ×（0.3 × 0.51 ＋ 0.9 × 1.0 ＋ 0.09）＝ 68.58 像素（誤差不超過一步）
+	var ok3: bool = true
+	var d3: Dictionary = {}
+	for scale in [1.0, 2.0, 0.1]:
+		for order in [["A", "B"], ["B", "A"]]:
+			var e: Node = _imm_enemy(holder, {})
+			for s in order:
+				if s == "A":
+					e.apply_slow_from("A", 0.3, 0.51)
+				else:
+					e.apply_slow_from("B", 0.9, 1.51)
+			var dt: float = scale / 60.0
+			var x0: float = e.position.x
+			var gt: float = 0.0
+			var marks: Array = []
+			for target in [0.45, 0.6, 1.45, 1.6]:
+				while gt < target - 1e-9:
+					e._physics_process(dt)
+					gt += dt
+				marks.append(snappedf(e.speed_mult, 0.0001))
+			var dist: float = e.position.x - x0
+			var ok: bool = _approx_list(marks, [0.3, 0.9, 0.9, 1.0]) and absf(dist - 68.58) <= 60.0 * dt + 0.01
+			ok3 = ok3 and ok
+			d3["%s %s" % [scale, "".join(order)]] = {"marks": marks, "dist": snappedf(dist, 0.001)}
+	_check("減速-3 強的來源先到期、弱的仍有效（照遊戲時間）：兩種套用順序 × 1 倍、2 倍、0.1 倍：遊戲時間 0.45 秒 0.3、0.6 秒 0.9、1.45 秒 0.9、1.6 秒 1；1.6 秒走約 68.58 像素",
+		ok3, d3)
+
+	# 減速-4：只撤自己的來源：0.3（A）、0.9（B）、舊入口 apply_slow 的 0.55 → 0.3；撤 A → 0.55；舊的 clear_slow 只撤 apply_slow 的效果 → 0.9（B 還在）；
+	# 撤不存在的來源不影響；撤 B → 1
+	var e4: Node = _imm_enemy(holder, {})
+	e4.apply_slow_from("A", 0.3, 5.0)
+	e4.apply_slow_from("B", 0.9, 5.0)
+	e4.apply_slow(0.55, 5.0)
+	var seq4: Array = [e4.speed_mult]
+	e4.remove_slow_from("A")
+	seq4.append(e4.speed_mult)
+	e4.clear_slow()
+	seq4.append(e4.speed_mult)
+	e4.remove_slow_from("nope")
+	seq4.append(e4.speed_mult)
+	e4.remove_slow_from("B")
+	seq4.append(e4.speed_mult)
+	_check("減速-4 只撤自己的來源：三個來源時 0.3；撤 A 後 0.55；舊的 clear_slow 只撤 apply_slow 的效果 → 0.9（其他來源還在）；撤不存在的來源不變；撤最後一個來源回到 1",
+		_approx_list(seq4, [0.3, 0.55, 0.9, 0.9, 1.0]) and e4.slow_sources_state().is_empty(), seq4)
+
+	# 減速-5：免疫減速的敵人：來源 API、舊入口 apply_slow、疊加減速都不套用（倍率 1、沒有來源、疊加 0），60 步照常走 60 像素
+	var e5: Node = _imm_enemy(holder, {"trait": "immune_slow"})
+	e5.apply_slow_from("A", 0.3, 5.0)
+	e5.apply_slow(0.3, 5.0)
+	e5.apply_stackable_slow(0.2, 3.5)
+	var d5: float = _slw_steps(e5, 60, 1.0 / 60.0)
+	_check("減速-5 免疫減速的敵人：來源 API（apply_slow_from）、舊入口 apply_slow、疊加減速都不套用：倍率 1、沒有來源、疊加 0，1 秒照常走 60 像素",
+		e5.speed_mult == 1.0 and e5.slow_sources_state().is_empty() and e5._stack_slow_amount == 0.0 and absf(d5 - 60.0) < 0.01,
+		{"mult": e5.speed_mult, "src": e5.slow_sources_state(), "stack": e5._stack_slow_amount, "px": snappedf(d5, 0.001)})
+
+	# 減速-6：和文士塔的疊加減速組合（速度＝基礎 × 倍率 × (1 − 疊加)，最少 15%）：0.9 與疊加 0.2 → 60 × 0.9 × 0.8 ＝ 43.2 像素／秒；
+	# 0.3 與疊加（0.5 兩次，上限 0.85）→ 60 × 0.3 × 0.15 ＝ 2.7，低於最少的 9 → 9 像素／秒；疊加的上限、持續時間照舊
+	var e6: Node = _imm_enemy(holder, {})
+	e6.apply_slow_from("A", 0.9, 10.0)
+	e6.apply_stackable_slow(0.2, 3.5)
+	var d6a: float = _slw_steps(e6, 60, 1.0 / 60.0)
+	var e6b: Node = _imm_enemy(holder, {})
+	e6b.apply_slow_from("A", 0.3, 10.0)
+	e6b.apply_stackable_slow(0.5, 3.5)
+	e6b.apply_stackable_slow(0.5, 3.5)
+	var stack6: Array = [e6b._stack_slow_amount, e6b._stack_slow_timer]
+	var d6b: float = _slw_steps(e6b, 60, 1.0 / 60.0)
+	_check("減速-6 和文士塔的疊加減速：0.9 × (1 − 0.2) → 1 秒 43.2 像素；0.3 與疊加（上限 0.85）→ 低於最少 15%，1 秒 9 像素；疊加上限 0.85、持續 3.5 秒照舊",
+		absf(d6a - 43.2) < 0.01 and absf(d6b - 9.0) < 0.01 and _approx_list(stack6, [0.85, 3.5]) and is_equal_approx(e6.get_effective_speed(), 43.2),
+		{"a_px": snappedf(d6a, 0.001), "b_px": snappedf(d6b, 0.001), "stack": stack6})
+	holder.queue_free()
+
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+	var t: float = float(main._tile_size)
+
+	# 減速-7：實際引擎，兩座步兵塔（(3,4)、(4,4)，射程 1.5 格）與一位沒有目標的武將（關羽在 (12,6)，沒有技能、不在道路上）：
+	# 敵人在塔的範圍內每一步都是 0.55（沒有目標的武將不會清掉塔的減速）；兩座塔範圍重疊處有兩個不同的來源（每座塔各自一個）；
+	# 離開兩座塔的範圍後沒有來源、倍率 1；兩座塔的來源字串不同
+	var es7: Array = await _slw_start(rec, "slw-7", [_grp("slw_walk", 1, 0.02)], 1, [_r12_hero("guan_yu", null)], {},
+		[["infantry", Vector2i(3, 4)], ["infantry", Vector2i(4, 4)]])
+	# 武將在塔之後放置：同一幀裡武將在塔之後處理，錯誤地清掉所有減速時，敵人在下一個物理步進就會失去塔的減速
+	_r12_place("guan_yu", Vector2i(12, 6))
+	var tw7: Array = _slw_towers()
+	var d7: Dictionary = {}
+	var ok7: bool = false
+	if es7.size() == 1 and tw7.size() == 2:
+		var c1: Vector2 = tw7[0].global_position
+		var c2: Vector2 = tw7[1].global_position
+		var rng: float = tw7[0].range_tiles
+		var rows: Array = await _slw_track(es7[0], c1, 6.0, func(e): return e.global_position.x / t > 8.0)
+		var inside_bad: Array = []
+		var outside_bad: Array = []
+		var overlap: int = 0
+		var overlap_bad: Array = []
+		for r in rows:
+			var d1: float = float(r.d)
+			var d2: float = absf(float(r.x) * t - c2.x) / t
+			# 敵人在第 5 列、塔在第 4 列：距離＝√(水平² + 1)
+			d2 = sqrt(d2 * d2 + 1.0)
+			var in1: bool = d1 < rng - 0.15
+			var in2: bool = d2 < rng - 0.15
+			var out_all: bool = d1 > rng + 0.15 and d2 > rng + 0.15
+			if (in1 or in2) and not is_equal_approx(float(r.m), 0.55):
+				inside_bad.append(r)
+			if out_all and (float(r.m) != 1.0 or not (r.src as Array).is_empty()):
+				outside_bad.append(r)
+			if in1 and in2:
+				overlap += 1
+				var srcs: Array = r.src
+				if srcs.size() != 2 or not srcs.has(tw7[0].slow_source) or not srcs.has(tw7[1].slow_source):
+					overlap_bad.append(r)
+		ok7 = rows.size() > 30 and inside_bad.is_empty() and outside_bad.is_empty() and overlap >= 3 and overlap_bad.is_empty() and tw7[0].slow_source != tw7[1].slow_source \
+			and _fly_hero("guan_yu") != null
+		d7 = {"frames": rows.size(), "inside_bad": inside_bad.slice(0, 3), "outside_bad": outside_bad.slice(0, 3), "overlap": overlap, "overlap_bad": overlap_bad.slice(0, 3),
+			"sources": [tw7[0].slow_source, tw7[1].slow_source]}
+	_check("減速-7 實際引擎：兩座步兵塔範圍內每一步都是 0.55（場上沒有目標的武將不會清掉塔的減速）；重疊處有兩座塔各自的來源；離開兩座塔的範圍後沒有來源、倍率 1；兩座塔的來源不同",
+		ok7, d7)
+
+	# 減速-8：道路武將的阻擋減速與攻擊圖片：關羽（沒有技能）在道路 (6,5)、步兵塔在 (3,4)：
+	# a 被打中後倍率 0.3（道路來源），在還沒被擋住時是 0.3 但不是攻擊的圖（攻擊圖片看阻擋狀態，不看倍率）；被擋住時是攻擊的圖；
+	# b 把關羽移到建築格 (6,4)：下一幀撤掉道路的來源（塔的來源不受影響，這時已離開塔的範圍 → 倍率 1），敵人不再被擋、恢復走路的圖
+	var es8: Array = await _slw_start(rec, "slw-8", [_grp("slw_walk", 1, 0.02)], 1, [_r12_hero("guan_yu", null)], {"guan_yu": Vector2i(6, 5)},
+		[["infantry", Vector2i(3, 4)]])
+	var g8: Node = _fly_hero("guan_yu")
+	var d8: Dictionary = {}
+	var ok8: bool = false
+	if es8.size() == 1 and g8 != null:
+		var e8: Node = es8[0]
+		var rows8: Array = await _slw_track(e8, g8.global_position, 8.0, func(e): return e.is_fighting_blocker())
+		var slowed_walk: int = 0
+		var both: int = 0
+		for r in rows8:
+			if float(r.m) <= 0.5 and not r.fight:
+				slowed_walk += 1
+			if (r.src as Array).has(g8.slow_source) and (r.src as Array).size() == 2:
+				both += 1
+		var fight_at_block: bool = e8.is_fighting_blocker() and is_equal_approx(e8.speed_mult, 0.3) and e8.has_slow_from(g8.slow_source)
+		var snap8: Dictionary = _fly_snapshot(rec)
+		var snap_fight: Variant = snap8.get("enemy_fighting", {}).values()
+		main.game_map.clear_occupied(Vector2i(6, 5))
+		g8.reposition(Vector2i(6, 4), main.game_map.grid_to_world(Vector2i(6, 4)), main.game_map)
+		main.game_map.set_occupied(Vector2i(6, 4), g8)
+		await physics_frame
+		await process_frame
+		await physics_frame
+		var after8: Array = [e8.speed_mult, e8.slow_sources_state().keys(), e8.is_fighting_blocker()]
+		var rows8b: Array = await _slw_track(e8, g8.global_position, 0.5)
+		var moved: float = 0.0
+		for r in rows8b:
+			moved += float(r.dx)
+		ok8 = slowed_walk >= 3 and both >= 1 and fight_at_block and snap_fight == [true] and float(after8[0]) == 1.0 and (after8[1] as Array).is_empty() and after8[2] == false and moved > 20.0
+		d8 = {"slowed_walk_frames": slowed_walk, "both_sources_frames": both, "blocked": fight_at_block, "snapshot_fighting": snap_fight, "after_move": after8, "moved_px": snappedf(moved, 0.01)}
+	_check("減速-8 道路武將：被打中後 0.3（道路來源；經過塔的範圍時兩個來源），還沒被擋住時不是攻擊的圖（不看倍率）、被擋住時是攻擊的圖（快照 enemy_fighting）；武將移到建築格後下一幀撤掉道路的來源、倍率 1、恢復走路的圖並繼續前進",
+		ok8, d8)
+
+	# 減速-9：免疫的敵人被道路武將擋住時也是攻擊的圖（倍率一直 1、沒有來源）
+	var es9: Array = await _slw_start(rec, "slw-9", [_grp("slw_imm", 1, 0.02)], 1, [_r12_hero("guan_yu", null)], {"guan_yu": Vector2i(6, 5)})
+	var ok9: bool = false
+	var d9: Dictionary = {}
+	if es9.size() == 1:
+		var rows9: Array = await _slw_track(es9[0], _fly_hero("guan_yu").global_position, 6.0, func(e): return e.is_fighting_blocker())
+		var max_m: float = 0.0
+		var min_m: float = 1.0
+		for r in rows9:
+			max_m = maxf(max_m, float(r.m))
+			min_m = minf(min_m, float(r.m))
+		ok9 = es9[0].is_fighting_blocker() and min_m == 1.0 and es9[0].slow_sources_state().is_empty()
+		d9 = {"fighting": es9[0].is_fighting_blocker(), "min_mult": min_m, "src": es9[0].slow_sources_state()}
+	_check("減速-9 免疫減速的敵人被道路武將擋住：倍率一直 1、沒有來源，攻擊時照樣是攻擊的圖（攻擊圖片看阻擋狀態）", ok9, d9)
+
+	# 減速-10：有效期照遊戲時間：同一個敵人（沒有其他減速）加上 0.3 秒的來源，1 倍、2 倍、部署選單的 0.1 倍下，到期時的物理時鐘都在 0.3 秒的一步之內；
+	# 手動暫停 1 秒（牆鐘）時來源與剩餘有效期不變、敵人不動，繼續後照剩下的時間到期；新的一場的敵人沒有舊的來源
+	var es10: Array = await _slw_start(rec, "slw-10", [_grp("slw_walk", 1, 0.02)], 1, [])
+	var d10: Dictionary = {}
+	var ok10: bool = false
+	if es10.size() == 1:
+		var e10: Node = es10[0]
+		var fresh: bool = e10.slow_sources_state().is_empty()
+		var spans: Dictionary = {}
+		for mode in ["x1", "x2", "x0_1"]:
+			var menu: Dictionary = {}
+			if mode == "x2":
+				_r19_speed(rec, 2.0)
+			elif mode == "x0_1":
+				menu = _r19_open(rec)
+			await physics_frame
+			e10.apply_slow_from("probe", 0.5, 0.3)
+			var p0: float = _pt()
+			while e10.has_slow_from("probe") and _pt() - p0 < 2.0:
+				await physics_frame
+			spans[mode] = snappedf(_pt() - p0, 0.0001)
+			if mode == "x2":
+				_r19_speed(rec, 1.0)
+			elif mode == "x0_1":
+				_r19_close(rec, menu)
+		e10.apply_slow_from("probe", 0.5, 0.6)
+		await physics_frame
+		var left0: float = float(e10.slow_sources_state().get("probe", {}).get("left", -1.0))
+		var x0: float = e10.global_position.x
+		_r20_pause(rec, true)
+		await _wait_real(1.0)
+		var paused: Array = [e10.has_slow_from("probe"), float(e10.slow_sources_state().get("probe", {}).get("left", -1.0)), e10.global_position.x - x0]
+		_r20_pause(rec, false)
+		var p1: float = _pt()
+		while e10.has_slow_from("probe") and _pt() - p1 < 2.0:
+			await physics_frame
+		var rest: float = _pt() - p1
+		var step1: float = 1.0 / float(Engine.physics_ticks_per_second)
+		ok10 = fresh and absf(float(spans.x1) - 0.3) <= step1 + 1e-4 and absf(float(spans.x2) - 0.3) <= 2.0 * step1 + 1e-4 and absf(float(spans.x0_1) - 0.3) <= 0.1 * step1 + 1e-4 \
+			and paused[0] == true and is_equal_approx(float(paused[1]), left0) and float(paused[2]) == 0.0 and absf(rest - left0) <= step1 + 1e-4
+		d10 = {"fresh": fresh, "spans": spans, "left_before_pause": left0, "paused": paused, "rest_after_resume": snappedf(rest, 0.0001)}
+	_check("減速-10 有效期照遊戲時間：0.3 秒的來源在 1 倍、2 倍、0.1 倍下都在遊戲時間 0.3 秒（一步之內）到期；暫停 1 秒（牆鐘）時來源與剩餘有效期不變、敵人不動，繼續後照剩下的時間到期；新的一場的敵人一開始沒有來源",
+		ok10, d10)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 關羽「減速光環」（設定表的被動描述「周圍敵人減速10%」）──
+# 範圍與規則的補充（設定表沒有寫）：以關羽為中心、目前有效射程內（含邊界，比中心距離）的地面敵人移動速度 × 0.9；
+# 不需要普通攻擊的目標、不看攻擊冷卻；飛行與免疫減速的敵人不受影響；和其他倍率減速取最強（兩個光環不相乘）；
+# 離開範圍、移位、升級、倒下、移除、新的一場都在下一幀內更新。普通攻擊照舊（沒有橫掃）
+func _aura_guan() -> Dictionary:
+	return _r12_hero("guan_yu", AURA_SKILL.duplicate())
+
+func _slow_aura_cases() -> void:
+	# 光環-0：技能參數的判讀：slow_mult 是 0～1 之間（不含兩端）的有限數字才啟用；字串、0、1、1.5、負數、布林、null、NaN、無限大、
+	# 沒有欄位、不認得的 id、sweep 都不是光環；經過 JSON 的 0.9 照用；光環不帶橫掃
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var bad0: Array = []
+	for c in [[{"id": "slow_aura", "slow_mult": 0.9}, 0.9], [{"id": "slow_aura", "slow_mult": 0.5}, 0.5], [{"id": "slow_aura", "slow_mult": "0.9"}, 1.0],
+			[{"id": "slow_aura", "slow_mult": 0}, 1.0], [{"id": "slow_aura", "slow_mult": 1}, 1.0], [{"id": "slow_aura", "slow_mult": 1.5}, 1.0],
+			[{"id": "slow_aura", "slow_mult": -0.1}, 1.0], [{"id": "slow_aura", "slow_mult": true}, 1.0], [{"id": "slow_aura", "slow_mult": null}, 1.0],
+			[{"id": "slow_aura", "slow_mult": NAN}, 1.0], [{"id": "slow_aura", "slow_mult": INF}, 1.0], [{"id": "slow_aura"}, 1.0],
+			[{"id": "slow_aura_x", "slow_mult": 0.9}, 1.0], [{"id": "sweep", "sweep_radius": 1.0, "sweep_max_targets": 2, "sweep_ratio": 0.5}, 1.0], [null, 1.0]]:
+		var st: Dictionary = {} if c[0] == null else {"skill": c[0]}
+		h0._read_skill(st)
+		var want_sweep: bool = c[0] != null and c[0].get("id") == "sweep"
+		if not is_equal_approx(h0.slow_aura_mult, float(c[1])) or (h0.sweep_ratio > 0.0) != want_sweep:
+			bad0.append(str(c[0]))
+	h0._read_skill({"skill": JSON.parse_string("{\"id\": \"slow_aura\", \"slow_mult\": 0.9}")})
+	var json0: float = h0.slow_aura_mult
+	h0.free()
+	_check("光環-0 技能參數：slow_mult 0.9、0.5 啟用；字串、0、1、1.5、負數、布林、null、NaN、無限大、沒有欄位、不認得的 id 都不啟用；sweep 只有橫掃、光環不帶橫掃；經過 JSON 的 0.9 照用",
+		bad0.is_empty() and is_equal_approx(json0, 0.9), {"bad": bad0, "json": json0})
+
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+	var t: float = float(main._tile_size)
+
+	# 光環-1：邊界與對象（不會移動的敵人，關羽在建築格 (6,4)、射程 3 格，攻擊冷卻設成很長 → 這段期間沒有普通攻擊）：
+	# 正好 3 格（含邊界）、1 格、√5 格的地面敵人都有光環（0.9、關羽的光環來源），3.02 格的沒有；1 格的飛行、1 格的免疫減速的地面都沒有（免疫的倍率 1）；
+	# 沒有普通攻擊（冷卻沒到、血量不變）也照樣作用；備戰時光環不作用（快照 aura_active false），開戰後 true
+	var team1: Array = [_aura_guan()]
+	var p1: Dictionary = _r12_payload("slw_aura1", [[_grp("slw_post", 4, 0.02), _grp("fly_post", 1, 0.02), _grp("slw_post_imm", 1, 0.02)]], "aura-1", team1)
+	for c in SLW_ENEMIES:
+		p1["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p1)
+	_r12_place("guan_yu", Vector2i(6, 4))
+	var g1: Node = _fly_hero("guan_yu")
+	for i in range(3):
+		await process_frame
+	var prep_active: bool = g1.slow_state().aura_active if g1 != null else true
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() >= 6, 5.0)
+	var es1: Array = _sw_enemies()
+	var d1: Dictionary = {}
+	var ok1: bool = false
+	if es1.size() == 6 and g1 != null:
+		g1._atk_timer = 999.0
+		var R: float = g1.attack_range * t
+		var posts: Array = es1.filter(func(e): return e.enemy_id == "slw_post")
+		var fly: Node = es1.filter(func(e): return e.enemy_id == "fly_post")[0]
+		var imm: Node = es1.filter(func(e): return e.enemy_id == "slw_post_imm")[0]
+		var c: Vector2 = g1.global_position
+		posts[0].global_position = c + Vector2(R, 0.0)
+		posts[1].global_position = c + Vector2(R + 0.02 * t, 0.0)
+		posts[2].global_position = c + Vector2(0.0, 1.0) * t
+		posts[3].global_position = c + Vector2(-2.0, 1.0) * t
+		fly.global_position = c + Vector2(1.0, 0.0) * t
+		imm.global_position = c + Vector2(-1.0, 0.0) * t
+		var hp0: Array = es1.map(func(e): return e.current_hp)
+		for i in range(4):
+			await process_frame
+			await physics_frame
+		var src: String = g1.aura_source
+		var got: Array = []
+		for e in [posts[0], posts[1], posts[2], posts[3], fly, imm]:
+			got.append([e.has_slow_from(src), snappedf(e.speed_mult, 0.0001)])
+		var hp1: Array = es1.map(func(e): return e.current_hp)
+		var snap1: Dictionary = _fly_snapshot(rec)
+		var hs: Dictionary = snap1.get("hero_slow", {}).get("guan_yu", {})
+		ok1 = got == [[true, 0.9], [false, 1.0], [true, 0.9], [true, 0.9], [false, 1.0], [false, 1.0]] and hp0 == hp1 and prep_active == false \
+			and hs.get("aura_active") == true and is_equal_approx(float(hs.get("aura_mult", 0.0)), 0.9) and is_equal_approx(float(hs.get("radius", 0.0)), 3.0) and (hs.get("aura", []) as Array).size() == 3
+		d1 = {"edge_3": got[0], "out_3_02": got[1], "one": got[2], "sqrt5": got[3], "flying": got[4], "immune": got[5], "hp_same": hp0 == hp1, "prep_active": prep_active, "snapshot": hs}
+	_check("光環-1 範圍與對象：正好 3 格（含邊界）、1 格、√5 格的地面敵人 0.9，3.02 格的沒有；飛行、免疫減速的敵人沒有（倍率 1）；沒有普通攻擊（冷卻沒到、血量不變）也照樣作用；備戰時不作用、開戰後快照 aura_active、倍率 0.9、半徑 3、影響 3 名",
+		ok1, d1)
+
+	# 光環-2：普通攻擊不變、沒有橫掃：主目標（生成序號 0，免疫減速）在 2 格、另外兩名在它旁邊 0.3 格與 0.4 格：
+	# 關羽打一次只有主目標扣 100，其他 0；橫掃次數 0；免疫的主目標沒有光環但照樣受到普通攻擊；旁邊兩名有光環
+	var p2: Dictionary = _r12_payload("slw_aura2", [[_grp("slw_post_imm", 1, 0.02), _grp("slw_post", 2, 0.02)]], "aura-2", [_aura_guan()])
+	for c in SLW_ENEMIES:
+		p2["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p2)
+	_r12_place("guan_yu", Vector2i(3, 4))
+	var g2: Node = _fly_hero("guan_yu")
+	if g2 != null:
+		g2.set_process(false)
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() >= 3, 5.0)
+	var es2: Array = _sw_enemies()
+	var d2: Dictionary = {}
+	var ok2: bool = false
+	if es2.size() == 3 and g2 != null:
+		var c2: Vector2 = g2.global_position + Vector2(2.0 * t, 0.0)
+		es2[0].global_position = c2
+		es2[1].global_position = c2 + Vector2(0.3, 0.0) * t
+		es2[2].global_position = c2 + Vector2(0.0, 0.4) * t
+		var before: Array = es2.map(func(e): return e.current_hp)
+		g2._process(0.0)
+		var dmg: Array = []
+		for i in range(3):
+			dmg.append(snappedf(float(before[i]) - es2[i].current_hp, 0.01))
+		var aura: Array = es2.map(func(e): return e.has_slow_from(g2.aura_source))
+		ok2 = es2[0].enemy_id == "slw_post_imm" and dmg == [100.0, 0.0, 0.0] and g2.sweep_count == 0 and g2.sweep_ratio == 0.0 and aura == [false, true, true]
+		d2 = {"main": es2[0].enemy_id, "dmg": dmg, "sweep": [g2.sweep_count, g2.sweep_ratio], "aura": aura}
+		g2.set_process(true)
+	_check("光環-2 普通攻擊不變、沒有橫掃：主目標（免疫減速）受到 100、旁邊 0.3 與 0.4 格的兩名 0；橫掃次數 0、沒有橫掃參數；免疫的主目標沒有光環但照樣被打，旁邊兩名有光環",
+		ok2, d2)
+
+	# 光環-3：實際移動距離（速度 120、關羽在建築格 (6,4)，不擋路也沒有道路減速）：範圍外每一步 2 像素；範圍內每一步 1.8 像素（0.9，不是 0.1 倍的 0.2）、
+	# 快照的實際速度 108；2 倍每步 3.6、部署選單的 0.1 倍每步 0.18，換算成每秒遊戲時間都是 108；暫停時不動、光環仍在；離開範圍後回到每步 2 像素、沒有來源
+	var es3: Array = await _slw_start(rec, "aura-3", [_grp("slw_walk", 1, 0.02)], 1, [_aura_guan()], {"guan_yu": Vector2i(6, 4)})
+	var g3: Node = _fly_hero("guan_yu")
+	var d3: Dictionary = {}
+	var ok3: bool = false
+	if es3.size() == 1 and g3 != null:
+		var e3: Node = es3[0]
+		var R3: float = g3.attack_range
+		var at3: Vector2 = g3.global_position
+		var pre: Array = await _slw_track(e3, at3, 3.0, func(e): return e.global_position.distance_to(at3) / t < R3 - 0.4)
+		var pre_steps: Array = []
+		# 前兩步不算（剛出現的那一步還沒移動）
+		for r in pre.slice(2):
+			if float(r.d) > R3 + 0.2:
+				pre_steps.append(snappedf(float(r.dx), 0.0001))
+		var snap3: Dictionary = _fly_snapshot(rec)
+		var sp3: float = float(snap3.get("enemy_speed", {}).values()[0]) if not snap3.get("enemy_speed", {}).is_empty() else -1.0
+		# 從一般幀開始量（_slw_track 停在物理步進開頭，這時開始量會少算一步）
+		await process_frame
+		var m1: Dictionary = await _r19_move(e3, 0.4)
+		_r19_speed(rec, 2.0)
+		var m2: Dictionary = await _r19_move(e3, 0.4)
+		_r19_speed(rec, 1.0)
+		var menu: Dictionary = _r19_open(rec)
+		var m01: Dictionary = await _r19_move(e3, 0.4)
+		_r19_close(rec, menu)
+		_r20_pause(rec, true)
+		var mp: Dictionary = await _r19_move(e3, 0.4)
+		var paused_src: bool = e3.has_slow_from(g3.aura_source)
+		_r20_pause(rec, false)
+		var post: Array = await _slw_track(e3, at3, 6.0, func(e): return e.global_position.distance_to(at3) / t > R3 + 0.6)
+		var out_steps: Array = []
+		for r in post:
+			if float(r.d) > R3 + 0.3:
+				out_steps.append(snappedf(float(r.dx), 0.0001))
+		var per: float = 120.0 / float(Engine.physics_ticks_per_second)
+		var all_eq := func(a: Array, v: float) -> bool:
+			for x in a:
+				if absf(float(x) - v) > 1e-3:
+					return false
+			return a.size() > 0
+		ok3 = all_eq.call(pre_steps, per) and is_equal_approx(sp3, 108.0) and absf(float(m1.per_step) - 0.9 * per) < 1e-3 and absf(float(m2.per_step) - 1.8 * per) < 1e-3 \
+			and absf(float(m01.per_step) - 0.09 * per) < 1e-3 and absf(float(m1.per_sec) - 108.0) < 0.1 and absf(float(m2.per_sec) - 108.0) < 0.1 and absf(float(m01.per_sec) - 108.0) < 0.1 \
+			and float(mp.dx) == 0.0 and paused_src and all_eq.call(out_steps, per) and e3.slow_sources_state().is_empty() and e3.speed_mult == 1.0
+		d3 = {"before": pre_steps.slice(0, 5), "speed_in": sp3, "x1": [snappedf(float(m1.per_step), 0.0001), snappedf(float(m1.per_sec), 0.01)],
+			"x2": [snappedf(float(m2.per_step), 0.0001), snappedf(float(m2.per_sec), 0.01)], "x0_1": [snappedf(float(m01.per_step), 0.0001), snappedf(float(m01.per_sec), 0.01)],
+			"paused_dx": mp.get("dx"), "paused_src": paused_src, "after": out_steps.slice(0, 5), "final_src": e3.slow_sources_state()}
+	_check("光環-3 實際移動距離：範圍外每步 2 像素；範圍內每步 1.8（0.9 倍）、快照速度 108；2 倍每步 3.6、0.1 倍每步 0.18，每秒遊戲時間都是 108；暫停時不動、光環仍在；離開範圍後每步 2、沒有來源",
+		ok3, d3)
+
+	# 光環-4：兩個光環不相乘：關羽 (6,4) 與帶同樣光環的趙雲 (6,6) 都涵蓋第 5 列的敵人 → 兩個不同的光環來源、倍率 0.9（不是 0.81）、每步 1.8 像素
+	var es4: Array = await _slw_start(rec, "aura-4", [_grp("slw_walk", 1, 0.02)], 1, [_aura_guan(), _r12_hero("zhao_yun", AURA_SKILL.duplicate())],
+		{"guan_yu": Vector2i(6, 4), "zhao_yun": Vector2i(6, 6)})
+	var ga: Node = _fly_hero("guan_yu")
+	var gz: Node = _fly_hero("zhao_yun")
+	var d4: Dictionary = {}
+	var ok4: bool = false
+	if es4.size() == 1 and ga != null and gz != null:
+		var at4: Vector2 = ga.global_position
+		var rows4: Array = await _slw_track(es4[0], at4, 4.0, func(e): return e.global_position.distance_to(at4) / t < 1.2)
+		var both4: Array = []
+		for r in rows4:
+			if (r.src as Array).has(ga.aura_source) and (r.src as Array).has(gz.aura_source):
+				both4.append(r)
+		var steps4: Array = []
+		for r in both4.slice(1):
+			steps4.append(snappedf(float(r.dx), 0.0001))
+		var bad4: Array = both4.filter(func(r): return not is_equal_approx(float(r.m), 0.9))
+		ok4 = both4.size() >= 10 and bad4.is_empty() and ga.aura_source != gz.aura_source and steps4.all(func(x): return absf(float(x) - 1.8) < 1e-3)
+		d4 = {"frames_both": both4.size(), "bad": bad4.slice(0, 3), "steps": steps4.slice(0, 5), "sources": [ga.aura_source, gz.aura_source]}
+	_check("光環-4 兩個光環涵蓋同一個敵人：兩個不同的來源、倍率 0.9（不是 0.81）、每步 1.8 像素", ok4, d4)
+
+	# 光環-5：和道路阻擋取最強：關羽（光環）在道路 (8,5)，敵人進入範圍前把攻擊冷卻設成 0.6 秒：先只有光環 0.9、被打中後 0.3（光環＋道路兩個來源）、被擋住；
+	# 把關羽移到建築格 (8,4) 後道路的來源撤掉、仍在光環範圍 → 0.9、繼續前進；離開光環範圍 → 1、沒有來源
+	var es5: Array = await _slw_start(rec, "aura-5", [_grp("slw_walk", 1, 0.02)], 1, [_aura_guan()], {"guan_yu": Vector2i(8, 5)})
+	var g5: Node = _fly_hero("guan_yu")
+	var d5: Dictionary = {}
+	var ok5: bool = false
+	if es5.size() == 1 and g5 != null:
+		var e5: Node = es5[0]
+		var at5: Vector2 = g5.global_position
+		var R5: float = g5.attack_range
+		# 進入範圍前把攻擊冷卻設成 0.6 秒：先有一段只有光環（還沒被打中）的時間
+		await _slw_track(e5, at5, 5.0, func(e): return e.global_position.distance_to(at5) / t < R5 + 0.3)
+		g5._atk_timer = 0.6
+		var rows5: Array = await _slw_track(e5, at5, 8.0, func(e): return e.is_fighting_blocker())
+		var aura_only: int = 0
+		var both5: int = 0
+		for r in rows5:
+			var s: Array = r.src
+			if s == [g5.aura_source] and is_equal_approx(float(r.m), 0.9):
+				aura_only += 1
+			if s.size() == 2 and s.has(g5.aura_source) and s.has(g5.slow_source) and is_equal_approx(float(r.m), 0.3):
+				both5 += 1
+		var blocked: bool = e5.is_fighting_blocker()
+		main.game_map.clear_occupied(Vector2i(8, 5))
+		g5.reposition(Vector2i(8, 4), main.game_map.grid_to_world(Vector2i(8, 4)), main.game_map)
+		main.game_map.set_occupied(Vector2i(8, 4), g5)
+		await physics_frame
+		await process_frame
+		await physics_frame
+		var mid: Array = [snappedf(e5.speed_mult, 0.0001), e5.slow_sources_state().keys() == [g5.aura_source], e5.is_fighting_blocker()]
+		var at5b: Vector2 = g5.global_position
+		var rows5b: Array = await _slw_track(e5, at5b, 6.0, func(e): return e.global_position.distance_to(at5b) / t > R5 + 0.3)
+		await physics_frame
+		await process_frame
+		await physics_frame
+		var end5: Array = [e5.speed_mult, e5.slow_sources_state().is_empty()] if is_instance_valid(e5) else [-1.0, false]
+		ok5 = aura_only >= 3 and both5 >= 3 and blocked and mid == [0.9, true, false] and rows5b.size() > 5 and end5 == [1.0, true]
+		d5 = {"aura_only_frames": aura_only, "aura_and_road_frames": both5, "blocked": blocked, "after_move": mid, "end": end5}
+	_check("光環-5 和道路阻擋取最強：先只有光環 0.9，被打中後光環＋道路兩個來源、0.3、被擋住；關羽移到建築格後只剩光環 0.9、不再被擋；離開光環範圍後 1、沒有來源",
+		ok5, d5)
+
+	# 光環-6：移位、升級、移除、倒下、新的一場（不會移動的敵人 A 在 3.3 格、B 在 1 格；關羽的射程成長 0.5，2 級時 3.5 格）：
+	# 1 級只有 B；升到 2 級（隊伍更新）後 A 也有；移到遠處 (1,4) 後兩個都沒有；移回來兩個都有；從隊伍移除後兩個都沒有；
+	# 重新放置後兩個都有，關羽倒下後兩個都沒有；新的一場的敵人沒有來源
+	var hc6: Array = [{"hero_id": "guan_yu", "name": "關羽", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5, "range_growth": 0.5}]
+	var es6: Array = await _slw_start(rec, "aura-6", [_grp("slw_post", 2, 0.02)], 2, [_aura_guan()], {"guan_yu": Vector2i(6, 4)}, [], hc6)
+	var g6: Node = _fly_hero("guan_yu")
+	var d6: Dictionary = {}
+	var ok6: bool = false
+	if es6.size() == 2 and g6 != null:
+		g6._atk_timer = 999.0
+		var base6: Vector2 = main.game_map.grid_to_world(Vector2i(6, 4))
+		es6[0].global_position = base6 + Vector2(3.3, 0.0) * t
+		es6[1].global_position = base6 + Vector2(0.0, 1.0) * t
+		var has := func() -> Array:
+			var h: Node = _fly_hero("guan_yu")
+			var src: String = h.aura_source if h != null else "none"
+			return [es6[0].has_slow_from(src), es6[1].has_slow_from(src), es6[0].slow_sources_state().size(), es6[1].slow_sources_state().size()]
+		var steps: Dictionary = {}
+		for i in range(3):
+			await process_frame
+			await physics_frame
+		steps["lv1"] = has.call()
+		var lv2: Dictionary = _aura_guan()
+		lv2["level"] = 2
+		_r19_js(rec, {"type": "update_team", "team_list": [lv2]})
+		for i in range(3):
+			await process_frame
+			await physics_frame
+		steps["lv2"] = has.call()
+		steps["lv2_radius"] = g6.attack_range
+		main.game_map.clear_occupied(Vector2i(6, 4))
+		g6.reposition(Vector2i(1, 4), main.game_map.grid_to_world(Vector2i(1, 4)), main.game_map)
+		main.game_map.set_occupied(Vector2i(1, 4), g6)
+		for i in range(3):
+			await process_frame
+			await physics_frame
+		steps["moved_away"] = has.call()
+		main.game_map.clear_occupied(Vector2i(1, 4))
+		g6.reposition(Vector2i(6, 4), base6, main.game_map)
+		main.game_map.set_occupied(Vector2i(6, 4), g6)
+		for i in range(3):
+			await process_frame
+			await physics_frame
+		steps["moved_back"] = has.call()
+		var src6: String = g6.aura_source
+		_r19_js(rec, {"type": "update_team", "team_list": []})
+		for i in range(3):
+			await process_frame
+			await physics_frame
+		steps["removed"] = [es6[0].has_slow_from(src6), es6[1].has_slow_from(src6), es6[0].slow_sources_state().size(), es6[1].slow_sources_state().size()]
+		_r19_js(rec, {"type": "update_team", "team_list": [lv2]})
+		_r12_place("guan_yu", Vector2i(6, 4))
+		var g6b: Node = _fly_hero("guan_yu")
+		if g6b != null:
+			g6b._atk_timer = 999.0
+		for i in range(3):
+			await process_frame
+			await physics_frame
+		steps["replaced"] = has.call()
+		steps["new_source"] = g6b != null and g6b.aura_source != src6
+		var src6b: String = g6b.aura_source if g6b != null else ""
+		if g6b != null:
+			g6b.take_damage(1.0e9)
+		for i in range(3):
+			await process_frame
+			await physics_frame
+		steps["died"] = [es6[0].has_slow_from(src6b), es6[1].has_slow_from(src6b), es6[0].slow_sources_state().size(), es6[1].slow_sources_state().size(), _fly_hero("guan_yu") == null]
+		var es6n: Array = await _slw_start(rec, "aura-6b", [_grp("slw_post", 2, 0.02)], 2, [_aura_guan()])
+		steps["new_battle"] = es6n.map(func(e): return e.slow_sources_state().size())
+		ok6 = steps.lv1 == [false, true, 0, 1] and steps.lv2 == [true, true, 1, 1] and is_equal_approx(float(steps.lv2_radius), 3.5) and steps.moved_away == [false, false, 0, 0] \
+			and steps.moved_back == [true, true, 1, 1] and steps.removed == [false, false, 0, 0] and steps.replaced == [true, true, 1, 1] and steps.new_source \
+			and steps.died == [false, false, 0, 0, true] and steps.new_battle == [0, 0]
+		d6 = steps
+	_check("光環-6 移位、升級、移除、倒下、新的一場：1 級只有 1 格的敵人；2 級（半徑 3.5）3.3 格的也有；移到遠處都沒有、移回來都有；從隊伍移除後都沒有；重新放置（新的來源）都有、倒下後都沒有；新的一場的敵人沒有來源",
+		ok6, d6)
 
 	rec.payload_received.disconnect(main._on_payload_received)
 	main.web_bridge = original

@@ -1,6 +1,7 @@
 ## Hero.gd
 ## 武將：放置於 ROAD 或 BUILD，自動攻擊範圍內敵人
-## ROAD 上：攻擊最近敵人並施加緩速（模擬阻擋；飛行敵人不受阻擋，不施加）
+## ROAD 上：攻擊最近敵人並施加緩速（模擬阻擋；飛行敵人不受阻擋，不施加）。打過的地面敵人留在射程內就持續減速，
+## 離開射程、倒下，或武將離開道路／被移除時只撤除這位武將自己的減速（見 _update_slows）
 ## BUILD 上：攻擊最近敵人（不阻擋）
 ## 對空：弓兵（archer）、法師（mage）可以攻擊地面與飛行敵人；步兵、騎兵、砲兵與不認得的職業只打地面
 
@@ -42,6 +43,12 @@ var _anim_timer: float    = 0.0
 var tile_size: int        = 48
 var hero_half: int        = 16
 const SLOW_RATIO: float   = 0.30   # ROAD 英雄對敵人施加的速度倍率
+## 這位武將施加減速時用的來源（每個武將節點各自不同：同一位武將移除後重新放置也是新的來源）。
+## 道路阻擋與減速光環是兩個來源：光環範圍內的敵人離開道路阻擋後，光環的減速照常生效
+var slow_source: String   = ""
+var aura_source: String   = ""
+## 目前被這位武將的道路阻擋減速的敵人（instance id → 敵人）：每一幀檢查、刷新或撤除，不留已經無效的引用
+var _road_slowed: Dictionary = {}
 
 # ── 技能（出征資料 team_list 的 skill，定義在 Web 的 utils/heroSkills）────
 ## 首擊加倍（first_strike，馬超「衝鋒」）：每場戰鬥首次有效普通攻擊的傷害倍率；1.0 代表沒有這個技能
@@ -55,7 +62,8 @@ var burn_ticks: int = 0
 var burn_interval: float = 1.0
 ## 橫掃（sweep）：每次有效普通攻擊命中後，以主目標被打中時的位置為中心、半徑 sweep_radius 格（含邊界）內，
 ## 對最多 sweep_max_targets 名其他仍存活的敵人各造成這一擊傷害 × sweep_ratio（由近到遠，距離相同時生成序號小的優先）。
-## sweep_ratio 0 代表沒有這個技能；橫掃的傷害走敵人一般的受傷／死亡流程，不再觸發橫掃或其他普通攻擊技能，也不增加攻擊次數
+## sweep_ratio 0 代表沒有這個技能；橫掃的傷害走敵人一般的受傷／死亡流程，不再觸發橫掃或其他普通攻擊技能，也不增加攻擊次數。
+## 目前沒有綁定任何正式武將（網頁的技能定義不送 sweep）：保留作技能原型，出征資料帶 sweep 時才啟用
 var sweep_ratio: float = 0.0
 var sweep_radius: float = 0.0
 var sweep_max_targets: int = 0
@@ -82,6 +90,19 @@ var dodge_log: Array = []
 const DODGE_LOG_MAX: int = 40
 ## 閃避提示的顏色（藍白色，和金色的技能倍率、紅色的受傷數字區分）
 const DODGE_COLOR: Color = Color(0.6, 0.92, 1.0)
+## 減速光環（slow_aura，關羽）：戰鬥中（BATTLE）、這位武將活著且在場上時，以武將為中心、目前有效射程內（含邊界，比中心距離）
+## 的所有地面敵人移動速度 × slow_aura_mult（0.9 ＝ 降低 10%）。不需要普通攻擊的目標、不看攻擊冷卻，也不改變普通攻擊；
+## 飛行敵人（步兵本來就不能對空）與免疫減速的敵人不受影響。每一幀重新判斷：離開範圍、武將移位／升級改變範圍、倒下、被移除、
+## 戰鬥結束時撤除自己的來源（最遲下一幀）。和其他倍率減速同時作用時由敵人取最強的一個（Enemy.speed_mult），不疊加。
+## slow_aura_mult 1.0 代表沒有這個技能
+var slow_aura_mult: float = 1.0
+## 目前被光環減速的敵人（instance id → 敵人）
+var _aura_slowed: Dictionary = {}
+## 範圍邊界的容許誤差（像素）：距離正好是半徑的敵人算在範圍內
+const AURA_EDGE_EPS: float = 0.001
+## 光環範圍的顯示（戰鬥中畫出淺藍色的範圍圈）
+const AURA_COLOR: Color = Color(0.45, 0.85, 1.0, 1.0)
+var _aura_shown: bool = false
 ## BattleManager：記錄這一場哪些武將已用過首擊加倍（記在這裡而不是武將節點，移位、重新放置都不會重置）
 var _battle_mgr: Node     = null
 
@@ -93,6 +114,8 @@ var body_color: Color     = Color(0.20, 0.40, 0.80, 1)  # 預設藍
 # ═══════════════════════════════════════════
 func _init() -> void:
 	_dodge_rng.randomize()
+	slow_source = "hero_road#%d" % get_instance_id()
+	aura_source = "hero_aura#%d" % get_instance_id()
 
 func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: bool, wave_mgr: Node, battle_mgr: Node = null) -> void:
 	hero_id    = str(state.get("hero_id", ""))
@@ -176,6 +199,7 @@ func _read_skill(state: Dictionary) -> void:
 	sweep_radius = 0.0
 	sweep_max_targets = 0
 	dodge_chance = 0.0
+	slow_aura_mult = 1.0
 	var skill = state.get("skill", null)
 	if not (skill is Dictionary):
 		return
@@ -206,6 +230,11 @@ func _read_skill(state: Dictionary) -> void:
 			var c: Variant = skill.get("dodge_chance")
 			if (c is float or c is int) and is_finite(float(c)) and float(c) > 0.0 and float(c) <= 1.0:
 				dodge_chance = float(c)
+		"slow_aura":
+			# 倍率要是 0～1 之間（不含兩端）的有限數字；字串、布林、null、NaN、無限大、0 以下、1 以上都不啟用
+			var m: Variant = skill.get("slow_mult")
+			if (m is float or m is int) and is_finite(float(m)) and float(m) > 0.0 and float(m) < 1.0:
+				slow_aura_mult = float(m)
 
 ## 有效射程（格）＝（基礎射程 + (等級-1) × 射程成長）× 技能倍率。
 ## 每次都從設定重新計算，不在目前的值上再乘：更新隊伍、升級、移位、重新放置都不會疊乘
@@ -223,6 +252,8 @@ func _compute_range(cfg: Dictionary) -> float:
 ## - 一幀最多打一擊：單幀長過攻擊間隔時其餘的攻擊作廢（受幀率限制），下一擊從這一擊起算一個完整的攻擊間隔，不補發
 ## 切換速度、部署慢速、手動暫停、升級、重選目標都不重設這個計時器
 func _process(delta: float) -> void:
+	# 減速（道路阻擋、光環）每一幀更新，不看攻擊冷卻
+	_update_slows()
 	var was_ready: bool = _atk_timer <= 0.0
 	_atk_timer -= delta
 	
@@ -241,8 +272,7 @@ func _process(delta: float) -> void:
 	var enemies: Array = _wave_mgr.get_active_enemies()
 	var target: Node = _find_target(enemies, range_px)
 	if target == null:
-		# 清除所有減速；待命停在 0，不囤積攻擊
-		_clear_all_slows(enemies)
+		# 待命停在 0，不囤積攻擊（射程內沒有目標時，道路阻擋的減速已由 _update_slows 撤除；其他來源的減速不受影響）
 		_atk_timer = 0.0
 		return
 
@@ -270,10 +300,12 @@ func _process(delta: float) -> void:
 	_atk_timer    = attack_speed - (late if late < attack_speed else 0.0)
 	queue_redraw()
 
-	# ROAD 武將：在攻擊的回合對目標施加緩速（模擬阻擋；飛行敵人不被武將擋住，不施加）。
+	# ROAD 武將：在攻擊的回合對目標施加緩速（模擬阻擋；飛行敵人不被武將擋住，不施加）。之後每一幀在射程內就刷新（_update_slows）。
 	# 目標可能被這一擊打倒並釋放，先確認還在
-	if is_on_road and is_instance_valid(target) and not target.is_flying():
-		target.apply_slow(SLOW_RATIO, attack_speed)
+	if is_on_road and _enemy_alive(target) and not target.is_flying():
+		target.apply_slow_from(slow_source, SLOW_RATIO, Enemy.SLOW_REFRESH_TTL)
+		if target.has_slow_from(slow_source):
+			_road_slowed[target.get_instance_id()] = target
 
 ## 這位武將能不能攻擊這個敵人：地面一律可以；飛行只有能對空的職業可以。選目標與橫掃都先經過這一關
 func can_target(e: Node) -> bool:
@@ -337,12 +369,65 @@ func _show_skill_text(text: String) -> void:
 	ft.scale = Vector2(1.5, 1.5)
 	ft.setup(text, Color(1.0, 0.85, 0.2), global_position + Vector2(0, -hero_half - 12))
 
-func _clear_all_slows(enemies: Array) -> void:
-	if not is_on_road:
-		return
-	for e in enemies:
-		if is_instance_valid(e) and not e.is_dead():
-			e.clear_slow()
+## 每一幀更新這位武將自己的兩個減速來源（只動自己的來源，其他武將、防禦塔的減速不受影響）：
+## - 道路阻擋：打過的地面敵人還在射程內（和選目標相同的距離判斷）就刷新；離開射程、倒下、武將不在道路上或正要被移除時撤除
+## - 減速光環：見 slow_aura_mult
+func _update_slows() -> void:
+	var leaving: bool = is_queued_for_deletion() or current_hp <= 0.0
+	var range_px: float = attack_range * tile_size
+	for id in _road_slowed.keys():
+		var e: Variant = _road_slowed[id]
+		if leaving or not is_on_road or not _enemy_alive(e) or global_position.distance_to(e.global_position) > range_px:
+			if is_instance_valid(e):
+				e.remove_slow_from(slow_source)
+			_road_slowed.erase(id)
+		else:
+			e.apply_slow_from(slow_source, SLOW_RATIO, Enemy.SLOW_REFRESH_TTL)
+
+	var active: bool = slow_aura_mult < 1.0 and not leaving and _wave_mgr != null and _in_battle()
+	var keep: Dictionary = {}
+	if active:
+		var radius_px: float = range_px + AURA_EDGE_EPS
+		for e in _wave_mgr.get_active_enemies():
+			if _enemy_alive(e) and not e.is_flying() and global_position.distance_to(e.global_position) <= radius_px:
+				e.apply_slow_from(aura_source, slow_aura_mult, Enemy.SLOW_REFRESH_TTL)
+				# 免疫減速的敵人不會套用，也就不列入
+				if e.has_slow_from(aura_source):
+					keep[e.get_instance_id()] = e
+	for id in _aura_slowed:
+		if not keep.has(id) and is_instance_valid(_aura_slowed[id]):
+			_aura_slowed[id].remove_slow_from(aura_source)
+	_aura_slowed = keep
+	if active != _aura_shown:
+		_aura_shown = active
+		queue_redraw()
+
+## 撤除這位武將施加的所有減速（被移除、倒下、切換關卡時離開場景樹）
+func _release_slows() -> void:
+	for id in _road_slowed:
+		if is_instance_valid(_road_slowed[id]):
+			_road_slowed[id].remove_slow_from(slow_source)
+	for id in _aura_slowed:
+		if is_instance_valid(_aura_slowed[id]):
+			_aura_slowed[id].remove_slow_from(aura_source)
+	_road_slowed.clear()
+	_aura_slowed.clear()
+
+func _exit_tree() -> void:
+	_release_slows()
+
+## 戰鬥中（BATTLE）才有光環；沒有 BattleManager（單獨建立的武將）時視為戰鬥中
+func _in_battle() -> bool:
+	return _battle_mgr == null or _battle_mgr.game_state == BattleManager.GameState.BATTLE
+
+func _enemy_alive(e: Variant) -> bool:
+	return e != null and is_instance_valid(e) and not e.is_queued_for_deletion() and not e.is_dead()
+
+## 測試用唯讀資訊（debug_snapshot）：光環的倍率、半徑（格）與目前影響的敵人；道路阻擋目前減速的敵人
+func slow_state() -> Dictionary:
+	return {"aura_mult": slow_aura_mult, "radius": attack_range, "aura_active": _aura_shown,
+		"aura": _aura_slowed.keys().map(func(k): return str(k)), "road": _road_slowed.keys().map(func(k): return str(k)),
+		"aura_source": aura_source, "road_source": slow_source}
 
 # ═══════════════════════════════════════════
 #  受傷（被擋住的敵人攻擊阻路武將；閃避見 dodge_chance）
@@ -412,6 +497,12 @@ func set_selected(sel: bool) -> void:
 func _draw() -> void:
 	var rect: Rect2 = Rect2(Vector2(-hero_half, -hero_half),
 					  Vector2(hero_half * 2, hero_half * 2))
+
+	# 減速光環的範圍（戰鬥中）：淺藍色的淡圈，半徑是目前的有效射程
+	if _aura_shown:
+		var ar: float = attack_range * tile_size
+		draw_circle(Vector2.ZERO, ar, Color(AURA_COLOR, 0.07))
+		draw_arc(Vector2.ZERO, ar, 0, TAU, 48, Color(AURA_COLOR, 0.45), 1.5)
 
 	# 射程圈（選中時顯示）
 	if _is_selected:
@@ -488,6 +579,7 @@ func get_cell() -> Vector2i:
 func get_attack_range_px() -> float:
 	return attack_range * tile_size
 
+## 移位：之後的減速照新的位置與格子判斷（下一幀撤除離開範圍的敵人；移到非道路格時撤除道路阻擋的減速）
 func reposition(new_cell: Vector2i, world_pos: Vector2, game_map: Node) -> void:
 	grid_cell = new_cell
 	position = world_pos

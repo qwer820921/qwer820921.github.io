@@ -5,7 +5,8 @@
 //   node scripts/shenma-regression/tools/run-tier.mjs full
 //   node scripts/shenma-regression/tools/run-tier.mjs list              列出功能與對應的瀏覽器腳本
 // - quick：型別檢查、神馬三國與地圖編輯器的 ESLint、Node 測試（store、戰鬥結算獎勵規則、飛行敵人與對空規則、出征前的對空準備、
-//   飛行路線無效與優先飛行選項、地面路線沒有路程與戰場內的下一波、備份檔、武將列表篩選、地圖編輯器的錯誤說明與敵人表的移動方式欄判斷、
+//   飛行路線無效與優先飛行選項、地面路線沒有路程與戰場內的下一波、關卡能不能出征與敵人攻擊力／免疫減速、備份檔、武將列表篩選、
+//   地圖編輯器的錯誤說明與敵人表的移動方式欄判斷、
 //   跨來源隔離開機腳本）、harness 雜訊規則、
 //   工具自我測試、素材引用檢查。不需要 dev server 與 Godot
 // - related：quick 之後，只跑指定功能的瀏覽器腳本；full：quick 之後跑全部瀏覽器腳本（約 35 分鐘）
@@ -61,6 +62,11 @@ const QUICK = [
     "地面路線沒有路程與戰場內下一波的規則測試",
     "node",
     ["scripts/shenma-regression/web/next-wave.test.mjs"],
+  ],
+  [
+    "關卡能不能出征與敵人攻擊力、免疫減速的規則測試",
+    "node",
+    ["scripts/shenma-regression/web/stage-data.test.mjs"],
   ],
   [
     "備份檔讀取與驗證測試",
@@ -145,12 +151,12 @@ const AREAS = {
     scripts: ["r13-web.js"],
   },
   skills: {
-    what: "武將技能（馬超的首擊加倍、趙雲的閃避、黃忠、周瑜、關羽）：趙雲在兩個入口實際擋路受擊，逐次核對閃避的判定（需要 Godot 產物）",
+    what: "武將技能（馬超的首擊加倍、趙雲的閃避、黃忠、周瑜、關羽的減速光環）：趙雲在兩個入口實際擋路受擊，逐次核對閃避的判定；關羽在兩個入口實際部署，核對光環範圍內地面敵人的速度與免疫、飛行不受影響（需要 Godot 產物）",
     scripts: [
       "r12-web.js",
       "r14-web.js",
       "r15-web.js",
-      "skill-sweep-web.js",
+      "skill-slow-aura-web.js",
       "skill-dodge-web.js",
     ],
   },
@@ -182,6 +188,10 @@ const AREAS = {
     what: "出征前的對空準備提醒：兩個關卡選擇入口與敵軍預覽、換隊伍即時更新、缺敵人設定、390 寬與鍵盤、不阻擋出征（需要 Godot 產物）",
     scripts: ["air-readiness-web.js"],
   },
+  "wave-reject": {
+    what: "拒絕開戰後的出口：主頁（桌面與 390×844）從提示的「切換關卡」打開關卡選擇，原本提示範圍內的有效關卡用 hit-test 確認在最上層並用真實滑鼠點擊換關；取消選關、Esc、再開；獨立戰鬥頁返回關卡選擇後換關；不結算、資源不變（需要 Godot 產物）",
+    scripts: ["wave-reject-exit-web.js"],
+  },
   "air-first": {
     what: "飛行路線無效與防禦塔「優先飛行」：兩個關卡選擇入口的提醒與預覽和實際出兵一致、兩個戰鬥入口選塔切換並觀察攻擊／減速目標、拒絕開戰的提示與出口、390 寬與鍵盤（需要 Godot 產物）",
     scripts: ["air-first-web.js"],
@@ -191,6 +201,14 @@ const AREAS = {
     scripts: ["next-wave-web.js"],
   },
   "stage-preview": { what: "攻速成長、關卡敵軍預覽", scripts: ["r16-web.js"] },
+  "stage-data": {
+    what: "關卡資料未完成的入口：兩個關卡選擇入口的卡片（尚未開放／尚未解鎖）、主頁與獨立戰鬥頁直接進入時不送關卡資料並說明原因與出口、在有效戰場點尚未開放的關卡不改變目前的戰場、快速連點、重玩、遊戲設定讀取失敗與重試、390 寬（需要 Godot 產物）",
+    scripts: ["stage-data-web.js"],
+  },
+  "enemy-traits": {
+    what: "敵人設定的對武將攻擊力與免疫減速：敵軍預覽與戰場內的下一波的顯示、兩個戰鬥入口實際部署受擊（快照核對攻擊力、免疫、減速倍率與扣血）、390 寬（需要 Godot 產物）",
+    scripts: ["enemy-traits-web.js"],
+  },
   "floating-ui": {
     what: "全站浮動入口在神馬三國視窗上的隱藏、敵軍預覽鍵盤操作、防禦塔目標優先",
     scripts: ["r17-web.js"],
@@ -234,7 +252,7 @@ const FULL = [
   "save-conflict-web.js",
   "backup-preview-web.js",
   "map-editor-web.js",
-  "skill-sweep-web.js",
+  "skill-slow-aura-web.js",
   "hero-filter-web.js",
   "team-filter-web.js",
   "hero-category-web.js",
@@ -246,6 +264,9 @@ const FULL = [
   "air-first-web.js",
   "next-wave-web.js",
   "skill-dodge-web.js",
+  "stage-data-web.js",
+  "enemy-traits-web.js",
+  "wave-reject-exit-web.js",
 ];
 
 const [mode, ...rest] = process.argv.slice(2);

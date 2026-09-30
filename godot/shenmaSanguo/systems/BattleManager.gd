@@ -230,7 +230,9 @@ static func create_game_timer(parent: Node, sec: float) -> Timer:
 
 func _spawn_next_wave() -> void:
 	var next_wave: int = current_wave + 1
-	if next_wave > total_waves:
+	# 關卡沒有任何波次（total_waves 是 0）時不能直接 return：那樣會一直停在備戰、按了迎戰沒有反應。
+	# 照一般的拒絕流程處理第 1 波（WaveManager 回報缺少這一波的資料），不結算、不當成清波勝利
+	if next_wave > total_waves and total_waves > 0:
 		return
 	# 先確認這一波至少有一組敵人能生成，才進入戰鬥
 	var plans: Array = _wave_manager.plan_wave(next_wave) if _wave_manager else []
@@ -246,7 +248,7 @@ func _spawn_next_wave() -> void:
 	_wave_manager.start_wave(current_wave, plans)
 
 ## 波次無法生成任何敵人時拒絕開戰：波次不前進、不結算，關閉自動並回到備戰。
-## 避免無效設定被當成「清波」而直接給勝利獎勵；切換到有效關卡即可恢復。
+## 避免無效設定被當成「清波」而直接給勝利獎勵；切換到有效關卡即可恢復。關卡完全沒有波次時同樣拒絕第 1 波。
 func _reject_wave(wave_num: int, reason: String) -> void:
 	push_error("[BattleManager] 拒絕開始第 %d 波：%s（關卡 %s）" % [wave_num, reason, stage_id])
 	_cancel_auto_wave()

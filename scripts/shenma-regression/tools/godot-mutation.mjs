@@ -1,4 +1,4 @@
-// Godot 技能（包括閃避與首擊加倍）、飛行敵人與敵人阻路冷卻測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
+// Godot 技能（包括閃避與首擊加倍）、飛行敵人、敵人阻路冷卻、關卡沒有波次的拒絕、敵人的攻擊力與免疫減速測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
 // 對遊戲程式套用一個刻意的錯誤，只跑指定的測試組（SHENMA_TEST_ONLY），確認測試「該失敗時一定失敗」。
 // 用法：GODOT=<Godot 4.6.2 console 執行檔> node scripts/shenma-regression/tools/godot-mutation.mjs <變異名稱|none|list>
 // - none：不改程式，同一組測試必須全部通過、log 也要通過 check-log.mjs 的檢查（確認基準）
@@ -22,6 +22,8 @@ const HERO = "entities/hero/Hero.gd";
 const TOWER = "entities/tower/Tower.gd";
 const ENEMY = "entities/enemy/Enemy.gd";
 const WAVE = "systems/WaveManager.gd";
+const MAIN = "main/Main.gd";
+const BATTLE = "systems/BattleManager.gd";
 
 // 每個變異：要改的檔案、原文（必須剛好出現一次）、改成的內容、要跑的測試組與預期會 FAIL 的項目（名稱開頭）
 const MUTATIONS = {
@@ -210,10 +212,101 @@ const MUTATIONS = {
   "dodge-refunds-enemy-cooldown": {
     why: "攻擊被閃避（沒有扣血）時退還敵人的冷卻，下一步立刻再打",
     file: ENEMY,
-    from: "\t\t\tblocker_attacks += 1\n\t\t\t_blocker.take_damage(BLOCKER_ATK)\n",
-    to: "\t\t\tblocker_attacks += 1\n\t\t\tvar hp_before: float = _blocker.current_hp\n\t\t\t_blocker.take_damage(BLOCKER_ATK)\n\t\t\tif is_instance_valid(_blocker) and _blocker.current_hp == hp_before:\n\t\t\t\t_blocker_atk_timer = 0.0\n\t\t\t\tqueue_redraw()\n\t\t\t\treturn\n",
+    from: "\t\t\tblocker_attacks += 1\n\t\t\t_blocker.take_damage(blocker_atk)\n",
+    to: "\t\t\tblocker_attacks += 1\n\t\t\tvar hp_before: float = _blocker.current_hp\n\t\t\t_blocker.take_damage(blocker_atk)\n\t\t\tif is_instance_valid(_blocker) and _blocker.current_hp == hp_before:\n\t\t\t\t_blocker_atk_timer = 0.0\n\t\t\t\tqueue_redraw()\n\t\t\t\treturn\n",
     only: "blocker",
     expect: ["阻路-13 ", "阻路-14a ", "阻路-14b "],
+  },
+  // 關卡資料未完成（SHENMA_TEST_ONLY=stagedata）
+  "no-waves-builtin-fallback": {
+    why: "關卡沒有波次時改用內建的測試波次（舊寫法：一波 soldier）",
+    file: MAIN,
+    from: "\t_waves = raw_waves if raw_waves is Array else []\n",
+    to: '\t_waves = raw_waves if raw_waves is Array else []\n\tif _waves.is_empty():\n\t\t_waves = [{"wave": 1, "enemies": [{"enemy_id": "soldier", "count": 3, "interval": 1.2, "path": "path_a"}]}]\n',
+    only: "stagedata",
+    expect: ["資料-1 ", "資料-2 ", "資料-3 ", "資料-4 "],
+  },
+  "no-waves-silent": {
+    why: "關卡沒有波次時按迎戰直接返回（沒有拒絕、一直停在備戰，舊寫法）",
+    file: BATTLE,
+    from: "\tif next_wave > total_waves and total_waves > 0:\n",
+    to: "\tif next_wave > total_waves:\n",
+    only: "stagedata",
+    expect: ["資料-1 ", "資料-2 ", "資料-3 ", "資料-4 ", "資料-5 "],
+  },
+  "no-waves-auto-win": {
+    why: "關卡沒有波次時直接當成打完（勝利結算）",
+    file: BATTLE,
+    from: "\tif next_wave > total_waves and total_waves > 0:\n\t\treturn\n",
+    to: "\tif next_wave > total_waves:\n\t\tif total_waves <= 0:\n\t\t\t_end_battle(true)\n\t\treturn\n",
+    only: "stagedata",
+    expect: ["資料-1 ", "資料-2 ", "資料-3 ", "資料-4 ", "資料-5 "],
+  },
+  // 敵人設定的對武將攻擊力（SHENMA_TEST_ONLY=enemyatk）
+  "atk-fixed-20": {
+    why: "敵人攻擊阻路武將固定 20（沒有讀設定的 atk，舊寫法）",
+    file: ENEMY,
+    from: "\tblocker_atk  = blocker_atk_of(cfg)\n",
+    to: "\tblocker_atk  = BLOCKER_ATK_DEFAULT\n",
+    only: "enemyatk",
+    expect: [
+      "攻擊-1 ",
+      "攻擊-3 ",
+      "攻擊-4 ",
+      "攻擊-5 ",
+      "攻擊-6 ",
+      "攻擊-7 ",
+      "攻擊-8 ",
+    ],
+  },
+  "atk-zero-fallback": {
+    why: "atk 是 0 時回退成 20（只接受正數）",
+    file: ENEMY,
+    from: "and float(raw) >= 0.0:\n",
+    to: "and float(raw) > 0.0:\n",
+    only: "enemyatk",
+    expect: ["攻擊-0 ", "攻擊-1 ", "攻擊-3 ", "攻擊-6 "],
+  },
+  // 敵人設定的免疫減速（SHENMA_TEST_ONLY=immune）
+  "immune-missing-slow": {
+    why: "免疫減速漏掉倍率減速（阻擋減速、緩速光環：apply_slow_from／apply_slow 照樣套用）",
+    file: ENEMY,
+    from: '\tif immune_slow or _is_dead or source == "":\n',
+    to: '\tif _is_dead or source == "":\n',
+    only: "immune",
+    expect: ["免疫-1 ", "免疫-2 ", "免疫-3 ", "免疫-4 ", "免疫-5 "],
+  },
+  "immune-missing-stack": {
+    why: "免疫減速漏掉文士塔的疊加減速（apply_stackable_slow 照樣套用、顯示「緩」）",
+    file: ENEMY,
+    from: "func apply_stackable_slow(amount: float, duration: float) -> void:\n\tif immune_slow:\n\t\treturn\n",
+    to: "func apply_stackable_slow(amount: float, duration: float) -> void:\n",
+    only: "immune",
+    expect: ["免疫-1 ", "免疫-2 ", "免疫-3 ", "免疫-5 "],
+  },
+  "immune-as-flying": {
+    why: "把免疫減速當成飛行（不被武將擋住、不攻擊武將）",
+    file: ENEMY,
+    from: "\treturn movement_type == MOVE_FLYING\n",
+    to: "\treturn movement_type == MOVE_FLYING or immune_slow\n",
+    only: "immune",
+    expect: ["免疫-4 "],
+  },
+  "immune-by-id": {
+    why: "用敵人的 id 判斷免疫（id 有 cavalry 就免疫，不看 trait）",
+    file: ENEMY,
+    from: "\timmune_slow  = is_immune_slow_cfg(cfg)\n",
+    to: '\timmune_slow  = str(cfg.get("enemy_id", "")).contains("cavalry")\n',
+    only: "immune",
+    expect: ["免疫-1 ", "免疫-2 ", "免疫-3 ", "免疫-4 ", "免疫-5 "],
+  },
+  "immune-shared": {
+    why: "免疫是所有敵人共用的一份（最後生成的敵人決定大家都免疫或都不免疫）",
+    file: ENEMY,
+    from: "var immune_slow: bool = false\n",
+    to: "static var immune_slow: bool = false\n",
+    only: "immune",
+    expect: ["免疫-1 ", "免疫-5 "],
   },
   // 趙雲「閃避」（SHENMA_TEST_ONLY=dodge）
   "dodge-boundary-inclusive": {
@@ -280,6 +373,135 @@ const MUTATIONS = {
     to: "\t\t\t\tdodge_chance = float(c)\n\t\t\t\tfirst_strike_multiplier = 2.0\n",
     only: "firststrike",
     expect: ["首擊加倍-1 "],
+  },
+  // 倍率減速的來源與有效期、關羽的減速光環（SHENMA_TEST_ONLY=slow）
+  "slow-ignores-duration": {
+    why: "倍率減速忽略有效期（永遠不到期）",
+    file: ENEMY,
+    from: "\t\te.left = float(e.left) - delta\n",
+    to: "\t\te.left = float(e.left)\n",
+    only: "slow",
+    expect: ["減速-2 ", "減速-3 ", "減速-10 "],
+  },
+  "slow-last-writer": {
+    why: "倍率減速由最後套用的來源覆蓋（不是取最強）",
+    file: ENEMY,
+    from: '\t_slow_sources[source] = {"mult": mult, "left": duration}\n\t_refresh_speed_mult()\n',
+    to: '\t_slow_sources[source] = {"mult": mult, "left": duration}\n\tspeed_mult = mult\n',
+    only: "slow",
+    expect: ["減速-1 "],
+  },
+  "slow-remove-clears-all": {
+    why: "撤除一個來源時清掉所有來源",
+    file: ENEMY,
+    from: "\tif _slow_sources.erase(source):\n\t\t_refresh_speed_mult()\n",
+    to: "\tif _slow_sources.has(source):\n\t\t_slow_sources.clear()\n\t\t_refresh_speed_mult()\n",
+    only: "slow",
+    expect: ["減速-4 "],
+  },
+  "slow-sources-multiply": {
+    why: "多個來源相乘（兩個 0.9 變成 0.81）",
+    file: ENEMY,
+    from: "\t\tm = minf(m, float(_slow_sources[s].mult))\n",
+    to: "\t\tm = m * float(_slow_sources[s].mult)\n",
+    only: "slow",
+    expect: ["減速-1 ", "減速-4 ", "光環-4 ", "光環-5 "],
+  },
+  "slow-immune-new-api": {
+    why: "免疫減速漏掉依來源的減速（apply_slow_from）",
+    file: ENEMY,
+    from: '\tif immune_slow or _is_dead or source == "":\n',
+    to: '\tif _is_dead or source == "":\n',
+    only: "slow",
+    expect: ["減速-5 ", "減速-9 ", "光環-1 ", "光環-2 "],
+  },
+  "hero-no-target-clears-all": {
+    why: "沒有目標的武將清掉所有敵人的所有減速（包括防禦塔的）",
+    file: HERO,
+    from: "\t\t# 待命停在 0，不囤積攻擊（射程內沒有目標時，道路阻擋的減速已由 _update_slows 撤除；其他來源的減速不受影響）\n\t\t_atk_timer = 0.0\n",
+    to: "\t\tfor e in enemies:\n\t\t\tif is_instance_valid(e):\n\t\t\t\te._slow_sources.clear()\n\t\t\t\te._refresh_speed_mult()\n\t\t_atk_timer = 0.0\n",
+    only: "slow",
+    expect: ["減速-7 "],
+  },
+  "tower-shared-source": {
+    why: "每座步兵塔用同一個來源（依塔的種類）",
+    file: TOWER,
+    from: '\tslow_source = "tower_aura#%d" % get_instance_id()\n',
+    to: '\tslow_source = "tower_aura"\n',
+    only: "slow",
+    expect: ["減速-7 "],
+  },
+  "hero-road-not-released": {
+    why: "道路阻擋的減速在武將離開道路或敵人離開射程後仍保留",
+    file: HERO,
+    from: "\t\tif leaving or not is_on_road or not _enemy_alive(e) or global_position.distance_to(e.global_position) > range_px:\n",
+    to: "\t\tif not _enemy_alive(e):\n",
+    only: "slow",
+    expect: ["減速-8 "],
+  },
+  "fighting-by-speed": {
+    why: "攻擊圖片仍看減速倍率（倍率 ≤ 0.5 就當成交戰）",
+    file: ENEMY,
+    from: "\treturn _blocker != null\n",
+    to: "\treturn speed_mult <= 0.5\n",
+    only: "slow",
+    expect: ["減速-8 ", "減速-9 "],
+  },
+  "aura-mult-inverted": {
+    why: "光環把 0.9 當成減少的比例（移速變成 10%）",
+    file: HERO,
+    from: "\t\t\t\te.apply_slow_from(aura_source, slow_aura_mult, Enemy.SLOW_REFRESH_TTL)\n",
+    to: "\t\t\t\te.apply_slow_from(aura_source, 1.0 - slow_aura_mult, Enemy.SLOW_REFRESH_TTL)\n",
+    only: "slow",
+    expect: ["光環-1 ", "光環-3 ", "光環-4 "],
+  },
+  "aura-keeps-sweep": {
+    why: "關羽的光環仍帶橫掃（普通攻擊附帶範圍傷害）",
+    file: HERO,
+    from: "\t\t\t\tslow_aura_mult = float(m)\n",
+    to: "\t\t\t\tslow_aura_mult = float(m)\n\t\t\t\tsweep_radius = 1.0\n\t\t\t\tsweep_max_targets = 2\n\t\t\t\tsweep_ratio = 0.5\n",
+    only: "slow",
+    expect: ["光環-0 ", "光環-2 "],
+  },
+  "aura-no-range-check": {
+    why: "光環不檢查範圍（全場地面敵人都減速）",
+    file: HERO,
+    from: "\t\t\tif _enemy_alive(e) and not e.is_flying() and global_position.distance_to(e.global_position) <= radius_px:\n",
+    to: "\t\t\tif _enemy_alive(e) and not e.is_flying():\n",
+    only: "slow",
+    expect: ["光環-1 ", "光環-3 ", "光環-6 "],
+  },
+  "aura-hits-flying": {
+    why: "光環也減速飛行敵人",
+    file: HERO,
+    from: "\t\t\tif _enemy_alive(e) and not e.is_flying() and global_position.distance_to(e.global_position) <= radius_px:\n",
+    to: "\t\t\tif _enemy_alive(e) and global_position.distance_to(e.global_position) <= radius_px:\n",
+    only: "slow",
+    expect: ["光環-1 "],
+  },
+  "aura-waits-cooldown": {
+    why: "光環要等攻擊冷卻（綁在普通攻擊上）",
+    file: HERO,
+    from: "\tvar active: bool = slow_aura_mult < 1.0 and not leaving and _wave_mgr != null and _in_battle()\n",
+    to: "\tvar active: bool = slow_aura_mult < 1.0 and not leaving and _wave_mgr != null and _in_battle() and _atk_timer <= 0.0\n",
+    only: "slow",
+    expect: ["光環-1 "],
+  },
+  "aura-not-released-on-exit": {
+    why: "武將被移除或倒下時不撤除自己的減速（等有效期到期）",
+    file: HERO,
+    from: "func _exit_tree() -> void:\n\t_release_slows()\n",
+    to: "func _exit_tree() -> void:\n\tpass\n",
+    only: "slow",
+    expect: ["光環-6 "],
+  },
+  "aura-in-prep": {
+    why: "備戰時光環也作用（不看戰鬥狀態）",
+    file: HERO,
+    from: "\treturn _battle_mgr == null or _battle_mgr.game_state == BattleManager.GameState.BATTLE\n",
+    to: "\treturn true\n",
+    only: "slow",
+    expect: ["光環-1 "],
   },
 };
 

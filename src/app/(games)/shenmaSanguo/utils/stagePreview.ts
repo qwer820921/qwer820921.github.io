@@ -1,5 +1,6 @@
 import { EnemyConfig, MapConfig } from "../types";
 import { MovementInfo, movementOf } from "./antiAir";
+import { BlockerAtk, enemyBlockerAtk, enemyTraitInfo } from "./enemyCombat";
 
 /**
  * 關卡敵軍預覽（唯讀）：只用已載入的 maps[].waves、enemiesConfig 與關卡的路線資料，不打任何 API。
@@ -13,6 +14,7 @@ import { MovementInfo, movementOf } from "./antiAir";
  *   沒有提供數量時遊戲以 1 隻計、沒有路線時用 path_a、沒有間隔時是 1 秒
  * 資料裡沒有的敵人能力不推定；數量無法判讀時不給確定的總數
  * 移動方式（movement_type）照遊戲的判讀（utils/antiAir）：只有 flying 是飛行，其他都當作地面，遊戲不認得的寫法另外註明
+ * 對武將攻擊力（atk）與免疫減速（trait）照遊戲的判讀（utils/enemyCombat）：沒有有效的攻擊力時遊戲以 20 計，照樣顯示
  */
 
 /** 組在戰場上的結果：出兵、遊戲會略過、無法判斷 */
@@ -48,6 +50,12 @@ export interface PreviewGroup {
   interval: number | null;
   /** 移動方式（遊戲的判讀）；找不到敵人設定時是 null */
   movement: MovementInfo | null;
+  /** 被武將擋住時每次攻擊那位武將的攻擊力（遊戲的判讀，含預設值）；找不到敵人設定時是 null */
+  blockerAtk: BlockerAtk | null;
+  /** 遊戲會讓這個敵人免疫減速（trait 是 immune_slow） */
+  immuneSlow: boolean;
+  /** 有填但遊戲不使用的 trait；沒有時是 null */
+  unusedTrait: string | null;
   outcome: GroupOutcome;
   /** 飛行路線無效（遊戲會略過這一組）；地面組、路線有效或無法判讀時是 null */
   flightProblem: FlightProblem | null;
@@ -214,6 +222,7 @@ function previewGroup(
   let flightProblem: FlightProblem | null = null;
   let groundProblem: GroundProblem | null = null;
   const movement = cfg ? movementOf(cfg.movement_type) : null;
+  const traits = cfg ? enemyTraitInfo(cfg) : null;
 
   if (!cfg) {
     notes.push(`找不到敵人設定「${enemyId}」，遊戲會略過這一組`);
@@ -294,6 +303,9 @@ function previewGroup(
     speed,
     interval,
     movement,
+    blockerAtk: cfg ? enemyBlockerAtk(cfg) : null,
+    immuneSlow: traits?.immuneSlow ?? false,
+    unusedTrait: traits?.unused ?? null,
     outcome,
     flightProblem,
     groundProblem,

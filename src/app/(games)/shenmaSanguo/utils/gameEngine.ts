@@ -12,7 +12,9 @@
  *    舊版遊戲不認得暫停命令（按鈕會默默沒有作用），同樣提升版本
  * 7：飛行敵人與對空：enemies_config 的 movement_type（flying 直線飛向終點、不被武將擋住），武將與防禦塔依職業／種類
  *    決定能不能攻擊飛行敵人（見 utils/antiAir）；show_upgrade_panel 帶 anti_air。舊版遊戲會把飛行敵人當成地面、
- *    所有單位都打得到，和網頁的說明不同，同樣提升版本
+ *    所有單位都打得到，和網頁的說明不同，同樣提升版本。
+ *    7 首次發布前另外加入（沒有再提升版本，網頁與遊戲產物必須同批發布）：敵人設定的 atk（對阻路武將的攻擊力）與
+ *    trait 的 immune_slow（免疫減速）在遊戲裡生效（見 utils/enemyCombat）；關卡沒有波次時遊戲拒絕第 1 波，不再改用內建的測試波次
  */
 export const BRIDGE_PROTOCOL = 7;
 

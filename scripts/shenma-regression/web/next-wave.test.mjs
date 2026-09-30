@@ -4,7 +4,7 @@
 // - utils/waveReject：地面的原因代碼轉成文字，和飛行的原因分得開
 // - utils/stageAirReadiness：地面組被略過或整波被拒絕時，飛行敵人的數量照同一份預覽
 // - utils/nextWave：下一波＝這一場 update_stats 的 wave＋1；沒有這一場的戰況時等待；最後一波、缺波次、整波被拒絕、
-//   數量無法確定、關卡沒有波次各自分開；對空提醒只看這一波
+//   數量無法確定、關卡沒有波次（遊戲會拒絕第 1 波）各自分開；對空提醒只看這一波
 // 用法：node scripts/shenma-regression/web/next-wave.test.mjs
 // 輸出 PASS／FAIL 各行與一行 RESULT_JSON；有任何失敗時結束碼為 1
 import { readFileSync } from "node:fs";
@@ -541,13 +541,22 @@ block("下一波", () => {
     vu
   );
 
-  const builtin = nextWaveView(stats(0, 3, PREP), battle(map([])));
+  // 遊戲收到沒有波次的關卡：總波數 0、打第 1 波時拒絕（不改用內建的測試波次）
+  const noWaves = nextWaveView(stats(0, 0, PREP), battle(map([])));
+  const noArray = nextWaveView(
+    stats(0, 0, PREP),
+    battle({ ...map([]), waves: null })
+  );
   check(
-    "下一波-9 關卡資料沒有波次（遊戲改用內建的測試波次）：無法預覽，說明原因；不當成沒有下一波",
-    builtin.status === "unknown" &&
-      builtin.next === 1 &&
-      /內建的測試波次/.test(builtin.reason),
-    builtin
+    "下一波-9 關卡資料沒有波次（遊戲總波數 0、會拒絕第 1 波）：說明會拒絕開戰、無法預覽；不當成沒有下一波，也不說成改用內建的波次",
+    noWaves.status === "unknown" &&
+      noWaves.next === 1 &&
+      noWaves.total === 0 &&
+      /拒絕開始第 1 波/.test(noWaves.reason) &&
+      !/改用內建/.test(noWaves.reason) &&
+      noArray.status === "unknown" &&
+      noArray.next === 1,
+    { noWaves, noArray }
   );
 
   const short = nextWaveView(

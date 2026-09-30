@@ -2595,7 +2595,7 @@ await test("R12-S1", async () => {
   // 首擊加倍依正式設定表的被動描述綁在馬超（「衝鋒：首擊傷害翻倍」）；趙雲改成閃避
   const ma = heroSkillOf("ma_chao");
   const payload = heroSkillPayload("ma_chao");
-  // 沒有技能的武將：關羽加上橫掃後改用張飛對照
+  // 沒有技能的武將：關羽有技能（減速光環），改用張飛對照
   const none = heroSkillPayload("zhang_fei");
   check(
     "R12-S1 馬超的衝鋒（首擊加倍）：送進 Godot 的參數（first_strike、2 倍）與說明文字出自同一份定義；參數只帶倍率；沒有技能的武將不帶 skill 欄位",
@@ -2677,7 +2677,7 @@ await test("R15-S1", async () => {
         JSON.stringify([
           ["dodge_chance", "id"],
           ["id", "range_multiplier"],
-          ["id", "sweep_max_targets", "sweep_radius", "sweep_ratio"],
+          ["id", "slow_mult"],
           [],
         ]) &&
       burnTickDamage(zhou, 100) === 20 &&
@@ -2692,46 +2692,44 @@ await test("R15-S1", async () => {
   );
 });
 
-// 關羽「橫掃」：參數、說明文字與副目標傷害出自同一份定義（utils/heroSkills）
-await test("橫掃-S1", async () => {
+// 關羽「減速光環」（設定表的被動描述「周圍敵人減速10%」）：參數與說明文字出自同一份定義（utils/heroSkills）；
+// 範圍（目前有效射程、含邊界）、只影響地面、免疫不受影響、和其他減速取最強是設定表沒有寫的補充規則
+await test("減速光環-S1", async () => {
   const {
     heroSkillOf,
     heroSkillPayload,
     describeHeroSkill,
-    sweepDamage,
+    slowAuraPercent,
     burnTickDamage,
     effectiveRange,
   } = require(join(GAME, "utils/heroSkills.ts"));
   const guan = heroSkillOf("guan_yu");
   const payload = heroSkillPayload("guan_yu");
-  const text = describeHeroSkill(guan, 1.5, 160);
+  const text = describeHeroSkill(guan, 3.5, 160);
   const plain = describeHeroSkill(guan);
   check(
-    "橫掃-S1 關羽的橫掃：送進 Godot 的參數（sweep、半徑 1 格、最多 2 名、50%）、說明文字與副目標傷害出自同一份定義；參數只帶橫掃欄位，射程與其他技能的計算不受影響",
-    guan?.id === "sweep" &&
-      guan.name === "橫掃" &&
-      guan.radiusTiles === 1 &&
-      guan.maxTargets === 2 &&
-      guan.damageRatio === 0.5 &&
-      payload.skill?.id === "sweep" &&
-      payload.skill.sweep_radius === guan.radiusTiles &&
-      payload.skill.sweep_max_targets === guan.maxTargets &&
-      payload.skill.sweep_ratio === guan.damageRatio &&
+    "減速光環-S1 關羽的減速光環：送進 Godot 的參數（slow_aura、slow_mult 0.9，只有這兩個欄位、沒有橫掃欄位）與說明文字出自同一份定義；說明寫出降低 10%（變成 90%）、目前範圍半徑、地面限制、飛行與免疫不受影響、取最強不疊加；射程與其他技能的計算不受影響",
+    guan?.id === "slow_aura" &&
+      guan.name === "減速光環" &&
+      guan.speedMultiplier === 0.9 &&
+      payload.skill?.id === "slow_aura" &&
+      payload.skill.slow_mult === guan.speedMultiplier &&
       JSON.stringify(Object.keys(payload.skill).sort()) ===
-        '["id","sweep_max_targets","sweep_radius","sweep_ratio"]' &&
-      sweepDamage(guan, 160) === 80 &&
-      sweepDamage(guan, 155) === 77.5 &&
-      sweepDamage(heroSkillOf("zhou_yu"), 100) === 0 &&
-      sweepDamage(null, 100) === 0 &&
+        '["id","slow_mult"]' &&
+      slowAuraPercent(guan) === 10 &&
+      slowAuraPercent(heroSkillOf("zhou_yu")) === 0 &&
+      slowAuraPercent(null) === 0 &&
       burnTickDamage(guan, 100) === 0 &&
-      effectiveRange(guan, 1.5) === 1.5 &&
-      text.includes("半徑 1 格內（含邊界）") &&
-      text.includes("最多 2 名其他敵人") &&
-      text.includes("50%") &&
-      text.includes("目前攻擊力 160：每名其他敵人受到 80") &&
-      text.includes("距離相同時先出現在戰場上的敵人優先") &&
-      text.includes("不會再引發橫掃") &&
-      !plain.includes("目前攻擊力"),
+      effectiveRange(guan, 3.5) === 3.5 &&
+      text.includes("移動速度降低 10%（變成原本的 90%）") &&
+      text.includes("目前等級的範圍半徑是 3.5 格") &&
+      text.includes("所有地面敵人") &&
+      text.includes("含邊界") &&
+      text.includes("飛行敵人與免疫減速的敵人不受影響") &&
+      text.includes("取最強的一個，不會疊加") &&
+      text.includes("不需要普通攻擊的目標") &&
+      !text.includes("橫掃") &&
+      !plain.includes("範圍半徑是"),
     { guan, payload, text }
   );
 });
@@ -2744,13 +2742,13 @@ await test("閃避-S1", async () => {
     describeHeroSkill,
     effectiveRange,
     burnTickDamage,
-    sweepDamage,
+    slowAuraPercent,
   } = require(join(GAME, "utils/heroSkills.ts"));
   const zhao = heroSkillOf("zhao_yun");
   const payload = heroSkillPayload("zhao_yun");
   const text = describeHeroSkill(zhao, 3, 100);
   check(
-    "閃避-S1 趙雲的閃避：送進 Godot 的參數（dodge、15%）與說明文字出自同一份定義；參數只帶閃避機率，沒有首擊加倍；射程、火攻、橫掃的計算不受影響",
+    "閃避-S1 趙雲的閃避：送進 Godot 的參數（dodge、15%）與說明文字出自同一份定義；參數只帶閃避機率，沒有首擊加倍；射程、火攻、減速光環的計算不受影響",
     zhao?.id === "dodge" &&
       zhao.name === "閃避" &&
       zhao.dodgeChance === 0.15 &&
@@ -2769,13 +2767,13 @@ await test("閃避-S1", async () => {
       !text.includes("目前攻擊力") &&
       effectiveRange(zhao, 3) === 3 &&
       burnTickDamage(zhao, 100) === 0 &&
-      sweepDamage(zhao, 100) === 0,
+      slowAuraPercent(zhao) === 0,
     { zhao, payload, text }
   );
 });
 
 // 技能綁定和正式設定表 heroes_config 的被動描述（passive）對照：趙雲是閃避、馬超是衝鋒（首擊加倍）；
-// 甘寧（「奇襲：首擊必殺」，意思還沒決定）、劉備（「光環：提升友軍防禦」，還沒有規格）沒有技能；關羽的橫掃和描述不一致，待對齊
+// 關羽是減速光環（「周圍敵人減速10%」）；甘寧（「奇襲：首擊必殺」，意思還沒決定）、劉備（「光環：提升友軍防禦」，還沒有規格）沒有技能
 await test("技能對照-S1", async () => {
   const { heroSkillOf, heroSkillPayload } = require(
     join(GAME, "utils/heroSkills.ts")
@@ -2797,19 +2795,20 @@ await test("技能對照-S1", async () => {
     (id) => heroSkillPayload(id).skill?.id === "first_strike"
   );
   check(
-    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 sweep（待對齊）；甘寧、劉備、張飛沒有技能；只有馬超帶首擊加倍",
+    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）；甘寧、劉備、張飛沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
     JSON.stringify(got) ===
       JSON.stringify({
         ma_chao: "first_strike",
         zhao_yun: "dodge",
         huang_zhong: "long_range",
         zhou_yu: "burn",
-        guan_yu: "sweep",
+        guan_yu: "slow_aura",
         gan_ning: null,
         liu_bei: null,
         zhang_fei: null,
       }) &&
       JSON.stringify(firstStrike) === '["ma_chao"]' &&
+      !Object.values(got).includes("sweep") &&
       !("skill" in heroSkillPayload("gan_ning")) &&
       !("skill" in heroSkillPayload("liu_bei")),
     { got, firstStrike }

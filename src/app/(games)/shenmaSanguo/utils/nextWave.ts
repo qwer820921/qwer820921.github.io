@@ -8,7 +8,9 @@ import { PreviewWave, StagePreview, buildStagePreview } from "./stagePreview";
  *   被拒絕開戰時仍在備戰、wave 不變，所以看到的是被拒絕的那一波（會標出不能出兵的原因）
  * - 敵軍資料用這一場送進遊戲的關卡與敵人設定（送出關卡資料時記下），不是之後才載入的設定
  * - 內容照敵軍預覽的規則（utils/stagePreview），只取這一波：關卡資料沒有這一波時是「沒有資料、遊戲會拒絕開始」，
- *   不是「沒有下一波」；有沒有下一波只看遊戲送來的總波數
+ *   不是「沒有下一波」；有沒有下一波只看遊戲送來的總波數。
+ *   關卡資料完全沒有波次時（兩個戰鬥入口不會送出這種關卡，見 utils/stagePlayability）遊戲會拒絕第 1 波、總波數是 0：
+ *   說明原因，不當成「沒有下一波」，也不說成改用內建的波次
  * - 還沒有這一場的戰況時是 waiting（不拿上一場的波次）；結算中是 ended
  * 只計算、不送任何命令：不暫停、不開始下一波、不改自動與倍率
  */
@@ -52,7 +54,7 @@ export type NextWaveView =
   | { status: "ended" }
   /** 目前已是最後一波（或最後一波已打完）：沒有下一波 */
   | ({ status: "last" } & Position)
-  /** 關卡資料沒有提供波次：遊戲改用內建的測試波次，無法預覽 */
+  /** 關卡資料沒有提供波次：遊戲會拒絕開始第 1 波，無法預覽 */
   | ({ status: "unknown"; next: number; reason: string } & Position)
   | ({
       status: "wave";
@@ -107,18 +109,17 @@ export function nextWaveView(
       stats.game_state === BATTLE && stats.auto_next_wave_pending === true,
   };
   const next = pos.current + 1;
-  if (next > pos.total) return { status: "last", ...pos };
-
   const rawWaves = battle.map.waves;
   if (!Array.isArray(rawWaves) || rawWaves.length === 0) {
     return {
       status: "unknown",
       next,
       reason:
-        "關卡資料沒有提供波次：遊戲改用內建的測試波次，無法預覽這一波的敵軍",
+        "關卡資料沒有提供波次：遊戲會拒絕開始第 1 波（仍在備戰、城池不扣血、不會結算），這一關需要換一關",
       ...pos,
     };
   }
+  if (next > pos.total) return { status: "last", ...pos };
   const preview = buildStagePreview(
     battle.map,
     Array.isArray(battle.enemies) ? battle.enemies : []

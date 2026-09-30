@@ -9,6 +9,12 @@ import { useSoundSettingsStore } from "../store/soundSettingsStore";
 import { BattleResultPayload, BattleResult, ExpeditionPayload } from "../types";
 import { getPlayerKey } from "../api/gameApi";
 import { isStageUnlocked } from "../utils/stageUtils";
+import {
+  isPlayable,
+  latestPlayableStage,
+  stageAccess,
+  stageAccessMessage,
+} from "../utils/stagePlayability";
 import { describePlayerError } from "../utils/playerErrors";
 import { BattleSession, isBattleResultMessage } from "../utils/battleSession";
 import { heroSkillPayload } from "../utils/heroSkills";
@@ -38,6 +44,7 @@ import styles from "../styles/shenmaSanguo.module.css";
 import PlacementMenu from "../battle/components/PlacementMenu";
 import UpgradePanel from "../battle/components/UpgradePanel";
 import WaveRejectNotice from "./WaveRejectNotice";
+import StageBlockedNotice, { StageBlockedAction } from "./StageBlockedNotice";
 import {
   WaveRejectNotice as WaveRejectData,
   waveRejectNotice,
@@ -358,7 +365,13 @@ export default function SinglePageContent() {
     error: playerError,
     writeHold,
   } = usePlayerStore();
-  const { config: staticConfig, fetchProgress } = useStaticConfigStore();
+  const {
+    config: staticConfig,
+    fetchProgress,
+    error: configError,
+    loadConfig,
+    clearError: clearConfigError,
+  } = useStaticConfigStore();
   // 讀不到存檔時由錯誤面板切換到金鑰輸入畫面
   const [showKeyEntry, setShowKeyEntry] = useState(false);
   const { sfxEnabled, sfxPolyphony } = useSoundSettingsStore();
@@ -525,7 +538,12 @@ export default function SinglePageContent() {
     const unsubscribe = usePlayerStore.subscribe((state, prev) => {
       if (state.player?.key === prev.player?.key) return;
       const owner = session.owner;
-      if (!owner || state.isBattleTicketCurrent(owner)) return;
+      if (!owner) {
+        // 還沒有開始任何一場（例如進度那一關尚未開放、只顯示說明）：選到的關卡來自切換前的帳號，改用目前帳號的進度重新挑選
+        setCurrentMapId("");
+        return;
+      }
+      if (state.isBattleTicketCurrent(owner)) return;
       leaveBattle(session);
       setPayloadSent(false);
       setBattleStats(null);
@@ -660,8 +678,14 @@ export default function SinglePageContent() {
   // ── 發送初始 Payload ────────────────────────────────────────
   const sendPayload = useCallback(() => {
     if (payloadSent || !player || !staticConfig || !currentMapId) return;
-    const map = staticConfig.maps.find((m) => m.map_id === currentMapId);
-    if (!map) return;
+    // 不能出征的關卡（資料未完成、未解鎖、設定裡沒有）：不送關卡資料、不開新的一場，畫面顯示原因與出口
+    const target = stageAccess({
+      mapId: currentMapId,
+      config: staticConfig,
+      maxStage: player.max_stage,
+    });
+    if (!isPlayable(target)) return;
+    const map = target.map;
     const iframe = iframeRef.current;
     if (!iframe?.contentWindow) return;
 
@@ -824,8 +848,15 @@ export default function SinglePageContent() {
 
   const handleStageSelected = (mapId: string) => {
     if (!staticConfig || !player) return;
-    const map = staticConfig.maps.find((m) => m.map_id === mapId);
-    if (!map) return;
+    // 只切換到可以出征的關卡：不能出征時什麼都不改（目前的戰場、場次與狀態都保留；
+    // 關卡視窗只會以可以出征的關卡呼叫，並自己說明原因，這裡再擋一次）
+    const target = stageAccess({
+      mapId,
+      config: staticConfig,
+      maxStage: player.max_stage,
+    });
+    if (!isPlayable(target)) return;
+    const map = target.map;
 
     // 部署選單還開著（HUD 在選單上方，可以直接切關）：先照一般的取消關閉，舊選單不留到新的一場
     handleCloseMenu();
@@ -1022,6 +1053,65 @@ export default function SinglePageContent() {
 
   const currentMap = staticConfig?.maps.find((m) => m.map_id === currentMapId);
 
+  // 目前這一關能不能出征（規則見 utils/stagePlayability）。還沒送出關卡資料時，不能出征就顯示原因與出口，不顯示載入動畫；
+  // 已經在打的一場不受之後的設定更新影響
+  const access = stageAccess({
+    mapId: currentMapId,
+    config: staticConfig,
+    configError,
+    maxStage: player?.max_stage ?? null,
+  });
+  const configFailed =
+    !payloadSent && !!player && access.status === "config_failed";
+  const stageBlocked =
+    !payloadSent &&
+    !!player &&
+    !!currentMapId &&
+    (access.status === "incomplete" ||
+      access.status === "locked" ||
+      access.status === "not_found");
+  const blockedMessage =
+    configFailed || stageBlocked
+      ? stageAccessMessage(access, {
+          progressName:
+            staticConfig?.maps.find((m) => m.map_id === player?.max_stage)
+              ?.name ?? player?.max_stage,
+        })
+      : null;
+  const latestPlayable = stageBlocked
+    ? latestPlayableStage(staticConfig?.maps, player?.max_stage)
+    : null;
+  const blockedActions: StageBlockedAction[] = configFailed
+    ? [
+        {
+          label: "重新讀取設定",
+          testId: "stage-blocked-retry",
+          primary: true,
+          onClick: () => {
+            clearConfigError();
+            void loadConfig();
+          },
+        },
+      ]
+    : [
+        ...(latestPlayable && latestPlayable.map_id !== currentMapId
+          ? [
+              {
+                label: `改打「${latestPlayable.name}」`,
+                testId: "stage-blocked-latest",
+                primary: true,
+                onClick: () => handleStageSelected(latestPlayable.map_id),
+              },
+            ]
+          : []),
+        {
+          label: "選擇其他關卡",
+          testId: "stage-blocked-choose",
+          primary: !latestPlayable || latestPlayable.map_id === currentMapId,
+          onClick: () => setShowStageModal(true),
+        },
+      ];
+
   // ── 渲染 ────────────────────────────────────────────────────
   if (!mounted) return null;
 
@@ -1046,6 +1136,8 @@ export default function SinglePageContent() {
             !loadTimedOut &&
             !playerLoadFailed &&
             !keyEntryVisible &&
+            !configFailed &&
+            !stageBlocked &&
             engineStatus !== "incompatible" && (
               <ThreeKingdomsLoader
                 progress={
@@ -1062,6 +1154,21 @@ export default function SinglePageContent() {
               </p>
             </div>
           )}
+
+          {/* 不能出征（關卡資料未完成、未解鎖、遊戲設定讀取失敗）：沒有送出關卡資料、沒有開新的一場，說明原因並給出口 */}
+          {(configFailed || stageBlocked) &&
+            blockedMessage &&
+            !writeHold &&
+            !keyEntryVisible &&
+            engineStatus !== "incompatible" && (
+              <StageBlockedNotice
+                status={access.status}
+                title={blockedMessage.title}
+                lines={blockedMessage.lines}
+                actions={blockedActions}
+                focusKey={engineStatus}
+              />
+            )}
 
           {/* 逾時錯誤畫面（120s 後） */}
           {iframeLoading && loadTimedOut && (
@@ -1123,8 +1230,9 @@ export default function SinglePageContent() {
             />
           )}
 
-          {/* 拒絕開戰：列出原因，出口是切換關卡 */}
-          {waveReject && payloadSent && !battleResult && (
+          {/* 拒絕開戰：列出原因，出口是切換關卡。關卡選擇開著時先收起（取消選關回到戰場時再出現並取得焦點，
+              Esc 與按鈕不會作用在視窗後面的提示上；換到新關卡時清除） */}
+          {waveReject && payloadSent && !battleResult && !showStageModal && (
             <WaveRejectNotice
               notice={waveReject}
               exitLabel="切換關卡"
@@ -1141,141 +1249,142 @@ export default function SinglePageContent() {
       </div>
 
       {/* HUD 疊加層：寫入限制中沒有開戰，仍顯示 HUD 供查看武將、隊伍與玩家資訊（戰鬥按鈕要有戰況才出現） */}
-      {(payloadSent || (writeHold && !!player)) && !battleResult && (
-        <>
-          {/* 頂欄 */}
-          <div className={styles.hudTopBar}>
-            <button
-              className={styles.hudAvatar}
-              onClick={() => setShowPlayerModal(true)}
-            >
-              👤
-            </button>
-            <div className={styles.hudCenter}>
+      {(payloadSent || (writeHold && !!player) || stageBlocked) &&
+        !battleResult && (
+          <>
+            {/* 頂欄 */}
+            <div className={styles.hudTopBar}>
+              <button
+                className={styles.hudAvatar}
+                onClick={() => setShowPlayerModal(true)}
+              >
+                👤
+              </button>
+              <div className={styles.hudCenter}>
+                <button
+                  className={styles.hudStageBtn}
+                  onClick={() => setShowStageModal(true)}
+                  title="切換關卡"
+                >
+                  🗺️
+                </button>
+                <span className={styles.hudMapName}>
+                  {currentMap?.name || "未知地圖"}
+                </span>
+                {battleStats && (
+                  <span className={styles.hudWave}>
+                    {" "}
+                    {battleStats.wave}/{battleStats.total_waves}
+                  </span>
+                )}
+              </div>
+              <div className={styles.hudRight}>
+                {battleStats && (
+                  <>
+                    <span className={styles.hudStat}>
+                      <Coin className="me-1" style={{ color: "#f59e0b" }} />
+                      {battleStats.gold}
+                    </span>
+                    <span className={styles.hudStat}>
+                      <ShieldFill
+                        className="me-1"
+                        style={{
+                          color:
+                            battleStats.hp / battleStats.max_hp < 0.3
+                              ? "var(--sg-red)"
+                              : "#6366f1",
+                        }}
+                      />
+                      <span
+                        style={{
+                          color:
+                            battleStats.hp / battleStats.max_hp < 0.3
+                              ? "var(--sg-red)"
+                              : "inherit",
+                        }}
+                      >
+                        {battleStats.hp}/{battleStats.max_hp}
+                      </span>
+                    </span>
+                  </>
+                )}
+              </div>
               <button
                 className={styles.hudStageBtn}
-                onClick={() => setShowStageModal(true)}
-                title="切換關卡"
+                onClick={() => setShowSettingsModal(true)}
+                title="設定"
               >
-                🗺️
+                <GearFill size={13} />
               </button>
-              <span className={styles.hudMapName}>
-                {currentMap?.name || "未知地圖"}
-              </span>
-              {battleStats && (
-                <span className={styles.hudWave}>
-                  {" "}
-                  {battleStats.wave}/{battleStats.total_waves}
-                </span>
-              )}
             </div>
-            <div className={styles.hudRight}>
-              {battleStats && (
-                <>
-                  <span className={styles.hudStat}>
-                    <Coin className="me-1" style={{ color: "#f59e0b" }} />
-                    {battleStats.gold}
-                  </span>
-                  <span className={styles.hudStat}>
-                    <ShieldFill
-                      className="me-1"
-                      style={{
-                        color:
-                          battleStats.hp / battleStats.max_hp < 0.3
-                            ? "var(--sg-red)"
-                            : "#6366f1",
-                      }}
-                    />
-                    <span
-                      style={{
-                        color:
-                          battleStats.hp / battleStats.max_hp < 0.3
-                            ? "var(--sg-red)"
-                            : "inherit",
-                      }}
-                    >
-                      {battleStats.hp}/{battleStats.max_hp}
-                    </span>
-                  </span>
-                </>
-              )}
-            </div>
-            <button
-              className={styles.hudStageBtn}
-              onClick={() => setShowSettingsModal(true)}
-              title="設定"
-            >
-              <GearFill size={13} />
-            </button>
-          </div>
 
-          {/* 操作按鈕列（top bar 下方，左右分組） */}
-          <div className={styles.hudActionBar}>
-            <div className={styles.hudActionBarLeft}>
-              {battleStats && battleStats.game_state !== GameState.RESULT && (
-                <>
-                  <button
-                    className={styles.hudBarBtn}
-                    onClick={handleStartBattle}
-                    disabled={
-                      battleStats.game_state !== GameState.PREP || paused
-                    }
-                    style={
-                      battleStats.game_state === GameState.BATTLE
-                        ? { background: "rgba(99, 102, 241, 0.6)" }
-                        : undefined
-                    }
-                  >
-                    {battleStats.game_state === GameState.BATTLE
-                      ? "戰鬥中"
-                      : "迎戰"}
-                  </button>
-                  <button
-                    className={`${styles.hudBarBtn} ${battleStats.auto_mode ? styles.hudActionBtnActive : ""}`}
-                    onClick={handleToggleAuto}
-                    disabled={paused}
-                  >
-                    自動
-                  </button>
-                  <SpeedToggle
-                    stats={battleStats}
-                    onSelect={handleSetSpeed}
-                    variant="hud"
-                  />
-                  <PauseToggle
-                    stats={battleStats}
-                    onSet={handleSetPaused}
-                    variant="hud"
-                  />
-                  {/* 下一波的敵軍：唯讀視窗，不暫停、不開始下一波、不改自動與倍率 */}
-                  <NextWaveEntry
-                    stats={battleStats}
-                    battle={nextWaveBattle}
-                    team={player?.team}
-                    heroesConfig={staticConfig?.heroesConfig}
-                    ended={!!battleResult}
-                    buttonClassName={styles.hudBarBtn}
-                  />
-                </>
-              )}
+            {/* 操作按鈕列（top bar 下方，左右分組） */}
+            <div className={styles.hudActionBar}>
+              <div className={styles.hudActionBarLeft}>
+                {battleStats && battleStats.game_state !== GameState.RESULT && (
+                  <>
+                    <button
+                      className={styles.hudBarBtn}
+                      onClick={handleStartBattle}
+                      disabled={
+                        battleStats.game_state !== GameState.PREP || paused
+                      }
+                      style={
+                        battleStats.game_state === GameState.BATTLE
+                          ? { background: "rgba(99, 102, 241, 0.6)" }
+                          : undefined
+                      }
+                    >
+                      {battleStats.game_state === GameState.BATTLE
+                        ? "戰鬥中"
+                        : "迎戰"}
+                    </button>
+                    <button
+                      className={`${styles.hudBarBtn} ${battleStats.auto_mode ? styles.hudActionBtnActive : ""}`}
+                      onClick={handleToggleAuto}
+                      disabled={paused}
+                    >
+                      自動
+                    </button>
+                    <SpeedToggle
+                      stats={battleStats}
+                      onSelect={handleSetSpeed}
+                      variant="hud"
+                    />
+                    <PauseToggle
+                      stats={battleStats}
+                      onSet={handleSetPaused}
+                      variant="hud"
+                    />
+                    {/* 下一波的敵軍：唯讀視窗，不暫停、不開始下一波、不改自動與倍率 */}
+                    <NextWaveEntry
+                      stats={battleStats}
+                      battle={nextWaveBattle}
+                      team={player?.team}
+                      heroesConfig={staticConfig?.heroesConfig}
+                      ended={!!battleResult}
+                      buttonClassName={styles.hudBarBtn}
+                    />
+                  </>
+                )}
+              </div>
+              <div className={styles.hudActionBarRight}>
+                <button
+                  className={styles.hudBarBtn}
+                  onClick={() => setShowHeroModal(true)}
+                >
+                  武將
+                </button>
+                <button
+                  className={styles.hudBarBtn}
+                  onClick={() => setShowTeamModal(true)}
+                >
+                  隊伍
+                </button>
+              </div>
             </div>
-            <div className={styles.hudActionBarRight}>
-              <button
-                className={styles.hudBarBtn}
-                onClick={() => setShowHeroModal(true)}
-              >
-                武將
-              </button>
-              <button
-                className={styles.hudBarBtn}
-                onClick={() => setShowTeamModal(true)}
-              >
-                隊伍
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+          </>
+        )}
 
       {/* 結算 Modal */}
       {battleResult && (

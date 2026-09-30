@@ -71,14 +71,18 @@ func _parse_path_json(pj: Dictionary) -> void:
 	_cell_textures.clear()
 
 	# 1. 優先處理新版多路徑格式 (paths: { "path_a": [...], "path_b": [...] })
+	# 路線不是陣列、路點不是 [x, y] 形式（或座標不是數字、字串）時略過，不讓格式錯誤的關卡資料讓遊戲出錯
 	if pj.has("paths"):
 		var pths = pj["paths"]
 		if pths is Dictionary:
 			for pid in pths:
-				var raw_pts: Array = pths[pid]
+				var raw_pts: Variant = pths[pid]
+				if not (raw_pts is Array):
+					continue
 				var wps: Array[Vector2i] = []
 				for wp in raw_pts:
-					wps.append(Vector2i(int(wp[0]), int(wp[1])))
+					if _is_point(wp):
+						wps.append(Vector2i(int(wp[0]), int(wp[1])))
 				
 				_paths[pid] = wps
 				
@@ -99,7 +103,7 @@ func _parse_path_json(pj: Dictionary) -> void:
 			var pid: String = "path_a"
 			var wps: Array[Vector2i] = []
 			for wp in pths:
-				if wp is Array and wp.size() >= 2:
+				if _is_point(wp):
 					wps.append(Vector2i(int(wp[0]), int(wp[1])))
 			
 			_paths[pid] = wps
@@ -113,10 +117,11 @@ func _parse_path_json(pj: Dictionary) -> void:
 	# 2. 如果沒有 paths 但有 waypoints (舊版相容)
 	elif pj.has("waypoints"):
 		var pid: String = "path_a"
-		var raw_pts: Array = pj["waypoints"]
+		var raw_pts: Variant = pj["waypoints"]
 		var wps: Array[Vector2i] = []
-		for wp in raw_pts:
-			wps.append(Vector2i(int(wp[0]), int(wp[1])))
+		for wp in (raw_pts if raw_pts is Array else []):
+			if _is_point(wp):
+				wps.append(Vector2i(int(wp[0]), int(wp[1])))
 		
 		_paths[pid] = wps
 		for i in range(wps.size() - 1):
@@ -145,6 +150,19 @@ func _parse_path_json(pj: Dictionary) -> void:
 			var opos: Vector2i = Vector2i(int(ob[0]), int(ob[1]))
 			if not _grid.has(opos):
 				_grid[opos] = TileType.OBSTACLE
+
+## 路點是否為 [x, y] 形式：陣列、至少兩個元素，座標是數字（有限）或字串（照 int() 換算，和原本相同）
+static func _is_point(wp: Variant) -> bool:
+	if not (wp is Array) or wp.size() < 2:
+		return false
+	for i in range(2):
+		var v: Variant = wp[i]
+		if v is float:
+			if not is_finite(v):
+				return false
+		elif not (v is int or v is String):
+			return false
+	return true
 
 func _fill_segment(from: Vector2i, to: Vector2i, type: TileType) -> void:
 	var dc: int = sign(to.x - from.x)

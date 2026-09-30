@@ -6,6 +6,10 @@ import { EnemyConfig, HeroConfig, MapConfig, TeamSlot } from "../../types";
 import { buildStagePreview, PreviewWave } from "../../utils/stagePreview";
 import { FLYING_RULE_TEXT } from "../../utils/antiAir";
 import { stageAirReadiness } from "../../utils/stageAirReadiness";
+import {
+  stageDataProblem,
+  stageDataProblemText,
+} from "../../utils/stagePlayability";
 import StageAirReadinessNote from "../StageAirReadinessNote";
 import { PreviewWaveBody, previewWaveStatus } from "../PreviewWaveDetail";
 import { useDialogFocus } from "../useDialogFocus";
@@ -46,6 +50,8 @@ export default function EnemyPreviewModal({
     () => stageAirReadiness(map, enemies, team, heroesConfig),
     [map, enemies, team, heroesConfig]
   );
+  // 關卡資料未完成（沒有路線或沒有波次）：尚未開放，不能出征（規則見 utils/stagePlayability）
+  const dataProblem = useMemo(() => stageDataProblem(map), [map]);
   const [open, setOpen] = useState<number[]>([1]);
   const toggle = (n: number) =>
     setOpen((prev) =>
@@ -78,7 +84,11 @@ export default function EnemyPreviewModal({
       >
         <div className={styles.modalHeader}>
           <span className={styles.modalTitle}>敵軍預覽｜{map.name}</span>
-          {locked && <span className={styles.previewBadge}>鎖定</span>}
+          {dataProblem ? (
+            <span className={styles.previewBadge}>尚未開放</span>
+          ) : (
+            locked && <span className={styles.previewBadge}>鎖定</span>
+          )}
           <button
             ref={closeRef}
             className={styles.modalClose}
@@ -104,7 +114,16 @@ export default function EnemyPreviewModal({
                 ? preview.pathIds.join("、")
                 : "沒有可用的路線"}
             </div>
-            {locked && (
+            {dataProblem && (
+              <div
+                className={styles.previewNote}
+                data-testid="preview-stage-unavailable"
+              >
+                這一關尚未開放（{stageDataProblemText(dataProblem)}
+                ）：只能查看，不能出征。
+              </div>
+            )}
+            {locked && !dataProblem && (
               <div className={styles.previewNote}>
                 這一關尚未解鎖：只能查看敵軍，不能出征。
               </div>
@@ -116,6 +135,8 @@ export default function EnemyPreviewModal({
             ))}
             <div className={styles.previewHint}>
               只列出關卡設定裡有的資料；移動速度是設定值（數字越大越快）。
+              對武將攻擊力是被武將擋住時打武將的數值（再依防禦減少），不是城池傷害（抵達城池一律扣
+              1）。
             </div>
             {preview.flying && (
               <div

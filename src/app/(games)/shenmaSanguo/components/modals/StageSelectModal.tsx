@@ -6,20 +6,32 @@ import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { isStageUnlocked } from "../../utils/stageUtils";
 import { stageAirReadiness } from "../../utils/stageAirReadiness";
+import {
+  stageDataProblem,
+  stageDataProblemText,
+} from "../../utils/stagePlayability";
 import EnemyPreviewModal from "./EnemyPreviewModal";
 import StageAirReadinessNote from "../StageAirReadinessNote";
+import StageDataNote from "../StageDataNote";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 interface Props {
+  /** 只會以可以出征的關卡呼叫（規則見 utils/stagePlayability） */
   onSelect: (mapId: string) => void;
   onClose: () => void;
 }
 
+/**
+ * 主頁的關卡選擇：只有可以出征的關卡能選。關卡資料未完成的關卡標示「尚未開放」與原因、按鈕停用；
+ * 點了這種關卡只在視窗上方說明，不切換、不結束目前的戰場（可以接著選其他關卡）
+ */
 export default function StageSelectModal({ onSelect, onClose }: Props) {
   const { player } = usePlayerStore();
   const { config: staticConfig } = useStaticConfigStore();
   // 正在查看敵軍預覽的關卡（唯讀，不切換關卡）
   const [previewId, setPreviewId] = useState<string | null>(null);
+  // 剛才點了不能出征的關卡：說明原因（目前的戰場不受影響）
+  const [refused, setRefused] = useState<string | null>(null);
 
   if (!player || !staticConfig) return null;
   const previewMap =
@@ -52,6 +64,15 @@ export default function StageSelectModal({ onSelect, onClose }: Props) {
             </button>
           </div>
           <div className={styles.modalBody}>
+            {refused && (
+              <div
+                className={styles.stageRefused}
+                role="status"
+                data-testid="stage-refused"
+              >
+                {refused}
+              </div>
+            )}
             {Object.entries(mapsByChapter)
               .sort(([a], [b]) => Number(a) - Number(b))
               .map(([chapter, maps]) => (
@@ -68,6 +89,9 @@ export default function StageSelectModal({ onSelect, onClose }: Props) {
                         player.max_stage
                       );
                       const isCurrent = map.map_id === player.max_stage;
+                      // 關卡資料未完成（沒有路線或沒有波次）：尚未開放，不能出征
+                      const problem = stageDataProblem(map);
+                      const playable = unlocked && !problem;
                       // 出征前的對空準備：只看目前上陣的隊伍（隊伍或設定改變時重新計算）
                       const air = stageAirReadiness(
                         map,
@@ -75,17 +99,35 @@ export default function StageSelectModal({ onSelect, onClose }: Props) {
                         player.team,
                         staticConfig.heroesConfig
                       );
+                      const choose = () => {
+                        if (playable) onSelect(map.map_id);
+                        else if (problem)
+                          setRefused(
+                            `「${map.name}」尚未開放（${stageDataProblemText(problem)}），不能出征；目前的戰場沒有改變，可以選擇其他關卡。`
+                          );
+                      };
                       return (
                         <Col xs={12} sm={6} key={map.map_id}>
                           <div
                             className={`${styles.stageCard} ${
-                              !unlocked
-                                ? styles.stageCardLocked
-                                : isCurrent
-                                  ? `${styles.stageCardUnlocked} ${styles.stageCardCurrent}`
-                                  : styles.stageCardUnlocked
+                              problem
+                                ? styles.stageCardUnavailable
+                                : !unlocked
+                                  ? styles.stageCardLocked
+                                  : isCurrent
+                                    ? `${styles.stageCardUnlocked} ${styles.stageCardCurrent}`
+                                    : styles.stageCardUnlocked
                             }`}
-                            onClick={() => unlocked && onSelect(map.map_id)}
+                            onClick={choose}
+                            data-testid="stage-card"
+                            data-map-id={map.map_id}
+                            data-access={
+                              problem
+                                ? "incomplete"
+                                : unlocked
+                                  ? "playable"
+                                  : "locked"
+                            }
                           >
                             <div style={{ padding: "0.9rem 1rem" }}>
                               <div
@@ -107,7 +149,11 @@ export default function StageSelectModal({ onSelect, onClose }: Props) {
                                     {map.name}
                                   </div>
                                 </div>
-                                {!unlocked ? (
+                                {problem ? (
+                                  <span className={styles.stageDataBadge}>
+                                    尚未開放
+                                  </span>
+                                ) : !unlocked ? (
                                   <span
                                     style={{
                                       fontSize: "0.62rem",
@@ -135,26 +181,35 @@ export default function StageSelectModal({ onSelect, onClose }: Props) {
                                   </span>
                                 ) : null}
                               </div>
-                              <StageAirReadinessNote
-                                readiness={air}
-                                variant="card"
-                              />
+                              {problem ? (
+                                <StageDataNote problem={problem} />
+                              ) : (
+                                <StageAirReadinessNote
+                                  readiness={air}
+                                  variant="card"
+                                />
+                              )}
                               <button
                                 className={
-                                  unlocked ? styles.btnGold : styles.btnOutline
+                                  playable ? styles.btnGold : styles.btnOutline
                                 }
                                 style={{
                                   width: "100%",
                                   fontSize: "0.8rem",
                                   padding: "0.4rem",
                                 }}
-                                disabled={!unlocked}
+                                disabled={!playable}
+                                data-testid="stage-select"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (unlocked) onSelect(map.map_id);
+                                  choose();
                                 }}
                               >
-                                {unlocked ? "選擇關卡" : "尚未解鎖"}
+                                {problem
+                                  ? "尚未開放"
+                                  : unlocked
+                                    ? "選擇關卡"
+                                    : "尚未解鎖"}
                               </button>
                               {/* 只查看，不切換關卡：不能冒泡到卡片（卡片點下去就是選擇關卡） */}
                               <button

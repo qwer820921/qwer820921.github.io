@@ -97,6 +97,10 @@ var upgrade_cost_base: int = 50
 var is_aoe: bool           = false
 var aoe_radius: float      = 0.0
 var slow_mult: float       = 1.0       # < 1.0 表示有緩速
+## 步兵塔的緩速光環：每一幀對射程內的地面敵人套用 slow_mult（來源是這座塔自己的 slow_source，每個塔節點各自不同，
+## 不用塔的種類）；離開射程、倒下的敵人撤除，塔被拆除或切換關卡時撤除全部。和其他倍率減速由敵人取最強的一個
+var slow_source: String    = ""
+var _aura_slowed: Dictionary = {}
 var stack_slow_amount: float = 0.0     # 疊加減速量 (文士塔)
 ## 能不能攻擊（文士塔是減速）飛行敵人：設定沒有 anti_air 的塔只打地面
 var can_hit_air: bool      = false
@@ -142,6 +146,9 @@ var _is_attacking: bool    = false  # 用於攻擊狀態識別
 # ═══════════════════════════════════════════
 #  初始化
 # ═══════════════════════════════════════════
+func _init() -> void:
+	slow_source = "tower_aura#%d" % get_instance_id()
+
 func setup(type_key: String, cell: Vector2i, wave_mgr: Node) -> void:
 	tower_type_key = type_key
 	grid_cell      = cell
@@ -184,6 +191,9 @@ func setup(type_key: String, cell: Vector2i, wave_mgr: Node) -> void:
 ## 攻擊冷卻和武將相同（見 Hero._process）：持續有目標時保留越過零點的零頭；
 ## 沒有目標時停在 0 不囤積；一幀最多打一擊，單幀長過攻擊間隔時其餘作廢、從這一擊起算完整的間隔
 func _process(delta: float) -> void:
+	# 步兵塔：緩速光環每一幀更新（不看攻擊冷卻）
+	if slow_mult < 1.0 and tower_type_key == "infantry":
+		_apply_slow_aura()
 	var was_ready: bool = _atk_timer <= 0.0
 	_atk_timer -= delta
 	
@@ -195,10 +205,6 @@ func _process(delta: float) -> void:
 
 	if _atk_timer > 0.0 or not _wave_mgr:
 		return
-
-	# 步兵塔：對範圍內所有敵人施加緩速（每幀）
-	if slow_mult < 1.0 and tower_type_key == "infantry":
-		_apply_slow_aura()
 
 	var range_px: float = range_tiles * tile_size
 	var enemies: Array = _wave_mgr.get_active_enemies()
@@ -280,15 +286,29 @@ func _attack_aoe(primary: Node, all_enemies: Array) -> void:
 			e.take_damage(atk)
 
 func _apply_slow_aura() -> void:
-	if not _wave_mgr:
-		return
-	var range_px: float = range_tiles * tile_size
-	for e in _wave_mgr.get_active_enemies():
-		# 步兵塔不能對空：緩速光環只作用於地面敵人
-		if is_instance_valid(e) and not e.is_dead() and can_target(e):
-			var dist: float = global_position.distance_to(e.global_position)
-			if dist <= range_px:
-				e.apply_slow(slow_mult, 0.2)
+	var keep: Dictionary = {}
+	if _wave_mgr and not is_queued_for_deletion() and not sold:
+		var range_px: float = range_tiles * tile_size
+		for e in _wave_mgr.get_active_enemies():
+			# 步兵塔不能對空：緩速光環只作用於地面敵人
+			if is_instance_valid(e) and not e.is_queued_for_deletion() and not e.is_dead() and can_target(e):
+				var dist: float = global_position.distance_to(e.global_position)
+				if dist <= range_px:
+					e.apply_slow_from(slow_source, slow_mult, Enemy.SLOW_REFRESH_TTL)
+					# 免疫減速的敵人不會套用，也就不列入
+					if e.has_slow_from(slow_source):
+						keep[e.get_instance_id()] = e
+	for id in _aura_slowed:
+		if not keep.has(id) and is_instance_valid(_aura_slowed[id]):
+			_aura_slowed[id].remove_slow_from(slow_source)
+	_aura_slowed = keep
+
+## 拆除、切換關卡（離開場景樹）時撤除這座塔的緩速；其他來源不受影響
+func _exit_tree() -> void:
+	for id in _aura_slowed:
+		if is_instance_valid(_aura_slowed[id]):
+			_aura_slowed[id].remove_slow_from(slow_source)
+	_aura_slowed.clear()
 
 # ═══════════════════════════════════════════
 #  升級

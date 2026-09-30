@@ -199,8 +199,8 @@ async (page) => {
     await page.locator('[data-testid="hero-skill-tag"]', { hasText: "閃避" }).first().click();
     const detail2 = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_page = { tags, detail2 };
-    run.check("A-2 武將頁：趙雲有「閃避」標籤（mock 的四位各一個技能：橫掃、閃避、百步穿楊、火攻），點開後顯示同樣的規則",
-      tags.length === 4 && JSON.stringify([...tags].sort()) === JSON.stringify(["技能：橫掃", "技能：閃避", "技能：百步穿楊", "技能：火攻"].sort()) && detail2 === detail, out.A_page);
+    run.check("A-2 武將頁：趙雲有「閃避」標籤（mock 的四位各一個技能：減速光環、閃避、百步穿楊、火攻），點開後顯示同樣的規則",
+      tags.length === 4 && JSON.stringify([...tags].sort()) === JSON.stringify(["技能：減速光環", "技能：閃避", "技能：百步穿楊", "技能：火攻"].sort()) && detail2 === detail, out.A_page);
 
     // 窄畫面：說明不溢出（沒有橫向捲動、在畫面寬度內）、字級至少 12px
     const vp = page.viewportSize();

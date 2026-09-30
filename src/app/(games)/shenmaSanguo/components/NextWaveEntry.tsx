@@ -118,9 +118,11 @@ function NextWaveModal({
 
   const next = v.status === "wave" || v.status === "unknown" ? v.next : null;
   const title =
-    v.status === "wave" || v.status === "unknown"
+    v.status === "wave" || (v.status === "unknown" && v.total > 0)
       ? `下一波：第 ${v.next} 波（共 ${v.total} 波）`
-      : "下一波";
+      : v.status === "unknown"
+        ? `下一波：第 ${v.next} 波`
+        : "下一波";
 
   return createPortal(
     <div
