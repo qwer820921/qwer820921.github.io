@@ -23,7 +23,8 @@ var _stack_slow_timer: float = 0.0  # 疊加減速持續時間
 ## "flying"（去掉前後空白後完全相同）是飛行，其他（沒有這個欄位、空白、不認得的值）一律是地面。
 ## 飛行：從這一組路線的第一個路點直線飛到最後一個路點（忽略中間的轉折），不被武將擋住、不攻擊武將；
 ## 只有能對空的武將與防禦塔打得到（Hero.can_target、Tower.can_target）。
-## 飛行路線至少要有兩個路點、起點和終點不同，否則一出現就在終點：這個檢查在出兵前由 WaveManager.plan_wave 做，無效的組不出兵
+## 飛行路線至少要有兩個路點、起點和終點不同，否則一出現就在終點：這個檢查在出兵前由 WaveManager.plan_wave 做，無效的組不出兵。
+## 地面路線同樣至少要有兩個路點，而且沿路點走的總路程不為 0（環狀路線可以），也在出兵前檢查
 const MOVE_GROUND: String = "ground"
 const MOVE_FLYING: String = "flying"
 var movement_type: String = MOVE_GROUND

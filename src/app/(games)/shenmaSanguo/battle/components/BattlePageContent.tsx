@@ -48,6 +48,8 @@ import {
 } from "../../utils/waveReject";
 import SpeedToggle from "./SpeedToggle";
 import PauseToggle, { PauseBadge } from "./PauseToggle";
+import NextWaveEntry from "../../components/NextWaveEntry";
+import { NextWaveBattle } from "../../utils/nextWave";
 
 interface BattleStats {
   battle_id?: string;
@@ -116,6 +118,10 @@ export default function BattlePageContent() {
   const [placedHeroIds, setPlacedHeroIds] = useState<string[]>([]);
   // 拒絕開戰的提示（這一波沒有可以出兵的敵人；見 utils/waveReject）：開戰、換一場、結算時清除
   const [waveReject, setWaveReject] = useState<WaveRejectData | null>(null);
+  // 這一場送進遊戲的關卡與敵人設定：戰場內的「下一波」用（見 utils/nextWave）
+  const [nextWaveBattle, setNextWaveBattle] = useState<NextWaveBattle | null>(
+    null
+  );
   // 這一關的戰鬥：記下屬於哪個帳號、能不能採用結算（見 utils/battleSession）
   const sessionRef = useRef(new BattleSession());
 
@@ -160,6 +166,11 @@ export default function BattlePageContent() {
     sessionRef.current.begin(ticket);
     // 新的一場：上一場的拒絕開戰提示不適用
     setWaveReject(null);
+    setNextWaveBattle({
+      battleId: ticket.id,
+      map,
+      enemies: staticConfig.enemiesConfig,
+    });
 
     const payload: ExpeditionPayload = {
       stage_id: mapId,
@@ -351,6 +362,7 @@ export default function BattlePageContent() {
     setPlacementMenu(null);
     setUpgradePanel(null);
     setWaveReject(null);
+    setNextWaveBattle(null);
     await activateLatestGameWorker();
     setEngineStatus("loading");
     setIframeLoading(true);
@@ -682,6 +694,15 @@ export default function BattlePageContent() {
                     stats={battleStats}
                     onSet={handleSetPaused}
                     variant="top"
+                  />
+                  {/* 下一波的敵軍：唯讀視窗，不暫停、不開始下一波、不改自動與倍率 */}
+                  <NextWaveEntry
+                    stats={battleStats}
+                    battle={nextWaveBattle}
+                    team={player?.team}
+                    heroesConfig={staticConfig?.heroesConfig}
+                    ended={!!battleResult}
+                    buttonClassName={styles.topBtn}
                   />
                   <button
                     className={`${styles.topBtn} ${battleStats.auto_mode ? styles.topBtnActive : ""}`}

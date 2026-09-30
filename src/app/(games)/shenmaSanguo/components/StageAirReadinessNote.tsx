@@ -53,17 +53,21 @@ const invalidText = (g: InvalidFlyingInfo) =>
 
 /**
  * 出征前的對空準備提醒（規則見 utils/stageAirReadiness）。確定沒有飛行敵人、也沒有路線無效的飛行組的關卡不顯示。
- * 只是提醒：不阻擋出征、不寫入任何東西
+ * 只是提醒：不阻擋出征、不寫入任何東西。
+ * scope="wave"：戰場內的「下一波」，範圍只有那一波（文字寫「這一波」，不提出征）
  */
 export default function StageAirReadinessNote({
   readiness: r,
   variant,
+  scope = "stage",
 }: {
   readiness: StageAirReadiness;
   variant: "card" | "panel";
+  scope?: "stage" | "wave";
 }) {
   const invalid = r.invalidFlying.length > 0;
   if (r.kind === "ground" && !invalid) return null;
+  const where = scope === "wave" ? "這一波" : "本關";
   const tone =
     r.kind !== "flying"
       ? styles.airReadyUnclear
@@ -78,6 +82,7 @@ export default function StageAirReadinessNote({
     "data-air-heroes":
       r.team.status === "ready" ? r.team.airHeroes.join("、") : "",
     "data-invalid-flying": String(r.invalidFlying.length),
+    "data-scope": scope,
   };
 
   if (variant === "card") {
@@ -108,14 +113,16 @@ export default function StageAirReadinessNote({
     <div
       className={`${styles.airReadyPanel} ${tone}`}
       role="note"
-      aria-label="出征前的對空準備"
+      aria-label={scope === "wave" ? "這一波的對空準備" : "出征前的對空準備"}
       {...data}
     >
-      <div className="fw-bold mb-1">出征前的對空準備</div>
+      <div className="fw-bold mb-1">
+        {scope === "wave" ? "這一波的對空準備" : "出征前的對空準備"}
+      </div>
       {r.kind === "flying" ? (
         <>
           <div data-testid="air-readiness-waves">
-            本關有飛行敵人：
+            {where}有飛行敵人：
             {r.flyingWaves
               .map(
                 (w) => `第 ${w.wave} 波 ${w.groups.map(groupText).join("、")}`
@@ -134,7 +141,7 @@ export default function StageAirReadinessNote({
         <div data-testid="air-readiness-invalid">
           路線無效、遊戲不會出兵的飛行敵人：
           {r.invalidFlying.map(invalidText).join("；")}
-          。飛行敵人從路線的起點直線飛到終點，這些組不算進本關的飛行敵人。
+          。飛行敵人從路線的起點直線飛到終點，這些組不算進{where}的飛行敵人。
         </div>
       )}
       {r.incomplete.length > 0 && (
@@ -142,11 +149,13 @@ export default function StageAirReadinessNote({
           敵軍資料不完整（{r.incomplete.join("；")}）：
           {r.kind === "flying"
             ? "飛行敵人可能不只這些。"
-            : "無法確認本關有沒有飛行敵人。"}
+            : `無法確認${where}有沒有飛行敵人。`}
         </div>
       )}
       <div className={styles.airReadyFoot}>
-        這是出征前的戰術提醒，不是戰力評分，也不保證能獲勝；不影響出征。
+        {scope === "wave"
+          ? "這是戰術提醒，不是戰力評分，也不保證能獲勝。"
+          : "這是出征前的戰術提醒，不是戰力評分，也不保證能獲勝；不影響出征。"}
       </div>
     </div>
   );

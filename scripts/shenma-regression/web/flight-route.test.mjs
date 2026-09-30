@@ -1,6 +1,7 @@
 // 飛行路線無效、防禦塔「優先飛行」選項與拒絕開戰提示的網頁端規則測試，不需要瀏覽器：
 // - utils/stagePreview：路線座標的判讀和 Godot 相同（int() 取整數、純整數字串；其他無法確定）；飛行組的路線只有一個路點、
 //   起點和終點同一格時遊戲會略過（原因、數量不算、全部無效的波次會被拒絕）；短但不同格的路線、地面的環狀路線照常
+//   （地面路線沒有路程的規則另見 web/next-wave.test.mjs）
 // - utils/stageAirReadiness：路線無效的飛行組另外列出，不算進飛行敵人與總數
 // - utils/towerTarget：選項以 Godot 送來的 target_modes 為準（沒有送的只顯示三種）；文士塔的說明都是減速
 // - utils/waveReject：只採用目前這一場的 wave_rejected，原因代碼轉成文字，不認得的代碼不猜
@@ -276,17 +277,22 @@ block("敵軍預覽", () => {
     ENEMIES
   );
   check(
-    "預覽-3 地面不套用飛行規則：地面的環狀路線、兩個相同路點、單一路點（大小寫不同的 Flying 也是地面）都照常出兵，沒有飛行路線的說明",
+    "預覽-3 地面不套用飛行規則（大小寫不同的 Flying 也是地面）：地面的環狀路線照常出兵；兩個相同路點、單一路點由地面路線的規則略過（原因是地面路線，不是飛行路線），這一波 2 隻",
     same(
-      groupsOf(ground).map((x) => [x.outcome, x.count, x.flightProblem]),
+      groupsOf(ground).map((x) => [
+        x.outcome,
+        x.count,
+        x.flightProblem,
+        x.groundProblem,
+      ]),
       [
-        ["spawn", 2, null],
-        ["spawn", 1, null],
-        ["spawn", 1, null],
+        ["spawn", 2, null, null],
+        ["skip", null, null, "ground_zero_length"],
+        ["skip", null, null, "ground_single_point"],
       ]
     ) &&
       !groupsOf(ground).some((x) => x.notes.some((n) => /飛行路線/.test(n))) &&
-      ground.waves[0].total === 4,
+      ground.waves[0].total === 2,
     groupsOf(ground)
   );
   const odd = buildStagePreview(

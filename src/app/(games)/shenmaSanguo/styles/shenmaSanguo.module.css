@@ -2115,6 +2115,11 @@
   max-height: calc(100vh - 7rem);
 }
 
+/* ── 戰場內的「下一波」（NextWaveEntry）：疊在戰場、HUD 與拒絕開戰的提示上方，低於底部提示（bottomNotices） ── */
+.nextWaveBackdrop {
+  z-index: 1000;
+}
+
 .previewSummary {
   font-size: 0.82rem;
   color: var(--sg-text);
@@ -2184,6 +2189,21 @@
 .previewGroupIndex {
   font-size: 0.68rem;
   color: var(--sg-muted);
+}
+
+/* 敵人名稱沒有空格時（例如找不到設定時顯示的 enemy_id）也能換行，窄螢幕不溢出 */
+.previewGroupMain {
+  overflow-wrap: anywhere;
+}
+
+.previewGround {
+  font-size: 0.62rem;
+  color: #57534e;
+  background: #f5f5f4;
+  border: 1px solid #d6d3d1;
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
 }
 
 .previewStats {
@@ -2473,7 +2493,27 @@
   }
 }
 
-/* 360 寬以下（例如 320）：主頁 HUD 按鈕列多了暫停鈕，縮小留白與間距，迎戰、自動、1×、2×、暫停、武將、隊伍仍放得下一列 */
+/* ── 戰場內的「下一波」入口（NextWaveEntry.tsx）：沿用各自的按鈕樣式，圖示＋文字；很窄的畫面只留圖示 ── */
+.nextWaveBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 400px) {
+  .nextWaveLabel {
+    display: none;
+  }
+  .nextWaveBtn {
+    min-width: 34px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}
+
+/* 360 寬以下（例如 320）：主頁 HUD 按鈕列多了暫停鈕，縮小留白與間距，迎戰、自動、1×、2×、暫停、下一波、武將、隊伍仍放得下一列 */
 @media (max-width: 360px) {
   .hudActionBar {
     padding-left: 4px;
@@ -2484,12 +2524,13 @@
     gap: 3px;
   }
   .hudBarBtn {
-    padding-left: 8px;
-    padding-right: 8px;
+    padding-left: 5px;
+    padding-right: 5px;
     letter-spacing: 0;
   }
   .hudBarBtn.speedBtn,
-  .hudBarBtn.pauseBtn {
+  .hudBarBtn.pauseBtn,
+  .hudBarBtn.nextWaveBtn {
     min-width: 30px;
     padding-left: 5px;
     padding-right: 5px;

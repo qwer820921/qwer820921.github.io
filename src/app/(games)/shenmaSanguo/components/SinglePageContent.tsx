@@ -44,6 +44,8 @@ import {
 } from "../utils/waveReject";
 import SpeedToggle from "../battle/components/SpeedToggle";
 import PauseToggle, { PauseBadge } from "../battle/components/PauseToggle";
+import NextWaveEntry from "./NextWaveEntry";
+import { NextWaveBattle } from "../utils/nextWave";
 import StageSelectModal from "./modals/StageSelectModal";
 import TeamEditModal from "./modals/TeamEditModal";
 import HeroListModal from "./modals/HeroListModal";
@@ -391,6 +393,10 @@ export default function SinglePageContent() {
   const [towerSell, setTowerSell] = useState<TowerSellState | null>(null);
   // 拒絕開戰的提示（這一波沒有可以出兵的敵人；見 utils/waveReject）：開戰、換關、結算時清除
   const [waveReject, setWaveReject] = useState<WaveRejectData | null>(null);
+  // 這一場送進遊戲的關卡與敵人設定：戰場內的「下一波」用（見 utils/nextWave）
+  const [nextWaveBattle, setNextWaveBattle] = useState<NextWaveBattle | null>(
+    null
+  );
   const [battleResult, setBattleResult] = useState<BattleResultPayload | null>(
     null
   );
@@ -683,6 +689,11 @@ export default function SinglePageContent() {
     sessionRef.current.begin(ticket);
     // 新的一場：上一場的拒絕開戰提示不適用
     setWaveReject(null);
+    setNextWaveBattle({
+      battleId: ticket.id,
+      map,
+      enemies: staticConfig.enemiesConfig,
+    });
 
     const payload: ExpeditionPayload = {
       stage_id: currentMapId,
@@ -792,6 +803,7 @@ export default function SinglePageContent() {
     setUpgradePanel(null);
     setTowerSell(null);
     setWaveReject(null);
+    setNextWaveBattle(null);
     await activateLatestGameWorker();
     setEngineStatus("loading");
     setIframeLoading(true);
@@ -854,6 +866,11 @@ export default function SinglePageContent() {
       sessionRef.current.begin(ticket);
       // 新的一場：上一場的拒絕開戰提示不適用
       setWaveReject(null);
+      setNextWaveBattle({
+        battleId: ticket.id,
+        map,
+        enemies: staticConfig.enemiesConfig,
+      });
       const payload: ExpeditionPayload = {
         stage_id: mapId,
         battle_id: ticket.id,
@@ -1229,6 +1246,15 @@ export default function SinglePageContent() {
                     stats={battleStats}
                     onSet={handleSetPaused}
                     variant="hud"
+                  />
+                  {/* 下一波的敵軍：唯讀視窗，不暫停、不開始下一波、不改自動與倍率 */}
+                  <NextWaveEntry
+                    stats={battleStats}
+                    battle={nextWaveBattle}
+                    team={player?.team}
+                    heroesConfig={staticConfig?.heroesConfig}
+                    ended={!!battleResult}
+                    buttonClassName={styles.hudBarBtn}
                   />
                 </>
               )}

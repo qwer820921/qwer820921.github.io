@@ -173,7 +173,8 @@ func _run() -> void:
 		last_result = r)
 
 	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃；skills 跑四位武將的技能與攻速成長；
-	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行
+	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行；
+	# route 跑飛行與地面的路線無效（出兵前擋下）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -192,8 +193,11 @@ func _run() -> void:
 		elif only == "airfirst":
 			await _flight_route_cases()
 			await _air_first_cases()
+		elif only == "route":
+			await _flight_route_cases()
+			await _ground_route_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route）", false)
 		_finish()
 		return
 
@@ -380,6 +384,9 @@ func _run() -> void:
 	# ── 飛行路線無效（出兵前擋下）與防禦塔「優先飛行」──
 	await _flight_route_cases()
 	await _air_first_cases()
+
+	# ── 地面路線沒有路程（出兵前擋下）──
+	await _ground_route_cases()
 
 	_finish()
 
@@ -3773,6 +3780,7 @@ func _flying_cases() -> void:
 # 地圖沿用飛行測試的 _fly_path_json，另外加幾條路線：
 # path_loop：(0,5)→(4,5)→(4,2)→(0,2)→(0,5)，起點和終點同一格的環狀路線（地面照常走 14 格；飛行無效）
 # path_dup：兩個相同的路點（飛行無效）；path_single：只有一個路點（飛行無效）；path_short：相鄰兩格（1 格長，飛行有效）
+# path_dup3：三個相同的路點（總路程 0）。地面：path_single、path_dup、path_dup3 無效，path_loop、path_short 有效
 func _route_payload(battle_id: String, waves: Array) -> Dictionary:
 	var p: Dictionary = _fly_payload(battle_id, waves)
 	var paths: Dictionary = p["map"]["path_json"]["paths"]
@@ -3780,6 +3788,7 @@ func _route_payload(battle_id: String, waves: Array) -> Dictionary:
 	paths["path_dup"] = [[3, 9], [3, 9]]
 	paths["path_single"] = [[6, 2]]
 	paths["path_short"] = [[10, 3], [11, 3]]
+	paths["path_dup3"] = [[5, 9], [5, 9], [5, 9]]
 	return p
 
 func _grp_on(id: String, count: int, interval: float, path: String) -> Dictionary:
@@ -3896,6 +3905,94 @@ func _flight_route_cases() -> void:
 	var m6: Dictionary = r6.msgs[0] if r6.msgs.size() == 1 else {}
 	_check("路線-6 缺波次（第 2 波不存在）：拒絕開戰，wave_rejected 帶 wave 2、missing true、沒有逐組原因",
 		r6.state.state == 1 and r6.state.wave == 1 and r6.ended == 0 and int(m6.get("wave", -1)) == 2 and m6.get("missing") == true and m6.get("skipped", [1]) == [], {"state": r6.state, "msgs": r6.msgs})
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 地面路線沒有路程（出兵前擋下）──
+# 地面敵人沿路點依序走：只有一個路點、或所有路點在同一格（總路程 0）時一出現就抵達基地，所以出兵前略過；
+# 判斷看沿路點的總路程，不看起點和終點：起終點同格的環狀路線（路線-5、地面路線-6）照常出兵
+func _ground_route_cases() -> void:
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 地面路線-1：這一波的地面組全部無效（只有一個路點、兩個相同路點、三個相同路點）→ 拒絕開戰：
+	# 停在備戰、波次不前進、城池不扣血、沒有結算、場上沒有敵人；拒絕信號一次；wave_rejected 逐組列出地面的原因代碼（和飛行不同）
+	var r1: Dictionary = await _route_reject(rec, _route_payload("ground-1", [[_grp_on("gnd_walk", 2, 0.1, "path_single"), _grp_on("gnd_walk", 1, 0.1, "path_dup"), _grp_on("gnd_run", 3, 0.1, "path_dup3")]]), false, 0)
+	var m1: Dictionary = r1.msgs[0] if r1.msgs.size() == 1 else {}
+	var want1: Array = [[1, "gnd_walk", "path_single", "ground_single_point"], [2, "gnd_walk", "path_dup", "ground_zero_length"], [3, "gnd_run", "path_dup3", "ground_zero_length"]]
+	_check("地面路線-1 地面組全部無效（只有一個路點、兩個相同路點、三個相同路點）→ 拒絕開戰：備戰、波次 0、城池 20、沒有結算、場上沒有敵人；拒絕信號 1 次；wave_rejected 帶這一場的 battle_id、第 1 波、逐組原因 ground_single_point／ground_zero_length，不含玩家 key",
+		r1.state.state == 1 and r1.state.wave == 0 and r1.state.hp == MAX_HP and not r1.state.auto and r1.state.active == 0 and r1.nodes == 0 and r1.ended == 0 and r1.sig == [1] and
+		r1.msgs.size() == 1 and m1.get("battle_id") == "ground-1" and int(m1.get("wave", -1)) == 1 and m1.get("missing") == false and _route_reasons(m1) == want1 and not JSON.stringify(m1).contains("\"key\""),
+		{"state": r1.state, "sig": r1.sig, "ended": r1.ended, "nodes": r1.nodes, "msgs": r1.msgs})
+
+	# 地面路線-2：自動模式，第 2 波只有無效的地面組 → 第 1 波（1 隻抵達）照常，第 2 波拒絕：自動關閉、波次停在 1、城池只扣第 1 波的 1、沒有結算
+	var r2: Dictionary = await _route_reject(rec, _route_payload("ground-2", [[_grp("gnd_run", 1, 0.1)], [_grp_on("gnd_run", 3, 0.1, "path_single")]]), true, 0)
+	var m2: Dictionary = r2.msgs[0] if r2.msgs.size() == 1 else {}
+	_check("地面路線-2 自動模式第 2 波只有無效的地面組：第 1 波照常（抵達，城池 19），第 2 波拒絕：自動關閉、停在備戰、波次 1、沒有結算、場上沒有敵人；wave_rejected 是第 2 波、原因 ground_single_point",
+		r2.state.state == 1 and r2.state.wave == 1 and r2.state.hp == MAX_HP - 1 and not r2.state.auto and r2.ended == 0 and r2.nodes == 0 and r2.sig == [2] and int(m2.get("wave", -1)) == 2 and _route_reasons(m2) == [[1, "gnd_run", "path_single", "ground_single_point"]],
+		{"state": r2.state, "sig": r2.sig, "ended": r2.ended, "msgs": r2.msgs})
+
+	# 地面路線-3：手動，下一波（第 2 波）只有總路程 0 的地面組 → 第 1 波打完後按迎戰被拒絕：波次停在 1、城池 19、沒有結算
+	var r3: Dictionary = await _route_reject(rec, _route_payload("ground-3", [[_grp("gnd_run", 1, 0.1)], [_grp_on("gnd_walk", 2, 0.1, "path_dup3")]]), false, 1)
+	var m3: Dictionary = r3.msgs[0] if r3.msgs.size() == 1 else {}
+	_check("地面路線-3 手動開下一波，第 2 波只有三個相同路點的地面組：拒絕，備戰、波次 1、城池 19、沒有結算、場上沒有敵人；wave_rejected 是第 2 波、原因 ground_zero_length",
+		r3.state.state == 1 and r3.state.wave == 1 and r3.state.hp == MAX_HP - 1 and r3.ended == 0 and r3.nodes == 0 and r3.sig == [2] and int(m3.get("wave", -1)) == 2 and _route_reasons(m3) == [[1, "gnd_walk", "path_dup3", "ground_zero_length"]],
+		{"state": r3.state, "sig": r3.sig, "ended": r3.ended, "msgs": r3.msgs})
+
+	# 地面路線-4：同一波混合：無效的地面組（單一路點、兩個相同路點）略過，合法的地面與飛行各 1 隻照常開戰；沒有 wave_rejected，城池不因無效組扣血
+	_load(_route_payload("ground-4", [[_grp_on("gnd_run", 2, 0.05, "path_single"), _grp_on("gnd_walk", 1, 0.05, "path_dup"), _grp("gnd_walk", 1, 0.05), _grp("fly_walk", 1, 0.05)]]))
+	var n4: int = rec.sent_wave_rejects.size()
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == 2, 3.0)
+	await _wait(0.5)
+	var es4: Array = _sw_enemies()
+	var d4: Dictionary = {"state": _bm().game_state, "count": es4.size(), "moves": es4.map(func(e): return e.movement_type), "hp": _bm().base_hp, "rejects": rec.sent_wave_rejects.size() - n4, "skipped": _route_reasons(_wm().get_last_plan_report())}
+	_check("地面路線-4 同一波混合：無效的地面組略過（計畫的說明列出兩組與原因），合法的地面與飛行各 1 隻照常開戰；沒有 wave_rejected、城池 20",
+		d4.state == 2 and d4.count == 2 and d4.moves == ["ground", "flying"] and d4.hp == MAX_HP and d4.rejects == 0 and d4.skipped == [[1, "gnd_run", "path_single", "ground_single_point"], [2, "gnd_walk", "path_dup", "ground_zero_length"]], d4)
+	_load(_stage_b())
+
+	# 地面路線-5：短但有效的地面路線（相鄰兩格、1 格長）照常出兵：兩個路點、剩餘 1 格；走到終點才扣城血（每秒 40 像素），不是一出現就扣
+	_load(_route_payload("ground-5", [[_grp_on("gnd_walk", 1, 0.1, "path_short")]]))
+	var n5: int = rec.sent_wave_rejects.size()
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == 1, 3.0)
+	var d5: Dictionary = {"spawned": _sw_enemies().size()}
+	if _sw_enemies().size() == 1:
+		var e5: Node = _sw_enemies()[0]
+		var t5: float = float(e5.tile_size)
+		var p5: float = _pt()
+		d5["move"] = e5.movement_type
+		d5["wps"] = e5._waypoints.size()
+		d5["rem_tiles"] = snappedf(e5.get_remaining_distance() / t5, 0.01)
+		d5["hp_at_spawn"] = _bm().base_hp
+		d5["expect_sec"] = snappedf(t5 / 40.0, 0.001)
+		await _wait_until(func(): return _bm().base_hp < MAX_HP, 5.0)
+		d5["arrive_sec"] = snappedf(_pt() - p5, 0.001)
+		d5["hp"] = _bm().base_hp
+	d5["rejects"] = rec.sent_wave_rejects.size() - n5
+	_check("地面路線-5 相鄰兩格的地面路線（1 格長）照常出兵：地面、兩個路點、剩餘 1 格、出現時城池 20；約 1 格 ÷ 40 像素／秒後抵達才扣 1；沒有拒絕",
+		d5.get("spawned") == 1 and d5.get("move") == "ground" and d5.get("wps") == 2 and is_equal_approx(float(d5.get("rem_tiles", 0.0)), 1.0) and d5.get("hp_at_spawn") == MAX_HP and float(d5.get("arrive_sec", 0.0)) >= float(d5.get("expect_sec", 99.0)) - 0.1 and float(d5.get("arrive_sec", 99.0)) <= float(d5.get("expect_sec", 0.0)) + 0.5 and d5.get("hp") == MAX_HP - 1 and d5.get("rejects") == 0, d5)
+	await _wait_until(func(): return _bm().game_state == 3, 5.0)
+
+	# 地面路線-6：同一波的地面環狀路線（起終點同格、中間有 14 格路程）照常出兵，只略過兩個相同路點的組：
+	# 環狀路線的敵人五個路點、剩餘 14 格、出現時城池 20；計畫的說明只列出 path_dup；沒有 wave_rejected
+	_load(_route_payload("ground-6", [[_grp_on("gnd_walk", 1, 0.05, "path_loop"), _grp_on("gnd_walk", 1, 0.05, "path_dup")]]))
+	var n6: int = rec.sent_wave_rejects.size()
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == 1, 3.0)
+	await _wait(0.3)
+	var es6: Array = _sw_enemies()
+	var d6: Dictionary = {"state": _bm().game_state, "count": es6.size(), "hp": _bm().base_hp, "rejects": rec.sent_wave_rejects.size() - n6, "skipped": _route_reasons(_wm().get_last_plan_report())}
+	if es6.size() == 1:
+		d6["wps"] = es6[0]._waypoints.size()
+		d6["rem_tiles"] = snappedf((es6[0].get_remaining_distance() + es6[0].position.distance_to(es6[0]._waypoints[0])) / float(es6[0].tile_size), 0.01)
+	_check("地面路線-6 地面環狀路線（起終點同格、中間有路程）照常出兵、同一波兩個相同路點的組略過：場上 1 隻、五個路點、全程 14 格、城池 20；計畫的說明只列 path_dup（ground_zero_length）；沒有 wave_rejected",
+		d6.state == 2 and d6.count == 1 and d6.get("wps") == 5 and is_equal_approx(float(d6.get("rem_tiles", 0.0)), 14.0) and d6.hp == MAX_HP and d6.rejects == 0 and d6.skipped == [[2, "gnd_walk", "path_dup", "ground_zero_length"]], d6)
 
 	rec.payload_received.disconnect(main._on_payload_received)
 	main.web_bridge = original

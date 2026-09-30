@@ -155,6 +155,23 @@ const MUTATIONS = {
     only: "airfirst",
     expect: ["優先飛行-1 ", "優先飛行-4 "],
   },
+  // 地面路線沒有路程（SHENMA_TEST_ONLY=route）
+  "ground-route-unchecked": {
+    why: "出兵前不檢查地面路線（只有一個路點、所有路點同格的地面組照常出兵，一出現就扣城血）",
+    file: WAVE,
+    from: '\t\tif ground_problem != "":\n',
+    to: "\t\tif false:\n",
+    only: "route",
+    expect: ["地面路線-1 ", "地面路線-2 ", "地面路線-3 ", "地面路線-4 "],
+  },
+  "ground-route-endpoints": {
+    why: "地面改用起點和終點判斷（起終點同格的環狀路線被誤擋）",
+    file: WAVE,
+    from: "\tif total <= FLIGHT_MIN_LEN:\n",
+    to: "\tif (waypoints[0] as Vector2).distance_to(waypoints[waypoints.size() - 1]) <= FLIGHT_MIN_LEN:\n",
+    only: "route",
+    expect: ["路線-5 ", "地面路線-6 "],
+  },
 };
 
 const name = process.argv[2];

@@ -8,7 +8,8 @@ import { MovementInfo, movementOf } from "./antiAir";
  *   某一波沒有資料，或那一波沒有任何可出兵的組時，遊戲會拒絕開始那一波（BattleManager._reject_wave）
  * - 同一個編號有多筆時只用第一筆（WaveManager.plan_wave）
  * - 每一組依序檢查，不符合就整組略過：enemy_id 空白（GAS 的空白列）→ 找不到敵人設定 → 路線沒有路點 →
- *   飛行路線無效（飛行敵人的路線只有一個路點，或起點和終點是同一格：WaveManager.plan_wave）→ 數量 ≤ 0；
+ *   飛行路線無效（飛行敵人的路線只有一個路點，或起點和終點是同一格）→ 地面路線沒有路程（地面敵人的路線只有一個路點，
+ *   或所有路點在同一格；起終點同格但中間有路程的環狀路線照常）→ 數量 ≤ 0（WaveManager.plan_wave）；
  *   沒有提供數量時遊戲以 1 隻計、沒有路線時用 path_a、沒有間隔時是 1 秒
  * 資料裡沒有的敵人能力不推定；數量無法判讀時不給確定的總數
  * 移動方式（movement_type）照遊戲的判讀（utils/antiAir）：只有 flying 是飛行，其他都當作地面，遊戲不認得的寫法另外註明
@@ -22,6 +23,12 @@ export type GroupOutcome = "spawn" | "skip" | "unknown";
  * 飛行敵人從起點直線飛到終點，這兩種一出現就在終點，遊戲不出兵
  */
 export type FlightProblem = "flight_single_point" | "flight_same_endpoints";
+
+/**
+ * 地面路線沒有路程的原因（和 Godot WaveManager 的原因代碼相同）：只有一個路點、所有路點在同一格（總路程 0）。
+ * 地面敵人沿路點依序走，這兩種一出現就抵達終點，遊戲不出兵
+ */
+export type GroundProblem = "ground_single_point" | "ground_zero_length";
 
 /** 路點的格子座標（和 Godot 的 Vector2i(int(x), int(y)) 相同）；無法確定 Godot 的結果時是 null */
 export type GridPoint = readonly [number, number] | null;
@@ -44,6 +51,8 @@ export interface PreviewGroup {
   outcome: GroupOutcome;
   /** 飛行路線無效（遊戲會略過這一組）；地面組、路線有效或無法判讀時是 null */
   flightProblem: FlightProblem | null;
+  /** 地面路線沒有路程（遊戲會略過這一組）；飛行組、路線有效或無法判讀時是 null */
+  groundProblem: GroundProblem | null;
   /** 資料不完整或遊戲會略過的原因（顯示用） */
   notes: string[];
 }
@@ -163,6 +172,29 @@ export function flightProblemText(problem: FlightProblem): string {
     : "飛行路線的起點和終點是同一格";
 }
 
+/**
+ * 地面路線的問題：只有一個路點 → ground_single_point；所有路點在同一格（沿路點走的總路程為 0）→ ground_zero_length。
+ * 不看起點和終點：只要有兩個路點不同格，總路程就至少是這兩點的距離（不同格至少差一格），環狀路線照常。
+ * 有座標無法判讀、而且能判讀的路點都在同一格時回傳 "unknown"（無法判讀的點可能在別格，不猜）
+ */
+export function groundRouteProblem(
+  points: GridPoint[]
+): GroundProblem | "unknown" | null {
+  if (points.length < 2) return "ground_single_point";
+  const known = points.filter((p): p is readonly [number, number] => !!p);
+  if (known.some((p) => p[0] !== known[0][0] || p[1] !== known[0][1])) {
+    return null;
+  }
+  return known.length < points.length ? "unknown" : "ground_zero_length";
+}
+
+/** 地面路線沒有路程的說明（預覽、拒絕開戰的提示共用） */
+export function groundProblemText(problem: GroundProblem): string {
+  return problem === "ground_single_point"
+    ? "地面路線只有一個路點"
+    : "地面路線的路點都在同一格（沒有路程）";
+}
+
 function previewGroup(
   raw: unknown,
   index: number,
@@ -180,6 +212,7 @@ function previewGroup(
   const notes: string[] = [];
   let outcome: GroupOutcome = "spawn";
   let flightProblem: FlightProblem | null = null;
+  let groundProblem: GroundProblem | null = null;
   const movement = cfg ? movementOf(cfg.movement_type) : null;
 
   if (!cfg) {
@@ -200,6 +233,19 @@ function previewGroup(
       flightProblem = problem;
       notes.push(
         `${flightProblemText(problem)}（路線「${path}」）：飛行敵人從起點直線飛到終點，這樣一出現就在終點，遊戲會略過這一組`
+      );
+      outcome = "skip";
+    }
+  } else {
+    // 地面敵人沿路點依序走：只有一個路點、或所有路點在同一格時一出現就抵達終點，遊戲不出兵
+    const problem = groundRouteProblem(paths[path]);
+    if (problem === "unknown") {
+      notes.push(`路線「${path}」有座標無法判讀，無法確定地面敵人能不能出兵`);
+      outcome = "unknown";
+    } else if (problem) {
+      groundProblem = problem;
+      notes.push(
+        `${groundProblemText(problem)}（路線「${path}」）：地面敵人沿路點走，這樣一出現就抵達終點，遊戲會略過這一組`
       );
       outcome = "skip";
     }
@@ -250,6 +296,7 @@ function previewGroup(
     movement,
     outcome,
     flightProblem,
+    groundProblem,
     notes,
   };
 }

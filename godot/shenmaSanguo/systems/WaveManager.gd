@@ -66,14 +66,15 @@ func get_spawning_group_count() -> int:
 	return _active_spawning_groups
 
 # ── 規劃與啟動波次 ────────────────────────────────────────────
-## 飛行路線的最短長度（像素）：起點到終點的直線距離不超過這個值，就視為同一個位置（飛行敵人一出現就在終點）。
-## 只用來擋掉「起點和終點是同一格」這類設定；相鄰兩格這種短但非零的路線照常出兵
+## 路線的最短長度（像素）：飛行比起點到終點的直線距離，地面比沿全部路點走的總路程；不超過這個值就視為沒有路程
+## （敵人一出現就在終點）。只用來擋掉「同一格」這類設定；相鄰兩格這種短但非零的路線照常出兵
 const FLIGHT_MIN_LEN: float = 0.001
 
 ## 最近一次 plan_wave 的結果說明：{wave, missing（沒有這一波的資料）, skipped: [{index, enemy_id, path, reason}]}。
 ## index 是這一組在波次清單裡的位置（從 1 開始，包含空白列）；reason：
 ## enemy_not_found（找不到敵人設定）、path_empty（路線沒有路點）、flight_single_point（飛行路線只有一個路點）、
-## flight_same_endpoints（飛行路線的起點和終點相同）、count_invalid（數量 ≤ 0）。
+## flight_same_endpoints（飛行路線的起點和終點相同）、ground_single_point（地面路線只有一個路點）、
+## ground_zero_length（地面路線的所有路點在同一個位置，總路程為 0）、count_invalid（數量 ≤ 0）。
 ## 拒絕開戰時交給 Web 顯示原因；只有關卡設定，沒有玩家資料
 var _last_plan_report: Dictionary = {}
 
@@ -122,6 +123,13 @@ func plan_wave(wave_num: int) -> Array:
 			push_warning("[WaveManager] 飛行敵人組 '%s' 的路線 %s 無效（%s），跳過此組" % [enemy_id, path_id, flight_problem])
 			_skip(index, enemy_id, path_id, flight_problem)
 			continue
+		# 地面敵人沿路點依序走：只有一個路點、或所有路點在同一個位置（總路程為 0）時，一出現就抵達基地（立刻扣城血），所以不出兵。
+		# 起點和終點相同、但中間有路程的環狀路線照常走完全程
+		var ground_problem: String = _ground_route_problem(enemy_cfg, waypoints)
+		if ground_problem != "":
+			push_warning("[WaveManager] 地面敵人組 '%s' 的路線 %s 無效（%s），跳過此組" % [enemy_id, path_id, ground_problem])
+			_skip(index, enemy_id, path_id, ground_problem)
+			continue
 		var count: int = int(g.get("count", 1))
 		if count <= 0:
 			push_warning("[WaveManager] 敵人組 '%s' 數量為 %d，跳過此組" % [enemy_id, count])
@@ -136,16 +144,35 @@ func plan_wave(wave_num: int) -> Array:
 func _skip(index: int, enemy_id: String, path_id: String, reason: String) -> void:
 	_last_plan_report["skipped"].append({"index": index, "enemy_id": enemy_id, "path": path_id, "reason": reason})
 
-## 飛行組的路線問題（地面組一律回傳空字串，地面的環狀路線照常走）：
+## 飛行組的路線問題（地面組一律回傳空字串，地面另外由 _ground_route_problem 檢查）：
 ## 路點少於 2 個 → flight_single_point；起點到終點的距離 ≤ FLIGHT_MIN_LEN → flight_same_endpoints
 func _flight_route_problem(cfg: Dictionary, waypoints: Array) -> String:
-	if str(cfg.get("movement_type", "")).strip_edges() != Enemy.MOVE_FLYING:
+	if not _is_flying_cfg(cfg):
 		return ""
 	if waypoints.size() < 2:
 		return "flight_single_point"
 	if (waypoints[0] as Vector2).distance_to(waypoints[waypoints.size() - 1]) <= FLIGHT_MIN_LEN:
 		return "flight_same_endpoints"
 	return ""
+
+## 地面組的路線問題（飛行組一律回傳空字串）：路點少於 2 個 → ground_single_point；
+## 沿全部相鄰路點累積的距離 ≤ FLIGHT_MIN_LEN → ground_zero_length。
+## 不看起點和終點是否相同：環狀路線只要中間有路程就照常出兵
+func _ground_route_problem(cfg: Dictionary, waypoints: Array) -> String:
+	if _is_flying_cfg(cfg):
+		return ""
+	if waypoints.size() < 2:
+		return "ground_single_point"
+	var total: float = 0.0
+	for i in range(1, waypoints.size()):
+		total += (waypoints[i - 1] as Vector2).distance_to(waypoints[i])
+	if total <= FLIGHT_MIN_LEN:
+		return "ground_zero_length"
+	return ""
+
+## 飛行的判讀和 Enemy.setup 相同：movement_type 去掉前後空白後等於 flying，其他都是地面
+func _is_flying_cfg(cfg: Dictionary) -> bool:
+	return str(cfg.get("movement_type", "")).strip_edges() == Enemy.MOVE_FLYING
 
 ## 開始一波。plans 必須是 plan_wave() 的結果且不可為空。
 ## 生成任何敵人之前就先登記所有組，任何一組同步完成都不會讓計數提前歸零；

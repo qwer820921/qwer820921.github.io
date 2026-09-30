@@ -12,6 +12,7 @@ import { FlightProblem, StagePreview, buildStagePreview } from "./stagePreview";
  * - 隊伍只看目前真實上陣的武將（player.team，依 hero_id 去重），不把沒上陣的武將算進去；
  *   能不能對空照武將職業（utils/antiAir 的矩陣，遊戲不認得的職業只打地面）；找不到設定的武將另外列出
  * - 只是戰術提醒：不是戰力評分，不保證能獲勝，也不阻擋出征、不寫入任何東西
+ * - 戰場內的「下一波」只看那一波（previewAirReadiness 搭配 utils/nextWave 取出的一波），不把其他波的飛行算進來
  */
 
 export interface FlyingGroupInfo {
@@ -124,7 +125,19 @@ export function stageAirReadiness(
   team: TeamSlot[] | null | undefined,
   heroesConfig: HeroConfig[] | null | undefined
 ): StageAirReadiness {
-  const preview = buildStagePreview(map, Array.isArray(enemies) ? enemies : []);
+  return previewAirReadiness(
+    buildStagePreview(map, Array.isArray(enemies) ? enemies : []),
+    team,
+    heroesConfig
+  );
+}
+
+/** 用已建好的敵軍預覽計算對空提醒：整關的預覽，或只有一波的預覽（範圍就只有那一波） */
+export function previewAirReadiness(
+  preview: StagePreview,
+  team: TeamSlot[] | null | undefined,
+  heroesConfig: HeroConfig[] | null | undefined
+): StageAirReadiness {
   const incomplete = incompleteReasons(preview);
   const flyingWaves: FlyingWaveInfo[] = preview.waves
     .filter((w) => !w.rejected)

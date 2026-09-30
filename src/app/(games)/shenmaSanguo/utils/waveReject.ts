@@ -1,4 +1,4 @@
-import { flightProblemText } from "./stagePreview";
+import { flightProblemText, groundProblemText } from "./stagePreview";
 
 /**
  * 拒絕開戰的提示：Godot 在「這一波沒有任何可以出兵的敵人組」時留在備戰（不扣城血、不結算、波次不前進），
@@ -22,6 +22,8 @@ const REASON_TEXT: Record<string, string> = {
   path_empty: "路線沒有路點",
   flight_single_point: flightProblemText("flight_single_point"),
   flight_same_endpoints: flightProblemText("flight_same_endpoints"),
+  ground_single_point: groundProblemText("ground_single_point"),
+  ground_zero_length: groundProblemText("ground_zero_length"),
   count_invalid: "數量不是正數",
 };
 
