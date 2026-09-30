@@ -279,6 +279,8 @@ function GroupRow({ group: g }: { group: PreviewGroup }) {
       className={styles.previewGroup}
       data-testid="preview-group"
       data-movement={g.movement?.value ?? ""}
+      data-outcome={g.outcome}
+      data-flight-problem={g.flightProblem ?? ""}
     >
       <Row className="g-1 align-items-center">
         <Col xs={12} sm={7}>

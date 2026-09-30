@@ -2708,3 +2708,65 @@
   font-size: 0.68rem;
   opacity: 0.8;
 }
+
+/* ── 拒絕開戰的提示（這一波沒有可以出兵的敵人）─────────────────── */
+/* 疊在戰場中央；比單位面板低、比暫停標示高。很窄的畫面最多佔 92% 寬 */
+.waveReject {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 900;
+  width: min(92%, 340px);
+  max-height: 80%;
+  overflow-y: auto;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.96);
+  border: 2px solid rgba(239, 68, 68, 0.85);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.55);
+  color: #e5e7eb;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.waveReject:focus-visible {
+  outline: 3px solid #fbbf24;
+  outline-offset: 2px;
+}
+
+.waveRejectTitle {
+  margin-bottom: 6px;
+  color: #fca5a5;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.waveRejectList {
+  margin: 0 0 8px;
+  padding-left: 1.1rem;
+}
+
+.waveRejectHint {
+  margin-bottom: 10px;
+  color: #cbd5e1;
+  font-size: 0.74rem;
+}
+
+.waveRejectBtn {
+  min-height: 36px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.waveRejectExit {
+  border-color: var(--sg-primary, #f59e0b);
+  background: var(--sg-primary, #f59e0b);
+  color: #111827;
+}

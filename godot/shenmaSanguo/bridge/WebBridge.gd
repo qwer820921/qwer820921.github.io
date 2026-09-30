@@ -26,7 +26,11 @@ signal debug_snapshot_requested(request_id: String)
 ##    {battle_id, ok, paused, speed, time_scale, reason?}，update_stats 帶 paused。舊版遊戲不認得暫停命令，所以提升版本
 ## 7：飛行敵人與對空：enemies_config 的 movement_type（flying 直線飛向終點、不被武將擋住），武將與防禦塔依職業／種類
 ##    決定能不能攻擊飛行敵人；show_upgrade_panel 帶 anti_air。舊版遊戲會把飛行敵人當成地面、所有單位都打得到，
-##    和網頁的說明不同，所以提升版本
+##    和網頁的說明不同，所以提升版本。
+##    同一版還加了：防禦塔的 air_first（優先飛行）目標優先與 show_upgrade_panel 的 target_modes（Web 只顯示列出的選項，
+##    沒有 target_modes 的遊戲只會顯示原本三種）、拒絕開戰時的 wave_rejected（沒有這則訊息只是不顯示原因）。
+##    這兩項對沒有它們的遊戲不會出現按了沒反應的選項，而且和 7 的其他內容一起首次發布，所以沒有另外提升版本；
+##    網頁與遊戲產物必須同批發布
 const BRIDGE_PROTOCOL: int = 7
 
 
@@ -191,6 +195,16 @@ func send_game_speed_result(data: Dictionary) -> void:
 func send_game_pause_result(data: Dictionary) -> void:
 	data["__godot_bridge"] = true
 	data["type"] = "game_pause_result"
+	if OS.get_name() != "Web":
+		return
+	var json = JSON.stringify(data)
+	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
+
+## 拒絕開戰：{battle_id, wave, missing, skipped: [{index, enemy_id, path, reason}]}（說明見 WaveManager.get_last_plan_report）。
+## 仍在備戰、沒有扣城血也不結算；Web 只在 battle_id 和目前這一場相同時顯示原因。舊版遊戲不送，Web 只是不顯示原因
+func send_wave_rejected(data: Dictionary) -> void:
+	data["__godot_bridge"] = true
+	data["type"] = "wave_rejected"
 	if OS.get_name() != "Web":
 		return
 	var json = JSON.stringify(data)

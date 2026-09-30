@@ -73,6 +73,7 @@ func _ready() -> void:
 	battle_manager.wave_changed.connect(_on_wave_changed)
 	battle_manager.battle_ended.connect(_on_battle_ended)
 	battle_manager.pause_changed.connect(_on_pause_changed)
+	battle_manager.wave_start_rejected.connect(_on_wave_start_rejected)
 
 	# WaveManager signals（只會收到目前關卡世代的敵人事件）
 	wave_manager.enemy_killed.connect(_on_enemy_killed)
@@ -227,6 +228,17 @@ func _on_wave_changed(current: int, total: int) -> void:
 
 func _on_battle_ended(result: Dictionary) -> void:
 	battle_hud.show_battle_result(result)
+
+## 拒絕開戰（這一波沒有任何可生成的敵人組）：把這一場的 battle_id 與逐組的原因交給 Web 顯示。
+## 原因只有關卡設定（第幾組、enemy_id、路線、原因代碼），沒有玩家資料
+func _on_wave_start_rejected(wave_num: int, _reason: String) -> void:
+	var report: Dictionary = wave_manager.get_last_plan_report()
+	web_bridge.send_wave_rejected({
+		"battle_id": battle_manager.battle_id,
+		"wave": wave_num,
+		"missing": bool(report.get("missing", false)) if int(report.get("wave", -1)) == wave_num else false,
+		"skipped": report.get("skipped", []) if int(report.get("wave", -1)) == wave_num else [],
+	})
 
 # ═══════════════════════════════════════════
 #  按鈕事件
@@ -536,6 +548,8 @@ func _on_tower_clicked(tower: Node) -> void:
 		"tower_uid": tower.tower_uid,
 		"battle_id": battle_manager.battle_id,
 		"target_mode": tower.target_mode,
+		# 這座塔可以選的目標優先（能對空的塔多了 air_first）：Web 只顯示這裡列出的選項
+		"target_modes": tower.get_target_modes(),
 		# 備戰拆除（Round 18）：這座塔已實際支付的戰鬥金幣、拆除時返還的金額、目前能不能拆（只有備戰中可以）。
 		# Web 的拆除命令要帶回確認時看到的返還金額，和這裡不同（例如確認期間升級了）就不拆
 		"invested_gold": tower.invested_gold,
@@ -862,6 +876,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 飛行敵人：每個敵人的移動方式、到終點的剩餘路程（格；地面沿路線、飛行直線）
 	var enemy_move: Dictionary = {}
 	var enemy_remaining: Dictionary = {}
+	# 文士塔的疊加減速：每個敵人目前的減速量（0 表示沒有）；測試用來看文士塔減速的是哪一個敵人
+	var enemy_slow: Dictionary = {}
 	for child in units_layer.get_children():
 		if child is Enemy and not child.is_queued_for_deletion():
 			var eid: String = child.enemy_id
@@ -874,11 +890,12 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			enemy_seq[str(child.get_instance_id())] = child.spawn_seq
 			enemy_move[str(child.get_instance_id())] = child.movement_type
 			enemy_remaining[str(child.get_instance_id())] = child.get_remaining_distance() / float(child.tile_size)
+			enemy_slow[str(child.get_instance_id())] = child._stack_slow_amount
 		elif child is Tower and not child.is_queued_for_deletion():
 			# screen：塔在畫面上的位置（和升級面板定位用的是同一套座標），測試用來點選塔
 			var sp: Vector2 = child.get_global_transform_with_canvas().origin
 			# cell、invested、refund（Round 18）：塔所在的格子、已實際支付的戰鬥金幣、拆除時的返還金額
-			tower_targets[child.tower_uid] = {"type": child.tower_type_key, "mode": child.target_mode, "level": child.tower_level, "screen": {"x": sp.x, "y": sp.y}, "cell": [child.grid_cell.x, child.grid_cell.y], "invested": child.invested_gold, "refund": child.get_sell_refund(), "air": child.can_hit_air}
+			tower_targets[child.tower_uid] = {"type": child.tower_type_key, "mode": child.target_mode, "modes": child.get_target_modes(), "level": child.tower_level, "screen": {"x": sp.x, "y": sp.y}, "cell": [child.grid_cell.x, child.grid_cell.y], "invested": child.invested_gold, "refund": child.get_sell_refund(), "air": child.can_hit_air}
 	# 每位武將目前的有效射程（格），以及到每個敵人的距離（格）：測試用來量射程技能（百步穿楊）
 	var hero_ranges: Dictionary = {}
 	var hero_enemy_dist: Dictionary = {}
@@ -937,6 +954,7 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		# 飛行敵人與對空
 		"enemy_move":        enemy_move,
 		"enemy_remaining":   enemy_remaining,
+		"enemy_slow":        enemy_slow,
 		"hero_air":          hero_air,
 	}
 	snapshot.merge(battle_manager.get_debug_state())

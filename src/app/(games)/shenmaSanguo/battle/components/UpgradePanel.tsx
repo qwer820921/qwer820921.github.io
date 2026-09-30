@@ -10,29 +10,8 @@ import {
   sellReasonText,
   TowerSellState,
 } from "../../utils/towerSell";
+import { TowerTargetMode, towerTargetOptions } from "../../utils/towerTarget";
 import styles from "../../styles/shenmaSanguo.module.css";
-
-/** 防禦塔的目標優先（Round 17）：和 Godot Tower.gd 的 TARGET_MODES 相同 */
-export type TowerTargetMode = "first" | "strongest" | "weakest";
-
-const TARGET_OPTIONS: { mode: TowerTargetMode; label: string; hint: string }[] =
-  [
-    {
-      mode: "first",
-      label: "優先前方",
-      hint: "打路線上走得最前面的敵人（預設）",
-    },
-    {
-      mode: "strongest",
-      label: "血量最多",
-      hint: "打射程內目前血量最多的敵人",
-    },
-    {
-      mode: "weakest",
-      label: "血量最少",
-      hint: "打射程內目前血量最少的敵人",
-    },
-  ];
 
 interface UpgradePanelProps {
   data: {
@@ -50,6 +29,8 @@ interface UpgradePanelProps {
     can_afford?: boolean;
     /** 防禦塔：Godot 目前的實際目標優先、這座塔的識別碼與這一場的 battle_id（Round 17） */
     target_mode?: TowerTargetMode;
+    /** 防禦塔：這座塔可以選的目標優先（能對空的塔多了 air_first）；沒有時只顯示原本三種 */
+    target_modes?: TowerTargetMode[];
     tower_uid?: string;
     battle_id?: string;
     /** 防禦塔：已實際支付的戰鬥金幣與拆除時的返還金額（Round 18，由 Godot 計算） */
@@ -91,12 +72,14 @@ export default function UpgradePanel({
   // 定位和部署選單共用（utils/stageAnchor）：Godot 座標乘上縮放比例、限制在看得到的範圍、尺寸或方向改變時重算
   useStageAnchor(panelRef, data.screen_pos);
 
+  const targetOptions = towerTargetOptions(data.tower_type, data.target_modes);
   const showTarget =
     data.unit_type === "tower" &&
     !!data.tower_uid &&
     !!data.target_mode &&
+    targetOptions.length > 0 &&
     !!onSetTargetMode;
-  const active = TARGET_OPTIONS.find((o) => o.mode === data.target_mode);
+  const active = targetOptions.find((o) => o.mode === data.target_mode);
 
   const showSell =
     data.unit_type === "tower" &&
@@ -187,8 +170,8 @@ export default function UpgradePanel({
               role="group"
               aria-label="攻擊目標"
             >
-              {TARGET_OPTIONS.map((o) => (
-                <Col xs={4} key={o.mode}>
+              {targetOptions.map((o) => (
+                <Col xs={targetOptions.length > 3 ? 6 : 4} key={o.mode}>
                   <button
                     className={`${styles.targetModeBtn} ${
                       o.mode === data.target_mode

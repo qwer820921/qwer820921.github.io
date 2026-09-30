@@ -372,8 +372,8 @@ async (page) => {
     await H.sleep(300);
     await setPaused(false);
     out.P6 = { panel: panel6, tower: [t6, snap6b.tower_targets[uid6]], gold: [gold6, gold6b] };
-    run.check("P-6 暫停中點塔：面板照常打開並顯示暫停說明，升級與三個目標按鈕都停用；直接送的升級與改目標被 Godot 拒絕（等級 1、模式 first、金幣不變）",
-      panel6.notice && panel6.upgrade === true && panel6.targets === 3 && panel6.targetsDisabled === 3 && snap6b.tower_targets[uid6].level === 1 && snap6b.tower_targets[uid6].mode === "first" && gold6 === gold6b, out.P6);
+    run.check("P-6 暫停中點塔：面板照常打開並顯示暫停說明，升級與全部目標按鈕（這座塔可以選的每一種，弓兵塔有優先飛行共四個）都停用；直接送的升級與改目標被 Godot 拒絕（等級 1、模式 first、金幣不變）",
+      panel6.notice && panel6.upgrade === true && panel6.targets >= 3 && panel6.targets === (t6.modes || []).length && panel6.targetsDisabled === panel6.targets && snap6b.tower_targets[uid6].level === 1 && snap6b.tower_targets[uid6].mode === "first" && gold6 === gold6b, out.P6);
 
     // P-7：暫停中 320×640 與 740×375：暫停鈕與「繼續」看得到點得到，其他按鈕也是，完整戰場；轉回直向後按「繼續」
     await setPaused(true);

@@ -1,6 +1,11 @@
 "use client";
 
-import { StageAirReadiness, TeamAirState } from "../utils/stageAirReadiness";
+import { flightProblemText } from "../utils/stagePreview";
+import {
+  InvalidFlyingInfo,
+  StageAirReadiness,
+  TeamAirState,
+} from "../utils/stageAirReadiness";
 import styles from "../styles/shenmaSanguo.module.css";
 
 /** 目前隊伍的對空說明（card：關卡卡片上的一行；panel：敵軍預覽裡的完整說明） */
@@ -43,8 +48,11 @@ const teamHasAir = (team: TeamAirState) =>
 const groupText = (g: { name: string; count: number | null }) =>
   g.count === null ? `${g.name}（數量無法確定）` : `${g.name} ×${g.count}`;
 
+const invalidText = (g: InvalidFlyingInfo) =>
+  `第 ${g.wave} 波 ${g.name}（${flightProblemText(g.reason)}，路線 ${g.path}）`;
+
 /**
- * 出征前的對空準備提醒（規則見 utils/stageAirReadiness）。確定沒有飛行敵人的關卡不顯示。
+ * 出征前的對空準備提醒（規則見 utils/stageAirReadiness）。確定沒有飛行敵人、也沒有路線無效的飛行組的關卡不顯示。
  * 只是提醒：不阻擋出征、不寫入任何東西
  */
 export default function StageAirReadinessNote({
@@ -54,9 +62,10 @@ export default function StageAirReadinessNote({
   readiness: StageAirReadiness;
   variant: "card" | "panel";
 }) {
-  if (r.kind === "ground") return null;
+  const invalid = r.invalidFlying.length > 0;
+  if (r.kind === "ground" && !invalid) return null;
   const tone =
-    r.kind === "unclear"
+    r.kind !== "flying"
       ? styles.airReadyUnclear
       : teamHasAir(r.team)
         ? styles.airReadyOk
@@ -68,6 +77,7 @@ export default function StageAirReadinessNote({
     "data-team": r.team.status,
     "data-air-heroes":
       r.team.status === "ready" ? r.team.airHeroes.join("、") : "",
+    "data-invalid-flying": String(r.invalidFlying.length),
   };
 
   if (variant === "card") {
@@ -81,8 +91,14 @@ export default function StageAirReadinessNote({
               <div>敵軍資料不完整，飛行敵人可能不只這些</div>
             )}
           </>
-        ) : (
+        ) : r.kind === "unclear" ? (
           <div>敵軍資料不完整，無法確認有沒有飛行敵人</div>
+        ) : null}
+        {invalid && (
+          <div data-testid="air-readiness-invalid">
+            有 {r.invalidFlying.length}{" "}
+            組飛行敵人的路線無效，遊戲不會出兵（見敵軍預覽）
+          </div>
         )}
       </div>
     );
@@ -109,9 +125,16 @@ export default function StageAirReadinessNote({
           </div>
           <div data-testid="air-readiness-team">{teamText(r.team, false)}</div>
         </>
-      ) : (
+      ) : r.kind === "unclear" ? (
         <div data-testid="air-readiness-team">
           如果有飛行敵人：{teamText(r.team, false)}
+        </div>
+      ) : null}
+      {invalid && (
+        <div data-testid="air-readiness-invalid">
+          路線無效、遊戲不會出兵的飛行敵人：
+          {r.invalidFlying.map(invalidText).join("；")}
+          。飛行敵人從路線的起點直線飛到終點，這些組不算進本關的飛行敵人。
         </div>
       )}
       {r.incomplete.length > 0 && (

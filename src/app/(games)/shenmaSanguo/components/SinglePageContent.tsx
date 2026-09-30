@@ -37,6 +37,11 @@ import InvalidResultNotice from "./InvalidResultNotice";
 import styles from "../styles/shenmaSanguo.module.css";
 import PlacementMenu from "../battle/components/PlacementMenu";
 import UpgradePanel from "../battle/components/UpgradePanel";
+import WaveRejectNotice from "./WaveRejectNotice";
+import {
+  WaveRejectNotice as WaveRejectData,
+  waveRejectNotice,
+} from "../utils/waveReject";
 import SpeedToggle from "../battle/components/SpeedToggle";
 import PauseToggle, { PauseBadge } from "../battle/components/PauseToggle";
 import StageSelectModal from "./modals/StageSelectModal";
@@ -384,6 +389,8 @@ export default function SinglePageContent() {
   const [upgradePanel, setUpgradePanel] = useState<any | null>(null);
   // 備戰拆除的狀態（確認中、送出中、不成功的原因；見 utils/towerSell）
   const [towerSell, setTowerSell] = useState<TowerSellState | null>(null);
+  // 拒絕開戰的提示（這一波沒有可以出兵的敵人；見 utils/waveReject）：開戰、換關、結算時清除
+  const [waveReject, setWaveReject] = useState<WaveRejectData | null>(null);
   const [battleResult, setBattleResult] = useState<BattleResultPayload | null>(
     null
   );
@@ -549,7 +556,21 @@ export default function SinglePageContent() {
         if (!sessionRef.current.onStats(event.data as BattleStats)) break;
         syncBattleLock(sessionRef.current);
         setBattleStats(event.data as BattleStats);
+        // 已經開戰（或結算）：拒絕開戰的提示不再適用
+        if ((event.data as BattleStats).game_state !== GameState.PREP) {
+          setWaveReject(null);
+        }
         break;
+      case "wave_rejected": {
+        // 拒絕開戰：只顯示目前這一場的原因（仍在備戰，Godot 沒有扣城血也不結算）
+        const notice = waveRejectNotice(
+          event.data,
+          sessionRef.current.owner?.id ?? null,
+          useStaticConfigStore.getState().config?.enemiesConfig
+        );
+        if (notice) setWaveReject(notice);
+        break;
+      }
       case "click_cell": {
         // 只開目前這一場的部署選單。不是這一場的選單不顯示，並立刻送回關閉命令：
         // Godot 只在它仍是目前開著的選單時才恢復速度，過期的不會影響新場次
@@ -660,6 +681,8 @@ export default function SinglePageContent() {
     const ticket = usePlayerStore.getState().beginBattle();
     if (!ticket) return;
     sessionRef.current.begin(ticket);
+    // 新的一場：上一場的拒絕開戰提示不適用
+    setWaveReject(null);
 
     const payload: ExpeditionPayload = {
       stage_id: currentMapId,
@@ -768,6 +791,7 @@ export default function SinglePageContent() {
     setPlacementMenu(null);
     setUpgradePanel(null);
     setTowerSell(null);
+    setWaveReject(null);
     await activateLatestGameWorker();
     setEngineStatus("loading");
     setIframeLoading(true);
@@ -799,6 +823,7 @@ export default function SinglePageContent() {
     setBattleStats(null);
     setBattleResult(null);
     setPlacedHeroIds([]);
+    setWaveReject(null);
     setShowStageModal(false);
     // 明確離開目前的戰鬥：舊的一場作廢，解除它的帳號切換鎖
     leaveBattle(sessionRef.current);
@@ -827,6 +852,8 @@ export default function SinglePageContent() {
       const ticket = usePlayerStore.getState().beginBattle();
       if (!ticket) return;
       sessionRef.current.begin(ticket);
+      // 新的一場：上一場的拒絕開戰提示不適用
+      setWaveReject(null);
       const payload: ExpeditionPayload = {
         stage_id: mapId,
         battle_id: ticket.id,
@@ -1076,6 +1103,16 @@ export default function SinglePageContent() {
               onSellCancel={() => setTowerSell(null)}
               onSellConfirm={handleSellConfirm}
               locked={paused}
+            />
+          )}
+
+          {/* 拒絕開戰：列出原因，出口是切換關卡 */}
+          {waveReject && payloadSent && !battleResult && (
+            <WaveRejectNotice
+              notice={waveReject}
+              exitLabel="切換關卡"
+              onExit={() => setShowStageModal(true)}
+              onClose={() => setWaveReject(null)}
             />
           )}
 

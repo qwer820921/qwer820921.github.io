@@ -523,10 +523,16 @@ async (page) => {
       if (btns.length) {
         const row = btns[0].parentElement.parentElement;
         const rects = btns.map((b) => b.getBoundingClientRect());
+        // 三個選項時一列三個（col-4）；能對空的塔多了「優先飛行」，四個選項時兩列各兩個（col-6）
+        const perRow = btns.length > 3 ? 2 : 3;
+        const col = perRow === 2 ? "col-6" : "col-4";
+        const lines = [...new Set(rects.map((x) => Math.round(x.top)))];
         grid = {
+          count: btns.length,
           rowClass: row.classList.contains("row") && row.classList.contains("g-1"),
-          cols: btns.every((b) => b.parentElement.classList.contains("col-4") && b.parentElement.parentElement === row),
-          sameLine: rects.every((x) => Math.abs(x.top - rects[0].top) < 1),
+          cols: btns.every((b) => b.parentElement.classList.contains(col) && b.parentElement.parentElement === row),
+          lines: lines.length,
+          sameLine: lines.length === Math.ceil(btns.length / perRow) && rects.every((x, i) => Math.abs(x.top - rects[i - (i % perRow)].top) < 1),
           sameWidth: rects.every((x) => Math.abs(x.width - rects[0].width) < 1.5),
           inline: getComputedStyle(row).display,
         };
@@ -667,8 +673,8 @@ async (page) => {
   run.check("C-5 說明入口和塔面板重疊時（Codex 發現的情境；D22 之後手機主頁不再自然重疊，把入口移到「攻擊力」上模擬）：重疊區域的 9 個點都點到面板、沒有點到入口",
     !!ov && ov.points === 9 && ov.onPanel === 9 && ov.onEntry === 0, { overlap: out.C.mainMobileTowerOverlap });
   const g = out.C.grid;
-  run.check("C-6 目標按鈕列用 Bootstrap Grid：外層 row（g-1）、每個按鈕在 col-4 裡，三個按鈕同一列、同寬",
-    !!g && g.rowClass && g.cols && g.sameLine && g.sameWidth, g);
+  run.check("C-6 目標按鈕列用 Bootstrap Grid：外層 row（g-1）；三個選項時每個按鈕在 col-4、同一列，四個選項（能對空的塔多了優先飛行）時在 col-6、兩列各兩個；同寬",
+    !!g && g.count >= 3 && g.rowClass && g.cols && g.sameLine && g.sameWidth, g);
   await page.setViewportSize({ width: 540, height: 900 });
 
   // ── V. 舊版遊戲（協定 2）：顯示更新提示，不送關卡資料 ──

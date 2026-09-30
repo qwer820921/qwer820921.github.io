@@ -53,6 +53,7 @@ func _begin_new_generation() -> void:
 	_active_spawning_groups = 0
 	_current_wave_num = 0
 	_cleared_wave_num = 0
+	_last_plan_report = {}
 
 ## 敵人是否屬於目前關卡（舊關卡殘留的敵人一律回傳 false）
 func owns_enemy(enemy: Node) -> bool:
@@ -65,9 +66,24 @@ func get_spawning_group_count() -> int:
 	return _active_spawning_groups
 
 # ── 規劃與啟動波次 ────────────────────────────────────────────
-## 回傳此波「確定能生成敵人」的組：敵人設定、路徑、數量都在生成前先驗證完。
+## 飛行路線的最短長度（像素）：起點到終點的直線距離不超過這個值，就視為同一個位置（飛行敵人一出現就在終點）。
+## 只用來擋掉「起點和終點是同一格」這類設定；相鄰兩格這種短但非零的路線照常出兵
+const FLIGHT_MIN_LEN: float = 0.001
+
+## 最近一次 plan_wave 的結果說明：{wave, missing（沒有這一波的資料）, skipped: [{index, enemy_id, path, reason}]}。
+## index 是這一組在波次清單裡的位置（從 1 開始，包含空白列）；reason：
+## enemy_not_found（找不到敵人設定）、path_empty（路線沒有路點）、flight_single_point（飛行路線只有一個路點）、
+## flight_same_endpoints（飛行路線的起點和終點相同）、count_invalid（數量 ≤ 0）。
+## 拒絕開戰時交給 Web 顯示原因；只有關卡設定，沒有玩家資料
+var _last_plan_report: Dictionary = {}
+
+func get_last_plan_report() -> Dictionary:
+	return _last_plan_report.duplicate(true)
+
+## 回傳此波「確定能生成敵人」的組：敵人設定、路徑、飛行路線、數量都在生成前先驗證完。
 ## 無效的組輸出警告後略過；回傳空陣列代表這一波沒有任何敵人可生成，呼叫端必須拒絕開戰。
 func plan_wave(wave_num: int) -> Array:
+	_last_plan_report = {"wave": wave_num, "missing": false, "skipped": []}
 	var wave_obj: Dictionary = {}
 	for w in _waves_data:
 		if int(w.get("wave", 0)) == wave_num:
@@ -75,35 +91,61 @@ func plan_wave(wave_num: int) -> Array:
 			break
 	if wave_obj.is_empty():
 		push_warning("[WaveManager] 找不到波次 %d 資料" % wave_num)
+		_last_plan_report["missing"] = true
 		return []
 	if not _enemy_scene or not _units_layer or not _game_map:
 		push_warning("[WaveManager] 尚未完成 setup，無法生成波次 %d" % wave_num)
 		return []
 
 	var plans: Array = []
+	var index: int = 0
 	for g in wave_obj.get("enemies", []):
+		index += 1
 		var enemy_id: String = str(g.get("enemy_id", "")).strip_edges()
 		if enemy_id.is_empty():
 			print("[WaveManager] 跳過空白敵人組: ", g)  # GAS 空白列
 			continue
 		var enemy_cfg: Dictionary = _find_enemy_config(enemy_id)
+		var path_id: String = str(g.get("path", "path_a"))
 		if enemy_cfg.is_empty():
 			push_warning("[WaveManager] 找不到敵人設定 ID: '%s'，跳過此組" % enemy_id)
+			_skip(index, enemy_id, path_id, "enemy_not_found")
 			continue
-		var path_id: String = str(g.get("path", "path_a"))
 		var waypoints: Array = _game_map.get_waypoints_world(path_id)
 		if waypoints.is_empty():
 			push_warning("[WaveManager] 路徑 %s 無路點，跳過此組" % path_id)
+			_skip(index, enemy_id, path_id, "path_empty")
+			continue
+		# 飛行敵人從路線的起點直線飛到終點：只有一個路點、或起點和終點相同時，一出現就在終點（立刻扣城血），所以不出兵
+		var flight_problem: String = _flight_route_problem(enemy_cfg, waypoints)
+		if flight_problem != "":
+			push_warning("[WaveManager] 飛行敵人組 '%s' 的路線 %s 無效（%s），跳過此組" % [enemy_id, path_id, flight_problem])
+			_skip(index, enemy_id, path_id, flight_problem)
 			continue
 		var count: int = int(g.get("count", 1))
 		if count <= 0:
 			push_warning("[WaveManager] 敵人組 '%s' 數量為 %d，跳過此組" % [enemy_id, count])
+			_skip(index, enemy_id, path_id, "count_invalid")
 			continue
 		plans.append({
 			"cfg": enemy_cfg, "waypoints": waypoints, "count": count,
 			"interval": maxf(0.0, float(g.get("interval", 1.0))),
 		})
 	return plans
+
+func _skip(index: int, enemy_id: String, path_id: String, reason: String) -> void:
+	_last_plan_report["skipped"].append({"index": index, "enemy_id": enemy_id, "path": path_id, "reason": reason})
+
+## 飛行組的路線問題（地面組一律回傳空字串，地面的環狀路線照常走）：
+## 路點少於 2 個 → flight_single_point；起點到終點的距離 ≤ FLIGHT_MIN_LEN → flight_same_endpoints
+func _flight_route_problem(cfg: Dictionary, waypoints: Array) -> String:
+	if str(cfg.get("movement_type", "")).strip_edges() != Enemy.MOVE_FLYING:
+		return ""
+	if waypoints.size() < 2:
+		return "flight_single_point"
+	if (waypoints[0] as Vector2).distance_to(waypoints[waypoints.size() - 1]) <= FLIGHT_MIN_LEN:
+		return "flight_same_endpoints"
+	return ""
 
 ## 開始一波。plans 必須是 plan_wave() 的結果且不可為空。
 ## 生成任何敵人之前就先登記所有組，任何一組同步完成都不會讓計數提前歸零；

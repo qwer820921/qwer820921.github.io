@@ -1,11 +1,12 @@
 import { EnemyConfig, HeroConfig, MapConfig, TeamSlot } from "../types";
 import { heroCanHitAir } from "./antiAir";
-import { StagePreview, buildStagePreview } from "./stagePreview";
+import { FlightProblem, StagePreview, buildStagePreview } from "./stagePreview";
 
 /**
  * 出征前的對空準備提醒（唯讀；兩個關卡選擇入口與共用的敵軍預覽都用這一份規則）：
  * - 關卡有沒有飛行敵人照敵軍預覽（utils/stagePreview）：遊戲會拒絕的波次、遊戲會略過的組不算；
  *   數量照預覽的合法規則，無法確定時不給數字（不會算出 NaN 或假的精確數）
+ * - 飛行路線無效（只有一個路點、起點和終點是同一格）的飛行組遊戲不會出兵：另外列出原因，不算進飛行敵人
  * - 找不到敵人設定、沒有波次或路線、波次編號無法判讀、缺波次時標成「資料不完整」：
  *   不能保證沒有飛行敵人，也不能保證飛行敵人只有列出的這些
  * - 隊伍只看目前真實上陣的武將（player.team，依 hero_id 去重），不把沒上陣的武將算進去；
@@ -22,6 +23,14 @@ export interface FlyingGroupInfo {
 export interface FlyingWaveInfo {
   wave: number;
   groups: FlyingGroupInfo[];
+}
+
+/** 路線無效、遊戲會略過的飛行組 */
+export interface InvalidFlyingInfo {
+  wave: number;
+  name: string;
+  path: string;
+  reason: FlightProblem;
 }
 
 export type TeamAirState =
@@ -48,6 +57,8 @@ export interface StageAirReadiness {
   flyingWaves: FlyingWaveInfo[];
   /** 飛行敵人的總隻數：每一組都確定而且敵軍資料完整時才有，否則 null */
   flyingTotal: number | null;
+  /** 路線無效、遊戲會略過的飛行組（不算在 flyingWaves 與 flyingTotal 裡） */
+  invalidFlying: InvalidFlyingInfo[];
   /** 敵軍資料不完整的原因（顯示用） */
   incomplete: string[];
   team: TeamAirState;
@@ -124,6 +135,20 @@ export function stageAirReadiness(
         .map((g) => ({ name: g.name ?? g.enemyId, count: g.count })),
     }))
     .filter((w) => w.groups.length > 0);
+  const invalidFlying: InvalidFlyingInfo[] = preview.waves.flatMap((w) =>
+    w.groups.flatMap((g) =>
+      g.flightProblem
+        ? [
+            {
+              wave: w.wave,
+              name: g.name ?? g.enemyId,
+              path: g.path,
+              reason: g.flightProblem,
+            },
+          ]
+        : []
+    )
+  );
   const counts = flyingWaves.flatMap((w) => w.groups.map((g) => g.count));
   const flyingTotal =
     flyingWaves.length > 0 &&
@@ -140,6 +165,7 @@ export function stageAirReadiness(
           : "ground",
     flyingWaves,
     flyingTotal,
+    invalidFlying,
     incomplete,
     team: teamAirState(team, heroesConfig),
   };

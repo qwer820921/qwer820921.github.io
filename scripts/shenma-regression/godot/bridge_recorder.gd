@@ -21,6 +21,8 @@ var sent_speeds: Array = []
 var sent_pauses: Array = []
 ## 測試用唯讀快照（debug_snapshot）
 var sent_snapshots: Array = []
+## 拒絕開戰的原因（wave_rejected）
+var sent_wave_rejects: Array = []
 
 func send_ready() -> void:
 	sent_ready += 1
@@ -65,3 +67,7 @@ func send_game_pause_result(data: Dictionary) -> void:
 func send_debug_snapshot(data: Dictionary) -> void:
 	sent_snapshots.append(data.duplicate(true))
 	super.send_debug_snapshot(data)
+
+func send_wave_rejected(data: Dictionary) -> void:
+	sent_wave_rejects.append(data.duplicate(true))
+	super.send_wave_rejected(data)

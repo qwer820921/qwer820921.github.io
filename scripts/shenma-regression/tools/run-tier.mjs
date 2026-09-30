@@ -4,8 +4,8 @@
 //   node scripts/shenma-regression/tools/run-tier.mjs related <功能...>   例：related save-conflict backup-preview
 //   node scripts/shenma-regression/tools/run-tier.mjs full
 //   node scripts/shenma-regression/tools/run-tier.mjs list              列出功能與對應的瀏覽器腳本
-// - quick：型別檢查、神馬三國與地圖編輯器的 ESLint、Node 測試（store、戰鬥結算獎勵規則、飛行敵人與對空規則、出征前的對空準備、備份檔、武將列表篩選、
-//   地圖編輯器的錯誤說明與敵人表的移動方式欄判斷、跨來源隔離開機腳本）、harness 雜訊規則、
+// - quick：型別檢查、神馬三國與地圖編輯器的 ESLint、Node 測試（store、戰鬥結算獎勵規則、飛行敵人與對空規則、出征前的對空準備、
+//   飛行路線無效與優先飛行選項、備份檔、武將列表篩選、地圖編輯器的錯誤說明與敵人表的移動方式欄判斷、跨來源隔離開機腳本）、harness 雜訊規則、
 //   工具自我測試、素材引用檢查。不需要 dev server 與 Godot
 // - related：quick 之後，只跑指定功能的瀏覽器腳本；full：quick 之後跑全部瀏覽器腳本（約 35 分鐘）
 //   瀏覽器腳本需要 npm run dev 與 PLAYWRIGHT_DIR（見 README）；Godot 端另外用 godot-check.sh
@@ -50,6 +50,11 @@ const QUICK = [
     "出征前的對空準備提醒測試",
     "node",
     ["scripts/shenma-regression/web/air-readiness.test.mjs"],
+  ],
+  [
+    "飛行路線無效、優先飛行選項與拒絕開戰提示測試",
+    "node",
+    ["scripts/shenma-regression/web/flight-route.test.mjs"],
   ],
   [
     "備份檔讀取與驗證測試",
@@ -165,6 +170,10 @@ const AREAS = {
     what: "出征前的對空準備提醒：兩個關卡選擇入口與敵軍預覽、換隊伍即時更新、缺敵人設定、390 寬與鍵盤、不阻擋出征（需要 Godot 產物）",
     scripts: ["air-readiness-web.js"],
   },
+  "air-first": {
+    what: "飛行路線無效與防禦塔「優先飛行」：兩個關卡選擇入口的提醒與預覽和實際出兵一致、兩個戰鬥入口選塔切換並觀察攻擊／減速目標、拒絕開戰的提示與出口、390 寬與鍵盤（需要 Godot 產物）",
+    scripts: ["air-first-web.js"],
+  },
   "stage-preview": { what: "攻速成長、關卡敵軍預覽", scripts: ["r16-web.js"] },
   "floating-ui": {
     what: "全站浮動入口在神馬三國視窗上的隱藏、敵軍預覽鍵盤操作、防禦塔目標優先",
@@ -218,6 +227,7 @@ const FULL = [
   "flying-web.js",
   "enemy-column-web.js",
   "air-readiness-web.js",
+  "air-first-web.js",
 ];
 
 const [mode, ...rest] = process.argv.slice(2);

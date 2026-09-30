@@ -7,7 +7,8 @@ import { MovementInfo, movementOf } from "./antiAir";
  * - 波數＝waves 裡最大的 wave 編號（Main._count_waves），依序打第 1～N 波；
  *   某一波沒有資料，或那一波沒有任何可出兵的組時，遊戲會拒絕開始那一波（BattleManager._reject_wave）
  * - 同一個編號有多筆時只用第一筆（WaveManager.plan_wave）
- * - 每一組依序檢查，不符合就整組略過：enemy_id 空白（GAS 的空白列）→ 找不到敵人設定 → 路線沒有路點 → 數量 ≤ 0；
+ * - 每一組依序檢查，不符合就整組略過：enemy_id 空白（GAS 的空白列）→ 找不到敵人設定 → 路線沒有路點 →
+ *   飛行路線無效（飛行敵人的路線只有一個路點，或起點和終點是同一格：WaveManager.plan_wave）→ 數量 ≤ 0；
  *   沒有提供數量時遊戲以 1 隻計、沒有路線時用 path_a、沒有間隔時是 1 秒
  * 資料裡沒有的敵人能力不推定；數量無法判讀時不給確定的總數
  * 移動方式（movement_type）照遊戲的判讀（utils/antiAir）：只有 flying 是飛行，其他都當作地面，遊戲不認得的寫法另外註明
@@ -15,6 +16,15 @@ import { MovementInfo, movementOf } from "./antiAir";
 
 /** 組在戰場上的結果：出兵、遊戲會略過、無法判斷 */
 export type GroupOutcome = "spawn" | "skip" | "unknown";
+
+/**
+ * 飛行路線無效的原因（和 Godot WaveManager 的原因代碼相同）：只有一個路點、起點和終點是同一格。
+ * 飛行敵人從起點直線飛到終點，這兩種一出現就在終點，遊戲不出兵
+ */
+export type FlightProblem = "flight_single_point" | "flight_same_endpoints";
+
+/** 路點的格子座標（和 Godot 的 Vector2i(int(x), int(y)) 相同）；無法確定 Godot 的結果時是 null */
+export type GridPoint = readonly [number, number] | null;
 
 export interface PreviewGroup {
   /** 這一波的第幾組（從 1 開始，包含空白列） */
@@ -32,6 +42,8 @@ export interface PreviewGroup {
   /** 移動方式（遊戲的判讀）；找不到敵人設定時是 null */
   movement: MovementInfo | null;
   outcome: GroupOutcome;
+  /** 飛行路線無效（遊戲會略過這一組）；地面組、路線有效或無法判讀時是 null */
+  flightProblem: FlightProblem | null;
   /** 資料不完整或遊戲會略過的原因（顯示用） */
   notes: string[];
 }
@@ -78,37 +90,84 @@ function toInt(v: unknown): number | null {
 
 const isPoint = (p: unknown): boolean => Array.isArray(p) && p.length >= 2;
 
-/** 關卡的路線：和 GameMap._parse_path_json 相同（paths 物件、paths 陣列視為 path_a、舊版 waypoints） */
-export function stagePathIds(pathJson: unknown): string[] {
+/** 一個路點的格子座標：座標必須是 Godot 的 int() 結果確定的值（數字取整數部分、純整數字串），否則 null */
+function gridPoint(wp: unknown): GridPoint {
+  if (!isPoint(wp)) return null;
+  const x = toInt((wp as unknown[])[0]);
+  const y = toInt((wp as unknown[])[1]);
+  return x === null || y === null ? null : [x, y];
+}
+
+/**
+ * 關卡每條路線的路點（格子座標）：和 GameMap._parse_path_json 相同（paths 物件、paths 陣列視為 path_a、舊版 waypoints）。
+ * 只列出有路點的路線
+ */
+export function stagePathPoints(
+  pathJson: unknown
+): Record<string, GridPoint[]> {
   let pj = pathJson;
   if (typeof pj === "string") {
     try {
       pj = JSON.parse(pj);
     } catch {
-      return [];
+      return {};
     }
   }
-  if (!pj || typeof pj !== "object" || Array.isArray(pj)) return [];
+  if (!pj || typeof pj !== "object" || Array.isArray(pj)) return {};
   const o = pj as Record<string, unknown>;
+  const out: Record<string, GridPoint[]> = {};
   if ("paths" in o) {
     const paths = o.paths;
-    if (Array.isArray(paths)) return paths.some(isPoint) ? ["path_a"] : [];
-    if (paths && typeof paths === "object") {
-      return Object.entries(paths as Record<string, unknown>)
-        .filter(([, pts]) => Array.isArray(pts) && pts.length > 0)
-        .map(([id]) => id);
+    if (Array.isArray(paths)) {
+      // 陣列格式：只取 [x, y] 形式的點（其他元素遊戲會跳過）
+      const pts = paths.filter(isPoint);
+      if (pts.length > 0) out.path_a = pts.map(gridPoint);
+    } else if (paths && typeof paths === "object") {
+      for (const [id, pts] of Object.entries(
+        paths as Record<string, unknown>
+      )) {
+        if (Array.isArray(pts) && pts.length > 0) out[id] = pts.map(gridPoint);
+      }
     }
-    return [];
+    return out;
   }
-  if (Array.isArray(o.waypoints) && o.waypoints.length > 0) return ["path_a"];
-  return [];
+  if (Array.isArray(o.waypoints) && o.waypoints.length > 0) {
+    out.path_a = o.waypoints.map(gridPoint);
+  }
+  return out;
+}
+
+/** 關卡的路線（有路點的） */
+export function stagePathIds(pathJson: unknown): string[] {
+  return Object.keys(stagePathPoints(pathJson));
+}
+
+/**
+ * 飛行路線的問題：只有一個路點 → flight_single_point；起點和終點是同一格 → flight_same_endpoints（格子相同，
+ * 遊戲換算成像素也相同；不同格至少差一格，不會被當成同一個位置）。起點或終點的座標無法判讀時回傳 "unknown"
+ */
+export function flightRouteProblem(
+  points: GridPoint[]
+): FlightProblem | "unknown" | null {
+  if (points.length < 2) return "flight_single_point";
+  const a = points[0];
+  const b = points[points.length - 1];
+  if (a === null || b === null) return "unknown";
+  return a[0] === b[0] && a[1] === b[1] ? "flight_same_endpoints" : null;
+}
+
+/** 飛行路線無效的說明（預覽、對空提醒、拒絕開戰的提示共用） */
+export function flightProblemText(problem: FlightProblem): string {
+  return problem === "flight_single_point"
+    ? "飛行路線只有一個路點"
+    : "飛行路線的起點和終點是同一格";
 }
 
 function previewGroup(
   raw: unknown,
   index: number,
   enemies: EnemyConfig[],
-  pathIds: string[]
+  paths: Record<string, GridPoint[]>
 ): PreviewGroup | "blank" {
   const g = (raw && typeof raw === "object" ? raw : {}) as Record<
     string,
@@ -120,13 +179,30 @@ function previewGroup(
   const path = g.path === undefined ? "path_a" : String(g.path);
   const notes: string[] = [];
   let outcome: GroupOutcome = "spawn";
+  let flightProblem: FlightProblem | null = null;
+  const movement = cfg ? movementOf(cfg.movement_type) : null;
 
   if (!cfg) {
     notes.push(`找不到敵人設定「${enemyId}」，遊戲會略過這一組`);
     outcome = "skip";
-  } else if (!pathIds.includes(path)) {
+  } else if (!Object.keys(paths).includes(path)) {
     notes.push(`路線「${path}」沒有路點，遊戲會略過這一組`);
     outcome = "skip";
+  } else if (movement?.value === "flying") {
+    // 飛行敵人從路線的起點直線飛到終點：只有一個路點、或起點和終點是同一格時一出現就在終點，遊戲不出兵
+    const problem = flightRouteProblem(paths[path]);
+    if (problem === "unknown") {
+      notes.push(
+        `路線「${path}」的起點或終點座標無法判讀，無法確定飛行敵人能不能出兵`
+      );
+      outcome = "unknown";
+    } else if (problem) {
+      flightProblem = problem;
+      notes.push(
+        `${flightProblemText(problem)}（路線「${path}」）：飛行敵人從起點直線飛到終點，這樣一出現就在終點，遊戲會略過這一組`
+      );
+      outcome = "skip";
+    }
   }
 
   let count: number | null = null;
@@ -156,7 +232,6 @@ function previewGroup(
   const speed = cfg ? finiteOrNull(cfg.speed) : null;
   if (cfg && hp === null) notes.push("敵人設定沒有提供血量");
   if (cfg && speed === null) notes.push("敵人設定沒有提供移動速度");
-  const movement = cfg ? movementOf(cfg.movement_type) : null;
   if (movement && !movement.known) {
     notes.push(
       `移動方式「${movement.raw}」不是遊戲的寫法，遊戲當作${movement.label}`
@@ -174,6 +249,7 @@ function previewGroup(
     interval,
     movement,
     outcome,
+    flightProblem,
     notes,
   };
 }
@@ -182,7 +258,8 @@ export function buildStagePreview(
   map: MapConfig,
   enemies: EnemyConfig[]
 ): StagePreview {
-  const pathIds = stagePathIds(map.path_json);
+  const paths = stagePathPoints(map.path_json);
+  const pathIds = Object.keys(paths);
   const rawWaves: unknown[] = Array.isArray(map.waves) ? map.waves : [];
   const problems: string[] = [];
   if (rawWaves.length === 0) problems.push("關卡資料沒有提供波次");
@@ -222,7 +299,7 @@ export function buildStagePreview(
     const groups: PreviewGroup[] = [];
     let blankRows = 0;
     list.forEach((raw, i) => {
-      const g = previewGroup(raw, i + 1, enemies, pathIds);
+      const g = previewGroup(raw, i + 1, enemies, paths);
       if (g === "blank") blankRows += 1;
       else groups.push(g);
     });

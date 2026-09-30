@@ -41,6 +41,11 @@ import InvalidResultNotice from "../../components/InvalidResultNotice";
 import styles from "../../styles/shenmaSanguo.module.css";
 import PlacementMenu from "./PlacementMenu";
 import UpgradePanel from "./UpgradePanel";
+import WaveRejectNotice from "../../components/WaveRejectNotice";
+import {
+  WaveRejectNotice as WaveRejectData,
+  waveRejectNotice,
+} from "../../utils/waveReject";
 import SpeedToggle from "./SpeedToggle";
 import PauseToggle, { PauseBadge } from "./PauseToggle";
 
@@ -109,6 +114,8 @@ export default function BattlePageContent() {
   // 備戰拆除的狀態（確認中、送出中、不成功的原因；見 utils/towerSell）
   const [towerSell, setTowerSell] = useState<TowerSellState | null>(null);
   const [placedHeroIds, setPlacedHeroIds] = useState<string[]>([]);
+  // 拒絕開戰的提示（這一波沒有可以出兵的敵人；見 utils/waveReject）：開戰、換一場、結算時清除
+  const [waveReject, setWaveReject] = useState<WaveRejectData | null>(null);
   // 這一關的戰鬥：記下屬於哪個帳號、能不能採用結算（見 utils/battleSession）
   const sessionRef = useRef(new BattleSession());
 
@@ -151,6 +158,8 @@ export default function BattlePageContent() {
     const ticket = usePlayerStore.getState().beginBattle();
     if (!ticket) return;
     sessionRef.current.begin(ticket);
+    // 新的一場：上一場的拒絕開戰提示不適用
+    setWaveReject(null);
 
     const payload: ExpeditionPayload = {
       stage_id: mapId,
@@ -202,6 +211,21 @@ export default function BattlePageContent() {
       if (!sessionRef.current.onStats(event.data as BattleStats)) return;
       syncBattleLock(sessionRef.current);
       setBattleStats(event.data as BattleStats);
+      // 已經開戰（或結算）：拒絕開戰的提示不再適用
+      if ((event.data as BattleStats).game_state !== GameState.PREP) {
+        setWaveReject(null);
+      }
+      return;
+    }
+
+    if (event.data.type === "wave_rejected") {
+      // 拒絕開戰：只顯示這一場的原因（仍在備戰，Godot 沒有扣城血也不結算）
+      const notice = waveRejectNotice(
+        event.data,
+        sessionRef.current.owner?.id ?? null,
+        useStaticConfigStore.getState().config?.enemiesConfig
+      );
+      if (notice) setWaveReject(notice);
       return;
     }
 
@@ -326,6 +350,7 @@ export default function BattlePageContent() {
     setPlacedHeroIds([]);
     setPlacementMenu(null);
     setUpgradePanel(null);
+    setWaveReject(null);
     await activateLatestGameWorker();
     setEngineStatus("loading");
     setIframeLoading(true);
@@ -751,6 +776,16 @@ export default function BattlePageContent() {
                 onSellCancel={() => setTowerSell(null)}
                 onSellConfirm={handleSellConfirm}
                 locked={paused}
+              />
+            )}
+
+            {/* 拒絕開戰：列出原因，出口是回到關卡選擇 */}
+            {waveReject && !battleResult && (
+              <WaveRejectNotice
+                notice={waveReject}
+                exitLabel="返回關卡選擇"
+                onExit={() => router.push("/shenmaSanguo/stages")}
+                onClose={() => setWaveReject(null)}
               />
             )}
 

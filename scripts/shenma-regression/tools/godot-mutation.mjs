@@ -21,6 +21,7 @@ const GAME = join(ROOT, "godot/shenmaSanguo");
 const HERO = "entities/hero/Hero.gd";
 const TOWER = "entities/tower/Tower.gd";
 const ENEMY = "entities/enemy/Enemy.gd";
+const WAVE = "systems/WaveManager.gd";
 
 // 每個變異：要改的檔案、原文（必須剛好出現一次）、改成的內容、要跑的測試組與預期會 FAIL 的項目（名稱開頭）
 const MUTATIONS = {
@@ -112,6 +113,47 @@ const MUTATIONS = {
     to: "\treturn a.get_progress_ratio() > b.get_progress_ratio()\n",
     only: "flying",
     expect: ["飛行-7a ", "飛行-7c "],
+  },
+  // 飛行路線無效與防禦塔「優先飛行」（SHENMA_TEST_ONLY=airfirst）
+  "flight-route-unchecked": {
+    why: "出兵前不檢查飛行路線（起終點相同、只有一個路點的飛行組照常出兵，一出現就扣城血）",
+    file: WAVE,
+    from: '\t\tif flight_problem != "":\n',
+    to: "\t\tif false:\n",
+    only: "airfirst",
+    expect: ["路線-1 ", "路線-2 ", "路線-4 "],
+  },
+  "air-first-out-of-range": {
+    why: "優先飛行漏掉射程過濾（射程外的飛行也被選為目標）",
+    file: TOWER,
+    from: "\t\tif global_position.distance_to(e.global_position) > range_px:\n\t\t\tcontinue\n",
+    to: '\t\tif global_position.distance_to(e.global_position) > range_px and not (target_mode == "air_first" and e.is_flying()):\n\t\t\tcontinue\n',
+    only: "airfirst",
+    expect: ["優先飛行-2 ", "優先飛行-4 "],
+  },
+  "air-first-resets-cooldown": {
+    why: "切換目標優先時重置攻擊冷卻（切換後立刻多打一擊）",
+    file: TOWER,
+    from: "\ttarget_mode = mode\n\tqueue_redraw()\n\treturn true\n",
+    to: "\ttarget_mode = mode\n\t_atk_timer = 0.0\n\tqueue_redraw()\n\treturn true\n",
+    only: "airfirst",
+    expect: ["優先飛行-5 ", "優先飛行-6 "],
+  },
+  "air-first-ground-tower": {
+    why: "只打地面的塔也能選優先飛行（只靠前端隱藏）",
+    file: TOWER,
+    from: "\t\tif can_hit_air or not AIR_TARGET_MODES.has(m):\n",
+    to: "\t\tif true:\n",
+    only: "airfirst",
+    expect: ["優先飛行-0 "],
+  },
+  "air-first-ignored": {
+    why: "優先飛行沒有先選飛行（和優先前方相同）",
+    file: TOWER,
+    from: '\t\t"air_first":\n\t\t\tif a.is_flying() != b.is_flying():\n\t\t\t\treturn a.is_flying()\n',
+    to: "",
+    only: "airfirst",
+    expect: ["優先飛行-1 ", "優先飛行-4 "],
   },
 };
 

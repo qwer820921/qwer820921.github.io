@@ -173,7 +173,7 @@ func _run() -> void:
 		last_result = r)
 
 	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃；skills 跑四位武將的技能與攻速成長；
-	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）
+	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -187,8 +187,13 @@ func _run() -> void:
 		elif only == "flying":
 			await _flying_cases()
 			await _r17_tower_target_cases()
+			await _flight_route_cases()
+			await _air_first_cases()
+		elif only == "airfirst":
+			await _flight_route_cases()
+			await _air_first_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst）", false)
 		_finish()
 		return
 
@@ -371,6 +376,10 @@ func _run() -> void:
 
 	# ── 飛行敵人與對空 ──
 	await _flying_cases()
+
+	# ── 飛行路線無效（出兵前擋下）與防禦塔「優先飛行」──
+	await _flight_route_cases()
+	await _air_first_cases()
 
 	_finish()
 
@@ -3755,6 +3764,365 @@ func _flying_cases() -> void:
 	_check("飛行-11 單位面板帶對空：弓兵、法師武將 true，步兵、不認得的職業 false；弓兵塔、文士塔 true，步兵、砲兵、騎兵塔 false",
 		panels == {"fly_archer": true, "fly_mage": true, "fly_inf": false, "fly_odd": false, "archer": true, "scholar": true, "infantry": false, "artillery": false, "cavalry": false}, panels)
 
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 飛行路線無效（出兵前擋下）──
+# 地圖沿用飛行測試的 _fly_path_json，另外加幾條路線：
+# path_loop：(0,5)→(4,5)→(4,2)→(0,2)→(0,5)，起點和終點同一格的環狀路線（地面照常走 14 格；飛行無效）
+# path_dup：兩個相同的路點（飛行無效）；path_single：只有一個路點（飛行無效）；path_short：相鄰兩格（1 格長，飛行有效）
+func _route_payload(battle_id: String, waves: Array) -> Dictionary:
+	var p: Dictionary = _fly_payload(battle_id, waves)
+	var paths: Dictionary = p["map"]["path_json"]["paths"]
+	paths["path_loop"] = [[0, 5], [4, 5], [4, 2], [0, 2], [0, 5]]
+	paths["path_dup"] = [[3, 9], [3, 9]]
+	paths["path_single"] = [[6, 2]]
+	paths["path_short"] = [[10, 3], [11, 3]]
+	return p
+
+func _grp_on(id: String, count: int, interval: float, path: String) -> Dictionary:
+	return {"enemy_id": id, "count": count, "interval": interval, "path": path}
+
+## 拒絕開戰的前後狀態：送出的 wave_rejected、拒絕信號、結算次數。wait_wave：先正常打完幾波再開下一波
+func _route_reject(rec: Node, payload: Dictionary, auto: bool, wait_wave: int) -> Dictionary:
+	_load(payload)
+	var n_msg: int = rec.sent_wave_rejects.size()
+	var ended0: int = battle_ended_count
+	var sig: Array = []
+	var on_reject := func(n: int, _r: String): sig.append(n)
+	_bm().wave_start_rejected.connect(on_reject)
+	if auto:
+		_bm().toggle_auto_mode()
+		await _wait_until(func(): return sig.size() > 0 or _bm().game_state == 3, 10.0)
+	else:
+		for i in range(wait_wave):
+			_bm().player_start_battle()
+			await _wait_until(func(): return _bm().game_state != 2, 10.0)
+		_bm().player_start_battle()
+	await _wait(1.0)
+	_bm().wave_start_rejected.disconnect(on_reject)
+	var msgs: Array = rec.sent_wave_rejects.slice(n_msg)
+	return {"state": _state(), "sig": sig, "ended": battle_ended_count - ended0, "msgs": msgs, "nodes": _sw_enemies().size()}
+
+func _route_reasons(msg: Dictionary) -> Array:
+	var out: Array = []
+	for s in msg.get("skipped", []):
+		out.append([int(s.get("index", -1)), str(s.get("enemy_id", "")), str(s.get("path", "")), str(s.get("reason", ""))])
+	return out
+
+func _flight_route_cases() -> void:
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 路線-1：這一波的飛行組全部無效（環狀路線起終點同格、兩個路點相同、只有一個路點）→ 拒絕開戰：
+	# 停在備戰、波次不前進、城池不扣血、沒有結算、場上沒有敵人；拒絕信號一次；Web 收到一則 wave_rejected，逐組列出原因（不含玩家資料）
+	var r1: Dictionary = await _route_reject(rec, _route_payload("route-1", [[_grp_on("fly_walk", 2, 0.1, "path_loop"), _grp_on("fly_walk", 1, 0.1, "path_dup"), _grp_on("fly_run", 1, 0.1, "path_single")]]), false, 0)
+	var m1: Dictionary = r1.msgs[0] if r1.msgs.size() == 1 else {}
+	var want1: Array = [[1, "fly_walk", "path_loop", "flight_same_endpoints"], [2, "fly_walk", "path_dup", "flight_same_endpoints"], [3, "fly_run", "path_single", "flight_single_point"]]
+	_check("路線-1 飛行組全部無效（環狀路線起終點同格、兩個相同路點、只有一個路點）→ 拒絕開戰：備戰、波次 0、城池 20、沒有結算、場上沒有敵人；拒絕信號 1 次；wave_rejected 帶這一場的 battle_id、第 1 波、逐組原因（位置、enemy_id、路線），不含玩家 key",
+		r1.state.state == 1 and r1.state.wave == 0 and r1.state.hp == MAX_HP and not r1.state.auto and r1.state.active == 0 and r1.nodes == 0 and r1.ended == 0 and r1.sig == [1] and
+		r1.msgs.size() == 1 and m1.get("battle_id") == "route-1" and int(m1.get("wave", -1)) == 1 and m1.get("missing") == false and _route_reasons(m1) == want1 and not JSON.stringify(m1).contains("\"key\""),
+		{"state": r1.state, "sig": r1.sig, "ended": r1.ended, "msgs": r1.msgs})
+
+	# 路線-2：自動模式，第 2 波只有無效的飛行組 → 第 1 波（地面，1 隻抵達）照常，第 2 波拒絕：自動關閉、波次停在 1、城池只扣第 1 波的 1、沒有結算
+	var r2: Dictionary = await _route_reject(rec, _route_payload("route-2", [[_grp("gnd_run", 1, 0.1)], [_grp_on("fly_walk", 3, 0.1, "path_dup")]]), true, 0)
+	var m2: Dictionary = r2.msgs[0] if r2.msgs.size() == 1 else {}
+	_check("路線-2 自動模式第 2 波只有無效的飛行組：第 1 波照常（地面抵達，城池 19），第 2 波拒絕：自動關閉、停在備戰、波次 1、沒有結算；wave_rejected 是第 2 波、原因 flight_same_endpoints",
+		r2.state.state == 1 and r2.state.wave == 1 and r2.state.hp == MAX_HP - 1 and not r2.state.auto and r2.ended == 0 and r2.sig == [2] and int(m2.get("wave", -1)) == 2 and _route_reasons(m2) == [[1, "fly_walk", "path_dup", "flight_same_endpoints"]],
+		{"state": r2.state, "sig": r2.sig, "ended": r2.ended, "msgs": r2.msgs})
+
+	# 路線-3：短但有效的飛行路線（相鄰兩格、1 格長）照常出兵：兩個路點、剩餘 1 格；飛到終點才扣城血（每秒 40 像素，約 1 格 ÷ 40 秒），不是一出現就扣
+	_load(_route_payload("route-3", [[_grp_on("fly_walk", 1, 0.1, "path_short")]]))
+	var n3: int = rec.sent_wave_rejects.size()
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == 1, 3.0)
+	var d3: Dictionary = {"spawned": _sw_enemies().size()}
+	if _sw_enemies().size() == 1:
+		var e3: Node = _sw_enemies()[0]
+		var t3: float = float(e3.tile_size)
+		var p0: float = _pt()
+		d3["wps"] = e3._waypoints.size()
+		d3["rem_tiles"] = snappedf(e3.get_remaining_distance() / t3, 0.01)
+		d3["hp_at_spawn"] = _bm().base_hp
+		d3["expect_sec"] = snappedf(t3 / 40.0, 0.001)
+		await _wait_until(func(): return _bm().base_hp < MAX_HP, 5.0)
+		d3["arrive_sec"] = snappedf(_pt() - p0, 0.001)
+		d3["hp"] = _bm().base_hp
+	d3["rejects"] = rec.sent_wave_rejects.size() - n3
+	_check("路線-3 相鄰兩格的飛行路線（1 格長）照常出兵：兩個路點、剩餘 1 格、出現時城池 20；約 1 格 ÷ 40 像素／秒後抵達才扣 1（不是一出現就扣）；沒有拒絕",
+		d3.get("spawned") == 1 and d3.get("wps") == 2 and is_equal_approx(float(d3.get("rem_tiles", 0.0)), 1.0) and d3.get("hp_at_spawn") == MAX_HP and float(d3.get("arrive_sec", 0.0)) >= float(d3.get("expect_sec", 99.0)) - 0.1 and float(d3.get("arrive_sec", 99.0)) <= float(d3.get("expect_sec", 0.0)) + 0.5 and d3.get("hp") == MAX_HP - 1 and d3.get("rejects") == 0, d3)
+	await _wait_until(func(): return _bm().game_state == 3, 5.0)
+
+	# 路線-4：同一波混合：無效的飛行組（環狀路線）略過，合法的飛行組與地面組照常開戰；不送 wave_rejected，城池不因無效組扣血
+	_load(_route_payload("route-4", [[_grp_on("fly_walk", 2, 0.05, "path_loop"), _grp("fly_walk", 1, 0.05), _grp("gnd_walk", 1, 0.05)]]))
+	var n4: int = rec.sent_wave_rejects.size()
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == 2, 3.0)
+	await _wait(0.5)
+	var es4: Array = _sw_enemies()
+	var rep4: Dictionary = _wm().get_last_plan_report()
+	var d4: Dictionary = {"state": _bm().game_state, "count": es4.size(), "moves": es4.map(func(e): return e.movement_type), "hp": _bm().base_hp, "rejects": rec.sent_wave_rejects.size() - n4, "skipped": _route_reasons(rep4)}
+	_check("路線-4 同一波混合：無效的飛行組略過（計畫的說明列出它），合法的飛行與地面各 1 隻照常開戰；沒有 wave_rejected、城池 20",
+		d4.state == 2 and d4.count == 2 and d4.moves == ["flying", "ground"] and d4.hp == MAX_HP and d4.rejects == 0 and d4.skipped == [[1, "fly_walk", "path_loop", "flight_same_endpoints"]], d4)
+	_load(_stage_b())
+
+	# 路線-5：地面的環狀路線（起終點同格）不受飛行規則影響：照常出兵、五個路點、剩餘 14 格，走完全程（每秒 240 像素）才抵達扣城血
+	_load(_route_payload("route-5", [[_grp_on("gnd_run", 1, 0.1, "path_loop")]]))
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == 1, 3.0)
+	var d5: Dictionary = {"spawned": _sw_enemies().size(), "state": _bm().game_state}
+	if _sw_enemies().size() == 1:
+		var e5: Node = _sw_enemies()[0]
+		var t5: float = float(e5.tile_size)
+		var p5: float = _pt()
+		d5["wps"] = e5._waypoints.size()
+		d5["rem_tiles"] = snappedf(e5.get_remaining_distance() / t5, 0.01)
+		d5["expect_sec"] = snappedf(14.0 * t5 / 240.0, 0.001)
+		await _wait_until(func(): return _bm().base_hp < MAX_HP, 8.0)
+		d5["arrive_sec"] = snappedf(_pt() - p5, 0.001)
+		d5["hp"] = _bm().base_hp
+	_check("路線-5 地面的環狀路線（起終點同格）照常：出兵、五個路點、剩餘 14 格，約 14 格 ÷ 240 像素／秒後才抵達扣 1",
+		d5.get("spawned") == 1 and d5.get("state") == 2 and d5.get("wps") == 5 and is_equal_approx(float(d5.get("rem_tiles", 0.0)), 14.0) and float(d5.get("arrive_sec", 0.0)) >= float(d5.get("expect_sec", 99.0)) - 0.1 and float(d5.get("arrive_sec", 99.0)) <= float(d5.get("expect_sec", 0.0)) + 0.5 and d5.get("hp") == MAX_HP - 1, d5)
+	await _wait_until(func(): return _bm().game_state == 3, 5.0)
+
+	# 路線-6：缺波次的拒絕也帶 missing：第 2 波不存在 → wave_rejected {wave: 2, missing: true, skipped: []}
+	var gap: Dictionary = _route_payload("route-6", [[_grp("gnd_run", 1, 0.1)]])
+	gap["map"]["waves"].append({"wave": 3, "enemies": [_grp("gnd_run", 1, 0.1)]})
+	var r6: Dictionary = await _route_reject(rec, gap, false, 1)
+	var m6: Dictionary = r6.msgs[0] if r6.msgs.size() == 1 else {}
+	_check("路線-6 缺波次（第 2 波不存在）：拒絕開戰，wave_rejected 帶 wave 2、missing true、沒有逐組原因",
+		r6.state.state == 1 and r6.state.wave == 1 and r6.ended == 0 and int(m6.get("wave", -1)) == 2 and m6.get("missing") == true and m6.get("skipped", [1]) == [], {"state": r6.state, "msgs": r6.msgs})
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 防禦塔「優先飛行」（air_first）──
+# 弓兵塔或文士塔放在 (6,4)，敵人都不會移動（飛行測試的 fly_post／gnd_post）。位置沿用飛行-7：
+# 地面在最後一段路、剩餘 7.4 格（塔的上方 1.5 格）；飛行 A 剩餘約 9 格（左下 2.06 格，射程內）；飛行 B 剩餘較短（右下 1.41 格，射程內）；
+# 射程外的飛行放在塔的右邊 3 格（剩餘最短，但射程 2.5 格打不到）
+const AF_BASE_MODES: Array = ["first", "strongest", "weakest"]
+const AF_AIR_MODES: Array = ["first", "strongest", "weakest", "air_first"]
+
+func _af_cmd(rec: Node, tw: Node, mode: String, bid: String = "", uid: String = "") -> Dictionary:
+	var n: int = rec.sent_tower_targets.size()
+	_r19_js(rec, {"type": "set_tower_target", "battle_id": bid if bid != "" else _bm().battle_id, "tower_uid": uid if uid != "" else tw.tower_uid, "mode": mode})
+	return rec.sent_tower_targets.back() if rec.sent_tower_targets.size() > n else {}
+
+## 開戰（一波：地面 1、飛行 nf 隻），在 (6,4) 放 tower_type，敵人放到固定位置、選取這座塔後回傳 {tower, g, f:[...]}
+func _af_start(battle_id: String, tower_type: String, nf: int) -> Dictionary:
+	var es: Array = await _fly_start(battle_id, [_grp("gnd_post", 1, 0.02), _grp("fly_post", nf, 0.02)], 1 + nf, [], {}, {tower_type: Vector2i(6, 4)})
+	var tw: Node = main.game_map.get_occupant(Vector2i(6, 4))
+	if es.size() != 1 + nf or tw == null:
+		return {}
+	var t: float = float(tw.tile_size)
+	var g: Node = es.filter(func(e): return not e.is_flying())[0]
+	var fs: Array = es.filter(func(e): return e.is_flying())
+	g._wp_index = 5
+	g.global_position = tw.global_position + Vector2(0.0, -1.5) * t
+	fs[0].global_position = tw.global_position + Vector2(-2.0, 0.5) * t
+	if nf > 1:
+		fs[1].global_position = tw.global_position + Vector2(1.0, 1.0) * t
+	main._on_tower_clicked(tw)
+	return {"tower": tw, "g": g, "f": fs}
+
+## 清掉疊加減速（文士塔的測試每一段重新量）
+func _af_clear_slow(es: Array) -> void:
+	for e in es:
+		if is_instance_valid(e):
+			e._stack_slow_amount = 0.0
+			e._stack_slow_timer = 0.0
+
+func _air_first_cases() -> void:
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+	# Web 的升級命令（request_upgrade）：和拆除測試一樣接到 Main
+	rec.upgrade_unit_requested.connect(main._on_web_upgrade_unit)
+
+	# 優先飛行-0：可選的目標優先：弓兵塔、文士塔的面板與測試快照多了 air_first；步兵、砲兵、騎兵塔只有三種。
+	# 只打地面的塔：Web 送 air_first 不套用、不回覆，Tower.set_target_mode 也拒絕（不能只靠前端隱藏）
+	_load(_fly_payload("af-0", [[_grp("gnd_post", 1, 0.02)]]))
+	var cells0: Dictionary = {"archer": Vector2i(5, 7), "scholar": Vector2i(6, 7), "infantry": Vector2i(7, 7), "artillery": Vector2i(8, 7), "cavalry": Vector2i(9, 7)}
+	var d0: Dictionary = {}
+	var ok0: bool = true
+	for tt in cells0:
+		var tw: Node = _r18_build(tt, cells0[tt])
+		if tw == null:
+			d0[tt] = "setup"
+			ok0 = false
+			continue
+		var panel: Dictionary = _r18_panel(rec, tw)
+		var snap: Dictionary = _fly_snapshot(rec)
+		var reply: Dictionary = _af_cmd(rec, tw, "air_first")
+		var air: bool = FLY_TOWERS[tt]
+		var direct: bool = tw.set_target_mode("air_first") if not air else true
+		var snap_modes = snap.get("tower_targets", {}).get(tw.tower_uid, {}).get("modes")
+		d0[tt] = {"panel_modes": panel.get("target_modes"), "snap_modes": snap_modes, "reply": reply.get("target_mode"), "mode": tw.target_mode, "direct": direct}
+		var want: Array = AF_AIR_MODES if air else AF_BASE_MODES
+		ok0 = ok0 and panel.get("target_modes") == want and snap_modes == want
+		if air:
+			ok0 = ok0 and reply.get("target_mode") == "air_first" and tw.target_mode == "air_first"
+		else:
+			ok0 = ok0 and reply.is_empty() and tw.target_mode == "first" and direct == false
+	main._deselect_unit()
+	_check("優先飛行-0 可選的目標優先：弓兵塔、文士塔的面板與快照是 first／strongest／weakest／air_first，Web 選 air_first 後 Godot 回覆並套用；步兵、砲兵、騎兵塔只有三種，Web 送 air_first 不回覆、模式維持 first，set_target_mode 也回傳 false", ok0, d0)
+
+	# 優先飛行-1：弓兵塔，地面（剩餘 7.4 格）與飛行 A（剩餘約 9 格）都在射程內：「優先前方」打地面（對照）；切到 air_first 後只打飛行
+	var s: Dictionary = await _af_start("af-1", "archer", 1)
+	var d1: Dictionary = {}
+	if not s.is_empty():
+		var tw: Node = s.tower
+		var pair: Dictionary = {"g": s.g, "f": s.f[0]}
+		var t: float = float(tw.tile_size)
+		d1["rem"] = {"g": snappedf(s.g.get_remaining_distance() / t, 0.01), "f": snappedf(s.f[0].get_remaining_distance() / t, 0.01)}
+		await _r17_wait_hit(pair)
+		d1["first"] = (await _r17_hits(pair, 1.7)).dmg
+		d1["reply"] = _af_cmd(rec, tw, "air_first").get("target_mode")
+		await _r17_wait_hit(pair)
+		d1["air"] = (await _r17_hits(pair, 1.7)).dmg
+		# 優先飛行-2：飛行移到射程外（右邊 3 格，剩餘最短）→ 塔不放棄射程內的地面；飛行回到射程內 → 再改打飛行
+		s.f[0].global_position = tw.global_position + Vector2(3.0, 0.0) * t
+		d1["out_rem"] = snappedf(s.f[0].get_remaining_distance() / t, 0.01)
+		await _r17_wait_hit(pair)
+		d1["out"] = (await _r17_hits(pair, 1.7)).dmg
+		s.f[0].global_position = tw.global_position + Vector2(-2.0, 0.5) * t
+		await _r17_wait_hit(pair)
+		d1["back"] = (await _r17_hits(pair, 1.7)).dmg
+	_check("優先飛行-1 弓兵塔：地面剩餘較短（7.4 格）、飛行較遠（約 9 格）都在射程內：「優先前方」只打地面；切到 air_first（Godot 回覆 air_first）後只打飛行",
+		d1.has("air") and float(d1.first.g) > 0.0 and float(d1.first.f) == 0.0 and d1.reply == "air_first" and float(d1.air.f) > 0.0 and float(d1.air.g) == 0.0 and float(d1.rem.g) < float(d1.rem.f), d1)
+	_check("優先飛行-2 飛行在射程外（剩餘最短）：塔照常打射程內的地面（不因射程外有飛行而停手或打射程外）；飛行回到射程內後再只打飛行",
+		d1.has("back") and float(d1.out.g) > 0.0 and float(d1.out.f) == 0.0 and float(d1.back.f) > 0.0 and float(d1.back.g) == 0.0, d1)
+
+	# 優先飛行-3：兩個飛行與一個地面都在射程內：只打剩餘較短的飛行 B（不打地面、不打飛行 A）；兩個飛行在同一個位置時維持清單順序（先出現的 A）
+	s = await _af_start("af-3", "archer", 2)
+	var d3: Dictionary = {}
+	if not s.is_empty():
+		var tw: Node = s.tower
+		var t: float = float(tw.tile_size)
+		var trio: Dictionary = {"g": s.g, "fa": s.f[0], "fb": s.f[1]}
+		_af_cmd(rec, tw, "air_first")
+		d3["rem"] = {"g": snappedf(s.g.get_remaining_distance() / t, 0.01), "fa": snappedf(s.f[0].get_remaining_distance() / t, 0.01), "fb": snappedf(s.f[1].get_remaining_distance() / t, 0.01)}
+		await _r17_wait_hit(trio)
+		d3["near"] = (await _r17_hits(trio, 1.7)).dmg
+		s.f[1].global_position = s.f[0].global_position
+		await _r17_wait_hit(trio)
+		d3["tie"] = (await _r17_hits(trio, 1.7)).dmg
+	_check("優先飛行-3 兩個飛行與一個地面都在射程內：只打剩餘較短的飛行 B；兩個飛行在同一個位置（剩餘相同）時打先出現的 A；地面都不打",
+		d3.has("tie") and float(d3.near.fb) > 0.0 and float(d3.near.fa) == 0.0 and float(d3.near.g) == 0.0 and float(d3.tie.fa) > 0.0 and float(d3.tie.fb) == 0.0 and float(d3.tie.g) == 0.0 and float(d3.rem.fb) < float(d3.rem.fa), d3)
+	_load(_stage_b())
+
+	# 優先飛行-4：文士塔：「優先前方」減速地面；air_first 只減速飛行；飛行移到射程外 → 減速地面。都不造成傷害
+	s = await _af_start("af-4", "scholar", 1)
+	var d4: Dictionary = {}
+	if not s.is_empty():
+		var tw: Node = s.tower
+		var t: float = float(tw.tile_size)
+		var pair: Dictionary = {"g": s.g, "f": s.f[0]}
+		_af_clear_slow([s.g, s.f[0]])
+		var r_first: Dictionary = await _r17_hits(pair, 1.5)
+		d4["first"] = r_first.stack
+		d4["reply"] = _af_cmd(rec, tw, "air_first").get("target_mode")
+		_af_clear_slow([s.g, s.f[0]])
+		var r_air: Dictionary = await _r17_hits(pair, 1.5)
+		d4["air"] = r_air.stack
+		s.f[0].global_position = tw.global_position + Vector2(3.0, 0.0) * t
+		_af_clear_slow([s.g, s.f[0]])
+		var r_out: Dictionary = await _r17_hits(pair, 1.5)
+		d4["out"] = r_out.stack
+		d4["dmg"] = [r_first.dmg, r_air.dmg, r_out.dmg]
+	_check("優先飛行-4 文士塔：「優先前方」只減速地面；air_first（回覆 air_first）只減速飛行；飛行在射程外時減速地面；三段都沒有傷害",
+		d4.has("out") and float(d4.first.g) > 0.0 and float(d4.first.f) == 0.0 and d4.reply == "air_first" and float(d4.air.f) > 0.0 and float(d4.air.g) == 0.0 and float(d4.out.g) > 0.0 and float(d4.out.f) == 0.0 and
+		d4.dmg.all(func(x): return float(x.g) == 0.0 and float(x.f) == 0.0), d4)
+	_load(_stage_b())
+
+	# 優先飛行-5：切換不重置冷卻、不額外攻擊、不花錢：看到一擊的那一幀立刻切到 air_first，下一擊仍在 0.8 秒的前後一幀內、打的是飛行；
+	# 金幣、攻擊力、射程、等級不變
+	s = await _af_start("af-5", "archer", 1)
+	var d5: Dictionary = {}
+	if not s.is_empty():
+		var tw: Node = s.tower
+		var pair: Dictionary = {"g": s.g, "f": s.f[0]}
+		var gold0: int = _bm().battle_gold
+		var hit_a: Dictionary = await _r17_wait_hit(pair)
+		var timer_before: float = tw._atk_timer
+		var reply: Dictionary = _af_cmd(rec, tw, "air_first")
+		var timer_after: float = tw._atk_timer
+		var f_hp: float = s.f[0].current_hp
+		var hit_b: Dictionary = await _r17_wait_hit(pair)
+		d5 = {"reply": reply, "itv": snappedf(float(hit_b.t) - float(hit_a.t), 0.0001), "dt_a": hit_a.dt, "dt_b": hit_b.dt, "timer": [timer_before, timer_after],
+			"f_hit": s.f[0].current_hp < f_hp, "gold": _bm().battle_gold - gold0, "atk": tw.atk, "range": tw.range_tiles, "level": tw.tower_level}
+	_check("優先飛行-5 切換不重置冷卻：看到一擊的那一幀切到 air_first（回覆帶 battle_id、tower_uid），冷卻計時不變、下一擊間隔在 0.8 秒的前後一幀內且打飛行；金幣、攻擊力、射程、等級不變",
+		d5.has("itv") and d5.reply.get("battle_id") == "af-5" and d5.reply.get("tower_uid") == s.tower.tower_uid and d5.reply.get("target_mode") == "air_first" and is_equal_approx(float(d5.timer[0]), float(d5.timer[1])) and
+		float(d5.itv) >= 0.8 - float(d5.dt_a) - 0.0005 and float(d5.itv) <= 0.8 + float(d5.dt_b) + 0.0005 and d5.f_hit and d5.gold == 0 and is_equal_approx(float(d5.atk), 30.0) and is_equal_approx(float(d5.range), 2.5) and d5.level == 1, d5)
+
+	# 優先飛行-6：2× 速度下切換：冷卻用遊戲時間，下一擊間隔仍是 0.8 秒（遊戲時間）的前後一幀；手動暫停中送 air_first 不套用、不回覆、冷卻不變；繼續後可以切換
+	var d6: Dictionary = {}
+	if not s.is_empty():
+		var tw: Node = s.tower
+		var pair: Dictionary = {"g": s.g, "f": s.f[0]}
+		d6["speed"] = _r19_speed(rec, 2).get("speed")
+		var hit_a: Dictionary = await _r17_wait_hit(pair)
+		var reply: Dictionary = _af_cmd(rec, tw, "first")
+		var hit_b: Dictionary = await _r17_wait_hit(pair)
+		d6["itv"] = snappedf(float(hit_b.t) - float(hit_a.t), 0.0001)
+		d6["dt"] = [hit_a.dt, hit_b.dt]
+		d6["reply"] = reply.get("target_mode")
+		d6["ts"] = Engine.time_scale
+		_r19_speed(rec, 1)
+		d6["paused"] = _r20_pause(rec, true).get("paused")
+		var tm0: float = tw._atk_timer
+		d6["paused_reply"] = _af_cmd(rec, tw, "air_first")
+		d6["paused_mode"] = tw.target_mode
+		d6["paused_timer_same"] = is_equal_approx(tw._atk_timer, tm0)
+		_r20_pause(rec, false)
+		d6["resumed_reply"] = _af_cmd(rec, tw, "air_first").get("target_mode")
+	_check("優先飛行-6 2× 速度下從 air_first 切回 first：下一擊間隔仍在遊戲時間 0.8 秒的前後一幀內；手動暫停中送 air_first 不套用、不回覆、冷卻不變；繼續後切換成功",
+		d6.has("itv") and d6.speed == 2 and is_equal_approx(float(d6.ts), 2.0) and d6.reply == "first" and float(d6.itv) >= 0.8 - float(d6.dt[0]) - 0.0005 and float(d6.itv) <= 0.8 + float(d6.dt[1]) + 0.0005 and
+		d6.paused == true and d6.paused_reply.is_empty() and d6.paused_mode == "first" and d6.paused_timer_same and d6.resumed_reply == "air_first", d6)
+
+	# 優先飛行-7：升級保留選擇：air_first 的弓兵塔升到 Lv2 → 仍是 air_first，面板的 target_mode 與 target_modes 照舊
+	var d7: Dictionary = {}
+	if not s.is_empty():
+		var tw: Node = s.tower
+		main._on_tower_clicked(tw)
+		_r18_upgrade(rec)
+		var panel: Dictionary = rec.sent_panels.back() if not rec.sent_panels.is_empty() else {}
+		d7 = {"level": tw.tower_level, "mode": tw.target_mode, "panel_mode": panel.get("target_mode"), "panel_modes": panel.get("target_modes"), "panel_level": panel.get("level")}
+	_check("優先飛行-7 升級保留選擇：air_first 的弓兵塔升到 Lv2 後仍是 air_first，面板帶 air_first 與四種可選",
+		d7.get("level") == 2 and d7.get("mode") == "air_first" and d7.get("panel_mode") == "air_first" and d7.get("panel_modes") == AF_AIR_MODES and d7.get("panel_level") == 2, d7)
+	_load(_stage_b())
+
+	# 優先飛行-8：拆除重建、新的一場都回到 first：備戰中選 air_first → 拆除 → 同一格重建（新識別碼）是 first；
+	# 舊識別碼的延遲命令不套用到新塔；新的一場放的塔也是 first
+	_load(_fly_payload("af-8", [[_grp("gnd_post", 1, 0.02)]]))
+	var d8: Dictionary = {}
+	var t8: Node = _r18_build("archer", Vector2i(6, 4))
+	if t8 != null:
+		var p8: Dictionary = _r18_panel(rec, t8)
+		d8["set"] = _af_cmd(rec, t8, "air_first").get("target_mode")
+		var old_uid: String = t8.tower_uid
+		d8["sold"] = _r18_sell(rec, old_uid, int(p8.get("sell_refund", -1))).get("ok")
+		var t8b: Node = _r18_build("archer", Vector2i(6, 4))
+		if t8b != null:
+			var p8b: Dictionary = _r18_panel(rec, t8b)
+			d8["rebuilt"] = {"uid_new": t8b.tower_uid != old_uid, "mode": t8b.target_mode, "panel_mode": p8b.get("target_mode")}
+			d8["stale"] = _af_cmd(rec, t8b, "air_first", "", old_uid)
+			d8["after_stale"] = t8b.target_mode
+	_load(_fly_payload("af-8b", [[_grp("gnd_post", 1, 0.02)]]))
+	var t8c: Node = _r18_build("scholar", Vector2i(6, 4))
+	d8["new_battle"] = t8c.target_mode if t8c != null else null
+	_check("優先飛行-8 拆除重建與新的一場回到 first：備戰中選 air_first 後拆除，同一格重建的新塔（新識別碼）是 first；舊識別碼的 air_first 命令不回覆、新塔仍是 first；新的一場的文士塔也是 first",
+		d8.get("set") == "air_first" and d8.get("sold") == true and d8.get("rebuilt", {}).get("uid_new") == true and d8.get("rebuilt", {}).get("mode") == "first" and d8.get("rebuilt", {}).get("panel_mode") == "first" and
+		d8.get("stale", {1: 1}).is_empty() and d8.get("after_stale") == "first" and d8.get("new_battle") == "first", d8)
+
+	rec.upgrade_unit_requested.disconnect(main._on_web_upgrade_unit)
 	rec.payload_received.disconnect(main._on_payload_received)
 	main.web_bridge = original
 	rec.free()

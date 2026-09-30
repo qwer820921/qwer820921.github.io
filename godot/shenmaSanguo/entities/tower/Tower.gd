@@ -106,9 +106,13 @@ var tower_name: String     = "弓兵塔"
 ## 目標優先：只存在這一場的記憶體（不寫存檔），新放置的塔一律從 "first" 開始。
 ## - "first"：走得最前面＝到終點的剩餘路程最短（Enemy.get_remaining_distance：地面沿路線折線、飛行是到終點的直線，混在一起也能比）
 ## - "strongest"：當下血量最多；"weakest"：當下血量最少（比 current_hp，不是最大血量或百分比）
+## - "air_first"（優先飛行，只有能對空的弓兵塔、文士塔可以選）：射程內有飛行敵人就選飛行，沒有就選地面；
+##   同一類之間照「優先前方」比剩餘路程。射程外的飛行不是候選，不會讓塔放棄射程內的地面。文士塔是優先減速飛行，不造成傷害
 ## 血量相同時看剩餘路程，再相同（相差不到 0.001 像素）維持候選的原順序。候選只有這座塔打得到的敵人（對空）。
 ## 只改主要目標：砲兵的範圍傷害、文士的減速跟著主要目標，步兵的緩速光環照舊作用於範圍內所有地面敵人
-const TARGET_MODES: Array = ["first", "strongest", "weakest"]
+const TARGET_MODES: Array = ["first", "strongest", "weakest", "air_first"]
+## 只有能對空的塔可以選的目標優先
+const AIR_TARGET_MODES: Array = ["air_first"]
 var target_mode: String    = "first"
 ## 這座塔的識別碼（Main 放置時指定，同一個頁面內不重複）：Web 的命令用它確認是同一座塔
 var tower_uid: String      = ""
@@ -242,14 +246,26 @@ func _better_target(a: Node, b: Node) -> bool:
 		"weakest":
 			if not is_equal_approx(a.current_hp, b.current_hp):
 				return a.current_hp < b.current_hp
+		"air_first":
+			if a.is_flying() != b.is_flying():
+				return a.is_flying()
 	return a.get_remaining_distance() < b.get_remaining_distance() - REMAINING_EPS
 
 ## 剩餘路程的比較容許誤差（像素）：相差不到這個值視為相同，保留候選的原順序
 const REMAINING_EPS: float = 0.001
 
-## 切換目標優先：只換之後挑選目標的方式，不重置攻擊冷卻、不立即攻擊、不動射程／傷害／等級。不認得的模式不套用
+## 這座塔可以選的目標優先：每座塔都有 first／strongest／weakest，能對空的塔（弓兵、文士）再加 air_first
+func get_target_modes() -> Array:
+	var modes: Array = []
+	for m in TARGET_MODES:
+		if can_hit_air or not AIR_TARGET_MODES.has(m):
+			modes.append(m)
+	return modes
+
+## 切換目標優先：只換之後挑選目標的方式，不重置攻擊冷卻、不立即攻擊、不動射程／傷害／等級。
+## 不認得的模式、這座塔不能選的模式（例如只打地面的塔選 air_first）不套用
 func set_target_mode(mode: String) -> bool:
-	if not TARGET_MODES.has(mode):
+	if not get_target_modes().has(mode):
 		return false
 	target_mode = mode
 	queue_redraw()
