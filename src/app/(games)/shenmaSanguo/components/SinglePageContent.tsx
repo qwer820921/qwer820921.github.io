@@ -12,6 +12,7 @@ import { isStageUnlocked } from "../utils/stageUtils";
 import { describePlayerError } from "../utils/playerErrors";
 import { BattleSession, isBattleResultMessage } from "../utils/battleSession";
 import { heroSkillPayload } from "../utils/heroSkills";
+import { toBattleRecord } from "../utils/battleReward";
 import {
   panelAfterSellResult,
   sellStateAfterResult,
@@ -32,6 +33,7 @@ import {
   isPaused,
 } from "../utils/gameSpeed";
 import EngineUpdatePrompt from "./EngineUpdatePrompt";
+import InvalidResultNotice from "./InvalidResultNotice";
 import styles from "../styles/shenmaSanguo.module.css";
 import PlacementMenu from "../battle/components/PlacementMenu";
 import UpgradePanel from "../battle/components/UpgradePanel";
@@ -255,6 +257,26 @@ function BattleResultModal({
   /** 寫入限制中（開戰後才遇到限制）：結果照常顯示，並說明沒有記錄 */
   notSaved?: boolean;
 }) {
+  // Godot 的結算不合規則（和 store 結算時同一個驗證）：不顯示星數與戰利品，只說明沒有領取；按下「關閉」照樣作廢這一場
+  if (!toBattleRecord(result)) {
+    return (
+      <div className={styles.resultOverlay}>
+        <div
+          className={`${styles.resultCard} ${styles.resultLose}`}
+          data-testid="result-card"
+        >
+          <div className={styles.resultTitle}>結算異常</div>
+          <InvalidResultNotice variant="dark" />
+          <button
+            className={`${styles.btnGold} w-100 mt-3`}
+            onClick={onConfirm}
+          >
+            關閉
+          </button>
+        </div>
+      </div>
+    );
+  }
   const isWin = result.result === BattleResult.Win;
 
   const getLootDisplay = (item: string) => {
@@ -282,6 +304,7 @@ function BattleResultModal({
     <div className={styles.resultOverlay}>
       <div
         className={`${styles.resultCard} ${isWin ? styles.resultWin : styles.resultLose}`}
+        data-testid="result-card"
       >
         <div className={styles.resultTitle}>{isWin ? "勝 利" : "落 敗"}</div>
         <div className={styles.resultStars}>

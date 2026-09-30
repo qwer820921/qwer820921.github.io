@@ -21,6 +21,7 @@ import {
   isCompatibleEngine,
 } from "../../utils/gameEngine";
 import { heroSkillPayload } from "../../utils/heroSkills";
+import { toBattleRecord } from "../../utils/battleReward";
 import {
   DeployMenuRef,
   GameSpeed,
@@ -36,6 +37,7 @@ import {
   TowerSellState,
 } from "../../utils/towerSell";
 import EngineUpdatePrompt from "../../components/EngineUpdatePrompt";
+import InvalidResultNotice from "../../components/InvalidResultNotice";
 import styles from "../../styles/shenmaSanguo.module.css";
 import PlacementMenu from "./PlacementMenu";
 import UpgradePanel from "./UpgradePanel";
@@ -549,11 +551,16 @@ export default function BattlePageContent() {
   const mapName =
     staticConfig?.maps.find((m) => m.map_id === mapId)?.name ?? mapId;
 
+  // Godot 的結算不合規則（和 store 結算時同一個驗證）：結算視窗只說明沒有領取，不顯示星數與獎勵
+  const resultInvalid = !!battleResult && !toBattleRecord(battleResult);
+
   const statusText = payloadSent
     ? battleResult
-      ? battleResult.result === BattleResult.Win
-        ? "勝利"
-        : "落敗"
+      ? resultInvalid
+        ? "結算異常"
+        : battleResult.result === BattleResult.Win
+          ? "勝利"
+          : "落敗"
       : ""
     : writeHold
       ? "存檔暫停保存"
@@ -754,8 +761,27 @@ export default function BattlePageContent() {
           </div>
         </div>
 
+        {/* 結算資料異常：不顯示獎勵，說明沒有領取；「返回主選單」照樣作廢這一場（store 回 INVALID_RESULT，不送出） */}
+        {battleResult && resultInvalid && (
+          <Modal show centered contentClassName="border-0 p-0 bg-transparent">
+            <div className={styles.invalidResultCard} data-testid="result-card">
+              <div className={styles.invalidResultHeader}>結算異常</div>
+              <div className={styles.invalidResultBody}>
+                <InvalidResultNotice variant="light" />
+                <button
+                  className={`${styles.invalidResultBtn} w-100`}
+                  onClick={handleConfirmResult}
+                >
+                  返回主選單
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
+
         {/* 結算 Modal */}
         {battleResult &&
+          !resultInvalid &&
           (() => {
             const isWin = battleResult.result === BattleResult.Win;
             const C = {
@@ -784,6 +810,7 @@ export default function BattlePageContent() {
                     color: C.text,
                     overflow: "hidden",
                   }}
+                  data-testid="result-card"
                 >
                   <div
                     style={{

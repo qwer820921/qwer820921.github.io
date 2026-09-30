@@ -10,8 +10,11 @@
  *    click_cell 帶 battle_id 與選單編號，關閉選單（resume_game）要帶回。舊版遊戲不認得速度命令（按鈕會默默沒有作用），同樣提升版本
  * 6：手動暫停：set_paused 命令 {battle_id, paused} 與 game_pause_result 回覆，update_stats 帶 paused。
  *    舊版遊戲不認得暫停命令（按鈕會默默沒有作用），同樣提升版本
+ * 7：飛行敵人與對空：enemies_config 的 movement_type（flying 直線飛向終點、不被武將擋住），武將與防禦塔依職業／種類
+ *    決定能不能攻擊飛行敵人（見 utils/antiAir）；show_upgrade_panel 帶 anti_air。舊版遊戲會把飛行敵人當成地面、
+ *    所有單位都打得到，和網頁的說明不同，同樣提升版本
  */
-export const BRIDGE_PROTOCOL = 6;
+export const BRIDGE_PROTOCOL = 7;
 
 /**
  * 遊戲引擎的狀態

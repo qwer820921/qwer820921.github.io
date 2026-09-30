@@ -507,6 +507,8 @@ func _on_hero_clicked(hero: Node) -> void:
 		"atk_spd": 1.0 / hero.attack_speed,
 		"range": hero.attack_range,
 		"hp": hero.current_hp,
+		# 對空：這位武將能不能攻擊飛行敵人（依職業，見 Hero.AIR_JOBS）
+		"anti_air": hero.can_hit_air,
 		"screen_pos": {"x": pos_screen.x, "y": pos_screen.y},
 	})
 
@@ -539,6 +541,8 @@ func _on_tower_clicked(tower: Node) -> void:
 		"invested_gold": tower.invested_gold,
 		"sell_refund": tower.get_sell_refund(),
 		"can_sell": battle_manager.game_state == BattleManager.GameState.PREP,
+		# 對空：這座塔能不能攻擊（文士塔是減速）飛行敵人
+		"anti_air": tower.can_hit_air,
 		"screen_pos": {"x": pos_screen.x, "y": pos_screen.y},
 	})
 
@@ -855,6 +859,9 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var tower_targets: Dictionary = {}
 	var enemy_pos: Dictionary = {}
 	var enemy_seq: Dictionary = {}
+	# 飛行敵人：每個敵人的移動方式、到終點的剩餘路程（格；地面沿路線、飛行直線）
+	var enemy_move: Dictionary = {}
+	var enemy_remaining: Dictionary = {}
 	for child in units_layer.get_children():
 		if child is Enemy and not child.is_queued_for_deletion():
 			var eid: String = child.enemy_id
@@ -865,21 +872,26 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			enemy_kind[str(child.get_instance_id())] = eid
 			enemy_pos[str(child.get_instance_id())] = [child.position.x, child.position.y]
 			enemy_seq[str(child.get_instance_id())] = child.spawn_seq
+			enemy_move[str(child.get_instance_id())] = child.movement_type
+			enemy_remaining[str(child.get_instance_id())] = child.get_remaining_distance() / float(child.tile_size)
 		elif child is Tower and not child.is_queued_for_deletion():
 			# screen：塔在畫面上的位置（和升級面板定位用的是同一套座標），測試用來點選塔
 			var sp: Vector2 = child.get_global_transform_with_canvas().origin
 			# cell、invested、refund（Round 18）：塔所在的格子、已實際支付的戰鬥金幣、拆除時的返還金額
-			tower_targets[child.tower_uid] = {"type": child.tower_type_key, "mode": child.target_mode, "level": child.tower_level, "screen": {"x": sp.x, "y": sp.y}, "cell": [child.grid_cell.x, child.grid_cell.y], "invested": child.invested_gold, "refund": child.get_sell_refund()}
+			tower_targets[child.tower_uid] = {"type": child.tower_type_key, "mode": child.target_mode, "level": child.tower_level, "screen": {"x": sp.x, "y": sp.y}, "cell": [child.grid_cell.x, child.grid_cell.y], "invested": child.invested_gold, "refund": child.get_sell_refund(), "air": child.can_hit_air}
 	# 每位武將目前的有效射程（格），以及到每個敵人的距離（格）：測試用來量射程技能（百步穿楊）
 	var hero_ranges: Dictionary = {}
 	var hero_enemy_dist: Dictionary = {}
 	# 橫掃（關羽）：Godot 實際讀到的參數（沒有啟用時不列出）、橫掃次數與打到的副目標數、目前還在顯示的範圍效果數
 	var hero_sweep: Dictionary = {}
+	# 對空：每位武將能不能攻擊飛行敵人
+	var hero_air: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
 			continue
 		hero_ranges[hid] = hero.attack_range
+		hero_air[hid] = hero.can_hit_air
 		if hero.sweep_ratio > 0.0:
 			var fx_n: int = 0
 			for c in hero.get_children():
@@ -922,6 +934,10 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		# 橫掃（關羽）：每個敵人的生成序號（副目標等距時的順序）、每位啟用橫掃的武將的參數與統計
 		"enemy_seq":         enemy_seq,
 		"hero_sweep":        hero_sweep,
+		# 飛行敵人與對空
+		"enemy_move":        enemy_move,
+		"enemy_remaining":   enemy_remaining,
+		"hero_air":          hero_air,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)

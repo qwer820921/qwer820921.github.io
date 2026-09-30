@@ -2553,3 +2553,158 @@
   font-size: 0.72rem;
   font-weight: 700;
 }
+
+/* ── 飛行敵人與對空 ─────────────────────────────────────────── */
+/* 武將詳情的對空說明 */
+.antiAirLine {
+  margin-bottom: 0.85rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 8px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.antiAirYes {
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+  color: #075985;
+}
+
+/* 部署選單卡片、單位面板上的對空標示 */
+.cardAir {
+  font-size: 0.62rem;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+.cardAirYes {
+  color: #38bdf8;
+  font-weight: 700;
+}
+
+/* 敵軍預覽：飛行敵人的標記與說明 */
+.previewFlying {
+  font-size: 0.62rem;
+  color: #0369a1;
+  background: #e0f2fe;
+  border: 1px solid #7dd3fc;
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.previewFlyingNote {
+  margin-top: 0.35rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 8px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  color: #075985;
+  font-size: 0.74rem;
+  line-height: 1.55;
+}
+
+/* 結算資料異常（未領取獎勵）：主頁的深色結算卡片 */
+.resultInvalid {
+  margin-top: 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.55);
+  color: #fecaca;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  text-align: left;
+}
+
+/* 獨立戰鬥頁的白底結算視窗 */
+.resultInvalidLight {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+/* 獨立戰鬥頁：結算資料異常的視窗（白底卡片、標題、內容、返回主選單按鈕） */
+.invalidResultCard {
+  background: #ffffff;
+  border: 1px solid rgba(224, 82, 82, 0.3);
+  border-radius: 12px;
+  color: #1a1f36;
+  overflow: hidden;
+}
+
+.invalidResultHeader {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #ef4444;
+}
+
+.invalidResultBody {
+  padding: 1.25rem;
+}
+
+.invalidResultBtn {
+  padding: 0.65rem;
+  font-size: 0.95rem;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  background: transparent;
+  color: #6b7280;
+}
+
+/* 出征前的對空準備提醒：關卡卡片上的一行（card）與敵軍預覽裡的完整說明（panel） */
+.airReadyCard {
+  margin-bottom: 0.55rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.airReadyPanel {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid;
+  font-size: 0.76rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+/* 有能對空的上陣武將 */
+.airReadyOk {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  color: #075985;
+}
+
+/* 有飛行敵人，但上陣武將打不到（或無法確認） */
+.airReadyWarn {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+/* 敵軍資料不完整，無法確認有沒有飛行敵人 */
+.airReadyUnclear {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+.airReadyFoot {
+  margin-top: 0.25rem;
+  font-size: 0.68rem;
+  opacity: 0.8;
+}

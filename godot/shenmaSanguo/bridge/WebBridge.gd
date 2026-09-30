@@ -24,7 +24,10 @@ signal debug_snapshot_requested(request_id: String)
 ##    舊版遊戲不認得速度命令（按鈕會默默沒有作用），所以提升版本
 ## 6：手動暫停：set_paused 命令 {battle_id, paused（布林，目標狀態）} 與 game_pause_result 回覆
 ##    {battle_id, ok, paused, speed, time_scale, reason?}，update_stats 帶 paused。舊版遊戲不認得暫停命令，所以提升版本
-const BRIDGE_PROTOCOL: int = 6
+## 7：飛行敵人與對空：enemies_config 的 movement_type（flying 直線飛向終點、不被武將擋住），武將與防禦塔依職業／種類
+##    決定能不能攻擊飛行敵人；show_upgrade_panel 帶 anti_air。舊版遊戲會把飛行敵人當成地面、所有單位都打得到，
+##    和網頁的說明不同，所以提升版本
+const BRIDGE_PROTOCOL: int = 7
 
 
 var _msg_callback: JavaScriptObject

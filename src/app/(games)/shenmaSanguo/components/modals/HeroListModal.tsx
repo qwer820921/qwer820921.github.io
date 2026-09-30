@@ -6,6 +6,7 @@ import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { HeroState, HeroConfig } from "../../types";
 import HeroSkillInfo from "../HeroSkillInfo";
+import HeroAntiAir from "../HeroAntiAir";
 import HeroFilterBar from "../HeroFilterBar";
 import { attackIntervalSec, formatSec } from "../../utils/heroStats";
 import {
@@ -569,6 +570,7 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                     }
                     atk={selectedHero.atk}
                   />
+                  <HeroAntiAir job={selectedConfig.job} />
                   <HeroDetailContent
                     hero={selectedHero}
                     config={selectedConfig}

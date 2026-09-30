@@ -19,6 +19,8 @@ var sent_clicks: Array = []
 var sent_speeds: Array = []
 ## 手動暫停的回覆
 var sent_pauses: Array = []
+## 測試用唯讀快照（debug_snapshot）
+var sent_snapshots: Array = []
 
 func send_ready() -> void:
 	sent_ready += 1
@@ -59,3 +61,7 @@ func send_game_speed_result(data: Dictionary) -> void:
 func send_game_pause_result(data: Dictionary) -> void:
 	sent_pauses.append(data.duplicate(true))
 	super.send_game_pause_result(data)
+
+func send_debug_snapshot(data: Dictionary) -> void:
+	sent_snapshots.append(data.duplicate(true))
+	super.send_debug_snapshot(data)

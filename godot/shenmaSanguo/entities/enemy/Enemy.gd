@@ -1,5 +1,5 @@
 ## Enemy.gd
-## 敵人：沿路點移動、受傷、死亡、抵達基地
+## 敵人：沿路點移動（飛行敵人直線飛向終點）、受傷、死亡、抵達基地
 
 class_name Enemy
 extends Node2D
@@ -19,9 +19,21 @@ var speed_mult: float = 1.0        # 速度乘數（被減速時 < 1.0，通常�
 var _stack_slow_amount: float = 0.0 # 疊加的減速量（來自文士塔）
 var _stack_slow_timer: float = 0.0  # 疊加減速持續時間
 
+# ── 移動方式（enemies_config 的 movement_type）──────────────────
+## "flying"（去掉前後空白後完全相同）是飛行，其他（沒有這個欄位、空白、不認得的值）一律是地面。
+## 飛行：從這一組路線的第一個路點直線飛到最後一個路點（忽略中間的轉折），不被武將擋住、不攻擊武將；
+## 只有能對空的武將與防禦塔打得到（Hero.can_target、Tower.can_target）
+const MOVE_GROUND: String = "ground"
+const MOVE_FLYING: String = "flying"
+var movement_type: String = MOVE_GROUND
+
 # ── 路徑 ──────────────────────────────────────────────────────
-var _waypoints: Array   = []       # Array[Vector2] 像素座標
+var _waypoints: Array   = []       # Array[Vector2] 像素座標（飛行只有起點與終點）
 var _wp_index: int      = 0
+## _tail[i]：路點 i 到終點的路程（像素，沿路點折線）。剩餘路程＝目前位置到下一個路點＋_tail[下一個路點]
+var _tail: Array        = []
+## 飛行的直線總長（像素）：路線完成比例的分母
+var _flight_len: float  = 0.0
 
 # ── 視覺常數 ──────────────────────────────────────────────────
 var tile_size: int      = 48
@@ -57,12 +69,21 @@ const BLOCKER_ATK_SPD: float = 1.0 # 攻擊間隔（秒）
 var body_color: Color   = Color(0.55, 0.20, 0.20, 1)  # 深紅兵
 var label_text: String  = "兵"
 
+# ── 飛行的外觀（只用圖形，Godot 專案沒有中文字型）──────────────
+## 身體往上畫的比例（× 半徑）：純視覺，命中、射程、移動都用實際座標
+const FLY_LIFT: float        = 0.45
+const FLY_WING_COLOR: Color  = Color(0.95, 0.97, 1.0, 0.9)
+const FLY_SHADOW_COLOR: Color = Color(0.0, 0.0, 0.0, 0.35)
+
 # ═══════════════════════════════════════════
 #  初始化
 # ═══════════════════════════════════════════
 func setup(cfg: Dictionary, waypoints: Array) -> void:
-	_waypoints   = waypoints
+	movement_type = MOVE_FLYING if str(cfg.get("movement_type", "")).strip_edges() == MOVE_FLYING else MOVE_GROUND
+	# 飛行只取這條路線的起點與終點（同一個 Array 由同一組的敵人共用，這裡另外建立，不改動它）
+	_waypoints   = [waypoints[0], waypoints[waypoints.size() - 1]] if is_flying() and waypoints.size() >= 2 else waypoints
 	_wp_index    = 1
+	_build_tail()
 	max_hp       = float(cfg.get("hp", 100))
 	current_hp   = max_hp
 	base_speed   = float(cfg.get("speed", 1.5))
@@ -148,8 +169,8 @@ func _physics_process(delta: float) -> void:
 			queue_redraw()
 			return  # 停下來等武將死亡或移開
 
-	# 檢查前方格子是否有武將阻路
-	if _game_map != null:
+	# 檢查前方格子是否有武將阻路（飛行敵人不被武將擋住，也就不會停下來攻擊武將）
+	if _game_map != null and not is_flying():
 		var cur_cell: Vector2i  = _game_map.world_to_grid(position)
 		var next_cell: Vector2i = _game_map.world_to_grid(_waypoints[_wp_index])
 		for check_cell in [cur_cell, next_cell]:
@@ -258,6 +279,13 @@ func _on_reached_base() -> void:
 # ═══════════════════════════════════════════
 func _draw() -> void:
 	var r: float = float(enemy_radius)
+	# 飛行：地面上的陰影在實際位置，身體（連同翅膀、灼燒圈、血條）往上畫；只是外觀，命中與射程都用實際座標
+	var lift: Vector2 = Vector2.ZERO
+	if is_flying():
+		lift = Vector2(0.0, -r * FLY_LIFT)
+		_draw_ellipse(Vector2(0.0, r * 0.55), Vector2(r * 0.85, r * 0.3), FLY_SHADOW_COLOR)
+		draw_set_transform(lift)
+		_draw_wings(r)
 	var sprite_rect: Rect2 = Rect2(Vector2(-r, -r), Vector2(r * 2.0, r * 2.0))
 
 	# 如果被武將大幅減速（speed_mult <= 0.5），視為正在交戰，顯示攻擊圖片
@@ -290,12 +318,60 @@ func _draw() -> void:
 		else (Color(0.9, 0.7, 0.1, 1) if hp_ratio > 0.25
 		else Color(0.9, 0.15, 0.15, 1))
 	)
+	if is_flying():
+		draw_set_transform(Vector2.ZERO)
+
+## 飛行的翅膀：身體左右各一片（淺色、深色外框），貼圖與純色模式共用
+func _draw_wings(r: float) -> void:
+	for s in [-1.0, 1.0]:
+		var pts: PackedVector2Array = PackedVector2Array([
+			Vector2(s * r * 0.55, -r * 0.15),
+			Vector2(s * r * 1.75, -r * 0.95),
+			Vector2(s * r * 1.45, -r * 0.2),
+			Vector2(s * r * 1.7, r * 0.2),
+			Vector2(s * r * 0.55, r * 0.3),
+		])
+		draw_colored_polygon(pts, FLY_WING_COLOR)
+		var outline: PackedVector2Array = pts.duplicate()
+		outline.append(pts[0])
+		draw_polyline(outline, Color(0.1, 0.12, 0.2, 0.9), 1.5)
+
+func _draw_ellipse(center: Vector2, radii: Vector2, color: Color) -> void:
+	var pts: PackedVector2Array = PackedVector2Array()
+	for i in range(20):
+		var a: float = TAU * float(i) / 20.0
+		pts.append(center + Vector2(cos(a) * radii.x, sin(a) * radii.y))
+	draw_colored_polygon(pts, color)
 
 # ═══════════════════════════════════════════
 #  查詢
 # ═══════════════════════════════════════════
+func is_flying() -> bool:
+	return movement_type == MOVE_FLYING
+
+## 每個路點到終點的路程（沿路點折線；飛行只有起點與終點，就是直線長度）
+func _build_tail() -> void:
+	_tail = []
+	_tail.resize(_waypoints.size())
+	var acc: float = 0.0
+	for i in range(_waypoints.size() - 1, -1, -1):
+		if i < _waypoints.size() - 1:
+			acc += (_waypoints[i] as Vector2).distance_to(_waypoints[i + 1])
+		_tail[i] = acc
+	_flight_len = acc if is_flying() else 0.0
+
+## 到終點的剩餘路程（像素）：目前位置到下一個路點，再沿路點到終點。地面沿路線折線；飛行只有起點與終點，就是到終點的直線距離。
+## 防禦塔「優先前方」用它比較誰走得最前面（地面與飛行混在一起也能比）
+func get_remaining_distance() -> float:
+	if _wp_index >= _waypoints.size() or _tail.size() != _waypoints.size():
+		return 0.0
+	return position.distance_to(_waypoints[_wp_index]) + float(_tail[_wp_index])
+
 func get_progress_ratio() -> float:
-	## 回傳在路徑上的進度（0~1），越接近基地越大，方便塔選目標
+	## 回傳在路徑上的進度（0~1），越接近基地越大，武將用它選目標。
+	## 地面：已經過的路點比例（沿用原本的算法）；飛行：直線已飛過的比例（不沿用地面的折線）
+	if is_flying():
+		return clampf(1.0 - get_remaining_distance() / _flight_len, 0.0, 1.0) if _flight_len > 0.0 else 1.0
 	return float(_wp_index) / max(1, _waypoints.size())
 
 func is_dead() -> bool:

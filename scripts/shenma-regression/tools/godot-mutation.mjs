@@ -1,4 +1,4 @@
-// Godot 技能測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
+// Godot 技能與飛行敵人測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
 // 對遊戲程式套用一個刻意的錯誤，只跑指定的測試組（SHENMA_TEST_ONLY），確認測試「該失敗時一定失敗」。
 // 用法：GODOT=<Godot 4.6.2 console 執行檔> node scripts/shenma-regression/tools/godot-mutation.mjs <變異名稱|none|list>
 // - none：不改程式，同一組測試必須全部通過、log 也要通過 check-log.mjs 的檢查（確認基準）
@@ -19,6 +19,8 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const GAME = join(ROOT, "godot/shenmaSanguo");
 const HERO = "entities/hero/Hero.gd";
+const TOWER = "entities/tower/Tower.gd";
+const ENEMY = "entities/enemy/Enemy.gd";
 
 // 每個變異：要改的檔案、原文（必須剛好出現一次）、改成的內容、要跑的測試組與預期會 FAIL 的項目（名稱開頭）
 const MUTATIONS = {
@@ -53,6 +55,63 @@ const MUTATIONS = {
     to: "return a.d < b.d)",
     only: "sweep",
     expect: ["橫掃-5 "],
+  },
+  // 飛行敵人與對空（SHENMA_TEST_ONLY=flying）
+  "air-filter-hero": {
+    why: "武將漏掉對空過濾（每位武將都打得到飛行）",
+    file: HERO,
+    from: "\treturn can_hit_air or not e.is_flying()\n",
+    to: "\treturn true\n",
+    only: "flying",
+    expect: ["飛行-2a ", "飛行-3 "],
+  },
+  "air-filter-tower": {
+    why: "防禦塔漏掉對空過濾（每座塔都打得到飛行）",
+    file: TOWER,
+    from: "\treturn can_hit_air or not e.is_flying()\n",
+    to: "\treturn true\n",
+    only: "flying",
+    expect: ["飛行-4 ", "飛行-5a "],
+  },
+  "aoe-hits-air": {
+    why: "砲兵塔的範圍傷害繞過對空過濾（波及旁邊的飛行）",
+    file: TOWER,
+    from: "\t\tif not is_instance_valid(e) or e.is_dead() or not can_target(e):\n\t\t\tcontinue\n\t\tif primary.global_position",
+    to: "\t\tif not is_instance_valid(e) or e.is_dead():\n\t\t\tcontinue\n\t\tif primary.global_position",
+    only: "flying",
+    expect: ["飛行-5a "],
+  },
+  "sweep-hits-air": {
+    why: "橫掃的副目標繞過對空過濾（步兵武將掃到飛行）",
+    file: HERO,
+    from: "e.is_queued_for_deletion() or e.is_dead() or not can_target(e):",
+    to: "e.is_queued_for_deletion() or e.is_dead():",
+    only: "flying",
+    expect: ["飛行-5b "],
+  },
+  "flying-ground-path": {
+    why: "飛行敵人仍沿地面的折線路線",
+    file: ENEMY,
+    from: "\t_waypoints   = [waypoints[0], waypoints[waypoints.size() - 1]] if is_flying() and waypoints.size() >= 2 else waypoints\n",
+    to: "\t_waypoints   = waypoints\n",
+    only: "flying",
+    expect: ["飛行-0 ", "飛行-1 "],
+  },
+  "flying-blocked": {
+    why: "飛行敵人仍被武將擋住（停下攻擊武將）",
+    file: ENEMY,
+    from: "\tif _game_map != null and not is_flying():\n",
+    to: "\tif _game_map != null:\n",
+    only: "flying",
+    expect: ["飛行-2a "],
+  },
+  "first-by-ratio": {
+    why: "防禦塔「優先前方」仍比路點比例（不是剩餘路程）",
+    file: TOWER,
+    from: "\treturn a.get_remaining_distance() < b.get_remaining_distance() - REMAINING_EPS\n",
+    to: "\treturn a.get_progress_ratio() > b.get_progress_ratio()\n",
+    only: "flying",
+    expect: ["飛行-7a ", "飛行-7c "],
   },
 };
 

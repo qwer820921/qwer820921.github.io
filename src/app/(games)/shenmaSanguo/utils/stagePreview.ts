@@ -1,4 +1,5 @@
 import { EnemyConfig, MapConfig } from "../types";
+import { MovementInfo, movementOf } from "./antiAir";
 
 /**
  * 關卡敵軍預覽（唯讀）：只用已載入的 maps[].waves、enemiesConfig 與關卡的路線資料，不打任何 API。
@@ -9,6 +10,7 @@ import { EnemyConfig, MapConfig } from "../types";
  * - 每一組依序檢查，不符合就整組略過：enemy_id 空白（GAS 的空白列）→ 找不到敵人設定 → 路線沒有路點 → 數量 ≤ 0；
  *   沒有提供數量時遊戲以 1 隻計、沒有路線時用 path_a、沒有間隔時是 1 秒
  * 資料裡沒有的敵人能力不推定；數量無法判讀時不給確定的總數
+ * 移動方式（movement_type）照遊戲的判讀（utils/antiAir）：只有 flying 是飛行，其他都當作地面，遊戲不認得的寫法另外註明
  */
 
 /** 組在戰場上的結果：出兵、遊戲會略過、無法判斷 */
@@ -27,6 +29,8 @@ export interface PreviewGroup {
   speed: number | null;
   /** 每隻之間的出兵間隔（秒） */
   interval: number | null;
+  /** 移動方式（遊戲的判讀）；找不到敵人設定時是 null */
+  movement: MovementInfo | null;
   outcome: GroupOutcome;
   /** 資料不完整或遊戲會略過的原因（顯示用） */
   notes: string[];
@@ -55,6 +59,8 @@ export interface StagePreview {
   pathIds: string[];
   /** 全關確定的出兵隻數；有任何一波無法確定或會被拒絕時是 null */
   total: number | null;
+  /** 這一關會出現飛行敵人（有出兵或數量無法確定的組是飛行） */
+  flying: boolean;
   /** 關卡本身的問題（例如沒有波次資料） */
   problems: string[];
 }
@@ -150,6 +156,12 @@ function previewGroup(
   const speed = cfg ? finiteOrNull(cfg.speed) : null;
   if (cfg && hp === null) notes.push("敵人設定沒有提供血量");
   if (cfg && speed === null) notes.push("敵人設定沒有提供移動速度");
+  const movement = cfg ? movementOf(cfg.movement_type) : null;
+  if (movement && !movement.known) {
+    notes.push(
+      `移動方式「${movement.raw}」不是遊戲的寫法，遊戲當作${movement.label}`
+    );
+  }
 
   return {
     index,
@@ -160,6 +172,7 @@ function previewGroup(
     hp,
     speed,
     interval,
+    movement,
     outcome,
     notes,
   };
@@ -235,5 +248,12 @@ export function buildStagePreview(
     waves.length > 0 && waves.every((w) => w.total !== null)
       ? waves.reduce((s, w) => s + (w.total ?? 0), 0)
       : null;
-  return { waves, pathIds, total, problems };
+  const flying = waves.some(
+    (w) =>
+      !w.rejected &&
+      w.groups.some(
+        (g) => g.outcome !== "skip" && g.movement?.value === "flying"
+      )
+  );
+  return { waves, pathIds, total, flying, problems };
 }

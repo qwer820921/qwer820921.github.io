@@ -1,6 +1,11 @@
 "use client";
 import React, { useRef, useState } from "react";
 import { useStageAnchor } from "../../utils/stageAnchor";
+import {
+  heroCanHitAir,
+  towerAirAbility,
+  towerAirText,
+} from "../../utils/antiAir";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 interface PlacementMenuProps {
@@ -95,6 +100,8 @@ export default function PlacementMenu({
                   (c) => c.hero_id === slot.hero_id
                 );
                 const isPlaced = placedHeroIds.includes(slot.hero_id);
+                // 對空：依職業（弓兵、法師可以攻擊飛行敵人）
+                const air = heroCanHitAir(config?.job);
                 return (
                   <button
                     key={slot.hero_id}
@@ -123,6 +130,13 @@ export default function PlacementMenu({
                     <div className={styles.cardStatus}>
                       {isPlaced ? "已在場上" : `Lv.${slot.level || 1}`}
                     </div>
+                    <div
+                      className={`${styles.cardAir} ${air ? styles.cardAirYes : ""}`}
+                      data-testid="placement-hero-air"
+                      data-anti-air={air ? "true" : "false"}
+                    >
+                      {air ? "可對空" : "只打地面"}
+                    </div>
                   </button>
                 );
               })}
@@ -134,6 +148,8 @@ export default function PlacementMenu({
             <div className={styles.towerGrid}>
               {towerConfigs.map((t) => {
                 const canAfford = playerGold >= t.cost;
+                // 對空：弓兵塔可以攻擊飛行敵人、文士塔可以減速，其他只打地面
+                const air = towerAirAbility(t.id);
                 return (
                   <button
                     key={t.id}
@@ -158,6 +174,14 @@ export default function PlacementMenu({
                       style={{ color: canAfford ? "#f59e0b" : "#ef4444" }}
                     >
                       💰 {t.cost}G
+                    </div>
+                    <div
+                      className={`${styles.cardAir} ${air !== "none" ? styles.cardAirYes : ""}`}
+                      data-testid="placement-tower-air"
+                      data-tower={t.id}
+                      data-anti-air={air}
+                    >
+                      {towerAirText(t.id)}
                     </div>
                   </button>
                 );

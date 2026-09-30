@@ -15,6 +15,7 @@ import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { HeroState, HeroConfig, Rarity } from "../../types";
 import HeroSkillInfo from "../../components/HeroSkillInfo";
+import HeroAntiAir from "../../components/HeroAntiAir";
 import HeroFilterBar from "../../components/HeroFilterBar";
 import { attackIntervalSec, formatSec } from "../../utils/heroStats";
 import {
@@ -179,6 +180,7 @@ function UpgradeModal({
             }
             atk={hero.atk}
           />
+          <HeroAntiAir job={config.job} />
           {/* 目前屬性 */}
           <div
             style={{

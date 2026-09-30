@@ -106,6 +106,19 @@ func _enemies_cfg() -> Array:
 		{"enemy_id": "t_weak", "name": "W", "hp": 300.0, "speed": 0.0},
 		# R19：不會移動、血量 90（弓兵塔 30 × 3 擊打倒；比較 1 倍與 2 倍的結算）
 		{"enemy_id": "r19_soft", "name": "S", "hp": 90.0, "speed": 0.0},
+		# 飛行敵人與對空（movement_type）：不會移動的地面／飛行、快速的地面／飛行（比較路線）、慢速的地面／飛行（阻擋與倍率）、
+		# 兩擊打倒的飛行（擊殺只算一次），以及 movement_type 的各種寫法（前後空白算飛行；大小寫不同、不認得、空白都是地面）
+		{"enemy_id": "fly_post", "name": "F", "hp": 99999.0, "speed": 0.0, "movement_type": "flying"},
+		{"enemy_id": "gnd_post", "name": "G", "hp": 99999.0, "speed": 0.0, "movement_type": "ground"},
+		{"enemy_id": "fly_run", "name": "F", "hp": 99999.0, "speed": 240.0, "movement_type": "flying"},
+		{"enemy_id": "gnd_run", "name": "G", "hp": 99999.0, "speed": 240.0},
+		{"enemy_id": "fly_walk", "name": "F", "hp": 99999.0, "speed": 40.0, "movement_type": "flying"},
+		{"enemy_id": "gnd_walk", "name": "G", "hp": 99999.0, "speed": 40.0, "movement_type": "ground"},
+		{"enemy_id": "fly_soft", "name": "F", "hp": 60.0, "speed": 0.0, "movement_type": "flying"},
+		{"enemy_id": "fly_pad", "name": "F", "hp": 99999.0, "speed": 0.0, "movement_type": " flying "},
+		{"enemy_id": "fly_caps", "name": "F", "hp": 99999.0, "speed": 0.0, "movement_type": "Flying"},
+		{"enemy_id": "fly_air", "name": "F", "hp": 99999.0, "speed": 0.0, "movement_type": "air"},
+		{"enemy_id": "fly_blank", "name": "F", "hp": 99999.0, "speed": 0.0, "movement_type": ""},
 	]
 
 func _payload(stage_id: String, waves: Array) -> Dictionary:
@@ -159,7 +172,8 @@ func _run() -> void:
 		battle_ended_count += 1
 		last_result = r)
 
-	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃；skills 跑四位武將的技能與攻速成長
+	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃；skills 跑四位武將的技能與攻速成長；
+	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -170,8 +184,11 @@ func _run() -> void:
 			await _sweep_cases()
 		elif only == "sweep":
 			await _sweep_cases()
+		elif only == "flying":
+			await _flying_cases()
+			await _r17_tower_target_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying）", false)
 		_finish()
 		return
 
@@ -314,7 +331,7 @@ func _run() -> void:
 	# ── R10：就緒訊息帶協定版本（Web 用來判斷遊戲版本是否相符）──
 	var bridge: Node = main.web_bridge
 	var ready: Dictionary = bridge.ready_message() if bridge.has_method("ready_message") else {}
-	_check("R10-1 game_ready 帶協定版本 6（加入手動暫停後的版本；Web 只在版本相同時送出關卡資料）", ready.get("type") == "game_ready" and ready.get("__godot_bridge") == true and typeof(ready.get("protocol")) == TYPE_INT and ready.get("protocol") == 6, ready)
+	_check("R10-1 game_ready 帶協定版本 7（加入飛行敵人與對空後的版本；Web 只在版本相同時送出關卡資料）", ready.get("type") == "game_ready" and ready.get("__godot_bridge") == true and typeof(ready.get("protocol")) == TYPE_INT and ready.get("protocol") == 7, ready)
 
 	# ── R12：趙雲「奇襲」（每場戰鬥首次有效普通攻擊 2 倍傷害）──
 	await _r12_first_strike_cases()
@@ -351,6 +368,9 @@ func _run() -> void:
 
 	# ── 關羽「橫掃」（普通攻擊命中後，主目標附近 1 格內最多 2 名其他敵人各受 50%）──
 	await _sweep_cases()
+
+	# ── 飛行敵人與對空 ──
+	await _flying_cases()
 
 	_finish()
 
@@ -1394,9 +1414,11 @@ func _r17_tower_target_cases() -> void:
 	await _r17_wait_hit(es)
 	es.t_weak.current_hp = 400.0
 	es.t_front.current_hp = 400.0
+	# 剩餘路程也相同：front 放到 weak 的位置、同一段路（前往同一個路點）
 	es.t_front._wp_index = 1
+	es.t_front.global_position = es.t_weak.global_position
 	var r5b: Dictionary = await _r17_hits(es, 0.9)
-	_check("R17-5 平手：血量相同時打路線進度較高的 front；進度也相同時維持原順序（weak）", float(r5a.dmg.t_front) > 0.0 and float(r5a.dmg.t_weak) == 0.0 and float(r5b.dmg.t_weak) > 0.0 and float(r5b.dmg.t_front) == 0.0, {"a": r5a.dmg, "b": r5b.dmg})
+	_check("R17-5 平手：血量相同時打剩餘路程較短的 front；剩餘路程也相同（同一個位置、同一段路）時維持原順序（weak）", float(r5a.dmg.t_front) > 0.0 and float(r5a.dmg.t_weak) == 0.0 and float(r5b.dmg.t_weak) > 0.0 and float(r5b.dmg.t_front) == 0.0, {"a": r5a.dmg, "b": r5b.dmg})
 
 	# R17-6：射程外、死亡、沒有目標：weak 移到射程外 → 改打 front；front 死亡 → 改打 tank；
 	# 三個都不在射程內 → 不攻擊；tank 回到射程內 → 繼續攻擊
@@ -2242,6 +2264,11 @@ class R20Target extends Node2D:
 		return false
 	func get_progress_ratio() -> float:
 		return 0.5
+	## 敵人介面（飛行敵人與對空）：地面、到終點的剩餘路程固定
+	func is_flying() -> bool:
+		return false
+	func get_remaining_distance() -> float:
+		return 100.0
 	func take_damage(_amount: float, _is_burn: bool = false) -> void:
 		hits += 1
 	func apply_slow(_mult: float, _duration: float) -> void:
@@ -3279,6 +3306,454 @@ func _sweep_cases() -> void:
 			d15["resumed_sweep"] = _guan().sweep_count > c1
 	_check("橫掃-15 手動暫停 0.6 秒：範圍效果、攻擊冷卻、三個敵人的血量、遊戲時間與橫掃次數都不變；繼續後效果照剩下的時間消失，之後照常橫掃",
 		d15.get("fx") == 1 and d15.get("paused_reply") == true and d15.get("frozen") == true and float(d15.get("fx_gone_after", 99.0)) <= float(d15.get("fx_left", 0.0)) + 0.1 and d15.get("resumed_sweep") == true, d15)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 飛行敵人與對空 ──
+# 地圖：path_a 從 (0,5) 往右到 (4,5)、往上繞到第 2 列、再回到第 5 列到終點 (13,5)。飛行敵人沿第 5 列直線飛（13 格），
+# 地面沿折線走（19 格）；(2,5) 是兩者都會經過的道路格。建築格：第 7 列、第 4 列的 5～8 欄、第 0 列的 3～10 欄
+# 武將：每種職業一位（射程 3 格、攻擊間隔 0.5 秒、攻擊力 100）；周瑜（法師）與關羽（步兵）另外用來測火攻與橫掃
+const FLY_JOBS: Dictionary = {
+	"fly_archer": "archer", "fly_mage": "mage", "fly_inf": "infantry", "fly_cav": "cavalry",
+	"fly_art": "artillery", "fly_odd": "spear", "fly_none": null,
+}
+## 能對空的職業（和 Hero.AIR_JOBS 對照；測試自己寫一份，不讀遊戲的常數）
+const FLY_AIR_HEROES: Array = ["fly_archer", "fly_mage"]
+## 防禦塔：能不能打（文士塔是減速）飛行
+const FLY_TOWERS: Dictionary = {"archer": true, "infantry": false, "artillery": false, "cavalry": false, "scholar": true}
+
+func _fly_path_json() -> Dictionary:
+	var bz: Array = []
+	for c in range(1, 13):
+		bz.append([c, 7])
+	for c in range(5, 9):
+		bz.append([c, 4])
+	for c in range(3, 11):
+		bz.append([c, 0])
+	return {"cols": 14, "rows": 11, "paths": {"path_a": [[0, 5], [4, 5], [4, 2], [9, 2], [9, 5], [13, 5]]},
+		"spawn": [0, 5], "base": [13, 5], "build_zones": bz, "obstacles": []}
+
+func _fly_hero_cfg(hid: String, job: Variant) -> Dictionary:
+	var c: Dictionary = {"hero_id": hid, "name": hid, "attack_range": 3.0, "attack_speed": 0.5}
+	if job != null:
+		c["job"] = job
+	return c
+
+func _fly_payload(battle_id: String, waves: Array, team: Array = []) -> Dictionary:
+	var p: Dictionary = _r12_payload("fly_a", waves, battle_id, team)
+	var hc: Array = []
+	for hid in FLY_JOBS:
+		hc.append(_fly_hero_cfg(hid, FLY_JOBS[hid]))
+	hc.append(_fly_hero_cfg("zhou_yu", "mage"))
+	hc.append(_fly_hero_cfg("guan_yu", "infantry"))
+	p["heroes_config"] = hc
+	p["map"]["path_json"] = _fly_path_json()
+	return p
+
+## 載入一場（一波，groups 同時出兵）、放置武將（cells：hero_id → 格子）與防禦塔、開戰、等 n 個敵人都出現。回傳依生成序號排列的敵人
+func _fly_start(battle_id: String, groups: Array, n: int, team: Array = [], cells: Dictionary = {}, towers: Dictionary = {}) -> Array:
+	_load(_fly_payload(battle_id, [groups], team))
+	for hid in cells:
+		_r12_place(hid, cells[hid])
+	for tt in towers:
+		main._on_web_place_tower({"tower_type": tt, "cell_x": towers[tt].x, "cell_y": towers[tt].y})
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == n, 5.0)
+	return _sw_enemies()
+
+## 格子中心的世界座標
+func _fly_cell(c: int, r: int) -> Vector2:
+	return main.game_map.grid_to_world(Vector2i(c, r))
+
+## 點到線段的距離
+func _fly_seg_dist(p: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab: Vector2 = b - a
+	var t: float = clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.000001), 0.0, 1.0)
+	return p.distance_to(a + ab * t)
+
+## 點到折線的距離
+func _fly_poly_dist(p: Vector2, pts: Array) -> float:
+	var d: float = INF
+	for i in range(pts.size() - 1):
+		d = minf(d, _fly_seg_dist(p, pts[i], pts[i + 1]))
+	return d
+
+func _fly_hero(hid: String) -> Node:
+	var h = main._placed_heroes.get(hid)
+	return h if h != null and is_instance_valid(h) else null
+
+func _fly_snapshot(rec: Node) -> Dictionary:
+	var n: int = rec.sent_snapshots.size()
+	main._on_debug_snapshot_requested("fly-snap")
+	return rec.sent_snapshots.back() if rec.sent_snapshots.size() > n else {}
+
+func _flying_cases() -> void:
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+	var line_a: Vector2 = Vector2.ZERO
+	var line_b: Vector2 = Vector2.ZERO
+
+	# 飛行-0：movement_type 的判讀（去掉前後空白後等於 flying 才是飛行）；飛行只有起點與終點兩個路點，
+	# 剩餘路程：飛行＝直線 13 格、地面＝折線 19 格；測試快照帶每個敵人的移動方式與剩餘路程
+	var es: Array = await _fly_start("fly-0", [_grp("fly_post", 1, 0.02), _grp("gnd_post", 1, 0.02), _grp("fly_pad", 1, 0.02),
+		_grp("fly_caps", 1, 0.02), _grp("fly_air", 1, 0.02), _grp("fly_blank", 1, 0.02), _grp("post", 1, 0.02)], 7)
+	var d0: Dictionary = {}
+	if es.size() == 7:
+		var t: float = float(es[0].tile_size)
+		d0["moves"] = es.map(func(e): return e.movement_type)
+		d0["wps"] = es.map(func(e): return e._waypoints.size())
+		d0["remaining"] = es.map(func(e): return snappedf(e.get_remaining_distance() / t, 0.001))
+		var snap: Dictionary = _fly_snapshot(rec)
+		var sm: Array = []
+		for e in es:
+			sm.append(snap.get("enemy_move", {}).get(str(e.get_instance_id())))
+		d0["snap_moves"] = sm
+		d0["snap_rem"] = snappedf(float(snap.get("enemy_remaining", {}).get(str(es[0].get_instance_id()), -1.0)), 0.001)
+		line_a = es[0]._waypoints[0]
+		line_b = es[0]._waypoints[1]
+	var want_moves: Array = ["flying", "ground", "flying", "ground", "ground", "ground", "ground"]
+	_check("飛行-0 movement_type：flying 與前後有空白的「 flying 」是飛行；Flying（大小寫不同）、air、空白、沒有這個欄位都是地面。飛行只有起點與終點兩個路點（地面 6 個）；剩餘路程飛行 13 格（直線）、地面 19 格（折線）；測試快照帶移動方式與剩餘路程",
+		d0.get("moves") == want_moves and d0.get("wps") == [2, 6, 2, 6, 6, 6, 6] and is_equal_approx(float(d0.get("remaining", [0])[0]), 13.0) and is_equal_approx(float(d0.get("remaining", [0, 0])[1]), 19.0) and d0.get("snap_moves") == want_moves and is_equal_approx(float(d0.get("snap_rem", -1.0)), 13.0), d0)
+
+	# 飛行-1：同時出發、速度相同：飛行沿第 5 列直線飛（每一幀都在起點到終點的直線上、x 只增不減），
+	# 地面沿折線走（每一幀都在折線上、最高離開直線 3 格）；飛行先到。兩隻都抵達基地：城池 -2（各一次）、這一場只結算一次、勝利
+	var ended1: int = battle_ended_count
+	es = await _fly_start("fly-1", [_grp("gnd_run", 1, 0.02), _grp("fly_run", 1, 0.02)], 2)
+	var d1: Dictionary = {}
+	if es.size() == 2:
+		var g: Node = es[0]
+		var f: Node = es[1]
+		var t: float = float(g.tile_size)
+		var poly: Array = g._waypoints.duplicate()
+		var fa: Vector2 = f._waypoints[0]
+		var fb: Vector2 = f._waypoints[1]
+		var f_off: float = 0.0
+		var g_off: float = 0.0
+		var g_dev: float = 0.0
+		var f_back: float = 0.0
+		var prev_fx: float = f.position.x
+		var f_gone: float = -1.0
+		var g_gone: float = -1.0
+		var t0: float = _gt()
+		var hp0: int = _bm().base_hp
+		var wall_end: int = Time.get_ticks_msec() + 15000
+		var gr: WeakRef = weakref(g)
+		var fr: WeakRef = weakref(f)
+		while Time.get_ticks_msec() < wall_end and (f_gone < 0.0 or g_gone < 0.0):
+			await process_frame
+			var fo = fr.get_ref()
+			var go = gr.get_ref()
+			if fo != null and not fo.is_queued_for_deletion():
+				f_off = maxf(f_off, _fly_seg_dist(fo.position, fa, fb))
+				f_back = maxf(f_back, prev_fx - fo.position.x)
+				prev_fx = fo.position.x
+			elif f_gone < 0.0:
+				f_gone = _gt() - t0
+			if go != null and not go.is_queued_for_deletion():
+				g_off = maxf(g_off, _fly_poly_dist(go.position, poly))
+				g_dev = maxf(g_dev, _fly_seg_dist(go.position, fa, fb))
+			elif g_gone < 0.0:
+				g_gone = _gt() - t0
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 3.0)
+		await _wait(0.2)
+		d1 = {"f_off_px": snappedf(f_off, 0.001), "f_back_px": snappedf(f_back, 0.001), "g_off_px": snappedf(g_off, 0.001), "g_dev_tiles": snappedf(g_dev / t, 0.01),
+			"f_arrive": snappedf(f_gone, 0.01), "g_arrive": snappedf(g_gone, 0.01), "hp_lost": hp0 - _bm().base_hp, "ended": battle_ended_count - ended1,
+			"result": last_result.get("result"), "kills": last_result.get("kills")}
+	_check("飛行-1 折線地圖上同時出發：飛行每一幀都在起點到終點的直線上（偏離 ≤ 0.5 像素、不往回飛），地面每一幀都在折線上（≤ 0.5 像素）且最高離開直線約 3 格；飛行先抵達。兩隻都抵達基地：城池各扣一次（共 2）、只結算一次（勝利、擊殺 0）",
+		d1.get("f_off_px", 99.0) <= 0.5 and d1.get("f_back_px", 99.0) <= 0.001 and d1.get("g_off_px", 99.0) <= 0.5 and d1.get("g_dev_tiles", 0.0) >= 2.9 and
+			d1.get("f_arrive", -1.0) > 0.0 and d1.get("g_arrive", -1.0) > d1.get("f_arrive", 99.0) and d1.get("hp_lost") == 2 and d1.get("ended") == 1 and d1.get("result") == "WIN" and d1.get("kills") == 0, d1)
+
+	# 飛行-2：武將不擋飛行、飛行不攻擊武將。(2,5) 是兩條路都會經過的道路格，放一位只打地面的步兵武將：
+	# a. 只有飛行（每秒 40 像素）：飛過武將的格子繼續前進（沒有停下、沒有被緩速），武將血量不變，飛行血量也不變（步兵打不到）
+	# b. 只有地面（對照；每秒 240 像素，道路武將的緩速下也很快走到）：在武將的格子前停下、攻擊武將（武將扣血），武將打得到它
+	# c. 能對空的弓兵武將在道路上：打得到飛行，但不施加阻擋用的緩速，飛行照常飛過
+	var d2: Dictionary = {}
+	for k in ["a", "b", "c"]:
+		var hid: String = "fly_archer" if k == "c" else "fly_inf"
+		var grp: Dictionary = _grp("gnd_run", 1, 0.02) if k == "b" else _grp("fly_walk", 1, 0.02)
+		es = await _fly_start("fly-2" + k, [grp], 1, [_r12_hero(hid, null)], {hid: Vector2i(2, 5)})
+		var h: Node = _fly_hero(hid)
+		if es.size() != 1 or h == null:
+			d2[k] = {"setup": false}
+			continue
+		var e: Node = es[0]
+		var t: float = float(h.tile_size)
+		var hx: float = h.position.x
+		var min_mult: float = 1.0
+		var wr: WeakRef = weakref(e)
+		var t_end: float = _gt() + 5.0
+		var wall_end: int = Time.get_ticks_msec() + 20000
+		while _gt() < t_end and Time.get_ticks_msec() < wall_end:
+			await process_frame
+			var eo = wr.get_ref()
+			if eo == null or eo.is_queued_for_deletion():
+				break
+			min_mult = minf(min_mult, eo.speed_mult)
+		var eo2 = wr.get_ref()
+		d2[k] = {"passed_tiles": snappedf(((eo2.position.x if eo2 != null else INF) - hx) / t, 0.01), "hero_hp": snappedf(h.current_hp, 0.01),
+			"enemy_dmg": snappedf(99999.0 - (eo2.current_hp if eo2 != null else 99999.0), 0.01), "min_mult": min_mult,
+			"blocked": eo2 != null and eo2._blocker != null}
+	_check("飛行-2a 只打地面的步兵武將在飛行必經的道路格：飛行飛過武將繼續前進（5 秒後在武將右邊 1 格以上）、沒有被擋也沒有被緩速；武將血量不變（飛行不攻擊武將）、飛行血量不變（步兵打不到）",
+		d2.get("a", {}).get("passed_tiles", 0.0) >= 1.0 and d2.get("a", {}).get("hero_hp") == 1000.0 and d2.get("a", {}).get("enemy_dmg") == 0.0 and d2.get("a", {}).get("min_mult") == 1.0 and d2.get("a", {}).get("blocked") == false, d2.get("a"))
+	_check("飛行-2b 對照：地面敵人在同一格前被擋下、停在武將左邊並攻擊武將（武將扣血），步兵武將打得到地面",
+		d2.get("b", {}).get("passed_tiles", 99.0) < 0.0 and d2.get("b", {}).get("blocked") == true and float(d2.get("b", {}).get("hero_hp", 1000.0)) < 1000.0 and float(d2.get("b", {}).get("enemy_dmg", 0.0)) > 0.0, d2.get("b"))
+	_check("飛行-2c 能對空的弓兵武將在道路上：打得到飛行，但不施加阻擋用的緩速（移動倍率一直是 1），飛行照常飛過、不攻擊武將",
+		float(d2.get("c", {}).get("enemy_dmg", 0.0)) > 0.0 and d2.get("c", {}).get("min_mult") == 1.0 and d2.get("c", {}).get("passed_tiles", 0.0) >= 1.0 and d2.get("c", {}).get("hero_hp") == 1000.0, d2.get("c"))
+
+	# 飛行-3：武將的對空矩陣。每種職業放在建築格 (6,4)，a. 只有飛行在射程內（1 格）、b. 只有地面在射程內，各看 1.2 秒遊戲時間的傷害。
+	# 弓兵、法師：a、b 都打；步兵、騎兵、砲兵、不認得的職業、沒有職業：a 不打（也沒有別的目標）、b 打
+	var d3: Dictionary = {}
+	var ok3: bool = true
+	for hid in FLY_JOBS:
+		es = await _fly_start("fly-3-" + hid, [_grp("fly_post", 1, 0.02), _grp("gnd_post", 1, 0.02)], 2, [_r12_hero(hid, null)], {hid: Vector2i(6, 4)})
+		var h: Node = _fly_hero(hid)
+		if es.size() != 2 or h == null:
+			d3[hid] = "setup"
+			ok3 = false
+			continue
+		var t: float = float(h.tile_size)
+		var pair: Dictionary = {"f": es[0], "g": es[1]}
+		es[0].global_position = h.global_position + Vector2(1.0, 0.0) * t
+		es[1].global_position = h.global_position + Vector2(-9.0, 0.0) * t
+		var ra: Dictionary = await _r17_hits(pair, 1.2)
+		es[0].global_position = h.global_position + Vector2(9.0, 0.0) * t
+		es[1].global_position = h.global_position + Vector2(-1.0, 0.0) * t
+		var rb: Dictionary = await _r17_hits(pair, 1.2)
+		var air: bool = FLY_AIR_HEROES.has(hid)
+		var snap: Dictionary = _fly_snapshot(rec)
+		d3[hid] = {"air_dmg": ra.dmg.f, "ground_in_a": ra.dmg.g, "ground_dmg": rb.dmg.g, "air_in_b": rb.dmg.f, "can_hit_air": h.can_hit_air, "snap_air": snap.get("hero_air", {}).get(hid)}
+		ok3 = ok3 and ((float(ra.dmg.f) > 0.0) == air) and float(ra.dmg.g) == 0.0 and float(rb.dmg.g) > 0.0 and float(rb.dmg.f) == 0.0 and h.can_hit_air == air and snap.get("hero_air", {}).get(hid) == air
+	_check("飛行-3 武將的對空矩陣：弓兵、法師打得到飛行；步兵、騎兵、砲兵、不認得的職業（spear）、沒有職業都打不到飛行（射程內只有飛行時不攻擊）；每一種都打得到地面；測試快照的 hero_air 相同", ok3, d3)
+
+	# 飛行-4：防禦塔的對空矩陣。每種塔放在 (6,4)，a. 只有飛行在射程內（1 格）、b. 只有地面在射程內，各看 3.3 秒（砲兵塔的間隔 3 秒）。
+	# 弓兵塔打得到飛行；文士塔對飛行疊加減速；步兵塔（包括緩速光環）、騎兵塔、砲兵塔對飛行沒有任何作用；每一種都作用於地面
+	var d4: Dictionary = {}
+	var ok4: bool = true
+	for tt in FLY_TOWERS:
+		es = await _fly_start("fly-4-" + tt, [_grp("fly_post", 1, 0.02), _grp("gnd_post", 1, 0.02)], 2, [], {}, {tt: Vector2i(6, 4)})
+		var tw: Node = main.game_map.get_occupant(Vector2i(6, 4))
+		if es.size() != 2 or tw == null:
+			d4[tt] = "setup"
+			ok4 = false
+			continue
+		var t: float = float(tw.tile_size)
+		var pair: Dictionary = {"f": es[0], "g": es[1]}
+		es[0].global_position = tw.global_position + Vector2(1.0, 0.0) * t
+		es[1].global_position = tw.global_position + Vector2(-9.0, 0.0) * t
+		var ra: Dictionary = await _r17_hits(pair, 3.3)
+		es[0].global_position = tw.global_position + Vector2(9.0, 0.0) * t
+		es[1].global_position = tw.global_position + Vector2(-1.0, 0.0) * t
+		var rb: Dictionary = await _r17_hits(pair, 3.3)
+		var air: bool = FLY_TOWERS[tt]
+		var scholar: bool = tt == "scholar"
+		var a_effect: bool = float(ra.stack.f) > 0.0 if scholar else float(ra.dmg.f) > 0.0
+		var b_effect: bool = float(rb.stack.g) > 0.0 if scholar else float(rb.dmg.g) > 0.0
+		var snap: Dictionary = _fly_snapshot(rec)
+		var snap_air = snap.get("tower_targets", {}).get(tw.tower_uid, {}).get("air")
+		d4[tt] = {"air_effect": a_effect, "air_dmg": ra.dmg.f, "air_stack": ra.stack.f, "air_slow": ra.slow.f, "ground_effect": b_effect, "ground_dmg": rb.dmg.g, "ground_slow": rb.slow.g, "can_hit_air": tw.can_hit_air, "snap_air": snap_air}
+		ok4 = ok4 and a_effect == air and b_effect and float(ra.slow.f) == 1.0 and float(rb.dmg.f) == 0.0 and tw.can_hit_air == air and snap_air == air
+		if scholar:
+			ok4 = ok4 and float(ra.dmg.f) == 0.0
+		if tt == "infantry":
+			ok4 = ok4 and float(rb.slow.g) < 1.0
+	_check("飛行-4 防禦塔的對空矩陣：弓兵塔打得到飛行、文士塔對飛行疊加減速；步兵塔（緩速光環也不作用）、騎兵塔、砲兵塔對飛行沒有傷害也沒有減速；每一種都作用於地面（步兵塔緩速地面）；測試快照的 air 相同", ok4, d4)
+
+	# 飛行-5a：砲兵塔的範圍傷害不波及飛行：主要目標是地面，另一個地面（0.5 格）與一個飛行（0.5 格）都在範圍內 → 兩個地面各 80、飛行 0
+	es = await _fly_start("fly-5a", [_grp("gnd_post", 2, 0.02), _grp("fly_post", 1, 0.02)], 3, [], {}, {"artillery": Vector2i(6, 4)})
+	var d5: Dictionary = {}
+	var art: Node = main.game_map.get_occupant(Vector2i(6, 4))
+	if es.size() == 3 and art != null:
+		var t: float = float(art.tile_size)
+		var gs: Array = es.filter(func(e): return not e.is_flying())
+		var fs: Array = es.filter(func(e): return e.is_flying())
+		var c: Vector2 = art.global_position + Vector2(1.5, 0.0) * t
+		gs[0].global_position = c
+		gs[1].global_position = c + Vector2(0.5, 0.0) * t
+		fs[0].global_position = c + Vector2(0.0, 0.5) * t
+		var r5: Dictionary = await _r17_hits({"g1": gs[0], "g2": gs[1], "f": fs[0]}, 3.3)
+		d5["artillery"] = {"dmg": r5.dmg, "aoe_px": art.aoe_radius, "f_dist_px": snappedf(0.5 * t, 0.01)}
+	_check("飛行-5a 砲兵塔的範圍傷害：主要目標與 0.5 格內的另一個地面各受 80，0.5 格內的飛行 0（範圍傷害先過能否攻擊）",
+		d5.has("artillery") and float(d5.artillery.dmg.g1) > 0.0 and is_equal_approx(float(d5.artillery.dmg.g1), float(d5.artillery.dmg.g2)) and float(d5.artillery.dmg.f) == 0.0, d5.get("artillery"))
+
+	# 飛行-5b：關羽（步兵）的橫掃不掃到飛行：主目標（地面）0.5 格內有一個飛行、一個地面 → 地面副目標 50、飛行 0，橫掃 1 次只打到 1 名
+	es = await _fly_start("fly-5b", [_grp("gnd_post", 2, 0.02), _grp("fly_post", 1, 0.02)], 3, [_r12_hero("guan_yu", _sw_skill())], {"guan_yu": Vector2i(6, 4)})
+	var g5: Node = _fly_hero("guan_yu")
+	var r5b: Dictionary = {}
+	if es.size() == 3 and g5 != null:
+		g5.set_process(false)
+		var t: float = float(g5.tile_size)
+		var gs: Array = es.filter(func(e): return not e.is_flying())
+		var fs: Array = es.filter(func(e): return e.is_flying())
+		var c: Vector2 = g5.global_position + Vector2(2.0, 0.0) * t
+		gs[0].global_position = c
+		fs[0].global_position = c + Vector2(0.5, 0.0) * t
+		gs[1].global_position = c + Vector2(0.0, 0.5) * t
+		var before: Array = [gs[0].current_hp, gs[1].current_hp, fs[0].current_hp]
+		var c0: int = g5.sweep_count
+		var h0: int = g5.sweep_hits
+		g5._process(0.0)
+		r5b = {"dmg": [before[0] - gs[0].current_hp, before[1] - gs[1].current_hp, before[2] - fs[0].current_hp], "count": g5.sweep_count - c0, "hits": g5.sweep_hits - h0}
+	_check("飛行-5b 關羽（步兵）的橫掃：主目標 100、0.5 格內的地面副目標 50、0.5 格內的飛行 0；橫掃 1 次、只打到 1 名（飛行不佔名額）",
+		r5b.get("dmg") == [100.0, 50.0, 0.0] and r5b.get("count") == 1 and r5b.get("hits") == 1, r5b)
+
+	# 飛行-6：周瑜（法師）打得到飛行，火攻照樣附加：第一擊後就在灼燒（每跳 20＝攻擊力 100 × 20%）；
+	# 之後 2.3 秒的總傷害＝普通攻擊 100 的倍數＋跳傷 20 的倍數（跳傷可能和普通攻擊落在同一幀，所以看總和除以 100 的餘數）
+	es = await _fly_start("fly-6", [_grp("fly_post", 1, 0.02)], 1, [_r12_hero("zhou_yu", {"id": "burn", "burn_ratio": 0.2, "burn_ticks": 3, "burn_interval": 1.0})], {"zhou_yu": Vector2i(6, 4)})
+	var zy: Node = _fly_hero("zhou_yu")
+	var d6: Dictionary = {}
+	if es.size() == 1 and zy != null:
+		var f6: Node = es[0]
+		var hp6: float = f6.current_hp
+		f6.global_position = zy.global_position + Vector2(1.0, 0.0) * float(zy.tile_size)
+		await _wait_until(func(): return f6.current_hp < hp6, 3.0)
+		d6["first_hit"] = hp6 - f6.current_hp
+		d6["burning"] = f6.is_burning()
+		d6["burn_damage"] = f6.burn_state().damage
+		await _wait(2.3)
+		var total: float = hp6 - f6.current_hp
+		d6["total"] = total
+		d6["burn_part"] = fmod(total, 100.0)
+	_check("飛行-6 周瑜（法師）打得到飛行，命中後附加火攻：第一擊 100 後在灼燒、每跳 20；之後的總傷害除以 100 餘 20 的倍數（有跳傷）",
+		d6.get("first_hit") == 100.0 and d6.get("burning") == true and d6.get("burn_damage") == 20.0 and float(d6.get("burn_part", 0.0)) > 0.0 and is_equal_approx(fmod(float(d6.get("burn_part", 1.0)), 20.0), 0.0), d6)
+
+	# 飛行-7：防禦塔「優先前方」用剩餘路程（地面沿折線、飛行直線），不是路點比例。弓兵塔在 (6,4)，敵人都不會移動：
+	# a. 地面在最後一段路（路點比例 5/6 很高）但剩餘 7.4 格；飛行剩餘 5.5 格 → 打飛行（用路點比例會打地面）
+	# b. 飛行移到剩餘 9 格 → 改打地面
+	# c. 兩個地面在同一段路（路點比例相同）：離下一個路點較近的剩餘較短 → 打後出現的那個（只看路點比例會打清單第一個）
+	# d. 兩個飛行在同一個位置（剩餘相同）：維持清單順序，打先出現的；重複兩次結果相同
+	es = await _fly_start("fly-7", [_grp("gnd_post", 2, 0.02), _grp("fly_post", 2, 0.02)], 4, [], {}, {"archer": Vector2i(6, 4)})
+	var tw7: Node = main.game_map.get_occupant(Vector2i(6, 4))
+	var d7: Dictionary = {}
+	if es.size() == 4 and tw7 != null:
+		var t: float = float(tw7.tile_size)
+		var gs: Array = es.filter(func(e): return not e.is_flying())
+		var fs: Array = es.filter(func(e): return e.is_flying())
+		var far: Vector2 = tw7.global_position + Vector2(0.0, 9.0) * t
+		gs[0]._wp_index = 5
+		gs[0].global_position = tw7.global_position + Vector2(0.0, -1.5) * t
+		fs[0].global_position = tw7.global_position + Vector2(1.5, 0.8) * t
+		gs[1].global_position = far
+		fs[1].global_position = far
+		var rem_a: Dictionary = {"g": snappedf(gs[0].get_remaining_distance() / t, 0.01), "f": snappedf(fs[0].get_remaining_distance() / t, 0.01), "g_ratio": snappedf(gs[0].get_progress_ratio(), 0.01), "f_ratio": snappedf(fs[0].get_progress_ratio(), 0.01)}
+		await _r17_wait_hit({"g": gs[0], "f": fs[0]})
+		var ra: Dictionary = await _r17_hits({"g": gs[0], "f": fs[0]}, 1.7)
+		fs[0].global_position = tw7.global_position + Vector2(-2.0, 0.5) * t
+		var rem_b: Dictionary = {"g": snappedf(gs[0].get_remaining_distance() / t, 0.01), "f": snappedf(fs[0].get_remaining_distance() / t, 0.01)}
+		await _r17_wait_hit({"g": gs[0], "f": fs[0]})
+		var rb: Dictionary = await _r17_hits({"g": gs[0], "f": fs[0]}, 1.7)
+		# c：兩個地面都在最後一段路，後出現的（gs[1]）離終點較近
+		fs[0].global_position = far
+		gs[1]._wp_index = 5
+		gs[0].global_position = tw7.global_position + Vector2(-1.0, 1.0) * t
+		gs[1].global_position = tw7.global_position + Vector2(1.0, 1.0) * t
+		await _r17_wait_hit({"g1": gs[0], "g2": gs[1]})
+		var rc: Dictionary = await _r17_hits({"g1": gs[0], "g2": gs[1]}, 1.7)
+		# d：兩個飛行在同一個位置
+		gs[0].global_position = far
+		gs[1].global_position = far
+		fs[0].global_position = tw7.global_position + Vector2(1.0, 1.0) * t
+		fs[1].global_position = fs[0].global_position
+		await _r17_wait_hit({"f1": fs[0], "f2": fs[1]})
+		var rd1: Dictionary = await _r17_hits({"f1": fs[0], "f2": fs[1]}, 1.7)
+		var rd2: Dictionary = await _r17_hits({"f1": fs[0], "f2": fs[1]}, 1.7)
+		d7 = {"rem_a": rem_a, "a": ra.dmg, "rem_b": rem_b, "b": rb.dmg, "c": rc.dmg, "d1": rd1.dmg, "d2": rd2.dmg}
+	_check("飛行-7a 地面在最後一段路（路點比例 0.83）但剩餘 7.4 格、飛行剩餘 5.5 格（比例 0.58）：「優先前方」打飛行（比的是剩餘路程）",
+		d7.has("a") and float(d7.a.f) > 0.0 and float(d7.a.g) == 0.0 and float(d7.rem_a.f) < float(d7.rem_a.g) and float(d7.rem_a.g_ratio) > float(d7.rem_a.f_ratio), d7.get("rem_a", d7))
+	_check("飛行-7b 飛行移到剩餘 9 格（地面 7.4 格）：改打地面", d7.has("b") and float(d7.b.g) > 0.0 and float(d7.b.f) == 0.0, {"rem": d7.get("rem_b"), "dmg": d7.get("b")})
+	_check("飛行-7c 兩個地面在同一段路（路點比例相同）：打離終點較近、後出現的那個（不是清單第一個）", d7.has("c") and float(d7.c.g2) > 0.0 and float(d7.c.g1) == 0.0, d7.get("c"))
+	_check("飛行-7d 兩個飛行在同一個位置（剩餘路程相同）：維持清單順序打先出現的，重複兩次結果相同", d7.has("d1") and float(d7.d1.f1) > 0.0 and float(d7.d1.f2) == 0.0 and float(d7.d2.f1) > 0.0 and float(d7.d2.f2) == 0.0, {"d1": d7.get("d1"), "d2": d7.get("d2")})
+
+	# 飛行-8：擊殺與抵達只結算一次：兩擊打倒的飛行放在弓兵塔旁（擊殺 1、金幣 +5 一次），快速的飛行與地面各抵達一次（城池 -2）；
+	# 清波與結算各一次，結算的擊殺數 1
+	var ended8: int = battle_ended_count
+	es = await _fly_start("fly-8", [_grp("fly_soft", 1, 0.02), _grp("fly_run", 1, 0.02), _grp("gnd_run", 1, 0.02)], 3, [], {}, {"archer": Vector2i(6, 4)})
+	var d8: Dictionary = {}
+	var tw8: Node = main.game_map.get_occupant(Vector2i(6, 4))
+	if es.size() == 3 and tw8 != null:
+		var gold0: int = _bm().battle_gold
+		var cleared: Array = [0]
+		var cb := func(_n: int): cleared[0] += 1
+		_wm().wave_cleared.connect(cb)
+		es[0].global_position = tw8.global_position + Vector2(0.0, 1.0) * float(tw8.tile_size)
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 15.0)
+		await _wait(0.3)
+		_wm().wave_cleared.disconnect(cb)
+		d8 = {"kills": _bm().kills, "gold": _bm().battle_gold - gold0, "hp": _bm().base_hp, "cleared": cleared[0], "ended": battle_ended_count - ended8,
+			"result_kills": last_result.get("kills"), "result": last_result.get("result"), "left": _wm().get_active_enemy_count()}
+	_check("飛行-8 擊殺與抵達只算一次：飛行被弓兵塔打倒 → 擊殺 1、金幣 +5；快速的飛行與地面各抵達一次 → 城池 18；清波 1 次、結算 1 次（勝利、擊殺 1），場上沒有剩下的敵人",
+		d8.get("kills") == 1 and d8.get("gold") == BattleManager.GOLD_PER_KILL and d8.get("hp") == MAX_HP - 2 and d8.get("cleared") == 1 and d8.get("ended") == 1 and d8.get("result_kills") == 1 and d8.get("result") == "WIN" and d8.get("left") == 0, d8)
+
+	# 飛行-9：遊戲時鐘：1× 每秒遊戲時間前進 40 像素、每個物理步進 40 ÷ 60；2× 每步加倍；部署選單的 0.1×；手動暫停時位置不變、繼續後照常。
+	# 全程都在直線上（y 不變）
+	es = await _fly_start("fly-9", [_grp("fly_walk", 1, 0.02)], 1)
+	var d9: Dictionary = {}
+	if es.size() == 1:
+		var e: Node = es[0]
+		var y0: float = e.position.y
+		d9["x1"] = await _r19_move(e, 0.6)
+		_r19_speed(rec, 2)
+		d9["x2"] = await _r19_move(e, 0.6)
+		var menu: Dictionary = _r19_open(rec, 6)
+		d9["slow"] = await _r19_move(e, 0.6)
+		_r19_close(rec, menu)
+		_r19_speed(rec, 1)
+		var pr: Dictionary = _r20_pause(rec, true)
+		var p0: Vector2 = e.position
+		await _wait_real(0.5)
+		d9["paused_reply"] = pr.get("paused")
+		d9["paused_moved"] = e.position.distance_to(p0)
+		_r20_pause(rec, false)
+		d9["resumed"] = await _r19_move(e, 0.4)
+		d9["y_drift"] = absf(e.position.y - y0)
+		d9["ts"] = Engine.time_scale
+	var ps: float = 40.0 / float(Engine.physics_ticks_per_second)
+	var ok9: bool = d9.has("x1")
+	if ok9:
+		ok9 = absf(float(d9.x1.per_sec) - 40.0) < 1.0 and absf(float(d9.x1.per_step) - ps) < 0.01 and absf(float(d9.x2.per_step) - 2.0 * ps) < 0.02 and absf(float(d9.x2.per_sec) - 40.0) < 1.0 and absf(float(d9.slow.per_step) - 0.1 * ps) < 0.005 and d9.paused_reply == true and d9.paused_moved == 0.0 and float(d9.resumed.dx) > 0.0 and d9.y_drift < 0.001
+	_check("飛行-9 遊戲時鐘：每秒遊戲時間 40 像素（1×、2× 都是）、每個物理步進 1× 為 40÷60、2× 加倍、部署選單 0.1×；手動暫停 0.5 秒位置不變、繼續後照常；全程沒有離開直線", ok9, d9)
+
+	# 飛行-10：新的一場不殘留：飛行還在場上時換成沒有飛行的關卡 → 舊的飛行敵人移出場景；新關卡的地面敵人被武將擋住（阻擋照常）；
+	# 再換回飛行關卡 → 新的飛行敵人照樣只有兩個路點
+	es = await _fly_start("fly-10a", [_grp("fly_walk", 2, 0.02)], 2)
+	var old: Array = es.map(func(e): return weakref(e))
+	es = await _fly_start("fly-10b", [_grp("gnd_run", 1, 0.02)], 1, [_r12_hero("fly_inf", null)], {"fly_inf": Vector2i(2, 5)})
+	await process_frame
+	var old_gone: bool = old.all(func(w): return w.get_ref() == null or not w.get_ref().is_inside_tree())
+	if es.size() == 1:
+		var g10: Node = es[0]
+		await _wait_until(func(): return is_instance_valid(g10) and g10._blocker != null, 5.0)
+	var nb: Dictionary = {"old_gone": old_gone, "flying_now": _sw_enemies().filter(func(e): return e.is_flying()).size(),
+		"blocked": es.size() == 1 and is_instance_valid(es[0]) and es[0]._blocker != null}
+	es = await _fly_start("fly-10c", [_grp("fly_walk", 1, 0.02)], 1)
+	nb["new_flying_wps"] = es[0]._waypoints.size() if es.size() == 1 else -1
+	_check("飛行-10 新的一場不殘留：換關卡後舊的飛行敵人移出場景、新關卡沒有飛行敵人、地面敵人照常被武將擋住；再換回飛行關卡，新的飛行敵人只有兩個路點",
+		nb.old_gone == true and nb.flying_now == 0 and nb.blocked == true and nb.new_flying_wps == 2, nb)
+
+	# 飛行-11：面板帶對空（anti_air）：弓兵、法師武將 true，步兵、不認得的職業 false；弓兵塔、文士塔 true，步兵、砲兵、騎兵塔 false
+	_load(_fly_payload("fly-11", [[_grp("gnd_post", 1, 0.02)]], [_r12_hero("fly_archer", null), _r12_hero("fly_mage", null), _r12_hero("fly_inf", null), _r12_hero("fly_odd", null)]))
+	var hcells: Dictionary = {"fly_archer": Vector2i(1, 7), "fly_mage": Vector2i(2, 7), "fly_inf": Vector2i(3, 7), "fly_odd": Vector2i(4, 7)}
+	var tcells: Dictionary = {"archer": Vector2i(5, 7), "scholar": Vector2i(6, 7), "infantry": Vector2i(7, 7), "artillery": Vector2i(8, 7), "cavalry": Vector2i(9, 7)}
+	var panels: Dictionary = {}
+	for hid in hcells:
+		_r12_place(hid, hcells[hid])
+		var h: Node = _fly_hero(hid)
+		if h != null:
+			main._on_hero_clicked(h)
+			panels[hid] = rec.sent_panels.back().get("anti_air") if not rec.sent_panels.is_empty() else null
+	for tt in tcells:
+		main._on_web_place_tower({"tower_type": tt, "cell_x": tcells[tt].x, "cell_y": tcells[tt].y})
+		var tw: Node = main.game_map.get_occupant(tcells[tt])
+		if tw != null:
+			main._on_tower_clicked(tw)
+			panels[tt] = rec.sent_panels.back().get("anti_air") if not rec.sent_panels.is_empty() else null
+	main._deselect_unit()
+	_check("飛行-11 單位面板帶對空：弓兵、法師武將 true，步兵、不認得的職業 false；弓兵塔、文士塔 true，步兵、砲兵、騎兵塔 false",
+		panels == {"fly_archer": true, "fly_mage": true, "fly_inf": false, "fly_odd": false, "archer": true, "scholar": true, "infantry": false, "artillery": false, "cavalry": false}, panels)
 
 	rec.payload_received.disconnect(main._on_payload_received)
 	main.web_bridge = original

@@ -51,7 +51,7 @@ async (page) => {
     const { atk_spd_growth: _drop, ...rest } = h;
     return { ...rest, speed_growth };
   };
-  const enemy = (enemy_id, name, hp, speed, image) => ({ enemy_id, name, hp, speed, image });
+  const enemy = (enemy_id, name, hp, speed, image, movement_type) => ({ enemy_id, name, hp, speed, image, ...(movement_type ? { movement_type } : {}) });
   const group = (enemy_id, count, interval) => ({ enemy_id, count, interval, path: "path_a" });
   const map = (map_id, name, waves) => ({
     map_id, chapter: 1, name, unlock_stage: map_id, path_json: pathJson,
@@ -82,6 +82,8 @@ async (page) => {
       enemy("mock_t_front", "前鋒", 1000, 6, "enemy_grunt1.webp"),
       enemy("mock_t_tank", "重甲", 5000, 5, "enemy_siege1.webp"),
       enemy("mock_t_weak", "傷兵", 300, 4, "enemy_grunt2.webp"),
+      // 飛行敵人與對空：飛行（movement_type flying，直線飛向終點、不被武將擋住，只有能對空的單位打得到）
+      enemy("mock_flyer", "飛騎", 30, 60, "enemy_cavalry1.webp", "flying"),
     ],
     maps: [
       map("chapter1_1", "Mock A 慢速出兵", [
@@ -132,6 +134,24 @@ async (page) => {
       map("chapter1_10", "Mock T 塔目標", [
         [group("mock_t_front", 1, 1.0), group("mock_t_tank", 1, 1.0), group("mock_t_weak", 1, 1.0)],
       ]),
+      // 飛行敵人與對空的示範關：折線路線（第 5 列往上繞到第 2 列再回來），飛行沿第 5 列直線飛。
+      // 第 1 波地面步兵 2＋飛騎 2，第 2 波飛騎 3；沒有防禦也會勝利（漏 7 隻 < 城池 20）。預設玩家的進度是 chapter1_7，這一關是鎖定的
+      {
+        ...map("chapter2_1", "Mock F 飛行混合", [
+          [group("mock_grunt", 2, 1.0), group("mock_flyer", 2, 1.2)],
+          [group("mock_flyer", 3, 0.8)],
+        ]),
+        chapter: 2,
+        path_json: {
+          ...pathJson,
+          paths: { path_a: [[0, ROW], [4, ROW], [4, ROW - 3], [9, ROW - 3], [9, ROW], [13, ROW]] },
+          build_zones: [
+            ...[1, 2, 3, 5, 6, 7, 8, 10, 11, 12].map((c) => [c, ROW + 1]),
+            ...[5, 6, 7, 8].map((c) => [c, ROW - 1]),
+            ...[3, 5, 6, 7, 8, 10].map((c) => [c, ROW - 4]),
+          ],
+        },
+      },
     ],
   };
 

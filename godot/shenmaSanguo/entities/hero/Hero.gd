@@ -1,7 +1,8 @@
 ## Hero.gd
 ## 武將：放置於 ROAD 或 BUILD，自動攻擊範圍內敵人
-## ROAD 上：攻擊最近敵人並施加緩速（模擬阻擋）
+## ROAD 上：攻擊最近敵人並施加緩速（模擬阻擋；飛行敵人不受阻擋，不施加）
 ## BUILD 上：攻擊最近敵人（不阻擋）
+## 對空：弓兵（archer）、法師（mage）可以攻擊地面與飛行敵人；步兵、騎兵、砲兵與不認得的職業只打地面
 
 class_name Hero
 extends Node2D
@@ -23,6 +24,12 @@ var attack_speed: float   = 1.0    # 攻擊間隔（秒）
 # ── 放置資訊 ──────────────────────────────────────────────────
 var grid_cell: Vector2i   = Vector2i.ZERO
 var is_on_road: bool      = false   # 若在 ROAD 上，施加緩速效果
+
+# ── 對空 ──────────────────────────────────────────────────────
+## 可以攻擊飛行敵人的職業（heroes_config 的 job）；其他職業（包括沒有設定、不認得的值）只打地面
+const AIR_JOBS: Array     = ["archer", "mage"]
+var job: String           = ""
+var can_hit_air: bool     = false
 
 # ── 內部狀態 ──────────────────────────────────────────────────
 var _atk_timer: float     = 0.0
@@ -98,8 +105,10 @@ func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: boo
 			
 			# 攻速計算：縮短攻擊間隔 (間隔 = 基礎 * (1 - (等級-1) * 成長))，最快不超過 0.1s
 			attack_speed = max(0.1, base_spd * (1.0 - (hero_level - 1) * spd_growth))
-			
-			match str(cfg.get("job", "")):
+
+			job = str(cfg.get("job", ""))
+			can_hit_air = AIR_JOBS.has(job)
+			match job:
 				"infantry":
 					body_color = Color(0.65, 0.20, 0.20, 1)
 				"archer":
@@ -236,16 +245,21 @@ func _process(delta: float) -> void:
 	_atk_timer    = attack_speed - (late if late < attack_speed else 0.0)
 	queue_redraw()
 
-	# ROAD 武將：在攻擊的回合對目標施加緩速
-	if is_on_road:
+	# ROAD 武將：在攻擊的回合對目標施加緩速（模擬阻擋；飛行敵人不被武將擋住，不施加）。
+	# 目標可能被這一擊打倒並釋放，先確認還在
+	if is_on_road and is_instance_valid(target) and not target.is_flying():
 		target.apply_slow(SLOW_RATIO, attack_speed)
 
+## 這位武將能不能攻擊這個敵人：地面一律可以；飛行只有能對空的職業可以。選目標與橫掃都先經過這一關
+func can_target(e: Node) -> bool:
+	return can_hit_air or not e.is_flying()
+
 func _find_target(enemies: Array, range_px: float) -> Node:
-	# 優先選「進度最靠近基地」且在範圍內的敵人
+	# 先排除打不到的（飛行敵人只有能對空的職業打得到），再選「進度最靠近基地」且在範圍內的敵人
 	var best: Node       = null
 	var best_progress: float = -1.0
 	for e in enemies:
-		if not is_instance_valid(e) or e.is_dead():
+		if not is_instance_valid(e) or e.is_dead() or not can_target(e):
 			continue
 		var dist: float = global_position.distance_to(e.global_position)
 		if dist <= range_px and e.get_progress_ratio() > best_progress:
@@ -254,14 +268,15 @@ func _find_target(enemies: Array, range_px: float) -> Node:
 	return best
 
 ## 橫掃：先選好副目標再造成傷害（受傷可能讓敵人死亡並從 WaveManager 的清單移除，不能邊走訪邊打）。
-## 候選是目前關卡仍存活的其他敵人，距離中心不超過半徑（含邊界）；由近到遠，距離相同時生成序號小的優先，每個敵人最多一次
+## 候選是目前關卡仍存活、這位武將打得到的其他敵人（不能對空的武將不會掃到飛行敵人），距離中心不超過半徑（含邊界）；
+## 由近到遠，距離相同時生成序號小的優先，每個敵人最多一次
 func _sweep(center: Vector2, primary: Node, sweep_damage: float) -> void:
 	if not _wave_mgr or sweep_damage <= 0.0:
 		return
 	var radius_px: float = sweep_radius * tile_size
 	var picks: Array = []
 	for e in _wave_mgr.get_active_enemies():
-		if e == primary or not is_instance_valid(e) or e.is_queued_for_deletion() or e.is_dead():
+		if e == primary or not is_instance_valid(e) or e.is_queued_for_deletion() or e.is_dead() or not can_target(e):
 			continue
 		var d: float = center.distance_to(e.global_position)
 		if d <= radius_px + SWEEP_EDGE_EPS:

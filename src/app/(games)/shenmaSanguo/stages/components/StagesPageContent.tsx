@@ -6,7 +6,9 @@ import { Container, Row, Col, Spinner, Alert } from "react-bootstrap";
 import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { isStageUnlocked } from "../../utils/stageUtils";
+import { stageAirReadiness } from "../../utils/stageAirReadiness";
 import EnemyPreviewModal from "../../components/modals/EnemyPreviewModal";
+import StageAirReadinessNote from "../../components/StageAirReadinessNote";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 export default function StagesPageContent() {
@@ -117,6 +119,13 @@ export default function StagesPageContent() {
                       player.max_stage
                     );
                     const isCurrent = map.map_id === player.max_stage;
+                    // 出征前的對空準備：只看目前上陣的隊伍（隊伍或設定改變時重新計算）
+                    const air = stageAirReadiness(
+                      map,
+                      staticConfig.enemiesConfig,
+                      player.team,
+                      staticConfig.heroesConfig
+                    );
 
                     return (
                       <Col xs={12} sm={6} key={map.map_id}>
@@ -193,6 +202,10 @@ export default function StagesPageContent() {
                                 </span>
                               )}
                             </div>
+                            <StageAirReadinessNote
+                              readiness={air}
+                              variant="card"
+                            />
                             <button
                               className={
                                 unlocked ? styles.btnGold : styles.btnOutline
@@ -242,6 +255,8 @@ export default function StagesPageContent() {
         <EnemyPreviewModal
           map={previewMap}
           enemies={staticConfig.enemiesConfig ?? []}
+          team={player.team}
+          heroesConfig={staticConfig.heroesConfig}
           locked={!isStageUnlocked(previewMap.map_id, player.max_stage)}
           onClose={() => setPreviewId(null)}
         />

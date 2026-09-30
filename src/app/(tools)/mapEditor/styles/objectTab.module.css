@@ -254,3 +254,15 @@
   font-size: 0.82rem;
   color: #9ca3af;
 }
+
+/* 敵人表：移動方式的說明（飛行與對空的規則） */
+.movementHint {
+  margin-bottom: 0.6rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid #bae6fd;
+  background: #f0f9ff;
+  font-size: 0.78rem;
+  color: #075985;
+  line-height: 1.5;
+}

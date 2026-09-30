@@ -4,7 +4,7 @@ import { JobClass, Rarity } from "../types";
  * 武將的職業與稀有度：遊戲認得的值、畫面上的名稱與顏色（主頁武將視窗、武將頁、隊伍編排、地圖編輯器共用）
  * - 值就是 heroes_config 存的文字（infantry、orange…），地圖編輯器的選單也只提供這些值
  * - 遊戲不認得的值（例如舊的稀有度 N／SR、中文職業）不改寫：畫面顯示「其他」與原始值，篩選時歸在「其他」
- * - 法師（mage）目前只是分類與顏色，戰場上沒有專屬的機制
+ * - 法師（mage）和弓兵一樣能攻擊飛行敵人（對空規則見 utils/antiAir），其他沒有專屬的機制
  */
 
 export interface JobInfo {

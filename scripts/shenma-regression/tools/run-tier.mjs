@@ -4,7 +4,8 @@
 //   node scripts/shenma-regression/tools/run-tier.mjs related <功能...>   例：related save-conflict backup-preview
 //   node scripts/shenma-regression/tools/run-tier.mjs full
 //   node scripts/shenma-regression/tools/run-tier.mjs list              列出功能與對應的瀏覽器腳本
-// - quick：型別檢查、神馬三國與地圖編輯器的 ESLint、Node 測試（store、戰鬥結算獎勵規則、備份檔、武將列表篩選、地圖編輯器的錯誤說明、跨來源隔離開機腳本）、harness 雜訊規則、
+// - quick：型別檢查、神馬三國與地圖編輯器的 ESLint、Node 測試（store、戰鬥結算獎勵規則、飛行敵人與對空規則、出征前的對空準備、備份檔、武將列表篩選、
+//   地圖編輯器的錯誤說明與敵人表的移動方式欄判斷、跨來源隔離開機腳本）、harness 雜訊規則、
 //   工具自我測試、素材引用檢查。不需要 dev server 與 Godot
 // - related：quick 之後，只跑指定功能的瀏覽器腳本；full：quick 之後跑全部瀏覽器腳本（約 35 分鐘）
 //   瀏覽器腳本需要 npm run dev 與 PLAYWRIGHT_DIR（見 README）；Godot 端另外用 godot-check.sh
@@ -41,6 +42,16 @@ const QUICK = [
     ["scripts/shenma-regression/web/battle-reward.test.mjs"],
   ],
   [
+    "飛行敵人與對空規則測試",
+    "node",
+    ["scripts/shenma-regression/web/anti-air.test.mjs"],
+  ],
+  [
+    "出征前的對空準備提醒測試",
+    "node",
+    ["scripts/shenma-regression/web/air-readiness.test.mjs"],
+  ],
+  [
     "備份檔讀取與驗證測試",
     "node",
     ["scripts/shenma-regression/web/backup-file.test.mjs"],
@@ -54,6 +65,11 @@ const QUICK = [
     "地圖編輯器設定寫入的錯誤說明測試",
     "node",
     ["scripts/shenma-regression/web/admin-error-text.test.mjs"],
+  ],
+  [
+    "地圖編輯器敵人表的移動方式欄判斷測試",
+    "node",
+    ["scripts/shenma-regression/web/movement-column.test.mjs"],
   ],
   [
     "跨來源隔離開機腳本測試",
@@ -134,8 +150,20 @@ const AREAS = {
     scripts: ["hero-category-web.js"],
   },
   settle: {
-    what: "戰鬥結算的完整獎勵：真 Godot 勝敗結算、回應遺失與重新確認、重新整理時在途、結算中改隊伍（需要 Godot 產物；可用 GAS_BACKEND 換成模擬後端）",
-    scripts: ["settle-web.js"],
+    what: "戰鬥結算的完整獎勵：真 Godot 勝敗結算、回應遺失與重新確認、重新整理時在途、結算中改隊伍（需要 Godot 產物；可用 GAS_BACKEND 換成模擬後端）；結算資料異常時兩個入口的畫面與出口",
+    scripts: ["settle-web.js", "settle-invalid-web.js"],
+  },
+  flying: {
+    what: "飛行敵人與對空：示範關的敵軍預覽標記、武將詳情／部署選單／單位面板的對空說明、兩個入口實際部署後扣血或不扣血與結算、390 寬與鍵盤、地圖編輯器敵人表的移動方式（需要 Godot 產物）",
+    scripts: ["flying-web.js"],
+  },
+  "enemy-column": {
+    what: "地圖編輯器敵人表的移動方式欄：未載入、載入失敗、有欄／缺欄 × 空表／有資料、舊後端無法確認、刪光再新增、讀取後表頭被移除（可用 GAS_BACKEND 換成模擬試算表上的後端程式）",
+    scripts: ["enemy-column-web.js"],
+  },
+  "air-readiness": {
+    what: "出征前的對空準備提醒：兩個關卡選擇入口與敵軍預覽、換隊伍即時更新、缺敵人設定、390 寬與鍵盤、不阻擋出征（需要 Godot 產物）",
+    scripts: ["air-readiness-web.js"],
   },
   "stage-preview": { what: "攻速成長、關卡敵軍預覽", scripts: ["r16-web.js"] },
   "floating-ui": {
@@ -186,6 +214,10 @@ const FULL = [
   "team-filter-web.js",
   "hero-category-web.js",
   "settle-web.js",
+  "settle-invalid-web.js",
+  "flying-web.js",
+  "enemy-column-web.js",
+  "air-readiness-web.js",
 ];
 
 const [mode, ...rest] = process.argv.slice(2);

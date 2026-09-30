@@ -2558,15 +2558,17 @@ await test("R10-P1", async () => {
     ready({ protocol: 3 }),
     ready({ protocol: 4 }),
     ready({ protocol: 5 }),
-    ready({ protocol: "6" }),
-    ready({ protocol: 7 }),
     ready({ protocol: 6 }),
+    ready({ protocol: "7" }),
+    ready({ protocol: 8 }),
+    ready({ protocol: 7 }),
   ].map((m) => isCompatibleEngine(m));
   check(
-    "R10-P1 只有協定版本和網頁相同（加入手動暫停後是 6）的 game_ready 才相容；舊版（沒有 protocol）、2（battle_id）、3（防禦塔目標優先）、4（備戰拆除）、5（戰鬥速度）、其他版本、字串都不相容",
-    BRIDGE_PROTOCOL === 6 &&
+    "R10-P1 只有協定版本和網頁相同（加入飛行敵人與對空後是 7）的 game_ready 才相容；舊版（沒有 protocol）、2（battle_id）、3（防禦塔目標優先）、4（備戰拆除）、5（戰鬥速度）、6（手動暫停）、其他版本、字串都不相容",
+    BRIDGE_PROTOCOL === 7 &&
       JSON.stringify(got) ===
         JSON.stringify([
+          false,
           false,
           false,
           false,

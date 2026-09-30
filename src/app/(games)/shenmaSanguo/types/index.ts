@@ -16,7 +16,7 @@ export enum JobClass {
   Archer = "archer",
   Artillery = "artillery",
   Cavalry = "cavalry",
-  /** 法師（周瑜）：目前只是分類，戰場上沒有專屬的機制 */
+  /** 法師（周瑜）：和弓兵一樣能攻擊飛行敵人（見 utils/antiAir） */
   Mage = "mage",
 }
 
@@ -70,6 +70,8 @@ export interface EnemyConfig {
   name: string;
   hp: number;
   speed: number;
+  /** 移動方式：flying 是飛行（直線飛向終點、不被武將擋住）；沒有、空白或其他值遊戲都當作地面（見 utils/antiAir） */
+  movement_type?: string;
   // 其餘欄位依 enemies_config 表擴充
   [key: string]: unknown;
 }

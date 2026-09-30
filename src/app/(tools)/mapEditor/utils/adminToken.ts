@@ -63,6 +63,8 @@ export function adminErrorText(code: string): string {
       return "試算表的這張設定表裡有公式，為了不把公式換成固定值，這次沒有寫入；請管理者把公式改成值後再儲存";
     case "CONFIG_VERIFY_FAILED":
       return "寫入後讀回的內容和預期不同（可能是資料驗證、格式或保護範圍），寫入前的內容已備份；再儲存一次會先恢復備份再寫入";
+    case "MOVEMENT_COLUMN_MISSING":
+      return "試算表的 enemies_config 沒有 movement_type 欄（表頭名稱要完全相同），飛行的設定無法保存，這次沒有寫入任何資料；請先在試算表第一列加上 movement_type 欄、重新載入後再儲存，或把飛行改回地面";
     default:
       return code;
   }

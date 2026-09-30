@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import { Col, Row } from "react-bootstrap";
 import { formatSec } from "../../utils/heroStats";
+import { towerAirAbility } from "../../utils/antiAir";
 import { useStageAnchor } from "../../utils/stageAnchor";
 import {
   isSameTower,
@@ -54,6 +55,8 @@ interface UpgradePanelProps {
     /** 防禦塔：已實際支付的戰鬥金幣與拆除時的返還金額（Round 18，由 Godot 計算） */
     invested_gold?: number;
     sell_refund?: number;
+    /** 能不能攻擊（文士塔是減速）飛行敵人：Godot 依職業／塔的種類判斷後送來 */
+    anti_air?: boolean;
     screen_pos: { x: number; y: number };
   };
   onUpgrade: () => void;
@@ -148,6 +151,24 @@ export default function UpgradePanel({
             <div className={styles.upgStatItem}>
               <span className={styles.upgStatLabel}>生命值</span>
               <span className={styles.upgStatValue}>{data.hp?.toFixed(0)}</span>
+            </div>
+          )}
+          {typeof data.anti_air === "boolean" && (
+            <div className={styles.upgStatItem}>
+              <span className={styles.upgStatLabel}>對空</span>
+              <span
+                className={`${styles.upgStatValue} ${data.anti_air ? styles.cardAirYes : ""}`}
+                data-testid="unit-panel-air"
+                data-anti-air={data.anti_air ? "true" : "false"}
+              >
+                {/* 以 Godot 送來的判斷為準；文士塔的對空是減速 */}
+                {!data.anti_air
+                  ? "只打地面"
+                  : data.unit_type === "tower" &&
+                      towerAirAbility(data.tower_type) === "slow"
+                    ? "可減速飛行"
+                    : "可對空"}
+              </span>
             </div>
           )}
         </div>

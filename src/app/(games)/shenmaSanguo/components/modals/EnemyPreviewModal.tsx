@@ -4,12 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { Row, Col } from "react-bootstrap";
-import { EnemyConfig, MapConfig } from "../../types";
+import { EnemyConfig, HeroConfig, MapConfig, TeamSlot } from "../../types";
 import {
   buildStagePreview,
   PreviewGroup,
   PreviewWave,
 } from "../../utils/stagePreview";
+import { FLYING_RULE_TEXT } from "../../utils/antiAir";
+import { stageAirReadiness } from "../../utils/stageAirReadiness";
+import StageAirReadinessNote from "../StageAirReadinessNote";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 const FOCUSABLE =
@@ -18,6 +21,9 @@ const FOCUSABLE =
 interface Props {
   map: MapConfig;
   enemies: EnemyConfig[];
+  /** 目前上陣的隊伍與武將設定：出征前的對空準備提醒用（不改隊伍、不寫入） */
+  team: TeamSlot[] | null | undefined;
+  heroesConfig: HeroConfig[] | null | undefined;
   /** 關卡尚未解鎖（只顯示資訊，不改變解鎖規則） */
   locked: boolean;
   onClose: () => void;
@@ -34,12 +40,18 @@ interface Props {
 export default function EnemyPreviewModal({
   map,
   enemies,
+  team,
+  heroesConfig,
   locked,
   onClose,
 }: Props) {
   const preview = useMemo(
     () => buildStagePreview(map, enemies),
     [map, enemies]
+  );
+  const air = useMemo(
+    () => stageAirReadiness(map, enemies, team, heroesConfig),
+    [map, enemies, team, heroesConfig]
   );
   const [open, setOpen] = useState<number[]>([1]);
   const toggle = (n: number) =>
@@ -156,6 +168,15 @@ export default function EnemyPreviewModal({
             <div className={styles.previewHint}>
               只列出關卡設定裡有的資料；移動速度是設定值（數字越大越快）。
             </div>
+            {preview.flying && (
+              <div
+                className={styles.previewFlyingNote}
+                data-testid="preview-flying-note"
+              >
+                這一關有飛行敵人（標示 ✈ 飛行）。{FLYING_RULE_TEXT}
+              </div>
+            )}
+            <StageAirReadinessNote readiness={air} variant="panel" />
           </div>
 
           {preview.waves.map((w) => (
@@ -254,11 +275,26 @@ function GroupRow({ group: g }: { group: PreviewGroup }) {
         ? "不會出兵"
         : "數量無法確定";
   return (
-    <div className={styles.previewGroup} data-testid="preview-group">
+    <div
+      className={styles.previewGroup}
+      data-testid="preview-group"
+      data-movement={g.movement?.value ?? ""}
+    >
       <Row className="g-1 align-items-center">
         <Col xs={12} sm={7}>
           <span className={styles.previewGroupIndex}>第 {g.index} 組</span>{" "}
           <strong>{g.name ?? `未知敵人（${g.enemyId}）`}</strong> {countText}
+          {g.movement?.value === "flying" && (
+            <>
+              {" "}
+              <span
+                className={styles.previewFlying}
+                data-testid="preview-flying"
+              >
+                ✈ 飛行
+              </span>
+            </>
+          )}
         </Col>
         <Col xs={12} sm={5} className="text-sm-end">
           路線 {g.path}

@@ -63,6 +63,8 @@ export interface EnemyConfig {
   notes: string;
   image: string;
   attack_image: string;
+  /** 移動方式：ground（地面）／flying（飛行）。試算表沒有這一欄時讀到的資料沒有這個欄位 */
+  movement_type?: string;
 }
 
 // ── heroes_config sheet ──

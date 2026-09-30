@@ -1,6 +1,8 @@
 ## Tower.gd
-## 防禦塔：弓兵 / 步兵 / 砲兵
+## 防禦塔：弓兵 / 步兵 / 砲兵 / 騎兵 / 文士
 ## 可用戰鬥金幣升級（最高 5 級），不持久化
+## 對空（設定的 anti_air）：弓兵塔可以攻擊飛行敵人、文士塔可以對飛行敵人減速；
+## 步兵、騎兵、砲兵塔只打地面（步兵塔的緩速光環、砲兵塔的範圍傷害也只作用於地面）
 
 class_name Tower
 extends Node2D
@@ -23,6 +25,7 @@ const TOWER_CONFIGS: Dictionary = {
 		"upgrade_base": 50,
 		"color":       Color(0.20, 0.65, 0.20, 1),
 		"aoe":         false,
+		"anti_air":    true,
 		"image":       "tower_archer.webp",
 		"scale":       0.9,
 	},
@@ -78,6 +81,7 @@ const TOWER_CONFIGS: Dictionary = {
 		"color":       Color(0.20, 0.50, 0.65, 1),
 		"aoe":         false,
 		"stack_slow_amount": 0.05,
+		"anti_air":    true,
 		"image":       "tower_scholar.webp",
 		"scale":       1.0,
 	},
@@ -94,14 +98,16 @@ var is_aoe: bool           = false
 var aoe_radius: float      = 0.0
 var slow_mult: float       = 1.0       # < 1.0 表示有緩速
 var stack_slow_amount: float = 0.0     # 疊加減速量 (文士塔)
+## 能不能攻擊（文士塔是減速）飛行敵人：設定沒有 anti_air 的塔只打地面
+var can_hit_air: bool      = false
 var body_color: Color      = Color.GREEN
 var tower_name: String     = "弓兵塔"
 
-## 目標優先（Round 17）：只存在這一場的記憶體（不寫存檔），新放置的塔一律從 "first" 開始。
-## - "first"：路線進度最高（既有行為；比的是路點進度，不是精確的「離基地剩餘距離」）
+## 目標優先：只存在這一場的記憶體（不寫存檔），新放置的塔一律從 "first" 開始。
+## - "first"：走得最前面＝到終點的剩餘路程最短（Enemy.get_remaining_distance：地面沿路線折線、飛行是到終點的直線，混在一起也能比）
 ## - "strongest"：當下血量最多；"weakest"：當下血量最少（比 current_hp，不是最大血量或百分比）
-## 血量相同時看路線進度，再相同維持候選的原順序。只改主要目標：砲兵的範圍傷害、文士的減速跟著主要目標，
-## 步兵的緩速光環照舊作用於範圍內所有敵人
+## 血量相同時看剩餘路程，再相同（相差不到 0.001 像素）維持候選的原順序。候選只有這座塔打得到的敵人（對空）。
+## 只改主要目標：砲兵的範圍傷害、文士的減速跟著主要目標，步兵的緩速光環照舊作用於範圍內所有地面敵人
 const TARGET_MODES: Array = ["first", "strongest", "weakest"]
 var target_mode: String    = "first"
 ## 這座塔的識別碼（Main 放置時指定，同一個頁面內不重複）：Web 的命令用它確認是同一座塔
@@ -146,6 +152,7 @@ func setup(type_key: String, cell: Vector2i, wave_mgr: Node) -> void:
 	aoe_radius       = float(cfg.get("aoe_radius", 0.0))
 	slow_mult        = float(cfg.get("slow_mult", 1.0))
 	stack_slow_amount = float(cfg.get("stack_slow_amount", 0.0))
+	can_hit_air      = bool(cfg.get("anti_air", false))
 	body_color       = cfg["color"]
 	tower_name       = str(cfg["name"])
 	tower_w = max(20, min(tile_size, int(tile_size * float(cfg.get("scale", 0.88)))))
@@ -210,11 +217,15 @@ func _process(delta: float) -> void:
 	queue_redraw()
 	_sfx("tower_shoot")
 
-## 每次準備攻擊時，依目前的目標優先與敵人當下的狀態重新挑選（射程內、有效、活著的敵人）
+## 這座塔能不能攻擊（文士塔是減速）這個敵人：地面一律可以；飛行只有能對空的塔可以
+func can_target(e: Node) -> bool:
+	return can_hit_air or not e.is_flying()
+
+## 每次準備攻擊時，依目前的目標優先與敵人當下的狀態重新挑選（射程內、有效、活著、打得到的敵人）
 func _find_target(enemies: Array, range_px: float) -> Node:
 	var best: Node = null
 	for e in enemies:
-		if not is_instance_valid(e) or e.is_dead():
+		if not is_instance_valid(e) or e.is_dead() or not can_target(e):
 			continue
 		if global_position.distance_to(e.global_position) > range_px:
 			continue
@@ -231,7 +242,10 @@ func _better_target(a: Node, b: Node) -> bool:
 		"weakest":
 			if not is_equal_approx(a.current_hp, b.current_hp):
 				return a.current_hp < b.current_hp
-	return a.get_progress_ratio() > b.get_progress_ratio()
+	return a.get_remaining_distance() < b.get_remaining_distance() - REMAINING_EPS
+
+## 剩餘路程的比較容許誤差（像素）：相差不到這個值視為相同，保留候選的原順序
+const REMAINING_EPS: float = 0.001
 
 ## 切換目標優先：只換之後挑選目標的方式，不重置攻擊冷卻、不立即攻擊、不動射程／傷害／等級。不認得的模式不套用
 func set_target_mode(mode: String) -> bool:
@@ -241,9 +255,10 @@ func set_target_mode(mode: String) -> bool:
 	queue_redraw()
 	return true
 
+## 範圍傷害：主要目標周圍、這座塔打得到的敵人（砲兵塔不能對空：旁邊的飛行敵人不受波及）
 func _attack_aoe(primary: Node, all_enemies: Array) -> void:
 	for e in all_enemies:
-		if not is_instance_valid(e) or e.is_dead():
+		if not is_instance_valid(e) or e.is_dead() or not can_target(e):
 			continue
 		if primary.global_position.distance_to(e.global_position) <= aoe_radius:
 			e.take_damage(atk)
@@ -253,7 +268,8 @@ func _apply_slow_aura() -> void:
 		return
 	var range_px: float = range_tiles * tile_size
 	for e in _wave_mgr.get_active_enemies():
-		if is_instance_valid(e) and not e.is_dead():
+		# 步兵塔不能對空：緩速光環只作用於地面敵人
+		if is_instance_valid(e) and not e.is_dead() and can_target(e):
 			var dist: float = global_position.distance_to(e.global_position)
 			if dist <= range_px:
 				e.apply_slow(slow_mult, 0.2)
