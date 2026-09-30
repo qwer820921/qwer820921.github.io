@@ -2584,6 +2584,17 @@
 }
 
 /* 部署選單與單位面板在暫停中的說明（只能查看、關閉） */
+/* 武將受到防禦光環加成：選取當下的有效防禦（戰場加成，不改存檔）；淺綠色和戰場上的外框一致 */
+.defAuraNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(140, 242, 140, 0.12);
+  border: 1px solid rgba(140, 242, 140, 0.45);
+  color: #a7f3a7;
+  font-size: 0.72rem;
+}
+
 .lockNotice {
   margin-bottom: 8px;
   padding: 4px 8px;

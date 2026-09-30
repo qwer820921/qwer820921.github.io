@@ -4,6 +4,7 @@
 ## 離開射程、倒下，或武將離開道路／被移除時只撤除這位武將自己的減速（見 _update_slows）
 ## BUILD 上：攻擊最近敵人（不阻擋）
 ## 對空：弓兵（archer）、法師（mage）可以攻擊地面與飛行敵人；步兵、騎兵、砲兵與不認得的職業只打地面
+## 防禦光環（劉備）：範圍內其他武將受傷時用提高後的防禦計算（見 def_aura_mult、effective_def），不改 def_stat
 
 class_name Hero
 extends Node2D
@@ -103,6 +104,26 @@ const AURA_EDGE_EPS: float = 0.001
 ## 光環範圍的顯示（戰鬥中畫出淺藍色的範圍圈）
 const AURA_COLOR: Color = Color(0.45, 0.85, 1.0, 1.0)
 var _aura_shown: bool = false
+## 防禦光環（def_aura，劉備）：戰鬥中（BATTLE）、這位武將活著且在場上時，以武將為中心、目前有效射程內（含邊界，比中心距離）的
+## 其他存活武將防禦力 × def_aura_mult（1.2 ＝ 提高 20%）；不含自己，防禦塔與城池不受影響，友軍的職業不限。
+## 不需要普通攻擊的目標、不看攻擊冷卻，也不改變自己的普通攻擊。每一幀重新判斷：離開範圍、移位／升級改變範圍、倒下、被移除、
+## 戰鬥結束時撤除自己的來源（最遲下一幀）。一位武將同時在幾個防禦光環裡時取最強的一個（def_bonus_mult），不相乘、不累加。
+## def_aura_mult 1.0 代表沒有這個技能
+var def_aura_mult: float = 1.0
+## 這位武將施加防禦光環時用的來源（每個武將節點各自不同：移除後重新放置也是新的來源）
+var def_aura_source: String = ""
+## 目前被這位武將的防禦光環加成的武將（instance id → 武將）
+var _def_buffed: Dictionary = {}
+## 防禦光環的顯示：範圍圈（戰鬥中）與受到加成的武將外框都是淺綠色，和減速光環的淺藍色區分
+const DEF_AURA_COLOR: Color = Color(0.55, 0.95, 0.55, 1.0)
+var _def_aura_shown: bool = false
+## 受到的防禦加成（其他武將的防禦光環）：每個來源各自保存 {倍率, 剩餘有效期}；生效的倍率 def_bonus_mult ＝ 所有來源中最大的，
+## 沒有來源時是 1。同一個來源再次套用只刷新倍率與有效期；有效期用 _process 的 delta 倒數（遊戲時間，手動暫停時不前進）。
+## 受傷時用 effective_def 計算；def_stat（隊伍資料的防禦）不會被改動，升級、更新隊伍後照新的防禦重新相乘
+var def_bonus_mult: float = 1.0
+var _def_sources: Dictionary = {}
+## 每一幀重新套用的防禦加成的有效期：施加者每一幀都會刷新；施加者停止處理又沒有撤除時，最多再維持這麼久
+const DEF_REFRESH_TTL: float = 0.5
 ## BattleManager：記錄這一場哪些武將已用過首擊加倍（記在這裡而不是武將節點，移位、重新放置都不會重置）
 var _battle_mgr: Node     = null
 
@@ -116,6 +137,7 @@ func _init() -> void:
 	_dodge_rng.randomize()
 	slow_source = "hero_road#%d" % get_instance_id()
 	aura_source = "hero_aura#%d" % get_instance_id()
+	def_aura_source = "hero_def_aura#%d" % get_instance_id()
 
 func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: bool, wave_mgr: Node, battle_mgr: Node = null) -> void:
 	hero_id    = str(state.get("hero_id", ""))
@@ -200,6 +222,7 @@ func _read_skill(state: Dictionary) -> void:
 	sweep_max_targets = 0
 	dodge_chance = 0.0
 	slow_aura_mult = 1.0
+	def_aura_mult = 1.0
 	var skill = state.get("skill", null)
 	if not (skill is Dictionary):
 		return
@@ -235,6 +258,11 @@ func _read_skill(state: Dictionary) -> void:
 			var m: Variant = skill.get("slow_mult")
 			if (m is float or m is int) and is_finite(float(m)) and float(m) > 0.0 and float(m) < 1.0:
 				slow_aura_mult = float(m)
+		"def_aura":
+			# 倍率要是大於 1 的有限數字；字串、布林、null、NaN、無限大、1 以下都不啟用
+			var d: Variant = skill.get("def_mult")
+			if (d is float or d is int) and is_finite(float(d)) and float(d) > 1.0:
+				def_aura_mult = float(d)
 
 ## 有效射程（格）＝（基礎射程 + (等級-1) × 射程成長）× 技能倍率。
 ## 每次都從設定重新計算，不在目前的值上再乘：更新隊伍、升級、移位、重新放置都不會疊乘
@@ -252,8 +280,10 @@ func _compute_range(cfg: Dictionary) -> float:
 ## - 一幀最多打一擊：單幀長過攻擊間隔時其餘的攻擊作廢（受幀率限制），下一擊從這一擊起算一個完整的攻擊間隔，不補發
 ## 切換速度、部署慢速、手動暫停、升級、重選目標都不重設這個計時器
 func _process(delta: float) -> void:
-	# 減速（道路阻擋、光環）每一幀更新，不看攻擊冷卻
+	# 減速（道路阻擋、光環）與防禦光環每一幀更新，不看攻擊冷卻；受到的防禦加成照遊戲時間倒數有效期
 	_update_slows()
+	_tick_def_sources(delta)
+	_update_def_aura()
 	var was_ready: bool = _atk_timer <= 0.0
 	_atk_timer -= delta
 	
@@ -413,8 +443,102 @@ func _release_slows() -> void:
 	_road_slowed.clear()
 	_aura_slowed.clear()
 
+## 每一幀更新這位武將的防禦光環（只動自己的來源，其他防禦光環不受影響）：範圍內（和選目標相同的中心距離，含邊界）
+## 其他存活的武將刷新加成，離開範圍、倒下或被移除的撤除；這位武將正要被移除、倒下，或不在戰鬥中時全部撤除。
+## 友軍是同一層（UnitsLayer）裡的其他武將：防禦塔、敵人、城池都不是武將
+func _update_def_aura() -> void:
+	var leaving: bool = is_queued_for_deletion() or current_hp <= 0.0
+	var active: bool = def_aura_mult > 1.0 and not leaving and _in_battle() and get_parent() != null
+	var keep: Dictionary = {}
+	if active:
+		var radius_px: float = attack_range * tile_size + AURA_EDGE_EPS
+		for h in get_parent().get_children():
+			if h == self or not (h is Hero) or not _hero_alive(h):
+				continue
+			if global_position.distance_to(h.global_position) <= radius_px:
+				h.apply_def_from(def_aura_source, def_aura_mult, DEF_REFRESH_TTL)
+				if h.has_def_from(def_aura_source):
+					keep[h.get_instance_id()] = h
+	for id in _def_buffed:
+		if not keep.has(id) and is_instance_valid(_def_buffed[id]):
+			_def_buffed[id].remove_def_from(def_aura_source)
+	_def_buffed = keep
+	if active != _def_aura_shown:
+		_def_aura_shown = active
+		queue_redraw()
+
+## 撤除這位武將的防禦光環給其他武將的加成（被移除、倒下、切換關卡時離開場景樹）
+func _release_def_aura() -> void:
+	for id in _def_buffed:
+		if is_instance_valid(_def_buffed[id]):
+			_def_buffed[id].remove_def_from(def_aura_source)
+	_def_buffed.clear()
+
+func _hero_alive(h: Variant) -> bool:
+	return h != null and is_instance_valid(h) and not h.is_queued_for_deletion() and h.current_hp > 0.0
+
+## 套用（或刷新）source 這個來源的防禦加成：mult 是防禦的倍率（1.2 ＝ 提高 20%），duration 是有效期（秒，遊戲時間）。
+## 不套用：已經倒下或正要被移除、來源是空字串、倍率不是大於 1 的有限數字、有效期不是正的有限數字
+func apply_def_from(source: String, mult: float, duration: float) -> void:
+	if source == "" or current_hp <= 0.0 or is_queued_for_deletion():
+		return
+	if not (is_finite(mult) and mult > 1.0 and is_finite(duration) and duration > 0.0):
+		return
+	_def_sources[source] = {"mult": mult, "left": duration}
+	_refresh_def_bonus()
+
+## 撤除 source 這個來源的防禦加成；其他來源不受影響（沒有這個來源時什麼都不做）
+func remove_def_from(source: String) -> void:
+	if _def_sources.erase(source):
+		_refresh_def_bonus()
+
+func has_def_from(source: String) -> bool:
+	return _def_sources.has(source)
+
+func _refresh_def_bonus() -> void:
+	var m: float = 1.0
+	for s in _def_sources:
+		m = maxf(m, float(_def_sources[s].mult))
+	if m != def_bonus_mult:
+		def_bonus_mult = m
+		queue_redraw()  # 受到加成的外框
+
+## 倒數每個防禦加成來源的有效期（遊戲時間）；到期的來源移除
+func _tick_def_sources(delta: float) -> void:
+	if _def_sources.is_empty():
+		return
+	var expired: Array = []
+	for s in _def_sources:
+		var e: Dictionary = _def_sources[s]
+		e.left = float(e.left) - delta
+		if e.left <= 0.0:
+			expired.append(s)
+	for s in expired:
+		_def_sources.erase(s)
+	if not expired.is_empty():
+		_refresh_def_bonus()
+
+## 受傷時用的防禦：def_stat × def_bonus_mult。防禦不是正數時不乘（加成不會讓 0 或負的防禦變得更不耐打）
+func effective_def() -> float:
+	return def_stat * def_bonus_mult if def_stat > 0.0 else def_stat
+
+## 測試用唯讀資訊（debug_snapshot）：原本與受傷時用的防禦、受到的加成與來源；自己的防禦光環（倍率、半徑、是否作用、目前加成的武將）
+func def_state() -> Dictionary:
+	var src: Dictionary = {}
+	for s in _def_sources:
+		src[s] = {"mult": _def_sources[s].mult, "left": _def_sources[s].left}
+	var buffed: Array = []
+	for id in _def_buffed:
+		if is_instance_valid(_def_buffed[id]):
+			buffed.append(_def_buffed[id].hero_id)
+	buffed.sort()
+	return {"def": def_stat, "effective": effective_def(), "bonus": def_bonus_mult, "sources": src,
+		"aura_mult": def_aura_mult, "aura_active": _def_aura_shown, "radius": attack_range, "buffed": buffed,
+		"aura_source": def_aura_source}
+
 func _exit_tree() -> void:
 	_release_slows()
+	_release_def_aura()
 
 ## 戰鬥中（BATTLE）才有光環；沒有 BattleManager（單獨建立的武將）時視為戰鬥中
 func _in_battle() -> bool:
@@ -430,7 +554,7 @@ func slow_state() -> Dictionary:
 		"aura_source": aura_source, "road_source": slow_source}
 
 # ═══════════════════════════════════════════
-#  受傷（被擋住的敵人攻擊阻路武將；閃避見 dodge_chance）
+#  受傷（被擋住的敵人攻擊阻路武將；閃避見 dodge_chance；防禦光環見 effective_def）
 # ═══════════════════════════════════════════
 func take_damage(amount: float) -> void:
 	if current_hp <= 0.0:
@@ -451,7 +575,9 @@ func take_damage(amount: float) -> void:
 			_show_dodge()
 			return
 
-	var actual_dmg: float = amount * (1.0 - def_stat / (def_stat + 100.0))
+	# 防禦公式不變，只是防禦換成受傷當下的有效防禦（防禦光環的加成乘在防禦上，不是直接少扣一定比例的傷害）
+	var d: float = effective_def()
+	var actual_dmg: float = amount * (1.0 - d / (d + 100.0))
 	current_hp -= actual_dmg
 	
 	# 顯示傷害數字 (深紅色代表英雄受傷)
@@ -503,6 +629,11 @@ func _draw() -> void:
 		var ar: float = attack_range * tile_size
 		draw_circle(Vector2.ZERO, ar, Color(AURA_COLOR, 0.07))
 		draw_arc(Vector2.ZERO, ar, 0, TAU, 48, Color(AURA_COLOR, 0.45), 1.5)
+	# 防禦光環的範圍（戰鬥中）：淺綠色的淡圈，半徑是目前的有效射程
+	if _def_aura_shown:
+		var dr: float = attack_range * tile_size
+		draw_circle(Vector2.ZERO, dr, Color(DEF_AURA_COLOR, 0.06))
+		draw_arc(Vector2.ZERO, dr, 0, TAU, 48, Color(DEF_AURA_COLOR, 0.45), 1.5)
 
 	# 射程圈（選中時顯示）
 	if _is_selected:
@@ -534,6 +665,10 @@ func _draw() -> void:
 		draw_string(ThemeDB.fallback_font,
 			Vector2(-10, 7), short_name,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
+
+	# 受到防禦光環加成：淺綠色的外框（貼圖與純色共用；選取時的金色邊框畫在它上面）
+	if def_bonus_mult > 1.0:
+		draw_rect(rect.grow(2), Color(DEF_AURA_COLOR, 0.9), false, 2.0)
 
 	# HP 條（貼圖與純色共用）
 	var bar_w: float = float(hero_half * 2)

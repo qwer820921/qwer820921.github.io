@@ -2772,8 +2772,59 @@ await test("閃避-S1", async () => {
   );
 });
 
+// 劉備「防禦光環」（設定表的被動描述「光環：提升友軍防禦」，沒有數值與範圍）：參數與說明文字出自同一份定義（utils/heroSkills）；
+// 20%、目前有效射程（含邊界）、不含自己、取最強不疊加、只在戰場是第一版的設計值
+await test("防禦光環-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    defAuraPercent,
+    damageAfterDefense,
+    slowAuraPercent,
+    burnTickDamage,
+    effectiveRange,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const liu = heroSkillOf("liu_bei");
+  const payload = heroSkillPayload("liu_bei");
+  const text = describeHeroSkill(liu, 3.5, 120);
+  const plain = describeHeroSkill(liu);
+  check(
+    "防禦光環-S1 劉備的防禦光環：送進 Godot 的參數（def_aura、def_mult 1.2，只有這兩個欄位）與說明文字出自同一份定義；說明寫出提升 20%、目前範圍半徑、不含自己與防禦塔、照防禦公式計算（50 → 約 45.5，不是直接少扣）、取最強不疊加、只在戰場、不改存檔，沒有治療；其他技能的計算不受影響",
+    liu?.id === "def_aura" &&
+      liu.name === "防禦光環" &&
+      liu.defenseMultiplier === 1.2 &&
+      payload.skill?.id === "def_aura" &&
+      payload.skill.def_mult === liu.defenseMultiplier &&
+      JSON.stringify(Object.keys(payload.skill).sort()) ===
+        '["def_mult","id"]' &&
+      defAuraPercent(liu) === 20 &&
+      defAuraPercent(heroSkillOf("guan_yu")) === 0 &&
+      defAuraPercent(null) === 0 &&
+      damageAfterDefense(100, 100) === 50 &&
+      Math.abs(damageAfterDefense(100, 120) - 10000 / 220) < 1e-9 &&
+      slowAuraPercent(liu) === 0 &&
+      burnTickDamage(liu, 100) === 0 &&
+      effectiveRange(liu, 3.5) === 3.5 &&
+      text.includes("其他友軍武將防禦力提升 20%") &&
+      text.includes("含邊界") &&
+      text.includes("目前等級的範圍半徑是 3.5 格") &&
+      text.includes("不含自己，防禦塔與城池不受影響") &&
+      text.includes("不是直接少扣 20% 的傷害") &&
+      text.includes("從扣 50 變成扣約 45.5") &&
+      text.includes("趙雲的閃避照常先判定") &&
+      text.includes("取最強的一個，不會疊加") &&
+      text.includes("只在戰場生效") &&
+      text.includes("存檔與屬性表的防禦不會提高") &&
+      !text.includes("治療") &&
+      !text.includes("恢復") &&
+      !plain.includes("範圍半徑是"),
+    { liu, payload, text }
+  );
+});
+
 // 技能綁定和正式設定表 heroes_config 的被動描述（passive）對照：趙雲是閃避、馬超是衝鋒（首擊加倍）；
-// 關羽是減速光環（「周圍敵人減速10%」）；甘寧（「奇襲：首擊必殺」，意思還沒決定）、劉備（「光環：提升友軍防禦」，還沒有規格）沒有技能
+// 關羽是減速光環（「周圍敵人減速10%」）；劉備是防禦光環（「光環：提升友軍防禦」）；甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
 await test("技能對照-S1", async () => {
   const { heroSkillOf, heroSkillPayload } = require(
     join(GAME, "utils/heroSkills.ts")
@@ -2795,7 +2846,7 @@ await test("技能對照-S1", async () => {
     (id) => heroSkillPayload(id).skill?.id === "first_strike"
   );
   check(
-    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）；甘寧、劉備、張飛沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
+    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）；甘寧、張飛沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
     JSON.stringify(got) ===
       JSON.stringify({
         ma_chao: "first_strike",
@@ -2804,13 +2855,13 @@ await test("技能對照-S1", async () => {
         zhou_yu: "burn",
         guan_yu: "slow_aura",
         gan_ning: null,
-        liu_bei: null,
+        liu_bei: "def_aura",
         zhang_fei: null,
       }) &&
       JSON.stringify(firstStrike) === '["ma_chao"]' &&
       !Object.values(got).includes("sweep") &&
       !("skill" in heroSkillPayload("gan_ning")) &&
-      !("skill" in heroSkillPayload("liu_bei")),
+      heroSkillPayload("liu_bei").skill?.id === "def_aura",
     { got, firstStrike }
   );
 });

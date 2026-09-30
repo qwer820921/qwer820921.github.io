@@ -304,6 +304,11 @@ export type HeroSkillPayload =
       id: "dodge";
       /** 每次受到敵人直接攻擊時閃避的機率（0～1）；不是有限數字或超出範圍時 Godot 當作沒有閃避 */
       dodge_chance: number;
+    }
+  | {
+      id: "def_aura";
+      /** 範圍（目前有效射程內）其他友軍武將的防禦倍率（1.2＝防禦提升 20%）；不是大於 1 的有限數字時 Godot 當作沒有這個技能 */
+      def_mult: number;
     };
 
 export interface ExpeditionPayload {

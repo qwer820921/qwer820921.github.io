@@ -151,13 +151,14 @@ const AREAS = {
     scripts: ["r13-web.js"],
   },
   skills: {
-    what: "武將技能（馬超的首擊加倍、趙雲的閃避、黃忠、周瑜、關羽的減速光環）：趙雲在兩個入口實際擋路受擊，逐次核對閃避的判定；關羽在兩個入口實際部署，核對光環範圍內地面敵人的速度與免疫、飛行不受影響（需要 Godot 產物）",
+    what: "武將技能（馬超的首擊加倍、趙雲的閃避、黃忠、周瑜、關羽的減速光環、劉備的防禦光環）：趙雲在兩個入口實際擋路受擊，逐次核對閃避的判定；關羽在兩個入口實際部署，核對光環範圍內地面敵人的速度與免疫、飛行不受影響；劉備在兩個入口實際部署，核對友軍每擊的實際扣血、移出隊伍後恢復與單位面板的防禦（需要 Godot 產物）",
     scripts: [
       "r12-web.js",
       "r14-web.js",
       "r15-web.js",
       "skill-slow-aura-web.js",
       "skill-dodge-web.js",
+      "skill-def-aura-web.js",
     ],
   },
   heroes: {
@@ -189,8 +190,8 @@ const AREAS = {
     scripts: ["air-readiness-web.js"],
   },
   "wave-reject": {
-    what: "拒絕開戰後的出口：主頁（桌面與 390×844）從提示的「切換關卡」打開關卡選擇，原本提示範圍內的有效關卡用 hit-test 確認在最上層並用真實滑鼠點擊換關；取消選關、Esc、再開；獨立戰鬥頁返回關卡選擇後換關；不結算、資源不變（需要 Godot 產物）",
-    scripts: ["wave-reject-exit-web.js"],
+    what: "拒絕開戰後的出口：主頁（桌面與 390×844）從提示的「切換關卡」打開關卡選擇，原本提示範圍內的有效關卡用 hit-test 確認在最上層並用真實滑鼠點擊換關；取消選關、Esc、再開；獨立戰鬥頁返回關卡選擇後換關；不結算、資源不變。另外全程用鍵盤：關卡選擇的對話框名稱、Tab 留在視窗內、Esc 只關最上層（巢狀的敵軍預覽先關）、焦點歸還、換關（需要 Godot 產物）",
+    scripts: ["wave-reject-exit-web.js", "stage-keyboard-web.js"],
   },
   "air-first": {
     what: "飛行路線無效與防禦塔「優先飛行」：兩個關卡選擇入口的提醒與預覽和實際出兵一致、兩個戰鬥入口選塔切換並觀察攻擊／減速目標、拒絕開戰的提示與出口、390 寬與鍵盤（需要 Godot 產物）",
@@ -267,6 +268,8 @@ const FULL = [
   "stage-data-web.js",
   "enemy-traits-web.js",
   "wave-reject-exit-web.js",
+  "stage-keyboard-web.js",
+  "skill-def-aura-web.js",
 ];
 
 const [mode, ...rest] = process.argv.slice(2);

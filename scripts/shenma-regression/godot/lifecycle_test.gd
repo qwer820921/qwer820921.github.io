@@ -172,12 +172,12 @@ func _run() -> void:
 		battle_ended_count += 1
 		last_result = r)
 
-	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜、趙雲的閃避、關羽的減速光環）、橫掃原型與攻速成長；
+	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜、趙雲的閃避、關羽的減速光環、劉備的防禦光環）、橫掃原型與攻速成長；
 	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行；
 	# route 跑飛行與地面的路線無效（出兵前擋下）；blocker 只跑敵人攻擊阻路武將的冷卻；
 	# dodge 只跑趙雲「閃避」；firststrike 只跑首擊加倍（馬超「衝鋒」）；
 	# stagedata 跑關卡資料未完成（沒有波次、波次或路線的格式不對）；enemyatk 跑敵人設定的對武將攻擊力；immune 跑免疫減速；
-	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）
+	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -188,6 +188,7 @@ func _run() -> void:
 			await _sweep_cases()
 			await _dodge_cases()
 			await _slow_aura_cases()
+			await _def_aura_cases()
 		elif only == "blocker":
 			await _blocker_cases()
 		elif only == "dodge":
@@ -218,8 +219,10 @@ func _run() -> void:
 			await _slow_aura_cases()
 		elif only == "aura":
 			await _slow_aura_cases()
+		elif only == "defaura":
+			await _def_aura_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura）", false)
 		_finish()
 		return
 
@@ -426,6 +429,9 @@ func _run() -> void:
 	# ── 倍率減速的來源與有效期、關羽的減速光環 ──
 	await _slow_source_cases()
 	await _slow_aura_cases()
+
+	# ── 劉備的防禦光環（範圍內其他武將的防禦 × 1.2，取最強不疊加）──
+	await _def_aura_cases()
 
 	_finish()
 
@@ -6510,6 +6516,398 @@ func _slow_aura_cases() -> void:
 			and steps.died == [false, false, 0, 0, true] and steps.new_battle == [0, 0]
 		d6 = steps
 	_check("光環-6 移位、升級、移除、倒下、新的一場：1 級只有 1 格的敵人；2 級（半徑 3.5）3.3 格的也有；移到遠處都沒有、移回來都有；從隊伍移除後都沒有；重新放置（新的來源）都有、倒下後都沒有；新的一場的敵人沒有來源",
+		ok6, d6)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 劉備「防禦光環」 ──────────────────────────────────────────
+# 以劉備為中心、目前有效射程內（含邊界）的其他存活武將防禦 × 1.2；受傷照原本的防禦公式、用提高後的防禦計算（不是直接少扣 20%）；
+# 不含自己與防禦塔；多個防禦光環取最強、不相乘不累加；只在戰鬥中；移位、升級、移除、倒下、戰鬥結束、新的一場都撤除，不寫回 def_stat
+
+## 劉備的防禦光環（和網頁 utils/heroSkills 的出征參數相同）
+const DEF_AURA_SKILL: Dictionary = {"id": "def_aura", "def_mult": 1.2}
+## 攻擊力 100 打防禦 100 的武將：沒有加成扣 50；有加成（防禦 120）扣 10000 ÷ 220；只有 1.1 的加成（防禦 110）扣 10000 ÷ 210
+const DEF_HIT_PLAIN: float = 50.0
+const DEF_HIT_AURA: float = 10000.0 / 220.0
+const DEF_HIT_WEAK: float = 10000.0 / 210.0
+
+## 實際引擎用的敵人：攻擊力 100 的快速地面兵（普通與免疫減速）、不會移動的地面兵（讓戰鬥持續、不會被打到）
+const DEF_ENEMIES: Array = [
+	{"enemy_id": "def_run", "name": "R", "hp": 99999.0, "speed": 240.0, "atk": 100},
+	{"enemy_id": "def_run_imm", "name": "I", "hp": 99999.0, "speed": 240.0, "atk": 100, "trait": "immune_slow"},
+	{"enemy_id": "def_post", "name": "P", "hp": 99999.0, "speed": 0.0},
+]
+
+## 出征的武將：防禦 100、血量 1,000,000（被打很多下也不會倒）
+func _def_hero(hid: String, skill: Variant = null, slot: int = 1) -> Dictionary:
+	var h: Dictionary = _r12_hero(hid, skill)
+	h["def"] = 100.0
+	h["hp"] = 1000000.0
+	h["slot"] = slot
+	return h
+
+## 實際引擎：載入一場（經過 JSON）並依 cells 的順序放置武將（hero_id → 格子）、放置防禦塔（[種類, 格子]），不開戰。
+## 劉備與另一位帶防禦光環的測試武將 def_b 射程 3 格（劉備的射程成長 0.5）；def_a／def_c／def_d 射程 0.3 格（擋住的敵人打不到，不會打倒它）
+func _def_load(rec: Node, battle_id: String, waves: Array, team: Array, cells: Dictionary, towers: Array = []) -> void:
+	var p: Dictionary = _r12_payload("def_" + battle_id, waves, battle_id, team)
+	p["heroes_config"] = [
+		{"hero_id": "liu_bei", "name": "劉備", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5, "range_growth": 0.5},
+		{"hero_id": "def_b", "name": "B", "job": "cavalry", "attack_range": 3.0, "attack_speed": 0.5},
+		{"hero_id": "def_a", "name": "A", "job": "infantry", "attack_range": 0.3, "attack_speed": 0.5},
+		{"hero_id": "def_c", "name": "C", "job": "archer", "attack_range": 0.3, "attack_speed": 0.5},
+		{"hero_id": "def_d", "name": "D", "job": "mage", "attack_range": 0.3, "attack_speed": 0.5},
+	]
+	for c in DEF_ENEMIES:
+		p["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p)
+	for hid in cells:
+		_r12_place(hid, cells[hid])
+	for t in towers:
+		main._on_web_place_tower({"tower_type": t[0], "cell_x": t[1].x, "cell_y": t[1].y})
+
+## 等 n 個一般幀＋物理步進（光環每一幀更新）
+func _def_frames(n: int = 3) -> void:
+	for i in range(n):
+		await process_frame
+		await physics_frame
+
+## 場上武將受到的防禦加成（hero_id → 倍率；不在場上是 -1）
+func _def_bonus(ids: Array) -> Array:
+	var out: Array = []
+	for hid in ids:
+		var h: Node = _fly_hero(hid)
+		out.append(snappedf(h.def_bonus_mult, 0.0001) if h != null else -1.0)
+	return out
+
+## 實際引擎：開戰、等被 def_a 擋住的敵人，記錄 sec 秒（物理時鐘）內每一擊讓 def_a 扣的血
+func _def_hits(e: Node, sec: float) -> Array:
+	var a: Node = _fly_hero("def_a")
+	if e == null or a == null:
+		return []
+	await _wait_until(func(): return is_instance_valid(e) and e._blocker != null, 5.0)
+	var tr: Dictionary = await _dodge_track(e, a, sec)
+	return tr.ev.map(func(x): return float(x.lost))
+
+func _def_all(xs: Array, v: float) -> bool:
+	return not xs.is_empty() and xs.all(func(x): return absf(float(x) - v) < 0.0002)
+
+func _def_aura_cases() -> void:
+	# 防禦-0：技能參數的判讀：def_mult 是大於 1 的有限數字才啟用；字串、1、0.8、0、負數、布林、null、NaN、無限大、沒有欄位、不認得的 id 都不啟用；
+	# 減速光環不是防禦光環；經過 JSON 的 1.2 照用；防禦光環不帶其他技能
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var bad0: Array = []
+	for c in [[{"id": "def_aura", "def_mult": 1.2}, 1.2], [{"id": "def_aura", "def_mult": 2}, 2.0], [{"id": "def_aura", "def_mult": "1.2"}, 1.0],
+			[{"id": "def_aura", "def_mult": 1}, 1.0], [{"id": "def_aura", "def_mult": 1.0}, 1.0], [{"id": "def_aura", "def_mult": 0.8}, 1.0],
+			[{"id": "def_aura", "def_mult": 0}, 1.0], [{"id": "def_aura", "def_mult": -1.2}, 1.0], [{"id": "def_aura", "def_mult": true}, 1.0],
+			[{"id": "def_aura", "def_mult": null}, 1.0], [{"id": "def_aura", "def_mult": NAN}, 1.0], [{"id": "def_aura", "def_mult": INF}, 1.0],
+			[{"id": "def_aura"}, 1.0], [{"id": "def_aura_x", "def_mult": 1.2}, 1.0], [{"id": "heal", "def_mult": 1.2}, 1.0],
+			[{"id": "slow_aura", "slow_mult": 0.9}, 1.0], [null, 1.0]]:
+		var st: Dictionary = {} if c[0] == null else {"skill": c[0]}
+		h0._read_skill(st)
+		var want_slow: bool = c[0] != null and c[0].get("id") == "slow_aura"
+		if not is_equal_approx(h0.def_aura_mult, float(c[1])) or (h0.slow_aura_mult < 1.0) != want_slow:
+			bad0.append(str(c[0]))
+	h0._read_skill({"skill": JSON.parse_string("{\"id\": \"def_aura\", \"def_mult\": 1.2}")})
+	var json0: float = h0.def_aura_mult
+	var other0: Array = [h0.slow_aura_mult, h0.dodge_chance, h0.first_strike_multiplier, h0.range_multiplier, h0.burn_ratio, h0.sweep_ratio]
+	h0.free()
+	_check("防禦-0 技能參數：def_mult 1.2、2 啟用；字串、1、0.8、0、負數、布林、null、NaN、無限大、沒有欄位、不認得的 id 都不啟用；減速光環不是防禦光環；經過 JSON 的 1.2 照用、不帶其他技能",
+		bad0.is_empty() and is_equal_approx(json0, 1.2) and other0 == [1.0, 0.0, 1.0, 1.0, 0.0, 0.0], {"bad": bad0, "json": json0, "other": other0})
+
+	# 防禦-1：受傷公式（單獨的武將，不經過 Main；劉備射程 3 格）：防禦 100 的武將被打 100 → 沒有加成扣 50；
+	# 劉備的光環作用後扣 10000 ÷ 220 ≈ 45.4545（不是直接少扣 20% 的 40），def_stat 仍是 100、有效防禦 120；光環再更新 10 次仍是 45.4545（不疊乘）；
+	# 劉備自己被打 100 仍扣 50（不含自己）；防禦 0 的武將有加成也扣 100；會閃避的武將（抽樣 0、0.9）先判定閃避：第一擊不扣血、第二擊 45.4545；
+	# 劉備不再更新後，加成照遊戲時間 0.5 秒到期（0.3 秒時還在、0.55 秒時沒有）
+	var holder := _dodge_holder()
+	var t: float = float(main._tile_size)
+	var mk := func(def: float, pos: Vector2) -> Node:
+		var h: Node = load("res://entities/hero/Hero.gd").new()
+		holder.add_child(h)
+		h.set_process(false)
+		h.tile_size = int(t)
+		h.max_hp = 1000000.0
+		h.current_hp = 1000000.0
+		h.def_stat = def
+		h.position = pos
+		return h
+	var hit := func(h: Node) -> float:
+		var hp0: float = h.current_hp
+		h.take_damage(100.0)
+		return snappedf(hp0 - h.current_hp, 0.0001)
+	var lb1: Node = mk.call(100.0, Vector2(t, 0.0))
+	lb1.hero_id = "liu_bei"
+	lb1.attack_range = 3.0
+	lb1._read_skill({"skill": DEF_AURA_SKILL.duplicate()})
+	var a1: Node = mk.call(100.0, Vector2.ZERO)
+	var z1: Node = mk.call(0.0, Vector2(0.0, t))
+	var d1: Node = mk.call(100.0, Vector2(0.0, -t))
+	d1.dodge_chance = 0.15
+	d1.dodge_roll_override = _dodge_seq({"i": 0, "us": [0.0, 0.9]})
+	var plain1: float = hit.call(a1)
+	lb1._update_def_aura()
+	var aura1: float = hit.call(a1)
+	var eff1: float = a1.effective_def()
+	for i in range(10):
+		lb1._update_def_aura()
+		a1._tick_def_sources(1.0 / 60.0)
+	var aura1b: float = hit.call(a1)
+	var self1: float = hit.call(lb1)
+	var zero1: float = hit.call(z1)
+	var dodge1: Array = [hit.call(d1), hit.call(d1)]
+	a1._tick_def_sources(0.3)
+	var ttl_mid: float = a1.def_bonus_mult
+	a1._tick_def_sources(0.25)
+	var ttl_end: float = a1.def_bonus_mult
+	var aura_hit: float = snappedf(DEF_HIT_AURA, 0.0001)
+	var ok1: bool = plain1 == DEF_HIT_PLAIN and is_equal_approx(aura1, aura_hit) and is_equal_approx(aura1b, aura_hit) and a1.def_stat == 100.0 and is_equal_approx(eff1, 120.0) \
+		and self1 == DEF_HIT_PLAIN and lb1.def_bonus_mult == 1.0 and zero1 == 100.0 and is_equal_approx(z1.def_bonus_mult, 1.2) \
+		and dodge1[0] == 0.0 and is_equal_approx(float(dodge1[1]), aura_hit) and d1.dodge_rolls == 2 and is_equal_approx(ttl_mid, 1.2) and ttl_end == 1.0
+	_check("防禦-1 受傷公式：防禦 100 被打 100 沒有加成扣 50、劉備的光環作用後扣 45.4545（有效防禦 120，不是直接少扣 20% 的 40）、def_stat 仍是 100；更新 10 次仍是 45.4545；劉備自己仍扣 50；防禦 0 的有加成也扣 100；會閃避的先判定（第一擊閃避不扣、第二擊 45.4545）；停止更新後 0.3 秒還在、0.55 秒到期",
+		ok1, {"plain": plain1, "aura": aura1, "aura_after_10": aura1b, "def_stat": a1.def_stat, "effective": eff1, "self": [self1, lb1.def_bonus_mult], "def0": [zero1, z1.def_bonus_mult],
+			"dodge": [dodge1, d1.dodge_rolls], "ttl": [ttl_mid, ttl_end]})
+
+	# 防禦-2：兩個來源（1.2 與 1.1）：兩種套用順序都是 1.2（不是相乘的 1.32）；撤掉強的剩 1.1、扣 10000 ÷ 210 ≈ 47.619；同一個來源重複套用只刷新（仍 1 個來源）；
+	# 撤除不存在的來源不影響；無效的套用（倍率 0.9、1、NaN、有效期 0、空的來源）都不算；撤掉弱的回到 1、扣 50
+	var a2: Node = mk.call(100.0, Vector2(20.0 * t, 20.0 * t))
+	var orders: Array = []
+	for order in [["s", "w"], ["w", "s"]]:
+		for k in order:
+			a2.apply_def_from("src_" + k, 1.2 if k == "s" else 1.1, 0.5)
+		orders.append(snappedf(a2.def_bonus_mult, 0.0001))
+		a2.remove_def_from("src_s")
+		a2.remove_def_from("src_w")
+	a2.apply_def_from("src_s", 1.2, 0.5)
+	a2.apply_def_from("src_w", 1.1, 0.5)
+	a2.remove_def_from("src_s")
+	var weak2: Array = [snappedf(a2.def_bonus_mult, 0.0001), hit.call(a2)]
+	for i in range(3):
+		a2.apply_def_from("src_w", 1.1, 0.5)
+	a2.remove_def_from("src_none")
+	for bad in [["x1", 0.9, 0.5], ["x2", 1.0, 0.5], ["x3", NAN, 0.5], ["x4", 1.5, 0.0], ["", 1.5, 0.5]]:
+		a2.apply_def_from(bad[0], bad[1], bad[2])
+	var kept2: Array = [a2._def_sources.keys(), snappedf(a2.def_bonus_mult, 0.0001)]
+	a2.remove_def_from("src_w")
+	var none2: Array = [a2.def_bonus_mult, hit.call(a2), a2._def_sources.size()]
+	holder.queue_free()
+	_check("防禦-2 兩個來源（1.2 與 1.1）：兩種套用順序都是 1.2（不相乘）；撤掉強的剩 1.1、扣 47.619；重複套用只刷新、撤除不存在的來源不影響、無效的套用不算；撤掉弱的回到 1、扣 50",
+		orders == [1.2, 1.2] and weak2[0] == 1.1 and is_equal_approx(float(weak2[1]), snappedf(DEF_HIT_WEAK, 0.0001)) and kept2 == [["src_w"], 1.1] and none2 == [1.0, DEF_HIT_PLAIN, 0],
+		{"orders": orders, "weak": weak2, "kept": kept2, "none": none2})
+
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 防禦-3：範圍與對象（實際引擎；劉備在建築格 (6,4)、射程 3 格，唯一的敵人不會移動、在範圍外 → 劉備沒有攻擊目標）：
+	# 備戰時不作用；開戰後正好 3 格（含邊界）與 1 格的友軍 1.2，3.02 格的 1；劉備自己 1；範圍內的防禦塔不列入；
+	# 快照與升級面板：劉備的光環作用中、倍率 1.2、半徑 3、加成 def_a 與 def_d；def_a 原本的防禦 100、有效防禦 120，def_c 100／100
+	var team3: Array = [_def_hero("liu_bei", DEF_AURA_SKILL.duplicate(), 1), _def_hero("def_a", null, 2), _def_hero("def_c", null, 3), _def_hero("def_d", null, 4)]
+	_def_load(rec, "def-3", [[_grp("def_post", 1, 0.02)]], team3, {"liu_bei": Vector2i(6, 4), "def_a": Vector2i(1, 4), "def_c": Vector2i(2, 4), "def_d": Vector2i(3, 4)}, [["archer", Vector2i(6, 6)]])
+	await _def_frames()
+	var prep3: Array = _def_bonus(["def_a", "def_c", "def_d", "liu_bei"])
+	var lb3: Node = _fly_hero("liu_bei")
+	var prep_active3: bool = lb3.def_state().aura_active if lb3 != null else true
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() >= 1, 5.0)
+	var d3: Dictionary = {}
+	var ok3: bool = false
+	if lb3 != null and _fly_hero("def_a") != null and _fly_hero("def_c") != null and _fly_hero("def_d") != null:
+		lb3._atk_timer = 999.0
+		var R: float = lb3.attack_range * t
+		var c3: Vector2 = lb3.global_position
+		_fly_hero("def_a").global_position = c3 + Vector2(R, 0.0)
+		_fly_hero("def_c").global_position = c3 + Vector2(R + 0.02 * t, 0.0)
+		_fly_hero("def_d").global_position = c3 + Vector2(0.0, 1.0) * t
+		await _def_frames(4)
+		var got3: Array = _def_bonus(["def_a", "def_c", "def_d", "liu_bei"])
+		var snap3: Dictionary = _fly_snapshot(rec)
+		var hd: Dictionary = snap3.get("hero_def", {})
+		var lbs: Dictionary = hd.get("liu_bei", {})
+		var np: int = rec.sent_panels.size()
+		main._on_hero_clicked(_fly_hero("def_a"))
+		var panel_a: Dictionary = rec.sent_panels.back() if rec.sent_panels.size() > np else {}
+		main._on_hero_clicked(_fly_hero("def_c"))
+		var panel_c: Dictionary = rec.sent_panels.back() if rec.sent_panels.size() > np + 1 else {}
+		main._deselect_unit()
+		var towers3: int = _slw_towers().size()
+		ok3 = prep3 == [1.0, 1.0, 1.0, 1.0] and prep_active3 == false and got3 == [1.2, 1.0, 1.2, 1.0] and towers3 == 1 \
+			and lbs.get("aura_active") == true and is_equal_approx(float(lbs.get("aura_mult", 0.0)), 1.2) and is_equal_approx(float(lbs.get("radius", 0.0)), 3.0) and lbs.get("buffed") == ["def_a", "def_d"] \
+			and is_equal_approx(float(hd.get("def_a", {}).get("def", 0.0)), 100.0) and is_equal_approx(float(hd.get("def_a", {}).get("effective", 0.0)), 120.0) \
+			and is_equal_approx(float(hd.get("def_c", {}).get("effective", 0.0)), 100.0) and lb3.current_hp == lb3.max_hp \
+			and is_equal_approx(float(panel_a.get("def", 0.0)), 100.0) and is_equal_approx(float(panel_a.get("def_effective", 0.0)), 120.0) \
+			and is_equal_approx(float(panel_c.get("def", 0.0)), 100.0) and is_equal_approx(float(panel_c.get("def_effective", 0.0)), 100.0)
+		d3 = {"prep": prep3, "prep_active": prep_active3, "edge_3/out_3_02/one/self": got3, "towers": towers3, "liu_bei": lbs, "def_a": hd.get("def_a"), "def_c": hd.get("def_c"),
+			"panel_a": [panel_a.get("def"), panel_a.get("def_effective")], "panel_c": [panel_c.get("def"), panel_c.get("def_effective")]}
+	_check("防禦-3 範圍與對象：備戰時不作用；開戰後正好 3 格（含邊界）與 1 格的友軍 1.2、3.02 格的 1、劉備自己 1；範圍內的防禦塔不列入；快照光環作用中、倍率 1.2、半徑 3、加成 def_a 與 def_d；升級面板 def_a 原本 100、有效 120，範圍外的 def_c 100／100",
+		ok3, d3)
+
+	# 防禦-4：實際受傷（被 def_a 擋在道路 (4,5) 的敵人，攻擊力 100，劉備在 (6,4)、距離 √5 格）：
+	# 沒有劉備每擊扣 50；有劉備每擊 45.4545；免疫減速的敵人也是 45.4545（不會忽略防禦），敵人的攻擊力仍是 100；
+	# 2 倍速每擊仍是 45.4545；手動暫停 1 秒（牆鐘）後加成仍在、只有 1 個來源，繼續後每擊 45.4545
+	var d4: Dictionary = {}
+	_def_load(rec, "def-4a", [[_grp("def_run", 1, 0.02)]], [_def_hero("def_a", null, 2)], {"def_a": Vector2i(4, 5)})
+	_bm().player_start_battle()
+	await _wait_until(func(): return _first_enemy() != null, 5.0)
+	d4["plain"] = await _def_hits(_first_enemy(), 2.2)
+	var team4: Array = [_def_hero("liu_bei", DEF_AURA_SKILL.duplicate(), 1), _def_hero("def_a", null, 2)]
+	_def_load(rec, "def-4b", [[_grp("def_run", 1, 0.02)]], team4, {"liu_bei": Vector2i(6, 4), "def_a": Vector2i(4, 5)})
+	_bm().player_start_battle()
+	await _wait_until(func(): return _first_enemy() != null, 5.0)
+	var e4: Node = _first_enemy()
+	d4["aura"] = await _def_hits(e4, 2.2)
+	d4["enemy_atk"] = e4.blocker_atk if is_instance_valid(e4) else -1.0
+	_r19_speed(rec, 2.0)
+	d4["x2"] = await _def_hits(e4, 2.2)
+	_r19_speed(rec, 1.0)
+	_r20_pause(rec, true)
+	await _wait_real(1.0)
+	var a4: Node = _fly_hero("def_a")
+	d4["paused"] = [snappedf(a4.def_bonus_mult, 0.0001), a4._def_sources.size()] if a4 != null else []
+	_r20_pause(rec, false)
+	d4["after_pause"] = await _def_hits(e4, 2.2)
+	_def_load(rec, "def-4c", [[_grp("def_run_imm", 1, 0.02)]], team4, {"liu_bei": Vector2i(6, 4), "def_a": Vector2i(4, 5)})
+	_bm().player_start_battle()
+	await _wait_until(func(): return _first_enemy() != null, 5.0)
+	var e4i: Node = _first_enemy()
+	d4["immune"] = await _def_hits(e4i, 2.2)
+	d4["immune_enemy"] = [e4i.immune_slow, e4i.blocker_atk] if is_instance_valid(e4i) else []
+	_check("防禦-4 實際受傷（攻擊力 100 打防禦 100 的阻路武將）：沒有劉備每擊 50；有劉備每擊 45.4545；免疫減速的敵人也是 45.4545、敵人攻擊力仍是 100；2 倍速仍是 45.4545；暫停 1 秒後加成仍在（1 個來源）、繼續後 45.4545",
+		_def_all(d4.plain, DEF_HIT_PLAIN) and _def_all(d4.aura, DEF_HIT_AURA) and d4.enemy_atk == 100.0 and _def_all(d4.x2, DEF_HIT_AURA) and d4.paused == [1.2, 1]
+			and _def_all(d4.after_pause, DEF_HIT_AURA) and _def_all(d4.immune, DEF_HIT_AURA) and d4.immune_enemy == [true, 100.0], d4)
+
+	# 防禦-5：兩個防禦光環（劉備 1.2、測試武將 def_b 1.1，都涵蓋被擋住的 def_a），兩種放置順序：def_a 1.2、兩個來源、每擊 45.4545；
+	# 兩位光環武將互相加成、不加自己（劉備 1.1、def_b 1.2）；把劉備從隊伍移除後 def_a 剩 1.1（只剩 def_b 的來源）、每擊 47.619；再移除 def_b 回到 1、每擊 50
+	var d5: Dictionary = {}
+	var ok5: bool = true
+	var weak_skill: Dictionary = {"id": "def_aura", "def_mult": 1.1}
+	for order in [["liu_bei", "def_b"], ["def_b", "liu_bei"]]:
+		var team5: Array = [_def_hero("liu_bei", DEF_AURA_SKILL.duplicate(), 1), _def_hero("def_b", weak_skill.duplicate(), 2), _def_hero("def_a", null, 3)]
+		var cells5: Dictionary = {}
+		cells5[order[0]] = Vector2i(6, 4) if order[0] == "liu_bei" else Vector2i(3, 4)
+		cells5[order[1]] = Vector2i(6, 4) if order[1] == "liu_bei" else Vector2i(3, 4)
+		cells5["def_a"] = Vector2i(4, 5)
+		_def_load(rec, "def-5-" + order[0], [[_grp("def_run", 1, 0.02)]], team5, cells5)
+		_bm().player_start_battle()
+		await _wait_until(func(): return _first_enemy() != null, 5.0)
+		var e5: Node = _first_enemy()
+		var both: Array = await _def_hits(e5, 2.2)
+		var a5: Node = _fly_hero("def_a")
+		var src5: int = a5._def_sources.size() if a5 != null else -1
+		var mutual: Array = _def_bonus(["def_a", "liu_bei", "def_b"])
+		var r: Dictionary = {"hits": both.slice(0, 3), "sources": src5, "a/liu_bei/def_b": mutual}
+		ok5 = ok5 and _def_all(both, DEF_HIT_AURA) and src5 == 2 and mutual == [1.2, 1.1, 1.2]
+		if order[0] == "liu_bei":
+			_r19_js(rec, {"type": "update_team", "team_list": [team5[1], team5[2]]})
+			await _def_frames()
+			var weak: Array = [_def_bonus(["def_a"])[0], _fly_hero("def_a")._def_sources.size() if _fly_hero("def_a") != null else -1]
+			var weak_hits: Array = await _def_hits(e5, 2.2)
+			_r19_js(rec, {"type": "update_team", "team_list": [team5[2]]})
+			await _def_frames()
+			var none: Array = [_def_bonus(["def_a"])[0], _fly_hero("def_a")._def_sources.size() if _fly_hero("def_a") != null else -1]
+			var none_hits: Array = await _def_hits(e5, 2.2)
+			r["removed_liu_bei"] = {"bonus/sources": weak, "hits": weak_hits.slice(0, 3)}
+			r["removed_both"] = {"bonus/sources": none, "hits": none_hits.slice(0, 3)}
+			ok5 = ok5 and weak == [1.1, 1] and _def_all(weak_hits, DEF_HIT_WEAK) and none == [1.0, 0] and _def_all(none_hits, DEF_HIT_PLAIN)
+		d5[",".join(order)] = r
+	_check("防禦-5 兩個防禦光環（1.2 與 1.1）兩種放置順序：def_a 1.2、兩個來源、每擊 45.4545；兩位光環武將互相加成、不加自己（劉備 1.1、def_b 1.2）；移除劉備後剩 1.1（1 個來源）、每擊 47.619；再移除 def_b 回到 1、每擊 50",
+		ok5, d5)
+
+	# 防禦-6：升級、移位、戰鬥結束、倒下、移除、新的一場（兩波，每波一個不會移動的敵人；劉備 (6,4)，def_a 在 3.3 格、def_c 在 1 格；劉備的射程成長 0.5，2 級時 3.5 格）：
+	# 1 級只有 def_c；劉備升到 2 級後兩位都有；def_a 的防禦更新成 150（有效 180），同樣的資料再送一次仍是 150／180、改成 160 是 160／192（不殘留、不膨脹）；
+	# 劉備移到遠處 (1,6) 兩位都沒有、移回來都有；第 1 波打完回到備戰時都沒有、光環不作用，開第 2 波又有；
+	# def_c 倒下後劉備只加成 def_a；把劉備從隊伍移除後都沒有；重新放置（新的來源）又有；第 2 波打完（結算）後都沒有；
+	# 新的一場的武將沒有來源，開戰後有，劉備倒下後都沒有
+	var d6: Dictionary = {}
+	var ok6: bool = false
+	var team6: Array = [_def_hero("liu_bei", DEF_AURA_SKILL.duplicate(), 1), _def_hero("def_a", null, 2), _def_hero("def_c", null, 3)]
+	_def_load(rec, "def-6", [[_grp("def_post", 1, 0.02)], [_grp("def_post", 1, 0.02)]], team6, {"liu_bei": Vector2i(6, 4), "def_a": Vector2i(1, 4), "def_c": Vector2i(2, 4)})
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() >= 1, 5.0)
+	var lb6: Node = _fly_hero("liu_bei")
+	if lb6 != null and _fly_hero("def_a") != null and _fly_hero("def_c") != null:
+		var base6: Vector2 = main.game_map.grid_to_world(Vector2i(6, 4))
+		_fly_hero("def_a").global_position = base6 + Vector2(3.3, 0.0) * t
+		_fly_hero("def_c").global_position = base6 + Vector2(0.0, 1.0) * t
+		var ac: Array = ["def_a", "def_c"]
+		await _def_frames()
+		d6["lv1"] = _def_bonus(ac)
+		var lv2: Dictionary = team6[0].duplicate()
+		lv2["level"] = 2
+		_r19_js(rec, {"type": "update_team", "team_list": [lv2, team6[1], team6[2]]})
+		await _def_frames()
+		d6["lv2"] = _def_bonus(ac) + [lb6.attack_range]
+		var a150: Dictionary = team6[1].duplicate()
+		a150["def"] = 150.0
+		a150["level"] = 2
+		_r19_js(rec, {"type": "update_team", "team_list": [lv2, a150, team6[2]]})
+		await _def_frames()
+		var ha: Node = _fly_hero("def_a")
+		d6["def150"] = [ha.def_stat, snappedf(ha.effective_def(), 0.0001)]
+		_r19_js(rec, {"type": "update_team", "team_list": [lv2, a150, team6[2]]})
+		await _def_frames()
+		d6["def150_again"] = [ha.def_stat, snappedf(ha.effective_def(), 0.0001)]
+		var a160: Dictionary = a150.duplicate()
+		a160["def"] = 160.0
+		_r19_js(rec, {"type": "update_team", "team_list": [lv2, a160, team6[2]]})
+		await _def_frames()
+		d6["def160"] = [ha.def_stat, snappedf(ha.effective_def(), 0.0001)]
+		main.game_map.clear_occupied(Vector2i(6, 4))
+		lb6.reposition(Vector2i(1, 6), main.game_map.grid_to_world(Vector2i(1, 6)), main.game_map)
+		main.game_map.set_occupied(Vector2i(1, 6), lb6)
+		await _def_frames()
+		d6["moved_away"] = _def_bonus(ac)
+		main.game_map.clear_occupied(Vector2i(1, 6))
+		lb6.reposition(Vector2i(6, 4), base6, main.game_map)
+		main.game_map.set_occupied(Vector2i(6, 4), lb6)
+		await _def_frames()
+		d6["moved_back"] = _def_bonus(ac)
+		for e in _sw_enemies():
+			e.take_damage(1.0e9)
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.PREP, 5.0)
+		await _def_frames()
+		d6["prep"] = _def_bonus(ac) + [lb6.def_state().aura_active, _bm().game_state]
+		_bm().player_start_battle()
+		await _wait_until(func(): return _sw_enemies().size() >= 1, 5.0)
+		await _def_frames()
+		d6["wave2"] = _def_bonus(ac) + [_bm().current_wave]
+		_fly_hero("def_c").take_damage(1.0e12)
+		await _def_frames()
+		d6["def_c_died"] = [lb6.def_state().buffed, _fly_hero("def_c") == null]
+		var src6: String = lb6.def_aura_source
+		_r19_js(rec, {"type": "update_team", "team_list": [a160, team6[2]]})
+		await _def_frames()
+		d6["removed"] = [_def_bonus(["def_a"])[0], ha._def_sources.size()]
+		_r19_js(rec, {"type": "update_team", "team_list": [lv2, a160, team6[2]]})
+		_r12_place("liu_bei", Vector2i(6, 4))
+		await _def_frames()
+		var lb6b: Node = _fly_hero("liu_bei")
+		d6["replaced"] = [_def_bonus(["def_a"])[0], lb6b != null and lb6b.def_aura_source != src6, ha._def_sources.keys() == ([lb6b.def_aura_source] if lb6b != null else [])]
+		for e in _sw_enemies():
+			e.take_damage(1.0e9)
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 5.0)
+		await _def_frames()
+		d6["result"] = [_def_bonus(["def_a"])[0], lb6b.def_state().aura_active if lb6b != null else null, _bm().game_state]
+		_def_load(rec, "def-6b", [[_grp("def_post", 1, 0.02)]], [_def_hero("liu_bei", DEF_AURA_SKILL.duplicate(), 1), _def_hero("def_a", null, 2)], {"liu_bei": Vector2i(6, 4), "def_a": Vector2i(5, 4)})
+		await _def_frames()
+		var na: Node = _fly_hero("def_a")
+		d6["new_prep"] = [na._def_sources.size() if na != null else -1, na.def_stat if na != null else -1.0]
+		_bm().player_start_battle()
+		await _wait_until(func(): return _sw_enemies().size() >= 1, 5.0)
+		await _def_frames()
+		d6["new_battle"] = _def_bonus(["def_a"])
+		var nl: Node = _fly_hero("liu_bei")
+		if nl != null:
+			nl.take_damage(1.0e12)
+		await _def_frames()
+		d6["liu_bei_died"] = [_def_bonus(["def_a"])[0], na._def_sources.size() if na != null else -1, _fly_hero("liu_bei") == null]
+		ok6 = d6.lv1 == [1.0, 1.2] and d6.lv2 == [1.2, 1.2, 3.5] and d6.def150 == [150.0, 180.0] and d6.def150_again == [150.0, 180.0] and d6.def160 == [160.0, 192.0] \
+			and d6.moved_away == [1.0, 1.0] and d6.moved_back == [1.2, 1.2] and d6.prep == [1.0, 1.0, false, BattleManager.GameState.PREP] and d6.wave2 == [1.2, 1.2, 2] \
+			and d6.def_c_died == [["def_a"], true] and d6.removed == [1.0, 0] and d6.replaced == [1.2, true, true] and d6.result == [1.0, false, BattleManager.GameState.RESULT] \
+			and d6.new_prep == [0, 100.0] and d6.new_battle == [1.2] and d6.liu_bei_died == [1.0, 0, true]
+	_check("防禦-6 升級、移位、戰鬥結束、倒下、移除、新的一場：1 級只有 1 格的友軍、2 級（半徑 3.5）兩位都有；友軍防禦更新成 150 是 150／180、再送一次不變、改成 160 是 160／192；移到遠處都沒有、移回來都有；第 1 波打完回到備戰時都沒有、第 2 波又有；友軍倒下後只加成另一位；移除劉備都沒有、重新放置（新的來源）又有；結算後沒有；新的一場沒有殘留、開戰後有、劉備倒下後沒有",
 		ok6, d6)
 
 	rec.payload_received.disconnect(main._on_payload_received)

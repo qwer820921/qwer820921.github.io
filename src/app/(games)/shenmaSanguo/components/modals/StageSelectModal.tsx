@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useId, useRef, useState } from "react";
 import { Row, Col } from "react-bootstrap";
 import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
@@ -13,25 +13,44 @@ import {
 import EnemyPreviewModal from "./EnemyPreviewModal";
 import StageAirReadinessNote from "../StageAirReadinessNote";
 import StageDataNote from "../StageDataNote";
+import { useDialogFocus } from "../useDialogFocus";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 interface Props {
   /** 只會以可以出征的關卡呼叫（規則見 utils/stagePlayability） */
   onSelect: (mapId: string) => void;
   onClose: () => void;
+  /**
+   * 關閉後開啟它的按鈕已經不在畫面上時（例如從拒絕開戰的提示打開、換關後原本的提示已卸載），焦點改交給這個元素
+   * （主頁 HUD 的「切換關卡」）
+   */
+  fallbackFocusRef?: React.RefObject<HTMLElement | null>;
 }
 
 /**
  * 主頁的關卡選擇：只有可以出征的關卡能選。關卡資料未完成的關卡標示「尚未開放」與原因、按鈕停用；
- * 點了這種關卡只在視窗上方說明，不切換、不結束目前的戰場（可以接著選其他關卡）
+ * 點了這種關卡只在視窗上方說明，不切換、不結束目前的戰場（可以接著選其他關卡）。
+ * 鍵盤：開啟時焦點移到右上的關閉鈕，Tab 只在視窗內循環（不會進到背後的戰場與 HUD），Esc 關閉；
+ * 裡面的敵軍預覽開著時由預覽處理（Esc 先關預覽、焦點回到它的「敵軍預覽」按鈕）。
+ * 關閉後焦點回到開啟它的按鈕，按鈕已不在畫面上時交給 fallbackFocusRef
  */
-export default function StageSelectModal({ onSelect, onClose }: Props) {
+export default function StageSelectModal({
+  onSelect,
+  onClose,
+  fallbackFocusRef,
+}: Props) {
   const { player } = usePlayerStore();
   const { config: staticConfig } = useStaticConfigStore();
   // 正在查看敵軍預覽的關卡（唯讀，不切換關卡）
   const [previewId, setPreviewId] = useState<string | null>(null);
   // 剛才點了不能出征的關卡：說明原因（目前的戰場不受影響）
   const [refused, setRefused] = useState<string | null>(null);
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const onKeyDown = useDialogFocus(panelRef, closeRef, onClose, {
+    fallbackFocus: () => fallbackFocusRef?.current ?? null,
+  });
 
   if (!player || !staticConfig) return null;
   const previewMap =
@@ -49,9 +68,21 @@ export default function StageSelectModal({ onSelect, onClose }: Props) {
   return (
     <>
       <div className={styles.modalBackdrop} onClick={onClose}>
-        <div className={styles.modalPanel} onClick={(e) => e.stopPropagation()}>
+        <div
+          ref={panelRef}
+          className={styles.modalPanel}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={onKeyDown}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          tabIndex={-1}
+          data-testid="stage-select-dialog"
+        >
           <div className={styles.modalHeader}>
-            <span className={styles.modalTitle}>關卡選擇</span>
+            <span id={titleId} className={styles.modalTitle}>
+              關卡選擇
+            </span>
             <span style={{ fontSize: "0.72rem", color: "var(--sg-muted)" }}>
               進度：
               <span style={{ color: "var(--sg-gold)" }}>
@@ -59,7 +90,12 @@ export default function StageSelectModal({ onSelect, onClose }: Props) {
                   ?.name || player.max_stage}
               </span>
             </span>
-            <button className={styles.modalClose} onClick={onClose}>
+            <button
+              ref={closeRef}
+              className={styles.modalClose}
+              onClick={onClose}
+              aria-label="關閉關卡選擇"
+            >
               ×
             </button>
           </div>

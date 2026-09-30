@@ -24,6 +24,9 @@ interface UpgradePanelProps {
     atk_spd: number;
     range: number;
     hp?: number;
+    /** 武將：隊伍資料的防禦（存檔的數值）與受傷時用的有效防禦（含防禦光環的戰場加成；Godot 在選取當下計算） */
+    def?: number;
+    def_effective?: number;
     upgrade_cost?: number;
     max_level?: boolean;
     can_afford?: boolean;
@@ -87,6 +90,15 @@ export default function UpgradePanel({
     typeof data.sell_refund === "number" &&
     !!onSellConfirm;
   const refund = data.sell_refund ?? 0;
+
+  // 武將的防禦：有防禦光環的戰場加成時分開列出原本與加成後的數值（加成不寫回存檔）
+  const def = data.unit_type === "hero" ? data.def : undefined;
+  const defEffective =
+    typeof data.def_effective === "number" ? data.def_effective : def;
+  const defBoosted =
+    typeof def === "number" &&
+    typeof defEffective === "number" &&
+    defEffective > def + 1e-6;
   const s = sell && isSameTower(data, sell) ? sell : null;
   const confirming = s?.phase === "confirm" || s?.phase === "pending";
   const pending = s?.phase === "pending";
@@ -136,6 +148,21 @@ export default function UpgradePanel({
               <span className={styles.upgStatValue}>{data.hp?.toFixed(0)}</span>
             </div>
           )}
+          {typeof def === "number" && (
+            <div className={styles.upgStatItem}>
+              <span className={styles.upgStatLabel}>防禦</span>
+              <span
+                className={styles.upgStatValue}
+                data-testid="unit-panel-def"
+                data-def={def}
+                data-def-effective={defEffective}
+              >
+                {defBoosted
+                  ? `${def.toFixed(0)} → ${defEffective?.toFixed(0)}`
+                  : def.toFixed(0)}
+              </span>
+            </div>
+          )}
           {typeof data.anti_air === "boolean" && (
             <div className={styles.upgStatItem}>
               <span className={styles.upgStatLabel}>對空</span>
@@ -155,6 +182,13 @@ export default function UpgradePanel({
             </div>
           )}
         </div>
+
+        {defBoosted && (
+          <div className={styles.defAuraNote} data-testid="unit-panel-def-note">
+            防禦光環：戰場上的防禦是 {defEffective?.toFixed(0)}
+            （原本 {def?.toFixed(0)}），只在範圍內生效，不改存檔
+          </div>
+        )}
 
         {locked && (
           <div className={styles.lockNotice} data-testid="unit-panel-locked">

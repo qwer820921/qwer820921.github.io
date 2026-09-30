@@ -1,4 +1,4 @@
-// Godot 技能（包括閃避與首擊加倍）、飛行敵人、敵人阻路冷卻、關卡沒有波次的拒絕、敵人的攻擊力與免疫減速測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
+// Godot 技能（包括閃避、首擊加倍與防禦光環）、飛行敵人、敵人阻路冷卻、關卡沒有波次的拒絕、敵人的攻擊力與免疫減速測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
 // 對遊戲程式套用一個刻意的錯誤，只跑指定的測試組（SHENMA_TEST_ONLY），確認測試「該失敗時一定失敗」。
 // 用法：GODOT=<Godot 4.6.2 console 執行檔> node scripts/shenma-regression/tools/godot-mutation.mjs <變異名稱|none|list>
 // - none：不改程式，同一組測試必須全部通過、log 也要通過 check-log.mjs 的檢查（確認基準）
@@ -502,6 +502,71 @@ const MUTATIONS = {
     to: "\treturn true\n",
     only: "slow",
     expect: ["光環-1 "],
+  },
+  // 劉備的防禦光環（SHENMA_TEST_ONLY=defaura）
+  "def-aura-flat-cut": {
+    why: "防禦光環直接少扣 20% 的傷害（不是提高防禦後照防禦公式計算）",
+    file: HERO,
+    from: "\tvar actual_dmg: float = amount * (1.0 - d / (d + 100.0))\n",
+    to: "\tvar actual_dmg: float = amount * (1.0 - def_stat / (def_stat + 100.0)) * (2.0 - def_bonus_mult)\n",
+    only: "defaura",
+    expect: ["防禦-1 ", "防禦-2 ", "防禦-4 ", "防禦-5 "],
+  },
+  "def-aura-multiply-sources": {
+    why: "多個防禦光環相乘（1.2 × 1.1）而不是取最強",
+    file: HERO,
+    from: "\t\tm = maxf(m, float(_def_sources[s].mult))\n",
+    to: "\t\tm *= float(_def_sources[s].mult)\n",
+    only: "defaura",
+    expect: ["防禦-2 ", "防禦-5 "],
+  },
+  "def-aura-writes-back": {
+    why: "防禦光環把加成寫回 def_stat（每一幀重複疊乘）",
+    file: HERO,
+    from: '\t_def_sources[source] = {"mult": mult, "left": duration}\n',
+    to: '\t_def_sources[source] = {"mult": mult, "left": duration}\n\tdef_stat *= mult\n',
+    only: "defaura",
+    expect: ["防禦-1 ", "防禦-3 ", "防禦-4 ", "防禦-6 "],
+  },
+  "def-aura-not-removed": {
+    why: "來源離開（移位、移除、戰鬥結束）時不撤除防禦加成（等有效期到期）",
+    file: HERO,
+    from: "\tif _def_sources.erase(source):\n\t\t_refresh_def_bonus()\n",
+    to: "\tif false:\n\t\t_refresh_def_bonus()\n",
+    only: "defaura",
+    expect: ["防禦-2 ", "防禦-5 ", "防禦-6 "],
+  },
+  "def-aura-remove-clears-all": {
+    why: "撤除一個來源時清掉所有防禦加成（強的離開後弱的也沒了）",
+    file: HERO,
+    from: "\tif _def_sources.erase(source):\n\t\t_refresh_def_bonus()\n",
+    to: "\t_def_sources.clear()\n\tif true:\n\t\t_refresh_def_bonus()\n",
+    only: "defaura",
+    expect: ["防禦-2 "],
+  },
+  "def-aura-includes-self": {
+    why: "防禦光環也加成劉備自己",
+    file: HERO,
+    from: "\t\t\tif h == self or not (h is Hero) or not _hero_alive(h):\n",
+    to: "\t\t\tif not (h is Hero) or not _hero_alive(h):\n",
+    only: "defaura",
+    expect: ["防禦-1 ", "防禦-3 ", "防禦-5 "],
+  },
+  "def-aura-no-range-check": {
+    why: "防禦光環不檢查範圍（全場武將都加成）",
+    file: HERO,
+    from: "\t\t\tif global_position.distance_to(h.global_position) <= radius_px:\n",
+    to: "\t\t\tif true:\n",
+    only: "defaura",
+    expect: ["防禦-3 ", "防禦-6 "],
+  },
+  "def-aura-in-prep": {
+    why: "備戰時防禦光環也作用（不看戰鬥狀態）",
+    file: HERO,
+    from: "\tvar active: bool = def_aura_mult > 1.0 and not leaving and _in_battle() and get_parent() != null\n",
+    to: "\tvar active: bool = def_aura_mult > 1.0 and not leaving and get_parent() != null\n",
+    only: "defaura",
+    expect: ["防禦-3 ", "防禦-6 "],
   },
 };
 

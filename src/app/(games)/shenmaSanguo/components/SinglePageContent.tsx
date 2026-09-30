@@ -419,6 +419,8 @@ export default function SinglePageContent() {
 
   // ── Modal 狀態 ─────────────────────────────────────────────
   const [showStageModal, setShowStageModal] = useState(false);
+  // HUD 的「切換關卡」：關卡選擇關閉時，開啟它的按鈕已不在畫面上（例如拒絕開戰的提示、換關後卸載的提示）就把焦點交給它
+  const stageBtnRef = useRef<HTMLButtonElement>(null);
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [showHeroModal, setShowHeroModal] = useState(false);
   const [showPlayerModal, setShowPlayerModal] = useState(false);
@@ -1262,6 +1264,7 @@ export default function SinglePageContent() {
               </button>
               <div className={styles.hudCenter}>
                 <button
+                  ref={stageBtnRef}
                   className={styles.hudStageBtn}
                   onClick={() => setShowStageModal(true)}
                   title="切換關卡"
@@ -1421,6 +1424,7 @@ export default function SinglePageContent() {
         <StageSelectModal
           onSelect={handleStageSelected}
           onClose={() => setShowStageModal(false)}
+          fallbackFocusRef={stageBtnRef}
         />
       )}
       {showTeamModal && (

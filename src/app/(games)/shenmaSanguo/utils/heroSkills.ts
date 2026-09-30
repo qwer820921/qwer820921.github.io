@@ -1,7 +1,7 @@
 import { HeroSkillPayload } from "../types";
 
 /**
- * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」）
+ * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」）
  * 這裡是技能規則的唯一來源：武將列表／詳情的說明，與隨出征資料送進 Godot 的參數都由這裡產生。
  * 技能是戰場效果：不寫進玩家存檔，也不需要後端（GAS）支援。
  * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊。
@@ -49,6 +49,16 @@ export type HeroSkill =
       name: string;
       /** 每次受到直接攻擊時閃避的機率（0～1） */
       dodgeChance: number;
+    }
+  | {
+      /**
+       * 防禦光環：戰鬥中，以武將為中心、目前有效射程內（含邊界）的其他友軍武將防禦力提升。
+       * 不含自己、防禦塔與城池；不需要普通攻擊的目標；和其他防禦光環取最強的一個，不疊加
+       */
+      id: "def_aura";
+      name: string;
+      /** 範圍內其他友軍武將的防禦倍率（1.2＝提升 20%，乘在該武將目前等級的防禦上；受傷照原本的防禦公式計算） */
+      defenseMultiplier: number;
     };
 
 const HERO_SKILLS: Record<string, HeroSkill> = {
@@ -69,6 +79,9 @@ const HERO_SKILLS: Record<string, HeroSkill> = {
   // 正式設定表的被動描述「周圍敵人減速10%」：移速 × 0.9。設定表沒有寫的部分是遊戲的補充規則：
   // 「周圍」是目前有效射程（含邊界）、只影響地面敵人（步兵不能對空）、免疫減速的不受影響、和其他減速取最強不疊加
   guan_yu: { id: "slow_aura", name: "減速光環", speedMultiplier: 0.9 },
+  // 正式設定表的被動描述「光環：提升友軍防禦」沒有寫數值與範圍。第一版的設計值，尚未做過平衡：防禦 × 1.2、
+  // 範圍是目前有效射程（含邊界）、只影響其他友軍武將（不含自己、防禦塔與城池）、多個防禦光環取最強不疊加、只在戰鬥中
+  liu_bei: { id: "def_aura", name: "防禦光環", defenseMultiplier: 1.2 },
 };
 
 export const heroSkillOf = (heroId: string): HeroSkill | null =>
@@ -99,9 +112,24 @@ export function slowAuraPercent(skill: HeroSkill | null): number {
     : 0;
 }
 
+/** 防禦光環讓防禦提升的百分比（1.2 → 20；沒有防禦光環時是 0） */
+export function defAuraPercent(skill: HeroSkill | null): number {
+  return skill?.id === "def_aura"
+    ? round3((skill.defenseMultiplier - 1) * 100)
+    : 0;
+}
+
+/**
+ * 受到攻擊時實際扣的血（和 Godot 的防禦公式相同）：攻擊力 × 100 ÷（防禦 ＋ 100）。
+ * 防禦光環乘在防禦上（防禦不是正數時不乘），不是直接少扣一定比例的傷害
+ */
+export function damageAfterDefense(atk: number, def: number): number {
+  return (atk * 100) / (def + 100);
+}
+
 /**
  * 技能的完整規則（顯示在武將詳情）
- * - rawRange：這位武將目前等級屬性表上的射程；有提供時，射程技能會寫出戰場上的實際射程，減速光環會寫出目前的範圍半徑
+ * - rawRange：這位武將目前等級屬性表上的射程；有提供時，射程技能會寫出戰場上的實際射程，減速光環與防禦光環會寫出目前的範圍半徑
  * - atk：這位武將目前的攻擊力；有提供時，火攻會寫出每次灼燒的傷害
  */
 export function describeHeroSkill(
@@ -135,6 +163,25 @@ export function describeHeroSkill(
       "飛行敵人與免疫減速的敵人不受影響（普通攻擊照常打得到地面上免疫減速的敵人）。" +
       "敵人離開範圍，或武將移位、被移除、陣亡時減速就解除；和其他減速（武將在道路上的阻擋、步兵塔、另一個減速光環）同時作用時取最強的一個，不會疊加，文士塔的減速另外計算。" +
       "戰鬥中武將周圍會顯示淺藍色的範圍圈，被減速的敵人有淺藍色的虛線外圈。只在戰場生效，不影響存檔。"
+    );
+  }
+  if (skill.id === "def_aura") {
+    const pct = defAuraPercent(skill);
+    const m = skill.defenseMultiplier;
+    const current =
+      rawRange === undefined
+        ? ""
+        : `目前等級的範圍半徑是 ${effectiveRange(skill, rawRange)} 格。`;
+    const plain = round3(damageAfterDefense(100, 100));
+    const boosted = Number(damageAfterDefense(100, 100 * m).toFixed(1));
+    return (
+      `戰鬥中，以這位武將為中心、目前射程內（含邊界）的其他友軍武將防禦力提升 ${pct}%（乘在該武將目前等級的防禦上，變成 ${m} 倍）。` +
+      current +
+      "不含自己，防禦塔與城池不受影響；友軍的職業不限，也不需要普通攻擊的目標。範圍跟著射程：升級射程變長時範圍一起變大。" +
+      `受到攻擊時照原本的防禦公式、用提升後的防禦計算，不是直接少扣 ${pct}% 的傷害（例如防禦 100 的友軍被攻擊力 100 的敵人打一下，從扣 ${plain} 變成扣約 ${boosted}）；趙雲的閃避照常先判定。` +
+      "同時在幾個防禦光環範圍內時取最強的一個，不會疊加。友軍離開範圍，或這位武將移位、被移除、陣亡、戰鬥結束時加成就解除。" +
+      "戰鬥中武將周圍會顯示淺綠色的範圍圈，受到加成的友軍有淺綠色的外框；在戰場上選取友軍時會分開列出原本的防禦與加成後的防禦。" +
+      "只在戰場生效：存檔與屬性表的防禦不會提高。"
     );
   }
   if (skill.id === "dodge") {
@@ -190,6 +237,9 @@ export function heroSkillPayload(heroId: string): { skill?: HeroSkillPayload } {
   }
   if (skill.id === "dodge") {
     return { skill: { id: skill.id, dodge_chance: skill.dodgeChance } };
+  }
+  if (skill.id === "def_aura") {
+    return { skill: { id: skill.id, def_mult: skill.defenseMultiplier } };
   }
   return {
     skill: {

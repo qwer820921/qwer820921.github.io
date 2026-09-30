@@ -520,6 +520,9 @@ func _on_hero_clicked(hero: Node) -> void:
 		"atk_spd": 1.0 / hero.attack_speed,
 		"range": hero.attack_range,
 		"hp": hero.current_hp,
+		# 防禦：隊伍資料的防禦（def）與受傷時用的有效防禦（def_effective，含防禦光環的加成；只在戰場，不改存檔）
+		"def": hero.def_stat,
+		"def_effective": hero.effective_def(),
 		# 對空：這位武將能不能攻擊飛行敵人（依職業，見 Hero.AIR_JOBS）
 		"anti_air": hero.can_hit_air,
 		"screen_pos": {"x": pos_screen.x, "y": pos_screen.y},
@@ -930,6 +933,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var hero_hp: Dictionary = {}
 	# 每位武將的減速：光環的倍率與半徑、目前影響的敵人、道路阻擋目前減速的敵人與兩個來源的識別字串
 	var hero_slow: Dictionary = {}
+	# 每位武將的防禦：原本與受傷時用的防禦、受到的防禦光環加成與來源；自己的防禦光環（倍率、半徑、是否作用、目前加成的武將）
+	var hero_def: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
@@ -937,6 +942,7 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		hero_ranges[hid] = hero.attack_range
 		hero_hp[hid] = hero.current_hp
 		hero_slow[hid] = hero.slow_state()
+		hero_def[hid] = hero.def_state()
 		hero_air[hid] = hero.can_hit_air
 		if hero.dodge_chance > 0.0:
 			hero_dodge[hid] = {"chance": hero.dodge_chance, "rolls": hero.dodge_rolls, "dodges": hero.dodge_count,
@@ -1002,6 +1008,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"enemy_speed":       enemy_speed,
 		"enemy_fighting":    enemy_fighting,
 		"hero_slow":         hero_slow,
+		# 防禦光環（劉備）
+		"hero_def":          hero_def,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)
