@@ -1,7 +1,7 @@
 import { HeroSkillPayload } from "../types";
 
 /**
- * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」）
+ * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」、廖化「堅韌」）
  * 這裡是技能規則的唯一來源：武將列表／詳情的說明，與隨出征資料送進 Godot 的參數都由這裡產生。
  * 技能是戰場效果：不寫進玩家存檔，也不需要後端（GAS）支援。
  * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊。
@@ -100,6 +100,18 @@ export type HeroSkill =
       name: string;
       /** 反彈的比例（0.2＝這一擊實際扣掉自己生命的 20%） */
       counterRatio: number;
+    }
+  | {
+      /**
+       * 堅韌：每次受傷都用受傷前的生命判斷，生命 ÷ 最大生命不高於 lowHpRatio（含剛好等於）時，防禦計算後的傷害再乘上 damageMultiplier。
+       * 不是提高防禦；這一擊讓生命跨過門檻時下一擊才減傷；不保底、不復活；只在戰場
+       */
+      id: "tenacity";
+      name: string;
+      /** 生效的生命比例門檻（0.3＝受傷前生命不高於最大生命的 30%） */
+      lowHpRatio: number;
+      /** 防禦計算後傷害的倍率（0.8＝少扣 20%） */
+      damageMultiplier: number;
     };
 
 const HERO_SKILLS: Record<string, HeroSkill> = {
@@ -137,6 +149,15 @@ const HERO_SKILLS: Record<string, HeroSkill> = {
   // 實際扣血後自己仍然活著時，反彈這一擊實際扣掉自己生命的 20% 給攻擊自己的敵人（打倒自己的那一擊、閃避、沒有攻擊者的扣血不反彈）；
   // 反彈不再引發其他技能、不會來回反彈；只在戰鬥中、不改屬性與存檔
   xia_hou_dun: { id: "counter", name: "反擊", counterRatio: 0.2 },
+  // 正式設定表的被動描述「堅韌：低血量減傷」沒有寫門檻與減傷多少。第一版的設計值，尚未做過平衡：受傷前生命不高於最大生命的 30%（含剛好 30%）時，
+  // 照原本的防禦公式算出的傷害再乘 0.8（少扣 20%，不是提高防禦、只乘一次）；用受傷前的生命判斷，生命回到超過 30% 時就不減傷；
+  // 用當下的最大生命計算（升級後照新的數值）；致死的一擊照常倒下（不保底、不復活）；只在戰鬥中、不改屬性與存檔
+  liao_hua: {
+    id: "tenacity",
+    name: "堅韌",
+    lowHpRatio: 0.3,
+    damageMultiplier: 0.8,
+  },
 };
 
 export const heroSkillOf = (heroId: string): HeroSkill | null =>
@@ -189,6 +210,19 @@ export function atkSpeedAuraPercent(skill: HeroSkill | null): number {
 /** 反擊反彈的百分比（0.2 → 20；沒有反擊時是 0） */
 export function counterPercent(skill: HeroSkill | null): number {
   return skill?.id === "counter" ? round3(skill.counterRatio * 100) : 0;
+}
+
+/** 堅韌的生命門檻與減傷的百分比（0.3、0.8 → 30、20；沒有堅韌時都是 0） */
+export function tenacityPercents(skill: HeroSkill | null): {
+  threshold: number;
+  reduction: number;
+} {
+  return skill?.id === "tenacity"
+    ? {
+        threshold: round3(skill.lowHpRatio * 100),
+        reduction: round3((1 - skill.damageMultiplier) * 100),
+      }
+    : { threshold: 0, reduction: 0 };
 }
 
 /**
@@ -324,6 +358,23 @@ export function describeHeroSkill(
       "只在戰場生效，不影響存檔。"
     );
   }
+  if (skill.id === "tenacity") {
+    const { threshold, reduction } = tenacityPercents(skill);
+    const m = skill.damageMultiplier;
+    const plain = round3(damageAfterDefense(100, 100));
+    const low = round3(plain * m);
+    const hpAt = round3(1000 * skill.lowHpRatio);
+    const aura = damageAfterDefense(100, 120);
+    return (
+      `受傷前生命不高於最大生命的 ${threshold}%（含剛好 ${threshold}%）時，受到的傷害先照防禦計算，再降低 ${reduction}%（變成 ${round3(m * 100)}%）。` +
+      `例如最大生命 1000、防禦 100 的廖化被攻擊力 100 的敵人打一下：生命 ${hpAt + 1} 時扣 ${plain} 變成 ${round3(hpAt + 1 - plain)}（這一擊不減傷），下一擊只扣 ${low}；生命剛好 ${hpAt} 時就只扣 ${low}。` +
+      `是防禦計算之後再少扣，不是提高防禦：在劉備的防禦光環裡扣約 ${aura.toFixed(2)} 的一擊變成約 ${(aura * m).toFixed(2)}。` +
+      `用受傷前的生命判斷，生命回到超過 ${threshold}% 時就不減傷；升級後照新的最大生命計算。` +
+      "閃避的一擊不扣血；減傷後仍然不夠的一擊照常倒下，不會留下 1 點生命，也不會復活。" +
+      "生效時武將的血條有古銅色外框與小盾牌；戰場上的單位面板顯示選取當時是否生效，重新點選武將可以更新。" +
+      "只在戰場生效：防禦、最大生命與存檔都不變。"
+    );
+  }
   if (skill.id === "dodge") {
     const pct = round3(skill.dodgeChance * 100);
     return (
@@ -396,6 +447,15 @@ export function heroSkillPayload(heroId: string): { skill?: HeroSkillPayload } {
   }
   if (skill.id === "counter") {
     return { skill: { id: skill.id, counter_ratio: skill.counterRatio } };
+  }
+  if (skill.id === "tenacity") {
+    return {
+      skill: {
+        id: skill.id,
+        low_hp_ratio: skill.lowHpRatio,
+        damage_mult: skill.damageMultiplier,
+      },
+    };
   }
   return {
     skill: {

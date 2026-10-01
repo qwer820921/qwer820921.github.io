@@ -1,8 +1,9 @@
-// Godot 技能（包括閃避、首擊加倍、防禦光環、暈眩、吸血、攻速光環與反擊）、敵人受傷與灼燒的入口、飛行敵人、敵人阻路冷卻、關卡沒有波次的拒絕、敵人的攻擊力與免疫減速測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
+// Godot 技能（包括閃避、首擊加倍、防禦光環、暈眩、吸血、攻速光環、反擊與堅韌）、敵人受傷與灼燒的入口、飛行敵人、敵人阻路冷卻、關卡沒有波次的拒絕、敵人的攻擊力與免疫減速測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
 // 對遊戲程式套用一個刻意的錯誤，只跑指定的測試組（SHENMA_TEST_ONLY），確認測試「該失敗時一定失敗」。
 // 用法：GODOT=<Godot 4.6.2 console 執行檔> node scripts/shenma-regression/tools/godot-mutation.mjs <變異名稱|none|list>
 // - none：不改程式，同一組測試必須全部通過、log 也要通過 check-log.mjs 的檢查（確認基準）
 // - 其他名稱：預期的測試項目必須 FAIL，否則結束碼 1（測試抓不到這個錯誤）
+// - check：只檢查全部變異定義的原文（見 checkDefinitions），不需要 GODOT；有任何一種失配、缺檔或定義無效時結束碼 1
 // 不寫入倉庫，暫存目錄保留供查看（log 在 <暫存>/test.log）
 import { spawnSync, execFileSync } from "node:child_process";
 import {
@@ -507,8 +508,8 @@ const MUTATIONS = {
   "def-aura-flat-cut": {
     why: "防禦光環直接少扣 20% 的傷害（不是提高防禦後照防禦公式計算）",
     file: HERO,
-    from: "\tvar actual_dmg: float = amount * (1.0 - d / (d + 100.0))\n",
-    to: "\tvar actual_dmg: float = amount * (1.0 - def_stat / (def_stat + 100.0)) * (2.0 - def_bonus_mult)\n",
+    from: "\tvar raw_dmg: float = amount * (1.0 - d / (d + 100.0))\n",
+    to: "\tvar raw_dmg: float = amount * (1.0 - def_stat / (def_stat + 100.0)) * (2.0 - def_bonus_mult)\n",
     only: "defaura",
     expect: ["防禦-1 ", "防禦-2 ", "防禦-4 ", "防禦-5 "],
   },
@@ -878,9 +879,158 @@ const MUTATIONS = {
     only: "counter",
     expect: ["反擊-0 "],
   },
+  // 廖化的堅韌（SHENMA_TEST_ONLY=tenacity）
+  "tenacity-strict-less": {
+    why: "門檻用嚴格小於（生命剛好 30% 時不減傷）",
+    file: HERO,
+    from: "\treturn current_hp / max_hp <= tenacity_hp_ratio\n",
+    to: "\treturn current_hp / max_hp < tenacity_hp_ratio\n",
+    only: "tenacity",
+    expect: ["堅韌-1 ", "堅韌-2 ", "堅韌-3 "],
+  },
+  "tenacity-after-damage": {
+    why: "用扣血後的生命判斷（讓生命跨過門檻的那一擊就減傷）",
+    file: HERO,
+    from: "\t\tvar reduced: bool = tenacity_on()\n",
+    to: "\t\tvar reduced: bool = tenacity_on() or (current_hp - raw_dmg) / max_hp <= tenacity_hp_ratio\n",
+    only: "tenacity",
+    expect: ["堅韌-1 ", "堅韌-2 ", "堅韌-4 "],
+  },
+  "tenacity-as-def": {
+    why: "減傷倍率加在防禦上（防禦 ÷ 0.8 再照防禦公式，不是防禦計算後乘 0.8）",
+    file: HERO,
+    from: "\t\t\tactual_dmg = raw_dmg * tenacity_damage_mult\n",
+    to: "\t\t\tactual_dmg = amount * (1.0 - (d / tenacity_damage_mult) / (d / tenacity_damage_mult + 100.0))\n",
+    only: "tenacity",
+    expect: ["堅韌-1 ", "堅韌-2 ", "堅韌-3 "],
+  },
+  "tenacity-no-mult": {
+    why: "判斷生效但漏乘倍率（照原本的傷害扣血）",
+    file: HERO,
+    from: "\t\t\tactual_dmg = raw_dmg * tenacity_damage_mult\n",
+    to: "\t\t\tactual_dmg = raw_dmg\n",
+    only: "tenacity",
+    expect: ["堅韌-1 ", "堅韌-2 ", "堅韌-3 "],
+  },
+  "tenacity-double": {
+    why: "倍率重複套用（防禦計算後乘兩次）",
+    file: HERO,
+    from: "\t\t\tactual_dmg = raw_dmg * tenacity_damage_mult\n",
+    to: "\t\t\tactual_dmg = raw_dmg * tenacity_damage_mult * tenacity_damage_mult\n",
+    only: "tenacity",
+    expect: ["堅韌-1 ", "堅韌-2 "],
+  },
+  "tenacity-deploy-max": {
+    why: "門檻用部署時的最大生命（升級後最大生命不更新）",
+    file: HERO,
+    from: "\tmax_hp     = new_max_hp\n",
+    to: "\tmax_hp     = max_hp if max_hp > 0.0 else new_max_hp\n",
+    only: "tenacity",
+    expect: ["堅韌-1 ", "堅韌-5 "],
+  },
+  "tenacity-needs-source": {
+    why: "只有帶攻擊者的受傷才減傷（套用了反擊的來源限制）",
+    file: HERO,
+    from: "\tif tenacity_hp_ratio > 0.0:\n\t\tvar before: float = current_hp\n",
+    to: "\tif tenacity_hp_ratio > 0.0 and source != null:\n\t\tvar before: float = current_hp\n",
+    only: "tenacity",
+    expect: ["堅韌-1 "],
+  },
+  "tenacity-floor-1hp": {
+    why: "減傷時保底 1 點生命（致死的一擊留下 1）",
+    file: HERO,
+    from: "\t\t\tactual_dmg = raw_dmg * tenacity_damage_mult\n",
+    to: "\t\t\tactual_dmg = minf(raw_dmg * tenacity_damage_mult, current_hp - 1.0)\n",
+    only: "tenacity",
+    expect: ["堅韌-1 ", "堅韌-2 ", "堅韌-4 "],
+  },
+  "tenacity-counter-raw": {
+    why: "同時有反擊時用減傷前的傷害計算反彈",
+    file: HERO,
+    from: "\t\tif counter_ratio > 0.0:\n\t\t\t_counter(actual_dmg, source)\n",
+    to: "\t\tif counter_ratio > 0.0:\n\t\t\t_counter(raw_dmg, source)\n",
+    only: "tenacity",
+    expect: ["堅韌-1 "],
+  },
+  "tenacity-reads-invalid": {
+    why: "門檻與倍率只檢查是不是數字（NaN、無限大、0、負數、1 以上也啟用）",
+    file: HERO,
+    from: "\t\t\tif _open_unit(lr) and _open_unit(lm):\n",
+    to: "\t\t\tif (lr is float or lr is int) and (lm is float or lm is int):\n",
+    only: "tenacity",
+    expect: ["堅韌-0 "],
+  },
+  "tenacity-not-cleared": {
+    why: "讀取技能時沒有清掉前一次的堅韌（換成其他技能後殘留）",
+    file: HERO,
+    from: '\ttenacity_hp_ratio = 0.0\n\ttenacity_damage_mult = 1.0\n\tvar skill = state.get("skill", null)\n',
+    to: '\tvar skill = state.get("skill", null)\n',
+    only: "tenacity",
+    expect: ["堅韌-0 ", "堅韌-5 "],
+  },
 };
 
+// 變異原文檢查（check）：逐一核對每個變異定義仍然有效（目標檔案存在、原文非空、而且在目前的原始碼裡剛好出現一次，CRLF 當作 LF）。
+// 只讀工作區的檔案：不啟動 Godot、不匯入、不建立暫存專案、不寫入任何檔案，也不需要 GODOT。
+// 執行某個變異時同樣會檢查它自己的原文；這個模式一次檢查全部，避免沒有執行的變異在程式改動後過期很久才被發現（快速一層會跑）
+function checkDefinitions() {
+  const problems = [];
+  const perFile = {};
+  for (const [k, m] of Object.entries(MUTATIONS)) {
+    const bad = [];
+    if (typeof m?.file !== "string" || m.file === "")
+      bad.push("file 不是非空字串");
+    if (typeof m?.from !== "string" || m.from === "")
+      bad.push("from 不是非空字串");
+    if (typeof m?.to !== "string") bad.push("to 不是字串");
+    else if (m.to === m.from) bad.push("to 和 from 相同（沒有改動）");
+    if (typeof m?.only !== "string" || m.only === "")
+      bad.push("only 不是非空字串");
+    if (
+      !Array.isArray(m?.expect) ||
+      m.expect.length === 0 ||
+      m.expect.some((e) => typeof e !== "string" || e.trim() === "")
+    )
+      bad.push("expect 不是非空的字串清單");
+    if (bad.length > 0) {
+      problems.push({ name: k, file: m?.file ?? null, reason: bad.join("、") });
+      continue;
+    }
+    let text;
+    try {
+      text = readFileSync(join(GAME, m.file), "utf8").replace(/\r\n/g, "\n");
+    } catch {
+      problems.push({ name: k, file: m.file, reason: "檔案不存在或無法讀取" });
+      continue;
+    }
+    const n = text.split(m.from).length - 1;
+    if (n !== 1)
+      problems.push({
+        name: k,
+        file: m.file,
+        count: n,
+        reason: `原文出現 ${n} 次（應為 1）`,
+      });
+    perFile[m.file] = (perFile[m.file] ?? 0) + 1;
+  }
+  for (const p of problems)
+    console.log(`FAIL  ${p.name}\t${p.file ?? "（沒有檔案）"}\t${p.reason}`);
+  const total = Object.keys(MUTATIONS).length;
+  console.log(
+    "RESULT_JSON " +
+      JSON.stringify({
+        mode: "check",
+        total,
+        ok: total - problems.length,
+        problems,
+        per_file: perFile,
+      })
+  );
+  return problems.length === 0;
+}
+
 const name = process.argv[2];
+if (name === "check") process.exit(checkDefinitions() ? 0 : 1);
 if (!name || name === "list") {
   for (const [k, m] of Object.entries(MUTATIONS))
     console.log(`${k}\t${m.why}（預期 FAIL：${m.expect.join("、").trim()}）`);

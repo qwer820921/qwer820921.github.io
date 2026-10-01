@@ -2615,6 +2615,24 @@
   overflow-wrap: anywhere;
 }
 
+/* 武將的堅韌（廖化）：選取當下是不是生效；生效時是古銅色，和戰場上血條的外框一致；窄畫面也至少 12px */
+.tenacityNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(156, 163, 175, 0.1);
+  border: 1px solid rgba(156, 163, 175, 0.35);
+  color: #d1d5db;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.tenacityNoteOn {
+  background: rgba(217, 153, 64, 0.14);
+  border-color: rgba(217, 153, 64, 0.55);
+  color: #f3c98b;
+}
+
 .lockNotice {
   margin-bottom: 8px;
   padding: 4px 8px;

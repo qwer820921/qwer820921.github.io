@@ -3065,9 +3065,88 @@ await test("反擊-S1", async () => {
   );
 });
 
+// 廖化「堅韌」（設定表的被動描述「堅韌：低血量減傷」，沒有寫門檻與減傷多少）：參數與說明文字出自同一份定義（utils/heroSkills）；
+// 受傷前生命不高於 30% 時、防禦計算後的傷害再乘 0.8 是第一版的設計值
+await test("堅韌-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    slowAuraPercent,
+    defAuraPercent,
+    lifestealPercent,
+    atkSpeedAuraPercent,
+    counterPercent,
+    tenacityPercents,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const lh = heroSkillOf("liao_hua");
+  const payload = heroSkillPayload("liao_hua");
+  const text = describeHeroSkill(lh, 1, 85);
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "cao_cao",
+    "gan_ning",
+    "xia_hou_dun",
+    "liaohua",
+  ].filter((id) => heroSkillOf(id)?.id === "tenacity");
+  check(
+    "堅韌-S1 廖化（liao_hua）的堅韌：送進 Godot 的參數（tenacity、low_hp_ratio 0.3、damage_mult 0.8，只有這三個欄位）與說明文字出自同一份定義；說明寫出受傷前生命不高於 30%（含剛好 30%）、防禦計算後降低 20%、301 扣 50 變成 251 下一擊扣 40、剛好 300 扣 40、不是提高防禦（防禦光環裡約 45.45 變成約 36.36）、生命回到超過 30% 不減傷、升級照新的最大生命、閃避不扣血、致死照常倒下不保底不復活、古銅色外框與小盾牌、面板是選取時的狀態、只在戰場不影響存檔；其他技能的計算不受影響；其他武將沒有堅韌",
+    lh?.id === "tenacity" &&
+      lh.name === "堅韌" &&
+      lh.lowHpRatio === 0.3 &&
+      lh.damageMultiplier === 0.8 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: { id: "tenacity", low_hp_ratio: 0.3, damage_mult: 0.8 },
+        }) &&
+      JSON.stringify(tenacityPercents(lh)) ===
+        JSON.stringify({ threshold: 30, reduction: 20 }) &&
+      JSON.stringify(tenacityPercents(heroSkillOf("xia_hou_dun"))) ===
+        JSON.stringify({ threshold: 0, reduction: 0 }) &&
+      JSON.stringify(tenacityPercents(null)) ===
+        JSON.stringify({ threshold: 0, reduction: 0 }) &&
+      effectiveRange(lh, 1) === 1 &&
+      burnTickDamage(lh, 85) === 0 &&
+      slowAuraPercent(lh) === 0 &&
+      defAuraPercent(lh) === 0 &&
+      lifestealPercent(lh) === 0 &&
+      atkSpeedAuraPercent(lh) === 0 &&
+      counterPercent(lh) === 0 &&
+      text.includes("受傷前生命不高於最大生命的 30%（含剛好 30%）") &&
+      text.includes("先照防禦計算，再降低 20%（變成 80%）") &&
+      text.includes(
+        "生命 301 時扣 50 變成 251（這一擊不減傷），下一擊只扣 40"
+      ) &&
+      text.includes("生命剛好 300 時就只扣 40") &&
+      text.includes("不是提高防禦") &&
+      text.includes("扣約 45.45 的一擊變成約 36.36") &&
+      text.includes("生命回到超過 30% 時就不減傷") &&
+      text.includes("升級後照新的最大生命計算") &&
+      text.includes("閃避的一擊不扣血") &&
+      text.includes("不會留下 1 點生命，也不會復活") &&
+      text.includes("古銅色外框與小盾牌") &&
+      text.includes("選取當時是否生效，重新點選武將可以更新") &&
+      text.includes("只在戰場生效") &&
+      text.includes("存檔都不變") &&
+      !text.includes("85") &&
+      others.length === 0,
+    { lh, payload, text, others }
+  );
+});
+
 // 技能綁定和正式設定表 heroes_config 的被動描述（passive）對照：趙雲是閃避、馬超是衝鋒（首擊加倍）；
 // 關羽是減速光環（「周圍敵人減速10%」）；劉備是防禦光環（「光環：提升友軍防禦」）；張飛是暈眩（「攻擊使敵人暈眩」）；
 // 魏延是吸血（「吸血：恢復生命」）；曹操是攻速光環（「指揮：提升友軍攻速」）；夏侯惇是反擊（「反擊：受傷時反彈傷害」）；
+// 廖化是堅韌（「堅韌：低血量減傷」）；
 // 甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
 await test("技能對照-S1", async () => {
   const { heroSkillOf, heroSkillPayload } = require(
@@ -3085,6 +3164,7 @@ await test("技能對照-S1", async () => {
     "wei_yan",
     "cao_cao",
     "xia_hou_dun",
+    "liao_hua",
   ];
   const got = Object.fromEntries(
     ids.map((id) => [id, heroSkillOf(id)?.id ?? null])
@@ -3093,7 +3173,7 @@ await test("技能對照-S1", async () => {
     (id) => heroSkillPayload(id).skill?.id === "first_strike"
   );
   check(
-    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
+    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
     JSON.stringify(got) ===
       JSON.stringify({
         ma_chao: "first_strike",
@@ -3107,6 +3187,7 @@ await test("技能對照-S1", async () => {
         wei_yan: "lifesteal",
         cao_cao: "atk_speed_aura",
         xia_hou_dun: "counter",
+        liao_hua: "tenacity",
       }) &&
       JSON.stringify(firstStrike) === '["ma_chao"]' &&
       !Object.values(got).includes("sweep") &&

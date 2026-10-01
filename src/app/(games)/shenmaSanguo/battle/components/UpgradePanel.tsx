@@ -43,6 +43,13 @@ interface UpgradePanelProps {
     sell_refund?: number;
     /** 能不能攻擊（文士塔是減速）飛行敵人：Godot 依職業／塔的種類判斷後送來 */
     anti_air?: boolean;
+    /** 武將的堅韌（廖化）：選取當下是不是生效與 Godot 實際讀到的門檻、倍率；沒有這個技能（或舊版遊戲）時沒有 */
+    tenacity?: {
+      active: boolean;
+      low_hp_ratio: number;
+      damage_mult: number;
+      max_hp?: number;
+    };
     screen_pos: { x: number; y: number };
   };
   onUpgrade: () => void;
@@ -110,6 +117,17 @@ export default function UpgradePanel({
       : data.atk_spd;
   const spdBoosted =
     data.atk_spd > 0 && spdEffective > data.atk_spd * (1 + 1e-6);
+  // 武將的堅韌：選取當下是不是生效（生命不高於門檻）；數值是 Godot 實際讀到的門檻與倍率
+  const ten = data.unit_type === "hero" ? data.tenacity : undefined;
+  const tenOk =
+    !!ten &&
+    typeof ten.active === "boolean" &&
+    Number.isFinite(ten.low_hp_ratio) &&
+    Number.isFinite(ten.damage_mult);
+  const tenThreshold = tenOk ? Number((ten.low_hp_ratio * 100).toFixed(1)) : 0;
+  const tenReduction = tenOk
+    ? Number(((1 - ten.damage_mult) * 100).toFixed(1))
+    : 0;
   const s = sell && isSameTower(data, sell) ? sell : null;
   const confirming = s?.phase === "confirm" || s?.phase === "pending";
   const pending = s?.phase === "pending";
@@ -231,6 +249,18 @@ export default function UpgradePanel({
             指揮：選取時的攻擊間隔是 {formatSec(1 / spdEffective)}秒（原本{" "}
             {formatSec(1 / data.atk_spd)}
             秒），之後開始的攻擊才套用，只在範圍內生效，不改存檔
+          </div>
+        )}
+
+        {tenOk && (
+          <div
+            className={`${styles.tenacityNote} ${ten.active ? styles.tenacityNoteOn : ""}`}
+            data-testid="unit-panel-tenacity"
+            data-active={ten.active ? "true" : "false"}
+          >
+            {ten.active
+              ? `堅韌生效中：選取時生命不高於 ${tenThreshold}%，受到的傷害（防禦計算後）降低 ${tenReduction}%`
+              : `堅韌：生命不高於 ${tenThreshold}% 時受到的傷害（防禦計算後）降低 ${tenReduction}%；選取時未生效`}
           </div>
         )}
 

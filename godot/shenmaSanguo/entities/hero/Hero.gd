@@ -9,6 +9,7 @@
 ## 吸血（魏延）：普通攻擊命中後恢復這一擊實際扣掉敵人生命的一定比例（見 lifesteal_ratio；扣掉多少由 Enemy.take_damage 回傳）
 ## 攻速光環（曹操「指揮」）：範圍內其他武將之後開始的攻擊冷卻用加成後的攻擊間隔（見 atk_speed_aura_mult、effective_attack_interval），不改 attack_speed
 ## 反擊（夏侯惇）：受到敵人的直接攻擊、實際扣血後仍然活著時，把實扣生命的一定比例反彈給這個敵人（見 counter_ratio；攻擊者由 Enemy 傳入 take_damage）
+## 堅韌（廖化）：受傷前的生命比例不高於門檻時，防禦計算後的傷害再乘上倍率（見 tenacity_hp_ratio、tenacity_damage_mult），不改防禦與最大生命
 
 class_name Hero
 extends Node2D
@@ -182,6 +183,22 @@ var counter_total: float = 0.0
 var counter_dealt: float = 0.0
 var counter_log: Array = []
 const COUNTER_LOG_MAX: int = 40
+## 堅韌（tenacity，廖化）：每次有效的受傷（沒有閃避、傷害是正的有限數字）都用「受傷前」的生命比例 current_hp ÷ max_hp 判斷，
+## 不高於 tenacity_hp_ratio（含剛好等於）時，先照原本的防禦公式（含防禦光環的加成）算出傷害，再乘上 tenacity_damage_mult（0.8 ＝ 少扣 20%）。
+## 倍率乘在傷害上，不是加在防禦上，也只乘一次；不看受傷後的生命（這一擊讓生命跨過門檻時，下一擊才減傷），恢復到門檻以上就不再減傷。
+## 每次都用當下的最大生命計算（升級、更新隊伍後照新的最大生命），不用部署時的數值。沒有攻擊者的扣血（舊的呼叫方式）同樣減傷；
+## 打倒自己的那一擊也照常計算（減傷後仍然不夠就倒下，不保底、不復活）。反擊用的是減傷後真正扣掉的生命。
+## tenacity_hp_ratio 0 代表沒有這個技能；門檻與倍率都要是 0～1 之間（不含兩端）的有限數字，任何一個不合理就整個不啟用（當作普通武將）
+var tenacity_hp_ratio: float = 0.0
+var tenacity_damage_mult: float = 1.0
+## 測試用唯讀統計（debug_snapshot）：減傷的次數、少扣的生命總量，以及最近 TENACITY_LOG_MAX 次有效受傷的受傷前生命、最大生命、
+## 防禦計算後的傷害、實際扣掉的生命與這一擊有沒有減傷（包括沒有減傷的受傷）
+var tenacity_count: int = 0
+var tenacity_saved: float = 0.0
+var tenacity_log: Array = []
+const TENACITY_LOG_MAX: int = 40
+## 堅韌生效時的提示顏色（古銅色：血條外框與小盾牌；和淺綠色的防禦光環、淡紫色的攻速光環區分）
+const TENACITY_COLOR: Color = Color(0.85, 0.6, 0.25, 1.0)
 ## 測試用唯讀統計（debug_snapshot）：這位武將的遊戲時間（_process 的 delta 累加，受時間倍率影響、手動暫停時不前進）、
 ## 普通攻擊的次數，以及最近 ATTACK_LOG_MAX 次攻擊的時間、這次冷卻用的攻擊間隔與當時的攻速加成
 var _age: float = 0.0
@@ -292,6 +309,8 @@ func _read_skill(state: Dictionary) -> void:
 	lifesteal_ratio = 0.0
 	atk_speed_aura_mult = 1.0
 	counter_ratio = 0.0
+	tenacity_hp_ratio = 0.0
+	tenacity_damage_mult = 1.0
 	var skill = state.get("skill", null)
 	if not (skill is Dictionary):
 		return
@@ -354,10 +373,21 @@ func _read_skill(state: Dictionary) -> void:
 			var k: Variant = skill.get("counter_ratio")
 			if (k is float or k is int) and is_finite(float(k)) and float(k) > 0.0 and float(k) <= 1.0:
 				counter_ratio = float(k)
+		"tenacity":
+			# 門檻與倍率都要是 0～1 之間（不含兩端）的有限數字；兩個都合理才啟用，任何一個缺少或不合理就當作普通武將（不補預設值）
+			var lr: Variant = skill.get("low_hp_ratio")
+			var lm: Variant = skill.get("damage_mult")
+			if _open_unit(lr) and _open_unit(lm):
+				tenacity_hp_ratio = float(lr)
+				tenacity_damage_mult = float(lm)
 
 ## 技能參數是正的有限數字（JSON 的數字在 Godot 是 float；字串、布林、null、NaN、無限大、0 以下都不是）
 static func _positive_finite(v: Variant) -> bool:
 	return (v is float or v is int) and is_finite(float(v)) and float(v) > 0.0
+
+## 技能參數是 0～1 之間（不含兩端）的有限數字（字串、布林、null、NaN、無限大、0 以下、1 以上都不是）
+static func _open_unit(v: Variant) -> bool:
+	return (v is float or v is int) and is_finite(float(v)) and float(v) > 0.0 and float(v) < 1.0
 
 ## 技能參數是正整數的數值（JSON 的 3.0 也算；小數、超過 2^53 − 1 這種無法精確表示的整數都不是）
 static func _positive_whole(v: Variant) -> bool:
@@ -796,7 +826,7 @@ func slow_state() -> Dictionary:
 		"aura_source": aura_source, "road_source": slow_source}
 
 # ═══════════════════════════════════════════
-#  受傷（被擋住的敵人攻擊阻路武將；閃避見 dodge_chance；防禦光環見 effective_def；反擊見 counter_ratio）
+#  受傷（被擋住的敵人攻擊阻路武將；閃避見 dodge_chance；防禦光環見 effective_def；反擊見 counter_ratio；堅韌見 tenacity_hp_ratio）
 # ═══════════════════════════════════════════
 ## source：這一擊的攻擊者（敵人攻擊阻路武將時傳入自己）；沒有攻擊者的扣血不傳（舊的呼叫方式照常可用），反擊只反彈給有效的攻擊者
 func take_damage(amount: float, source: Variant = null) -> void:
@@ -820,7 +850,19 @@ func take_damage(amount: float, source: Variant = null) -> void:
 
 	# 防禦公式不變，只是防禦換成受傷當下的有效防禦（防禦光環的加成乘在防禦上，不是直接少扣一定比例的傷害）
 	var d: float = effective_def()
-	var actual_dmg: float = amount * (1.0 - d / (d + 100.0))
+	var raw_dmg: float = amount * (1.0 - d / (d + 100.0))
+	var actual_dmg: float = raw_dmg
+	# 堅韌：用受傷前的生命判斷，防禦計算後的傷害再乘上倍率
+	if tenacity_hp_ratio > 0.0:
+		var before: float = current_hp
+		var reduced: bool = tenacity_on()
+		if reduced:
+			actual_dmg = raw_dmg * tenacity_damage_mult
+			tenacity_count += 1
+			tenacity_saved += raw_dmg - actual_dmg
+		tenacity_log.append({"before": before, "max_hp": max_hp, "raw": raw_dmg, "taken": actual_dmg, "reduced": reduced})
+		if tenacity_log.size() > TENACITY_LOG_MAX:
+			tenacity_log.pop_front()
 	current_hp -= actual_dmg
 	
 	# 顯示傷害數字 (深紅色代表英雄受傷)
@@ -856,6 +898,15 @@ func _counter(taken: float, source: Variant) -> void:
 	counter_log.append({"taken": taken, "reflect": reflect, "dealt": dealt, "killed": source.is_dead()})
 	if counter_log.size() > COUNTER_LOG_MAX:
 		counter_log.pop_front()
+
+## 堅韌現在是不是生效：有這個技能、還活著，而且目前的生命比例（current_hp ÷ 目前的 max_hp）不高於門檻。
+## 最大生命不是正的有限數字、生命不是有限數字時不生效。受傷時在扣血之前判斷，血條的提示也用它
+func tenacity_on() -> bool:
+	if not (tenacity_hp_ratio > 0.0) or not (current_hp > 0.0 and is_finite(current_hp)):
+		return false
+	if not (max_hp > 0.0 and is_finite(max_hp)):
+		return false
+	return current_hp / max_hp <= tenacity_hp_ratio
 
 ## 閃避判定用的亂數 u（0 ≤ u < 1）：randi 是 32 位元整數，除以 2^32 不會得到 1（randf 可能剛好回傳 1.0）。
 ## 有測試替身時改用替身的值（測試用來驗證 0、0.149999、0.15、接近 1 這些邊界）
@@ -950,6 +1001,12 @@ func _draw() -> void:
 	var ratio: float = current_hp / max_hp
 	draw_rect(Rect2(bar_x, bar_y, bar_w, 5), Color(0.2, 0.2, 0.2, 0.8))
 	draw_rect(Rect2(bar_x, bar_y, bar_w * ratio, 5), Color(0.2, 0.9, 0.2, 1))
+	# 堅韌生效中（廖化的生命不高於門檻）：血條加上古銅色的外框，左邊一個小盾牌（不用文字，Godot 專案沒有中文字型）
+	if tenacity_on():
+		draw_rect(Rect2(bar_x - 1, bar_y - 1, bar_w + 2, 7), TENACITY_COLOR, false, 1.5)
+		var sx: float = bar_x - 9.0
+		var sy: float = bar_y - 2.0
+		draw_colored_polygon(PackedVector2Array([Vector2(sx, sy), Vector2(sx + 7, sy), Vector2(sx + 7, sy + 5), Vector2(sx + 3.5, sy + 9), Vector2(sx, sy + 5)]), TENACITY_COLOR)
 
 	# 選取邊框（貼圖與純色共用）
 	if _is_selected:

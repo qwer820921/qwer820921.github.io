@@ -511,7 +511,7 @@ func _on_hero_clicked(hero: Node) -> void:
 	
 	# 取得螢幕位置傳給 Web
 	var pos_screen: Vector2 = hero.get_global_transform_with_canvas().origin
-	web_bridge.send_show_upgrade_panel({
+	var info: Dictionary = {
 		"unit_type": "hero",
 		"hero_id": hero.hero_id,
 		"name": hero.hero_name,
@@ -528,7 +528,12 @@ func _on_hero_clicked(hero: Node) -> void:
 		# 對空：這位武將能不能攻擊飛行敵人（依職業，見 Hero.AIR_JOBS）
 		"anti_air": hero.can_hit_air,
 		"screen_pos": {"x": pos_screen.x, "y": pos_screen.y},
-	})
+	}
+	# 堅韌（廖化）：選取當下是不是生效（生命比例不高於門檻）與 Godot 實際讀到的門檻、倍率；沒有啟用這個技能的武將不帶這個欄位
+	if hero.tenacity_hp_ratio > 0.0:
+		info["tenacity"] = {"active": hero.tenacity_on(), "low_hp_ratio": hero.tenacity_hp_ratio, "damage_mult": hero.tenacity_damage_mult,
+			"max_hp": hero.max_hp}
+	web_bridge.send_show_upgrade_panel(info)
 
 func _on_tower_clicked(tower: Node) -> void:
 	_deselect_unit()
@@ -957,6 +962,9 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 反擊（夏侯惇）：Godot 實際讀到的比例（沒有啟用時不列出）、反彈的次數、反彈的總量、攻擊者實際被扣掉的總量、目前與最大生命、
 	# 最近幾次的實扣生命與反彈量
 	var hero_counter: Dictionary = {}
+	# 堅韌（廖化）：Godot 實際讀到的門檻與倍率（沒有啟用時不列出）、現在是不是生效、減傷的次數與少扣的總量、目前與最大生命、
+	# 最近幾次有效受傷的受傷前生命、防禦計算後的傷害與實際扣掉的生命
+	var hero_tenacity: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
@@ -969,6 +977,10 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		if hero.counter_ratio > 0.0:
 			hero_counter[hid] = {"ratio": hero.counter_ratio, "count": hero.counter_count, "total": hero.counter_total, "dealt": hero.counter_dealt,
 				"hp": hero.current_hp, "max_hp": hero.max_hp, "log": hero.counter_log.duplicate(true)}
+		if hero.tenacity_hp_ratio > 0.0:
+			hero_tenacity[hid] = {"low_hp_ratio": hero.tenacity_hp_ratio, "damage_mult": hero.tenacity_damage_mult, "active": hero.tenacity_on(),
+				"count": hero.tenacity_count, "saved": hero.tenacity_saved, "hp": hero.current_hp, "max_hp": hero.max_hp,
+				"log": hero.tenacity_log.duplicate(true)}
 		hero_ranges[hid] = hero.attack_range
 		hero_hp[hid] = hero.current_hp
 		hero_slow[hid] = hero.slow_state()
@@ -1052,6 +1064,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		# 反擊（夏侯惇）
 		"hero_counter":      hero_counter,
 		"counter_texts":     counter_texts,
+		# 堅韌（廖化）
+		"hero_tenacity":     hero_tenacity,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)

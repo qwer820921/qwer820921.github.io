@@ -338,6 +338,16 @@ export type HeroSkillPayload =
        * 不是大於 0、不超過 1 的有限數字時 Godot 當作沒有這個技能
        */
       counter_ratio: number;
+    }
+  | {
+      id: "tenacity";
+      /**
+       * 受傷前的生命比例（生命 ÷ 最大生命）不高於這個值時減傷（0.3＝30%，含剛好等於）；
+       * 和 damage_mult 都要是 0～1 之間（不含兩端）的有限數字，任何一個不是時 Godot 當作沒有這個技能
+       */
+      low_hp_ratio: number;
+      /** 減傷時防禦計算後傷害的倍率（0.8＝少扣 20%） */
+      damage_mult: number;
     };
 
 export interface ExpeditionPayload {

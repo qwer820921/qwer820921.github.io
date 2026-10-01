@@ -172,14 +172,14 @@ func _run() -> void:
 		battle_ended_count += 1
 		last_result = r)
 
-	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊）、橫掃原型與攻速成長；
+	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、廖化的堅韌）、橫掃原型與攻速成長；
 	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行；
 	# route 跑飛行與地面的路線無效（出兵前擋下）；blocker 只跑敵人攻擊阻路武將的冷卻；
 	# dodge 只跑趙雲「閃避」；firststrike 只跑首擊加倍（馬超「衝鋒」）；
 	# stagedata 跑關卡資料未完成（沒有波次、波次或路線的格式不對）；enemyatk 跑敵人設定的對武將攻擊力；immune 跑免疫減速；
 	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）；stun 只跑張飛的暈眩（skills 也包含）；lifesteal 只跑魏延的吸血（skills 也包含）；
 	# atkspeed 只跑曹操的攻速光環（skills 也包含）；damage 只跑敵人受傷的入口（拒絕無效的傷害）；
-	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）
+	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -196,6 +196,7 @@ func _run() -> void:
 			await _atk_speed_aura_cases()
 			await _burn_input_cases()
 			await _counter_cases()
+			await _tenacity_cases()
 		elif only == "blocker":
 			await _blocker_cases()
 		elif only == "dodge":
@@ -240,8 +241,10 @@ func _run() -> void:
 			await _burn_input_cases()
 		elif only == "counter":
 			await _counter_cases()
+		elif only == "tenacity":
+			await _tenacity_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity）", false)
 		_finish()
 		return
 
@@ -469,6 +472,9 @@ func _run() -> void:
 
 	# ── 夏侯惇的反擊（受到直接攻擊、實扣後仍活著時反彈實扣的 20% 給攻擊者）──
 	await _counter_cases()
+
+	# ── 廖化的堅韌（受傷前生命不高於 30% 時，防禦計算後的傷害再乘 0.8）──
+	await _tenacity_cases()
 
 	_finish()
 
@@ -9434,6 +9440,477 @@ func _counter_cases() -> void:
 	d4["d"] = [x4d.counter_count if x4d != null else -1, x4d.counter_log.size() if x4d != null else -1, x4d.current_hp if x4d != null else -1.0, x4d.counter_ratio if x4d != null else -1.0]
 	_check("反擊-4 移位、移除、陣亡與新的一場：反彈過的夏侯惇移到建築格後敵人不再被擋住、照常前進，不再攻擊與反彈；移出隊伍後不在場上、沒有反彈；生命 120 時前兩擊各反彈 10、第三擊打倒它不反彈（敵人只被扣 20），之後不在場上、敵人照常前進；新的一場反彈次數 0、沒有紀錄、生命 1000",
 		ok4a and ok4b and ok4c and d4.d == [0, 0, 1000.0, 0.2], d4)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 堅韌（廖化）──
+# 每次有效的受傷都用受傷前的生命比例判斷：current_hp ÷ max_hp 不高於 30%（含剛好 30%）時，防禦計算後（含防禦光環）的傷害再乘 0.8；
+# 不是提高防禦、只乘一次；讓生命跨過門檻的那一擊不減傷、下一擊才減傷；用當下的最大生命；沒有攻擊者的扣血同樣減傷；致死照常倒下
+
+## 廖化的堅韌（和網頁 utils/heroSkills 的出征參數相同）
+const TEN_SKILL: Dictionary = {"id": "tenacity", "low_hp_ratio": 0.3, "damage_mult": 0.8}
+## 攻擊力 100 打防禦 100：沒有減傷扣 50、減傷扣 40；在劉備的防禦光環裡（防禦 120）沒有減傷扣 100 × 100 ÷ 220、減傷再乘 0.8
+const TEN_HIT: float = 50.0
+const TEN_HIT_LOW: float = 40.0
+const TEN_HIT_AURA: float = 100.0 * 100.0 / 220.0
+const TEN_HIT_AURA_LOW: float = 100.0 * 100.0 / 220.0 * 0.8
+## 實際引擎用的敵人：慢速地面兵（每秒 20 像素、攻擊力 100、血量很多）
+const TEN_ENEMIES: Array = [
+	{"enemy_id": "ten_walk", "name": "W", "hp": 99999.0, "speed": 20.0, "atk": 100},
+]
+
+## 數字（可以是巢狀的陣列）逐一相符，容許浮點誤差；其他型別要完全相同
+func _ten_same(a: Variant, b: Variant, eps: float = 1e-6) -> bool:
+	if a is Array and b is Array:
+		if a.size() != b.size():
+			return false
+		for i in range(a.size()):
+			if not _ten_same(a[i], b[i], eps):
+				return false
+		return true
+	if (a is float or a is int) and (b is float or b is int):
+		return absf(float(a) - float(b)) < eps
+	return typeof(a) == typeof(b) and a == b
+
+## 單獨的廖化（真正的 Hero 腳本，不經過 Main、不攻擊）：最大生命 max_v、目前生命 hp、防禦 def_v；skill 是 null 時帶堅韌的參數
+func _ten_hero(holder: Node, hp: float, max_v: float = 1000.0, def_v: float = 100.0, skill: Variant = null) -> Node:
+	var h: Node = load("res://entities/hero/Hero.gd").new()
+	holder.add_child(h)
+	h.set_process(false)
+	h.hero_id = "liao_hua"
+	h.max_hp = max_v
+	h.current_hp = hp
+	h.def_stat = def_v
+	h._read_skill({"skill": TEN_SKILL.duplicate() if skill == null else skill})
+	return h
+
+## 直接呼叫受傷（傷害 amount，可以帶攻擊者）：回傳 [受傷前的生命, 扣掉的生命]
+func _ten_hit(h: Node, amount: float = 100.0, source: Variant = null) -> Array:
+	var before: float = h.current_hp
+	h.take_damage(amount, source)
+	return [before, before - h.current_hp]
+
+## 固定步進用的一對：真正的 Enemy（攻擊力 100、速度 0，停在第 3 格）與真正的 Hero（廖化：防禦 100、最大生命 max_v、目前生命 hp，
+## 放在第 3 格擋住它、不攻擊）；skill 是 null 時帶堅韌的參數。測試自己用固定的 delta 呼叫敵人的 _physics_process（第 2 步打第一擊）
+func _ten_pair(holder: Node, hp: float, max_v: float = 1000.0, skill: Variant = null) -> Dictionary:
+	var map := BlkMap.new()
+	holder.add_child(map)
+	var e: Node = _ctr_enemy(holder, map)
+	var h: Node = _blk_hero(holder, map, 3, max_v)
+	h.hero_id = "liao_hua"
+	h.def_stat = 100.0
+	h.current_hp = hp
+	h._read_skill({"skill": TEN_SKILL.duplicate() if skill == null else skill})
+	return {"e": e, "h": h, "map": map}
+
+## 實際引擎：載入一場（經過 JSON）並依 cells 放置武將（hero_id → 格子），不開戰。廖化是步兵、射程 1.5 格、攻擊間隔 1.1 秒；劉備（射程 3 格）用來測組合
+func _ten_load(rec: Node, battle_id: String, waves: Array, team: Array, cells: Dictionary) -> void:
+	var p: Dictionary = _r12_payload("ten_" + battle_id, waves, battle_id, team)
+	p["heroes_config"] = [
+		{"hero_id": "liao_hua", "name": "廖化", "job": "infantry", "attack_range": 1.5, "attack_speed": 1.1},
+		{"hero_id": "liu_bei", "name": "劉備", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5},
+	]
+	for c in TEN_ENEMIES:
+		p["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p)
+	for hid in cells:
+		_r12_place(hid, cells[hid])
+
+## 出征的廖化（攻擊力 100、防禦 100、生命 hp、等級 level）；skill 是 null 時帶堅韌的參數
+func _ten_lh(hp: float = 1000.0, skill: Variant = null, level: int = 1) -> Dictionary:
+	var h: Dictionary = _r12_hero("liao_hua", TEN_SKILL.duplicate() if skill == null else skill)
+	h["def"] = 100.0
+	h["hp"] = hp
+	h["level"] = level
+	return h
+
+## 每一列：敵人攻擊 1 次的列廖化扣 hit；沒有攻擊的列生命不變。回傳不符合的列（最多 5 列）
+func _ten_bad_rows(rows: Array, hit: float) -> Array:
+	var bad: Array = []
+	for i in range(rows.size()):
+		var r: Dictionary = rows[i]
+		var ok: bool = (int(r.atk) == 0 and float(r.dh) == 0.0) or (int(r.atk) == 1 and absf(float(r.dh) + hit) < 1e-6)
+		if not ok:
+			bad.append({"i": i, "row": r})
+	return bad.slice(0, 5)
+
+## 堅韌紀錄每一筆都是 [受傷前的生命, 實際扣掉的生命, 有沒有減傷]
+func _ten_log(h: Node) -> Array:
+	return h.tenacity_log.map(func(x): return [x.before, x.taken, x.reduced])
+
+func _tenacity_cases() -> void:
+	# 堅韌-0：技能參數的判讀：low_hp_ratio 與 damage_mult 都是 0～1 之間（不含兩端）的有限數字才啟用（0.3／0.8、0.0001／0.9999、0.5／0.5、經過 JSON 的 0.3／0.8）；
+	# 任何一個是字串、布林、null、陣列、字典、NaN、正負無限大、0、負數、1、超過 1 或沒有欄位時整個不啟用（另一個合理也一樣，不補預設值）；
+	# 不認得或大小寫不同的 id、其他技能都不啟用；堅韌不帶其他技能，換成其他技能或沒有技能後清除
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var off: Array = [0.0, 1.0]
+	var cases0: Array = [[{"id": "tenacity", "low_hp_ratio": 0.3, "damage_mult": 0.8}, [0.3, 0.8]],
+		[{"id": "tenacity", "low_hp_ratio": 0.0001, "damage_mult": 0.9999}, [0.0001, 0.9999]],
+		[{"id": "tenacity", "low_hp_ratio": 0.5, "damage_mult": 0.5}, [0.5, 0.5]]]
+	for bad in ["0.3", true, false, null, [0.3], {"v": 0.3}, NAN, INF, -INF, 0, 0.0, -0.3, 1, 1.0, 1.5]:
+		cases0.append([{"id": "tenacity", "low_hp_ratio": bad, "damage_mult": 0.8}, off])
+		cases0.append([{"id": "tenacity", "low_hp_ratio": 0.3, "damage_mult": bad}, off])
+	cases0.append_array([[{"id": "tenacity", "damage_mult": 0.8}, off], [{"id": "tenacity", "low_hp_ratio": 0.3}, off], [{"id": "tenacity"}, off],
+		[{"id": "tenacity_x", "low_hp_ratio": 0.3, "damage_mult": 0.8}, off], [{"id": "Tenacity", "low_hp_ratio": 0.3, "damage_mult": 0.8}, off],
+		[{"id": "counter", "counter_ratio": 0.2, "low_hp_ratio": 0.3, "damage_mult": 0.8}, off], [{"id": "def_aura", "def_mult": 1.2}, off], [null, off]])
+	var bad0: Array = []
+	for c in cases0:
+		h0._read_skill({} if c[0] == null else {"skill": c[0]})
+		if [h0.tenacity_hp_ratio, h0.tenacity_damage_mult] != c[1]:
+			bad0.append(str(c[0]))
+	h0._read_skill({"skill": JSON.parse_string("{\"id\": \"tenacity\", \"low_hp_ratio\": 0.3, \"damage_mult\": 0.8}")})
+	var json0: Array = [h0.tenacity_hp_ratio, h0.tenacity_damage_mult]
+	var other0: Array = [h0.stun_duration, h0.slow_aura_mult, h0.def_aura_mult, h0.dodge_chance, h0.first_strike_multiplier, h0.range_multiplier, h0.burn_ratio,
+		h0.sweep_ratio, h0.lifesteal_ratio, h0.atk_speed_aura_mult, h0.counter_ratio]
+	h0._read_skill({"skill": {"id": "counter", "counter_ratio": 0.2}})
+	var switched0: Array = [h0.tenacity_hp_ratio, h0.tenacity_damage_mult, h0.counter_ratio]
+	h0._read_skill({"skill": TEN_SKILL.duplicate()})
+	h0._read_skill({})
+	var cleared0: Array = [h0.tenacity_hp_ratio, h0.tenacity_damage_mult]
+	h0.free()
+	_check("堅韌-0 技能參數：low_hp_ratio／damage_mult 是 0～1 之間（不含兩端）的有限數字才啟用（0.3／0.8、0.0001／0.9999、0.5／0.5 與經過 JSON 的 0.3／0.8）；任何一個是字串、布林、null、陣列、字典、NaN、無限大、0、負數、1、超過 1 或沒有欄位時整個不啟用；不認得或大小寫不同的 id、其他技能都不啟用；堅韌不帶其他技能，換成反擊或沒有技能後清除",
+		bad0.is_empty() and json0 == [0.3, 0.8] and other0 == [0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] and switched0 == [0.0, 1.0, 0.2] and cleared0 == [0.0, 1.0],
+		{"bad": bad0, "json": json0, "other": other0, "switched": switched0, "cleared": cleared0, "cases": cases0.size()})
+
+	# 堅韌-1：受傷前的生命判斷與數值（單獨的廖化，直接呼叫受傷、不帶攻擊者，也就是舊的呼叫方式）：最大生命 1000、防禦 100、傷害 100：
+	# a 生命 301 → 扣 50 到 251（這一擊不減傷）→ 下一擊扣 40 到 211；紀錄是受傷前的生命、最大生命、防禦計算後的傷害、實扣與有沒有減傷，減傷 1 次、少扣 10；
+	# b 剛好 300 扣 40、300.001 扣 50、299.999 扣 40；
+	# c 生命 260 經過恢復（吸血的恢復流程）回到 301 後扣 50、下一擊扣 40；
+	# d 最大生命 500：150 扣 40、151 扣 50；最大生命 2000：600 扣 40、601 扣 50、301 扣 40（門檻跟著最大生命，不是固定的 300 點）；
+	# e 升級（更新隊伍，最大生命 1000 → 2000，生命照比例變成 500、640）：25% 的扣 40、32% 的扣 50（用新的最大生命）；
+	# f 防禦光環（防禦 × 1.2）：生命 400 扣約 45.45、生命 300 扣約 36.36（防禦計算後再乘 0.8，不是加在防禦上、只乘一次）；防禦 0 的生命 300 扣 80；
+	# g 參數無效（沒有倍率）時生命 300 照常扣 50；無效的傷害（0、負數、NaN、正負無限大）不扣血、不記錄；
+	# h 閃避（抽樣 0）不扣血、不記錄，改成抽樣 0.99 後扣 40；
+	# i 致死：生命 40 扣 40 倒下、39.9 倒下（倒下信號一次、生命 0、正要被移除），40.0001 撐住剩 0.0001；最大生命 100、生命 50（不減傷）扣 50 倒下；
+	# j 同時設定反擊 0.2（帶攻擊者）：生命 300 扣 40、反彈 8（以減傷後的實扣為準），生命 400 扣 50、反彈 10
+	var hh := _dodge_holder()
+	var ha: Node = _ten_hero(hh, 301.0)
+	var a1: Array = [_ten_hit(ha), _ten_hit(ha)]
+	var log_a: Array = ha.tenacity_log.map(func(x): return [x.before, x.max_hp, x.raw, x.taken, x.reduced])
+	var cnt_a: Array = [ha.tenacity_count, ha.tenacity_saved]
+	var b1: Array = []
+	for hp in [300.0, 300.001, 299.999]:
+		b1.append(_ten_hit(_ten_hero(hh, hp))[1])
+	var hc: Node = _ten_hero(hh, 260.0)
+	hc.lifesteal_ratio = 1.0
+	hc._lifesteal(41.0)
+	var c1: Array = [hc.current_hp, _ten_hit(hc)[1], _ten_hit(hc)[1]]
+	var d1: Array = []
+	for c in [[500.0, 150.0], [500.0, 151.0], [2000.0, 600.0], [2000.0, 601.0], [2000.0, 301.0]]:
+		d1.append(_ten_hit(_ten_hero(hh, c[1], c[0]))[1])
+	var e1: Array = []
+	for hp in [250.0, 320.0]:
+		var he: Node = _ten_hero(hh, hp)
+		he.apply_stat_update({"hp": 2000.0, "level": 2, "def": 100.0}, [])
+		e1.append([he.max_hp, he.current_hp, _ten_hit(he)[1]])
+	var hf: Node = _ten_hero(hh, 400.0)
+	hf.apply_def_from("test_def", 1.2, 1.0e9)
+	var f1: Array = [_ten_hit(hf)[1]]
+	hf.current_hp = 300.0
+	f1.append(_ten_hit(hf)[1])
+	f1.append(_ten_hit(_ten_hero(hh, 300.0, 1000.0, 0.0))[1])
+	var g1: Array = [_ten_hit(_ten_hero(hh, 300.0, 1000.0, 100.0, {"id": "tenacity", "low_hp_ratio": 0.3}))[1]]
+	var hg: Node = _ten_hero(hh, 250.0)
+	for v in [0.0, -5.0, NAN, INF, -INF]:
+		hg.take_damage(v)
+	g1.append([hg.current_hp, hg.tenacity_count, hg.tenacity_log.size()])
+	var hd: Node = _ten_hero(hh, 250.0)
+	var u: Array = [0.0]
+	hd.dodge_chance = 0.5
+	hd.dodge_roll_override = func() -> float: return float(u[0])
+	var h1: Array = [_ten_hit(hd)[1]]
+	u[0] = 0.99
+	h1.append(_ten_hit(hd)[1])
+	h1.append_array([hd.dodge_count, hd.tenacity_log.size()])
+	var i1: Array = []
+	for c in [[1000.0, 40.0], [1000.0, 39.9], [1000.0, 40.0001], [100.0, 50.0]]:
+		var hl: Node = _ten_hero(hh, c[1], c[0])
+		var deaths: Array = [0]
+		hl.hero_died.connect(func(_x): deaths[0] += 1)
+		var r: Array = _ten_hit(hl)
+		i1.append([r[1], hl.current_hp, deaths[0], hl.is_queued_for_deletion()])
+	var pk: Dictionary = _ten_pair(hh, 300.0)
+	pk.h.counter_ratio = 0.2
+	var j1: Array = [_ten_hit(pk.h, 100.0, pk.e)[1], 99999.0 - pk.e.current_hp]
+	pk.h.current_hp = 400.0
+	j1.append_array([_ten_hit(pk.h, 100.0, pk.e)[1], 99999.0 - pk.e.current_hp])
+	j1.append(pk.h.counter_log.map(func(x): return x.taken))
+	hh.queue_free()
+	var d1x: Dictionary = {"a": a1, "log_a": log_a, "count_a": cnt_a, "b": b1, "c": c1, "d": d1, "e": e1, "f": f1, "g": g1, "h": h1, "i": i1, "j": j1}
+	_check("堅韌-1 受傷前的生命判斷（不帶攻擊者的扣血也減傷）：301 扣 50 到 251、下一擊扣 40；剛好 300 扣 40、300.001 扣 50、299.999 扣 40；恢復到 301 後扣 50；最大生命 500 時 150／151、2000 時 600／601／301 照比例判斷；升級後照新的最大生命（25% 扣 40、32% 扣 50）；防禦光環裡 45.45 → 36.36（只乘一次）、防禦 0 扣 80；參數無效照常扣 50；無效的傷害與閃避不扣血不記錄；致死照常倒下不保底（40、39.9 倒下，40.0001 剩 0.0001，不減傷的 50 也倒下）；同時有反擊時反彈減傷後實扣的 20%",
+		_ten_same(a1, [[301.0, 50.0], [251.0, 40.0]]) and _ten_same(log_a, [[301.0, 1000.0, 50.0, 50.0, false], [251.0, 1000.0, 50.0, 40.0, true]]) and _ten_same(cnt_a, [1, 10.0])
+			and _ten_same(b1, [40.0, 50.0, 40.0]) and _ten_same(c1, [301.0, 50.0, 40.0]) and _ten_same(d1, [40.0, 50.0, 40.0, 50.0, 40.0])
+			and _ten_same(e1, [[2000.0, 500.0, 40.0], [2000.0, 640.0, 50.0]]) and _ten_same(f1, [TEN_HIT_AURA, TEN_HIT_AURA_LOW, 80.0])
+			and _ten_same(g1, [50.0, [250.0, 0, 0]]) and _ten_same(h1, [0.0, 40.0, 1, 1])
+			and _ten_same(i1, [[40.0, 0.0, 1, true], [39.9, 0.0, 1, true], [40.0, 0.0001, 0, false], [50.0, 0.0, 1, true]], 1e-9)
+			and _ten_same(j1, [40.0, 8.0, 50.0, 18.0, [40.0, 50.0]]),
+		d1x)
+
+	# 堅韌-2：固定步進（真正的 Enemy 與 Hero，每步 1/60 秒；敵人第 2、62、122、182 步攻擊）：攻擊力 100 打防禦 100 的廖化（最大生命 1000）：
+	# a 生命 340：第 2 步扣 50（34%，不減傷）→ 之後每擊扣 40（290、250、210 都在門檻內），沒有攻擊的步數生命不變；減傷 3 次；
+	# b 生命 301：扣 50 到 251 → 下一擊扣 40；剛好 300：每擊扣 40；
+	# c 在防禦光環裡（防禦 × 1.2）生命 300：每擊約 36.36；
+	# d 生命 40：第一擊扣 40 倒下（倒下信號一次），之後敵人不再被擋住、不再攻擊
+	var h2 := _dodge_holder()
+	var pa: Dictionary = _ten_pair(h2, 340.0)
+	var ra: Dictionary = _ctr_steps(pa.e, pa.h, 190)
+	var a2: Dictionary = {"atk": ra.atk, "odd": ra.odd, "hp": pa.h.current_hp, "count": pa.h.tenacity_count, "log": _ten_log(pa.h)}
+	var pb: Dictionary = _ten_pair(h2, 301.0)
+	var rb: Dictionary = _ctr_steps(pb.e, pb.h, 70)
+	var pb2: Dictionary = _ten_pair(h2, 300.0)
+	var rb2: Dictionary = _ctr_steps(pb2.e, pb2.h, 70)
+	var pc: Dictionary = _ten_pair(h2, 300.0)
+	pc.h.apply_def_from("test_def", 1.2, 1.0e9)
+	var rc: Dictionary = _ctr_steps(pc.e, pc.h, 70)
+	var pd: Dictionary = _ten_pair(h2, 40.0)
+	var dd: Array = [0]
+	pd.h.hero_died.connect(func(_x): dd[0] += 1)
+	var rd: Dictionary = _ctr_steps(pd.e, pd.h, 70)
+	var b2: Dictionary = {"cross": rb.atk, "cross_odd": rb.odd, "edge": rb2.atk, "edge_odd": rb2.odd, "aura": rc.atk, "aura_odd": rc.odd,
+		"lethal": rd.atk, "died": dd[0], "attacks": pd.e.blocker_attacks, "blocker": pd.e._blocker == null, "hp": pd.h.current_hp}
+	h2.queue_free()
+	_check("堅韌-2 固定步進（真正的 Enemy 阻路攻擊）：生命 340 第一擊扣 50、之後每擊 40；301 扣 50 到 251、下一擊 40；剛好 300 每擊 40；防禦光環裡每擊約 36.36；沒有攻擊的步數不變；生命 40 第一擊扣 40 倒下（一次），之後不再被攻擊",
+		_ctr_rows_ok(a2.atk, [[2, 50, 0, 0], [62, 40, 0, 0], [122, 40, 0, 0], [182, 40, 0, 0]]) and a2.odd.is_empty() and _ten_same(a2.hp, 170.0) and a2.count == 3
+			and _ten_same(a2.log, [[340.0, 50.0, false], [290.0, 40.0, true], [250.0, 40.0, true], [210.0, 40.0, true]])
+			and _ctr_rows_ok(b2.cross, [[2, 50, 0, 0], [62, 40, 0, 0]]) and b2.cross_odd.is_empty()
+			and _ctr_rows_ok(b2.edge, [[2, 40, 0, 0], [62, 40, 0, 0]]) and b2.edge_odd.is_empty()
+			and _ctr_rows_ok(b2.aura, [[2, TEN_HIT_AURA_LOW, 0, 0], [62, TEN_HIT_AURA_LOW, 0, 0]]) and b2.aura_odd.is_empty()
+			and _ctr_rows_ok(b2.lethal, [[2, 40, 0, 0]]) and b2.died == 1 and b2.attacks == 1 and b2.blocker and b2.hp == 0.0,
+		{"a": a2, "b": b2})
+
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 堅韌-3：實際引擎（時間倍率與暫停）：廖化在道路 (4,5) 擋住慢速地面兵（攻擊力 100），最大生命 2000、防禦 100，開戰前生命設成剛好 600（30%）：
+	# 備戰時點選廖化，面板的堅韌是生效中（門檻 0.3、倍率 0.8）；1 倍 3 次攻擊 → 2 倍 3 次 → 部署選單（0.1 倍）1 次 → 關閉、回到 1 倍後手動暫停 1 秒（牆鐘）→ 繼續後再 1 次：
+	# 每一步：敵人攻擊 1 次時廖化扣 40、沒有攻擊的步數生命不變；暫停中沒有攻擊、生命不變；減傷次數＝攻擊次數＝紀錄筆數；生命＝600 − 40 × 次數；
+	# 快照的 hero_tenacity 和節點一致（生效中、門檻 0.3、倍率 0.8、最大生命 2000、紀錄每筆都是 40）
+	var d3: Dictionary = {}
+	var ok3: bool = false
+	_ten_load(rec, "ten-3", [[_grp("ten_walk", 1, 0.02)]], [_ten_lh(2000.0)], {"liao_hua": Vector2i(4, 5)})
+	var x3: Node = _fly_hero("liao_hua")
+	if x3 != null:
+		x3.current_hp = 600.0
+		main._on_hero_clicked(x3)
+	var panel3: Dictionary = rec.sent_panels.back() if not rec.sent_panels.is_empty() else {}
+	var e3: Node = await _stn_start(Vector2i(4, 5), Vector2(-0.4, 0.0))
+	if e3 != null and x3 != null:
+		await _wait_until(func(): return is_instance_valid(e3) and e3._blocker != null, 5.0)
+		var st3: Dictionary = {"n": 0, "phase": 0, "menu": {}, "pause": {}, "rec": rec, "h": x3, "paused": []}
+		var each3 := func(row: Dictionary) -> void:
+			st3.n = int(st3.n) + int(row.atk)
+			var ph: int = int(st3.phase)
+			if ph == 3:
+				st3.paused.append(row)
+			if ph == 0 and int(st3.n) >= 3:
+				_r19_speed(st3.rec, 2.0)
+				st3.phase = 1
+			elif ph == 1 and int(st3.n) >= 6:
+				st3.menu = _r19_open(st3.rec, 2)
+				st3.phase = 2
+			elif ph == 2 and int(st3.n) >= 7:
+				_r19_close(st3.rec, st3.menu)
+				_r19_speed(st3.rec, 1.0)
+				st3.pause = {"n": st3.n, "hp": st3.h.current_hp, "count": st3.h.tenacity_count, "wall": Time.get_ticks_msec(), "reply": _r20_pause(st3.rec, true)}
+				st3.phase = 3
+			elif ph == 3 and Time.get_ticks_msec() - int(st3.pause.wall) >= 1000:
+				st3.pause["n2"] = st3.n
+				st3.pause["hp2"] = st3.h.current_hp
+				st3.pause["count2"] = st3.h.tenacity_count
+				st3.pause["frozen"] = _r20_frozen()
+				_r20_pause(st3.rec, false)
+				st3.phase = 4
+		var rows3: Array = await _ctr_track(x3, e3, 60000, func(_r): return int(st3.phase) == 4 and int(st3.n) >= 8, each3)
+		var atk_ts: Array = rows3.filter(func(r): return int(r.atk) > 0).map(func(r): return snappedf(float(r.ts), 0.01))
+		var p3: Dictionary = st3.pause
+		var snap3: Dictionary = _fly_snapshot(rec)
+		var ten3: Dictionary = snap3.get("hero_tenacity", {}).get("liao_hua", {})
+		d3 = {"phase": st3.phase, "n": st3.n, "attacks": e3.blocker_attacks, "count": x3.tenacity_count, "log": x3.tenacity_log.size(), "hp": x3.current_hp,
+			"bad_rows": _ten_bad_rows(rows3, TEN_HIT_LOW), "atk_ts": atk_ts, "panel": panel3.get("tenacity", {}),
+			"logs_ok": x3.tenacity_log.all(func(x): return x.reduced == true and _ls_near(x.taken, TEN_HIT_LOW, 1e-6) and x.max_hp == 2000.0),
+			"snap": {"low": ten3.get("low_hp_ratio"), "mult": ten3.get("damage_mult"), "active": ten3.get("active"), "count": ten3.get("count"), "hp": ten3.get("hp"),
+				"max_hp": ten3.get("max_hp"), "log": (ten3.get("log", []) as Array).size(), "saved": ten3.get("saved")},
+			"pause": {"n": [p3.get("n"), p3.get("n2")], "hp": [p3.get("hp"), p3.get("hp2")], "count": [p3.get("count"), p3.get("count2")], "frozen": p3.get("frozen"),
+				"rows": st3.paused.size(), "moved": st3.paused.filter(func(r): return int(r.atk) != 0 or float(r.dh) != 0.0 or float(r.dt) != 0.0).size()},
+			"menu": not st3.menu.is_empty(), "ts_now": Engine.time_scale}
+		var n3: int = x3.tenacity_count
+		ok3 = int(st3.phase) == 4 and int(st3.n) >= 8 and d3.bad_rows.is_empty() and n3 == e3.blocker_attacks and x3.tenacity_log.size() == n3 and d3.logs_ok \
+			and _ls_near(x3.current_hp, 600.0 - 40.0 * float(n3), 1e-6) and atk_ts.has(2.0) and atk_ts.has(0.1) and atk_ts.has(1.0) \
+			and p3.get("n") == p3.get("n2") and p3.get("hp") == p3.get("hp2") and p3.get("count") == p3.get("count2") and p3.get("frozen") == true \
+			and int(d3.pause.rows) >= 20 and int(d3.pause.moved) == 0 and not st3.menu.is_empty() and is_equal_approx(Engine.time_scale, 1.0) \
+			and d3.panel == {"active": true, "low_hp_ratio": 0.3, "damage_mult": 0.8, "max_hp": 2000.0} \
+			and d3.snap.low == 0.3 and d3.snap.mult == 0.8 and d3.snap.active == true and int(d3.snap.count) == n3 and _ls_near(d3.snap.hp, x3.current_hp, 1e-6) \
+			and d3.snap.max_hp == 2000.0 and int(d3.snap.log) == n3 and _ls_near(d3.snap.saved, 10.0 * float(n3), 1e-6)
+	_check("堅韌-3 實際引擎（1 倍、2 倍、部署慢速、手動暫停）：最大生命 2000、生命剛好 600 的廖化每次被攻擊扣 40，沒有攻擊的步數不變；暫停 1 秒中沒有攻擊、生命不變；減傷次數＝攻擊次數＝紀錄筆數、生命＝600 − 40 × 次數；選取面板與快照的堅韌是生效中（0.3、0.8、最大生命 2000）",
+		ok3, d3)
+
+	# 堅韌-4：實際引擎的自然受傷、組合與多個敵人：
+	# a 最大生命 200 的廖化（不改生命）：150、100、50（第 3 擊讓生命跨過門檻，這一擊不減傷）、之後 10、倒下：扣 50、50、50、40、10（第 5 擊減傷後 40 仍然打倒它）；
+	#   倒下時紀錄是受傷前 200／150／100／50／10、減傷只有後兩擊；倒下一次、之後不在場上、敵人照常前進；
+	# b 劉備的防禦光環（劉備在 (5,4)）、生命 300：防禦加成 1.2，每擊約 36.36；
+	# c 兩個敵人都擋在廖化前面（最大生命 2000、生命 600）：每次攻擊扣 40、減傷次數＝兩個敵人的攻擊次數；
+	# d 技能 id 不認得（tenacity_x）：生命 300 照常扣 50、快照沒有 hero_tenacity
+	var d4: Dictionary = {}
+	_ten_load(rec, "ten-4a", [[_grp("ten_walk", 1, 0.02)]], [_ten_lh(200.0)], {"liao_hua": Vector2i(4, 5)})
+	var x4a: Node = _fly_hero("liao_hua")
+	var e4a: Node = await _stn_start(Vector2i(4, 5), Vector2(-0.4, 0.0))
+	var ok4a: bool = false
+	if e4a != null and x4a != null:
+		var box: Dictionary = {"log": [], "died": 0}
+		x4a.hero_died.connect(func(h: Node) -> void:
+			box["log"] = h.tenacity_log.map(func(x): return [x.before, x.taken, x.reduced])
+			box["died"] = int(box["died"]) + 1)
+		await _wait_until(func(): return int(box["died"]) > 0, 15.0)
+		var atk4a: int = e4a.blocker_attacks
+		await _def_frames(5)
+		var x0: float = e4a.global_position.x
+		var g4a: float = _pt()
+		await _wait_until(func(): return _pt() - g4a >= 1.0, 8.0)
+		d4["a"] = {"log": box["log"], "died": box["died"], "attacks": atk4a, "gone": _fly_hero("liao_hua") == null, "blocker": e4a._blocker == null,
+			"moved": (e4a.global_position.x - x0) / float(main._tile_size)}
+		ok4a = _ten_same(box["log"], [[200.0, 50.0, false], [150.0, 50.0, false], [100.0, 50.0, false], [50.0, 40.0, true], [10.0, 40.0, true]]) \
+			and int(box["died"]) == 1 and atk4a == 5 and bool(d4.a.gone) and bool(d4.a.blocker) and float(d4.a.moved) > 0.2
+
+	var ok4b: bool = false
+	_ten_load(rec, "ten-4b", [[_grp("ten_walk", 1, 0.02)]], [_ten_lh(1000.0), _r12_hero("liu_bei", DEF_AURA_SKILL.duplicate())],
+		{"liao_hua": Vector2i(4, 5), "liu_bei": Vector2i(5, 4)})
+	var x4b: Node = _fly_hero("liao_hua")
+	if x4b != null:
+		x4b.current_hp = 300.0
+	var e4b: Node = await _stn_start(Vector2i(4, 5), Vector2(-0.4, 0.0))
+	if e4b != null and x4b != null:
+		await _wait_until(func(): return is_instance_valid(e4b) and e4b._blocker != null, 5.0)
+		var rows4b: Array = await _ctr_track(x4b, e4b, 20000, func(rs): return rs.filter(func(r): return int(r.atk) > 0).size() >= 3)
+		d4["b"] = {"bonus": x4b.def_bonus_mult, "bad_rows": _ten_bad_rows(rows4b, TEN_HIT_AURA_LOW), "n": rows4b.filter(func(r): return int(r.atk) > 0).size(),
+			"count": x4b.tenacity_count}
+		ok4b = is_equal_approx(x4b.def_bonus_mult, 1.2) and d4.b.bad_rows.is_empty() and int(d4.b.n) >= 3 and x4b.tenacity_count == e4b.blocker_attacks
+
+	var ok4c: bool = false
+	_ten_load(rec, "ten-4c", [[_grp("ten_walk", 2, 0.02)]], [_ten_lh(2000.0)], {"liao_hua": Vector2i(4, 5)})
+	var x4c: Node = _fly_hero("liao_hua")
+	if x4c != null:
+		x4c.current_hp = 600.0
+	_bm().player_start_battle()
+	await _wait_until(func(): return _ctr_enemies().size() >= 2, 5.0)
+	var es4c: Array = _ctr_enemies()
+	if es4c.size() >= 2 and x4c != null:
+		es4c[0].global_position = main.game_map.grid_to_world(Vector2i(4, 5)) + Vector2(-0.3, 0.0) * float(main._tile_size)
+		es4c[1].global_position = main.game_map.grid_to_world(Vector2i(4, 5)) + Vector2(-0.45, 0.0) * float(main._tile_size)
+		var g4c: float = _pt()
+		await _wait_until(func(): return _pt() - g4c >= 4.0, 30.0)
+		var per: Array = es4c.map(func(e): return e.blocker_attacks if is_instance_valid(e) else -1)
+		var total: int = int(per[0]) + int(per[1])
+		d4["c"] = {"per": per, "count": x4c.tenacity_count, "hp": x4c.current_hp, "log_ok": x4c.tenacity_log.all(func(x): return _ls_near(x.taken, TEN_HIT_LOW, 1e-6))}
+		ok4c = int(per[0]) >= 2 and int(per[1]) >= 2 and x4c.tenacity_count == total and _ls_near(x4c.current_hp, 600.0 - 40.0 * float(total), 1e-6) and bool(d4.c.log_ok)
+
+	_ten_load(rec, "ten-4d", [[_grp("ten_walk", 1, 0.02)]], [_ten_lh(1000.0, {"id": "tenacity_x", "low_hp_ratio": 0.3, "damage_mult": 0.8})], {"liao_hua": Vector2i(4, 5)})
+	var x4d: Node = _fly_hero("liao_hua")
+	if x4d != null:
+		x4d.current_hp = 300.0
+	var e4d: Node = await _stn_start(Vector2i(4, 5), Vector2(-0.4, 0.0))
+	var g4d: float = _pt()
+	await _wait_until(func(): return _pt() - g4d >= 2.5, 10.0)
+	var snap4d: Dictionary = _fly_snapshot(rec)
+	d4["d"] = [e4d.blocker_attacks if is_instance_valid(e4d) else -1, x4d.tenacity_hp_ratio if x4d != null else -1.0, x4d.tenacity_count if x4d != null else -1,
+		x4d.current_hp if x4d != null else -1.0, snap4d.has("hero_tenacity") and (snap4d.hero_tenacity as Dictionary).is_empty()]
+	_check("堅韌-4 實際引擎：最大生命 200 的廖化自然受傷 50、50、50（跨過門檻的那一擊不減傷）、40、40（倒下，不保底），倒下一次、之後不在場上、敵人照常前進；劉備的防禦光環裡每擊約 36.36；兩個敵人時每擊 40、減傷次數＝攻擊次數；不認得的 id 照常扣 50、快照沒有堅韌",
+		ok4a and ok4b and ok4c and int(d4.d[0]) >= 2 and d4.d[1] == 0.0 and d4.d[2] == 0 and _ls_near(d4.d[3], 300.0 - 50.0 * float(d4.d[0]), 1e-6) and d4.d[4] == true, d4)
+
+	# 堅韌-5：移位、升級、換技能、移除與新的一場（實際引擎）：
+	# a 減傷過的廖化（最大生命 2000、生命 600）移到建築格 (5,4)：技能參數不變、仍然生效，敵人不再被擋住、不再攻擊；
+	# b 戰鬥中升級（更新隊伍：最大生命 1000 → 2000，生命 250 → 500）：之後每擊仍扣 40（用新的最大生命判斷），點選面板是生效中、最大生命 2000；
+	#   生命 320 的升級後 640（32%）：面板是未生效，第一擊扣 50（到 590，29.5%）、第二擊扣 40；
+	# c 更新隊伍把廖化的技能換成反擊：堅韌清除，生命 300 每擊扣 50；
+	# d 移出隊伍：不在場上，敵人不再被擋住；
+	# e 新的一場：減傷次數 0、沒有紀錄、生命等於最大生命、未生效
+	var d5: Dictionary = {}
+	_ten_load(rec, "ten-5a", [[_grp("ten_walk", 1, 0.02)]], [_ten_lh(2000.0)], {"liao_hua": Vector2i(4, 5)})
+	var x5a: Node = _fly_hero("liao_hua")
+	if x5a != null:
+		x5a.current_hp = 600.0
+	var e5a: Node = await _stn_start(Vector2i(4, 5), Vector2(-0.4, 0.0))
+	var ok5a: bool = false
+	if e5a != null and x5a != null:
+		await _wait_until(func(): return is_instance_valid(x5a) and x5a.tenacity_count >= 1, 5.0)
+		var before5: Array = [x5a.tenacity_count, e5a.blocker_attacks, x5a.current_hp]
+		_blk_move(x5a, Vector2i(5, 4))
+		var g5: float = _pt()
+		await _wait_until(func(): return _pt() - g5 >= 2.5, 10.0)
+		d5["a"] = {"before": before5, "after": [x5a.tenacity_count, e5a.blocker_attacks, x5a.current_hp], "params": [x5a.tenacity_hp_ratio, x5a.tenacity_damage_mult],
+			"on": x5a.tenacity_on(), "blocker": e5a._blocker == null}
+		ok5a = int(before5[0]) >= 1 and d5.a.after == before5 and d5.a.params == [0.3, 0.8] and d5.a.on and d5.a.blocker
+
+	var ok5b: bool = false
+	var b5: Array = []
+	for hp in [250.0, 320.0]:
+		_ten_load(rec, "ten-5b-%d" % int(hp), [[_grp("ten_walk", 1, 0.02)]], [_ten_lh(1000.0)], {"liao_hua": Vector2i(4, 5)})
+		var x5b: Node = _fly_hero("liao_hua")
+		if x5b == null:
+			b5.append({})
+			continue
+		x5b.current_hp = hp
+		_r19_js(rec, {"type": "update_team", "team_list": [_ten_lh(2000.0, null, 2)]})
+		await _def_frames(2)
+		main._on_hero_clicked(x5b)
+		var panel5: Dictionary = rec.sent_panels.back() if not rec.sent_panels.is_empty() else {}
+		var e5b: Node = await _stn_start(Vector2i(4, 5), Vector2(-0.4, 0.0))
+		if e5b == null:
+			b5.append({})
+			continue
+		# 用廖化自己的受傷紀錄比對開戰後的前兩擊（不受開始追蹤的時間點影響）
+		await _wait_until(func(): return is_instance_valid(x5b) and x5b.tenacity_log.size() >= 2, 10.0)
+		b5.append({"max": x5b.max_hp, "level": x5b.hero_level, "panel": panel5.get("tenacity", {}), "log": _ten_log(x5b).slice(0, 2),
+			"attacks": e5b.blocker_attacks if is_instance_valid(e5b) else -1})
+	d5["b"] = b5
+	if b5.size() == 2 and not b5[0].is_empty() and not b5[1].is_empty():
+		ok5b = b5[0].max == 2000.0 and b5[0].level == 2 and _ten_same(b5[0].log, [[500.0, 40.0, true], [460.0, 40.0, true]]) \
+			and b5[0].panel == {"active": true, "low_hp_ratio": 0.3, "damage_mult": 0.8, "max_hp": 2000.0} \
+			and b5[1].max == 2000.0 and _ten_same(b5[1].log, [[640.0, 50.0, false], [590.0, 40.0, true]]) \
+			and b5[1].panel == {"active": false, "low_hp_ratio": 0.3, "damage_mult": 0.8, "max_hp": 2000.0}
+
+	var ok5c: bool = false
+	_ten_load(rec, "ten-5c", [[_grp("ten_walk", 1, 0.02)]], [_ten_lh(1000.0)], {"liao_hua": Vector2i(4, 5)})
+	var x5c: Node = _fly_hero("liao_hua")
+	if x5c != null:
+		x5c.current_hp = 300.0
+		_r19_js(rec, {"type": "update_team", "team_list": [_ten_lh(1000.0, {"id": "counter", "counter_ratio": 0.2})]})
+		await _def_frames(2)
+		var e5c: Node = await _stn_start(Vector2i(4, 5), Vector2(-0.4, 0.0))
+		if e5c != null:
+			await _wait_until(func(): return is_instance_valid(e5c) and e5c._blocker != null, 5.0)
+			var rows5c: Array = await _ctr_track(x5c, e5c, 20000, func(rs): return rs.filter(func(r): return int(r.atk) > 0).size() >= 2)
+			d5["c"] = {"params": [x5c.tenacity_hp_ratio, x5c.tenacity_damage_mult, x5c.counter_ratio], "bad50": _ten_bad_rows(rows5c, TEN_HIT).size(),
+				"count": x5c.tenacity_count, "log": x5c.tenacity_log.size()}
+			ok5c = d5.c.params == [0.0, 1.0, 0.2] and int(d5.c.bad50) == 0 and int(d5.c.count) == 0 and int(d5.c.log) == 0
+
+	var ok5d: bool = false
+	_ten_load(rec, "ten-5d", [[_grp("ten_walk", 1, 0.02)]], [_ten_lh(2000.0)], {"liao_hua": Vector2i(4, 5)})
+	var x5d: Node = _fly_hero("liao_hua")
+	if x5d != null:
+		x5d.current_hp = 600.0
+	var e5d: Node = await _stn_start(Vector2i(4, 5), Vector2(-0.4, 0.0))
+	if e5d != null and x5d != null:
+		await _wait_until(func(): return is_instance_valid(x5d) and x5d.tenacity_count >= 1, 5.0)
+		var atk5d: int = e5d.blocker_attacks
+		_r19_js(rec, {"type": "update_team", "team_list": []})
+		await _def_frames(3)
+		var g5d: float = _pt()
+		await _wait_until(func(): return _pt() - g5d >= 1.5, 8.0)
+		d5["d"] = [_fly_hero("liao_hua") == null, e5d.blocker_attacks == atk5d, e5d._blocker == null]
+		ok5d = d5.d == [true, true, true]
+
+	_ten_load(rec, "ten-5e", [[_grp("ten_walk", 1, 0.02)]], [_ten_lh(1000.0)], {"liao_hua": Vector2i(4, 5)})
+	await _def_frames()
+	var x5e: Node = _fly_hero("liao_hua")
+	d5["e"] = [x5e.tenacity_count if x5e != null else -1, x5e.tenacity_log.size() if x5e != null else -1, x5e.current_hp if x5e != null else -1.0,
+		x5e.max_hp if x5e != null else -1.0, x5e.tenacity_on() if x5e != null else true, [x5e.tenacity_hp_ratio, x5e.tenacity_damage_mult] if x5e != null else []]
+	_check("堅韌-5 移位、升級、換技能、移除與新的一場：減傷過的廖化移到建築格後參數不變、仍然生效、不再被攻擊；升級後用新的最大生命判斷（25% → 500／2000 每擊 40、面板生效中；32% → 640／2000 面板未生效、扣 50 後下一擊 40）；換成反擊後堅韌清除、生命 300 每擊 50；移出隊伍後不在場上、敵人不再被擋住；新的一場沒有紀錄、滿血、未生效",
+		ok5a and ok5b and ok5c and ok5d and d5.e == [0, 0, 1000.0, 1000.0, false, [0.3, 0.8]], d5)
 
 	rec.payload_received.disconnect(main._on_payload_received)
 	main.web_bridge = original
