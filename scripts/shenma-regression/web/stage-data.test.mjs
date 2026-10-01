@@ -556,10 +556,10 @@ block("和 Godot 原始碼一致", () => {
   const trait = (enemy.match(/const TRAIT_IMMUNE_SLOW: String = "([^"]+)"/) ||
     [])[1];
   check(
-    "原始碼-1 Godot 的預設攻擊力與免疫減速的字串和 Web 相同（20、immune_slow）；攻擊阻路武將用設定的攻擊力",
+    "原始碼-1 Godot 的預設攻擊力與免疫減速的字串和 Web 相同（20、immune_slow）；攻擊阻路武將用設定的攻擊力（並傳入自己當作攻擊者）",
     Number(def) === ENEMY_BLOCKER_ATK_DEFAULT &&
       trait === TRAIT_IMMUNE_SLOW &&
-      /_blocker\.take_damage\(blocker_atk\)/.test(enemy),
+      /_blocker\.take_damage\(blocker_atk, self\)/.test(enemy),
     { def, trait }
   );
   check(

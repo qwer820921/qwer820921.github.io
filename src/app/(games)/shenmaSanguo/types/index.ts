@@ -330,6 +330,14 @@ export type HeroSkillPayload =
        * 不是大於 1 的有限數字時 Godot 當作沒有這個技能
        */
       atk_speed_mult: number;
+    }
+  | {
+      id: "counter";
+      /**
+       * 受到敵人的直接攻擊、實際扣血後仍然活著時，反彈給攻擊者的比例（0.2＝這一擊實際扣掉自己生命的 20%）；
+       * 不是大於 0、不超過 1 的有限數字時 Godot 當作沒有這個技能
+       */
+      counter_ratio: number;
     };
 
 export interface ExpeditionPayload {

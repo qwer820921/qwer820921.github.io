@@ -889,6 +889,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var dodge_texts: int = 0
 	# 場上還在顯示的吸血恢復提示（綠色的「+恢復量」）
 	var heal_texts: Array = []
+	# 場上還在顯示的反擊反彈傷害數字（洋紅色）
+	var counter_texts: Array = []
 	# 每個敵人 Godot 實際套用的對武將攻擊力（enemies_config 的 atk 或預設 20）、是否免疫減速、目前的減速倍率（1 表示沒有被武將或步兵塔減速）
 	var enemy_atk: Dictionary = {}
 	var enemy_immune: Dictionary = {}
@@ -924,6 +926,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			dodge_texts += 1
 		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text.begins_with("+"):
 			heal_texts.append(child._label.text)
+		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.get_theme_color("font_color").is_equal_approx(Enemy.COUNTER_COLOR):
+			counter_texts.append(child._label.text)
 		elif child is Tower and not child.is_queued_for_deletion():
 			# screen：塔在畫面上的位置（和升級面板定位用的是同一套座標），測試用來點選塔
 			var sp: Vector2 = child.get_global_transform_with_canvas().origin
@@ -950,6 +954,9 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var hero_lifesteal: Dictionary = {}
 	# 每位武將的攻擊間隔：目前等級的間隔、受到的攻速加成與來源、有效間隔、攻擊次數與最近的攻擊紀錄；自己的攻速光環（曹操）
 	var hero_atk_speed: Dictionary = {}
+	# 反擊（夏侯惇）：Godot 實際讀到的比例（沒有啟用時不列出）、反彈的次數、反彈的總量、攻擊者實際被扣掉的總量、目前與最大生命、
+	# 最近幾次的實扣生命與反彈量
+	var hero_counter: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
@@ -959,6 +966,9 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		if hero.lifesteal_ratio > 0.0:
 			hero_lifesteal[hid] = {"ratio": hero.lifesteal_ratio, "count": hero.lifesteal_count, "total": hero.lifesteal_total,
 				"hp": hero.current_hp, "max_hp": hero.max_hp, "log": hero.lifesteal_log.duplicate(true)}
+		if hero.counter_ratio > 0.0:
+			hero_counter[hid] = {"ratio": hero.counter_ratio, "count": hero.counter_count, "total": hero.counter_total, "dealt": hero.counter_dealt,
+				"hp": hero.current_hp, "max_hp": hero.max_hp, "log": hero.counter_log.duplicate(true)}
 		hero_ranges[hid] = hero.attack_range
 		hero_hp[hid] = hero.current_hp
 		hero_slow[hid] = hero.slow_state()
@@ -1039,6 +1049,9 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"heal_texts":        heal_texts,
 		# 攻速光環（曹操）與每位武將的攻擊間隔
 		"hero_atk_speed":    hero_atk_speed,
+		# 反擊（夏侯惇）
+		"hero_counter":      hero_counter,
+		"counter_texts":     counter_texts,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)

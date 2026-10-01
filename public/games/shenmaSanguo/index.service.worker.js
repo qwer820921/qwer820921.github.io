@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1790823285|7947487';
+const CACHE_VERSION = '1790828876|5564770';
 /** @type {string} */
 const CACHE_PREFIX = 'shenmaSanguo-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;

@@ -1,7 +1,7 @@
 import { HeroSkillPayload } from "../types";
 
 /**
- * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」）
+ * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」）
  * 這裡是技能規則的唯一來源：武將列表／詳情的說明，與隨出征資料送進 Godot 的參數都由這裡產生。
  * 技能是戰場效果：不寫進玩家存檔，也不需要後端（GAS）支援。
  * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊。
@@ -90,6 +90,16 @@ export type HeroSkill =
       name: string;
       /** 範圍內其他友軍武將每秒攻擊次數的倍率（1.15＝攻速提升 15%，攻擊間隔變成原本的 1 ÷ 1.15） */
       attackSpeedMultiplier: number;
+    }
+  | {
+      /**
+       * 反擊：受到敵人的直接攻擊、實際扣血後自己仍然活著時，對這次攻擊自己的敵人造成這一擊實際扣血 × counterRatio 的傷害。
+       * 實扣是防禦公式之後的數字（不是敵人的攻擊力 × 比例），也不替自己減傷；閃避、打倒自己的那一擊、沒有攻擊者的扣血不反彈；只在戰場
+       */
+      id: "counter";
+      name: string;
+      /** 反彈的比例（0.2＝這一擊實際扣掉自己生命的 20%） */
+      counterRatio: number;
     };
 
 const HERO_SKILLS: Record<string, HeroSkill> = {
@@ -123,6 +133,10 @@ const HERO_SKILLS: Record<string, HeroSkill> = {
   // （攻擊間隔 ÷ 1.15，不是減少 15%）、範圍是目前有效射程（含邊界）、只影響其他友軍武將（不含自己、防禦塔與城池）、
   // 多個攻速光環取最強不疊加、只在戰鬥中；加成只用在之後新開始的攻擊冷卻，不改攻擊力、射程與存檔
   cao_cao: { id: "atk_speed_aura", name: "指揮", attackSpeedMultiplier: 1.15 },
+  // 正式設定表的被動描述「反擊：受傷時反彈傷害」沒有寫比例與觸發細節。第一版的設計值，尚未做過平衡：受到敵人的直接攻擊、
+  // 實際扣血後自己仍然活著時，反彈這一擊實際扣掉自己生命的 20% 給攻擊自己的敵人（打倒自己的那一擊、閃避、沒有攻擊者的扣血不反彈）；
+  // 反彈不再引發其他技能、不會來回反彈；只在戰鬥中、不改屬性與存檔
+  xia_hou_dun: { id: "counter", name: "反擊", counterRatio: 0.2 },
 };
 
 export const heroSkillOf = (heroId: string): HeroSkill | null =>
@@ -170,6 +184,11 @@ export function atkSpeedAuraPercent(skill: HeroSkill | null): number {
   return skill?.id === "atk_speed_aura"
     ? round3((skill.attackSpeedMultiplier - 1) * 100)
     : 0;
+}
+
+/** 反擊反彈的百分比（0.2 → 20；沒有反擊時是 0） */
+export function counterPercent(skill: HeroSkill | null): number {
+  return skill?.id === "counter" ? round3(skill.counterRatio * 100) : 0;
 }
 
 /**
@@ -290,6 +309,21 @@ export function describeHeroSkill(
       "只在戰場生效：存檔與屬性表的攻擊間隔不會改變。"
     );
   }
+  if (skill.id === "counter") {
+    const pct = counterPercent(skill);
+    const r = skill.counterRatio;
+    const plain = round3(damageAfterDefense(100, 100));
+    const aura = damageAfterDefense(100, 120);
+    return (
+      `受到敵人的直接攻擊（目前是被武將擋在路上的敵人）、實際扣血後自己仍然活著時，對這次攻擊自己的敵人造成這一擊實際扣血 ${pct}% 的傷害。` +
+      `以防禦計算後實際扣掉的生命為準，不是敵人攻擊力的 ${pct}%：例如防禦 100 的武將被攻擊力 100 的敵人打一下扣 ${plain}、反彈 ${round3(plain * r)}；` +
+      `在劉備的防禦光環裡（防禦 120）扣約 ${aura.toFixed(2)}、反彈約 ${(aura * r).toFixed(2)}。反彈不會替自己減少傷害。` +
+      "閃避（沒有扣血）、打倒自己的那一擊、沒有攻擊者的扣血都不反彈；只反彈給這次攻擊自己、仍然活著的敵人，不會波及其他敵人。" +
+      "反彈可以打倒攻擊者（擊殺與金幣照常只算一次），免疫減速的敵人照樣會受到反彈；反彈不會再引發吸血、暈眩、灼燒等其他技能，也不會來回反彈。" +
+      "反彈的傷害數字是洋紅色。普通攻擊的傷害、攻擊間隔與射程不變；戰場上的單位面板顯示的是選取當時的生命，重新點選武將可以看到最新的生命。" +
+      "只在戰場生效，不影響存檔。"
+    );
+  }
   if (skill.id === "dodge") {
     const pct = round3(skill.dodgeChance * 100);
     return (
@@ -359,6 +393,9 @@ export function heroSkillPayload(heroId: string): { skill?: HeroSkillPayload } {
     return {
       skill: { id: skill.id, atk_speed_mult: skill.attackSpeedMultiplier },
     };
+  }
+  if (skill.id === "counter") {
+    return { skill: { id: skill.id, counter_ratio: skill.counterRatio } };
   }
   return {
     skill: {

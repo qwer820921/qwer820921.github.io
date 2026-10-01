@@ -8,6 +8,7 @@
 ## 暈眩（張飛）：普通攻擊命中後目標還活著時讓它暈眩（見 stun_duration；暈眩的狀態記在敵人身上，Enemy.apply_stun）
 ## 吸血（魏延）：普通攻擊命中後恢復這一擊實際扣掉敵人生命的一定比例（見 lifesteal_ratio；扣掉多少由 Enemy.take_damage 回傳）
 ## 攻速光環（曹操「指揮」）：範圍內其他武將之後開始的攻擊冷卻用加成後的攻擊間隔（見 atk_speed_aura_mult、effective_attack_interval），不改 attack_speed
+## 反擊（夏侯惇）：受到敵人的直接攻擊、實際扣血後仍然活著時，把實扣生命的一定比例反彈給這個敵人（見 counter_ratio；攻擊者由 Enemy 傳入 take_damage）
 
 class_name Hero
 extends Node2D
@@ -167,6 +168,20 @@ var atk_speed_bonus_mult: float = 1.0
 var _atk_speed_sources: Dictionary = {}
 ## 每一幀重新套用的攻速加成的有效期：施加者每一幀都會刷新；施加者停止處理又沒有撤除時，最多再維持這麼久
 const ATK_SPEED_REFRESH_TTL: float = 0.5
+## 反擊（counter，夏侯惇）：受到敵人對阻路武將的直接攻擊、實際扣血後自己仍然活著時，對這次攻擊自己的敵人造成
+## 「這一擊實際扣掉自己的生命 × counter_ratio」的傷害：實扣是防禦公式（含防禦光環的加成）之後的數字，不是敵人的攻擊力 × 比例，也不替自己減傷。
+## 不反彈：閃避、0 或無效的傷害、打倒自己的那一擊、沒有攻擊者（測試或其他沒有攻擊者的扣血）、攻擊者不是敵人或已經倒下／正要被移除；
+## 這些情況自己的扣血照常。反彈的傷害走敵人一般的受傷／死亡流程（可能打倒攻擊者，擊殺與金幣只算一次），
+## 不會再引發吸血、暈眩、灼燒、首擊或另一次反彈，也不改變任何敵人的攻擊冷卻；不另外計時，反彈的次數就是實際被打到（扣血）的次數。
+## 免疫減速的敵人照樣受到反彈。counter_ratio 0 代表沒有這個技能；比例不是 0～1（不含 0、含 1）的有限數字時不啟用（當作普通武將）
+var counter_ratio: float = 0.0
+## 測試用唯讀統計（debug_snapshot）：反彈的次數、反彈的傷害總量與攻擊者實際被扣掉的總量，以及最近 COUNTER_LOG_MAX 次的
+## 自己實際被扣掉的生命、反彈的傷害、攻擊者實際被扣掉的生命與攻擊者被打倒了沒有
+var counter_count: int = 0
+var counter_total: float = 0.0
+var counter_dealt: float = 0.0
+var counter_log: Array = []
+const COUNTER_LOG_MAX: int = 40
 ## 測試用唯讀統計（debug_snapshot）：這位武將的遊戲時間（_process 的 delta 累加，受時間倍率影響、手動暫停時不前進）、
 ## 普通攻擊的次數，以及最近 ATTACK_LOG_MAX 次攻擊的時間、這次冷卻用的攻擊間隔與當時的攻速加成
 var _age: float = 0.0
@@ -276,6 +291,7 @@ func _read_skill(state: Dictionary) -> void:
 	stun_duration = 0.0
 	lifesteal_ratio = 0.0
 	atk_speed_aura_mult = 1.0
+	counter_ratio = 0.0
 	var skill = state.get("skill", null)
 	if not (skill is Dictionary):
 		return
@@ -285,13 +301,15 @@ func _read_skill(state: Dictionary) -> void:
 		"long_range":
 			range_multiplier = max(1.0, float(skill.get("range_multiplier", 1.0)))
 		"burn":
-			var interval: float = float(skill.get("burn_interval", 1.0))
-			var ticks: int = int(skill.get("burn_ticks", 0))
-			# 參數不合理（非正數）時不啟用，當作普通攻擊
-			if interval > 0.0 and ticks > 0:
-				burn_ratio = max(0.0, float(skill.get("burn_ratio", 0.0)))
-				burn_ticks = ticks
-				burn_interval = interval
+			# 比例與間隔要是正的有限數字、跳數要是正整數（JSON 的 3.0 也算）；三個欄位都合理才啟用，任何一個不合理就當作普通攻擊。
+			# 字串、布林、null、NaN、無限大、0 以下、小數的跳數、沒有欄位都不合理（沒有間隔時不會自動當作 1 秒）
+			var br: Variant = skill.get("burn_ratio")
+			var bi: Variant = skill.get("burn_interval")
+			var bt: Variant = skill.get("burn_ticks")
+			if _positive_finite(br) and _positive_finite(bi) and _positive_whole(bt):
+				burn_ratio = float(br)
+				burn_ticks = int(bt)
+				burn_interval = float(bi)
 		"sweep":
 			var radius: float = float(skill.get("sweep_radius", 0.0))
 			var max_targets: int = int(skill.get("sweep_max_targets", 0))
@@ -331,6 +349,19 @@ func _read_skill(state: Dictionary) -> void:
 			var a: Variant = skill.get("atk_speed_mult")
 			if (a is float or a is int) and is_finite(float(a)) and float(a) > 1.0:
 				atk_speed_aura_mult = float(a)
+		"counter":
+			# 比例要是大於 0、不超過 1 的有限數字；字串、布林、null、NaN、無限大、0 以下、超過 1 都不啟用（當作普通武將）
+			var k: Variant = skill.get("counter_ratio")
+			if (k is float or k is int) and is_finite(float(k)) and float(k) > 0.0 and float(k) <= 1.0:
+				counter_ratio = float(k)
+
+## 技能參數是正的有限數字（JSON 的數字在 Godot 是 float；字串、布林、null、NaN、無限大、0 以下都不是）
+static func _positive_finite(v: Variant) -> bool:
+	return (v is float or v is int) and is_finite(float(v)) and float(v) > 0.0
+
+## 技能參數是正整數的數值（JSON 的 3.0 也算；小數、超過 2^53 − 1 這種無法精確表示的整數都不是）
+static func _positive_whole(v: Variant) -> bool:
+	return _positive_finite(v) and float(v) == floorf(float(v)) and float(v) <= 9007199254740991.0
 
 ## 有效射程（格）＝（基礎射程 + (等級-1) × 射程成長）× 技能倍率。
 ## 每次都從設定重新計算，不在目前的值上再乘：更新隊伍、升級、移位、重新放置都不會疊乘
@@ -765,9 +796,10 @@ func slow_state() -> Dictionary:
 		"aura_source": aura_source, "road_source": slow_source}
 
 # ═══════════════════════════════════════════
-#  受傷（被擋住的敵人攻擊阻路武將；閃避見 dodge_chance；防禦光環見 effective_def）
+#  受傷（被擋住的敵人攻擊阻路武將；閃避見 dodge_chance；防禦光環見 effective_def；反擊見 counter_ratio）
 # ═══════════════════════════════════════════
-func take_damage(amount: float) -> void:
+## source：這一擊的攻擊者（敵人攻擊阻路武將時傳入自己）；沒有攻擊者的扣血不傳（舊的呼叫方式照常可用），反擊只反彈給有效的攻擊者
+func take_damage(amount: float, source: Variant = null) -> void:
 	if current_hp <= 0.0:
 		return
 	# 無效的傷害（0、負數、NaN、無限大）不處理：不扣血、不判定閃避（不抽亂數），血量不會變成 NaN
@@ -802,6 +834,28 @@ func take_damage(amount: float) -> void:
 		queue_free()
 	else:
 		queue_redraw()
+		# 反擊：打倒自己的那一擊不會走到這裡（不反彈）
+		if counter_ratio > 0.0:
+			_counter(actual_dmg, source)
+
+## 反擊：對攻擊者 source 造成 taken × counter_ratio 的傷害（taken 是這一擊實際扣掉自己的生命）。
+## 這位武將已經倒下或正要被移除、taken 不是正的有限數字、source 不是仍然有效且活著的敵人時不反彈。
+## 只呼叫敵人的受傷（Enemy.take_damage），不經過自己的普通攻擊：不會引發吸血、暈眩、灼燒、首擊；敵人受傷時不會反彈回來
+func _counter(taken: float, source: Variant) -> void:
+	if not (taken > 0.0 and is_finite(taken)) or not _hero_alive(self):
+		return
+	if not (is_instance_valid(source) and source is Enemy) or not _enemy_alive(source):
+		return
+	var reflect: float = taken * counter_ratio
+	if not (reflect > 0.0 and is_finite(reflect)):
+		return
+	var dealt: float = source.take_damage(reflect, false, true)
+	counter_count += 1
+	counter_total += reflect
+	counter_dealt += dealt
+	counter_log.append({"taken": taken, "reflect": reflect, "dealt": dealt, "killed": source.is_dead()})
+	if counter_log.size() > COUNTER_LOG_MAX:
+		counter_log.pop_front()
 
 ## 閃避判定用的亂數 u（0 ≤ u < 1）：randi 是 32 位元整數，除以 2^32 不會得到 1（randf 可能剛好回傳 1.0）。
 ## 有測試替身時改用替身的值（測試用來驗證 0、0.149999、0.15、接近 1 這些邊界）

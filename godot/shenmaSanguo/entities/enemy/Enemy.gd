@@ -71,6 +71,8 @@ var _burn_damage: float     = 0.0
 var _burn_interval: float   = 1.0
 var _burn_timer: float      = 0.0
 const BURN_COLOR: Color     = Color(1.0, 0.55, 0.05)  # 橘色：灼燒標記與跳傷數字
+## 夏侯惇「反擊」反彈的傷害數字：洋紅色（和普通攻擊的橘紅、灼燒的橘色區分）
+const COUNTER_COLOR: Color  = Color(1.0, 0.35, 0.8)
 
 # ── 暈眩（張飛「暈眩」，Hero.gd 命中時呼叫 apply_stun）───────────────
 ## 剩餘的暈眩時間（秒，遊戲時間：_physics_process 的 delta，受時間倍率與部署慢速影響，手動暫停時不前進）；0 表示沒有暈眩。
@@ -100,7 +102,7 @@ var _blocked_cell: Vector2i = Vector2i(-1, -1)
 ## - 沒有阻擋：照常倒數但停在 0，不累積欠下的攻擊；恢復阻擋時最多先打一擊，之後照攻擊間隔
 ## - 一步最多打一擊；第一次接觸時，偵測到阻擋的那一步不攻擊，下一步冷卻已到（初始 0）就打
 var _blocker_atk_timer: float = 0.0
-## 對阻路武將的直接攻擊力（enemies_config 的 atk）：每次攻擊交給 Hero.take_damage（照武將的防禦公式減傷、趙雲可閃避）。
+## 對阻路武將的直接攻擊力（enemies_config 的 atk）：每次攻擊交給 Hero.take_damage（照武將的防禦公式減傷、趙雲可閃避、夏侯惇可反擊）。
 ## 只接受有限、不小於 0 的數字（JSON 的數字，包括 0：0 照樣是一次攻擊、用掉冷卻，只是沒有傷害）；
 ## 沒有這個欄位、空白、字串（包括看起來像數字的）、布林、負數、NaN、無限大一律用 BLOCKER_ATK_DEFAULT。
 ## 不設上限。只用在攻擊阻路武將：抵達城池一律扣 1（BattleManager），和它無關。Web 的 utils/enemyCombat 用同一份規則顯示
@@ -243,7 +245,11 @@ func _physics_process(delta: float) -> void:
 			attack_log.append(_age)
 			if attack_log.size() > STUN_LOG_MAX:
 				attack_log.pop_front()
-			_blocker.take_damage(blocker_atk)
+			# 傳入自己當作攻擊者：夏侯惇的反擊只反彈給攻擊它的敵人
+			_blocker.take_damage(blocker_atk, self)
+			# 反擊可能在這一擊把自己打倒（死亡、擊殺與金幣已在受傷時處理一次）：之後不再處理這一步
+			if _is_dead:
+				return
 			# 保留這一步越過零點的零頭；原本就在待命、或零頭長過一個間隔時從這一擊起算完整的間隔
 			var late: float = 0.0 if was_ready else -_blocker_atk_timer
 			_blocker_atk_timer = BLOCKER_ATK_SPD - (late if late < BLOCKER_ATK_SPD else 0.0)
@@ -282,11 +288,12 @@ func _physics_process(delta: float) -> void:
 # ═══════════════════════════════════════════
 #  受傷 / 死亡
 # ═══════════════════════════════════════════
-## is_burn：灼燒的跳傷（數字用橘色、稍微往上，和普通攻擊區分）；死亡、擊殺與金幣照一般流程只觸發一次。
+## is_burn：灼燒的跳傷（數字用橘色、稍微往上，和普通攻擊區分）；is_counter：夏侯惇反擊的反彈傷害（數字用洋紅色、稍微往下）。
+## 死亡、擊殺與金幣照一般流程只觸發一次。
 ## 回傳這一擊實際扣掉的生命，不含超過剩餘生命的部分（剩 30 時受到 100 回傳 30，打倒的這一擊也照算；魏延的吸血用它計算恢復量）。
 ## 拒絕無效的受傷：傷害不是正的有限數字（0、負數、NaN、正負無限大），或這個敵人已經倒下、正要被移除時，立即回傳 0，
 ## 生命、傷害數字、音效、閃爍都不變，也不會發出死亡信號（不會被擊殺、不會重複死亡、不影響結算）
-func take_damage(amount: float, is_burn: bool = false) -> float:
+func take_damage(amount: float, is_burn: bool = false, is_counter: bool = false) -> float:
 	if _is_dead or is_queued_for_deletion() or not (amount > 0.0 and is_finite(amount)):
 		return 0.0
 	var dealt: float = minf(amount, maxf(current_hp, 0.0))
@@ -298,6 +305,8 @@ func take_damage(amount: float, is_burn: bool = false) -> float:
 	get_parent().add_child(ft)
 	if is_burn:
 		ft.setup("%.0f" % amount, BURN_COLOR, global_position + Vector2(0, -12))
+	elif is_counter:
+		ft.setup("%.0f" % amount, COUNTER_COLOR, global_position + Vector2(0, 10))
 	else:
 		ft.setup("%.0f" % amount, Color(1.0, 0.4, 0.2), global_position)
 
@@ -388,8 +397,12 @@ func apply_stackable_slow(amount: float, duration: float) -> void:
 ## 周瑜「火攻」：附加灼燒。同一個敵人只有一份：
 ## - 沒有灼燒時：開始新的一份，第一跳在 interval 秒後（命中當下不另外跳）
 ## - 已在灼燒時：剩餘跳數刷新為 ticks、每跳傷害換成這次的快照，已在倒數的下一跳時間不變（不疊加、不延後）
+## 不套用（什麼都不改：沒有新的灼燒，已有的灼燒照原本的時間、跳數與每跳傷害燒完）：已經倒下或正要被移除、
+## 每跳傷害或間隔不是正的有限數字（0、負數、NaN、正負無限大；無限大或 NaN 的間隔會讓灼燒永遠不結束）、跳數不是正數
 func apply_burn(damage: float, ticks: int, interval: float) -> void:
-	if _is_dead or ticks <= 0 or damage <= 0.0 or interval <= 0.0:
+	if _is_dead or is_queued_for_deletion() or ticks <= 0:
+		return
+	if not (damage > 0.0 and is_finite(damage) and interval > 0.0 and is_finite(interval)):
 		return
 	if _burn_ticks_left <= 0:
 		_burn_interval = interval

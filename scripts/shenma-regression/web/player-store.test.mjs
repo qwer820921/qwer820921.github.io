@@ -2963,7 +2963,9 @@ await test("指揮-S1", async () => {
       cao.name === "指揮" &&
       cao.attackSpeedMultiplier === 1.15 &&
       JSON.stringify(payload) ===
-        JSON.stringify({ skill: { id: "atk_speed_aura", atk_speed_mult: 1.15 } }) &&
+        JSON.stringify({
+          skill: { id: "atk_speed_aura", atk_speed_mult: 1.15 },
+        }) &&
       atkSpeedAuraPercent(cao) === 15 &&
       atkSpeedAuraPercent(heroSkillOf("liu_bei")) === 0 &&
       atkSpeedAuraPercent(null) === 0 &&
@@ -2991,9 +2993,82 @@ await test("指揮-S1", async () => {
   );
 });
 
+// 夏侯惇「反擊」（設定表的被動描述「反擊：受傷時反彈傷害」，沒有寫比例與觸發細節）：參數與說明文字出自同一份定義（utils/heroSkills）；
+// 反彈實際扣掉自己生命的 20%、自己要活著、只反彈給直接攻擊自己的敵人、閃避與致死不反彈是第一版的設計值
+await test("反擊-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    slowAuraPercent,
+    defAuraPercent,
+    lifestealPercent,
+    atkSpeedAuraPercent,
+    counterPercent,
+    damageAfterDefense,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const xhd = heroSkillOf("xia_hou_dun");
+  const payload = heroSkillPayload("xia_hou_dun");
+  const text = describeHeroSkill(xhd, 1, 149);
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "cao_cao",
+    "gan_ning",
+    "xiahou_dun",
+  ].filter((id) => heroSkillOf(id)?.id === "counter");
+  check(
+    "反擊-S1 夏侯惇（xia_hou_dun）的反擊：送進 Godot 的參數（counter、counter_ratio 0.2，只有這兩個欄位）與說明文字出自同一份定義；說明寫出 20%、以防禦計算後的實扣為準不是敵人攻擊力（扣 50 反彈 10；防禦光環裡扣約 45.45、反彈約 9.09）、不替自己減傷、自己要活著、閃避與致死與沒有攻擊者都不反彈、只反彈給攻擊自己的敵人、可以打倒攻擊者且擊殺只算一次、免疫減速照樣受到、不引發其他技能也不來回反彈、洋紅色數字、面板是選取時的生命、只在戰場不影響存檔；其他技能的計算不受影響；其他武將沒有反擊",
+    xhd?.id === "counter" &&
+      xhd.name === "反擊" &&
+      xhd.counterRatio === 0.2 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({ skill: { id: "counter", counter_ratio: 0.2 } }) &&
+      counterPercent(xhd) === 20 &&
+      counterPercent(heroSkillOf("wei_yan")) === 0 &&
+      counterPercent(null) === 0 &&
+      damageAfterDefense(100, 100) === 50 &&
+      effectiveRange(xhd, 1) === 1 &&
+      burnTickDamage(xhd, 149) === 0 &&
+      slowAuraPercent(xhd) === 0 &&
+      defAuraPercent(xhd) === 0 &&
+      lifestealPercent(xhd) === 0 &&
+      atkSpeedAuraPercent(xhd) === 0 &&
+      text.includes("實際扣血後自己仍然活著時") &&
+      text.includes("這一擊實際扣血 20% 的傷害") &&
+      text.includes("不是敵人攻擊力的 20%") &&
+      text.includes("扣 50、反彈 10") &&
+      text.includes("扣約 45.45、反彈約 9.09") &&
+      text.includes("反彈不會替自己減少傷害") &&
+      text.includes(
+        "閃避（沒有扣血）、打倒自己的那一擊、沒有攻擊者的扣血都不反彈"
+      ) &&
+      text.includes("只反彈給這次攻擊自己、仍然活著的敵人") &&
+      text.includes("擊殺與金幣照常只算一次") &&
+      text.includes("免疫減速的敵人照樣會受到反彈") &&
+      text.includes("不會來回反彈") &&
+      text.includes("洋紅色") &&
+      text.includes("重新點選武將可以看到最新的生命") &&
+      text.includes("只在戰場生效") &&
+      text.includes("不影響存檔") &&
+      !text.includes("149") &&
+      others.length === 0,
+    { xhd, payload, text, others }
+  );
+});
+
 // 技能綁定和正式設定表 heroes_config 的被動描述（passive）對照：趙雲是閃避、馬超是衝鋒（首擊加倍）；
 // 關羽是減速光環（「周圍敵人減速10%」）；劉備是防禦光環（「光環：提升友軍防禦」）；張飛是暈眩（「攻擊使敵人暈眩」）；
-// 魏延是吸血（「吸血：恢復生命」）；曹操是攻速光環（「指揮：提升友軍攻速」）；甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
+// 魏延是吸血（「吸血：恢復生命」）；曹操是攻速光環（「指揮：提升友軍攻速」）；夏侯惇是反擊（「反擊：受傷時反彈傷害」）；
+// 甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
 await test("技能對照-S1", async () => {
   const { heroSkillOf, heroSkillPayload } = require(
     join(GAME, "utils/heroSkills.ts")
@@ -3009,6 +3084,7 @@ await test("技能對照-S1", async () => {
     "zhang_fei",
     "wei_yan",
     "cao_cao",
+    "xia_hou_dun",
   ];
   const got = Object.fromEntries(
     ids.map((id) => [id, heroSkillOf(id)?.id ?? null])
@@ -3017,7 +3093,7 @@ await test("技能對照-S1", async () => {
     (id) => heroSkillPayload(id).skill?.id === "first_strike"
   );
   check(
-    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
+    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
     JSON.stringify(got) ===
       JSON.stringify({
         ma_chao: "first_strike",
@@ -3030,6 +3106,7 @@ await test("技能對照-S1", async () => {
         zhang_fei: "stun",
         wei_yan: "lifesteal",
         cao_cao: "atk_speed_aura",
+        xia_hou_dun: "counter",
       }) &&
       JSON.stringify(firstStrike) === '["ma_chao"]' &&
       !Object.values(got).includes("sweep") &&
