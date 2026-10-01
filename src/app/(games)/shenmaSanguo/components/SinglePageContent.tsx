@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect, useCallback, useId } from "react";
 import { Spinner, Form, Alert } from "react-bootstrap";
 import { Coin, Trophy, ShieldFill, GearFill } from "react-bootstrap-icons";
 import { usePlayerStore } from "../store/playerStore";
@@ -58,6 +58,7 @@ import TeamEditModal from "./modals/TeamEditModal";
 import HeroListModal from "./modals/HeroListModal";
 import PlayerInfoModal from "./modals/PlayerInfoModal";
 import SettingsModal from "./modals/SettingsModal";
+import { useDialogFocus } from "./useDialogFocus";
 
 interface BattleStats {
   battle_id?: string;
@@ -261,6 +262,13 @@ function ThreeKingdomsLoader({ progress }: { progress: number }) {
 }
 
 // ── 結算 Modal ────────────────────────────────────────────────
+// 結算只能按「確認」／「關閉」結束：Esc 不關閉
+const keepOpen = () => {};
+
+/**
+ * 結算視窗也是對話框（useDialogFocus）：出現時焦點移到結算卡本身（按 Enter 不會直接確認），Tab 只在結算卡裡。
+ * 戰鬥結束時隊伍編排等視窗還開著：結算卡疊在最上層，由它處理焦點與按鍵，確認後焦點回到下面的視窗
+ */
 function BattleResultModal({
   result,
   onConfirm,
@@ -271,15 +279,30 @@ function BattleResultModal({
   /** 寫入限制中（開戰後才遇到限制）：結果照常顯示，並說明沒有記錄 */
   notSaved?: boolean;
 }) {
+  const titleId = useId();
+  const cardRef = useRef<HTMLDivElement>(null);
+  const onKeyDown = useDialogFocus(cardRef, cardRef, keepOpen);
+  const dialogProps = {
+    ref: cardRef,
+    onKeyDown,
+    role: "dialog",
+    "aria-modal": true,
+    "aria-labelledby": titleId,
+    tabIndex: -1,
+  } as const;
+
   // Godot 的結算不合規則（和 store 結算時同一個驗證）：不顯示星數與戰利品，只說明沒有領取；按下「關閉」照樣作廢這一場
   if (!toBattleRecord(result)) {
     return (
       <div className={styles.resultOverlay}>
         <div
+          {...dialogProps}
           className={`${styles.resultCard} ${styles.resultLose}`}
           data-testid="result-card"
         >
-          <div className={styles.resultTitle}>結算異常</div>
+          <div id={titleId} className={styles.resultTitle}>
+            結算異常
+          </div>
           <InvalidResultNotice variant="dark" />
           <button
             className={`${styles.btnGold} w-100 mt-3`}
@@ -317,10 +340,13 @@ function BattleResultModal({
   return (
     <div className={styles.resultOverlay}>
       <div
+        {...dialogProps}
         className={`${styles.resultCard} ${isWin ? styles.resultWin : styles.resultLose}`}
         data-testid="result-card"
       >
-        <div className={styles.resultTitle}>{isWin ? "勝 利" : "落 敗"}</div>
+        <div id={titleId} className={styles.resultTitle}>
+          {isWin ? "勝 利" : "落 敗"}
+        </div>
         <div className={styles.resultStars}>
           {"★".repeat(result.stars_earned)}
           {"☆".repeat(3 - result.stars_earned)}
@@ -422,6 +448,8 @@ export default function SinglePageContent() {
   // HUD 的「切換關卡」：關卡選擇關閉時，開啟它的按鈕已不在畫面上（例如拒絕開戰的提示、換關後卸載的提示）就把焦點交給它
   const stageBtnRef = useRef<HTMLButtonElement>(null);
   const [showTeamModal, setShowTeamModal] = useState(false);
+  // HUD 的「隊伍」：隊伍編排關閉時，開啟前沒有焦點（例如用滑鼠點開又沒有取得焦點）就把焦點交給它
+  const teamBtnRef = useRef<HTMLButtonElement>(null);
   const [showHeroModal, setShowHeroModal] = useState(false);
   // HUD 的「武將」：武將列表關閉時，開啟前沒有焦點（例如用滑鼠點開又沒有取得焦點）就把焦點交給它
   const heroBtnRef = useRef<HTMLButtonElement>(null);
@@ -429,6 +457,8 @@ export default function SinglePageContent() {
   // HUD 的「玩家資訊」：玩家資訊關閉時，開啟前沒有焦點（例如用滑鼠點開又沒有取得焦點）就把焦點交給它
   const playerBtnRef = useRef<HTMLButtonElement>(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  // HUD 的「設定」：遊戲設定關閉時，開啟前沒有焦點就把焦點交給它
+  const settingsBtnRef = useRef<HTMLButtonElement>(null);
 
   // ── 初始化 ─────────────────────────────────────────────────
   const [mounted, setMounted] = useState(false);
@@ -1320,6 +1350,7 @@ export default function SinglePageContent() {
                 )}
               </div>
               <button
+                ref={settingsBtnRef}
                 className={styles.hudStageBtn}
                 onClick={() => setShowSettingsModal(true)}
                 title="設定"
@@ -1387,6 +1418,7 @@ export default function SinglePageContent() {
                   武將
                 </button>
                 <button
+                  ref={teamBtnRef}
                   className={styles.hudBarBtn}
                   onClick={() => setShowTeamModal(true)}
                 >
@@ -1439,6 +1471,7 @@ export default function SinglePageContent() {
         <TeamEditModal
           onClose={() => setShowTeamModal(false)}
           onTeamSaved={sendTeamUpdate}
+          fallbackFocusRef={teamBtnRef}
         />
       )}
       {showHeroModal && (
@@ -1459,7 +1492,10 @@ export default function SinglePageContent() {
         />
       )}
       {showSettingsModal && (
-        <SettingsModal onClose={() => setShowSettingsModal(false)} />
+        <SettingsModal
+          onClose={() => setShowSettingsModal(false)}
+          fallbackFocusRef={settingsBtnRef}
+        />
       )}
 
       {/* 遊戲版本更新 banner（遊戲已啟動時顯示） */}

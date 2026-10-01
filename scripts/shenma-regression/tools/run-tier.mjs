@@ -182,16 +182,16 @@ const AREAS = {
     ],
   },
   team: {
-    what: "隊伍編排的搜尋、職業篩選與排序（主頁隊伍視窗、隊伍頁）：只篩選可選武將、槽位照常、依 hero_id 入隊、容量、鍵盤、切換帳號、寫入限制",
-    scripts: ["team-filter-web.js"],
+    what: "隊伍編排的搜尋、職業篩選與排序（主頁隊伍視窗、隊伍頁）：只篩選可選武將、槽位照常、依 hero_id 入隊、容量、鍵盤、切換帳號、寫入限制；主頁隊伍編排與遊戲設定的對話框鍵盤（名稱、Tab 留在視窗裡、Esc、焦點歸還與退路、槽位操作後的焦點、儲存與寫入限制）、隊伍編排開著時結算卡在最上層（需要 Godot 產物）",
+    scripts: ["team-filter-web.js", "hud-keyboard-web.js"],
   },
   "hero-category": {
     what: "地圖編輯器武將表的稀有度／職業選單（遊戲的值、不認得的值保留原值）",
     scripts: ["hero-category-web.js"],
   },
   settle: {
-    what: "戰鬥結算的完整獎勵：真 Godot 勝敗結算、回應遺失與重新確認、重新整理時在途、結算中改隊伍（需要 Godot 產物；可用 GAS_BACKEND 換成模擬後端）；結算資料異常時兩個入口的畫面與出口",
-    scripts: ["settle-web.js", "settle-invalid-web.js"],
+    what: "戰鬥結算的完整獎勵：真 Godot 勝敗結算、回應遺失與重新確認、重新整理時在途、結算中改隊伍（需要 Godot 產物；可用 GAS_BACKEND 換成模擬後端）；結算資料異常時兩個入口的畫面與出口；主頁結算卡是對話框（隊伍編排等視窗開著時在最上層、Esc 不關閉）",
+    scripts: ["settle-web.js", "settle-invalid-web.js", "hud-keyboard-web.js"],
   },
   flying: {
     what: "飛行敵人與對空：示範關的敵軍預覽標記、武將詳情／部署選單／單位面板的對空說明、兩個入口實際部署後扣血或不扣血與結算、390 寬與鍵盤、地圖編輯器敵人表的移動方式（需要 Godot 產物）",
@@ -299,6 +299,7 @@ const FULL = [
   "skill-atk-down-web.js",
   "hero-keyboard-web.js",
   "skill-double-shot-web.js",
+  "hud-keyboard-web.js",
 ];
 
 const [mode, ...rest] = process.argv.slice(2);

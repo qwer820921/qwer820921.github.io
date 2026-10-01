@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useId, useRef } from "react";
 import { Row, Col, Alert } from "react-bootstrap";
 import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
@@ -15,6 +15,7 @@ import {
 } from "../../utils/heroFilter";
 import { jobInfo, rarityInfo } from "../../utils/heroCategories";
 import { onActivateKey } from "../../utils/keyboard";
+import { useDialogFocus } from "../useDialogFocus";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 const MAX_SLOTS = 5;
@@ -22,9 +23,28 @@ const MAX_SLOTS = 5;
 interface Props {
   onClose: () => void;
   onTeamSaved?: () => void;
+  /** 關閉時開啟前的元素已經不在畫面上（或開啟時焦點不在任何元素上）時，焦點改交給這個元素（主頁 HUD 的「隊伍」按鈕） */
+  fallbackFocusRef?: React.RefObject<HTMLElement | null>;
 }
 
-export default function TeamEditModal({ onClose, onTeamSaved }: Props) {
+/** 按下的按鈕停用或消失時，焦點要交給誰（下一次畫面更新後處理） */
+type FocusAfter =
+  | { kind: "move"; heroId: string; dir: -1 | 1 }
+  | { kind: "remove"; heroId: string; index: number }
+  | { kind: "save" };
+
+/**
+ * 主頁（戰場的 HUD）的隊伍編排視窗：有名稱的對話框，鍵盤沿用 useDialogFocus。
+ * 開啟時焦點在右上的關閉鈕，Tab／Shift+Tab 只在視窗內循環，Esc 關閉，關閉後焦點回到開啟它的按鈕（不在畫面上時交給「隊伍」）。
+ * 槽位的 ‹ › 移動後焦點跟著那位武將（同方向的按鈕停用時換到另一個方向）；× 移除後交給同一個位置的下一位武將的 ×，
+ * 沒有時交給前一位，再沒有時交給那位武將在下方的卡片。按下「儲存隊伍」後按鈕停用（已儲存或寫入限制中）時，焦點交給下方的「關閉」。
+ * 玩家資料或設定還沒載入時，仍然顯示標題、關閉鈕與「隊伍資料載入中…」
+ */
+export default function TeamEditModal({
+  onClose,
+  onTeamSaved,
+  fallbackFocusRef,
+}: Props) {
   const { player, updateTeam, writeHold } = usePlayerStore();
   const { config: staticConfig } = useStaticConfigStore();
   const [selected, setSelected] = useState<string[]>([]);
@@ -40,7 +60,93 @@ export default function TeamEditModal({ onClose, onTeamSaved }: Props) {
     }
   }, [player]);
 
-  if (!player || !staticConfig) return null;
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const bottomCloseRef = useRef<HTMLButtonElement>(null);
+  const saveRef = useRef<HTMLButtonElement>(null);
+  const onKeyDown = useDialogFocus(panelRef, closeRef, onClose, {
+    fallbackFocus: () => fallbackFocusRef?.current ?? null,
+  });
+  const focusAfterRef = useRef<FocusAfter | null>(null);
+  useEffect(() => {
+    const want = focusAfterRef.current;
+    const panel = panelRef.current;
+    if (!want || !panel) return;
+    focusAfterRef.current = null;
+    const slotOf = (heroId: string) =>
+      Array.from(
+        panel.querySelectorAll<HTMLElement>('[data-testid="team-slot"]')
+      ).find((el) => el.dataset.heroId === heroId);
+    let target: HTMLElement | null = null;
+    if (want.kind === "move") {
+      const slot = slotOf(want.heroId);
+      const same = slot?.querySelector<HTMLButtonElement>(
+        `button[data-move="${want.dir}"]`
+      );
+      const other = slot?.querySelector<HTMLButtonElement>(
+        `button[data-move="${-want.dir}"]`
+      );
+      target =
+        same && !same.disabled ? same : other && !other.disabled ? other : null;
+    } else if (want.kind === "remove") {
+      const removes = panel.querySelectorAll<HTMLElement>(
+        '[data-testid="team-slot-remove"]'
+      );
+      target =
+        removes[want.index] ??
+        removes[want.index - 1] ??
+        Array.from(
+          panel.querySelectorAll<HTMLElement>('[data-testid="team-pool-card"]')
+        ).find((el) => el.dataset.heroId === want.heroId) ??
+        closeRef.current;
+    } else if (saveRef.current?.disabled) {
+      target = bottomCloseRef.current;
+    }
+    target?.focus();
+  });
+
+  const header = (
+    <div className={styles.modalHeader}>
+      <span id={titleId} className={styles.modalTitle}>
+        隊伍編排
+      </span>
+      <button
+        ref={closeRef}
+        type="button"
+        className={styles.modalClose}
+        onClick={onClose}
+        aria-label="關閉隊伍編排"
+      >
+        ×
+      </button>
+    </div>
+  );
+
+  // 玩家資料或設定還沒載入（或切換存檔時暫時沒有）：仍然顯示視窗與關閉鈕，焦點與 Esc 照常可用
+  if (!player || !staticConfig) {
+    return (
+      <div className={styles.modalBackdrop} onClick={onClose}>
+        <div
+          ref={panelRef}
+          className={styles.modalPanel}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={onKeyDown}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          tabIndex={-1}
+        >
+          {header}
+          <div className={styles.modalBody}>
+            <div role="status" className="small text-muted">
+              隊伍資料載入中…
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const capacity = player.capacity;
   const usedCost = selected.reduce((sum, heroId) => {
@@ -61,6 +167,9 @@ export default function TeamEditModal({ onClose, onTeamSaved }: Props) {
 
   // Plan C: 左右移動槽位順序
   const moveHero = (idx: number, dir: -1 | 1) => {
+    if (selected[idx]) {
+      focusAfterRef.current = { kind: "move", heroId: selected[idx], dir };
+    }
     setSaved(false);
     setSelected((prev) => {
       const next = [...prev];
@@ -71,7 +180,14 @@ export default function TeamEditModal({ onClose, onTeamSaved }: Props) {
     });
   };
 
+  // 槽位的 ×：移除後焦點交給同一個位置的下一位（見 focusAfterRef）
+  const removeFromSlot = (idx: number, heroId: string) => {
+    focusAfterRef.current = { kind: "remove", heroId, index: idx };
+    toggleHero(heroId);
+  };
+
   const handleSave = () => {
+    focusAfterRef.current = { kind: "save" };
     const newTeam: TeamSlot[] = selected.map((heroId, idx) => ({
       hero_id: heroId,
       slot: idx + 1,
@@ -111,13 +227,17 @@ export default function TeamEditModal({ onClose, onTeamSaved }: Props) {
 
   return (
     <div className={styles.modalBackdrop} onClick={onClose}>
-      <div className={styles.modalPanel} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.modalHeader}>
-          <span className={styles.modalTitle}>隊伍編排</span>
-          <button className={styles.modalClose} onClick={onClose}>
-            ×
-          </button>
-        </div>
+      <div
+        ref={panelRef}
+        className={styles.modalPanel}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={onKeyDown}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+      >
+        {header}
         <div className={styles.modalBody}>
           {/* 容量條 */}
           <div style={{ marginBottom: "1.25rem" }}>
@@ -214,6 +334,7 @@ export default function TeamEditModal({ onClose, onTeamSaved }: Props) {
                           className={styles.slotArrowBtn}
                           onClick={() => moveHero(i, -1)}
                           disabled={i === 0}
+                          data-move="-1"
                           aria-label={`${config.name} 往前移`}
                         >
                           ‹
@@ -221,7 +342,7 @@ export default function TeamEditModal({ onClose, onTeamSaved }: Props) {
                         <button
                           type="button"
                           className={styles.slotArrowBtn}
-                          onClick={() => toggleHero(config.hero_id)}
+                          onClick={() => removeFromSlot(i, config.hero_id)}
                           aria-label={`移除 ${config.name}`}
                           data-testid="team-slot-remove"
                         >
@@ -232,6 +353,7 @@ export default function TeamEditModal({ onClose, onTeamSaved }: Props) {
                           className={styles.slotArrowBtn}
                           onClick={() => moveHero(i, 1)}
                           disabled={i === selected.length - 1}
+                          data-move="1"
                           aria-label={`${config.name} 往後移`}
                         >
                           ›
@@ -371,10 +493,17 @@ export default function TeamEditModal({ onClose, onTeamSaved }: Props) {
           )}
 
           <div style={{ display: "flex", gap: "0.65rem", marginTop: "0.5rem" }}>
-            <button className={styles.btnOutline} onClick={onClose}>
+            <button
+              ref={bottomCloseRef}
+              type="button"
+              className={styles.btnOutline}
+              onClick={onClose}
+            >
               關閉
             </button>
             <button
+              ref={saveRef}
+              type="button"
               className={styles.btnGold}
               style={{ flex: 1 }}
               onClick={handleSave}
