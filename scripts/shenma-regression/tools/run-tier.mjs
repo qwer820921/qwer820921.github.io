@@ -4,7 +4,7 @@
 //   node scripts/shenma-regression/tools/run-tier.mjs related <功能...>   例：related save-conflict backup-preview
 //   node scripts/shenma-regression/tools/run-tier.mjs full
 //   node scripts/shenma-regression/tools/run-tier.mjs list              列出功能與對應的瀏覽器腳本
-// - quick：型別檢查、神馬三國與地圖編輯器的 ESLint、Node 測試（store、戰鬥結算獎勵規則、飛行敵人與對空規則、出征前的對空準備、
+// - quick：型別檢查、神馬三國與地圖編輯器的 ESLint、Node 測試（store、後端讀取的自動重試、戰鬥結算獎勵規則、飛行敵人與對空規則、出征前的對空準備、
 //   飛行路線無效與優先飛行選項、地面路線沒有路程與戰場內的下一波、關卡能不能出征與敵人攻擊力／免疫減速、備份檔、武將列表篩選、
 //   地圖編輯器的錯誤說明與敵人表的移動方式欄判斷、
 //   跨來源隔離開機腳本）、harness 雜訊規則、
@@ -37,6 +37,11 @@ const QUICK = [
     "玩家存檔 store 測試",
     "node",
     ["scripts/shenma-regression/web/player-store.test.mjs"],
+  ],
+  [
+    "後端讀取的自動重試與遊戲設定載入測試",
+    "node",
+    ["scripts/shenma-regression/web/read-retry.test.mjs"],
   ],
   [
     "戰鬥結算獎勵規則測試",
@@ -131,6 +136,18 @@ const AREAS = {
   "backup-preview": {
     what: "離線備份檔預覽（設定頁，唯讀）",
     scripts: ["backup-preview-web.js"],
+  },
+  "read-retry": {
+    what: "後端讀取的自動重試：連線失敗、平台錯誤頁、逾時、回應較慢的說明，寫入只送一次（兩個戰鬥入口）",
+    scripts: ["read-retry-web.js"],
+  },
+  "save-dialog": {
+    what: "存檔比較與備份檔預覽的鍵盤操作（對話框名稱、Tab 留在視窗裡、Esc、處理中不能關閉、焦點歸還與退路）",
+    scripts: ["save-dialog-keyboard-web.js"],
+  },
+  "battle-tips": {
+    what: "戰場的玩法提示：兩個戰鬥入口的位置（不疊在遊戲畫面上）、開關與收起、記住收起、不暫停戰鬥（需要 Godot 產物）",
+    scripts: ["battle-tips-web.js"],
   },
   "map-editor": {
     what: "地圖編輯器的素材、頁面說明與分頁操作（管理密碼在 save-conflict）",
@@ -300,6 +317,9 @@ const FULL = [
   "hero-keyboard-web.js",
   "skill-double-shot-web.js",
   "hud-keyboard-web.js",
+  "read-retry-web.js",
+  "save-dialog-keyboard-web.js",
+  "battle-tips-web.js",
 ];
 
 const [mode, ...rest] = process.argv.slice(2);

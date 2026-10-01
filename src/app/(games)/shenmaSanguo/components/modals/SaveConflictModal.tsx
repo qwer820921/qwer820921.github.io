@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Alert, Button, Col, Row } from "react-bootstrap";
 import { ExclamationTriangleFill } from "react-bootstrap-icons";
 import {
@@ -12,6 +12,7 @@ import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { PlayerState, SessionPlayerState } from "../../types";
 import { describePlayerError } from "../../utils/playerErrors";
 import SaveCompareTable from "../SaveCompareTable";
+import { useDialogFocus } from "../useDialogFocus";
 import {
   buildExport,
   compareSaves,
@@ -24,6 +25,8 @@ import styles from "../../styles/shenmaSanguo.module.css";
 
 interface Props {
   onClose: () => void;
+  /** 關閉時開啟它的按鈕已經不在畫面上（例如衝突已處理、提示收起）時，焦點改交給這裡回傳的元素 */
+  fallbackFocus?: () => HTMLElement | null;
 }
 
 /** 處理衝突時的原因代碼：和切換存檔共用的代碼，在這裡改成處理衝突的說法 */
@@ -79,9 +82,12 @@ const toData = (p: SessionPlayerState): PlayerState => {
 /**
  * 存檔衝突的比較與選擇（玩家開啟）：並列這個分頁（尚未保存）與雲端的資料，標出不同的項目；
  * 選擇後先顯示具體影響，再確認一次才執行。確認時帶著畫面上的衝突 id 與本機版本，
- * 期間任何一邊有變化都不執行，改成刷新比較請玩家重新確認。不顯示存檔金鑰
+ * 期間任何一邊有變化都不執行，改成刷新比較請玩家重新確認。不顯示存檔金鑰。
+ * 鍵盤沿用 useDialogFocus：開啟時焦點在右上的關閉鈕，Tab／Shift+Tab 只在視窗內循環，Esc 關閉；
+ * 處理中（已送出、等待伺服器）不能關閉（和停用的關閉鈕相同），焦點留在視窗裡並說明原因。
+ * 進入確認步驟時焦點移到確認的說明（不放在「確定」上，避免按著 Enter 直接執行），返回比較時回到原本的選項
  */
-export default function SaveConflictModal({ onClose }: Props) {
+export default function SaveConflictModal({ onClose, fallbackFocus }: Props) {
   const conflict = usePlayerStore((s) => s.saveConflict);
   const player = usePlayerStore((s) => s.player);
   const resolving = usePlayerStore((s) => s.resolvingConflict);
@@ -92,6 +98,43 @@ export default function SaveConflictModal({ onClose }: Props) {
   const [showHeroes, setShowHeroes] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmStep | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const titleId = useId();
+  const introId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const serverRef = useRef<HTMLButtonElement>(null);
+  const localRef = useRef<HTMLButtonElement>(null);
+  const confirmTitleRef = useRef<HTMLParagraphElement>(null);
+  const messageRef = useRef<HTMLDivElement>(null);
+  // 確認步驟結束後焦點要去的地方：返回比較 → 原本的選項；沒有完成 → 說明的訊息
+  const afterConfirmRef = useRef<"choice" | "message" | null>(null);
+  const lastChoiceRef = useRef<ConflictChoice | null>(null);
+  // 處理中不能關閉（停用的關閉鈕同樣的規則）：Esc 不關、焦點留在視窗裡
+  const requestClose = () => {
+    if (!usePlayerStore.getState().resolvingConflict) onClose();
+  };
+  const onKeyDown = useDialogFocus(panelRef, closeRef, requestClose, {
+    fallbackFocus,
+  });
+
+  useEffect(() => {
+    if (confirm) {
+      confirmTitleRef.current?.focus();
+      return;
+    }
+    const next = afterConfirmRef.current;
+    afterConfirmRef.current = null;
+    if (next === "message") {
+      messageRef.current?.focus();
+    } else if (next === "choice") {
+      const btn =
+        lastChoiceRef.current === "local"
+          ? localRef.current
+          : serverRef.current;
+      if (btn && !btn.disabled) btn.focus();
+      else closeRef.current?.focus();
+    }
+  }, [confirm]);
 
   const local = useMemo(() => (player ? toData(player) : null), [player]);
   const compared = useMemo(
@@ -120,6 +163,7 @@ export default function SaveConflictModal({ onClose }: Props) {
     );
 
   const choose = (choice: ConflictChoice) => {
+    lastChoiceRef.current = choice;
     setMessage(null);
     setConfirm({
       choice,
@@ -131,11 +175,14 @@ export default function SaveConflictModal({ onClose }: Props) {
 
   const run = async (step: ConfirmStep) => {
     setMessage(null);
+    // 「確定」在處理中停用：焦點先放在視窗本身（不會掉到背後的頁面）
+    panelRef.current?.focus();
     const r = await resolve(step.choice, step.expect);
     if (r.ok) {
       onClose();
       return;
     }
+    afterConfirmRef.current = "message";
     setConfirm(null);
     setMessage(
       r.error === "CONFLICT_CHANGED"
@@ -151,21 +198,38 @@ export default function SaveConflictModal({ onClose }: Props) {
       className={`${styles.modalBackdrop} ${styles.conflictBackdrop}`}
       data-testid="save-conflict-modal"
     >
-      <div className={`${styles.modalPanel} ${styles.conflictPanel}`}>
+      <div
+        ref={panelRef}
+        className={`${styles.modalPanel} ${styles.conflictPanel}`}
+        onKeyDown={onKeyDown}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={introId}
+        aria-busy={resolving}
+        tabIndex={-1}
+      >
         <div className={styles.modalHeader}>
-          <ExclamationTriangleFill className={styles.conflictIcon} />
-          <span className={styles.modalTitle}>比較雲端與這個分頁的存檔</span>
+          <ExclamationTriangleFill
+            className={styles.conflictIcon}
+            aria-hidden="true"
+          />
+          <span id={titleId} className={styles.modalTitle}>
+            比較雲端與這個分頁的存檔
+          </span>
           <button
+            ref={closeRef}
+            type="button"
             className={styles.modalClose}
             onClick={onClose}
-            aria-label="關閉"
+            aria-label="關閉存檔比較"
             disabled={resolving}
           >
             ×
           </button>
         </div>
         <div className={styles.modalBody}>
-          <p className={styles.conflictIntro}>
+          <p id={introId} className={styles.conflictIntro}>
             {conflict.reason === "base_unknown"
               ? "這個分頁不確定自己的資料根據雲端哪一個版本（例如網站更新前留下的修改），伺服器要求確認之後才能保存。"
               : "雲端存檔在其他分頁或裝置更新過。"}
@@ -174,9 +238,11 @@ export default function SaveConflictModal({ onClose }: Props) {
           </p>
           {message && (
             <Alert
+              ref={messageRef}
               variant="warning"
               className="py-2 small"
               data-testid="save-conflict-message"
+              tabIndex={-1}
             >
               {message}
             </Alert>
@@ -213,6 +279,7 @@ export default function SaveConflictModal({ onClose }: Props) {
               <Row className="g-2">
                 <Col xs={12} sm={6}>
                   <Button
+                    ref={serverRef}
                     variant="outline-primary"
                     className="w-100"
                     disabled={!!blocked || resolving || cloudCorrupt}
@@ -227,6 +294,7 @@ export default function SaveConflictModal({ onClose }: Props) {
                 </Col>
                 <Col xs={12} sm={6}>
                   <Button
+                    ref={localRef}
                     variant="outline-danger"
                     className="w-100"
                     disabled={!!blocked || resolving || cloudCorrupt}
@@ -259,7 +327,12 @@ export default function SaveConflictModal({ onClose }: Props) {
               data-testid="save-conflict-confirm"
               data-choice={confirm.choice}
             >
-              <p className={styles.conflictConfirmTitle}>
+              <p
+                ref={confirmTitleRef}
+                className={styles.conflictConfirmTitle}
+                tabIndex={-1}
+                data-testid="save-conflict-confirm-title"
+              >
                 {confirm.choice === "server"
                   ? "確定使用雲端版本？這個分頁尚未保存的修改會被放棄："
                   : `確定保留這個分頁的版本？雲端（版本 ${confirm.cloudRev}）上其他分頁或裝置的修改會被覆蓋：`}
@@ -285,6 +358,15 @@ export default function SaveConflictModal({ onClose }: Props) {
                   ? "放棄前會先備份這個分頁的資料，之後可以在畫面下方匯出或放回。"
                   : "覆蓋前會先備份雲端的資料，之後可以在畫面下方匯出或放回。雲端在確認期間又更新時不會覆蓋，會請你重新比較。"}
               </p>
+              {resolving && (
+                <p
+                  className={styles.conflictHint}
+                  role="status"
+                  data-testid="save-conflict-busy"
+                >
+                  正在送出並等待伺服器確認。完成前不能關閉這個視窗，也不會重複送出；完成後會自動關閉，沒有完成時會說明原因。
+                </p>
+              )}
               <Row className="g-2">
                 <Col xs={12} sm={6}>
                   <Button
@@ -306,7 +388,10 @@ export default function SaveConflictModal({ onClose }: Props) {
                     variant="secondary"
                     className="w-100"
                     disabled={resolving}
-                    onClick={() => setConfirm(null)}
+                    onClick={() => {
+                      afterConfirmRef.current = "choice";
+                      setConfirm(null);
+                    }}
                     data-testid="save-conflict-confirm-no"
                   >
                     返回比較

@@ -12,6 +12,7 @@ import { PLAYER_SESSION_KEY, usePlayerStore } from "../store/playerStore";
 import { useStaticConfigStore } from "../store/staticConfigStore";
 import { SyncStatus } from "../types";
 import { findIsolationRecovery } from "../utils/isolationRecovery";
+import { describePlayerError } from "../utils/playerErrors";
 import UpgradeUnconfirmedNotice from "./UpgradeUnconfirmedNotice";
 import SettleUnconfirmedNotice from "./SettleUnconfirmedNotice";
 import SaveConflictNotice from "./SaveConflictNotice";
@@ -20,6 +21,7 @@ import SaveConflictModal from "./modals/SaveConflictModal";
 import SwitchFailedNotice from "./SwitchFailedNotice";
 import MigrationHoldNotice from "./MigrationHoldNotice";
 import IsolationProblemNotice from "./IsolationProblemNotice";
+import ReadWaitNotice from "./ReadWaitNotice";
 import styles from "../styles/shenmaSanguo.module.css";
 
 const MAIN_PATH = "/shenmaSanguo";
@@ -52,6 +54,9 @@ export default function GameInitializer() {
   const saveConflict = usePlayerStore((s) => s.saveConflict !== null);
   const conflictBackup = usePlayerStore((s) => s.conflictBackup !== null);
   const [compareOpen, setCompareOpen] = useState(false);
+  // 衝突已經不在（處理完成、其他流程解除）：比較視窗跟著關閉，之後的新衝突要玩家再按「比較並選擇」才開啟
+  // （在繪製期間依目前的狀態調整，不另外用 effect）
+  if (!saveConflict && compareOpen) setCompareOpen(false);
 
   const hasConfig = useStaticConfigStore(
     (s) => (s.config?.heroesConfig?.length ?? 0) > 0
@@ -180,12 +185,17 @@ export default function GameInitializer() {
         className={`${styles.syncBar} ${barClass}`}
         data-sync-status={syncStatus}
       />
-      {/* 遊戲設定載入失敗：固定在頁面頂部 */}
-      {configError && (
-        <div className={styles.topNotices}>
-          <div className={`${styles.notice} ${styles.noticeDanger}`}>
+      {/* 固定在頁面頂部：讀取較慢或正在自動重試的說明、遊戲設定載入失敗（自動重試用完之後） */}
+      <div className={styles.topNotices}>
+        <ReadWaitNotice />
+        {configError && (
+          <div
+            className={`${styles.notice} ${styles.noticeDanger}`}
+            data-testid="config-error-notice"
+          >
             <span className={styles.noticeText}>
-              ⚠ 遊戲設定載入失敗（{configError}）— 部分頁面功能暫時無法使用
+              ⚠ 遊戲設定載入失敗，部分頁面功能暫時無法使用。
+              {describePlayerError(configError)}（代碼：{configError}）
             </span>
             <button
               className={styles.noticeBtn}
@@ -195,8 +205,8 @@ export default function GameInitializer() {
               {retrying ? "重試中..." : "重試"}
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
       {/* 固定在頁面底部，不擋住上方的 HUD 按鈕：存檔處理暫停、切換存檔失敗、存檔暫停保存（含網站更新前的暫存）、武將升級或戰鬥結算的結果待確認、存檔版本衝突與處理後的備份 */}
       {hasBottomNotices && (
         <div className={styles.bottomNotices} ref={bottomNoticesRef}>
@@ -214,7 +224,15 @@ export default function GameInitializer() {
         </div>
       )}
       {saveConflict && compareOpen && (
-        <SaveConflictModal onClose={() => setCompareOpen(false)} />
+        <SaveConflictModal
+          onClose={() => setCompareOpen(false)}
+          // 「比較並選擇」已經不在畫面上（例如衝突已處理）：焦點交給底部提示的第一個按鈕（例如處理後的備份提示）
+          fallbackFocus={() =>
+            bottomNoticesRef.current?.querySelector<HTMLElement>(
+              "button:not([disabled])"
+            ) ?? null
+          }
+        />
       )}
     </>
   );

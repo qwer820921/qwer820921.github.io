@@ -91,6 +91,31 @@ const MUTATIONS = {
     ],
     expect: ["結算-18 "],
   },
+  "create-when-stale": {
+    why: "讀取回報找不到存檔時不確認這次載入是否已經過期（換了帳號之後仍替舊帳號建檔）",
+    edits: [
+      [
+        '  if (!active()) return { ok: false, error: "SUPERSEDED" };\n  if (writesHeld()) return { ok: false, error: "MIGRATION_HOLD" };',
+        '  if (writesHeld()) return { ok: false, error: "MIGRATION_HOLD" };',
+      ],
+    ],
+    expect: ["過期建檔-1 ", "過期建檔-5 ", "過期建檔-6 "],
+  },
+  "reread-when-stale": {
+    why: "建檔回來時不確認是否已經過期（換了帳號之後仍開始讀取舊帳號）",
+    edits: [
+      [
+        '  }\n  // 建檔期間過期：已送出的建檔照常完成，但不再讀取（之後登入這個帳號時會讀到）\n  if (!active()) return { ok: false, error: "SUPERSEDED" };\n',
+        "  }\n",
+      ],
+    ],
+    expect: ["過期建檔-2 "],
+  },
+  "stale-wait-notice": {
+    why: "改登入另一個帳號時不拿掉舊讀取的等待說明（目前帳號保存期間仍顯示舊讀取回應較慢）",
+    edits: [["      dropStaleReadWaits();\n", ""]],
+    expect: ["過期建檔-8 "],
+  },
 };
 
 const run = (src) => {

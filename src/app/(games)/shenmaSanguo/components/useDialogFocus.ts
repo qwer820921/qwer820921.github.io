@@ -28,7 +28,9 @@ interface Options {
  * Esc 只關閉這個視窗（不再傳到後面），Tab 只在視窗內循環（不能操作背後的按鈕）。
  * 焦點所在的按鈕在處理中停用、或所在的區塊收起時，焦點會掉到頁面本身（按鍵不會經過視窗）：
  * 這時最上層的視窗照樣處理 Esc（關閉）與 Tab（回到視窗裡的第一個控制項，Shift+Tab 是最後一個）。
- * 視窗裡再開另一個視窗時，只有最上層的視窗拉回焦點、處理 Esc 與 Tab；最上層關閉後由下一層接手
+ * 視窗裡再開另一個視窗時，只有最上層的視窗拉回焦點、處理 Esc 與 Tab；最上層關閉後由下一層接手。
+ * initialRef 拿不到焦點（例如處理中停用）、或視窗裡暫時沒有可以操作的控制項時，焦點留在視窗本身
+ * （視窗要有 tabIndex={-1}），不會跑到背後的頁面
  */
 export function useDialogFocus(
   panelRef: RefObject<HTMLElement | null>,
@@ -47,18 +49,23 @@ export function useDialogFocus(
 
   useEffect(() => {
     const key = keyRef.current;
+    const focusInto = () => {
+      initialRef.current?.focus();
+      const panel = panelRef.current;
+      if (panel && !panel.contains(document.activeElement)) panel.focus();
+    };
     const prev =
       document.activeElement instanceof HTMLElement &&
       document.activeElement !== document.body
         ? document.activeElement
         : null;
     openDialogs.push(key);
-    initialRef.current?.focus();
+    focusInto();
     const onFocusIn = (e: FocusEvent) => {
       if (!isTop(key)) return;
       const panel = panelRef.current;
       if (panel && e.target instanceof Node && !panel.contains(e.target)) {
-        initialRef.current?.focus();
+        focusInto();
       }
     };
     // 焦點掉到頁面本身（沒有任何元素有焦點）時的 Esc 與 Tab；焦點在元素上時交給視窗的 onKeyDown 與 onFocusIn
@@ -75,8 +82,11 @@ export function useDialogFocus(
       const items = Array.from(
         panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)
       );
-      if (items.length === 0) return;
       e.preventDefault();
+      if (items.length === 0) {
+        panelRef.current.focus();
+        return;
+      }
       (e.shiftKey ? items[items.length - 1] : items[0]).focus();
     };
     document.addEventListener("focusin", onFocusIn);
@@ -106,7 +116,12 @@ export function useDialogFocus(
     const items = Array.from(
       panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)
     );
-    if (items.length === 0) return;
+    if (items.length === 0) {
+      // 暫時沒有可以操作的控制項（例如處理中都停用）：焦點留在視窗本身
+      e.preventDefault();
+      panelRef.current.focus();
+      return;
+    }
     const first = items[0];
     const last = items[items.length - 1];
     const active = document.activeElement;

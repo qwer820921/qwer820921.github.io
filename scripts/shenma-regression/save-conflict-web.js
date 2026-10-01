@@ -339,7 +339,7 @@ async (page) => {
     await H.shot(page, "save-conflict-confirm-cloud");
     await page.locator('[data-testid="save-conflict-confirm-no"]').click();
     const backToTable = await page.locator('[data-testid="save-conflict-table"]').isVisible();
-    await page.locator('button[aria-label="關閉"]').click();
+    await page.locator('button[aria-label="關閉存檔比較"]').click();
     await H.sleep(500);
     const a5 = await sessionOf(page);
     run.check("C-5 取消：選「使用雲端版本」後先列出影響（戰場點數 1000 → 900、隊伍變成只有關羽），按「返回比較」、再關閉視窗都不改變任何資料、沒有送出請求；衝突提示仍在",
@@ -459,7 +459,7 @@ async (page) => {
     const blockedText = await page.locator('[data-testid="save-conflict-blocked"]').innerText().catch(() => "");
     const disabled12 = [await page.locator('[data-testid="save-conflict-server"]').isDisabled(), await page.locator('[data-testid="save-conflict-local"]').isDisabled()];
     await H.shot(page, "save-conflict-migration-hold");
-    await page.locator('button[aria-label="關閉"]').click();
+    await page.locator('button[aria-label="關閉存檔比較"]').click();
     run.check("C-12 寫入限制（遷移狀態不明）時：比較視窗說明不能選擇，「使用雲端」「保留這個分頁」都停用，沒有送出任何請求；雲端不變",
       /暫停保存/.test(blockedText) && disabled12.every(Boolean) && logOf("A").length === reqA12 && backend.rev(KEY) === R + 3,
       { blockedText, disabled12 });

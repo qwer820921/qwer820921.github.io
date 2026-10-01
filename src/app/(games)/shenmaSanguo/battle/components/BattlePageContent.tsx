@@ -55,6 +55,7 @@ import {
 import SpeedToggle from "./SpeedToggle";
 import PauseToggle, { PauseBadge } from "./PauseToggle";
 import NextWaveEntry from "../../components/NextWaveEntry";
+import { BattleTipsPanel, BattleTipsToggle } from "../../components/BattleTips";
 import { NextWaveBattle } from "../../utils/nextWave";
 
 interface BattleStats {
@@ -94,6 +95,9 @@ export default function BattlePageContent() {
   const mapId = searchParams.get("map") ?? "";
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  // 戰場區域（玩法提示依它判斷擺放位置）與頂部的玩法提示開關（提示收起時焦點交給它）
+  const stageRef = useRef<HTMLDivElement>(null);
+  const tipsBtnRef = useRef<HTMLButtonElement>(null);
   const { player, applyBattleResult, writeHold } = usePlayerStore();
   const {
     config: staticConfig,
@@ -673,6 +677,13 @@ export default function BattlePageContent() {
                 ‹
               </button>
               <span className={styles.battleTopBarTitle}>{mapName}</span>
+              {/* 玩法提示的開關：放在標題旁（右側的按鈕列在窄螢幕已經放滿） */}
+              {battleStats && battleStats.game_state !== GameState.RESULT && (
+                <BattleTipsToggle
+                  buttonRef={tipsBtnRef}
+                  className={styles.topBtn}
+                />
+              )}
             </Col>
             {battleStats && (
               <Col xs="auto">
@@ -773,8 +784,14 @@ export default function BattlePageContent() {
           </Row>
         </div>
 
+        {/* 玩法提示：戰場出現後才有，結算時不顯示；放在戰場旁邊，不疊在遊戲畫面上。
+            DOM 排在戰場前面（畫面上排在後面）：從頂部的開關往後按 Tab 就到提示，不會先進到遊戲畫面裡 */}
+        {payloadSent && battleStats && !battleResult && (
+          <BattleTipsPanel stageRef={stageRef} toggleRef={tipsBtnRef} />
+        )}
+
         {/* 遊戲 iframe：固定 540:720，放進戰場區域的實際寬高（D22）；data-game-stage 是面板定位的可見範圍 */}
-        <div className={styles.gamePortraitWrap} data-game-stage>
+        <div ref={stageRef} className={styles.gamePortraitWrap} data-game-stage>
           {/* 部署選單開著時，戰場的留邊（D24）和選單外一樣是關閉區：只蓋住遊戲畫面以外的留邊，點了照一般的取消關閉 */}
           {placementMenu && (
             <div

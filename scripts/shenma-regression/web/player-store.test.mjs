@@ -496,6 +496,16 @@ function makeEnv() {
           call.settled = true;
           rejectFetch(new TypeError("Failed to fetch"));
         },
+        // 平台回的錯誤頁（HTML，無法解析成 JSON；例如回應網址的 404）
+        htmlPage(status = 404) {
+          call.settled = true;
+          resolveFetch({
+            status,
+            json: async () => {
+              throw new SyntaxError("Unexpected token '<'");
+            },
+          });
+        },
       };
       server.calls.push(call);
       if (!server.held.has(call.action)) server.handle(call);
@@ -591,6 +601,19 @@ const loaded = async (env, S, key, profile = baseProfile()) => {
   return r;
 };
 const status = (S) => S().player?.syncStatus;
+// 唯讀請求（get_profile 等）的暫時失敗會在 1 秒、2 秒後自動重試（gameApi 的 READ_RETRY_DELAYS_MS）：
+// 讓第一次與兩次重試都網路錯誤，呼叫端才會收到失敗
+const READ_RETRY_DELAYS = [1000, 2000];
+async function failRead(env, first) {
+  const { action, key } = first;
+  first.networkError();
+  for (const ms of READ_RETRY_DELAYS) {
+    const n = env.server.count(action, key);
+    await settle();
+    await env.clock.advance(ms);
+    (await env.server.waitFor(action, key, n + 1)).networkError();
+  }
+}
 
 // ── 驗收 1：有 key、無 session，get_profile 失敗 ────────────────
 await test("W1", async ({ env, S }) => {
@@ -598,7 +621,7 @@ await test("W1", async ({ env, S }) => {
   env.local.setItem("shenma_player_key", "test_w1");
   env.server.held.add("get_profile");
   const p = S().initFromGAS("test_w1");
-  (await env.server.waitFor("get_profile", "test_w1")).networkError();
+  await failRead(env, await env.server.waitFor("get_profile", "test_w1"));
   const r = await p;
   check("W1-1 get_profile 網路錯誤：回傳失敗", r && r.ok === false, r);
   check(
@@ -613,7 +636,7 @@ await test("W1", async ({ env, S }) => {
   );
 
   const p2 = S().initFromGAS("test_w1");
-  (await env.server.waitFor("get_profile", "test_w1", 2)).respond({
+  (await env.server.waitFor("get_profile", "test_w1", 4)).respond({
     status: 500,
     error: "INTERNAL",
   });
@@ -718,7 +741,7 @@ await test("W2e", async ({ env, S }) => {
   env.server.held.add("get_profile");
   const p = S().initFromGAS("test_w2e");
   env.server.handle(await env.server.waitFor("get_profile", "test_w2e", 1)); // NOT_FOUND
-  (await env.server.waitFor("get_profile", "test_w2e", 2)).networkError(); // 建檔後讀取失敗
+  await failRead(env, await env.server.waitFor("get_profile", "test_w2e", 2)); // 建檔後讀取失敗
   const r = await p;
   check(
     "W2-7 建檔後讀取失敗：不報成功",
@@ -2517,7 +2540,7 @@ await test("R10-N5", async ({ env, S }) => {
   env.server.held.add("get_profile");
   const refresh = S().refreshProfile();
   const read = await env.server.waitFor("get_profile", "test_n5a", 2);
-  read.networkError();
+  await failRead(env, read);
   const r = await refresh;
   check(
     "R10-N5 同帳號同步失敗：不產生切換提示",
@@ -2531,7 +2554,7 @@ await test("R10-N6", async ({ env, S }) => {
   env.server.held.add("get_profile");
   const login = S().initFromGAS("test_n6");
   const read = await env.server.waitFor("get_profile", "test_n6");
-  read.networkError();
+  await failRead(env, read);
   const r = await login;
   check(
     "R10-N6 首次登入（還沒有玩家資料）失敗：由登入畫面顯示錯誤，不產生切換提示",
@@ -5846,6 +5869,487 @@ await test("結算-19", async ({ env, S }) => {
       S().player?.gold === 1300 &&
       pendingIn(env).length === 1,
     { n: resultsOf(env, K).length, pending: pendingIn(env) }
+  );
+});
+
+// ── 讀取的自動重試（gameApi）：store 層的流程 ──────────────────────
+// 唯讀的 get_profile 暫時失敗會自動重試；建檔與所有寫入只送一次；換帳號後舊讀取不再重試
+await test("讀取重試-1", async ({ env, S }) => {
+  env.server.profiles.set("test_rt1", baseProfile("既有玩家"));
+  env.server.held.add("get_profile");
+  const p = S().initFromGAS("test_rt1");
+  (await env.server.waitFor("get_profile", "test_rt1")).networkError();
+  await settle();
+  await env.clock.advance(1000);
+  env.server.handle(await env.server.waitFor("get_profile", "test_rt1", 2));
+  const r = await p;
+  check(
+    "讀取重試-1 登入時讀取連線失敗一次：自動重試後載入既有存檔，不建檔",
+    r?.ok === true &&
+      r.created === false &&
+      S().player?.nickname === "既有玩家" &&
+      S().error === null &&
+      env.server.count("get_profile", "test_rt1") === 2 &&
+      env.server.count("create_profile") === 0,
+    { r, gets: env.server.count("get_profile", "test_rt1") }
+  );
+});
+await test("讀取重試-2", async ({ env, S }) => {
+  env.local.setItem("shenma_player_key", "test_rt2");
+  env.server.held.add("get_profile");
+  const p = S().initFromGAS("test_rt2");
+  for (let i = 1; i <= 3; i++) {
+    (await env.server.waitFor("get_profile", "test_rt2", i)).htmlPage(404);
+    await settle();
+    if (i < 3) await env.clock.advance(i === 1 ? 1000 : 2000);
+  }
+  const r = await p;
+  await env.clock.advance(60_000);
+  check(
+    "讀取重試-2 平台三次都回 404 錯誤頁：回報 BAD_RESPONSE，不當成找不到存檔、不建檔",
+    r?.ok === false &&
+      r.error === "BAD_RESPONSE" &&
+      S().error === "BAD_RESPONSE" &&
+      S().isLoading === false &&
+      S().player === null &&
+      env.server.count("get_profile", "test_rt2") === 3 &&
+      env.server.count("create_profile") === 0,
+    { r, gets: env.server.count("get_profile", "test_rt2") }
+  );
+});
+await test("讀取重試-3", async ({ env, S }) => {
+  env.server.held.add("create_profile");
+  const p = S().initFromGAS("test_rt3");
+  (await env.server.waitFor("create_profile", "test_rt3")).networkError();
+  const r = await p;
+  await env.clock.advance(120_000);
+  check(
+    "讀取重試-3 建檔連線失敗：只送一次、不自動重送（之後由玩家重試時先讀取）",
+    r?.ok === false &&
+      env.server.count("create_profile") === 1 &&
+      env.server.count("get_profile", "test_rt3") === 1,
+    { r, creates: env.server.count("create_profile") }
+  );
+});
+await test("讀取重試-4", async ({ env, S }) => {
+  await loaded(env, S, "test_rt4a", baseProfile("A"));
+  env.server.profiles.set("test_rt4b", baseProfile("B"));
+  env.server.profiles.set("test_rt4c", baseProfile("C"));
+  env.server.held.add("get_profile");
+  const toB = S().initFromGAS("test_rt4b");
+  (await env.server.waitFor("get_profile", "test_rt4b")).networkError();
+  await settle();
+  // B 等待重試期間改切到 C：B 的讀取過期，不再重試
+  const toC = S().initFromGAS("test_rt4c");
+  env.server.handle(await env.server.waitFor("get_profile", "test_rt4c"));
+  const rC = await toC;
+  await env.clock.advance(10_000);
+  const rB = await toB;
+  check(
+    "讀取重試-4 切換帳號後，較早的讀取不再重試、也不切回去",
+    rC?.ok === true &&
+      rB?.superseded === true &&
+      env.server.count("get_profile", "test_rt4b") === 1 &&
+      S().player?.key === "test_rt4c" &&
+      env.local.getItem("shenma_player_key") === "test_rt4c",
+    { rB, rC, gets: env.server.count("get_profile", "test_rt4b") }
+  );
+});
+await test("讀取重試-5", async ({ env, S }) => {
+  env.server.profiles.set("test_rt5", baseProfile("既有玩家"));
+  env.server.held.add("get_profile");
+  const p1 = S().initFromGAS("test_rt5");
+  (await env.server.waitFor("get_profile", "test_rt5")).networkError();
+  await settle();
+  // 等待重試期間再按一次：共用同一次讀取，不另開一套重試
+  const p2 = S().initFromGAS("test_rt5");
+  await env.clock.advance(1000);
+  env.server.handle(await env.server.waitFor("get_profile", "test_rt5", 2));
+  const [r1, r2] = await Promise.all([p1, p2]);
+  await env.clock.advance(10_000);
+  check(
+    "讀取重試-5 重試期間連按：共用結果，get_profile 只有第一次＋一次重試",
+    p1 === p2 &&
+      r1?.ok === true &&
+      r2?.ok === true &&
+      env.server.count("get_profile", "test_rt5") === 2,
+    { gets: env.server.count("get_profile", "test_rt5") }
+  );
+});
+await test("讀取重試-6", async ({ env, S }) => {
+  await loaded(env, S, "test_rt6", baseProfile("伺服器"));
+  env.server.held.add("get_profile");
+  const p = S().backgroundRefresh("test_rt6");
+  (await env.server.waitFor("get_profile", "test_rt6", 2)).networkError();
+  await settle();
+  // 等待重試期間玩家改了隊伍：重試的回應（舊的雲端資料）不能蓋掉本機修改
+  S().updateTeam([{ hero_id: "zhao_yun", slot: 1 }]);
+  await env.clock.advance(1000);
+  const retry = await env.server.waitFor("get_profile", "test_rt6", 3);
+  env.server.handle(retry);
+  await p;
+  await settle();
+  const local = S().player?.team?.[0]?.hero_id;
+  env.server.held.delete("get_profile");
+  await env.clock.advance(30_000); // debounce 後保存
+  check(
+    "讀取重試-6 背景讀取重試期間有本機修改：不採用讀到的舊資料，修改照常保存",
+    local === "zhao_yun" &&
+      env.server.profiles.get("test_rt6").team[0].hero_id === "zhao_yun" &&
+      status(S) === "idle",
+    {
+      local,
+      server: env.server.profiles.get("test_rt6").team,
+      status: status(S),
+    }
+  );
+});
+await test("讀取重試-7", async ({ env, S }) => {
+  await loaded(env, S, "test_rt7", baseProfile("伺服器"));
+  S().updateTeam([{ hero_id: "zhao_yun", slot: 1 }]);
+  env.server.held.add("save_profile");
+  const p = S().refreshProfile();
+  (await env.server.waitFor("save_profile", "test_rt7")).networkError();
+  const r = await p;
+  await env.clock.advance(5_000);
+  check(
+    "讀取重試-7 整份保存連線失敗：不會被讀取的重試機制重送（save_profile 仍 1 次）",
+    r?.ok === false &&
+      env.server.count("save_profile", "test_rt7") === 1 &&
+      S().player?.team?.[0]?.hero_id === "zhao_yun",
+    { r, saves: env.server.count("save_profile", "test_rt7") }
+  );
+});
+await test("讀取重試-8", async ({ env, S }) => {
+  env.server.profiles.set("test_rt8", baseProfile("既有玩家"));
+  env.server.held.add("get_profile");
+  const p = S().initFromGAS("test_rt8");
+  await env.server.waitFor("get_profile", "test_rt8");
+  // 第一次一直沒有回應：30 秒逾時後重試
+  await env.clock.advance(30_000);
+  const gets30 = env.server.count("get_profile", "test_rt8");
+  await env.clock.advance(1000);
+  env.server.handle(await env.server.waitFor("get_profile", "test_rt8", 2));
+  const r = await p;
+  check(
+    "讀取重試-8 讀取 30 秒沒有回應：逾時後重試並載入，不會一直停在載入中",
+    r?.ok === true &&
+      gets30 === 1 &&
+      env.server.count("get_profile", "test_rt8") === 2 &&
+      S().isLoading === false,
+    { r, gets30, gets: env.server.count("get_profile", "test_rt8") }
+  );
+});
+
+// ── 過期的讀取不建檔（store 層）────────────────────────────────────
+// 讀取期間換了帳號或有較新的讀取：舊讀取回報找不到存檔時不建檔；建檔已送出就照常完成（只送一次），
+// 回來時已經過期就不再讀取。過期的讀取也不再說明回應較慢或正在重試
+const readWaitOf = () => {
+  const w = require(join(GAME, "store/readWaitStore.ts"));
+  const s = w.useReadWaitStore.getState();
+  return {
+    retry: w.selectReadRetry(s),
+    slow: w.selectReadSlow(s),
+    n: Object.keys(s.waits).length,
+  };
+};
+/** 目前帳號的畫面、session 與記住的 key 都是這個帳號，沒有停在載入中或錯誤 */
+const intact = (env, S, key) =>
+  S().player?.key === key &&
+  readSession(env)?.key === key &&
+  env.local.getItem("shenma_player_key") === key &&
+  S().isLoading === false &&
+  S().error === null &&
+  S().switchNotice === null;
+const staleBrief = (env, S, a) => ({
+  creates: env.server.count("create_profile", a),
+  gets: env.server.count("get_profile", a),
+  exists: env.server.profiles.has(a),
+  key: S().player?.key,
+  sessionKey: readSession(env)?.key,
+  isLoading: S().isLoading,
+  error: S().error,
+});
+const NOT_FOUND = { status: 404, error: "PROFILE_NOT_FOUND" };
+/** 等舊帳號的載入結束：如果（錯誤地）又送出了請求，讓伺服器處理，測試才不會停在等回應（次數照樣計入） */
+async function staleDone(env, key, promise) {
+  for (let i = 0; i < 5; i++) {
+    await settle();
+    const open = env.server.calls.filter((c) => c.key === key && !c.settled);
+    if (open.length === 0) break;
+    open.forEach((c) => env.server.handle(c));
+  }
+  return promise;
+}
+
+await test("過期建檔-1", async ({ env, S }) => {
+  const A = "test_sp1_a";
+  const B = "test_sp1_b";
+  env.server.profiles.set(B, baseProfile("B"));
+  env.server.held.add("get_profile");
+  const toA = S().initFromGAS(A);
+  const readA = await env.server.waitFor("get_profile", A);
+  // A 的讀取還沒回應時改登入 B，B 先載入完成
+  const toB = S().initFromGAS(B);
+  env.server.handle(await env.server.waitFor("get_profile", B));
+  const rB = await toB;
+  await settle();
+  readA.respond(NOT_FOUND);
+  const rA = await staleDone(env, A, toA);
+  await env.clock.advance(60_000);
+  check(
+    "過期建檔-1 讀取擱置期間改登入另一個帳號，舊帳號之後回報找不到存檔：不建檔、不再讀取，目前帳號不受影響",
+    rB?.ok === true &&
+      rA?.superseded === true &&
+      env.server.count("create_profile") === 0 &&
+      env.server.count("get_profile", A) === 1 &&
+      !env.server.profiles.has(A) &&
+      intact(env, S, B) &&
+      S().player?.nickname === "B",
+    { rA, rB, ...staleBrief(env, S, A) }
+  );
+});
+
+await test("過期建檔-2", async ({ env, S }) => {
+  const A = "test_sp2_a";
+  const B = "test_sp2_b";
+  env.server.profiles.set(B, baseProfile("B"));
+  env.server.held.add("get_profile");
+  env.server.held.add("create_profile");
+  const toA = S().initFromGAS(A);
+  (await env.server.waitFor("get_profile", A)).respond(NOT_FOUND);
+  const createA = await env.server.waitFor("create_profile", A);
+  // A 的建檔已送出、還沒回應時改登入 B
+  const toB = S().initFromGAS(B);
+  env.server.handle(await env.server.waitFor("get_profile", B));
+  const rB = await toB;
+  await settle();
+  env.server.handle(createA);
+  const rA = await staleDone(env, A, toA);
+  await env.clock.advance(60_000);
+  check(
+    "過期建檔-2 建檔已送出時改登入另一個帳號：建檔照常完成、只送 1 次，完成後不再讀取舊帳號，目前帳號不受影響",
+    rB?.ok === true &&
+      rA?.superseded === true &&
+      env.server.count("create_profile", A) === 1 &&
+      env.server.count("create_profile") === 1 &&
+      env.server.profiles.has(A) &&
+      env.server.count("get_profile", A) === 1 &&
+      intact(env, S, B) &&
+      S().player?.nickname === "B",
+    { rA, rB, ...staleBrief(env, S, A) }
+  );
+});
+
+await test("過期建檔-3", async ({ env, S }) => {
+  const K = "test_sp3_new";
+  const r = await S().initFromGAS(K);
+  await settle();
+  check(
+    "過期建檔-3 有效的新帳號：建檔 1 次並讀回，載入新存檔",
+    r?.ok === true &&
+      r.created === true &&
+      env.server.count("create_profile") === 1 &&
+      env.server.count("get_profile", K) === 2 &&
+      intact(env, S, K) &&
+      S().player?.nickname === "旅行者",
+    { r, ...staleBrief(env, S, K) }
+  );
+});
+
+await test("過期建檔-4", async ({ env, S }) => {
+  const K = "test_sp4_new";
+  env.server.held.add("get_profile");
+  const p = S().initFromGAS(K);
+  (await env.server.waitFor("get_profile", K)).networkError();
+  await settle();
+  await env.clock.advance(1000);
+  (await env.server.waitFor("get_profile", K, 2)).respond(NOT_FOUND);
+  env.server.handle(await env.server.waitFor("get_profile", K, 3));
+  const r = await p;
+  await settle();
+  check(
+    "過期建檔-4 讀取連線失敗、自動重試後才確認找不到存檔（仍有效）：照常建檔 1 次並讀回",
+    r?.ok === true &&
+      r.created === true &&
+      env.server.count("create_profile") === 1 &&
+      env.server.count("get_profile", K) === 3 &&
+      intact(env, S, K),
+    { r, ...staleBrief(env, S, K) }
+  );
+});
+
+await test("過期建檔-5", async ({ env, S }) => {
+  const A = "test_sp5_a";
+  const B = "test_sp5_b";
+  env.server.profiles.set(B, baseProfile("B"));
+  env.server.held.add("get_profile");
+  const toA = S().initFromGAS(A);
+  (await env.server.waitFor("get_profile", A)).networkError();
+  await settle();
+  await env.clock.advance(1000);
+  const retryA = await env.server.waitFor("get_profile", A, 2);
+  // 自動重試已送出、還沒回應時改登入 B
+  const toB = S().initFromGAS(B);
+  env.server.handle(await env.server.waitFor("get_profile", B));
+  const rB = await toB;
+  await settle();
+  retryA.respond(NOT_FOUND);
+  const rA = await staleDone(env, A, toA);
+  await env.clock.advance(60_000);
+  check(
+    "過期建檔-5 自動重試已送出時改登入另一個帳號，重試才回報找不到存檔：不建檔、不再讀取",
+    rB?.ok === true &&
+      rA?.superseded === true &&
+      env.server.count("create_profile") === 0 &&
+      env.server.count("get_profile", A) === 2 &&
+      !env.server.profiles.has(A) &&
+      intact(env, S, B),
+    { rA, rB, ...staleBrief(env, S, A) }
+  );
+});
+
+await test("過期建檔-6", async ({ env, S }) => {
+  const A = "test_sp6_a";
+  const B = "test_sp6_b";
+  await loaded(env, S, B, baseProfile("B"));
+  env.server.held.add("get_profile");
+  const toA = S().initFromGAS(A);
+  const readA = await env.server.waitFor("get_profile", A);
+  // 讀取 A 的期間改回原本的帳號（手動同步）：A 的讀取過期
+  const backToB = S().initFromGAS(B);
+  env.server.handle(await env.server.waitFor("get_profile", B, 2));
+  const rB = await backToB;
+  await settle();
+  // 目前帳號有結果待確認的升級（伺服器還沒回應）與還沒保存的本機修改
+  env.server.held.add("upgrade_hero");
+  const up = S().upgradeHero("guan_yu", heroCfg);
+  const upgrade = await env.server.waitFor("upgrade_hero", B);
+  S().updateNickname("本機暱稱");
+  readA.respond(NOT_FOUND);
+  const rA = await staleDone(env, A, toA);
+  await settle();
+  const ses = readSession(env);
+  check(
+    "過期建檔-6 舊讀取過期時目前帳號有待確認的升級與本機修改：不建檔、不再讀取，升級紀錄、本機修改、session 與記住的 key 都保留",
+    rB?.ok === true &&
+      rA?.superseded === true &&
+      env.server.count("create_profile") === 0 &&
+      env.server.count("get_profile", A) === 1 &&
+      intact(env, S, B) &&
+      S().player?.nickname === "本機暱稱" &&
+      S().player?.pendingUpgrade?.hero_id === "guan_yu" &&
+      ses?.nickname === "本機暱稱" &&
+      ses?.pendingUpgrade?.hero_id === "guan_yu",
+    { rA, ...staleBrief(env, S, A), session: brief(ses) }
+  );
+  // 之後升級回應、保存都只寫到目前帳號
+  env.server.held.delete("upgrade_hero");
+  env.server.held.delete("get_profile");
+  env.server.handle(upgrade);
+  const upR = await up;
+  await env.clock.advance(60_000);
+  await settle(60);
+  const backend = env.server.profiles.get(B);
+  check(
+    "過期建檔-7 之後升級完成、本機修改保存，都只寫到目前帳號；伺服器上沒有舊帳號的存檔",
+    upR?.success === true &&
+      heroOf(backend)?.level === 2 &&
+      backend.nickname === "本機暱稱" &&
+      status(S) === "idle" &&
+      !readSession(env)?.pendingUpgrade &&
+      !env.server.profiles.has(A) &&
+      env.server.count("create_profile") === 0 &&
+      env.server.count("save_profile", A) === 0,
+    { upR, backend: brief(backend), status: status(S) }
+  );
+});
+
+await test("過期建檔-8", async ({ env, S }) => {
+  const A = "test_sp8_a";
+  const B = "test_sp8_b";
+  const C = "test_sp8_c";
+  await loaded(env, S, C, baseProfile("C"));
+  env.server.profiles.set(B, baseProfile("B"));
+  env.server.held.add("get_profile");
+  const toA = S().initFromGAS(A);
+  const readA = await env.server.waitFor("get_profile", A);
+  await env.clock.advance(8000);
+  const slowA = readWaitOf();
+  // 目前帳號 C 有還沒保存的修改；改登入 B 時要先保存 C（保存還沒回應），A 的讀取已經過期
+  S().updateTeam([{ hero_id: "zhao_yun", slot: 1 }]);
+  env.server.held.add("save_profile");
+  const toB = S().initFromGAS(B);
+  const saveC = await env.server.waitFor("save_profile", C);
+  const whileSaving = readWaitOf();
+  await env.clock.advance(8000);
+  const later = readWaitOf();
+  env.server.held.delete("save_profile");
+  env.server.handle(saveC);
+  env.server.handle(await env.server.waitFor("get_profile", B));
+  const rB = await toB;
+  await settle();
+  readA.respond(NOT_FOUND);
+  const rA = await staleDone(env, A, toA);
+  await settle();
+  const end = readWaitOf();
+  check(
+    "過期建檔-8 舊讀取已在說明「回應較慢」時改登入另一個帳號：說明立即拿掉，等目前帳號保存的期間也不再出現",
+    slowA.slow === true &&
+      whileSaving.slow === false &&
+      whileSaving.n === 0 &&
+      later.slow === false &&
+      later.n === 0 &&
+      end.n === 0 &&
+      rB?.ok === true &&
+      rA?.superseded === true &&
+      env.server.count("create_profile") === 0 &&
+      intact(env, S, B),
+    { slowA, whileSaving, later, end, rA, ...staleBrief(env, S, A) }
+  );
+});
+
+await test("過期建檔-9", async ({ env, S }) => {
+  const A = "test_sp9_a";
+  const B = "test_sp9_b";
+  const D = "test_sp9_d";
+  env.server.profiles.set(B, baseProfile("B"));
+  env.server.held.add("get_profile");
+  // A：還不到 8 秒就過期，之後計時到了也不標為較慢
+  const toA = S().initFromGAS(A);
+  const readA = await env.server.waitFor("get_profile", A);
+  await env.clock.advance(3000);
+  const toB = S().initFromGAS(B);
+  env.server.handle(await env.server.waitFor("get_profile", B));
+  await toB;
+  await env.clock.advance(10_000);
+  const afterTimer = readWaitOf();
+  readA.respond(NOT_FOUND);
+  const rA = await staleDone(env, A, toA);
+  // D：等待重試時顯示「第 1 次重試」，過期後拿掉、也不再送出
+  const toD = S().initFromGAS(D);
+  (await env.server.waitFor("get_profile", D)).networkError();
+  await settle();
+  const retrying = readWaitOf();
+  const backToB = S().initFromGAS(B);
+  env.server.handle(await env.server.waitFor("get_profile", B, 2));
+  await backToB;
+  const afterSwitch = readWaitOf();
+  await env.clock.advance(10_000);
+  const rD = await staleDone(env, D, toD);
+  check(
+    "過期建檔-9 過期之後計時才到：不標為較慢；等待重試時過期：重試說明拿掉、不再送出；兩者都不建檔",
+    afterTimer.slow === false &&
+      afterTimer.n === 0 &&
+      retrying.retry === 1 &&
+      afterSwitch.retry === 0 &&
+      afterSwitch.n === 0 &&
+      rA?.superseded === true &&
+      rD?.superseded === true &&
+      env.server.count("get_profile", D) === 1 &&
+      env.server.count("create_profile") === 0 &&
+      intact(env, S, B),
+    { afterTimer, retrying, afterSwitch, rA, rD }
   );
 });
 

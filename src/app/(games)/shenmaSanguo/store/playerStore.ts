@@ -16,6 +16,7 @@ import {
   setPlayerKey,
   GasError,
   SETTLE_CONTRACT,
+  dropStaleReadWaits,
 } from "../api/gameApi";
 import {
   applyBattleReward,
@@ -485,16 +486,21 @@ const isFreshSnapshot = (t: SnapshotToken) =>
 /**
  * 讀取存檔；只有 PROFILE_NOT_FOUND 才建檔，其他錯誤一律回報失敗。
  * 寫入限制中不建檔（建檔也是寫入），回報 MIGRATION_HOLD。
- * rev：雲端版本（和資料是同一次讀取的結果）；舊版後端沒有時是 null
+ * rev：雲端版本（和資料是同一次讀取的結果）；舊版後端沒有時是 null。
+ * 讀取的暫時失敗由 gameApi 自動重試（玩家正在等，畫面會說明）；active 回傳 false 後不再重試。
+ * 重試用完仍失敗、或平台回了錯誤頁，都只回報失敗，不會當成找不到存檔而建檔；建檔本身只送一次。
+ * 每次等待回來都先確認 active：找不到存檔時已經過期就不建檔；建檔已送出就不取消，回來時過期就不再讀取
  */
 async function fetchProfile(
-  key: string
+  key: string,
+  active: () => boolean
 ): Promise<
   | { ok: true; data: PlayerState; created: boolean; rev: number | null }
   | { ok: false; error: string }
 > {
+  const read = { active, foreground: true };
   try {
-    const res = await gameApi.getProfile(key);
+    const res = await gameApi.getProfile(key, read);
     if (!validateData(res.data)) {
       return { ok: false, error: "PROFILE_FORMAT_INVALID" };
     }
@@ -508,6 +514,8 @@ async function fetchProfile(
     const code = errorCode(e);
     if (code !== "PROFILE_NOT_FOUND") return { ok: false, error: code };
   }
+  // 讀取期間換了帳號或有較新的讀取：這個帳號已經沒有人在等，不建檔
+  if (!active()) return { ok: false, error: "SUPERSEDED" };
   if (writesHeld()) return { ok: false, error: "MIGRATION_HOLD" };
   // 新玩家：建立存檔後重新讀取（不依賴 create_profile 的回傳格式）
   try {
@@ -515,8 +523,10 @@ async function fetchProfile(
   } catch (e: unknown) {
     return { ok: false, error: errorCode(e) };
   }
+  // 建檔期間過期：已送出的建檔照常完成，但不再讀取（之後登入這個帳號時會讀到）
+  if (!active()) return { ok: false, error: "SUPERSEDED" };
   try {
-    const res = await gameApi.getProfile(key);
+    const res = await gameApi.getProfile(key, read);
     if (!validateData(res.data)) {
       return { ok: false, error: "PROFILE_FORMAT_INVALID" };
     }
@@ -873,7 +883,9 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       let serverRev: number | null;
       const token = snapshotToken();
       try {
-        const res = await gameApi.getProfile(key);
+        const res = await gameApi.getProfile(key, {
+          active: () => gen === _accountGen,
+        });
         if (!validateData(res.data))
           return retryLater("PROFILE_FORMAT_INVALID");
         server = normalizeProfile(res.data);
@@ -1067,7 +1079,11 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     let fresh: PlayerState;
     let rev: number | null;
     try {
-      const res = await gameApi.getProfile(key);
+      const res = await gameApi.getProfile(key, {
+        active: () =>
+          gen === _accountGen && currentConflict()?.id === conflict.id,
+        foreground: true,
+      });
       if (!validateData(res.data)) {
         return { ok: false, error: "PROFILE_FORMAT_INVALID" };
       }
@@ -1426,6 +1442,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         return _loadInFlight.promise;
       }
       const seq = ++_loadSeq;
+      // 較早的讀取從這裡起過期：不再說明它回應較慢或正在重試
+      dropStaleReadWaits();
       // 從目前的帳號切換到其他帳號（登入、同帳號同步不算）：開始時清掉上一次的切換提示
       const switching = !!get().player && get().player?.key !== key;
       if (switching) set({ switchNotice: null });
@@ -1477,7 +1495,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
 
         // 2. 讀取存檔（找不到才建立）；送出前記下世代，提交前驗證
         const token = snapshotToken();
-        const r = await fetchProfile(key);
+        const r = await fetchProfile(key, () => seq === _loadSeq);
         if (seq !== _loadSeq) return superseded();
         if (!r.ok) return fail(r.error);
 
@@ -1555,7 +1573,10 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       const token = snapshotToken();
       const rev0 = revOf(player);
       try {
-        const res = await gameApi.getProfile(key);
+        // 背景讀取：畫面不顯示等待狀態；帳號或資料已經換過時不再重試
+        const res = await gameApi.getProfile(key, {
+          active: () => isFreshSnapshot(token) && get().player?.key === key,
+        });
         if (!validateData(res.data)) return;
         const cur = get().player;
         // 回應時再檢查一次：帳號、資料世代、本機版本、未同步修改、在途寫入與待確認的升級都沒變才套用

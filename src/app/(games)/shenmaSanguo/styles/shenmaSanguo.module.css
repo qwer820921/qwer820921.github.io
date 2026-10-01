@@ -201,6 +201,12 @@
   border-bottom: 1px solid #fecaca;
   color: #b91c1c;
 }
+/* 讀取較慢或正在自動重試（ReadWaitNotice）：只是說明，不是錯誤 */
+.noticeInfo {
+  background: #eff6ff;
+  border-bottom: 1px solid #bfdbfe;
+  color: #1e40af;
+}
 .noticeWarning {
   background: #fffbeb;
   border-top: 1px solid #fde68a;
@@ -2985,4 +2991,70 @@
   border-radius: 4px;
   padding: 1px 6px;
   white-space: nowrap;
+}
+
+/* ── 戰場的玩法提示（BattleTips）：不疊在遊戲畫面上 ─────────────── */
+/* 遊戲畫面左邊的空間夠寬（桌面）時固定在視窗左下角；否則接在戰場區域下方，遊戲畫面依剩下的空間縮放。
+   接在下方時排在戰場後面（order：獨立戰鬥頁的 DOM 放在戰場前面，Tab 才不會先進到遊戲畫面裡）。
+   右下角留給全站的聊天按鈕，下方讓出底部提示的高度 */
+.battleTips {
+  z-index: 8;
+  background: rgba(10, 15, 35, 0.85);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 6px 10px 8px;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+.battleTipsBelow {
+  position: relative;
+  order: 1;
+  flex: none;
+  align-self: flex-start;
+  width: calc(100% - 96px);
+  max-width: 480px;
+  margin: 6px 8px calc(8px + var(--sg-bottom-notices-h, 0px));
+}
+/* 主頁的 HUD 疊在戰場區域上方：提示接在下方時遊戲畫面會往上移，讓出 HUD 的高度（頂欄＋按鈕列，和 BattleTipsPanel 的 hudReserve 相同），格子不會被 HUD 蓋住 */
+.singlePage:has(.battleTipsBelow:not([hidden])) .gamePortraitWrap {
+  padding-top: 82px;
+}
+.battleTipsSide {
+  position: fixed;
+  left: 12px;
+  bottom: calc(12px + var(--sg-bottom-notices-h, 0px));
+  width: 260px;
+}
+.battleTipsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 2px;
+}
+.battleTipsTitle {
+  font-weight: 700;
+  color: #fcd34d;
+  letter-spacing: 0.05em;
+}
+.battleTipsClose {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  border-radius: 6px;
+  padding: 1px 10px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.battleTipsClose:hover {
+  background: rgba(99, 102, 241, 0.45);
+}
+.battleTipsList {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+.battleTipsNote {
+  margin: 4px 0 0;
+  color: rgba(255, 255, 255, 0.72);
 }

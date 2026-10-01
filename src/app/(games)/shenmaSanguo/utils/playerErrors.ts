@@ -8,6 +8,8 @@ export function describePlayerError(code: string | null | undefined): string {
       return "無法連線到伺服器，請確認網路連線後再試一次。";
     case "BAD_RESPONSE":
       return "伺服器回應異常，請稍後再試。";
+    case "TIMEOUT":
+      return "伺服器太久沒有回應，請稍後再試。";
     case "PROFILE_FORMAT_INVALID":
       return "存檔資料格式異常，暫時無法讀取。";
     case "PROFILE_NOT_FOUND":

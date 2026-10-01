@@ -52,6 +52,7 @@ import {
 import SpeedToggle from "../battle/components/SpeedToggle";
 import PauseToggle, { PauseBadge } from "../battle/components/PauseToggle";
 import NextWaveEntry from "./NextWaveEntry";
+import { BattleTipsPanel, BattleTipsToggle } from "./BattleTips";
 import { NextWaveBattle } from "../utils/nextWave";
 import StageSelectModal from "./modals/StageSelectModal";
 import TeamEditModal from "./modals/TeamEditModal";
@@ -459,6 +460,9 @@ export default function SinglePageContent() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   // HUD 的「設定」：遊戲設定關閉時，開啟前沒有焦點就把焦點交給它
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
+  // 戰場區域（玩法提示依它判斷擺放位置）與 HUD 的玩法提示開關（提示收起時焦點交給它）
+  const stageRef = useRef<HTMLDivElement>(null);
+  const tipsBtnRef = useRef<HTMLButtonElement>(null);
 
   // ── 初始化 ─────────────────────────────────────────────────
   const [mounted, setMounted] = useState(false);
@@ -1155,7 +1159,7 @@ export default function SinglePageContent() {
     <div className={styles.singlePage}>
       {/* Godot iframe — 不卸載；只有遊戲版本不相符、玩家按下重新載入時才換成新的 iframe。
           遊戲畫面固定 540:720、放進戰場區域的實際寬高（D22）；data-game-stage 是面板定位的可見範圍 */}
-      <div className={styles.gamePortraitWrap} data-game-stage>
+      <div ref={stageRef} className={styles.gamePortraitWrap} data-game-stage>
         {/* 部署選單開著時，戰場的留邊（D24）和選單外一樣是關閉區：只蓋住遊戲畫面以外的留邊，點了照一般的取消關閉 */}
         {placementMenu && (
           <div
@@ -1349,6 +1353,12 @@ export default function SinglePageContent() {
                   </>
                 )}
               </div>
+              {payloadSent && battleStats && (
+                <BattleTipsToggle
+                  buttonRef={tipsBtnRef}
+                  className={styles.hudStageBtn}
+                />
+              )}
               <button
                 ref={settingsBtnRef}
                 className={styles.hudStageBtn}
@@ -1428,6 +1438,16 @@ export default function SinglePageContent() {
             </div>
           </>
         )}
+
+      {/* 玩法提示：戰場出現後才有，結算時不顯示；放在戰場旁邊，不疊在遊戲畫面上。
+          DOM 排在 HUD 後面：從 HUD 的開關往後按 Tab 就到提示（遊戲畫面裡會吃掉 Tab） */}
+      {payloadSent && battleStats && !battleResult && (
+        <BattleTipsPanel
+          stageRef={stageRef}
+          toggleRef={tipsBtnRef}
+          hudReserve={82}
+        />
+      )}
 
       {/* 結算 Modal */}
       {battleResult && (

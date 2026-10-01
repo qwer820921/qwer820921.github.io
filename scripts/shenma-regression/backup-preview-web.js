@@ -190,7 +190,7 @@ async (page) => {
     await page.locator('[data-testid="backup-preview-open"]').click();
     await modal().waitFor({ timeout: 10000 });
     const s7 = await shown();
-    await page.locator('[data-testid="backup-preview-modal"] button[aria-label="關閉"]').click();
+    await page.locator('[data-testid="backup-preview-modal"] button[aria-label="關閉備份檔預覽"]').click();
     run.check("預覽-7 按「關閉」後視窗消失；重新開啟時沒有上一份檔案，右上角 × 也能關閉",
       closed && s7.file === null && !s7.result && (await modal().count()) === 0, { closed, s7: { file: s7.file, result: s7.result } });
 
