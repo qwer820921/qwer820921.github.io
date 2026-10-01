@@ -2595,8 +2595,8 @@ await test("R12-S1", async () => {
   // 首擊加倍依正式設定表的被動描述綁在馬超（「衝鋒：首擊傷害翻倍」）；趙雲改成閃避
   const ma = heroSkillOf("ma_chao");
   const payload = heroSkillPayload("ma_chao");
-  // 沒有技能的武將：關羽有技能（減速光環），改用張飛對照
-  const none = heroSkillPayload("zhang_fei");
+  // 沒有技能的武將：關羽（減速光環）、張飛（暈眩）都有技能，改用沒有綁定技能的合成武將 id 對照
+  const none = heroSkillPayload("no_skill_hero");
   check(
     "R12-S1 馬超的衝鋒（首擊加倍）：送進 Godot 的參數（first_strike、2 倍）與說明文字出自同一份定義；參數只帶倍率；沒有技能的武將不帶 skill 欄位",
     ma?.id === "first_strike" &&
@@ -2608,7 +2608,7 @@ await test("R12-S1", async () => {
         '["first_attack_multiplier","id"]' &&
       describeHeroSkill(ma).includes(`${ma.firstAttackMultiplier} 倍`) &&
       describeHeroSkill(ma).includes("x2!") &&
-      heroSkillOf("zhang_fei") === null &&
+      heroSkillOf("no_skill_hero") === null &&
       !("skill" in none),
     { ma, payload, none }
   );
@@ -2678,7 +2678,7 @@ await test("R15-S1", async () => {
           ["dodge_chance", "id"],
           ["id", "range_multiplier"],
           ["id", "slow_mult"],
-          [],
+          ["id", "stun_sec"],
         ]) &&
       burnTickDamage(zhou, 100) === 20 &&
       burnTickDamage(zhou, 122) === 24.4 &&
@@ -2823,8 +2823,53 @@ await test("防禦光環-S1", async () => {
   );
 });
 
+// 張飛「暈眩」（設定表的被動描述「攻擊使敵人暈眩」，沒有寫時間與疊加方式）：參數與說明文字出自同一份定義（utils/heroSkills）；
+// 0.5 秒、刷新不累加、不是減速（免疫減速也會暈眩）是第一版的設計值
+await test("暈眩-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    slowAuraPercent,
+    defAuraPercent,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const zhang = heroSkillOf("zhang_fei");
+  const payload = heroSkillPayload("zhang_fei");
+  const text = describeHeroSkill(zhang, 1.5, 150);
+  check(
+    "暈眩-S1 張飛的暈眩：送進 Godot 的參數（stun、stun_sec 0.5，只有這兩個欄位）與說明文字出自同一份定義；說明寫出每次命中、0.5 秒、停止移動與攻擊、照常受傷、刷新不累加也不縮短、免疫減速也會暈眩、張飛離開不提早解除、打不到飛行、只在戰場、不影響存檔；射程與其他技能的計算不受影響",
+    zhang?.id === "stun" &&
+      zhang.name === "暈眩" &&
+      zhang.stunSec === 0.5 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({ skill: { id: "stun", stun_sec: 0.5 } }) &&
+      effectiveRange(zhang, 1.5) === 1.5 &&
+      burnTickDamage(zhang, 150) === 0 &&
+      slowAuraPercent(zhang) === 0 &&
+      defAuraPercent(zhang) === 0 &&
+      text.includes(
+        "每次普通攻擊命中、而且敵人被打後還活著時，這個敵人暈眩 0.5 秒（遊戲時間）"
+      ) &&
+      text.includes("暈眩中停止移動，也不能攻擊擋住它的武將") &&
+      text.includes("照常受到傷害") &&
+      text.includes("再次命中時剩餘時間刷新成 0.5 秒，不會累加") &&
+      text.includes("不會縮短") &&
+      text.includes("免疫減速的敵人也會暈眩") &&
+      text.includes("恢復後最多先打一下") &&
+      text.includes("已經造成的暈眩照樣持續到時間結束") &&
+      text.includes("步兵打不到飛行敵人") &&
+      text.includes("黃色星星") &&
+      text.includes("只在戰場生效，不影響存檔") &&
+      !text.includes("150"),
+    { zhang, payload, text }
+  );
+});
+
 // 技能綁定和正式設定表 heroes_config 的被動描述（passive）對照：趙雲是閃避、馬超是衝鋒（首擊加倍）；
-// 關羽是減速光環（「周圍敵人減速10%」）；劉備是防禦光環（「光環：提升友軍防禦」）；甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
+// 關羽是減速光環（「周圍敵人減速10%」）；劉備是防禦光環（「光環：提升友軍防禦」）；張飛是暈眩（「攻擊使敵人暈眩」）；
+// 甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
 await test("技能對照-S1", async () => {
   const { heroSkillOf, heroSkillPayload } = require(
     join(GAME, "utils/heroSkills.ts")
@@ -2846,7 +2891,7 @@ await test("技能對照-S1", async () => {
     (id) => heroSkillPayload(id).skill?.id === "first_strike"
   );
   check(
-    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）；甘寧、張飛沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
+    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
     JSON.stringify(got) ===
       JSON.stringify({
         ma_chao: "first_strike",
@@ -2856,7 +2901,7 @@ await test("技能對照-S1", async () => {
         guan_yu: "slow_aura",
         gan_ning: null,
         liu_bei: "def_aura",
-        zhang_fei: null,
+        zhang_fei: "stun",
       }) &&
       JSON.stringify(firstStrike) === '["ma_chao"]' &&
       !Object.values(got).includes("sweep") &&

@@ -1,7 +1,7 @@
 import { HeroSkillPayload } from "../types";
 
 /**
- * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」）
+ * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」）
  * 這裡是技能規則的唯一來源：武將列表／詳情的說明，與隨出征資料送進 Godot 的參數都由這裡產生。
  * 技能是戰場效果：不寫進玩家存檔，也不需要後端（GAS）支援。
  * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊。
@@ -59,6 +59,16 @@ export type HeroSkill =
       name: string;
       /** 範圍內其他友軍武將的防禦倍率（1.2＝提升 20%，乘在該武將目前等級的防禦上；受傷照原本的防禦公式計算） */
       defenseMultiplier: number;
+    }
+  | {
+      /**
+       * 暈眩：每次普通攻擊命中、而且目標被打後還活著時，目標暈眩一段時間（遊戲時間）：不能移動、不能攻擊阻路的武將，照常受傷。
+       * 再次命中時剩餘時間取較長的（刷新、不累加）；不是減速，免疫減速的敵人也會暈眩
+       */
+      id: "stun";
+      name: string;
+      /** 每次命中的暈眩時間（秒，遊戲時間） */
+      stunSec: number;
     };
 
 const HERO_SKILLS: Record<string, HeroSkill> = {
@@ -82,6 +92,9 @@ const HERO_SKILLS: Record<string, HeroSkill> = {
   // 正式設定表的被動描述「光環：提升友軍防禦」沒有寫數值與範圍。第一版的設計值，尚未做過平衡：防禦 × 1.2、
   // 範圍是目前有效射程（含邊界）、只影響其他友軍武將（不含自己、防禦塔與城池）、多個防禦光環取最強不疊加、只在戰鬥中
   liu_bei: { id: "def_aura", name: "防禦光環", defenseMultiplier: 1.2 },
+  // 正式設定表的被動描述「攻擊使敵人暈眩」沒有寫時間與疊加方式。第一版的設計值，尚未做過平衡：每次普通攻擊命中、目標還活著時暈眩 0.5 秒；
+  // 暈眩中不能移動也不能攻擊、照常受傷；再次命中取較長的剩餘時間（不累加）；不是減速（免疫減速的敵人也會暈眩）；只在戰鬥中
+  zhang_fei: { id: "stun", name: "暈眩", stunSec: 0.5 },
 };
 
 export const heroSkillOf = (heroId: string): HeroSkill | null =>
@@ -184,6 +197,16 @@ export function describeHeroSkill(
       "只在戰場生效：存檔與屬性表的防禦不會提高。"
     );
   }
+  if (skill.id === "stun") {
+    const sec = skill.stunSec;
+    return (
+      `每次普通攻擊命中、而且敵人被打後還活著時，這個敵人暈眩 ${sec} 秒（遊戲時間）：暈眩中停止移動，也不能攻擊擋住它的武將，但照常受到傷害、可以被打倒。` +
+      `再次命中時剩餘時間刷新成 ${sec} 秒，不會累加；已經有更長的暈眩時不會縮短。普通攻擊的傷害與攻擊間隔不變，沒有機率、不波及其他敵人；打倒敵人的那一擊與灼燒都不會引發暈眩。` +
+      "暈眩不是減速：免疫減速的敵人也會暈眩；暈眩期間減速與灼燒照常計時，結束後恢復當時的移動速度，敵人的攻擊冷卻照常倒數但不會累積，恢復後最多先打一下。" +
+      "這位武將移位、被移除或陣亡時，已經造成的暈眩照樣持續到時間結束；暈眩不會讓武將打得到原本打不到的敵人（步兵打不到飛行敵人）。" +
+      "暈眩中的敵人頭上有轉動的黃色星星。只在戰場生效，不影響存檔。"
+    );
+  }
   if (skill.id === "dodge") {
     const pct = round3(skill.dodgeChance * 100);
     return (
@@ -240,6 +263,9 @@ export function heroSkillPayload(heroId: string): { skill?: HeroSkillPayload } {
   }
   if (skill.id === "def_aura") {
     return { skill: { id: skill.id, def_mult: skill.defenseMultiplier } };
+  }
+  if (skill.id === "stun") {
+    return { skill: { id: skill.id, stun_sec: skill.stunSec } };
   }
   return {
     skill: {

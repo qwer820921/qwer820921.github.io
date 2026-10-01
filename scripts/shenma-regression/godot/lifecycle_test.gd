@@ -172,12 +172,12 @@ func _run() -> void:
 		battle_ended_count += 1
 		last_result = r)
 
-	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜、趙雲的閃避、關羽的減速光環、劉備的防禦光環）、橫掃原型與攻速成長；
+	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩）、橫掃原型與攻速成長；
 	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行；
 	# route 跑飛行與地面的路線無效（出兵前擋下）；blocker 只跑敵人攻擊阻路武將的冷卻；
 	# dodge 只跑趙雲「閃避」；firststrike 只跑首擊加倍（馬超「衝鋒」）；
 	# stagedata 跑關卡資料未完成（沒有波次、波次或路線的格式不對）；enemyatk 跑敵人設定的對武將攻擊力；immune 跑免疫減速；
-	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）
+	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）；stun 只跑張飛的暈眩（skills 也包含）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -189,6 +189,7 @@ func _run() -> void:
 			await _dodge_cases()
 			await _slow_aura_cases()
 			await _def_aura_cases()
+			await _stun_cases()
 		elif only == "blocker":
 			await _blocker_cases()
 		elif only == "dodge":
@@ -221,8 +222,10 @@ func _run() -> void:
 			await _slow_aura_cases()
 		elif only == "defaura":
 			await _def_aura_cases()
+		elif only == "stun":
+			await _stun_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun）", false)
 		_finish()
 		return
 
@@ -432,6 +435,9 @@ func _run() -> void:
 
 	# ── 劉備的防禦光環（範圍內其他武將的防禦 × 1.2，取最強不疊加）──
 	await _def_aura_cases()
+
+	# ── 張飛的暈眩（命中後目標暈眩 0.5 秒：不移動、不攻擊，刷新不累加）──
+	await _stun_cases()
 
 	_finish()
 
@@ -6909,6 +6915,658 @@ func _def_aura_cases() -> void:
 			and d6.new_prep == [0, 100.0] and d6.new_battle == [1.2] and d6.liu_bei_died == [1.0, 0, true]
 	_check("防禦-6 升級、移位、戰鬥結束、倒下、移除、新的一場：1 級只有 1 格的友軍、2 級（半徑 3.5）兩位都有；友軍防禦更新成 150 是 150／180、再送一次不變、改成 160 是 160／192；移到遠處都沒有、移回來都有；第 1 波打完回到備戰時都沒有、第 2 波又有；友軍倒下後只加成另一位；移除劉備都沒有、重新放置（新的來源）又有；結算後沒有；新的一場沒有殘留、開戰後有、劉備倒下後沒有",
 		ok6, d6)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 張飛「暈眩」 ──────────────────────────────────────────────
+# 每次普通攻擊命中、目標被打後還活著時，目標暈眩 0.5 秒（遊戲時間）：不移動、不攻擊阻路的武將，照常受傷與死亡；
+# 再次命中取較長的剩餘時間（不累加、不縮短）；不是減速（免疫減速的敵人也會暈眩）；
+# 暈眩中減速、灼燒照常計時，攻擊冷卻照常倒數但停在 0（不囤積）；記在敵人身上，張飛移位、被移除、陣亡都不提早解除
+
+## 張飛的暈眩（和網頁 utils/heroSkills 的出征參數相同）
+const STUN_SKILL: Dictionary = {"id": "stun", "stun_sec": 0.5}
+## 實際引擎用的敵人：慢速地面兵（每秒 20 像素、攻擊力 100、血量很多；普通與免疫減速）、不會移動的飛行兵、血量 80 的慢速地面兵（張飛一擊打倒）
+const STUN_ENEMIES: Array = [
+	{"enemy_id": "stn_walk", "name": "W", "hp": 99999.0, "speed": 20.0, "atk": 100},
+	{"enemy_id": "stn_walk_imm", "name": "I", "hp": 99999.0, "speed": 20.0, "atk": 100, "trait": "immune_slow"},
+	{"enemy_id": "stn_fly", "name": "F", "hp": 99999.0, "speed": 0.0, "movement_type": "flying"},
+	{"enemy_id": "stn_soft", "name": "S", "hp": 80.0, "speed": 20.0},
+]
+## 實際引擎的敵人速度（像素／秒）
+const STN_SPEED: float = 20.0
+## 阻路的張飛（防禦 50）被攻擊力 100 的敵人打一下實際扣的血：100 ×（1 − 50 ÷ 150）
+const STN_BLOCK_DMG: float = 100.0 * (1.0 - 50.0 / 150.0)
+
+## 固定步進用的敵人（真正的 Enemy 腳本，不經過場景樹的物理處理）：地面、速度 speed 像素／秒，沿直線往右走 40 格；extra 另外加進設定（例如 trait、hp）
+func _stn_enemy(holder: Node, speed: float, extra: Dictionary = {}) -> Node:
+	var e: Node = load("res://entities/enemy/Enemy.gd").new()
+	holder.add_child(e)
+	e.set_physics_process(false)
+	var cfg: Dictionary = {"enemy_id": "stn", "hp": 99999.0, "speed": speed}
+	cfg.merge(extra, true)
+	e.setup(cfg, [Vector2.ZERO, Vector2(40.0 * 48.0, 0.0)])
+	return e
+
+## 固定步進 steps 步（步數從 first 起算），每一步之前呼叫 before(i)。記錄：處理前在暈眩的步數、暈眩中卻移動的步數、暈眩外每一步前進的距離、
+## 攻擊阻路武將的步數（敵人的攻擊次數增加的地方）、處理後仍在暈眩卻顯示攻擊圖片的步數、一步打兩下以上
+func _stn_steps(e: Node, delta: float, steps: int, first: int = 1, before: Callable = Callable()) -> Dictionary:
+	var r: Dictionary = {"stunned": [], "moved_in_stun": [], "dx": [], "atk": [], "fight_in_stun": [], "multi": false}
+	for i in range(first, first + steps):
+		if before.is_valid():
+			before.call(i)
+		if e.is_dead():
+			break
+		var was: bool = e.is_stunned()
+		var x0: float = e.position.x
+		var n: int = e.blocker_attacks
+		e._physics_process(delta)
+		var dx: float = e.position.x - x0
+		if was:
+			r.stunned.append(i)
+			if absf(dx) > 1e-9:
+				r.moved_in_stun.append(i)
+		else:
+			r.dx.append(dx)
+		if e.blocker_attacks > n:
+			r.atk.append(i)
+			if e.blocker_attacks > n + 1:
+				r.multi = true
+		if e.is_stunned() and e.is_fighting_blocker():
+			r.fight_in_stun.append(i)
+	return r
+
+## 連續的步數分段（[起, 迄] 的清單）
+func _stn_runs(xs: Array) -> Array:
+	var out: Array = []
+	for x in xs:
+		if not out.is_empty() and int(out.back()[1]) == int(x) - 1:
+			var last: Array = out.back()
+			last[1] = int(x)
+		else:
+			out.append([int(x), int(x)])
+	return out
+
+## 每個值都和 v 相差不到 eps（空的清單不算；位置是 32 位元浮點，位移的比較用 1e-4）
+func _stn_all(xs: Array, v: float, eps: float = 1e-4) -> bool:
+	return not xs.is_empty() and xs.all(func(x): return absf(float(x) - v) < eps)
+
+## 暈眩時間（遊戲時間）介於 sec 與 sec ＋ 一步之間
+func _stn_len_ok(dur: float, sec: float, step: float) -> bool:
+	return dur >= sec - 1e-6 and dur <= sec + step + 1e-6
+
+## 實際引擎：載入一場（經過 JSON）並依 cells 放置武將（hero_id → 格子），不開戰；towers 是防禦塔（[種類, 格子] 的清單）。
+## 張飛射程 zf_range 格、攻擊間隔 1.5 秒
+func _stn_load(rec: Node, battle_id: String, waves: Array, team: Array, cells: Dictionary, zf_range: float = 2.5, towers: Array = []) -> void:
+	var p: Dictionary = _r12_payload("stn_" + battle_id, waves, battle_id, team)
+	p["heroes_config"] = [
+		{"hero_id": "zhang_fei", "name": "張飛", "job": "infantry", "attack_range": zf_range, "attack_speed": 1.5},
+	]
+	for c in STUN_ENEMIES:
+		p["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p)
+	for hid in cells:
+		_r12_place(hid, cells[hid])
+	for t in towers:
+		main._on_web_place_tower({"tower_type": t[0], "cell_x": t[1].x, "cell_y": t[1].y})
+
+## 出征的張飛（攻擊力 100、防禦 50、血量 1,000,000）；skill 是 null 時帶暈眩的參數
+func _stn_zf(skill: Variant = null) -> Dictionary:
+	var h: Dictionary = _r12_hero("zhang_fei", STUN_SKILL.duplicate() if skill == null else skill)
+	h["hp"] = 1000000.0
+	return h
+
+## 開戰、等第一個敵人出現，把它放到 cell 的中心再加上 offset 格（沿著直線路線，第 5 列）
+func _stn_start(cell: Vector2i, offset: Vector2 = Vector2.ZERO) -> Node:
+	_bm().player_start_battle()
+	await _wait_until(func(): return _first_enemy() != null, 5.0)
+	var e: Node = _first_enemy()
+	if e != null:
+		e.global_position = main.game_map.grid_to_world(cell) + offset * float(main._tile_size)
+	return e
+
+func _stn_read(e: Node, h: Node) -> Dictionary:
+	var alive: bool = h != null and is_instance_valid(h)
+	return {"st": e.is_stunned(), "x": e.global_position.x, "atk": e.blocker_attacks, "hhp": h.current_hp if alive else 0.0, "ehp": e.current_hp,
+		"pt": _pt(), "blk": e._blocker != null, "fight": e.is_fighting_blocker(), "left": e._stun_left, "ts": Engine.time_scale}
+
+## 實際引擎：逐個物理步進記錄敵人 e，直到 stop(rows) 回傳 true、物理時鐘前進 sec 秒或牆鐘逾時。在 physics_frame 信號當下讀取
+## （這一步的節點還沒處理；上一步之後的一般幀已處理，張飛的攻擊在一般幀）。每一列是一步：st＝這一步處理前是否暈眩、dx＝這一步前進的距離（格）、
+## atk＝攻擊阻路武將的次數增加、lost＝阻路武將 h 扣的血、hit＝這一步到下一步之間敵人被打掉的血、dt＝這一步的物理時鐘長度、t＝這一步之後的物理時鐘、
+## after＝下一步處理前是否暈眩、blk／fight＝之後是否被擋住、是否顯示攻擊圖片、left＝之後剩餘的暈眩時間、ts＝讀取時的時間倍率。
+## each(row) 在每一列之後呼叫（同步：切換速度、打開部署選單、暫停、移除武將）
+func _stn_track(e: Node, h: Node, sec: float, stop: Callable, each: Callable = Callable()) -> Array:
+	var rows: Array = []
+	var t: float = float(main._tile_size)
+	var p_end: float = _pt() + sec
+	var w_end: int = Time.get_ticks_msec() + int(sec * 4000.0) + 20000
+	await physics_frame
+	var prev: Dictionary = _stn_read(e, h)
+	while _pt() < p_end and Time.get_ticks_msec() < w_end:
+		await physics_frame
+		if not is_instance_valid(e) or e.is_queued_for_deletion():
+			break
+		var cur: Dictionary = _stn_read(e, h)
+		var row: Dictionary = {"st": prev.st, "dx": (cur.x - prev.x) / t, "atk": cur.atk - prev.atk, "lost": snappedf(prev.hhp - cur.hhp, 0.0001),
+			"hit": snappedf(prev.ehp - cur.ehp, 0.0001), "dt": cur.pt - prev.pt, "t": cur.pt, "after": cur.st, "blk": cur.blk, "fight": cur.fight,
+			"left": cur.left, "ts": prev.ts}
+		rows.append(row)
+		prev = cur
+		if each.is_valid():
+			each.call(row)
+		if stop.call(rows):
+			break
+	return rows
+
+## 暈眩段（連續 st 為 true 的列）：遊戲時間（dt 的和）、步數、最長的一步、期間最小／最大的時間倍率、dt 為 0 的列數（手動暫停）、
+## 其中移動、攻擊的列數；complete＝開始與結束都記錄到（前一列不在暈眩、最後一列之後不在暈眩）
+func _stn_segments(rows: Array) -> Array:
+	var segs: Array = []
+	var i: int = 0
+	while i < rows.size():
+		if not rows[i].st:
+			i += 1
+			continue
+		var s: Dictionary = {"from": i, "dur": 0.0, "steps": 0, "maxdt": 0.0, "ts_min": 99.0, "ts_max": 0.0, "zero": 0, "moved": 0, "atk": 0}
+		var started: bool = i > 0
+		while i < rows.size() and rows[i].st:
+			var r: Dictionary = rows[i]
+			s.dur = float(s.dur) + float(r.dt)
+			s.steps = int(s.steps) + 1
+			s.maxdt = maxf(float(s.maxdt), float(r.dt))
+			if float(r.dt) > 0.0:
+				s.ts_min = minf(float(s.ts_min), float(r.ts))
+				s.ts_max = maxf(float(s.ts_max), float(r.ts))
+			else:
+				s.zero = int(s.zero) + 1
+			if absf(float(r.dx)) > 1e-9:
+				s.moved = int(s.moved) + 1
+			if int(r.atk) > 0:
+				s.atk = int(s.atk) + 1
+			i += 1
+		s["to"] = i - 1
+		s["complete"] = started and not rows[i - 1].after
+		segs.append(s)
+	return segs
+
+## 完整暈眩段的摘要（回報用）
+func _stn_seg_brief(segs: Array) -> Array:
+	return segs.map(func(s): return {"dur": snappedf(float(s.dur), 0.0001), "steps": s.steps, "maxdt": snappedf(float(s.maxdt), 0.0001),
+		"ts": [snappedf(float(s.ts_min), 0.01), snappedf(float(s.ts_max), 0.01)], "zero": s.zero, "moved": s.moved, "atk": s.atk})
+
+## 暈眩外、有前進時間的列：每一步前進的距離都是速度 × 這一步的時間（格），回傳不符合的列數
+func _stn_bad_moves(rows: Array, speed: float) -> int:
+	var t: float = float(main._tile_size)
+	var bad: int = 0
+	for r in rows:
+		if not r.st and float(r.dt) > 0.0 and absf(float(r.dx) - speed * float(r.dt) / t) > 1e-4:
+			bad += 1
+	return bad
+
+## 數完整的暈眩段（each 用）：st 為 false、after 為 true 時開始，之後 st 為 true、after 為 false 時完成一段
+func _stn_count(sc: Dictionary, row: Dictionary) -> void:
+	if not row.st and row.after:
+		sc.open = true
+	elif row.st and not row.after and sc.open:
+		sc.open = false
+		sc.done = int(sc.done) + 1
+
+func _stun_cases() -> void:
+	# 暈眩-0：技能參數的判讀：stun_sec 是正的有限數字才啟用（0.5、1、2.5、經過 JSON 的 0.5）；字串、布林、null、NaN、無限大、0、負數、沒有欄位、
+	# 不認得或大小寫不同的 id、其他技能都不啟用；暈眩不帶其他技能，改成沒有技能後清除。Enemy.apply_stun 也拒絕 0、負數、NaN、無限大，倒下的敵人不套用
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var bad0: Array = []
+	for c in [[{"id": "stun", "stun_sec": 0.5}, 0.5], [{"id": "stun", "stun_sec": 1}, 1.0], [{"id": "stun", "stun_sec": 2.5}, 2.5],
+			[{"id": "stun", "stun_sec": "0.5"}, 0.0], [{"id": "stun", "stun_sec": true}, 0.0], [{"id": "stun", "stun_sec": null}, 0.0],
+			[{"id": "stun", "stun_sec": NAN}, 0.0], [{"id": "stun", "stun_sec": INF}, 0.0], [{"id": "stun", "stun_sec": -INF}, 0.0],
+			[{"id": "stun", "stun_sec": 0}, 0.0], [{"id": "stun", "stun_sec": 0.0}, 0.0], [{"id": "stun", "stun_sec": -0.5}, 0.0],
+			[{"id": "stun"}, 0.0], [{"id": "stun_x", "stun_sec": 0.5}, 0.0], [{"id": "Stun", "stun_sec": 0.5}, 0.0],
+			[{"id": "def_aura", "def_mult": 1.2}, 0.0], [{"id": "slow_aura", "slow_mult": 0.9}, 0.0], [null, 0.0]]:
+		var st: Dictionary = {} if c[0] == null else {"skill": c[0]}
+		h0._read_skill(st)
+		if h0.stun_duration != float(c[1]):
+			bad0.append(str(c[0]))
+	h0._read_skill({"skill": JSON.parse_string("{\"id\": \"stun\", \"stun_sec\": 0.5}")})
+	var json0: float = h0.stun_duration
+	var other0: Array = [h0.slow_aura_mult, h0.def_aura_mult, h0.dodge_chance, h0.first_strike_multiplier, h0.range_multiplier, h0.burn_ratio, h0.sweep_ratio]
+	h0._read_skill({})
+	var cleared0: float = h0.stun_duration
+	h0.free()
+	var holder := _dodge_holder()
+	var e0: Node = _stn_enemy(holder, 60.0)
+	var rej0: Array = []
+	for v in [0.0, -0.5, NAN, INF, -INF]:
+		rej0.append(e0.apply_stun(v))
+	var none0: Array = [e0.is_stunned(), e0.stun_count, e0.stun_log.size()]
+	var e0d: Node = _stn_enemy(holder, 60.0)
+	e0d.take_damage(1.0e9)
+	var dead0: bool = e0d.apply_stun(0.5)
+	_check("暈眩-0 技能參數：stun_sec 0.5、1、2.5 與經過 JSON 的 0.5 啟用；字串、布林、null、NaN、無限大、0、負數、沒有欄位、不認得或大小寫不同的 id、其他技能都不啟用（當作普通攻擊）；暈眩不帶其他技能、改成沒有技能後清除；敵人拒絕 0、負數、NaN、無限大的暈眩，倒下的敵人不套用",
+		bad0.is_empty() and json0 == 0.5 and other0 == [1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0] and cleared0 == 0.0 and rej0 == [false, false, false, false, false]
+			and none0 == [false, 0, 0] and dead0 == false,
+		{"bad": bad0, "json": json0, "other": other0, "cleared": cleared0, "rejected": rej0, "after_reject": none0, "dead": dead0})
+
+	# 暈眩-1：移動中的敵人（固定步進，真正的 Enemy 程式，速度 60 像素／秒）：步長 1 倍（1/60）、2 倍（2/60）、部署慢速（0.1/60）與不整除的 0.03、0.07。
+	# 先走 10 步，第 11 步之前暈眩 0.5 秒：從第 11 步起連續不動，不動的時間（步數 × 步長）介於 0.5 與 0.5 ＋ 一步之間、這段時間一步都沒動；
+	# 前後每步都前進 60 × 步長（恢復原本的速度）；暈眩紀錄只有一段、長度和不動的時間相同、剩餘時間歸零
+	var rows1: Array = []
+	var bad1: Array = []
+	for delta in [1.0 / 60.0, 2.0 / 60.0, 0.1 / 60.0, 0.03, 0.07]:
+		var e1: Node = _stn_enemy(holder, 60.0)
+		var pre: Dictionary = _stn_steps(e1, delta, 10)
+		var applied: bool = e1.apply_stun(0.5)
+		var mid: Dictionary = _stn_steps(e1, delta, int(ceil(0.5 / delta)) + 12, 11)
+		var runs: Array = _stn_runs(mid.stunned)
+		var frozen: float = float(mid.stunned.size()) * delta
+		var want: float = 60.0 * delta
+		var log1: Array = e1.stun_log.duplicate(true)
+		var row: Dictionary = {"step": snappedf(delta, 0.000001), "frozen": snappedf(frozen, 0.000001), "runs": runs, "moved_in_stun": mid.moved_in_stun,
+			"pre": pre.dx.slice(0, 2).map(func(x): return snappedf(x, 0.000001)), "after": mid.dx.slice(0, 3).map(func(x): return snappedf(x, 0.000001)),
+			"log": log1, "left": e1._stun_left}
+		rows1.append(row)
+		var log_ok: bool = log1.size() == 1 and absf(float(log1[0].to) - float(log1[0].from) - frozen) < 1e-6
+		if not (applied and runs.size() == 1 and int(runs[0][0]) == 11 and _stn_len_ok(frozen, 0.5, delta) and mid.moved_in_stun.is_empty()
+				and pre.dx.size() == 10 and _stn_all(pre.dx, want) and mid.dx.size() >= 10 and _stn_all(mid.dx, want) and log_ok and e1._stun_left == 0.0):
+			bad1.append(row)
+		e1.queue_free()
+	_check("暈眩-1 移動中的敵人（固定步進，步長 1 倍／2 倍／部署慢速與 0.03／0.07 秒）：暈眩 0.5 秒時從下一步起連續不動，不動的時間介於 0.5 與 0.5 ＋ 一步之間、這段時間一步都沒動；前後每步都前進 60 × 步長（恢復原本的速度）；暈眩紀錄只有一段、長度和不動的時間相同",
+		bad1.is_empty() and rows1.size() == 5, {"bad": bad1, "rows": rows1})
+
+	# 暈眩-2：被擋住的敵人（固定步進，真正的 Enemy／Hero 程式；武將防禦 50、每擊扣 13.333，偵測的第 1 步不打、第 2 步打第一擊，沒有暈眩時每 1 秒一擊）：
+	# a 冷卻剩約 0.2 秒時暈眩 0.5 秒（每秒 60 步：第 50 步）：暈眩中一步都不攻擊（原本第 62 步的那一擊延後），暈眩結束的下一步打一擊，再下一擊在 1 秒後（差一步以內）；
+	#   暈眩中仍被同一位武將擋住、沒有移動、不顯示攻擊圖片；2 倍（2/60）與部署慢速（0.1/60）同樣在冷卻剩約 0.2 秒時暈眩，結果相同
+	# b 暈眩 3 秒（冷卻早就好了）：恢復後只打一擊（不補打），下一擊在 1 秒後
+	# c 剛打完不久（第 10 步）暈眩 0.5 秒：冷卻在暈眩中照常倒數，攻擊的步數和沒有暈眩時完全相同（第 2、62、122… 步）
+	# 每一種都是一步最多一擊、每擊扣 13.333、武將扣的血＝攻擊次數 × 13.333
+	var d2: Dictionary = {}
+	var ok2: bool = true
+	var ref_atk: Array = []
+	for spec in [["ref", 1.0 / 60.0, -1, 0.0], ["a", 1.0 / 60.0, 50, 0.5], ["a2x", 2.0 / 60.0, 2 + int(ceil(0.8 * 30.0)), 0.5],
+			["a01", 0.1 / 60.0, 2 + int(ceil(0.8 * 600.0)), 0.5], ["b", 1.0 / 60.0, 50, 3.0], ["c", 1.0 / 60.0, 10, 0.5]]:
+		var kind: String = spec[0]
+		var dt: float = float(spec[1])
+		var at_step: int = int(spec[2])
+		var sec: float = float(spec[3])
+		var map := BlkMap.new()
+		holder.add_child(map)
+		var e2: Node = _blk_enemy(holder, map)
+		var h2: Node = _blk_hero(holder, map, 3)
+		var st2: Dictionary = {"e": e2, "h": h2, "at": at_step, "sec": sec, "unblocked": 0}
+		var bf := func(i: int) -> void:
+			if i == int(st2.at):
+				st2.e.apply_stun(float(st2.sec))
+			if st2.e.is_stunned() and st2.e._blocker != st2.h:
+				st2.unblocked = int(st2.unblocked) + 1
+		var total: float = (3.0 if kind == "ref" else float(at_step) * dt + sec + 2.2)
+		var r2: Dictionary = _stn_steps(e2, dt, int(ceil(total / dt)), 1, bf)
+		var runs2: Array = _stn_runs(r2.stunned)
+		var lost2: float = 1000000.0 - h2.current_hp
+		var row2: Dictionary = {"atk": r2.atk.slice(0, 6), "runs": runs2, "moved": r2.moved_in_stun.size(), "fight_in_stun": r2.fight_in_stun.size(),
+			"unblocked": st2.unblocked, "multi": r2.multi, "lost_ok": absf(lost2 - float(r2.atk.size()) * BLK_DMG) < 0.001}
+		var ok: bool = row2.lost_ok and not r2.multi and r2.moved_in_stun.is_empty() and r2.fight_in_stun.is_empty() and int(st2.unblocked) == 0 \
+			and not r2.atk.is_empty() and int(r2.atk[0]) == 2
+		if kind == "ref":
+			ref_atk = r2.atk.duplicate()
+			ok = ok and r2.atk.size() >= 3 and runs2.is_empty()
+		else:
+			var in_stun: Array = r2.atk.filter(func(x): return r2.stunned.has(x))
+			var len_ok: bool = runs2.size() == 1 and int(runs2[0][0]) == at_step and _stn_len_ok(float(r2.stunned.size()) * dt, sec, dt)
+			row2["len"] = snappedf(float(r2.stunned.size()) * dt, 0.000001)
+			ok = ok and len_ok and in_stun.is_empty()
+			if kind == "c":
+				ok = ok and r2.atk.slice(0, 3) == ref_atk.slice(0, 3)
+			elif len_ok:
+				var end: int = int(runs2[0][1])
+				var after: Array = r2.atk.filter(func(x): return int(x) > end)
+				var before: Array = r2.atk.filter(func(x): return int(x) < at_step)
+				row2["before"] = before
+				row2["after"] = after.slice(0, 3)
+				ok = ok and before == [2] and after.size() >= 2 and int(after[0]) == end + 1 \
+					and float(int(after[1]) - int(after[0])) * dt >= 1.0 - 1e-6 and float(int(after[1]) - int(after[0])) * dt <= 1.0 + dt + 1e-6
+		d2[kind] = row2
+		ok2 = ok2 and ok
+	_check("暈眩-2 被擋住的敵人（固定步進）：冷卻快好時暈眩 0.5 秒（1 倍／2 倍／部署慢速）：暈眩中不攻擊、仍被同一位武將擋住、不移動、不顯示攻擊圖片，結束的下一步打一擊、再下一擊間隔 1 秒；暈眩 3 秒恢復後只打一擊（不補打）；剛打完就暈眩時攻擊的步數和沒有暈眩時相同（冷卻照常倒數）；一步最多一擊、每擊 13.333",
+		ok2, d2)
+
+	# 暈眩-2d：被擋住又暈眩時，阻擋的武將陣亡（固定步進，每秒 60 步，敵人速度 60 像素／秒）：第 20 步之前暈眩 0.5 秒、第 25 步之前武將陣亡：
+	# 下一步不再被擋住，但到暈眩結束才開始走（暈眩中不動），之後每步前進 1 像素
+	var map2d := BlkMap.new()
+	holder.add_child(map2d)
+	var e2d: Node = load("res://entities/enemy/Enemy.gd").new()
+	holder.add_child(e2d)
+	e2d.set_physics_process(false)
+	e2d.setup({"enemy_id": "blk", "hp": 99999.0, "speed": 60.0}, [Vector2(0.5 * map2d.tile, 0.0), Vector2(12.5 * map2d.tile, 0.0)])
+	e2d.position = Vector2(3.5 * map2d.tile, 0.0)
+	e2d._game_map = map2d
+	var h2d: Node = _blk_hero(holder, map2d, 3)
+	var st2d: Dictionary = {"e": e2d, "h": h2d, "blk_after_kill": 0}
+	var bf2d := func(i: int) -> void:
+		if i == 20:
+			st2d.e.apply_stun(0.5)
+		elif i == 25:
+			st2d.h.take_damage(1.0e12)
+		elif i > 26 and st2d.e._blocker != null:
+			st2d.blk_after_kill = int(st2d.blk_after_kill) + 1
+	var r2d: Dictionary = _stn_steps(e2d, 1.0 / 60.0, 70, 1, bf2d)
+	var runs2d: Array = _stn_runs(r2d.stunned)
+	var moves2d: Array = r2d.dx.filter(func(x): return x > 0.0)
+	var d2d: Dictionary = {"runs": runs2d, "moved_in_stun": r2d.moved_in_stun, "blk_after_kill": st2d.blk_after_kill, "moves": moves2d.size(),
+		"move_step": snappedf(moves2d[0], 0.000001) if not moves2d.is_empty() else -1.0}
+	_check("暈眩-2d 被擋住又暈眩時阻擋的武將陣亡：下一步不再被擋住，但到暈眩結束（0.5 秒，差一步以內）才開始走、暈眩中不動，之後每步照原速前進",
+		runs2d.size() == 1 and int(runs2d[0][0]) == 20 and _stn_len_ok(float(r2d.stunned.size()) / 60.0, 0.5, 1.0 / 60.0) and r2d.moved_in_stun.is_empty()
+			and int(st2d.blk_after_kill) == 0 and moves2d.size() >= 15 and _stn_all(moves2d, 1.0), d2d)
+
+	# 暈眩-3：刷新與到期（固定步進每秒 60 步）：暈眩 0.5 秒、過 0.2 秒（剩 0.3）後再 0.5 → 剩 0.5（不是相加的 0.8）；再 0.2 → 仍是 0.5（不縮短）；
+	# 再 1.0 → 1.0（取較長）；無效的時間不算；生效 4 次、只有一段暈眩紀錄；最後一次之後 1 秒（差一步以內）結束、恢復原速；結束後再暈眩是新的一段
+	var e3: Node = _stn_enemy(holder, 60.0)
+	e3.apply_stun(0.5)
+	_stn_steps(e3, 1.0 / 60.0, 12)
+	var left3: Array = [snappedf(e3._stun_left, 0.000001)]
+	for v in [0.5, 0.2, 1.0]:
+		e3.apply_stun(v)
+		left3.append(snappedf(e3._stun_left, 0.000001))
+	for v in [0.0, -1.0, NAN]:
+		e3.apply_stun(v)
+	left3.append(snappedf(e3._stun_left, 0.000001))
+	var count3: int = e3.stun_count
+	var r3: Dictionary = _stn_steps(e3, 1.0 / 60.0, 80, 13)
+	var frozen3: float = float(r3.stunned.size()) / 60.0
+	var log3: int = e3.stun_log.size()
+	e3.apply_stun(0.5)
+	var d3: Dictionary = {"left": left3, "count": count3, "frozen": snappedf(frozen3, 0.000001), "moved_in_stun": r3.moved_in_stun.size(),
+		"after": r3.dx.slice(0, 3), "log_before/after": [log3, e3.stun_log.size()]}
+	_check("暈眩-3 刷新與到期：剩 0.3 秒時再 0.5 → 0.5（不相加）、再 0.2 → 仍是 0.5（不縮短）、再 1.0 → 1.0；無效的時間不算；生效 4 次、只有一段紀錄；最後一次之後 1 秒（差一步以內）結束、恢復原速；結束後再暈眩是新的一段",
+		left3 == [0.3, 0.5, 0.5, 1.0, 1.0] and count3 == 4 and _stn_len_ok(frozen3, 1.0, 1.0 / 60.0) and r3.moved_in_stun.is_empty() and _stn_all(r3.dx, 1.0)
+			and log3 == 1 and e3.stun_log.size() == 2, d3)
+
+	# 暈眩-4：暈眩中其他狀態照常計時（固定步進每秒 60 步，暈眩 1 秒）：
+	# 減速：0.3 秒的來源（0.5）在暈眩中到期、5 秒的來源（0.8）還在；文士塔的疊加減速（0.4 秒）到期歸零；恢復後每步前進 60 × 0.8 ÷ 60（當下應有的減速速度）；
+	# 灼燒：每 0.2 秒 10 點、3 跳，0.7 秒時已在暈眩中扣完 30；
+	# 灼燒致死：血量 25 的敵人在暈眩中被第 3 跳（0.6 秒，差一步以內）打倒，死亡信號只發一次，之後再處理也不會重複
+	var e4: Node = _stn_enemy(holder, 60.0)
+	e4.apply_slow_from("stn_short", 0.5, 0.3)
+	e4.apply_slow_from("stn_long", 0.8, 5.0)
+	e4.apply_stackable_slow(0.3, 0.4)
+	e4.apply_burn(10.0, 3, 0.2)
+	e4.apply_stun(1.0)
+	var hp4: float = e4.current_hp
+	var r4a: Dictionary = _stn_steps(e4, 1.0 / 60.0, 42)
+	var mid4: Dictionary = {"stunned": e4.is_stunned(), "sources": e4.slow_sources_state().keys(), "mult": snappedf(e4.speed_mult, 0.0001),
+		"stack": e4._stack_slow_amount, "burn_lost": snappedf(hp4 - e4.current_hp, 0.0001), "burn_left": e4._burn_ticks_left}
+	var r4b: Dictionary = _stn_steps(e4, 1.0 / 60.0, 40, 43)
+	var frozen4: float = float(r4a.stunned.size() + r4b.stunned.size()) / 60.0
+	var e4k: Node = _stn_enemy(holder, 60.0, {"hp": 25.0})
+	var died4: Array = [0, -1]
+	var on_died4 := func(_x) -> void:
+		died4[0] = int(died4[0]) + 1
+	e4k.died.connect(on_died4)
+	e4k.apply_burn(10.0, 3, 0.2)
+	e4k.apply_stun(1.0)
+	for i in range(1, 61):
+		e4k._physics_process(1.0 / 60.0)
+		if e4k.is_dead() and int(died4[1]) < 0:
+			died4[1] = i
+	var d4: Dictionary = {"mid": mid4, "frozen": snappedf(frozen4, 0.000001), "moved_in_stun": r4a.moved_in_stun.size() + r4b.moved_in_stun.size(),
+		"after": r4b.dx.slice(0, 3).map(func(x): return snappedf(x, 0.000001)), "burn_kill": {"died": died4[0], "step": died4[1]}}
+	_check("暈眩-4 暈眩中其他狀態照常計時：0.3 秒的減速來源到期、5 秒的（0.8）還在，文士塔的疊加減速到期歸零，灼燒 3 跳在暈眩中扣完 30；暈眩 1 秒後恢復成當下應有的速度（每步 0.8 像素）；灼燒在暈眩中致死（第 36 步，差一步以內）只發一次死亡信號",
+		mid4.stunned and mid4.sources == ["stn_long"] and mid4.mult == 0.8 and mid4.stack == 0.0 and mid4.burn_lost == 30.0 and mid4.burn_left == 0
+			and _stn_len_ok(frozen4, 1.0, 1.0 / 60.0) and int(d4.moved_in_stun) == 0 and _stn_all(r4b.dx, 0.8)
+			and died4[0] == 1 and int(died4[1]) >= 36 and int(died4[1]) <= 37, d4)
+
+	# 暈眩-5：免疫減速的敵人（trait immune_slow，固定步進每秒 60 步）：倍率減速與文士塔的疊加減速都不套用，但暈眩照樣生效：
+	# 0.5 秒不動（差一步以內），恢復後照原速（每步 1 像素）前進
+	var e5: Node = _stn_enemy(holder, 60.0, {"trait": "immune_slow"})
+	e5.apply_slow_from("stn_s", 0.5, 5.0)
+	e5.apply_stackable_slow(0.3, 5.0)
+	var applied5: bool = e5.apply_stun(0.5)
+	var r5: Dictionary = _stn_steps(e5, 1.0 / 60.0, 45)
+	var d5: Dictionary = {"immune": e5.immune_slow, "applied": applied5, "mult": e5.speed_mult, "sources": e5._slow_sources.size(), "stack": e5._stack_slow_amount,
+		"frozen": snappedf(float(r5.stunned.size()) / 60.0, 0.000001), "moved_in_stun": r5.moved_in_stun.size(), "after": r5.dx.slice(0, 3)}
+	_check("暈眩-5 免疫減速的敵人：倍率減速與疊加減速都不套用（倍率 1、沒有來源），但暈眩照樣生效：0.5 秒不動（差一步以內），恢復後照原速前進",
+		e5.immune_slow and applied5 and e5.speed_mult == 1.0 and e5._slow_sources.is_empty() and e5._stack_slow_amount == 0.0
+			and _stn_len_ok(float(r5.stunned.size()) / 60.0, 0.5, 1.0 / 60.0) and r5.moved_in_stun.is_empty() and _stn_all(r5.dx, 1.0), d5)
+	holder.queue_free()
+
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 暈眩-6：實際引擎，移動中的敵人（每秒 20 像素、血量很多，放在 (4,5)）；張飛在建築格 (5,4)、射程 2.5 格、攻擊間隔 1.5 秒、攻擊力 100：
+	# 每次命中敵人扣 100 並暈眩；暈眩中每一步都沒有移動，暈眩外每一步都照原速前進；每段暈眩的遊戲時間（物理時鐘）介於 0.5 與 0.5 ＋ 一步之間；
+	# 1 倍記錄 2 段、切到 2 倍記錄 1 段、暈眩開始時打開部署選單（0.1 倍）記錄 1 段，最後一段在暈眩中手動暫停 1 秒（牆鐘）：
+	# 暫停中剩餘時間與位置不變、繼續後這一段總長仍是 0.5；張飛讓敵人暈眩的次數＝敵人的生效次數＝暈眩紀錄的段數＝命中次數（沒有刷新）
+	var d6: Dictionary = {}
+	var ok6: bool = false
+	_stn_load(rec, "stn-6", [[_grp("stn_walk", 1, 0.02)]], [_stn_zf()], {"zhang_fei": Vector2i(5, 4)})
+	var e6: Node = await _stn_start(Vector2i(4, 5))
+	var zf6: Node = _fly_hero("zhang_fei")
+	if e6 != null and zf6 != null:
+		var st6: Dictionary = {"done": 0, "open": false, "phase": 0, "menu": {}, "pause": {}, "rec": rec, "e": e6}
+		var each6 := func(row: Dictionary) -> void:
+			_stn_count(st6, row)
+			var ph: int = int(st6.phase)
+			if ph == 0 and int(st6.done) >= 2:
+				_r19_speed(st6.rec, 2.0)
+				st6.phase = 1
+			elif ph == 1 and int(st6.done) >= 3:
+				st6.phase = 2
+			elif ph == 2 and not row.st and row.after:
+				st6.menu = _r19_open(st6.rec, 2)
+				st6.phase = 3
+			elif ph == 3 and int(st6.done) >= 4:
+				_r19_close(st6.rec, st6.menu)
+				_r19_speed(st6.rec, 1.0)
+				st6.phase = 4
+			elif ph == 4 and not row.st and row.after:
+				st6.pause = {"left": st6.e._stun_left, "x": st6.e.global_position.x, "wall": Time.get_ticks_msec(), "reply": _r20_pause(st6.rec, true)}
+				st6.phase = 5
+			elif ph == 5 and Time.get_ticks_msec() - int(st6.pause.wall) >= 1000:
+				st6.pause["left2"] = st6.e._stun_left
+				st6.pause["x2"] = st6.e.global_position.x
+				st6.pause["frozen"] = _r20_frozen()
+				_r20_pause(st6.rec, false)
+				st6.phase = 6
+		var rows6: Array = await _stn_track(e6, null, 30.0, func(_r): return int(st6.phase) == 6 and int(st6.done) >= 5, each6)
+		var segs6: Array = _stn_segments(rows6).filter(func(s): return s.complete)
+		var hits6: Array = rows6.filter(func(r): return float(r.hit) > 0.0).map(func(r): return r.hit)
+		var lens_ok: bool = segs6.size() >= 5
+		for s in segs6:
+			lens_ok = lens_ok and _stn_len_ok(float(s.dur), 0.5, float(s.maxdt)) and int(s.moved) == 0
+		var p6: Dictionary = st6.pause
+		d6 = {"segments": _stn_seg_brief(segs6), "bad_moves": _stn_bad_moves(rows6, STN_SPEED), "hits": hits6.slice(0, 8),
+			"counts": [zf6.stun_count, e6.stun_count, e6.stun_log.size(), roundi((e6.max_hp - e6.current_hp) / 100.0)], "phase": st6.phase,
+			"pause": {"left": [p6.get("left"), p6.get("left2")], "x_same": p6.get("x") == p6.get("x2"), "frozen": p6.get("frozen"), "reply": p6.get("reply")},
+			"menu": st6.menu, "ts_now": Engine.time_scale}
+		ok6 = lens_ok and int(d6.bad_moves) == 0 and _stn_all(hits6, 100.0) and zf6.stun_count >= 5 and zf6.stun_count == e6.stun_count             and e6.stun_count == e6.stun_log.size() and e6.stun_count == roundi((e6.max_hp - e6.current_hp) / 100.0)             and float(segs6[2].ts_min) >= 1.9 and int(segs6[3].steps) >= 250 and float(segs6[3].ts_min) <= 0.11 and int(segs6[4].zero) >= 20             and p6.get("left") == p6.get("left2") and p6.get("x") == p6.get("x2") and p6.get("frozen") == true and not st6.menu.is_empty() and is_equal_approx(Engine.time_scale, 1.0)
+	_check("暈眩-6 實際引擎（移動中的敵人）：張飛每次命中扣 100 並暈眩；暈眩中每一步都不動、暈眩外照原速前進；1 倍 2 段、2 倍 1 段、部署慢速 1 段、手動暫停 1 秒的 1 段，每段遊戲時間都介於 0.5 與 0.5 ＋ 一步之間；暫停中剩餘時間與位置不變；張飛的暈眩次數＝敵人的生效次數＝紀錄段數＝命中次數",
+		ok6, d6)
+
+	# 暈眩-7：實際引擎，被擋住的敵人：張飛在道路 (4,5)（射程 1.5 格、攻擊間隔 1.5 秒），敵人（攻擊力 100）放在張飛的格子裡（中心左邊 0.4 格），第一步就被擋下；記錄 9 秒遊戲時間：
+	# 暈眩中的每一步都沒有攻擊、張飛沒有扣血、沒有移動、不顯示攻擊圖片；被擋下之後一直是擋住的狀態（暈眩不解除阻擋）；
+	# 暈眩外照常攻擊，每擊扣 66.667、一步最多一擊；相鄰兩擊至少隔 1 秒減一步（不補打）；每兩段暈眩之間都有攻擊（恢復後照常攻擊）
+	var d7: Dictionary = {}
+	var ok7: bool = false
+	_stn_load(rec, "stn-7", [[_grp("stn_walk", 1, 0.02)]], [_stn_zf()], {"zhang_fei": Vector2i(4, 5)}, 1.5)
+	var e7: Node = await _stn_start(Vector2i(4, 5), Vector2(-0.4, 0.0))
+	var zf7: Node = _fly_hero("zhang_fei")
+	if e7 != null and zf7 != null:
+		var rows7: Array = await _stn_track(e7, zf7, 9.0, func(_r): return false)
+		var first_blk: int = -1
+		for i in range(rows7.size()):
+			if rows7[i].blk:
+				first_blk = i
+				break
+		var segs7: Array = _stn_segments(rows7).filter(func(s): return s.complete)
+		var atk_idx: Array = []
+		var bad7: Array = []
+		var maxdt: float = 0.0
+		for i in range(rows7.size()):
+			var r: Dictionary = rows7[i]
+			maxdt = maxf(maxdt, float(r.dt))
+			if r.st and (int(r.atk) != 0 or float(r.lost) != 0.0 or absf(float(r.dx)) > 1e-9):
+				bad7.append({"i": i, "why": "stunned", "row": r})
+			if r.after and r.fight:
+				bad7.append({"i": i, "why": "fight", "row": r})
+			if first_blk >= 0 and i >= first_blk and not r.blk:
+				bad7.append({"i": i, "why": "unblocked", "row": r})
+			if int(r.atk) > 0:
+				atk_idx.append(i)
+				if int(r.atk) > 1 or absf(float(r.lost) - STN_BLOCK_DMG) > 0.001:
+					bad7.append({"i": i, "why": "hit", "row": r})
+			elif float(r.lost) != 0.0:
+				bad7.append({"i": i, "why": "lost", "row": r})
+		var gaps: Array = []
+		for k in range(1, atk_idx.size()):
+			gaps.append(snappedf(float(rows7[atk_idx[k]].t) - float(rows7[atk_idx[k - 1]].t), 0.0001))
+		var windows: int = 0
+		var windows_ok: int = 0
+		var recovery: int = 0
+		for k in range(segs7.size() - 1):
+			if atk_idx.is_empty() or int(segs7[k].from) < int(atk_idx[0]):
+				continue
+			windows += 1
+			var a: int = int(segs7[k].to)
+			var b: int = int(segs7[k + 1].from)
+			if atk_idx.any(func(x): return x > a and x < b):
+				windows_ok += 1
+			if atk_idx.has(a + 1):
+				recovery += 1
+		d7 = {"first_blk": first_blk, "segments": _stn_seg_brief(segs7), "attacks": atk_idx.size(), "gaps": gaps, "windows": [windows_ok, windows], "recovery_immediate": recovery,
+			"bad": bad7.slice(0, 5), "zf_stun": zf7.stun_count}
+		var lens7: bool = segs7.size() >= 3
+		for s in segs7:
+			lens7 = lens7 and _stn_len_ok(float(s.dur), 0.5, float(s.maxdt))
+		ok7 = first_blk >= 0 and bad7.is_empty() and lens7 and atk_idx.size() >= 3 and gaps.all(func(g): return g >= 1.0 - maxdt - 1e-6)             and windows >= 2 and windows_ok == windows
+	_check("暈眩-7 實際引擎（被擋住的敵人）：暈眩中不攻擊、張飛不扣血、不移動、不顯示攻擊圖片，仍被擋住；暈眩外照常攻擊（每擊 66.667、一步最多一擊）；相鄰兩擊至少隔 1 秒減一步（不補打）；每兩段暈眩之間都有攻擊；每段暈眩 0.5 秒（差一步以內）",
+		ok7, d7)
+
+	# 暈眩-8：不觸發與不受影響（實際引擎，張飛射程 2.5 格）：
+	# a 普攻致死：血量 80 的敵人被一擊打倒，張飛的暈眩次數 0、擊殺 1、只結算一次；
+	# b 空目標：唯一的敵人在出生點（射程外）1.5 秒遊戲時間，張飛沒有攻擊、暈眩次數 0、攻擊冷卻待命在 0；
+	# c 飛行：不會移動的飛行兵放在 (4,5)（射程內）2 秒：張飛（步兵）打不到它：血量不變、沒有暈眩、暈眩次數 0；
+	# d 免疫減速：步兵塔 (4,6) 的緩速光環範圍內、免疫減速的慢速兵照樣暈眩（兩段，暈眩中不動、各 0.5 秒），但沒有任何減速來源、倍率 1；
+	# e 技能 id 不認得（stun_x）：照樣命中扣 100，但不暈眩
+	var d8: Dictionary = {}
+	_stn_load(rec, "stn-8a", [[_grp("stn_soft", 1, 0.02)]], [_stn_zf()], {"zhang_fei": Vector2i(5, 4)})
+	var ended8: int = battle_ended_count
+	await _stn_start(Vector2i(4, 5))
+	await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 5.0)
+	var zf8a: Node = _fly_hero("zhang_fei")
+	d8["a"] = [zf8a.stun_count if zf8a != null else -1, _bm().kills, _bm().game_state == BattleManager.GameState.RESULT, battle_ended_count - ended8]
+	_stn_load(rec, "stn-8b", [[_grp("stn_walk", 1, 0.02)]], [_stn_zf()], {"zhang_fei": Vector2i(10, 4)})
+	_bm().player_start_battle()
+	await _wait_until(func(): return _first_enemy() != null, 5.0)
+	var e8b: Node = _first_enemy()
+	var g8: float = _pt()
+	await _wait_until(func(): return _pt() - g8 >= 1.5, 8.0)
+	var zf8b: Node = _fly_hero("zhang_fei")
+	d8["b"] = [zf8b.stun_count if zf8b != null else -1, zf8b._atk_timer if zf8b != null else -1.0, e8b.stun_count if is_instance_valid(e8b) else -1,
+		e8b.current_hp == e8b.max_hp if is_instance_valid(e8b) else false]
+	_stn_load(rec, "stn-8c", [[_grp("stn_fly", 1, 0.02)]], [_stn_zf()], {"zhang_fei": Vector2i(5, 4)})
+	var e8c: Node = await _stn_start(Vector2i(4, 5))
+	var g8c: float = _pt()
+	await _wait_until(func(): return _pt() - g8c >= 2.0, 8.0)
+	var zf8c: Node = _fly_hero("zhang_fei")
+	d8["c"] = [e8c.is_flying() if is_instance_valid(e8c) else false, e8c.current_hp == e8c.max_hp if is_instance_valid(e8c) else false,
+		e8c.stun_count if is_instance_valid(e8c) else -1, zf8c.stun_count if zf8c != null else -1, zf8c.can_hit_air if zf8c != null else true]
+	_stn_load(rec, "stn-8d", [[_grp("stn_walk_imm", 1, 0.02)]], [_stn_zf()], {"zhang_fei": Vector2i(5, 4)}, 2.5, [["infantry", Vector2i(4, 6)]])
+	var e8d: Node = await _stn_start(Vector2i(4, 5))
+	var ok8d: bool = false
+	if e8d != null:
+		var sc8: Dictionary = {"done": 0, "open": false}
+		var cnt8 := func(row: Dictionary) -> void:
+			_stn_count(sc8, row)
+		var rows8: Array = await _stn_track(e8d, null, 8.0, func(_r): return int(sc8.done) >= 2, cnt8)
+		var segs8: Array = _stn_segments(rows8).filter(func(s): return s.complete)
+		var lens8: bool = segs8.size() >= 2
+		for s in segs8:
+			lens8 = lens8 and _stn_len_ok(float(s.dur), 0.5, float(s.maxdt)) and int(s.moved) == 0
+		d8["d"] = {"immune": e8d.immune_slow, "segments": _stn_seg_brief(segs8), "mult": e8d.speed_mult, "sources": e8d._slow_sources.size(), "towers": _slw_towers().size(),
+			"bad_moves": _stn_bad_moves(rows8, STN_SPEED)}
+		ok8d = e8d.immune_slow and lens8 and e8d.speed_mult == 1.0 and e8d._slow_sources.is_empty() and _slw_towers().size() == 1 and int(d8.d.bad_moves) == 0
+	_stn_load(rec, "stn-8e", [[_grp("stn_walk", 1, 0.02)]], [_stn_zf({"id": "stun_x", "stun_sec": 0.5})], {"zhang_fei": Vector2i(5, 4)})
+	var e8e: Node = await _stn_start(Vector2i(4, 5))
+	var ok8e: bool = false
+	if e8e != null:
+		var rows8e: Array = await _stn_track(e8e, null, 3.5, func(_r): return false)
+		var hits8e: Array = rows8e.filter(func(r): return float(r.hit) > 0.0).map(func(r): return r.hit)
+		var zf8e: Node = _fly_hero("zhang_fei")
+		d8["e"] = {"hits": hits8e, "stunned_rows": rows8e.filter(func(r): return r.st).size(), "stun_count": e8e.stun_count, "zf_duration": zf8e.stun_duration if zf8e != null else -1.0}
+		ok8e = hits8e.size() >= 2 and _stn_all(hits8e, 100.0) and int(d8.e.stunned_rows) == 0 and e8e.stun_count == 0 and zf8e != null and zf8e.stun_duration == 0.0
+	_check("暈眩-8 不觸發與不受影響：普攻致死不暈眩（擊殺 1、結算一次）；射程內沒有敵人時不攻擊、冷卻待命在 0；步兵張飛打不到飛行兵（不扣血、不暈眩）；免疫減速的敵人照樣暈眩（每段 0.5 秒、暈眩中不動），步兵塔的緩速光環仍然無效；不認得的技能 id 照樣扣 100 但不暈眩",
+		d8.a == [0, 1, true, 1] and d8.b == [0, 0.0, 0, true] and d8.c == [true, true, 0, 0, false] and ok8d and ok8e, d8)
+
+	# 暈眩-9：施加者離開與清理（實際引擎）：
+	# a 移動中的敵人被張飛暈眩後，立刻把張飛移出隊伍（送出和隊伍視窗相同的 update_team）：這一段暈眩照樣到 0.5 秒（差一步以內）才結束、之後照原速移動、不再暈眩
+	#   （放到射程內的當下可能已被打過一下，那一段開始時間沒有記錄到，不列入長度檢查）；
+	# b 被擋住的敵人（張飛在道路 (4,5)）在暈眩中、張飛陣亡：下一步不再被擋住，但到暈眩結束（0.5 秒）才開始走（暈眩中不動），之後照原速前進；
+	# c 暈眩中的敵人被打倒：擊殺 1、只結算一次；
+	# d 新的一場：備戰時上一場的敵人都不在了，開戰後新的敵人沒有暈眩（剩餘 0、次數 0）
+	var d9: Dictionary = {}
+	var ok9a: bool = false
+	_stn_load(rec, "stn-9a", [[_grp("stn_walk", 1, 0.02)]], [_stn_zf()], {"zhang_fei": Vector2i(5, 4)})
+	var e9a: Node = await _stn_start(Vector2i(4, 5))
+	if e9a != null:
+		var st9a: Dictionary = {"done": 0, "open": false, "removed": false, "rec": rec, "t": -1.0}
+		var each9a := func(row: Dictionary) -> void:
+			_stn_count(st9a, row)
+			if not st9a.removed and not row.st and row.after:
+				_r19_js(st9a.rec, {"type": "update_team", "team_list": []})
+				st9a.removed = true
+			if int(st9a.done) >= 1 and float(st9a.t) < 0.0:
+				st9a.t = _pt()
+		var rows9a: Array = await _stn_track(e9a, null, 8.0, func(_r): return float(st9a.t) >= 0.0 and _pt() - float(st9a.t) >= 1.2, each9a)
+		var segs9a: Array = _stn_segments(rows9a)
+		var done9a: Array = segs9a.filter(func(s): return s.complete)
+		var tail: Array = rows9a.slice(int(done9a[0].to) + 1) if not done9a.is_empty() else []
+		d9["a"] = {"segments": _stn_seg_brief(segs9a), "zf_gone": _fly_hero("zhang_fei") == null, "stun_count": e9a.stun_count, "tail_rows": tail.size(),
+			"tail_bad_moves": _stn_bad_moves(tail, STN_SPEED), "tail_moving": tail.filter(func(r): return float(r.dx) > 0.0).size()}
+		ok9a = done9a.size() == 1 and bool(segs9a.back().complete) and _stn_len_ok(float(done9a[0].dur), 0.5, float(done9a[0].maxdt)) and int(done9a[0].moved) == 0             and _fly_hero("zhang_fei") == null and e9a.stun_count == segs9a.size() and tail.size() >= 30 and int(d9.a.tail_bad_moves) == 0 and int(d9.a.tail_moving) >= 30
+	var ok9b: bool = false
+	_stn_load(rec, "stn-9b", [[_grp("stn_walk", 1, 0.02)]], [_stn_zf()], {"zhang_fei": Vector2i(4, 5)}, 1.5)
+	var e9b: Node = await _stn_start(Vector2i(3, 5))
+	if e9b != null:
+		var st9b: Dictionary = {"killed": -1, "t": -1.0, "done": 0, "open": false}
+		var each9b := func(row: Dictionary) -> void:
+			_stn_count(st9b, row)
+			if int(st9b.killed) < 0 and row.after and row.blk:
+				var z: Node = _fly_hero("zhang_fei")
+				if z != null:
+					z.take_damage(1.0e12)
+					st9b.killed = int(st9b.done)
+			if int(st9b.killed) >= 0 and int(st9b.done) > int(st9b.killed) and float(st9b.t) < 0.0:
+				st9b.t = _pt()
+		var rows9b: Array = await _stn_track(e9b, null, 12.0, func(_r): return float(st9b.t) >= 0.0 and _pt() - float(st9b.t) >= 1.2, each9b)
+		var segs9b: Array = _stn_segments(rows9b)
+		var last9b: Dictionary = segs9b.back() if not segs9b.is_empty() else {}
+		var tail9b: Array = rows9b.slice(int(last9b.get("to", rows9b.size())) + 1)
+		var in_seg: Array = rows9b.slice(int(last9b.get("from", 0)), int(last9b.get("to", -1)) + 1)
+		d9["b"] = {"segments": _stn_seg_brief(segs9b), "zf_gone": _fly_hero("zhang_fei") == null, "blk_in_seg": in_seg.map(func(r): return r.blk).slice(0, 3),
+			"tail_rows": tail9b.size(), "tail_blk": tail9b.filter(func(r): return r.blk).size(), "tail_bad_moves": _stn_bad_moves(tail9b, STN_SPEED),
+			"tail_moving": tail9b.filter(func(r): return float(r.dx) > 0.0).size()}
+		ok9b = not last9b.is_empty() and bool(last9b.complete) and _stn_len_ok(float(last9b.dur), 0.5, float(last9b.maxdt)) and int(last9b.moved) == 0             and in_seg.size() >= 2 and not in_seg[1].blk and _fly_hero("zhang_fei") == null and tail9b.size() >= 30 and int(d9.b.tail_blk) == 0             and int(d9.b.tail_bad_moves) == 0 and int(d9.b.tail_moving) >= 30
+	_stn_load(rec, "stn-9c", [[_grp("stn_walk", 1, 0.02)]], [_stn_zf()], {"zhang_fei": Vector2i(5, 4)})
+	var ended9: int = battle_ended_count
+	var e9c: Node = await _stn_start(Vector2i(4, 5))
+	await _wait_until(func(): return is_instance_valid(e9c) and e9c.is_stunned(), 5.0)
+	var was9c: bool = is_instance_valid(e9c) and e9c.is_stunned()
+	if is_instance_valid(e9c):
+		e9c.take_damage(1.0e9)
+	await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 5.0)
+	await _wait(0.3)
+	d9["c"] = [was9c, _bm().kills, battle_ended_count - ended9, _bm().game_state == BattleManager.GameState.RESULT]
+	_stn_load(rec, "stn-9d", [[_grp("stn_walk", 1, 0.02)]], [_stn_zf()], {"zhang_fei": Vector2i(10, 4)})
+	await _def_frames()
+	var prep9: bool = _first_enemy() == null
+	_bm().player_start_battle()
+	await _wait_until(func(): return _first_enemy() != null, 5.0)
+	var e9d: Node = _first_enemy()
+	d9["d"] = [prep9, e9d._stun_left if e9d != null else -1.0, e9d.stun_count if e9d != null else -1, e9d.stun_log.size() if e9d != null else -1]
+	_check("暈眩-9 施加者離開與清理：暈眩後張飛被移出隊伍，這一段仍到 0.5 秒才結束、之後照原速移動且不再暈眩；被擋住又暈眩時張飛陣亡，下一步不再被擋住、到暈眩結束才走、之後照原速；暈眩中的敵人被打倒只擊殺與結算一次；新的一場沒有殘留的敵人、新的敵人沒有暈眩",
+		ok9a and ok9b and d9.c == [true, 1, 1, true] and d9.d == [true, 0.0, 0, 0], d9)
 
 	rec.payload_received.disconnect(main._on_payload_received)
 	main.web_bridge = original

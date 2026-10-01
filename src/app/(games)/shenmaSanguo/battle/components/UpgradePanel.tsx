@@ -183,6 +183,16 @@ export default function UpgradePanel({
           )}
         </div>
 
+        {/* 生命值與防禦是 Godot 在選取當下送來的快照：面板開著時不會跟著戰況更新（舊版遊戲沒有送防禦時不顯示） */}
+        {typeof def === "number" && (
+          <div
+            className={styles.snapshotNote}
+            data-testid="unit-panel-snapshot-note"
+          >
+            生命值與防禦是選取時的數值，重新點選武將可更新
+          </div>
+        )}
+
         {defBoosted && (
           <div className={styles.defAuraNote} data-testid="unit-panel-def-note">
             防禦光環：戰場上的防禦是 {defEffective?.toFixed(0)}

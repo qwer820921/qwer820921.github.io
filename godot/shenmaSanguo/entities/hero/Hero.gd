@@ -5,6 +5,7 @@
 ## BUILD 上：攻擊最近敵人（不阻擋）
 ## 對空：弓兵（archer）、法師（mage）可以攻擊地面與飛行敵人；步兵、騎兵、砲兵與不認得的職業只打地面
 ## 防禦光環（劉備）：範圍內其他武將受傷時用提高後的防禦計算（見 def_aura_mult、effective_def），不改 def_stat
+## 暈眩（張飛）：普通攻擊命中後目標還活著時讓它暈眩（見 stun_duration；暈眩的狀態記在敵人身上，Enemy.apply_stun）
 
 class_name Hero
 extends Node2D
@@ -124,6 +125,12 @@ var def_bonus_mult: float = 1.0
 var _def_sources: Dictionary = {}
 ## 每一幀重新套用的防禦加成的有效期：施加者每一幀都會刷新；施加者停止處理又沒有撤除時，最多再維持這麼久
 const DEF_REFRESH_TTL: float = 0.5
+## 暈眩（stun，張飛）：每次普通攻擊命中、而且目標被這一擊打過後還活著時，目標暈眩 stun_duration 秒（Enemy.apply_stun：取較長的剩餘時間，不累加）。
+## 普通攻擊的傷害、攻擊間隔與選目標都不變（打不到的敵人照樣打不到）；打倒目標的那一擊、沒有目標時都不觸發；灼燒等其他傷害不觸發。
+## stun_duration 0 代表沒有這個技能；時間不是正的有限數字時不啟用
+var stun_duration: float = 0.0
+## 測試用唯讀統計（debug_snapshot）：這位武將讓敵人暈眩（包括刷新）的次數
+var stun_count: int = 0
 ## BattleManager：記錄這一場哪些武將已用過首擊加倍（記在這裡而不是武將節點，移位、重新放置都不會重置）
 var _battle_mgr: Node     = null
 
@@ -223,6 +230,7 @@ func _read_skill(state: Dictionary) -> void:
 	dodge_chance = 0.0
 	slow_aura_mult = 1.0
 	def_aura_mult = 1.0
+	stun_duration = 0.0
 	var skill = state.get("skill", null)
 	if not (skill is Dictionary):
 		return
@@ -263,6 +271,11 @@ func _read_skill(state: Dictionary) -> void:
 			var d: Variant = skill.get("def_mult")
 			if (d is float or d is int) and is_finite(float(d)) and float(d) > 1.0:
 				def_aura_mult = float(d)
+		"stun":
+			# 時間要是正的有限數字；字串、布林、null、NaN、無限大、0 以下都不啟用（當作普通攻擊）
+			var s: Variant = skill.get("stun_sec")
+			if (s is float or s is int) and is_finite(float(s)) and float(s) > 0.0:
+				stun_duration = float(s)
 
 ## 有效射程（格）＝（基礎射程 + (等級-1) × 射程成長）× 技能倍率。
 ## 每次都從設定重新計算，不在目前的值上再乘：更新隊伍、升級、移位、重新放置都不會疊乘
@@ -321,6 +334,9 @@ func _process(delta: float) -> void:
 	# 火攻：這一擊命中後附加灼燒（快照是這次命中時的攻擊力）；目標被這一擊打倒時不附加
 	if burn_ratio > 0.0 and is_instance_valid(target) and not target.is_dead():
 		target.apply_burn(atk * burn_ratio, burn_ticks, burn_interval)
+	# 暈眩：這一擊命中後目標還活著才附加（被這一擊打倒、正要被移除的不附加）
+	if stun_duration > 0.0 and _enemy_alive(target) and target.apply_stun(stun_duration):
+		stun_count += 1
 	if sweep_ratio > 0.0:
 		_sweep(hit_pos, target, damage * sweep_ratio)
 	_is_attacking = true

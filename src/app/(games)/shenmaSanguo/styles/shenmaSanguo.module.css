@@ -2584,6 +2584,14 @@
 }
 
 /* 部署選單與單位面板在暫停中的說明（只能查看、關閉） */
+/* 武將面板的生命值與防禦是選取當下的數值（不會即時更新）：淡色小字，不和加成說明搶視線 */
+.snapshotNote {
+  margin-bottom: 6px;
+  color: #9ca3af;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
 /* 武將受到防禦光環加成：選取當下的有效防禦（戰場加成，不改存檔）；淺綠色和戰場上的外框一致 */
 .defAuraNote {
   margin-bottom: 8px;

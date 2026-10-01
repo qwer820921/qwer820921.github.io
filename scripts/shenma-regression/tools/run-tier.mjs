@@ -151,7 +151,7 @@ const AREAS = {
     scripts: ["r13-web.js"],
   },
   skills: {
-    what: "武將技能（馬超的首擊加倍、趙雲的閃避、黃忠、周瑜、關羽的減速光環、劉備的防禦光環）：趙雲在兩個入口實際擋路受擊，逐次核對閃避的判定；關羽在兩個入口實際部署，核對光環範圍內地面敵人的速度與免疫、飛行不受影響；劉備在兩個入口實際部署，核對友軍每擊的實際扣血、移出隊伍後恢復與單位面板的防禦（需要 Godot 產物）",
+    what: "武將技能（馬超的首擊加倍、趙雲的閃避、黃忠、周瑜、關羽的減速光環、劉備的防禦光環、張飛的暈眩）：趙雲在兩個入口實際擋路受擊，逐次核對閃避的判定；關羽在兩個入口實際部署，核對光環範圍內地面敵人的速度與免疫、飛行不受影響；劉備在兩個入口實際部署，核對友軍每擊的實際扣血、移出隊伍後恢復與單位面板的防禦；張飛在兩個入口實際部署，核對暈眩區間裡沒有攻擊、暈眩後照常攻擊與劉備的加成（需要 Godot 產物）",
     scripts: [
       "r12-web.js",
       "r14-web.js",
@@ -159,6 +159,7 @@ const AREAS = {
       "skill-slow-aura-web.js",
       "skill-dodge-web.js",
       "skill-def-aura-web.js",
+      "skill-stun-web.js",
     ],
   },
   heroes: {
@@ -270,6 +271,7 @@ const FULL = [
   "wave-reject-exit-web.js",
   "stage-keyboard-web.js",
   "skill-def-aura-web.js",
+  "skill-stun-web.js",
 ];
 
 const [mode, ...rest] = process.argv.slice(2);

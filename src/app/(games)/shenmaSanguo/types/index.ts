@@ -309,6 +309,11 @@ export type HeroSkillPayload =
       id: "def_aura";
       /** 範圍（目前有效射程內）其他友軍武將的防禦倍率（1.2＝防禦提升 20%）；不是大於 1 的有限數字時 Godot 當作沒有這個技能 */
       def_mult: number;
+    }
+  | {
+      id: "stun";
+      /** 每次普通攻擊命中（目標還活著）後的暈眩時間（秒，遊戲時間）；不是正的有限數字時 Godot 當作沒有這個技能 */
+      stun_sec: number;
     };
 
 export interface ExpeditionPayload {

@@ -1,4 +1,4 @@
-// Godot 技能（包括閃避、首擊加倍與防禦光環）、飛行敵人、敵人阻路冷卻、關卡沒有波次的拒絕、敵人的攻擊力與免疫減速測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
+// Godot 技能（包括閃避、首擊加倍、防禦光環與暈眩）、飛行敵人、敵人阻路冷卻、關卡沒有波次的拒絕、敵人的攻擊力與免疫減速測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
 // 對遊戲程式套用一個刻意的錯誤，只跑指定的測試組（SHENMA_TEST_ONLY），確認測試「該失敗時一定失敗」。
 // 用法：GODOT=<Godot 4.6.2 console 執行檔> node scripts/shenma-regression/tools/godot-mutation.mjs <變異名稱|none|list>
 // - none：不改程式，同一組測試必須全部通過、log 也要通過 check-log.mjs 的檢查（確認基準）
@@ -567,6 +567,71 @@ const MUTATIONS = {
     to: "\tvar active: bool = def_aura_mult > 1.0 and not leaving and get_parent() != null\n",
     only: "defaura",
     expect: ["防禦-3 ", "防禦-6 "],
+  },
+  // 張飛的暈眩（SHENMA_TEST_ONLY=stun）
+  "stun-still-attacks": {
+    why: "暈眩只停止移動，被擋住時仍攻擊武將（暈眩的判斷排在攻擊之後）",
+    file: ENEMY,
+    from: "\tif _stun_left > 0.0:\n\t\t_stun_left -= delta\n",
+    to: "\tif _stun_left > 0.0 and _blocker == null:\n\t\t_stun_left -= delta\n",
+    only: "stun",
+    expect: ["暈眩-2 ", "暈眩-7 "],
+  },
+  "stun-immune-slow": {
+    why: "把免疫減速當成免疫暈眩",
+    file: ENEMY,
+    from: "\tif _is_dead or not (is_finite(duration) and duration > 0.0):\n\t\treturn false\n",
+    to: "\tif immune_slow or _is_dead or not (is_finite(duration) and duration > 0.0):\n\t\treturn false\n",
+    only: "stun",
+    expect: ["暈眩-5 ", "暈眩-8 "],
+  },
+  "stun-adds-up": {
+    why: "再次命中時暈眩時間相加（不是取較長的）",
+    file: ENEMY,
+    from: "\t_stun_left = maxf(_stun_left, duration)\n",
+    to: "\t_stun_left += duration\n",
+    only: "stun",
+    expect: ["暈眩-3 "],
+  },
+  "stun-overwrites": {
+    why: "再次命中時直接改成這次的時間（較短的效果縮短了剩餘時間）",
+    file: ENEMY,
+    from: "\t_stun_left = maxf(_stun_left, duration)\n",
+    to: "\t_stun_left = duration\n",
+    only: "stun",
+    expect: ["暈眩-3 "],
+  },
+  "stun-freezes-timers": {
+    why: "暈眩在最前面就提早結束這一步，減速、灼燒的計時跟著停住",
+    file: ENEMY,
+    from: "\t_age += delta\n",
+    to: "\t_age += delta\n\tif _stun_left > 0.0:\n\t\t_stun_left = maxf(0.0, _stun_left - delta)\n\t\t_blocker_atk_timer = maxf(0.0, _blocker_atk_timer - delta)\n\t\treturn\n",
+    only: "stun",
+    expect: ["暈眩-4 "],
+  },
+  "stun-freezes-cooldown": {
+    why: "暈眩中攻擊冷卻不倒數（恢復後延後攻擊）",
+    file: ENEMY,
+    from: "\t\t_stun_left -= delta\n\t\t_blocker_atk_timer = maxf(0.0, _blocker_atk_timer - delta)\n",
+    to: "\t\t_stun_left -= delta\n",
+    only: "stun",
+    expect: ["暈眩-2 "],
+  },
+  "stun-shows-attack-anim": {
+    why: "暈眩中仍顯示攻擊阻路武將的圖片",
+    file: ENEMY,
+    from: "\treturn _blocker != null and not is_stunned()\n",
+    to: "\treturn _blocker != null\n",
+    only: "stun",
+    expect: ["暈眩-2 ", "暈眩-7 "],
+  },
+  "stun-reads-invalid": {
+    why: "暈眩時間不檢查（字串、布林、0、負數也啟用）",
+    file: HERO,
+    from: "\t\t\tif (s is float or s is int) and is_finite(float(s)) and float(s) > 0.0:\n",
+    to: "\t\t\tif s != null:\n",
+    only: "stun",
+    expect: ["暈眩-0 "],
   },
 };
 

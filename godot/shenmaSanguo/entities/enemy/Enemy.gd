@@ -72,6 +72,24 @@ var _burn_interval: float   = 1.0
 var _burn_timer: float      = 0.0
 const BURN_COLOR: Color     = Color(1.0, 0.55, 0.05)  # 橘色：灼燒標記與跳傷數字
 
+# ── 暈眩（張飛「暈眩」，Hero.gd 命中時呼叫 apply_stun）───────────────
+## 剩餘的暈眩時間（秒，遊戲時間：_physics_process 的 delta，受時間倍率與部署慢速影響，手動暫停時不前進）；0 表示沒有暈眩。
+## 暈眩中不移動、不攻擊阻路的武將，照常受傷與死亡；減速、灼燒照常計時，攻擊冷卻照常倒數但停在 0（不囤積）。
+## 不是減速：不看 immune_slow，也不改 speed_mult。再次套用時取較長的剩餘時間（刷新、不累加，也不會縮短）。
+## 記在敵人身上：施加的武將移位、被移除、陣亡都不提早解除；敵人死亡、抵達基地或切換關卡時跟著節點一起消失
+var _stun_left: float = 0.0
+## 暈眩的標記顏色（黃色星星，和淺藍色的減速、橘色的灼燒區分）
+const STUN_COLOR: Color = Color(1.0, 0.9, 0.25)
+## 剩餘時間小於這個值就算結束（浮點誤差：0.5 秒在每秒 60 步時正好 30 步，不會因為 0.5 − 30 × (1/60) 留下極小的正數而多停一步）
+const STUN_END_EPS: float = 1e-6
+## 測試用唯讀資訊（debug_snapshot）：生效的暈眩次數（包括刷新）；這個敵人出現後經過的遊戲時間（物理步進的 delta），
+## 以及用這個時間記下的暈眩區間（[開始, 結束]，還在暈眩時結束是 -1）與攻擊阻路武將的時間（各保留最近 STUN_LOG_MAX 筆）
+var stun_count: int = 0
+var _age: float = 0.0
+var stun_log: Array = []
+var attack_log: Array = []
+const STUN_LOG_MAX: int = 40
+
 # ── 武將阻路 ──────────────────────────────────────────────────
 var _game_map: Node        = null
 var _blocker: Node         = null   # 正在阻擋路徑的武將
@@ -164,6 +182,7 @@ func _physics_process(delta: float) -> void:
 
 	# 防止 Web 端 delta 異常導致的「瞬移」
 	delta = min(delta, 0.1)
+	_age += delta
 
 	# 閃爍與狀態計時
 	if _flash_timer > 0.0:
@@ -201,12 +220,29 @@ func _physics_process(delta: float) -> void:
 		_blocker = null
 		_blocked_cell = Vector2i(-1, -1)
 		queue_redraw()  # 回到走路的圖
+
+	# ── 暈眩：這一步不移動、不攻擊（上面的減速、灼燒已照常計時；阻擋的武將失效時也已照常解除）──
+	# 攻擊冷卻照遊戲時間倒數、停在 0，不囤積：恢復後冷卻已到就先打一擊，之後照攻擊間隔。
+	# 開始暈眩後的每一步都算在暈眩裡（包括剩餘時間在這一步歸零的那一步），暈眩的長度以物理步進為單位，最多差一步
+	if _stun_left > 0.0:
+		_stun_left -= delta
+		_blocker_atk_timer = maxf(0.0, _blocker_atk_timer - delta)
+		if _stun_left <= STUN_END_EPS:
+			_stun_left = 0.0
+			if not stun_log.is_empty():
+				stun_log.back()["to"] = _age
+		queue_redraw()  # 星星轉動；結束時移除標記、換回攻擊或走路的圖
+		return
+
 	if _blocker != null:
 		var was_ready: bool = _blocker_atk_timer <= 0.0
 		_blocker_atk_timer -= delta
 		if _blocker_atk_timer <= 0.0:
 			# 被閃避（沒有扣血）也是一次攻擊：照樣用掉冷卻
 			blocker_attacks += 1
+			attack_log.append(_age)
+			if attack_log.size() > STUN_LOG_MAX:
+				attack_log.pop_front()
 			_blocker.take_damage(blocker_atk)
 			# 保留這一步越過零點的零頭；原本就在待命、或零頭長過一個間隔時從這一擊起算完整的間隔
 			var late: float = 0.0 if was_ready else -_blocker_atk_timer
@@ -360,6 +396,27 @@ func apply_burn(damage: float, ticks: int, interval: float) -> void:
 func is_burning() -> bool:
 	return _burn_ticks_left > 0 and not _is_dead
 
+## 張飛「暈眩」：這個敵人暈眩 duration 秒（遊戲時間）。已在暈眩時剩餘時間取較長的（不累加、不縮短）。
+## 不看 immune_slow（暈眩不是減速）。不套用：已經倒下、時間不是正的有限數字。回傳這次是否生效
+func apply_stun(duration: float) -> bool:
+	if _is_dead or not (is_finite(duration) and duration > 0.0):
+		return false
+	if _stun_left <= 0.0:
+		stun_log.append({"from": _age, "to": -1.0})
+		if stun_log.size() > STUN_LOG_MAX:
+			stun_log.pop_front()
+	_stun_left = maxf(_stun_left, duration)
+	stun_count += 1
+	queue_redraw()
+	return true
+
+func is_stunned() -> bool:
+	return _stun_left > 0.0 and not _is_dead
+
+## 測試用唯讀資訊（debug_snapshot）：剩餘時間、生效次數、這個敵人的時間（見 _age）、暈眩區間與攻擊阻路武將的時間
+func stun_state() -> Dictionary:
+	return {"left": _stun_left, "count": stun_count, "age": _age, "log": stun_log.duplicate(true), "attacks": attack_log.duplicate()}
+
 ## 測試用唯讀資訊（debug_snapshot）：剩餘跳數與每跳傷害
 func burn_state() -> Dictionary:
 	return {"ticks_left": _burn_ticks_left, "damage": _burn_damage, "next_in": _burn_timer if _burn_ticks_left > 0 else 0.0}
@@ -389,7 +446,7 @@ func _draw() -> void:
 		_draw_wings(r)
 	var sprite_rect: Rect2 = Rect2(Vector2(-r, -r), Vector2(r * 2.0, r * 2.0))
 
-	# 被武將擋住（停下來攻擊阻路的武將）時顯示攻擊圖片；只看阻擋狀態，不看減速倍率（免疫減速的敵人攻擊時也一樣）
+	# 被武將擋住（停下來攻擊阻路的武將）時顯示攻擊圖片；只看阻擋狀態，不看減速倍率（免疫減速的敵人攻擊時也一樣）；暈眩中不攻擊，顯示一般的圖
 	var is_fighting: bool = is_fighting_blocker()
 	var current_tex: Texture2D = _texture_atk if (is_fighting and _texture_atk != null) else _texture
 
@@ -424,8 +481,26 @@ func _draw() -> void:
 		else (Color(0.9, 0.7, 0.1, 1) if hp_ratio > 0.25
 		else Color(0.9, 0.15, 0.15, 1))
 	)
+	# 暈眩中：血條上方三顆轉動的黃色星星（隨剩餘時間轉動：手動暫停時停住）
+	if is_stunned():
+		var cy: float = bar_y - 9.0
+		for i in range(3):
+			var a: float = _stun_left * 6.0 + TAU * float(i) / 3.0
+			_draw_star(Vector2(cos(a) * r * 0.7, cy + sin(a) * 3.0), 4.5)
 	if is_flying():
 		draw_set_transform(Vector2.ZERO)
+
+## 暈眩標記的四角星（黃色、深色外框）
+func _draw_star(c: Vector2, size: float) -> void:
+	var pts: PackedVector2Array = PackedVector2Array()
+	for k in range(8):
+		var rad: float = size if k % 2 == 0 else size * 0.4
+		var a: float = -PI / 2.0 + PI * float(k) / 4.0
+		pts.append(c + Vector2(cos(a), sin(a)) * rad)
+	draw_colored_polygon(pts, STUN_COLOR)
+	var outline: PackedVector2Array = pts.duplicate()
+	outline.append(pts[0])
+	draw_polyline(outline, Color(0.3, 0.2, 0.0, 0.9), 1.0)
 
 ## 飛行的翅膀：身體左右各一片（淺色、深色外框），貼圖與純色模式共用
 func _draw_wings(r: float) -> void:
@@ -455,9 +530,9 @@ func _draw_ellipse(center: Vector2, radii: Vector2, color: Color) -> void:
 func is_flying() -> bool:
 	return movement_type == MOVE_FLYING
 
-## 正在攻擊阻路的武將（被擋住、停下來）：攻擊圖片看這個狀態
+## 正在攻擊阻路的武將（被擋住、停下來）：攻擊圖片看這個狀態。暈眩中不攻擊，所以不算（仍被擋住，暈眩結束後照常攻擊）
 func is_fighting_blocker() -> bool:
-	return _blocker != null
+	return _blocker != null and not is_stunned()
 
 ## 敵人設定的 atk（對阻路武將的直接攻擊力）：有限、不小於 0 的數字照用，其他一律 BLOCKER_ATK_DEFAULT（見 blocker_atk）
 static func blocker_atk_of(cfg: Dictionary) -> float:

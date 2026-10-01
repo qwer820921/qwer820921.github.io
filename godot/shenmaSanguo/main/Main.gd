@@ -893,8 +893,11 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var enemy_slow_src: Dictionary = {}
 	var enemy_speed: Dictionary = {}
 	var enemy_fighting: Dictionary = {}
+	# 暈眩（張飛）：每個敵人的剩餘時間、生效次數、自己的時間與暈眩區間、攻擊阻路武將的時間
+	var enemy_stun: Dictionary = {}
 	for child in units_layer.get_children():
 		if child is Enemy and not child.is_queued_for_deletion():
+			enemy_stun[str(child.get_instance_id())] = child.stun_state()
 			enemy_slow_src[str(child.get_instance_id())] = child.slow_sources_state()
 			enemy_speed[str(child.get_instance_id())] = child.get_effective_speed()
 			enemy_fighting[str(child.get_instance_id())] = child.is_fighting_blocker()
@@ -935,10 +938,14 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var hero_slow: Dictionary = {}
 	# 每位武將的防禦：原本與受傷時用的防禦、受到的防禦光環加成與來源；自己的防禦光環（倍率、半徑、是否作用、目前加成的武將）
 	var hero_def: Dictionary = {}
+	# 暈眩（張飛）：Godot 實際讀到的暈眩時間（沒有啟用時不列出）與讓敵人暈眩的次數
+	var hero_stun: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
 			continue
+		if hero.stun_duration > 0.0:
+			hero_stun[hid] = {"sec": hero.stun_duration, "count": hero.stun_count}
 		hero_ranges[hid] = hero.attack_range
 		hero_hp[hid] = hero.current_hp
 		hero_slow[hid] = hero.slow_state()
@@ -1010,6 +1017,9 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"hero_slow":         hero_slow,
 		# 防禦光環（劉備）
 		"hero_def":          hero_def,
+		# 暈眩（張飛）
+		"hero_stun":         hero_stun,
+		"enemy_stun":        enemy_stun,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)
