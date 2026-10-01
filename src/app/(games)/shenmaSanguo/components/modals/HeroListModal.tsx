@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { Row, Col, Spinner, Alert } from "react-bootstrap";
 import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
@@ -8,6 +8,7 @@ import { HeroState, HeroConfig } from "../../types";
 import HeroSkillInfo from "../HeroSkillInfo";
 import HeroAntiAir from "../HeroAntiAir";
 import HeroFilterBar from "../HeroFilterBar";
+import { useDialogFocus } from "../useDialogFocus";
 import { attackIntervalSec, formatSec } from "../../utils/heroStats";
 import {
   DEFAULT_HERO_FILTER,
@@ -48,10 +49,25 @@ function HeroDetailContent({
   const writeHold = usePlayerStore((s) => s.writeHold);
   const blocked = loading || !canAfford || writeHold;
 
+  // 升級處理中按鈕停用，焦點會掉到頁面本身（Tab／Esc 照樣由視窗處理）：處理完後焦點還在頁面本身時，
+  // 放回升級按鈕（仍然可以按時），否則放回「關閉」
+  const upgradeRef = useRef<HTMLButtonElement>(null);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const restoreRef = useRef(false);
+  useEffect(() => {
+    if (loading || !restoreRef.current) return;
+    restoreRef.current = false;
+    const a = document.activeElement;
+    if (a && a !== document.body) return;
+    const up = upgradeRef.current;
+    (up && !up.disabled ? up : closeBtnRef.current)?.focus();
+  });
+
   const handleUpgrade = async () => {
     setLoading(true);
     setFeedback(null);
     const result = await onUpgrade();
+    restoreRef.current = true;
     setLoading(false);
     if (result.success) {
       setFeedback({ type: "success", msg: "升級成功！" });
@@ -233,6 +249,8 @@ function HeroDetailContent({
       {/* 按鈕 */}
       <div style={{ display: "flex", gap: "0.5rem" }}>
         <button
+          ref={closeBtnRef}
+          type="button"
           onClick={onClose}
           style={{
             flex: 1,
@@ -248,6 +266,8 @@ function HeroDetailContent({
           關閉
         </button>
         <button
+          ref={upgradeRef}
+          type="button"
           onClick={handleUpgrade}
           disabled={blocked}
           style={{
@@ -278,21 +298,254 @@ function HeroDetailContent({
     </>
   );
 }
+// ── 武將詳情 modal（疊在列表上方）：自己的視窗焦點與按鍵（Esc 只關閉詳情，焦點還給開啟它的卡片）──
+function HeroDetailDialog({
+  hero,
+  config,
+  gold,
+  onClose,
+  onUpgrade,
+  onUpgraded,
+  listPanelRef,
+  listCloseRef,
+}: {
+  hero: HeroState;
+  config: HeroConfig;
+  gold: number;
+  onClose: () => void;
+  onUpgrade: () => Promise<{ success: boolean; error?: string }>;
+  onUpgraded?: () => void;
+  /** 下層武將列表的視窗與關閉鈕（詳情關閉時的退路） */
+  listPanelRef: React.RefObject<HTMLElement | null>;
+  listCloseRef: React.RefObject<HTMLElement | null>;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const heroId = config.hero_id;
+  // 關閉時，開啟它的卡片已經不在畫面上（或開啟時焦點不在任何元素上）：交給列表裡同一位武將的卡片，
+  // 沒有時交給列表的搜尋框，再沒有時交給列表的關閉鈕
+  const onKeyDown = useDialogFocus(panelRef, closeRef, onClose, {
+    fallbackFocus: () => {
+      const list = listPanelRef.current;
+      if (!list) return null;
+      const card = Array.from(
+        list.querySelectorAll<HTMLElement>("[data-hero-id]")
+      ).find((el) => el.dataset.heroId === heroId);
+      return (
+        card ??
+        list.querySelector<HTMLElement>('input[type="search"]') ??
+        listCloseRef.current
+      );
+    },
+  });
+  const rarity = rarityInfo(config.rarity);
+  const job = jobInfo(config.job);
+  const color = rarity.color;
+  const jColor = job.color;
+  return (
+    <div
+      className={styles.modalBackdrop}
+      style={{ zIndex: 210 }}
+      onClick={onClose}
+    >
+      <div
+        ref={panelRef}
+        className={styles.modalPanel}
+        style={{ maxWidth: 380 }}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={onKeyDown}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`武將詳情：${config.name}`}
+        tabIndex={-1}
+        data-testid="hero-detail"
+        data-hero-id={config.hero_id}
+        data-hero-level={hero.level}
+      >
+        {/* 頭像 banner */}
+        {config.image && (
+          <div
+            style={{
+              position: "relative",
+              height: 150,
+              overflow: "hidden",
+              flexShrink: 0,
+            }}
+          >
+            <img
+              src={`/images/shenmaSanguo/units/${config.image}`}
+              alt={config.name}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                objectPosition: "top center",
+                display: "block",
+              }}
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: `linear-gradient(to bottom, transparent 35%, rgba(255,255,255,0.92) 100%)`,
+              }}
+            />
+          </div>
+        )}
+
+        {/* Header：名字 + 稀有度 + 職業 + 關閉 */}
+        <div
+          className={styles.modalHeader}
+          style={{ borderTop: `3px solid ${color}` }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.45rem",
+              flex: 1,
+            }}
+          >
+            <span className={styles.modalTitle}>{config.name}</span>
+            <span
+              style={{
+                background: `${color}22`,
+                color,
+                border: `1px solid ${color}55`,
+                borderRadius: 4,
+                fontSize: "0.6rem",
+                padding: "1px 5px",
+              }}
+            >
+              {rarity.label}
+            </span>
+            <span
+              style={{
+                fontSize: "0.65rem",
+                color: jColor,
+                fontWeight: 600,
+              }}
+            >
+              {job.label}
+            </span>
+          </div>
+          <button
+            ref={closeRef}
+            type="button"
+            className={styles.modalClose}
+            onClick={onClose}
+            aria-label="關閉武將詳情"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Body：技能與升級詳情 */}
+        <div className={styles.modalBody}>
+          <HeroSkillInfo
+            heroId={config.hero_id}
+            variant="full"
+            rawRange={
+              config.attack_range + (hero.level - 1) * config.range_growth
+            }
+            atk={hero.atk}
+          />
+          <HeroAntiAir job={config.job} />
+          <HeroDetailContent
+            hero={hero}
+            config={config}
+            gold={gold}
+            onClose={onClose}
+            onUpgrade={onUpgrade}
+            onUpgraded={onUpgraded}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface Props {
   onClose: () => void;
   onHeroUpgraded?: () => void;
+  /** 關閉時開啟前的元素（「武將」按鈕）已經不在畫面上時，焦點改交給它 */
+  fallbackFocusRef?: React.RefObject<HTMLElement | null>;
 }
 
-export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
+/**
+ * 主頁（戰場的 HUD）的武將列表視窗與疊在上面的武將詳情：兩層各自是視窗（useDialogFocus）。
+ * 開啟時焦點在右上的關閉鈕，Tab／Shift+Tab 只在最上層的視窗內循環，Esc 只關閉最上層；
+ * 詳情關閉後焦點回到開啟它的卡片，列表關閉後回到「武將」按鈕。卡片是原生按鈕（Enter／空白鍵開啟詳情）；
+ * 按鈕裡只能放行內的內容，原本的區塊都用 span（顯示方式由樣式決定，版面不變）
+ */
+export default function HeroListModal({
+  onClose,
+  onHeroUpgraded,
+  fallbackFocusRef,
+}: Props) {
   const { player, upgradeHero } = usePlayerStore();
   const { config: staticConfig } = useStaticConfigStore();
   const [selectedHeroId, setSelectedHeroId] = useState<string | null>(null);
   // 搜尋／職業／排序只影響這個視窗的顯示；關閉視窗（元件卸載）就回到預設
   const [criteria, setCriteria] =
     useState<HeroFilterCriteria>(DEFAULT_HERO_FILTER);
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const onKeyDown = useDialogFocus(panelRef, closeRef, onClose, {
+    fallbackFocus: () => fallbackFocusRef?.current ?? null,
+  });
 
-  if (!player || !staticConfig) return null;
+  const ready = !!player && !!staticConfig;
+  const header = (
+    <div className={styles.modalHeader}>
+      <span id={titleId} className={styles.modalTitle}>
+        武將列表
+      </span>
+      {player && (
+        <span style={{ fontSize: "0.72rem", color: "var(--sg-muted)" }}>
+          戰場點數：
+          <span style={{ color: "var(--sg-gold)", fontWeight: 700 }}>
+            {(player.gold ?? 0).toLocaleString()}
+          </span>
+        </span>
+      )}
+      <button
+        ref={closeRef}
+        type="button"
+        className={styles.modalClose}
+        onClick={onClose}
+        aria-label="關閉武將列表"
+      >
+        ×
+      </button>
+    </div>
+  );
+
+  // 玩家資料或設定還沒載入（或切換存檔時暫時沒有）：仍然顯示視窗與關閉鈕，焦點與 Esc 照常可用
+  if (!ready) {
+    return (
+      <div className={styles.modalBackdrop} onClick={onClose}>
+        <div
+          ref={panelRef}
+          className={styles.modalPanel}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={onKeyDown}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          tabIndex={-1}
+        >
+          {header}
+          <div className={styles.modalBody}>
+            <div role="status" className="small text-muted">
+              武將資料載入中…
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const teamHeroIds = new Set((player.team || []).map((s) => s.hero_id));
 
@@ -317,19 +570,17 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
     <>
       {/* ── 武將列表 modal ── */}
       <div className={styles.modalBackdrop} onClick={onClose}>
-        <div className={styles.modalPanel} onClick={(e) => e.stopPropagation()}>
-          <div className={styles.modalHeader}>
-            <span className={styles.modalTitle}>武將列表</span>
-            <span style={{ fontSize: "0.72rem", color: "var(--sg-muted)" }}>
-              戰場點數：
-              <span style={{ color: "var(--sg-gold)", fontWeight: 700 }}>
-                {(player.gold ?? 0).toLocaleString()}
-              </span>
-            </span>
-            <button className={styles.modalClose} onClick={onClose}>
-              ×
-            </button>
-          </div>
+        <div
+          ref={panelRef}
+          className={styles.modalPanel}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={onKeyDown}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          tabIndex={-1}
+        >
+          {header}
           <div className={styles.modalBody}>
             <HeroFilterBar
               criteria={criteria}
@@ -350,9 +601,11 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                 const canAfford = player.gold >= upgradeCost;
                 return (
                   <Col xs={6} sm={4} key={config.hero_id}>
-                    <div
-                      className={styles.heroCard}
+                    <button
+                      type="button"
+                      className={`${styles.heroCard} ${styles.heroCardButton}`}
                       data-hero-id={config.hero_id}
+                      aria-haspopup="dialog"
                       style={{
                         flexDirection: "column",
                         borderTopColor: color,
@@ -361,11 +614,9 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                           ? `2px solid ${color}55`
                           : undefined,
                       }}
-                      onClick={() =>
-                        setSelectedHeroId(isSelected ? null : config.hero_id)
-                      }
+                      onClick={() => setSelectedHeroId(config.hero_id)}
                     >
-                      <div
+                      <span
                         className={styles.heroCardImg}
                         style={{
                           borderBottom: `2px solid ${jColor}33`,
@@ -378,16 +629,16 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                             className={styles.heroCardImgEl}
                           />
                         ) : (
-                          <div className={styles.heroCardImgPlaceholder}>
+                          <span className={styles.heroCardImgPlaceholder}>
                             {config.name[0]}
-                          </div>
+                          </span>
                         )}
                         {inTeam && (
-                          <div className={styles.heroInTeamBadge}>在隊中</div>
+                          <span className={styles.heroInTeamBadge}>在隊中</span>
                         )}
-                      </div>
-                      <div className={styles.heroCardInner}>
-                        <div
+                      </span>
+                      <span className={styles.heroCardInner}>
+                        <span
                           style={{
                             display: "flex",
                             justifyContent: "space-between",
@@ -395,7 +646,7 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                             marginBottom: "0.15rem",
                           }}
                         >
-                          <div className={styles.heroName}>{config.name}</div>
+                          <span className={styles.heroName}>{config.name}</span>
                           <span
                             style={{
                               background: `${color}22`,
@@ -416,8 +667,9 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                           >
                             {rarity.label}
                           </span>
-                        </div>
-                        <div
+                        </span>
+                        <span
+                          className="d-block"
                           style={{
                             fontSize: "0.62rem",
                             color: "var(--sg-muted)",
@@ -431,8 +683,8 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                             {job.label}
                           </span>
                           　Lv.{hero.level}
-                        </div>
-                        <div className={styles.heroStats}>
+                        </span>
+                        <span className={styles.heroStats}>
                           <span style={{ color: "var(--sg-red)" }}>
                             ⚔ {r(hero.atk)}
                           </span>
@@ -442,9 +694,9 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                           <span style={{ color: "var(--sg-green)" }}>
                             ❤ {r(hero.hp)}
                           </span>
-                        </div>
+                        </span>
                         <HeroSkillInfo heroId={config.hero_id} variant="tag" />
-                        <div
+                        <span
                           className={
                             canAfford
                               ? styles.heroHintAffordable
@@ -452,9 +704,9 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
                           }
                         >
                           {canAfford ? `可升級 (-${upgradeCost})` : "點擊升級"}
-                        </div>
-                      </div>
-                    </div>
+                        </span>
+                      </span>
+                    </button>
                   </Col>
                 );
               })}
@@ -463,129 +715,18 @@ export default function HeroListModal({ onClose, onHeroUpgraded }: Props) {
         </div>
       </div>
 
-      {/* ── 武將詳情 modal（疊在列表上方）── */}
-      {selectedHero &&
-        selectedConfig &&
-        (() => {
-          const rarity = rarityInfo(selectedConfig.rarity);
-          const job = jobInfo(selectedConfig.job);
-          const color = rarity.color;
-          const jColor = job.color;
-          return (
-            <div
-              className={styles.modalBackdrop}
-              style={{ zIndex: 210 }}
-              onClick={closeDetail}
-            >
-              <div
-                className={styles.modalPanel}
-                style={{ maxWidth: 380 }}
-                onClick={(e) => e.stopPropagation()}
-                data-testid="hero-detail"
-                data-hero-id={selectedConfig.hero_id}
-                data-hero-level={selectedHero.level}
-              >
-                {/* 頭像 banner */}
-                {selectedConfig.image && (
-                  <div
-                    style={{
-                      position: "relative",
-                      height: 150,
-                      overflow: "hidden",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <img
-                      src={`/images/shenmaSanguo/units/${selectedConfig.image}`}
-                      alt={selectedConfig.name}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                        objectPosition: "top center",
-                        display: "block",
-                      }}
-                    />
-                    <div
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        background: `linear-gradient(to bottom, transparent 35%, rgba(255,255,255,0.92) 100%)`,
-                      }}
-                    />
-                  </div>
-                )}
-
-                {/* Header：名字 + 稀有度 + 職業 + 關閉 */}
-                <div
-                  className={styles.modalHeader}
-                  style={{ borderTop: `3px solid ${color}` }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.45rem",
-                      flex: 1,
-                    }}
-                  >
-                    <span className={styles.modalTitle}>
-                      {selectedConfig.name}
-                    </span>
-                    <span
-                      style={{
-                        background: `${color}22`,
-                        color,
-                        border: `1px solid ${color}55`,
-                        borderRadius: 4,
-                        fontSize: "0.6rem",
-                        padding: "1px 5px",
-                      }}
-                    >
-                      {rarity.label}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: "0.65rem",
-                        color: jColor,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {job.label}
-                    </span>
-                  </div>
-                  <button className={styles.modalClose} onClick={closeDetail}>
-                    ×
-                  </button>
-                </div>
-
-                {/* Body：技能與升級詳情 */}
-                <div className={styles.modalBody}>
-                  <HeroSkillInfo
-                    heroId={selectedConfig.hero_id}
-                    variant="full"
-                    rawRange={
-                      selectedConfig.attack_range +
-                      (selectedHero.level - 1) * selectedConfig.range_growth
-                    }
-                    atk={selectedHero.atk}
-                  />
-                  <HeroAntiAir job={selectedConfig.job} />
-                  <HeroDetailContent
-                    hero={selectedHero}
-                    config={selectedConfig}
-                    gold={player.gold}
-                    onClose={closeDetail}
-                    onUpgrade={() =>
-                      upgradeHero(selectedHero.hero_id, selectedConfig)
-                    }
-                    onUpgraded={onHeroUpgraded}
-                  />
-                </div>
-              </div>
-            </div>
-          );
-        })()}
+      {selectedHero && selectedConfig && (
+        <HeroDetailDialog
+          hero={selectedHero}
+          config={selectedConfig}
+          gold={player.gold}
+          onClose={closeDetail}
+          onUpgrade={() => upgradeHero(selectedHero.hero_id, selectedConfig)}
+          onUpgraded={onHeroUpgraded}
+          listPanelRef={panelRef}
+          listCloseRef={closeRef}
+        />
+      )}
     </>
   );
 }

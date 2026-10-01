@@ -237,9 +237,9 @@ async (page) => {
     await H.waitHud(page);
     await waitSync("idle");
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
-    const card = await page.locator('div[class*="heroCard"]', { has: page.locator('div[class*="heroName"]', { hasText: "夏侯惇" }) }).first().innerText();
-    await page.locator('div[class*="heroName"]', { hasText: "夏侯惇" }).first().click();
+    await page.waitForSelector('[class*="heroName"]');
+    const card = await page.locator('[data-hero-id][class*="heroCard"]', { has: page.locator('[class*="heroName"]', { hasText: "夏侯惇" }) }).first().innerText();
+    await page.locator('[class*="heroName"]', { hasText: "夏侯惇" }).first().click();
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { card, detail, shot: await H.shot(page, "counter-a-skill-detail") };
     run.check("A-1 主頁武將視窗：夏侯惇的卡片是「技能：反擊」；詳情寫明自己要活著、反彈實扣的 20%（不是攻擊力的 20%，扣 50 反彈 10）、閃避／致死／沒有攻擊者不反彈、只在戰場不影響存檔",
@@ -276,8 +276,8 @@ async (page) => {
     await page.goto(H.BASE + "/shenmaSanguo");
     await H.waitHud(page);
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
-    await page.locator('div[class*="heroName"]', { hasText: "夏侯惇" }).first().click();
+    await page.waitForSelector('[class*="heroName"]');
+    await page.locator('[class*="heroName"]', { hasText: "夏侯惇" }).first().click();
     await page.waitForSelector('[data-testid="hero-skill-detail"]');
     await page.locator('[data-testid="hero-skill-detail"]').first().scrollIntoViewIfNeeded();
     await H.sleep(300);

@@ -1,7 +1,7 @@
 import { HeroSkillPayload } from "../types";
 
 /**
- * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」、廖化「堅韌」）
+ * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」、廖化「堅韌」、顏良「威壓」、孫尚香「連射」）
  * 這裡是技能規則的唯一來源：武將列表／詳情的說明，與隨出征資料送進 Godot 的參數都由這裡產生。
  * 技能是戰場效果：不寫進玩家存檔，也不需要後端（GAS）支援。
  * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊。
@@ -112,6 +112,26 @@ export type HeroSkill =
       lowHpRatio: number;
       /** 防禦計算後傷害的倍率（0.8＝少扣 20%） */
       damageMultiplier: number;
+    }
+  | {
+      /**
+       * 威壓：戰鬥中，以武將為中心、目前有效射程內（含邊界）的所有敵人攻擊武將的直接攻擊力降低（地面、飛行、免疫減速的敵人都算）。
+       * 多個威壓取最強的一個，不相乘；被打的武將照常用防禦計算；敵人的移動速度、攻擊間隔與漏到城池扣的城防不變；只在戰場
+       */
+      id: "atk_down_aura";
+      name: string;
+      /** 範圍內敵人直接攻擊力的倍率（0.9＝降低 10%，不是降到 10%） */
+      attackMultiplier: number;
+    }
+  | {
+      /**
+       * 連射：每次普通攻擊實際打到敵人、而且敵人被這一擊打過後還活著時，有機率在同一次攻擊對同一個敵人再打一擊（這次普通攻擊的攻擊力 × 1）。
+       * 每次普通攻擊最多追加一擊、追加的一擊不會再連射；不換目標、不波及其他敵人；第一擊就打倒敵人時不連射；攻擊間隔不變；只在戰場
+       */
+      id: "double_shot";
+      name: string;
+      /** 每次普通攻擊追加一擊的機率（0.2＝20%；0～1 之間、不含兩端） */
+      doubleShotChance: number;
     };
 
 const HERO_SKILLS: Record<string, HeroSkill> = {
@@ -158,6 +178,14 @@ const HERO_SKILLS: Record<string, HeroSkill> = {
     lowHpRatio: 0.3,
     damageMultiplier: 0.8,
   },
+  // 正式設定表的被動描述「威壓：降低敵軍攻擊」沒有寫比例、範圍與疊加方式。第一版的設計值，尚未做過平衡：範圍是目前有效射程（含邊界），
+  // 範圍內所有敵人攻擊武將的直接攻擊力 × 0.9（地面、飛行、免疫減速都算）；多個威壓取最強不相乘；被打的武將照常用防禦、閃避、堅韌、反擊計算；
+  // 敵人的移動速度、攻擊間隔與漏到城池扣的城防不變；只在戰鬥中、不改敵人設定與存檔
+  yan_liang: { id: "atk_down_aura", name: "威壓", attackMultiplier: 0.9 },
+  // 正式設定表的被動描述「連射：有機率二次攻擊」沒有寫機率、倍率與時序。第一版的設計值，尚未做過平衡：每次普通攻擊實際打到敵人、
+  // 敵人還活著時有 20% 的機率在同一次攻擊對同一個敵人再打一擊（這次攻擊力的 100%）；第一擊打倒敵人時不連射、不換目標、不再連射、
+  // 攻擊間隔不變；追加的一擊不引發其他技能；只在戰鬥中、不改屬性與存檔
+  sun_shang_xiang: { id: "double_shot", name: "連射", doubleShotChance: 0.2 },
 };
 
 export const heroSkillOf = (heroId: string): HeroSkill | null =>
@@ -225,6 +253,18 @@ export function tenacityPercents(skill: HeroSkill | null): {
     : { threshold: 0, reduction: 0 };
 }
 
+/** 威壓讓敵人直接攻擊力降低的百分比（0.9 → 10；沒有威壓時是 0） */
+export function atkDownAuraPercent(skill: HeroSkill | null): number {
+  return skill?.id === "atk_down_aura"
+    ? round3((1 - skill.attackMultiplier) * 100)
+    : 0;
+}
+
+/** 連射追加一擊的機率（百分比，0.2 → 20；沒有連射時是 0） */
+export function doubleShotPercent(skill: HeroSkill | null): number {
+  return skill?.id === "double_shot" ? round3(skill.doubleShotChance * 100) : 0;
+}
+
 /**
  * 攻速光環加成後的攻擊間隔（秒）：攻擊間隔 ÷ 倍率（和 Godot 相同）。
  * 是除以倍率、不是減少同樣的百分比：1.15 倍時 1 秒變成約 0.8696 秒，不是 0.85 秒
@@ -246,8 +286,8 @@ export function damageAfterDefense(atk: number, def: number): number {
 
 /**
  * 技能的完整規則（顯示在武將詳情）
- * - rawRange：這位武將目前等級屬性表上的射程；有提供時，射程技能會寫出戰場上的實際射程，減速光環、防禦光環與攻速光環會寫出目前的範圍半徑
- * - atk：這位武將目前的攻擊力；有提供時，火攻會寫出每次灼燒的傷害
+ * - rawRange：這位武將目前等級屬性表上的射程；有提供時，射程技能會寫出戰場上的實際射程，減速光環、防禦光環、攻速光環與威壓會寫出目前的範圍半徑
+ * - atk：這位武將目前的攻擊力；有提供時，火攻會寫出每次灼燒的傷害，連射會寫出追加一擊的傷害
  */
 export function describeHeroSkill(
   skill: HeroSkill,
@@ -375,6 +415,40 @@ export function describeHeroSkill(
       "只在戰場生效：防禦、最大生命與存檔都不變。"
     );
   }
+  if (skill.id === "atk_down_aura") {
+    const pct = atkDownAuraPercent(skill);
+    const m = skill.attackMultiplier;
+    const current =
+      rawRange === undefined
+        ? ""
+        : `目前等級的範圍半徑是 ${effectiveRange(skill, rawRange)} 格。`;
+    const plain = round3(damageAfterDefense(100, 100));
+    const lowered = round3(damageAfterDefense(100 * m, 100));
+    return (
+      `戰鬥中，以這位武將為中心、目前射程內（含邊界）的所有敵人攻擊武將的直接攻擊力降低 ${pct}%（變成原本的 ${round3(m * 100)}%）。` +
+      current +
+      "範圍跟著射程：升級射程變長時範圍一起變大；地面、飛行與免疫減速的敵人都算，也不需要普通攻擊的目標。" +
+      `被打的武將照常用防禦計算：例如攻擊力 100 的敵人打防禦 100 的武將，從扣 ${plain} 變成扣 ${lowered}。` +
+      "同時在幾個威壓範圍內時取最強的一個，不會疊加；敵人離開範圍，或這位武將移位、被移除、陣亡時就恢復。" +
+      "只降低直接攻擊：敵人的移動速度與攻擊間隔不變，漏到城池時扣的城防也不會減少。" +
+      "戰鬥中武將周圍有暗紅色的範圍圈，受到威壓的敵人血條右上方有暗紅色的向下箭頭（白色描邊）。只在戰場生效，不影響存檔。"
+    );
+  }
+  if (skill.id === "double_shot") {
+    const pct = doubleShotPercent(skill);
+    const current =
+      atk === undefined
+        ? ""
+        : `目前攻擊力 ${round3(atk)}：連射時同一個敵人在這次攻擊受到 ${round3(atk)} ＋ ${round3(atk)}。`;
+    return (
+      `每次普通攻擊命中敵人、而且敵人被這一擊打過後還活著時，有 ${pct}% 的機率在同一次攻擊對同一個敵人再打一擊，傷害是這次普通攻擊的攻擊力（100%）；武將上方會出現金色的「+1」。` +
+      current +
+      "每次普通攻擊各自判定一次、最多追加一擊，追加的一擊不會再連射；不換目標，也不會打到其他敵人。" +
+      "第一擊就打倒敵人時不會連射（不會改打旁邊的敵人）；沒有目標、或打不到的敵人（飛行敵人要能對空的職業才打得到）不會判定。" +
+      "追加的一擊照常可以打倒敵人，擊殺與金幣只算一次；追加的一擊不會引發其他技能。" +
+      "攻擊間隔不變：連射不會讓下一次攻擊提早或延後。只在戰場生效，不影響存檔。"
+    );
+  }
   if (skill.id === "dodge") {
     const pct = round3(skill.dodgeChance * 100);
     return (
@@ -455,6 +529,14 @@ export function heroSkillPayload(heroId: string): { skill?: HeroSkillPayload } {
         low_hp_ratio: skill.lowHpRatio,
         damage_mult: skill.damageMultiplier,
       },
+    };
+  }
+  if (skill.id === "atk_down_aura") {
+    return { skill: { id: skill.id, atk_mult: skill.attackMultiplier } };
+  }
+  if (skill.id === "double_shot") {
+    return {
+      skill: { id: skill.id, double_shot_chance: skill.doubleShotChance },
     };
   }
   return {

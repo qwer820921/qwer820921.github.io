@@ -157,8 +157,8 @@ async (page) => {
     r.teamSavedText = (await page.locator("text=隊伍已儲存").count()) > 0;
     await H.clickButton(page, "關閉");
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
-    await page.locator('div[class*="heroName"]', { hasText: "關羽" }).first().click();
+    await page.waitForSelector('[class*="heroName"]');
+    await page.locator('[class*="heroName"]', { hasText: "關羽" }).first().click();
     const up = page.getByRole("button", { name: /^升級 \(-\d+ 點\)$/ });
     await up.waitFor({ timeout: 10000 });
     r.upgradeHold = (await page.locator('[data-testid="upgrade-hold"]').count()) > 0;

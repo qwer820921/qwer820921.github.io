@@ -347,6 +347,22 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
+/* 武將卡片做成原生按鈕（主頁的武將視窗、獨立武將頁：Tab 可以移到卡片，Enter／空白鍵開啟詳情）：
+   去掉按鈕預設的字型、文字顏色、對齊與內距，子元素照常撐滿（按鈕預設 align-items 是 flex-start），版面和原本的卡片相同 */
+.heroCardButton {
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  align-items: stretch;
+}
+
+.heroCardButton:focus-visible {
+  outline: 3px solid #6366f1;
+  outline-offset: 2px;
+}
+
 .heroJobBar {
   width: 4px;
   flex-shrink: 0;
@@ -416,7 +432,9 @@
   gap: 0.3rem;
   margin-top: 0.35rem;
 }
+/* 卡片按鈕裡用 span：自己佔一行（和其他卡片的區塊一樣） */
 .heroHint {
+  display: block;
   font-size: 0.58rem;
   color: var(--sg-muted);
   margin-top: 0.4rem;

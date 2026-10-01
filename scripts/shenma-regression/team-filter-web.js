@@ -281,10 +281,10 @@ async (page) => {
       );
     const modal = await read();
     await page.getByTestId("hero-filter-job-other").click();
-    const modalOther = await page.evaluate(() => [...document.querySelectorAll('div[class*="heroCard"][data-hero-id]')].map((c) => c.getAttribute("data-hero-id")));
+    const modalOther = await page.evaluate(() => [...document.querySelectorAll('[class*="heroCard"][data-hero-id]')].map((c) => c.getAttribute("data-hero-id")));
     await page.getByTestId("hero-filter-job-mage").click();
-    const modalMage = await page.evaluate(() => [...document.querySelectorAll('div[class*="heroCard"][data-hero-id]')].map((c) => c.getAttribute("data-hero-id")));
-    await page.locator('div[class*="heroCard"][data-hero-id="zhou_yu"]').click();
+    const modalMage = await page.evaluate(() => [...document.querySelectorAll('[class*="heroCard"][data-hero-id]')].map((c) => c.getAttribute("data-hero-id")));
+    await page.locator('[class*="heroCard"][data-hero-id="zhou_yu"]').click();
     await page.waitForSelector('[data-testid="hero-detail"]');
     const detail = await page.locator('[data-testid="hero-detail"]').innerText();
     out.B_detail_shot = await H.shot(page, "team-filter-b-detail-mage");
@@ -292,7 +292,7 @@ async (page) => {
     await H.sleep(200);
     await page.locator('button[class*="modalClose"]').last().click();
     await page.goto(H.BASE + "/shenmaSanguo/heroes");
-    await page.waitForSelector('div[class*="heroCard"][data-hero-id]');
+    await page.waitForSelector('[class*="heroCard"][data-hero-id]');
     const pageCards = await read();
     out.B_page_shot = await H.shot(page, "team-filter-b-heroes-page");
     out.B = { modal, modalOther, modalMage, pageCards };

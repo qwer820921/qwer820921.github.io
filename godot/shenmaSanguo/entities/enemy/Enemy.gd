@@ -102,7 +102,8 @@ var _blocked_cell: Vector2i = Vector2i(-1, -1)
 ## - 沒有阻擋：照常倒數但停在 0，不累積欠下的攻擊；恢復阻擋時最多先打一擊，之後照攻擊間隔
 ## - 一步最多打一擊；第一次接觸時，偵測到阻擋的那一步不攻擊，下一步冷卻已到（初始 0）就打
 var _blocker_atk_timer: float = 0.0
-## 對阻路武將的直接攻擊力（enemies_config 的 atk）：每次攻擊交給 Hero.take_damage（照武將的防禦公式減傷、趙雲可閃避、夏侯惇可反擊）。
+## 對阻路武將的直接攻擊力（enemies_config 的 atk）：每次攻擊交給 Hero.take_damage（照武將的防禦公式減傷、趙雲可閃避、夏侯惇可反擊）；
+## 顏良的威壓在攻擊當下乘上倍率（見 atk_mult、effective_blocker_atk），這個值本身不變。
 ## 只接受有限、不小於 0 的數字（JSON 的數字，包括 0：0 照樣是一次攻擊、用掉冷卻，只是沒有傷害）；
 ## 沒有這個欄位、空白、字串（包括看起來像數字的）、布林、負數、NaN、無限大一律用 BLOCKER_ATK_DEFAULT。
 ## 不設上限。只用在攻擊阻路武將：抵達城池一律扣 1（BattleManager），和它無關。Web 的 utils/enemyCombat 用同一份規則顯示
@@ -111,6 +112,24 @@ var blocker_atk: float = BLOCKER_ATK_DEFAULT
 const BLOCKER_ATK_SPD: float = 1.0 # 攻擊間隔（秒）
 ## 測試用唯讀統計：這個敵人攻擊阻路武將的次數（每次攻擊都算，包括被閃避、沒有扣血的）
 var blocker_attacks: int = 0
+
+# ── 威壓（顏良「威壓」，Hero.gd 的 atk_down_aura 每一幀套用）────────────
+## 對阻路武將的直接攻擊力倍率：每個來源各自保存 {倍率, 剩餘有效期}。生效的倍率 atk_mult ＝ 所有來源中最小的（最強的減攻），沒有來源時是 1：
+## - 同一個來源再次套用只刷新倍率與有效期，不累加；不同來源不相乘（0.9 與 0.8 同時作用是 0.8，撤除 0.8 後回到 0.9）
+## - 施加者自己撤除（remove_atk_down_from）時立即恢復；有效期用 _physics_process 的 delta 倒數（遊戲時間：受時間倍率與部署慢速影響，
+##   手動暫停時不前進），只是施加者停止處理又沒有撤除時的清理保險
+## 每次攻擊阻路武將時用當下的有效攻擊力（effective_blocker_atk ＝ blocker_atk × atk_mult），再交給武將照常計算閃避、防禦、堅韌與反擊；
+## blocker_atk 本身（敵人設定的攻擊力）不變。移動速度、攻擊間隔與冷卻、抵達城池扣的城防（BattleManager 固定扣 1）都不受影響。
+## 不是減速：免疫減速（immune_slow）的敵人照樣受到；飛行敵人也可以有這個狀態（目前飛行敵人不阻路，也就不攻擊武將）
+var atk_mult: float = 1.0
+var _atk_down_sources: Dictionary = {}
+## 每一幀重新套用的威壓用的有效期：施加者每一幀都會刷新；施加者停止處理又沒有撤除時，最多再維持這麼久
+const ATK_DOWN_REFRESH_TTL: float = 0.5
+## 測試用唯讀資訊（debug_snapshot）：最近 STUN_LOG_MAX 次攻擊阻路武將時的時間（_age）、敵人設定的攻擊力、倍率與實際用的攻擊力
+## （attack_log 只記時間、格式不變）
+var atk_log: Array = []
+## 威壓的標記顏色（暗紅色的向下箭頭，和淺藍色的減速、橘色的灼燒、黃色的暈眩區分）
+const ATK_DOWN_COLOR: Color = Color(0.85, 0.22, 0.28)
 
 # ── 免疫減速（enemies_config 的 trait）────────────────────────────
 ## trait 是字串、去掉前後空白後完全等於 immune_slow 時，這個敵人不受任何減速：武將在道路上的阻擋減速、步兵塔的緩速光環（apply_slow）
@@ -198,6 +217,7 @@ func _physics_process(delta: float) -> void:
 			_stack_slow_amount = 0.0 # 疊加效果結束
 			queue_redraw()
 	_tick_slow_sources(delta)
+	_tick_atk_down_sources(delta)
 
 	# 灼燒：到時間就跳一次（走一般的受傷／死亡流程）；死亡後立即停止
 	if _burn_ticks_left > 0:
@@ -245,8 +265,13 @@ func _physics_process(delta: float) -> void:
 			attack_log.append(_age)
 			if attack_log.size() > STUN_LOG_MAX:
 				attack_log.pop_front()
+			# 威壓：用這一擊當下的有效攻擊力（敵人設定的攻擊力 × 目前最強的減攻倍率）
+			var hit_atk: float = effective_blocker_atk()
+			atk_log.append({"t": _age, "base": blocker_atk, "mult": atk_mult, "atk": hit_atk})
+			if atk_log.size() > STUN_LOG_MAX:
+				atk_log.pop_front()
 			# 傳入自己當作攻擊者：夏侯惇的反擊只反彈給攻擊它的敵人
-			_blocker.take_damage(blocker_atk, self)
+			_blocker.take_damage(hit_atk, self)
 			# 反擊可能在這一擊把自己打倒（死亡、擊殺與金幣已在受傷時處理一次）：之後不再處理這一步
 			if _is_dead:
 				return
@@ -378,6 +403,59 @@ func _tick_slow_sources(delta: float) -> void:
 	if not expired.is_empty():
 		_refresh_speed_mult()
 
+## 套用（或刷新）source 這個來源的威壓：mult 是對阻路武將的直接攻擊力倍率（0.9 ＝ 降低 10%），duration 是有效期（秒，遊戲時間）。
+## 不套用（已有的來源也不改動）：已經倒下或正要被移除、來源是空字串、倍率不在 0～1 之間（不含兩端）、有效期不是正的有限數字。
+## 不看 immune_slow（威壓不是減速）
+func apply_atk_down_from(source: String, mult: float, duration: float) -> void:
+	if _is_dead or is_queued_for_deletion() or source == "":
+		return
+	if not (is_finite(mult) and mult > 0.0 and mult < 1.0 and is_finite(duration) and duration > 0.0):
+		return
+	_atk_down_sources[source] = {"mult": mult, "left": duration}
+	_refresh_atk_mult()
+
+## 撤除 source 這個來源的威壓；其他來源不受影響（沒有這個來源時什麼都不做）
+func remove_atk_down_from(source: String) -> void:
+	if _atk_down_sources.erase(source):
+		_refresh_atk_mult()
+
+func has_atk_down_from(source: String) -> bool:
+	return _atk_down_sources.has(source)
+
+## 對阻路武將的有效攻擊力：敵人設定的攻擊力 × 目前最強的減攻倍率（攻擊力 0 仍是 0）
+func effective_blocker_atk() -> float:
+	return blocker_atk * atk_mult
+
+## 測試用唯讀資訊（debug_snapshot）：敵人設定的攻擊力、倍率、有效攻擊力、每個來源的倍率與剩餘有效期、最近幾次攻擊用的攻擊力
+func atk_down_state() -> Dictionary:
+	var src: Dictionary = {}
+	for s in _atk_down_sources:
+		src[s] = {"mult": _atk_down_sources[s].mult, "left": _atk_down_sources[s].left}
+	return {"base": blocker_atk, "mult": atk_mult, "effective": effective_blocker_atk(), "sources": src, "log": atk_log.duplicate(true)}
+
+func _refresh_atk_mult() -> void:
+	var m: float = 1.0
+	for s in _atk_down_sources:
+		m = minf(m, float(_atk_down_sources[s].mult))
+	if m != atk_mult:
+		atk_mult = m
+		queue_redraw()  # 威壓標記
+
+## 倒數每個威壓來源的有效期（遊戲時間）；到期的來源移除
+func _tick_atk_down_sources(delta: float) -> void:
+	if _atk_down_sources.is_empty():
+		return
+	var expired: Array = []
+	for s in _atk_down_sources:
+		var e: Dictionary = _atk_down_sources[s]
+		e.left = float(e.left) - delta
+		if e.left <= 0.0:
+			expired.append(s)
+	for s in expired:
+		_atk_down_sources.erase(s)
+	if not expired.is_empty():
+		_refresh_atk_mult()
+
 ## 疊加減速（文士塔用）。免疫減速的敵人不套用，也不顯示「緩」
 func apply_stackable_slow(amount: float, duration: float) -> void:
 	if immune_slow:
@@ -499,6 +577,11 @@ func _draw() -> void:
 		else (Color(0.9, 0.7, 0.1, 1) if hp_ratio > 0.25
 		else Color(0.9, 0.15, 0.15, 1))
 	)
+	# 威壓中（顏良）：血條右上方一個暗紅色、白色描邊的向下箭頭（箭桿＋箭頭，不用文字，Godot 專案沒有中文字型）。
+	# 戰場在手機寬度會縮小，箭頭做到 12×13。整個箭頭在血條的上方：被武將擋住時敵人和武將幾乎重疊、兩條血條一樣高，
+	# 放在血條旁邊會蓋住武將的血條；水平方向在血條右端再往右 2 像素，碰不到暈眩的星星、灼燒與減速的外圈
+	if atk_mult < 1.0:
+		_draw_atk_down_arrow(Vector2(bar_x + HP_BAR_W + 2.0, bar_y - 17.0))
 	# 暈眩中：血條上方三顆轉動的黃色星星（隨剩餘時間轉動：手動暫停時停住）
 	if is_stunned():
 		var cy: float = bar_y - 9.0
@@ -507,6 +590,19 @@ func _draw() -> void:
 			_draw_star(Vector2(cos(a) * r * 0.7, cy + sin(a) * 3.0), 4.5)
 	if is_flying():
 		draw_set_transform(Vector2.ZERO)
+
+## 威壓標記的向下箭頭：左上角在 p，寬 12、高 13（箭桿寬 4、高 6，箭頭寬 12、高 7）。
+## 先畫白色的粗描邊（深色與淺色的地面上都看得到），再填暗紅色、加深色的細外框
+func _draw_atk_down_arrow(p: Vector2) -> void:
+	var pts: PackedVector2Array = PackedVector2Array([
+		p + Vector2(4.0, 0.0), p + Vector2(8.0, 0.0), p + Vector2(8.0, 6.0), p + Vector2(12.0, 6.0),
+		p + Vector2(6.0, 13.0), p + Vector2(0.0, 6.0), p + Vector2(4.0, 6.0),
+	])
+	var outline: PackedVector2Array = pts.duplicate()
+	outline.append(pts[0])
+	draw_polyline(outline, Color(1.0, 1.0, 1.0, 0.95), 3.0)
+	draw_colored_polygon(pts, ATK_DOWN_COLOR)
+	draw_polyline(outline, Color(0.2, 0.0, 0.0, 0.9), 1.0)
 
 ## 暈眩標記的四角星（黃色、深色外框）
 func _draw_star(c: Vector2, size: float) -> void:

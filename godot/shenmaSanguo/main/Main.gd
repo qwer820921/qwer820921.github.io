@@ -894,6 +894,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var dodge_texts: int = 0
 	# 場上還在顯示的吸血恢復提示（綠色的「+恢復量」）
 	var heal_texts: Array = []
+	# 場上還在顯示的連射提示（金色的「+1」，不算在吸血的恢復提示裡）
+	var double_shot_texts: int = 0
 	# 場上還在顯示的反擊反彈傷害數字（洋紅色）
 	var counter_texts: Array = []
 	# 每個敵人 Godot 實際套用的對武將攻擊力（enemies_config 的 atk 或預設 20）、是否免疫減速、目前的減速倍率（1 表示沒有被武將或步兵塔減速）
@@ -906,9 +908,12 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var enemy_fighting: Dictionary = {}
 	# 暈眩（張飛）：每個敵人的剩餘時間、生效次數、自己的時間與暈眩區間、攻擊阻路武將的時間
 	var enemy_stun: Dictionary = {}
+	# 威壓（顏良）：每個敵人設定的攻擊力、目前的倍率與有效攻擊力、每個來源的倍率與剩餘有效期、最近幾次攻擊阻路武將用的攻擊力
+	var enemy_atk_down: Dictionary = {}
 	for child in units_layer.get_children():
 		if child is Enemy and not child.is_queued_for_deletion():
 			enemy_stun[str(child.get_instance_id())] = child.stun_state()
+			enemy_atk_down[str(child.get_instance_id())] = child.atk_down_state()
 			enemy_slow_src[str(child.get_instance_id())] = child.slow_sources_state()
 			enemy_speed[str(child.get_instance_id())] = child.get_effective_speed()
 			enemy_fighting[str(child.get_instance_id())] = child.is_fighting_blocker()
@@ -929,6 +934,9 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			enemy_blocker_attacks[str(child.get_instance_id())] = child.blocker_attacks
 		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == "MISS":
 			dodge_texts += 1
+		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == "+1" \
+				and child._label.get_theme_color("font_color").is_equal_approx(Hero.SKILL_TEXT_COLOR):
+			double_shot_texts += 1
 		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text.begins_with("+"):
 			heal_texts.append(child._label.text)
 		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.get_theme_color("font_color").is_equal_approx(Enemy.COUNTER_COLOR):
@@ -965,6 +973,10 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 堅韌（廖化）：Godot 實際讀到的門檻與倍率（沒有啟用時不列出）、現在是不是生效、減傷的次數與少扣的總量、目前與最大生命、
 	# 最近幾次有效受傷的受傷前生命、防禦計算後的傷害與實際扣掉的生命
 	var hero_tenacity: Dictionary = {}
+	# 威壓（顏良）：Godot 實際讀到的倍率（沒有啟用時不列出）、半徑、是否作用、目前影響的敵人與來源
+	var hero_atk_down: Dictionary = {}
+	# 連射（孫尚香）：Godot 實際讀到的機率（沒有啟用時不列出）、抽亂數與追加的次數、追加的一擊實際扣掉的生命總量、普通攻擊的次數與最近幾次的抽樣
+	var hero_double_shot: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
@@ -981,6 +993,10 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			hero_tenacity[hid] = {"low_hp_ratio": hero.tenacity_hp_ratio, "damage_mult": hero.tenacity_damage_mult, "active": hero.tenacity_on(),
 				"count": hero.tenacity_count, "saved": hero.tenacity_saved, "hp": hero.current_hp, "max_hp": hero.max_hp,
 				"log": hero.tenacity_log.duplicate(true)}
+		if hero.atk_down_aura_mult < 1.0:
+			hero_atk_down[hid] = hero.atk_down_state()
+		if hero.double_shot_chance > 0.0:
+			hero_double_shot[hid] = hero.double_shot_state()
 		hero_ranges[hid] = hero.attack_range
 		hero_hp[hid] = hero.current_hp
 		hero_slow[hid] = hero.slow_state()
@@ -1066,6 +1082,12 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"counter_texts":     counter_texts,
 		# 堅韌（廖化）
 		"hero_tenacity":     hero_tenacity,
+		# 威壓（顏良）
+		"hero_atk_down":     hero_atk_down,
+		"enemy_atk_down":    enemy_atk_down,
+		# 連射（孫尚香）
+		"hero_double_shot":  hero_double_shot,
+		"double_shot_texts": double_shot_texts,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)

@@ -13,6 +13,7 @@
 #   PUBLIC_DIR    要核對的交付產物目錄（預設：工作區的 public/games/shenmaSanguo）
 #   TEST_SCRIPT   要執行的測試（預設：res://__regression__/lifecycle_test.gd；失敗 fixture 見 README）
 #   COMPARE_HEAD  設為 1 時另外列出與 HEAD 版 public/ 的差異（僅供診斷，不影響結果）
+#   TEST_TIMEOUT  headless 測試的逾時秒數（預設 1500；完整回歸約 16 分鐘，技能測試增加時可以調高）
 set -uo pipefail
 
 die() { echo "拒絕：$*" >&2; exit 2; }
@@ -97,7 +98,7 @@ echo "== headless 測試：$TEST_SCRIPT（測試檔只放在另一份暫存專�
 cp -r "$WORK/project" "$WORK/test-project"
 mkdir -p "$WORK/test-project/__regression__"
 cp -r "$REPO/scripts/shenma-regression/godot/." "$WORK/test-project/__regression__/"
-run_godot test 900 --path "$(win "$WORK/test-project")" --script "$TEST_SCRIPT"
+run_godot test "${TEST_TIMEOUT:-1500}" --path "$(win "$WORK/test-project")" --script "$TEST_SCRIPT"
 code=$?
 grep -aE '^(PASS|FAIL)  ' "$WORK/test.log"
 [ $code -eq 0 ] || fail "測試結束碼 $code"

@@ -43,8 +43,8 @@ async (page) => {
   // 主頁武將視窗：某位武將的「攻擊間隔 目前 → 升級後」
   const modalInterval = async (name) => {
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
-    await page.locator('div[class*="heroName"]', { hasText: new RegExp("^" + name + "$") }).first().click();
+    await page.waitForSelector('[class*="heroName"]');
+    await page.locator('[class*="heroName"]', { hasText: new RegExp("^" + name + "$") }).first().click();
     const t = (await page.locator('[data-testid="attack-interval-preview"]').first().innerText()).replace(/\s+/g, " ");
     await closeModals();
     return t;
@@ -132,8 +132,8 @@ async (page) => {
       out.A1);
 
     await page.goto(H.BASE + "/shenmaSanguo/heroes");
-    await page.waitForSelector('div[class*="heroName"]', { timeout: 60000 });
-    await page.locator('div[class*="heroName"]', { hasText: /^周瑜$/ }).first().click();
+    await page.waitForSelector('[class*="heroName"]', { timeout: 60000 });
+    await page.locator('[class*="heroName"]', { hasText: /^周瑜$/ }).first().click();
     await page.waitForSelector(".modal-content", { timeout: 10000 });
     const heroPage = (await page.locator(".modal-content").first().innerText()).replace(/\s+/g, " ");
     out.A2 = { heroPage };
@@ -161,7 +161,7 @@ async (page) => {
     const preview1 = await modalInterval("關羽");
     // 戰鬥中升級：store 更新後送 update_team，Godot 從設定重新計算攻擊間隔
     await H.clickButton(page, "武將");
-    await page.locator('div[class*="heroName"]', { hasText: /^關羽$/ }).first().click();
+    await page.locator('[class*="heroName"]', { hasText: /^關羽$/ }).first().click();
     await page.getByRole("button", { name: /^升級 \(-\d+ 點\)$/ }).click();
     await page.waitForSelector("text=升級成功！", { timeout: 60000 });
     await closeModals();

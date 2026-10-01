@@ -194,9 +194,9 @@ async (page) => {
     await H.waitHud(page);
     await waitSync("idle");
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
-    const card = await page.locator('div[class*="heroCard"]', { has: page.locator('div[class*="heroName"]', { hasText: "關羽" }) }).first().innerText();
-    await page.locator('div[class*="heroName"]', { hasText: "關羽" }).first().click();
+    await page.waitForSelector('[class*="heroName"]');
+    const card = await page.locator('[data-hero-id][class*="heroCard"]', { has: page.locator('[class*="heroName"]', { hasText: "關羽" }) }).first().innerText();
+    await page.locator('[class*="heroName"]', { hasText: "關羽" }).first().click();
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { card, detail, shot: await H.shot(page, "aura-a-skill-detail") };
     run.check("A-1 主頁武將視窗：關羽的卡片是「技能：減速光環」；詳情寫明移動速度降低 10%（變成原本的 90%）、目前等級的範圍半徑 1.5 格（含邊界）、所有地面敵人、飛行與免疫減速的敵人不受影響、取最強不疊加；沒有橫掃",
@@ -236,8 +236,8 @@ async (page) => {
     await page.goto(H.BASE + "/shenmaSanguo");
     await H.waitHud(page);
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
-    await page.locator('div[class*="heroName"]', { hasText: "關羽" }).first().click();
+    await page.waitForSelector('[class*="heroName"]');
+    await page.locator('[class*="heroName"]', { hasText: "關羽" }).first().click();
     await page.waitForSelector('[data-testid="hero-skill-detail"]');
     await page.locator('[data-testid="hero-skill-detail"]').first().scrollIntoViewIfNeeded();
     await H.sleep(300);

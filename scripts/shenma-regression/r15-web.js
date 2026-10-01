@@ -122,9 +122,9 @@ async (page) => {
     await H.waitHud(page);
     await waitSync("idle");
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
-    const card = await page.locator('div[class*="heroCard"]', { has: page.locator('div[class*="heroName"]', { hasText: "周瑜" }) }).first().innerText();
-    await page.locator('div[class*="heroName"]', { hasText: "周瑜" }).first().click();
+    await page.waitForSelector('[class*="heroName"]');
+    const card = await page.locator('[data-hero-id][class*="heroCard"]', { has: page.locator('[class*="heroName"]', { hasText: "周瑜" }) }).first().innerText();
+    await page.locator('[class*="heroName"]', { hasText: "周瑜" }).first().click();
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { card, detail };
     out.A_shot = await H.shot(page, "r15-a-skill-detail");

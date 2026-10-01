@@ -134,12 +134,12 @@ async (page) => {
     await H.waitHud(page);
     await waitSync("idle");
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
-    const cardText = (name) => page.locator('div[class*="heroCard"]', { has: page.locator('div[class*="heroName"]', { hasText: name }) }).first().innerText();
+    await page.waitForSelector('[class*="heroName"]');
+    const cardText = (name) => page.locator('[data-hero-id][class*="heroCard"]', { has: page.locator('[class*="heroName"]', { hasText: name }) }).first().innerText();
     const maCard = await cardText("馬超");
     const zhaoCard = await cardText("趙雲");
     const guanCard = await cardText("關羽");
-    await page.locator('div[class*="heroName"]', { hasText: "馬超" }).first().click();
+    await page.locator('[class*="heroName"]', { hasText: "馬超" }).first().click();
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { maCard, zhaoCard, guanCard, detail };
     // 首擊加倍只給馬超：趙雲的卡片是「閃避」、關羽是「減速光環」，都不是衝鋒

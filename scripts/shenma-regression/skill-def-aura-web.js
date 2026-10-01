@@ -242,10 +242,10 @@ async (page) => {
     await H.waitHud(page);
     await waitSync("idle");
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
-    const card = await page.locator('div[class*="heroCard"]', { has: page.locator('div[class*="heroName"]', { hasText: "劉備" }) }).first().innerText();
-    const allyCard = await page.locator('div[class*="heroCard"]', { has: page.locator('div[class*="heroName"]', { hasText: "護衛" }) }).first().innerText();
-    await page.locator('div[class*="heroName"]', { hasText: "劉備" }).first().click();
+    await page.waitForSelector('[class*="heroName"]');
+    const card = await page.locator('[data-hero-id][class*="heroCard"]', { has: page.locator('[class*="heroName"]', { hasText: "劉備" }) }).first().innerText();
+    const allyCard = await page.locator('[data-hero-id][class*="heroCard"]', { has: page.locator('[class*="heroName"]', { hasText: "護衛" }) }).first().innerText();
+    await page.locator('[class*="heroName"]', { hasText: "劉備" }).first().click();
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { card, allyCard, detail, shot: await H.shot(page, "defaura-a-skill-detail") };
     run.check("A-1 主頁武將視窗：劉備的卡片是「技能：防禦光環」（護衛沒有技能）；詳情寫明其他友軍武將防禦力提升 20%、目前等級的範圍半徑 1.5 格（含邊界）、不含自己與防禦塔、照防禦公式計算（不是直接少扣 20%）、取最強不疊加、只在戰場；沒有治療",
@@ -284,8 +284,8 @@ async (page) => {
     await page.goto(H.BASE + "/shenmaSanguo");
     await H.waitHud(page);
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
-    await page.locator('div[class*="heroName"]', { hasText: "劉備" }).first().click();
+    await page.waitForSelector('[class*="heroName"]');
+    await page.locator('[class*="heroName"]', { hasText: "劉備" }).first().click();
     await page.waitForSelector('[data-testid="hero-skill-detail"]');
     await page.locator('[data-testid="hero-skill-detail"]').first().scrollIntoViewIfNeeded();
     await H.sleep(300);

@@ -16,7 +16,7 @@ async (page) => {
   const A = "test_herofilter_a";
   const B = "test_herofilter_b";
   const KEY_INPUT = 'input[placeholder="例：eric_sanguo_2026"]';
-  const CARD = 'div[class*="heroCard"][data-hero-id]';
+  const CARD = '[class*="heroCard"][data-hero-id]';
   const DEFAULT_IDS = config.heroes.map((h) => h.hero_id); // 關羽、趙雲、黃忠、周瑜
   const TOTAL = DEFAULT_IDS.length;
   const hero = (hero_id, level, atk) => ({ hero_id, level, star: 0, atk, def: 100, hp: 1000 });

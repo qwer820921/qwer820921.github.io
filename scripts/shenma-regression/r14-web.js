@@ -122,9 +122,9 @@ async (page) => {
     await H.waitHud(page);
     await waitSync("idle");
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
-    const card = await page.locator('div[class*="heroCard"]', { has: page.locator('div[class*="heroName"]', { hasText: "黃忠" }) }).first().innerText();
-    await page.locator('div[class*="heroName"]', { hasText: "黃忠" }).first().click();
+    await page.waitForSelector('[class*="heroName"]');
+    const card = await page.locator('[data-hero-id][class*="heroCard"]', { has: page.locator('[class*="heroName"]', { hasText: "黃忠" }) }).first().innerText();
+    await page.locator('[class*="heroName"]', { hasText: "黃忠" }).first().click();
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { card, detail };
     out.A_shot = await H.shot(page, "r14-a-skill-detail");
@@ -176,7 +176,7 @@ async (page) => {
     const levels = [];
     for (let i = 0; i < 2; i++) {
       await H.clickButton(page, "武將");
-      await page.locator('div[class*="heroName"]', { hasText: "黃忠" }).first().click();
+      await page.locator('[class*="heroName"]', { hasText: "黃忠" }).first().click();
       await page.getByRole("button", { name: /^升級 \(-\d+ 點\)$/ }).click();
       await page.waitForSelector("text=升級成功！", { timeout: 60000 });
       for (let j = 0; j < 3 && (await page.locator('button[class*="modalClose"]').count()) > 0; j++) {

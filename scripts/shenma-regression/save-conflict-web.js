@@ -214,7 +214,7 @@ async (page) => {
     await p.waitForSelector("text=隊伍已儲存", { timeout: 10000 });
   };
   const upgradeOnHeroes = async (p, name) => {
-    await p.locator('div[class*="heroCard"]', { hasText: name }).first().click();
+    await p.locator('[data-hero-id][class*="heroCard"]', { hasText: name }).first().click();
     await p.getByRole("button", { name: /^升級 \(-\d+ 點\)$/ }).click();
     const msg = await waitUntil(async () => {
       const t = await p.locator(".alert").allInnerTexts();

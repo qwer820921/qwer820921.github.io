@@ -60,7 +60,7 @@ async (page) => {
   // 在武將 Modal 對關羽按升級（不等結果）
   const startUpgrade = async () => {
     await H.clickButton(page, "武將");
-    await page.locator('div[class*="heroName"]', { hasText: "關羽" }).first().click();
+    await page.locator('[class*="heroName"]', { hasText: "關羽" }).first().click();
     await page.getByRole("button", { name: /^升級 \(-\d+ 點\)$/ }).click();
   };
   const closeModals = async () => {

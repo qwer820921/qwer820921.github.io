@@ -253,9 +253,9 @@ async (page) => {
     await H.waitHud(page);
     await waitSync("idle");
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
+    await page.waitForSelector('[class*="heroName"]');
     const detailAir = async (name) => {
-      await page.locator('div[class*="heroName"]', { hasText: name }).first().click();
+      await page.locator('[class*="heroName"]', { hasText: name }).first().click();
       const el = page.locator('[data-testid="hero-detail"] [data-testid="hero-anti-air"]').first();
       await el.waitFor({ timeout: 10000 });
       const r = { text: await el.innerText(), air: await el.getAttribute("data-anti-air") };
@@ -267,9 +267,9 @@ async (page) => {
     await page.locator('button[class*="modalClose"]').last().click();
     await H.sleep(300);
     await page.goto(H.BASE + "/shenmaSanguo/heroes");
-    await page.waitForSelector('div[class*="heroName"]', { timeout: 60000 });
+    await page.waitForSelector('[class*="heroName"]', { timeout: 60000 });
     const pageAir = async (name) => {
-      await page.locator('div[class*="heroName"]', { hasText: name }).first().click();
+      await page.locator('[class*="heroName"]', { hasText: name }).first().click();
       const el = page.locator('[data-testid="hero-detail"] [data-testid="hero-anti-air"]').first();
       await el.waitFor({ timeout: 10000 });
       const r = { text: await el.innerText(), air: await el.getAttribute("data-anti-air") };

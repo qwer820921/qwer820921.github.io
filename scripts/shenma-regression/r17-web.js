@@ -105,7 +105,7 @@ async (page) => {
     await H.sleep(300);
     const after = await floating();
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
+    await page.waitForSelector('[class*="heroName"]');
     const inHeroModal = await floating();
     await closeModals();
     out.F = { home, before, inModal, inPreview, after, inHeroModal };

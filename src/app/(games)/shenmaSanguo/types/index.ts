@@ -348,6 +348,22 @@ export type HeroSkillPayload =
       low_hp_ratio: number;
       /** 減傷時防禦計算後傷害的倍率（0.8＝少扣 20%） */
       damage_mult: number;
+    }
+  | {
+      id: "atk_down_aura";
+      /**
+       * 範圍內敵人對阻路武將的直接攻擊力倍率（0.9＝降低 10%）；
+       * 不是 0～1 之間（不含兩端）的有限數字時 Godot 當作沒有這個技能
+       */
+      atk_mult: number;
+    }
+  | {
+      id: "double_shot";
+      /**
+       * 每次普通攻擊追加一擊（同一個目標、這次攻擊力 × 1）的機率（0.2＝20%）；
+       * 不是 0～1 之間（不含兩端）的有限數字時 Godot 當作沒有這個技能
+       */
+      double_shot_chance: number;
     };
 
 export interface ExpeditionPayload {

@@ -266,7 +266,7 @@ async (page) => {
   await section("H", async () => {
     const goldBefore = (await session()).gold;
     await H.clickButton(page, "武將");
-    await page.locator('div[class*="heroName"]', { hasText: "關羽" }).first().click();
+    await page.locator('[class*="heroName"]', { hasText: "關羽" }).first().click();
     await page.getByRole("button", { name: /^升級 \(-\d+ 點\)$/ }).click();
     await page.waitForSelector("text=升級成功！", { timeout: 60000 });
     const d = await db();

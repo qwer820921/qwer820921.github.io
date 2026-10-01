@@ -3143,10 +3143,165 @@ await test("堅韌-S1", async () => {
   );
 });
 
+// 顏良「威壓」（設定表的被動描述「威壓：降低敵軍攻擊」，沒有寫比例、範圍與疊加方式）：參數與說明文字出自同一份定義（utils/heroSkills）；
+// 目前射程內所有敵人攻擊武將的直接攻擊力 × 0.9、取最強不疊加是第一版的設計值
+await test("威壓-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    slowAuraPercent,
+    defAuraPercent,
+    lifestealPercent,
+    atkSpeedAuraPercent,
+    counterPercent,
+    tenacityPercents,
+    atkDownAuraPercent,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const yl = heroSkillOf("yan_liang");
+  const payload = heroSkillPayload("yan_liang");
+  const text = describeHeroSkill(yl, 2, 102);
+  const noRange = describeHeroSkill(yl);
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "cao_cao",
+    "gan_ning",
+    "xia_hou_dun",
+    "liao_hua",
+    "yanliang",
+  ].filter((id) => heroSkillOf(id)?.id === "atk_down_aura");
+  check(
+    "威壓-S1 顏良（yan_liang）的威壓：送進 Godot 的參數（atk_down_aura、atk_mult 0.9，只有這兩個欄位）與說明文字出自同一份定義；說明寫出目前射程內（含邊界）所有敵人攻擊武將的直接攻擊力降低 10%（變成 90%）、目前的範圍半徑、地面飛行與免疫減速都算、防禦照常計算（攻擊力 100 打防禦 100 從扣 50 變成扣 45）、取最強不疊加、離開範圍或移位移除陣亡就恢復、移動速度與攻擊間隔不變、漏到城池扣的城防不會減少、暗紅色的範圍圈與向下箭頭、只在戰場不影響存檔；沒有射程時不寫範圍半徑；其他技能的計算不受影響；其他武將沒有威壓",
+    yl?.id === "atk_down_aura" &&
+      yl.name === "威壓" &&
+      yl.attackMultiplier === 0.9 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({ skill: { id: "atk_down_aura", atk_mult: 0.9 } }) &&
+      atkDownAuraPercent(yl) === 10 &&
+      atkDownAuraPercent(heroSkillOf("guan_yu")) === 0 &&
+      atkDownAuraPercent(null) === 0 &&
+      effectiveRange(yl, 2) === 2 &&
+      burnTickDamage(yl, 102) === 0 &&
+      slowAuraPercent(yl) === 0 &&
+      defAuraPercent(yl) === 0 &&
+      lifestealPercent(yl) === 0 &&
+      atkSpeedAuraPercent(yl) === 0 &&
+      counterPercent(yl) === 0 &&
+      JSON.stringify(tenacityPercents(yl)) ===
+        JSON.stringify({ threshold: 0, reduction: 0 }) &&
+      text.includes(
+        "目前射程內（含邊界）的所有敵人攻擊武將的直接攻擊力降低 10%（變成原本的 90%）"
+      ) &&
+      text.includes("目前等級的範圍半徑是 2 格") &&
+      !noRange.includes("範圍半徑是") &&
+      text.includes("地面、飛行與免疫減速的敵人都算") &&
+      text.includes("從扣 50 變成扣 45") &&
+      text.includes("取最強的一個，不會疊加") &&
+      text.includes("移位、被移除、陣亡時就恢復") &&
+      text.includes("敵人的移動速度與攻擊間隔不變") &&
+      text.includes("漏到城池時扣的城防也不會減少") &&
+      text.includes("暗紅色的範圍圈") &&
+      text.includes("暗紅色的向下箭頭") &&
+      text.includes("只在戰場生效，不影響存檔") &&
+      !text.includes("102") &&
+      others.length === 0,
+    { yl, payload, text, noRange, others }
+  );
+});
+
+// 孫尚香「連射」（設定表的被動描述「連射：有機率二次攻擊」，沒有寫機率、倍率與時序）：參數與說明文字出自同一份定義（utils/heroSkills）；
+// 20% 機率、同一個目標再打一擊（這次攻擊力的 100%）是第一版的設計值
+await test("連射-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    slowAuraPercent,
+    defAuraPercent,
+    lifestealPercent,
+    atkSpeedAuraPercent,
+    counterPercent,
+    tenacityPercents,
+    atkDownAuraPercent,
+    doubleShotPercent,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const ss = heroSkillOf("sun_shang_xiang");
+  const payload = heroSkillPayload("sun_shang_xiang");
+  const text = describeHeroSkill(ss, 5, 92);
+  const noAtk = describeHeroSkill(ss);
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "cao_cao",
+    "gan_ning",
+    "xia_hou_dun",
+    "liao_hua",
+    "yan_liang",
+    "sunshangxiang",
+    "Sun_Shang_Xiang",
+  ].filter((id) => heroSkillOf(id)?.id === "double_shot");
+  check(
+    "連射-S1 孫尚香（sun_shang_xiang）的連射：送進 Godot 的參數（double_shot、double_shot_chance 0.2，只有這兩個欄位）與說明文字出自同一份定義；說明寫出 20% 機率、敵人被打過後還活著時在同一次攻擊對同一個敵人再打一擊（攻擊力的 100%）、金色的「+1」、目前攻擊力的追加傷害、每次最多追加一擊且不再連射、不換目標不打其他敵人、第一擊打倒敵人時不連射、打不到的敵人不判定、擊殺與金幣只算一次、不引發其他技能、攻擊間隔不變、只在戰場不影響存檔；沒有攻擊力時不寫目前攻擊力；其他技能的計算不受影響；其他武將（含寫錯的 id）沒有連射",
+    ss?.id === "double_shot" &&
+      ss.name === "連射" &&
+      ss.doubleShotChance === 0.2 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: { id: "double_shot", double_shot_chance: 0.2 },
+        }) &&
+      doubleShotPercent(ss) === 20 &&
+      doubleShotPercent(heroSkillOf("zhao_yun")) === 0 &&
+      doubleShotPercent(null) === 0 &&
+      effectiveRange(ss, 5) === 5 &&
+      burnTickDamage(ss, 92) === 0 &&
+      slowAuraPercent(ss) === 0 &&
+      defAuraPercent(ss) === 0 &&
+      lifestealPercent(ss) === 0 &&
+      atkSpeedAuraPercent(ss) === 0 &&
+      counterPercent(ss) === 0 &&
+      atkDownAuraPercent(ss) === 0 &&
+      JSON.stringify(tenacityPercents(ss)) ===
+        JSON.stringify({ threshold: 0, reduction: 0 }) &&
+      text.includes(
+        "有 20% 的機率在同一次攻擊對同一個敵人再打一擊，傷害是這次普通攻擊的攻擊力（100%）"
+      ) &&
+      text.includes("敵人被這一擊打過後還活著時") &&
+      text.includes("金色的「+1」") &&
+      text.includes("目前攻擊力 92：連射時同一個敵人在這次攻擊受到 92 ＋ 92") &&
+      !noAtk.includes("目前攻擊力") &&
+      text.includes("最多追加一擊，追加的一擊不會再連射") &&
+      text.includes("不換目標，也不會打到其他敵人") &&
+      text.includes("第一擊就打倒敵人時不會連射") &&
+      text.includes("擊殺與金幣只算一次") &&
+      text.includes("追加的一擊不會引發其他技能") &&
+      text.includes("攻擊間隔不變") &&
+      text.includes("只在戰場生效，不影響存檔") &&
+      others.length === 0,
+    { ss, payload, text, noAtk, others }
+  );
+});
+
 // 技能綁定和正式設定表 heroes_config 的被動描述（passive）對照：趙雲是閃避、馬超是衝鋒（首擊加倍）；
 // 關羽是減速光環（「周圍敵人減速10%」）；劉備是防禦光環（「光環：提升友軍防禦」）；張飛是暈眩（「攻擊使敵人暈眩」）；
 // 魏延是吸血（「吸血：恢復生命」）；曹操是攻速光環（「指揮：提升友軍攻速」）；夏侯惇是反擊（「反擊：受傷時反彈傷害」）；
-// 廖化是堅韌（「堅韌：低血量減傷」）；
+// 廖化是堅韌（「堅韌：低血量減傷」）；顏良是威壓（「威壓：降低敵軍攻擊」）；孫尚香是連射（「連射：有機率二次攻擊」）；
 // 甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
 await test("技能對照-S1", async () => {
   const { heroSkillOf, heroSkillPayload } = require(
@@ -3165,6 +3320,8 @@ await test("技能對照-S1", async () => {
     "cao_cao",
     "xia_hou_dun",
     "liao_hua",
+    "yan_liang",
+    "sun_shang_xiang",
   ];
   const got = Object.fromEntries(
     ids.map((id) => [id, heroSkillOf(id)?.id ?? null])
@@ -3173,7 +3330,7 @@ await test("技能對照-S1", async () => {
     (id) => heroSkillPayload(id).skill?.id === "first_strike"
   );
   check(
-    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
+    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）、顏良 atk_down_aura（威壓）、孫尚香 double_shot（連射）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
     JSON.stringify(got) ===
       JSON.stringify({
         ma_chao: "first_strike",
@@ -3188,6 +3345,8 @@ await test("技能對照-S1", async () => {
         cao_cao: "atk_speed_aura",
         xia_hou_dun: "counter",
         liao_hua: "tenacity",
+        yan_liang: "atk_down_aura",
+        sun_shang_xiang: "double_shot",
       }) &&
       JSON.stringify(firstStrike) === '["ma_chao"]' &&
       !Object.values(got).includes("sweep") &&

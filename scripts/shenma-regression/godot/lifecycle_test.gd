@@ -172,14 +172,14 @@ func _run() -> void:
 		battle_ended_count += 1
 		last_result = r)
 
-	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、廖化的堅韌）、橫掃原型與攻速成長；
+	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、廖化的堅韌、顏良的威壓、孫尚香的連射）、橫掃原型與攻速成長；
 	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行；
 	# route 跑飛行與地面的路線無效（出兵前擋下）；blocker 只跑敵人攻擊阻路武將的冷卻；
 	# dodge 只跑趙雲「閃避」；firststrike 只跑首擊加倍（馬超「衝鋒」）；
 	# stagedata 跑關卡資料未完成（沒有波次、波次或路線的格式不對）；enemyatk 跑敵人設定的對武將攻擊力；immune 跑免疫減速；
 	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）；stun 只跑張飛的暈眩（skills 也包含）；lifesteal 只跑魏延的吸血（skills 也包含）；
 	# atkspeed 只跑曹操的攻速光環（skills 也包含）；damage 只跑敵人受傷的入口（拒絕無效的傷害）；
-	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）
+	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -197,6 +197,8 @@ func _run() -> void:
 			await _burn_input_cases()
 			await _counter_cases()
 			await _tenacity_cases()
+			await _atk_down_cases()
+			await _double_shot_cases()
 		elif only == "blocker":
 			await _blocker_cases()
 		elif only == "dodge":
@@ -243,8 +245,12 @@ func _run() -> void:
 			await _counter_cases()
 		elif only == "tenacity":
 			await _tenacity_cases()
+		elif only == "atkdown":
+			await _atk_down_cases()
+		elif only == "doubleshot":
+			await _double_shot_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot）", false)
 		_finish()
 		return
 
@@ -475,6 +481,12 @@ func _run() -> void:
 
 	# ── 廖化的堅韌（受傷前生命不高於 30% 時，防禦計算後的傷害再乘 0.8）──
 	await _tenacity_cases()
+
+	# ── 顏良的威壓（射程內敵人對阻路武將的直接攻擊力 × 0.9）──
+	await _atk_down_cases()
+
+	# ── 孫尚香的連射（普通攻擊命中後目標還活著時 20% 機率對同一個目標再打一擊）──
+	await _double_shot_cases()
 
 	_finish()
 
@@ -9911,6 +9923,1192 @@ func _tenacity_cases() -> void:
 		x5e.max_hp if x5e != null else -1.0, x5e.tenacity_on() if x5e != null else true, [x5e.tenacity_hp_ratio, x5e.tenacity_damage_mult] if x5e != null else []]
 	_check("堅韌-5 移位、升級、換技能、移除與新的一場：減傷過的廖化移到建築格後參數不變、仍然生效、不再被攻擊；升級後用新的最大生命判斷（25% → 500／2000 每擊 40、面板生效中；32% → 640／2000 面板未生效、扣 50 後下一擊 40）；換成反擊後堅韌清除、生命 300 每擊 50；移出隊伍後不在場上、敵人不再被擋住；新的一場沒有紀錄、滿血、未生效",
 		ok5a and ok5b and ok5c and ok5d and d5.e == [0, 0, 1000.0, 1000.0, false, [0.3, 0.8]], d5)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 威壓（顏良）──
+# 戰鬥中，顏良目前射程內（含邊界）的所有存活敵人對阻路武將的直接攻擊力 × 0.9；地面、飛行、免疫減速都算（不是減速）；
+# 敵人取所有來源中最強的一個（不相乘）；每次攻擊用當下的有效攻擊力，再照武將的閃避、防禦、堅韌、反擊計算；
+# 離開範圍、移位、升級、倒下、移除、換技能、戰鬥結束、新的一場都在下一幀撤除（有效期只是清理保險）；移動速度、攻擊間隔、漏到城池扣的城防都不變
+
+## 顏良的威壓（和網頁 utils/heroSkills 的出征參數相同）
+const WY_SKILL: Dictionary = {"id": "atk_down_aura", "atk_mult": 0.9}
+## 攻擊力 100 打防禦 100：沒有威壓扣 50、0.9 扣 45、0.8 扣 40；劉備的防禦光環裡（防禦 120）90 × 100 ÷ 220；
+## 低血量的堅韌再乘 0.8 是 36（同時有反擊 20% 時反彈 7.2）；設定錯誤的攻擊力（預設 20）× 0.9 ＝ 18 扣 9
+const WY_HIT: float = 50.0
+const WY_HIT_90: float = 45.0
+const WY_HIT_80: float = 40.0
+const WY_HIT_AURA: float = 90.0 * 100.0 / 220.0
+## 實際引擎用的敵人：慢速地面兵（攻擊力 100，普通與免疫減速）、攻擊力 0 與攻擊力寫成字串（照既有規則用預設 20）的慢速地面兵、
+## 不會移動的地面／飛行／免疫減速、快速地面兵（漏到城池）
+const WY_ENEMIES: Array = [
+	{"enemy_id": "wy_walk", "name": "W", "hp": 99999.0, "speed": 20.0, "atk": 100},
+	{"enemy_id": "wy_walk_imm", "name": "I", "hp": 99999.0, "speed": 20.0, "atk": 100, "trait": "immune_slow"},
+	{"enemy_id": "wy_zero", "name": "Z", "hp": 99999.0, "speed": 20.0, "atk": 0},
+	{"enemy_id": "wy_bad", "name": "B", "hp": 99999.0, "speed": 20.0, "atk": "100"},
+	{"enemy_id": "wy_post", "name": "P", "hp": 99999.0, "speed": 0.0, "atk": 100},
+	{"enemy_id": "wy_post_fly", "name": "F", "hp": 99999.0, "speed": 0.0, "atk": 100, "movement_type": "flying"},
+	{"enemy_id": "wy_post_imm", "name": "Q", "hp": 99999.0, "speed": 0.0, "atk": 100, "trait": "immune_slow"},
+	{"enemy_id": "wy_run", "name": "R", "hp": 99999.0, "speed": 240.0, "atk": 100},
+]
+
+## 出征的武將：防禦 100、生命 hp（預設很多，被打很多下也不會倒）
+func _wy_hero(hid: String, skill: Variant = null, slot: int = 1, hp: float = 1000000.0) -> Dictionary:
+	var h: Dictionary = _r12_hero(hid, skill)
+	h["def"] = 100.0
+	h["hp"] = hp
+	h["slot"] = slot
+	return h
+
+## 實際引擎：載入一場（經過 JSON）並依 cells 的順序放置武將（hero_id → 格子），不開戰。顏良是步兵、射程 2 格、射程成長 0.5（2 級 2.5 格）；
+## wy_b 是帶其他倍率的測試武將（射程 3 格）；擋路的 wy_tank、廖化、夏侯惇射程 0.3 格（打不到擋住的敵人）；劉備射程 3 格
+func _wy_load(rec: Node, battle_id: String, waves: Array, team: Array, cells: Dictionary) -> void:
+	var p: Dictionary = _r12_payload("wy_" + battle_id, waves, battle_id, team)
+	p["heroes_config"] = [
+		{"hero_id": "yan_liang", "name": "顏良", "job": "infantry", "attack_range": 2.0, "attack_speed": 1.0, "range_growth": 0.5},
+		{"hero_id": "wy_b", "name": "B", "job": "cavalry", "attack_range": 3.0, "attack_speed": 1.0},
+		{"hero_id": "wy_tank", "name": "T", "job": "infantry", "attack_range": 0.3, "attack_speed": 1.0},
+		{"hero_id": "liao_hua", "name": "廖化", "job": "infantry", "attack_range": 0.3, "attack_speed": 1.0},
+		{"hero_id": "xia_hou_dun", "name": "夏侯惇", "job": "infantry", "attack_range": 0.3, "attack_speed": 1.0},
+		{"hero_id": "liu_bei", "name": "劉備", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5},
+	]
+	for c in WY_ENEMIES:
+		p["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p)
+	for hid in cells:
+		_r12_place(hid, cells[hid])
+
+## 固定步進用的一對：真正的 Enemy（攻擊力 atk_v、速度 0，停在第 3 格）與真正的 Hero（防禦 100、最大生命 1000、生命 hp，放在第 3 格擋住它、不攻擊）；
+## skill 是技能（null 表示沒有技能）。測試自己用固定的 delta 呼叫敵人的 _physics_process（第 2 步打第一擊）
+func _wy_pair(holder: Node, atk_v: Variant = 100.0, hp: float = 1000.0, skill: Variant = null) -> Dictionary:
+	var map := BlkMap.new()
+	holder.add_child(map)
+	var e: Node = load("res://entities/enemy/Enemy.gd").new()
+	holder.add_child(e)
+	e.set_physics_process(false)
+	var cfg: Dictionary = {"enemy_id": "wy", "hp": 99999.0, "speed": 0.0}
+	if atk_v != null:
+		cfg["atk"] = atk_v
+	e.setup(cfg, [Vector2(0.5 * map.tile, 0.0), Vector2(12.5 * map.tile, 0.0)])
+	e.position = Vector2(3.5 * map.tile, 0.0)
+	e._game_map = map
+	var h: Node = _blk_hero(holder, map, 3, 1000.0)
+	h.def_stat = 100.0
+	h.current_hp = hp
+	h._read_skill({} if skill == null else {"skill": skill})
+	return {"e": e, "h": h, "map": map}
+
+## 敵人最近幾次攻擊用的攻擊力 [敵人設定的攻擊力, 倍率, 實際用的攻擊力]
+func _wy_atk_log(e: Node) -> Array:
+	return e.atk_log.map(func(x): return [x.base, x.mult, x.atk])
+
+## 實際引擎：開戰、等第一個敵人出現並放到 cell 的中心再加上 offset 格，等它被擋住
+func _wy_start(cell: Vector2i, offset: Vector2 = Vector2(-0.4, 0.0)) -> Node:
+	var e: Node = await _stn_start(cell, offset)
+	if e != null:
+		await _wait_until(func(): return is_instance_valid(e) and e._blocker != null, 5.0)
+	return e
+
+## 實際引擎：等擋路的武將 h 再被敵人 e 打 n 次，回傳每一次的扣血（逐個物理步進讀取；牆鐘 wall_ms 逾時）
+func _wy_hits(h: Node, e: Node, n: int, wall_ms: int = 20000) -> Array:
+	var rows: Array = await _ctr_track(h, e, wall_ms, func(rs): return rs.filter(func(r): return int(r.atk) > 0).size() >= n)
+	return rows.filter(func(r): return int(r.atk) > 0).map(func(r): return -float(r.dh))
+
+## 敵人 e 的威壓狀態：[是不是有 src 這個來源, 倍率, 有效攻擊力]
+func _wy_has(e: Node, src: String) -> Array:
+	if not is_instance_valid(e):
+		return []
+	return [e.has_atk_down_from(src), snappedf(e.atk_mult, 0.0001), snappedf(e.effective_blocker_atk(), 0.0001)]
+
+func _atk_down_cases() -> void:
+	# 威壓-0：技能參數的判讀：atk_mult 是 0～1 之間（不含兩端）的有限數字才啟用（0.9、0.5、0.0001、0.9999 與經過 JSON 的 0.9）；
+	# 字串、布林、null、陣列、字典、NaN、正負無限大、0、負數、1、超過 1、沒有欄位都不啟用；不認得或大小寫不同的 id、其他技能帶 atk_mult 也不啟用；
+	# 威壓不帶其他技能，換成其他技能或沒有技能後清除
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var cases0: Array = [[{"id": "atk_down_aura", "atk_mult": 0.9}, 0.9], [{"id": "atk_down_aura", "atk_mult": 0.5}, 0.5],
+		[{"id": "atk_down_aura", "atk_mult": 0.0001}, 0.0001], [{"id": "atk_down_aura", "atk_mult": 0.9999}, 0.9999]]
+	for bad in ["0.9", true, false, null, [0.9], {"v": 0.9}, NAN, INF, -INF, 0, 0.0, -0.1, 1, 1.0, 1.5]:
+		cases0.append([{"id": "atk_down_aura", "atk_mult": bad}, 1.0])
+	cases0.append_array([[{"id": "atk_down_aura"}, 1.0], [{"id": "atk_down_aura_x", "atk_mult": 0.9}, 1.0], [{"id": "Atk_Down_Aura", "atk_mult": 0.9}, 1.0],
+		[{"id": "slow_aura", "slow_mult": 0.9, "atk_mult": 0.9}, 1.0], [{"id": "tenacity", "low_hp_ratio": 0.3, "damage_mult": 0.8, "atk_mult": 0.9}, 1.0], [null, 1.0]])
+	var bad0: Array = []
+	for c in cases0:
+		h0._read_skill({} if c[0] == null else {"skill": c[0]})
+		if h0.atk_down_aura_mult != float(c[1]):
+			bad0.append(str(c[0]))
+	h0._read_skill({"skill": JSON.parse_string("{\"id\": \"atk_down_aura\", \"atk_mult\": 0.9}")})
+	var json0: float = h0.atk_down_aura_mult
+	var other0: Array = [h0.stun_duration, h0.slow_aura_mult, h0.def_aura_mult, h0.dodge_chance, h0.first_strike_multiplier, h0.range_multiplier, h0.burn_ratio,
+		h0.sweep_ratio, h0.lifesteal_ratio, h0.atk_speed_aura_mult, h0.counter_ratio, h0.tenacity_hp_ratio]
+	h0._read_skill({"skill": {"id": "counter", "counter_ratio": 0.2}})
+	var switched0: Array = [h0.atk_down_aura_mult, h0.counter_ratio]
+	h0._read_skill({"skill": WY_SKILL.duplicate()})
+	h0._read_skill({})
+	var cleared0: float = h0.atk_down_aura_mult
+	var src0: bool = h0.atk_down_aura_source.begins_with("hero_atk_down_aura#") and h0.atk_down_aura_source != h0.aura_source
+	h0.free()
+	_check("威壓-0 技能參數：atk_mult 是 0～1 之間（不含兩端）的有限數字才啟用（0.9、0.5、0.0001、0.9999 與經過 JSON 的 0.9）；字串、布林、null、陣列、字典、NaN、無限大、0、負數、1、超過 1、沒有欄位都不啟用；不認得或大小寫不同的 id、其他技能帶 atk_mult 都不啟用；威壓不帶其他技能，換成反擊或沒有技能後清除；來源是這個武將節點自己的",
+		bad0.is_empty() and json0 == 0.9 and other0 == [0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0] and switched0 == [1.0, 0.2] and cleared0 == 1.0 and src0,
+		{"bad": bad0, "json": json0, "other": other0, "switched": switched0, "cleared": cleared0, "source": src0, "cases": cases0.size()})
+
+	# 威壓-1：敵人身上的來源（真正的 Enemy，不經過場景樹的物理處理）：攻擊力 100：
+	# a 來源 A 0.9 → 倍率 0.9、有效攻擊力 90、設定的攻擊力仍是 100；同一個來源再套用不累加（仍 0.9、只有 1 個來源）；
+	# b 來源 B 0.8 → 0.8（取最強，不相乘）；撤除 B 回到 0.9、撤除 A 回到 1 與 100；撤除不存在的來源不變；
+	# c 無效的套用（空字串來源、倍率 0／1／1.5／負數／NaN／無限大、有效期 0／負數／NaN／無限大）不建立來源，也不改動已有的來源 A（倍率與有效期都不變）；
+	# d 有效期照遊戲時間倒數（物理步進 0.25 秒剩 0.25，再 0.3 秒已到期、回到 1）；
+	# e 免疫減速的敵人照樣受到威壓（減速照樣不套用）、飛行敵人也可以有威壓；
+	# f 攻擊力 0 的有效攻擊力仍是 0；攻擊力寫成字串或沒有欄位時照既有規則用 20，威壓後 18；
+	# g 已經倒下、正要被移除的敵人不建立來源；
+	# h 威壓不改移動速度（速度 60 的敵人仍是 60、減速倍率 1、沒有減速來源）與攻擊冷卻
+	var h1 := _dodge_holder()
+	var m1 := BlkMap.new()
+	h1.add_child(m1)
+	var ea: Node = _ctr_enemy(h1, m1)
+	ea.apply_atk_down_from("A", 0.9, 0.5)
+	var a1: Array = [ea.atk_mult, ea.effective_blocker_atk(), ea.blocker_atk]
+	ea.apply_atk_down_from("A", 0.9, 0.5)
+	a1.append_array([ea.atk_mult, ea._atk_down_sources.size()])
+	ea.apply_atk_down_from("B", 0.8, 0.5)
+	var b1: Array = [ea.atk_mult, ea.effective_blocker_atk()]
+	ea.remove_atk_down_from("B")
+	b1.append(ea.atk_mult)
+	ea.remove_atk_down_from("A")
+	b1.append_array([ea.atk_mult, ea.effective_blocker_atk()])
+	ea.remove_atk_down_from("X")
+	b1.append(ea.atk_mult)
+	ea.apply_atk_down_from("A", 0.9, 0.5)
+	for c in [["", 0.9, 0.5], ["C", 0.0, 0.5], ["C", 1.0, 0.5], ["C", 1.5, 0.5], ["C", -0.1, 0.5], ["C", NAN, 0.5], ["C", INF, 0.5],
+			["C", 0.9, 0.0], ["C", 0.9, -1.0], ["C", 0.9, NAN], ["C", 0.9, INF], ["A", 1.5, 0.5], ["A", 0.0, 0.5], ["A", 0.5, 0.0], ["A", 0.5, NAN]]:
+		ea.apply_atk_down_from(c[0], c[1], c[2])
+	var c1: Array = [ea.atk_down_state().sources, ea.atk_mult]
+	# 敵人每一步的 delta 上限 0.1 秒：用 0.05 秒的步進
+	for i in range(5):
+		ea._physics_process(0.05)
+	var d1: Array = [snappedf(float(ea.atk_down_state().sources.get("A", {}).get("left", -1.0)), 0.0001), ea.atk_mult]
+	for i in range(6):
+		ea._physics_process(0.05)
+	d1.append_array([ea._atk_down_sources.size(), ea.atk_mult, ea.effective_blocker_atk()])
+	var ei: Node = _ctr_enemy(h1, m1, 100.0, 99999.0, {"trait": "immune_slow"})
+	ei.apply_atk_down_from("A", 0.9, 0.5)
+	ei.apply_slow_from("S", 0.5, 0.5)
+	var ef: Node = _ctr_enemy(h1, m1, 100.0, 99999.0, {"movement_type": "flying"})
+	ef.apply_atk_down_from("A", 0.9, 0.5)
+	var e1: Array = [ei.atk_mult, ei.speed_mult, ei.immune_slow, ef.atk_mult, ef.is_flying()]
+	var f1: Array = []
+	for v in [0, "100", null]:
+		var ez: Node = load("res://entities/enemy/Enemy.gd").new()
+		h1.add_child(ez)
+		ez.set_physics_process(false)
+		var cz: Dictionary = {"enemy_id": "wy", "hp": 100.0, "speed": 0.0}
+		if v != null:
+			cz["atk"] = v
+		ez.setup(cz, [Vector2(0, 0), Vector2(100, 0)])
+		ez.apply_atk_down_from("A", 0.9, 0.5)
+		f1.append([ez.blocker_atk, snappedf(ez.effective_blocker_atk(), 0.0001)])
+	var ed: Node = _ctr_enemy(h1, m1)
+	ed.take_damage(1.0e9)
+	ed.apply_atk_down_from("A", 0.9, 0.5)
+	var eq: Node = _ctr_enemy(h1, m1)
+	eq.queue_free()
+	eq.apply_atk_down_from("A", 0.9, 0.5)
+	var g1: Array = [ed._atk_down_sources.size(), ed.atk_mult, eq._atk_down_sources.size(), eq.atk_mult]
+	var es: Node = _ctr_enemy(h1, m1, 100.0, 99999.0, {"speed": 60.0})
+	var sp0: float = es.get_effective_speed()
+	var cd0: float = es._blocker_atk_timer
+	es.apply_atk_down_from("A", 0.9, 0.5)
+	var h1x: Array = [sp0, es.get_effective_speed(), es.speed_mult, es.slow_sources_state().is_empty(), es._blocker_atk_timer == cd0, es.atk_mult]
+	h1.queue_free()
+	var d1x: Dictionary = {"a": a1, "b": b1, "c": c1, "d": d1, "e": e1, "f": f1, "g": g1, "h": h1x}
+	_check("威壓-1 敵人的來源：0.9 → 有效攻擊力 90、設定的攻擊力仍是 100、同一個來源不累加；加上 0.8 取 0.8（不相乘），撤除後回到 0.9、全部撤除回到 1；無效的套用不建立、不改動已有的來源；有效期照遊戲時間到期；免疫減速與飛行的敵人照樣受到威壓（減速照樣免疫）；攻擊力 0 仍是 0、字串或沒有攻擊力照既有規則 20 → 18；倒下、正要被移除的不建立；移動速度與攻擊冷卻不變",
+		a1 == [0.9, 90.0, 100.0, 0.9, 1] and b1 == [0.8, 80.0, 0.9, 1.0, 100.0, 1.0] and c1 == [{"A": {"mult": 0.9, "left": 0.5}}, 0.9]
+			and d1 == [0.25, 0.9, 0, 1.0, 100.0] and e1 == [0.9, 1.0, true, 0.9, true]
+			and f1 == [[0.0, 0.0], [20.0, 18.0], [20.0, 18.0]] and g1 == [0, 1.0, 0, 1.0]
+			and h1x == [60.0, 60.0, 1.0, true, true, 0.9],
+		d1x)
+
+	# 威壓-2：固定步進（真正的 Enemy 與 Hero，每步 1/60 秒；敵人第 2、62、122 步攻擊）：攻擊力 100 打防禦 100 的武將（最大生命 1000）：
+	# a 沒有威壓每擊 50；b 威壓 0.9 每擊 45，攻擊的步數不變（冷卻不變、每次攻擊只結算一次），攻擊紀錄是 [100, 0.9, 90]，舊的攻擊時間紀錄格式不變（只有時間）；
+	# c 低血量的廖化（生命 300、堅韌）每擊 36；同時設定反擊 0.2 時每擊 36、反彈 7.2（用威壓與堅韌之後的實扣）；
+	# d 劉備的防禦光環（防禦 × 1.2）每擊約 40.91（90 × 100 ÷ 220，不是 50 − 10）；
+	# e 閃避（抽樣 0）不扣血，攻擊照樣算一次、紀錄 90；f 攻擊力 0 的敵人每次攻擊都不扣血、攻擊照常（紀錄 0）；
+	# g 0.9 與 0.8 重疊每擊 40，第 61 步前撤除 0.8 → 第 62 步 45，第 121 步前撤除 0.9 → 第 122 步 50；
+	# h 攻擊力寫成字串（照既有規則 20）威壓後 18、每擊 9
+	var h2 := _dodge_holder()
+	var pa: Dictionary = _wy_pair(h2)
+	var ra: Dictionary = _ctr_steps(pa.e, pa.h, 130)
+	var pb: Dictionary = _wy_pair(h2)
+	pb.e.apply_atk_down_from("T", 0.9, 1.0e9)
+	var rb: Dictionary = _ctr_steps(pb.e, pb.h, 130)
+	var b2: Dictionary = {"rows": rb.atk, "odd": rb.odd, "log": _wy_atk_log(pb.e), "attack_log": pb.e.attack_log.all(func(x): return x is float), "n": pb.e.attack_log.size()}
+	var pc: Dictionary = _wy_pair(h2, 100.0, 300.0, TEN_SKILL.duplicate())
+	pc.e.apply_atk_down_from("T", 0.9, 1.0e9)
+	var rc: Dictionary = _ctr_steps(pc.e, pc.h, 70)
+	var pc2: Dictionary = _wy_pair(h2, 100.0, 300.0, TEN_SKILL.duplicate())
+	pc2.h.counter_ratio = 0.2
+	pc2.e.apply_atk_down_from("T", 0.9, 1.0e9)
+	var rc2: Dictionary = _ctr_steps(pc2.e, pc2.h, 70)
+	var c2: Dictionary = {"ten": rc.atk, "ten_odd": rc.odd, "ctr": rc2.atk, "ctr_odd": rc2.odd, "ctr_log": pc2.h.counter_log.map(func(x): return [x.taken, x.reflect])}
+	var pd: Dictionary = _wy_pair(h2)
+	pd.h.apply_def_from("test_def", 1.2, 1.0e9)
+	pd.e.apply_atk_down_from("T", 0.9, 1.0e9)
+	var rd: Dictionary = _ctr_steps(pd.e, pd.h, 70)
+	var pe: Dictionary = _wy_pair(h2)
+	pe.h.dodge_chance = 0.5
+	pe.h.dodge_roll_override = func() -> float: return 0.0
+	pe.e.apply_atk_down_from("T", 0.9, 1.0e9)
+	var re: Dictionary = _ctr_steps(pe.e, pe.h, 70)
+	var e2: Dictionary = {"rows": re.atk, "odd": re.odd, "dodges": pe.h.dodge_count, "log": _wy_atk_log(pe.e)}
+	var pf: Dictionary = _wy_pair(h2, 0)
+	pf.e.apply_atk_down_from("T", 0.9, 1.0e9)
+	var rf: Dictionary = _ctr_steps(pf.e, pf.h, 130)
+	var f2: Dictionary = {"rows": rf.atk, "odd": rf.odd, "attacks": pf.e.blocker_attacks, "log": _wy_atk_log(pf.e), "hp": pf.h.current_hp}
+	var pg: Dictionary = _wy_pair(h2)
+	pg.e.apply_atk_down_from("A", 0.9, 1.0e9)
+	pg.e.apply_atk_down_from("B", 0.8, 1.0e9)
+	var rg: Dictionary = _ctr_steps(pg.e, pg.h, 130, func(i: int) -> void:
+		if i == 61:
+			pg.e.remove_atk_down_from("B")
+		elif i == 121:
+			pg.e.remove_atk_down_from("A"))
+	var pstr: Dictionary = _wy_pair(h2, "100")
+	pstr.e.apply_atk_down_from("T", 0.9, 1.0e9)
+	var rh: Dictionary = _ctr_steps(pstr.e, pstr.h, 70)
+	h2.queue_free()
+	_check("威壓-2 固定步進（真正的 Enemy 阻路攻擊）：沒有威壓每擊 50；威壓 0.9 每擊 45、攻擊的步數不變（第 2、62、122 步，每次只結算一次）、攻擊紀錄 [100, 0.9, 90]、舊的時間紀錄格式不變；低血量堅韌 36、加上反擊反彈 7.2；防禦光環裡約 40.91；閃避不扣血但算一次攻擊；攻擊力 0 不扣血、攻擊照常；0.9 與 0.8 重疊 40、撤除 0.8 後 45、全部撤除後 50；攻擊力寫成字串時 20 × 0.9 ＝ 18、每擊 9",
+		_ctr_rows_ok(ra.atk, [[2, WY_HIT, 0, 0], [62, WY_HIT, 0, 0], [122, WY_HIT, 0, 0]]) and ra.odd.is_empty()
+			and _ctr_rows_ok(b2.rows, [[2, WY_HIT_90, 0, 0], [62, WY_HIT_90, 0, 0], [122, WY_HIT_90, 0, 0]]) and b2.odd.is_empty()
+			and _ten_same(b2.log, [[100.0, 0.9, 90.0], [100.0, 0.9, 90.0], [100.0, 0.9, 90.0]]) and b2.attack_log and b2.n == 3
+			and _ctr_rows_ok(c2.ten, [[2, 36.0, 0, 0], [62, 36.0, 0, 0]]) and c2.ten_odd.is_empty()
+			and _ctr_rows_ok(c2.ctr, [[2, 36.0, 7.2, 1], [62, 36.0, 7.2, 1]]) and c2.ctr_odd.is_empty() and _ten_same(c2.ctr_log, [[36.0, 7.2], [36.0, 7.2]])
+			and _ctr_rows_ok(rd.atk, [[2, WY_HIT_AURA, 0, 0], [62, WY_HIT_AURA, 0, 0]]) and rd.odd.is_empty()
+			and _ctr_rows_ok(e2.rows, [[2, 0, 0, 0], [62, 0, 0, 0]]) and e2.odd.is_empty() and e2.dodges == 2 and _ten_same(e2.log, [[100.0, 0.9, 90.0], [100.0, 0.9, 90.0]])
+			and _ctr_rows_ok(f2.rows, [[2, 0, 0, 0], [62, 0, 0, 0], [122, 0, 0, 0]]) and f2.odd.is_empty() and f2.attacks == 3 and f2.hp == 1000.0
+			and _ten_same(f2.log, [[0.0, 0.9, 0.0], [0.0, 0.9, 0.0], [0.0, 0.9, 0.0]])
+			and _ctr_rows_ok(rg.atk, [[2, WY_HIT_80, 0, 0], [62, WY_HIT_90, 0, 0], [122, WY_HIT, 0, 0]]) and rg.odd.is_empty()
+			and _ctr_rows_ok(rh.atk, [[2, 9.0, 0, 0], [62, 9.0, 0, 0]]) and rh.odd.is_empty(),
+		{"a": ra, "b": b2, "c": c2, "d": rd, "e": e2, "f": f2, "g": rg, "h": rh})
+
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+	var t: float = float(main._tile_size)
+
+	# 威壓-3：範圍與對象（不會移動的敵人；顏良在建築格 (6,4)、射程 2 格、攻擊冷卻設成很長 → 這段期間沒有普通攻擊）：
+	# 備戰時威壓不作用；開戰後正好 2 格（含邊界）、1 格、√2 格的地面敵人與 1 格的飛行、免疫減速的敵人都是 0.9（顏良的來源），2.02 格的沒有；
+	# 移動速度不變（減速倍率 1）、設定的攻擊力仍是 100；快照的 hero_atk_down 作用中、倍率 0.9、半徑 2、影響 5 個，enemy_atk_down 列出設定的攻擊力、倍率、有效攻擊力與來源；
+	# 升到 2 級（射程 2.5 格）後 2.02 格的也有；移到遠處都沒有、移回來都有（下一幀）
+	var team3: Array = [_wy_hero("yan_liang", WY_SKILL.duplicate())]
+	_wy_load(rec, "wy-3", [[_grp("wy_post", 4, 0.02), _grp("wy_post_fly", 1, 0.02), _grp("wy_post_imm", 1, 0.02)]], team3, {"yan_liang": Vector2i(6, 4)})
+	var y3: Node = _fly_hero("yan_liang")
+	await _def_frames()
+	var prep3: Array = [y3.atk_down_state().aura_active, y3.atk_down_state().affected.size()] if y3 != null else []
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() >= 6, 5.0)
+	var es3: Array = _sw_enemies()
+	var d3: Dictionary = {"prep": prep3}
+	var ok3: bool = false
+	if es3.size() == 6 and y3 != null:
+		y3._atk_timer = 999.0
+		var R: float = y3.attack_range * t
+		var posts: Array = es3.filter(func(e): return e.enemy_id == "wy_post")
+		var fly: Node = es3.filter(func(e): return e.enemy_id == "wy_post_fly")[0]
+		var imm: Node = es3.filter(func(e): return e.enemy_id == "wy_post_imm")[0]
+		var c: Vector2 = y3.global_position
+		posts[0].global_position = c + Vector2(R, 0.0)
+		posts[1].global_position = c + Vector2(R + 0.02 * t, 0.0)
+		posts[2].global_position = c + Vector2(0.0, 1.0) * t
+		posts[3].global_position = c + Vector2(-1.0, 1.0) * t
+		fly.global_position = c + Vector2(1.0, 0.0) * t
+		imm.global_position = c + Vector2(-1.0, 0.0) * t
+		var order: Array = [posts[0], posts[1], posts[2], posts[3], fly, imm]
+		await _def_frames(4)
+		var src: String = y3.atk_down_aura_source
+		var got: Array = order.map(func(e): return _wy_has(e, src))
+		var speeds: Array = order.map(func(e): return [e.speed_mult, e.get_effective_speed(), e.blocker_atk])
+		var snap3: Dictionary = _fly_snapshot(rec)
+		var hs: Dictionary = snap3.get("hero_atk_down", {}).get("yan_liang", {})
+		var es_edge: Dictionary = snap3.get("enemy_atk_down", {}).get(str(posts[0].get_instance_id()), {})
+		var es_out: Dictionary = snap3.get("enemy_atk_down", {}).get(str(posts[1].get_instance_id()), {})
+		var base_edge: Variant = snap3.get("enemy_atk", {}).get(str(posts[0].get_instance_id()))
+		_r19_js(rec, {"type": "update_team", "team_list": [_wy_hero("yan_liang", WY_SKILL.duplicate()).merged({"level": 2}, true)]})
+		await _def_frames(1)
+		var lv2: Array = [y3.attack_range, _wy_has(posts[1], src)]
+		main.game_map.clear_occupied(Vector2i(6, 4))
+		y3.reposition(Vector2i(12, 6), main.game_map.grid_to_world(Vector2i(12, 6)), main.game_map)
+		main.game_map.set_occupied(Vector2i(12, 6), y3)
+		var pt0: float = _pt()
+		await _def_frames(1)
+		var away: Array = order.map(func(e): return _wy_has(e, src))
+		var away_dt: float = _pt() - pt0
+		main.game_map.clear_occupied(Vector2i(12, 6))
+		y3.reposition(Vector2i(6, 4), main.game_map.grid_to_world(Vector2i(6, 4)), main.game_map)
+		main.game_map.set_occupied(Vector2i(6, 4), y3)
+		await _def_frames(1)
+		var back: Array = order.map(func(e): return _wy_has(e, src))
+		d3.merge({"got": got, "speeds": speeds, "snapshot": hs, "edge": es_edge, "out": es_out, "base_edge": base_edge, "lv2": lv2, "away": away, "away_dt": away_dt, "back": back})
+		var on: Array = [true, 0.9, 90.0]
+		var off: Array = [false, 1.0, 100.0]
+		ok3 = prep3 == [false, 0] and got == [on, off, on, on, on, on] and speeds.all(func(x): return x == [1.0, 0.0, 100.0]) \
+			and hs.get("aura_active") == true and hs.get("aura_mult") == 0.9 and hs.get("radius") == 2.0 and (hs.get("affected", []) as Array).size() == 5 and hs.get("aura_source") == src \
+			and es_edge.get("base") == 100.0 and es_edge.get("mult") == 0.9 and _ls_near(es_edge.get("effective"), 90.0, 1e-9) and (es_edge.get("sources", {}) as Dictionary).has(src) \
+			and es_out.get("mult") == 1.0 and (es_out.get("sources", {}) as Dictionary).is_empty() and base_edge == 100.0 \
+			and lv2 == [2.5, on] and away.all(func(x): return x == off) and away_dt < Enemy.ATK_DOWN_REFRESH_TTL and back == [on, on, on, on, on, on]
+	_check("威壓-3 範圍與對象：備戰時不作用；開戰後正好 2 格（含邊界）、1 格、√2 格的地面與 1 格的飛行、免疫減速的敵人都是 0.9（有效攻擊力 90），2.02 格的沒有；移動速度與設定的攻擊力不變；快照的威壓作用中、倍率 0.9、半徑 2、影響 5 個，敵人列出設定的攻擊力、倍率、有效攻擊力與來源；升到 2 級（2.5 格）後 2.02 格的也有；移到遠處後下一幀全部恢復（不用等有效期），移回來都有",
+		ok3, d3)
+
+	# 威壓-4：實際引擎（時間倍率與暫停）：wy_tank 在道路 (4,5) 擋住慢速地面兵（攻擊力 100），顏良在 (5,4)（距離約 1.72 格）：
+	# 1 倍 3 次攻擊 → 2 倍 3 次 → 部署選單（0.1 倍）1 次 → 關閉、回到 1 倍後手動暫停 1 秒（牆鐘）→ 繼續後再 1 次：
+	# 每一步：敵人攻擊 1 次時扣 45、沒有攻擊的步數生命不變；暫停中沒有攻擊、生命不變，威壓的來源還在、剩餘有效期不變（暫停不算時間），繼續後仍是 0.9；
+	# 攻擊的遊戲時間間隔都是 1 秒（前後一個物理步進內），攻擊紀錄每筆都是 [100, 0.9, 90]、筆數＝攻擊次數
+	var d4: Dictionary = {}
+	var ok4: bool = false
+	_wy_load(rec, "wy-4", [[_grp("wy_walk", 1, 0.02)]], [_wy_hero("yan_liang", WY_SKILL.duplicate(), 1), _wy_hero("wy_tank", null, 2)],
+		{"yan_liang": Vector2i(5, 4), "wy_tank": Vector2i(4, 5)})
+	var y4: Node = _fly_hero("yan_liang")
+	var k4: Node = _fly_hero("wy_tank")
+	var e4: Node = await _wy_start(Vector2i(4, 5))
+	if e4 != null and y4 != null and k4 != null:
+		await _def_frames(2)
+		var src4: String = y4.atk_down_aura_source
+		var st4: Dictionary = {"n": 0, "phase": 0, "menu": {}, "pause": {}, "paused": [], "e": e4}
+		var each4 := func(row: Dictionary) -> void:
+			st4.n = int(st4.n) + int(row.atk)
+			var ph: int = int(st4.phase)
+			if ph == 3:
+				st4.paused.append(row)
+			if ph == 0 and int(st4.n) >= 3:
+				_r19_speed(rec, 2.0)
+				st4.phase = 1
+			elif ph == 1 and int(st4.n) >= 6:
+				st4.menu = _r19_open(rec, 2)
+				st4.phase = 2
+			elif ph == 2 and int(st4.n) >= 7:
+				_r19_close(rec, st4.menu)
+				_r19_speed(rec, 1.0)
+				var s0: Dictionary = st4.e.atk_down_state().sources
+				st4.pause = {"n": st4.n, "left": s0.get(src4, {}).get("left", -1.0), "wall": Time.get_ticks_msec(), "reply": _r20_pause(rec, true)}
+				st4.phase = 3
+			elif ph == 3 and Time.get_ticks_msec() - int(st4.pause.wall) >= 1000:
+				var s1: Dictionary = st4.e.atk_down_state().sources
+				st4.pause["n2"] = st4.n
+				st4.pause["left2"] = s1.get(src4, {}).get("left", -1.0)
+				st4.pause["frozen"] = _r20_frozen()
+				_r20_pause(rec, false)
+				st4.phase = 4
+		var rows4: Array = await _ctr_track(k4, e4, 60000, func(_r): return int(st4.phase) == 4 and int(st4.n) >= 8, each4)
+		var bad4: Array = []
+		for i in range(rows4.size()):
+			var r: Dictionary = rows4[i]
+			if not ((int(r.atk) == 0 and float(r.dh) == 0.0) or (int(r.atk) == 1 and absf(float(r.dh) + WY_HIT_90) < 1e-6)):
+				bad4.append({"i": i, "row": r})
+		var times: Array = e4.attack_log.duplicate()
+		var gaps: Array = []
+		for i in range(1, times.size()):
+			gaps.append(snappedf(float(times[i]) - float(times[i - 1]), 0.0001))
+		var p4: Dictionary = st4.pause
+		await _def_frames(2)
+		d4 = {"phase": st4.phase, "n": st4.n, "attacks": e4.blocker_attacks, "bad": bad4.slice(0, 5), "gaps": gaps, "log": _wy_atk_log(e4).slice(0, 3),
+			"log_ok": e4.atk_log.all(func(x): return x.base == 100.0 and x.mult == 0.9 and _ls_near(x.atk, 90.0, 1e-9)), "log_n": e4.atk_log.size(),
+			"pause": {"n": [p4.get("n"), p4.get("n2")], "left": [p4.get("left"), p4.get("left2")], "frozen": p4.get("frozen"), "rows": st4.paused.size(),
+				"moved": st4.paused.filter(func(r): return int(r.atk) != 0 or float(r.dh) != 0.0 or float(r.dt) != 0.0).size()},
+			"after": _wy_has(e4, src4), "ts": Engine.time_scale}
+		ok4 = int(st4.phase) == 4 and int(st4.n) >= 8 and bad4.is_empty() and gaps.size() >= 7 and gaps.all(func(g): return absf(float(g) - 1.0) <= 0.034) \
+			and bool(d4.log_ok) and int(d4.log_n) == e4.blocker_attacks \
+			and p4.get("n") == p4.get("n2") and float(p4.get("left", -1.0)) > 0.0 and p4.get("left") == p4.get("left2") and p4.get("frozen") == true \
+			and int(d4.pause.rows) >= 20 and int(d4.pause.moved) == 0 and d4.after == [true, 0.9, 90.0] and is_equal_approx(Engine.time_scale, 1.0)
+	_check("威壓-4 實際引擎（1 倍、2 倍、部署慢速、手動暫停）：被擋住的敵人每次攻擊扣 45，沒有攻擊的步數不變；攻擊的遊戲時間間隔都是 1 秒（冷卻不變）；暫停 1 秒中沒有攻擊、生命不變，威壓的剩餘有效期不變，繼續後仍是 0.9；攻擊紀錄每筆 [100, 0.9, 90]、筆數＝攻擊次數",
+		ok4, d4)
+
+	# 威壓-5：撤除都在下一幀（不用等有效期），之後的攻擊照原本的攻擊力；有效期只是清理保險：
+	# a 顏良移到遠處 (10,6)：下一幀沒有來源、倍率 1，下一擊扣 50；移回 (5,4)：下一擊 45；
+	# b 更新隊伍把顏良的技能換成反擊：下一幀恢復、下一擊 50；換回威壓：45；
+	# c 顏良移出隊伍：下一幀恢復、下一擊 50；
+	# d 顏良倒下（直接扣血）：下一幀恢復、下一擊 50；
+	# e 顏良停止處理（不刷新也不撤除）：0.25 秒時仍是 0.9，0.6 秒後到期恢復（有效期 0.5 秒的清理保險）；
+	# f 第 1 波打完回到備戰：威壓不作用、顏良沒有影響的敵人；第 2 波又作用；
+	# g 新的一場：新的顏良是新的來源、沒有影響的敵人，開戰後才作用
+	var d5: Dictionary = {}
+	var ok5: bool = false
+	var team5: Array = [_wy_hero("yan_liang", WY_SKILL.duplicate(), 1), _wy_hero("wy_tank", null, 2)]
+	_wy_load(rec, "wy-5", [[_grp("wy_walk", 1, 0.02)]], team5, {"yan_liang": Vector2i(5, 4), "wy_tank": Vector2i(4, 5)})
+	var y5: Node = _fly_hero("yan_liang")
+	var k5: Node = _fly_hero("wy_tank")
+	var e5: Node = await _wy_start(Vector2i(4, 5))
+	if e5 != null and y5 != null and k5 != null:
+		await _def_frames(2)
+		var src5: String = y5.atk_down_aura_source
+		var before5: Array = _wy_has(e5, src5)
+		main.game_map.clear_occupied(Vector2i(5, 4))
+		y5.reposition(Vector2i(10, 6), main.game_map.grid_to_world(Vector2i(10, 6)), main.game_map)
+		main.game_map.set_occupied(Vector2i(10, 6), y5)
+		var pt5: float = _pt()
+		await _def_frames(1)
+		var away5: Array = [_wy_has(e5, src5), _pt() - pt5 < Enemy.ATK_DOWN_REFRESH_TTL]
+		away5.append(await _wy_hits(k5, e5, 1))
+		main.game_map.clear_occupied(Vector2i(10, 6))
+		y5.reposition(Vector2i(5, 4), main.game_map.grid_to_world(Vector2i(5, 4)), main.game_map)
+		main.game_map.set_occupied(Vector2i(5, 4), y5)
+		await _def_frames(1)
+		var back5: Array = [_wy_has(e5, src5), await _wy_hits(k5, e5, 1)]
+		_r19_js(rec, {"type": "update_team", "team_list": [_wy_hero("yan_liang", CTR_SKILL.duplicate(), 1), team5[1]]})
+		pt5 = _pt()
+		await _def_frames(1)
+		var sw5: Array = [_wy_has(e5, src5), _pt() - pt5 < Enemy.ATK_DOWN_REFRESH_TTL, y5.atk_down_aura_mult, await _wy_hits(k5, e5, 1)]
+		_r19_js(rec, {"type": "update_team", "team_list": team5})
+		await _def_frames(1)
+		sw5.append_array([_wy_has(e5, src5), await _wy_hits(k5, e5, 1)])
+		_r19_js(rec, {"type": "update_team", "team_list": [team5[1]]})
+		pt5 = _pt()
+		await _def_frames(1)
+		var rm5: Array = [_wy_has(e5, src5), _pt() - pt5 < Enemy.ATK_DOWN_REFRESH_TTL, _fly_hero("yan_liang") == null, await _wy_hits(k5, e5, 1)]
+		_r19_js(rec, {"type": "update_team", "team_list": team5})
+		_r12_place("yan_liang", Vector2i(5, 4))
+		await _def_frames(2)
+		var y5b: Node = _fly_hero("yan_liang")
+		var src5b: String = y5b.atk_down_aura_source if y5b != null else ""
+		var re5: Array = [src5b != src5 and src5b != "", _wy_has(e5, src5b)]
+		if y5b != null:
+			y5b.take_damage(1.0e12)
+		pt5 = _pt()
+		await _def_frames(1)
+		var died5: Array = [_wy_has(e5, src5b), _pt() - pt5 < Enemy.ATK_DOWN_REFRESH_TTL, _fly_hero("yan_liang") == null, await _wy_hits(k5, e5, 1)]
+		_r19_js(rec, {"type": "update_team", "team_list": team5})
+		_r12_place("yan_liang", Vector2i(5, 4))
+		await _def_frames(2)
+		var y5c: Node = _fly_hero("yan_liang")
+		var ttl5: Array = []
+		if y5c != null:
+			var src5c: String = y5c.atk_down_aura_source
+			ttl5.append(_wy_has(e5, src5c))
+			y5c.set_process(false)
+			var g5: float = _pt()
+			await _wait_until(func(): return _pt() - g5 >= 0.25, 5.0)
+			ttl5.append(_wy_has(e5, src5c))
+			await _wait_until(func(): return _pt() - g5 >= 0.6, 5.0)
+			ttl5.append(_wy_has(e5, src5c))
+			y5c.set_process(true)
+			await _def_frames(1)
+			ttl5.append(_wy_has(e5, src5c))
+		d5 = {"before": before5, "away": away5, "back": back5, "switch": sw5, "removed": rm5, "replaced": re5, "died": died5, "ttl": ttl5}
+		var on5: Array = [true, 0.9, 90.0]
+		var off5: Array = [false, 1.0, 100.0]
+		ok5 = before5 == on5 and away5[0] == off5 and away5[1] == true and _ten_same(away5[2], [WY_HIT]) and back5[0] == on5 and _ten_same(back5[1], [WY_HIT_90]) \
+			and sw5[0] == off5 and sw5[1] == true and sw5[2] == 1.0 and _ten_same(sw5[3], [WY_HIT]) and sw5[4] == on5 and _ten_same(sw5[5], [WY_HIT_90]) \
+			and rm5[0] == off5 and rm5[1] == true and rm5[2] == true and _ten_same(rm5[3], [WY_HIT]) and re5 == [true, on5] \
+			and died5[0] == off5 and died5[1] == true and died5[2] == true and _ten_same(died5[3], [WY_HIT]) \
+			and ttl5 == [on5, on5, off5, on5]
+
+	var ok5b: bool = false
+	_wy_load(rec, "wy-5b", [[_grp("wy_post", 1, 0.02)], [_grp("wy_post", 1, 0.02)]], [_wy_hero("yan_liang", WY_SKILL.duplicate())], {"yan_liang": Vector2i(6, 4)})
+	var y5w: Node = _fly_hero("yan_liang")
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() >= 1, 5.0)
+	if y5w != null and _sw_enemies().size() >= 1:
+		var w1: Node = _sw_enemies()[0]
+		w1.global_position = y5w.global_position + Vector2(1.0, 0.0) * t
+		await _def_frames(2)
+		var on_w1: Array = _wy_has(w1, y5w.atk_down_aura_source)
+		w1.take_damage(1.0e9)
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.PREP, 5.0)
+		await _def_frames(2)
+		var prep5: Array = [y5w.atk_down_state().aura_active, y5w.atk_down_state().affected.size(), _bm().game_state]
+		_bm().player_start_battle()
+		await _wait_until(func(): return _sw_enemies().size() >= 1, 5.0)
+		var w2: Node = _sw_enemies()[0] if _sw_enemies().size() >= 1 else null
+		if w2 != null:
+			w2.global_position = y5w.global_position + Vector2(1.0, 0.0) * t
+		await _def_frames(2)
+		var wave2: Array = [y5w.atk_down_state().aura_active, _wy_has(w2, y5w.atk_down_aura_source), _bm().current_wave]
+		var old_src: String = y5w.atk_down_aura_source
+		_wy_load(rec, "wy-5c", [[_grp("wy_post", 1, 0.02)]], [_wy_hero("yan_liang", WY_SKILL.duplicate())], {"yan_liang": Vector2i(6, 4)})
+		await _def_frames(2)
+		var y5n: Node = _fly_hero("yan_liang")
+		var fresh: Array = [y5n != null and y5n.atk_down_aura_source != old_src, y5n.atk_down_state().aura_active if y5n != null else true,
+			y5n.atk_down_state().affected.size() if y5n != null else -1, _sw_enemies().size()]
+		d5["waves"] = {"wave1": on_w1, "prep": prep5, "wave2": wave2, "new_stage": fresh}
+		ok5b = on_w1 == [true, 0.9, 90.0] and prep5 == [false, 0, BattleManager.GameState.PREP] and wave2 == [true, [true, 0.9, 90.0], 2] and fresh == [true, false, 0, 0]
+	_check("威壓-5 撤除與生命週期：顏良移到遠處、換成其他技能、移出隊伍、倒下時都在下一幀恢復（不用等 0.5 秒的有效期），下一擊扣 50；移回、換回、重新放置（新的來源）後又是 45；停止處理（不刷新也不撤除）時 0.25 秒仍是 0.9、0.6 秒後到期；第 1 波打完回到備戰時不作用、第 2 波又作用；新的一場是新的來源、沒有殘留",
+		ok5 and ok5b, d5)
+
+	# 威壓-6：兩個威壓重疊（顏良 0.9 在 (5,4)、測試武將 wy_b 0.8 在 (3,4)，都涵蓋擋在 (4,5) 前面的敵人）：
+	# 倍率 0.8（取最強，不相乘也不因為每一幀刷新而變小），每擊 40；wy_b 移出隊伍後下一幀 0.9、每擊 45；顏良也移出後下一幀 1、每擊 50
+	var d6: Dictionary = {}
+	var ok6: bool = false
+	var team6: Array = [_wy_hero("yan_liang", WY_SKILL.duplicate(), 1), _wy_hero("wy_b", {"id": "atk_down_aura", "atk_mult": 0.8}, 2), _wy_hero("wy_tank", null, 3)]
+	_wy_load(rec, "wy-6", [[_grp("wy_walk", 1, 0.02)]], team6, {"yan_liang": Vector2i(5, 4), "wy_b": Vector2i(3, 4), "wy_tank": Vector2i(4, 5)})
+	var k6: Node = _fly_hero("wy_tank")
+	var e6: Node = await _wy_start(Vector2i(4, 5))
+	if e6 != null and k6 != null and _fly_hero("yan_liang") != null and _fly_hero("wy_b") != null:
+		await _def_frames(2)
+		var both: Array = [snappedf(e6.atk_mult, 0.0001), e6._atk_down_sources.size(), await _wy_hits(k6, e6, 2), snappedf(e6.atk_mult, 0.0001)]
+		_r19_js(rec, {"type": "update_team", "team_list": [team6[0], team6[2]]})
+		await _def_frames(1)
+		var one: Array = [snappedf(e6.atk_mult, 0.0001), e6._atk_down_sources.size(), await _wy_hits(k6, e6, 1)]
+		_r19_js(rec, {"type": "update_team", "team_list": [team6[2]]})
+		await _def_frames(1)
+		var none: Array = [snappedf(e6.atk_mult, 0.0001), e6._atk_down_sources.size(), await _wy_hits(k6, e6, 1)]
+		d6 = {"both": both, "one": one, "none": none}
+		ok6 = both[0] == 0.8 and both[1] == 2 and _ten_same(both[2], [WY_HIT_80, WY_HIT_80]) and both[3] == 0.8 \
+			and one[0] == 0.9 and one[1] == 1 and _ten_same(one[2], [WY_HIT_90]) and none[0] == 1.0 and none[1] == 0 and _ten_same(none[2], [WY_HIT])
+	_check("威壓-6 兩個威壓重疊：0.9 與 0.8 同時作用時是 0.8（取最強，不相乘、刷新也不會越來越小），每擊 40；移除 0.8 的武將後下一幀 0.9、每擊 45；全部移除後 1、每擊 50",
+		ok6, d6)
+
+	# 威壓-7：漏到城池照舊扣城防：3 個快速地面兵（每秒 240 像素）走進顏良（城池旁的 (12,4)，射程 2 格，城池 (13,5) 在約 1.41 格）的範圍、抵達城池：
+	# 抵達的那一步仍在範圍內、有威壓（0.9），移動速度照常 240（不被減速）；每個抵達都照常扣 1（共 3），和威壓無關
+	var d7: Dictionary = {}
+	_wy_load(rec, "wy-7", [[_grp("wy_run", 3, 0.3)]], [_wy_hero("yan_liang", WY_SKILL.duplicate())], {"yan_liang": Vector2i(12, 4)})
+	var y7: Node = _fly_hero("yan_liang")
+	var hp7: int = _bm().base_hp
+	var seen7: Dictionary = {"mult": 1.0, "speed": [], "ids": {}, "at_base": []}
+	# 抵達城池的當下（信號發出時）記下這個敵人的倍率
+	var on_base7 := func(e: Node) -> void:
+		seen7.at_base.append(e.atk_mult)
+	_wm().enemy_leaked.connect(on_base7)
+	_bm().player_start_battle()
+	var w_end7: int = Time.get_ticks_msec() + 20000
+	while Time.get_ticks_msec() < w_end7:
+		await physics_frame
+		for e in _sw_enemies():
+			seen7.ids[e.get_instance_id()] = true
+			if e.atk_mult < 1.0:
+				seen7.mult = minf(float(seen7.mult), e.atk_mult)
+				seen7.speed.append(e.get_effective_speed())
+		if seen7.ids.size() >= 3 and _sw_enemies().is_empty() and _bm().game_state != BattleManager.GameState.BATTLE:
+			break
+	_wm().enemy_leaked.disconnect(on_base7)
+	d7 = {"base_before": hp7, "base_after": _bm().base_hp, "seen_mult": seen7.mult, "speeds": seen7.speed.slice(0, 3), "speed_ok": seen7.speed.all(func(s): return s == 240.0),
+		"at_base": seen7.at_base, "enemies": seen7.ids.size(), "state": _bm().game_state, "y": y7 != null}
+	_check("威壓-7 漏到城池照舊扣城防：3 個快速地面兵走進城池旁顏良的範圍，抵達城池的當下都有威壓（0.9）、移動速度照常 240；每個抵達都照常扣 1（共 3），不因為威壓而少扣",
+		y7 != null and seen7.ids.size() == 3 and seen7.mult == 0.9 and seen7.at_base == [0.9, 0.9, 0.9] and not seen7.speed.is_empty() and bool(d7.speed_ok) and hp7 - _bm().base_hp == 3, d7)
+
+	# 威壓-8：實際引擎的組合（顏良 (5,4)，擋路的武將在道路 (4,5)，攻擊力 100 的敵人）：
+	# a 劉備的防禦光環（劉備 (5,6)）：擋路的 wy_tank 防禦 120，每擊約 40.91（不是 50 − 10）；
+	# b 低血量的廖化（生命 300、堅韌）：每擊 36；
+	# c 夏侯惇（反擊 20%）：每擊 45、反彈 9（用威壓後的實扣）；
+	# d 免疫減速的敵人：照樣受到威壓，每擊 45、移動倍率 1；
+	# e 攻擊力 0 的敵人：攻擊照常但不扣血；f 攻擊力寫成字串（預設 20）：20 × 0.9 → 每擊 9
+	var d8: Dictionary = {}
+	var cases8: Array = [
+		["a", "wy_walk", [_wy_hero("yan_liang", WY_SKILL.duplicate(), 1), _wy_hero("wy_tank", null, 2), _wy_hero("liu_bei", DEF_AURA_SKILL.duplicate(), 3)],
+			{"yan_liang": Vector2i(5, 4), "wy_tank": Vector2i(4, 5), "liu_bei": Vector2i(5, 6)}, "wy_tank", WY_HIT_AURA],
+		["b", "wy_walk", [_wy_hero("yan_liang", WY_SKILL.duplicate(), 1), _wy_hero("liao_hua", TEN_SKILL.duplicate(), 2, 1000.0)],
+			{"yan_liang": Vector2i(5, 4), "liao_hua": Vector2i(4, 5)}, "liao_hua", 36.0],
+		["c", "wy_walk", [_wy_hero("yan_liang", WY_SKILL.duplicate(), 1), _wy_hero("xia_hou_dun", CTR_SKILL.duplicate(), 2)],
+			{"yan_liang": Vector2i(5, 4), "xia_hou_dun": Vector2i(4, 5)}, "xia_hou_dun", WY_HIT_90],
+		["d", "wy_walk_imm", [_wy_hero("yan_liang", WY_SKILL.duplicate(), 1), _wy_hero("wy_tank", null, 2)],
+			{"yan_liang": Vector2i(5, 4), "wy_tank": Vector2i(4, 5)}, "wy_tank", WY_HIT_90],
+		["e", "wy_zero", [_wy_hero("yan_liang", WY_SKILL.duplicate(), 1), _wy_hero("wy_tank", null, 2)],
+			{"yan_liang": Vector2i(5, 4), "wy_tank": Vector2i(4, 5)}, "wy_tank", 0.0],
+		["f", "wy_bad", [_wy_hero("yan_liang", WY_SKILL.duplicate(), 1), _wy_hero("wy_tank", null, 2)],
+			{"yan_liang": Vector2i(5, 4), "wy_tank": Vector2i(4, 5)}, "wy_tank", 9.0],
+	]
+	var ok8: bool = true
+	for c8 in cases8:
+		_wy_load(rec, "wy-8" + c8[0], [[_grp(c8[1], 1, 0.02)]], c8[2], c8[3])
+		var tk: Node = _fly_hero(c8[4])
+		if tk != null and c8[0] == "b":
+			tk.current_hp = 300.0
+		var e8: Node = await _wy_start(Vector2i(4, 5))
+		if e8 == null or tk == null:
+			d8[c8[0]] = "no enemy or hero"
+			ok8 = false
+			continue
+		await _def_frames(2)
+		var n0: int = e8.blocker_attacks
+		var hits: Array = await _wy_hits(tk, e8, 2)
+		var row: Dictionary = {"hits": hits, "attacks": e8.blocker_attacks - n0, "mult": snappedf(e8.atk_mult, 0.0001), "speed_mult": e8.speed_mult,
+			"base": e8.blocker_atk, "def_bonus": snappedf(tk.def_bonus_mult, 0.0001)}
+		if c8[0] == "c":
+			row["counter"] = tk.counter_log.slice(-2).map(func(x): return [x.taken, x.reflect])
+		d8[c8[0]] = row
+		var good: bool = row.mult == 0.9 and row.attacks >= 2 and hits.size() == 2 and hits.all(func(x): return _ls_near(x, float(c8[5]), 1e-6))
+		if c8[0] == "a":
+			good = good and row.def_bonus == 1.2
+		elif c8[0] == "c":
+			good = good and _ten_same(row.counter, [[WY_HIT_90, 9.0], [WY_HIT_90, 9.0]])
+		elif c8[0] == "d":
+			good = good and row.speed_mult == 1.0 and e8.immune_slow
+		elif c8[0] == "f":
+			good = good and row.base == 20.0
+		ok8 = ok8 and good
+	_check("威壓-8 實際引擎的組合：劉備的防禦光環裡每擊約 40.91（90 × 100 ÷ 220）；低血量的廖化每擊 36；夏侯惇每擊 45、反彈 9；免疫減速的敵人照樣受到威壓（每擊 45、沒有減速）；攻擊力 0 的敵人攻擊照常但不扣血；攻擊力寫成字串時 20 × 0.9、每擊 9",
+		ok8, d8)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 孫尚香的連射（double_shot）──
+# 每次普通攻擊實際扣到目標的生命、目標仍然活著時抽一次 [0,1) 的亂數 u，u < 機率就在同一個攻擊回合對同一個目標再打一擊（攻擊力 × 1）；
+# 第一擊打倒目標、傷害無效、沒有目標時不抽；追加的一擊不再引發其他技能、不再連射；攻擊冷卻與攻擊次數照一次攻擊計算
+const DS_SKILL: Dictionary = {"id": "double_shot", "double_shot_chance": 0.2}
+## 實際引擎用的敵人：不會移動的地面兵與飛行兵（血量很多）、血量 150 與 100 的不會移動的地面兵（追加的一擊打倒／第一擊就打倒）
+const DS_ENEMIES: Array = [
+	{"enemy_id": "ds_post", "name": "P", "hp": 99999.0, "speed": 0.0},
+	{"enemy_id": "ds_fly", "name": "F", "hp": 99999.0, "speed": 0.0, "movement_type": "flying"},
+	{"enemy_id": "ds_150", "name": "S", "hp": 150.0, "speed": 0.0},
+	{"enemy_id": "ds_100", "name": "K", "hp": 100.0, "speed": 0.0},
+]
+
+## 抽樣替身：依序回傳 seq 的值（cycle 時循環，否則用完後重複最後一個）；calls 是被呼叫的次數
+class DsRolls extends RefCounted:
+	var seq: Array = []
+	var cycle: bool = false
+	var calls: int = 0
+	func _init(s: Array, c: bool = false) -> void:
+		seq = s
+		cycle = c
+	func next() -> Variant:
+		var i: int = (calls % seq.size()) if cycle else mini(calls, seq.size() - 1)
+		calls += 1
+		return seq[i]
+
+## 會記錄灼燒被套用幾次的敵人（其餘和真正的 Enemy 相同）
+class DsEnemy extends Enemy:
+	var burn_calls: int = 0
+	func apply_burn(damage: float, ticks: int, interval: float) -> void:
+		burn_calls += 1
+		super(damage, ticks, interval)
+
+## 單獨的孫尚香（真正的 Hero 腳本，不經過 Main、測試自己呼叫 _process）：攻擊力 atk_v、射程 3 格、攻擊間隔 1 秒、弓兵（能對空）、
+## 最大生命 1000；skill 是 null 時帶連射的參數；rolls 不是 null 時用它取代亂數
+func _ds_hero(holder: Node, wave: Node, rolls: DsRolls = null, atk_v: float = 100.0, skill: Variant = null) -> Node:
+	var h: Node = load("res://entities/hero/Hero.gd").new()
+	holder.add_child(h)
+	h.set_process(false)
+	h.hero_id = "sun_shang_xiang"
+	h.job = "archer"
+	h.can_hit_air = true
+	h.attack_range = 3.0
+	h.attack_speed = 1.0
+	h.atk = atk_v
+	h.max_hp = 1000.0
+	h.current_hp = 1000.0
+	h._read_skill({"skill": DS_SKILL.duplicate() if skill == null else skill})
+	h._wave_mgr = wave
+	if rolls != null:
+		h.double_shot_roll_override = rolls.next
+	return h
+
+## 讓武將打一個攻擊回合（冷卻歸零後處理一步）：[目標被打掉的生命, 抽亂數次數的增加, 追加次數的增加, 攻擊次數的增加]
+func _ds_round(h: Node, e: Node) -> Array:
+	var e0: float = e.current_hp
+	var r0: int = h.double_shot_rolls
+	var c0: int = h.double_shot_count
+	var a0: int = h.attack_count
+	h._atk_timer = 0.0
+	h._process(1.0 / 60.0)
+	return [snappedf(e0 - e.current_hp, 0.0001), h.double_shot_rolls - r0, h.double_shot_count - c0, h.attack_count - a0]
+
+## 單獨的孫尚香對一個敵人（血量 hp）打 n 個攻擊回合，抽樣替身依序回傳 seq：每回合的結果、抽亂數與追加的次數、追加的一擊實際扣掉的總量、
+## 紀錄、替身被呼叫的次數、攻擊次數、敵人的死亡信號次數與是否倒下、金色「+1」提示數
+func _ds_case(seq: Array, hp: float = 99999.0, n: int = 1, atk_v: float = 100.0) -> Dictionary:
+	var holder := _dodge_holder()
+	var wave := R20Wave.new()
+	holder.add_child(wave)
+	var rolls := DsRolls.new(seq)
+	var h: Node = _ds_hero(holder, wave, rolls, atk_v)
+	var e: Node = _ls_enemy(holder, wave, hp)
+	var died: Array = [0]
+	var on_died := func(_x) -> void:
+		died[0] = int(died[0]) + 1
+	e.died.connect(on_died)
+	var rounds: Array = []
+	for i in range(n):
+		rounds.append(_ds_round(h, e))
+	var r: Dictionary = {"rounds": rounds, "rolls": h.double_shot_rolls, "count": h.double_shot_count, "dealt": h.double_shot_dealt,
+		"log": h.double_shot_log.duplicate(true), "calls": rolls.calls, "attacks": h.attack_count, "died": died[0], "dead": e.is_dead()}
+	r["texts"] = (await _dodge_texts(holder)).filter(func(t): return str(t) == "+1").size()
+	holder.queue_free()
+	return r
+
+## 實際引擎：載入一場（經過 JSON）並依 cells 放置武將（hero_id → 格子），不開戰。孫尚香的職業 ss_job、射程 2.5 格、攻擊間隔 1 秒；
+## 曹操（射程 3 格）用來測攻速光環
+func _ds_load(rec: Node, battle_id: String, waves: Array, team: Array, cells: Dictionary, ss_job: String = "archer") -> void:
+	var p: Dictionary = _r12_payload("ds_" + battle_id, waves, battle_id, team)
+	p["heroes_config"] = [
+		{"hero_id": "sun_shang_xiang", "name": "孫尚香", "job": ss_job, "attack_range": 2.5, "attack_speed": 1.0},
+		{"hero_id": "cao_cao", "name": "曹操", "job": "infantry", "attack_range": 3.0, "attack_speed": 1.0},
+	]
+	for c in DS_ENEMIES:
+		p["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p)
+	for hid in cells:
+		_r12_place(hid, cells[hid])
+
+## 出征的孫尚香（攻擊力 100）；skill 是 null 時帶連射的參數
+func _ds_ss(skill: Variant = null) -> Dictionary:
+	return _r12_hero("sun_shang_xiang", DS_SKILL.duplicate() if skill == null else skill)
+
+## 載入後替場上的孫尚香設定抽樣替身；回傳孫尚香（不在場上時是 null）
+func _ds_place_rolls(rolls: DsRolls) -> Node:
+	var h: Node = _fly_hero("sun_shang_xiang")
+	if h != null:
+		h.double_shot_roll_override = rolls.next
+	return h
+
+## 紀錄的每一筆：抽樣照 seq 的順序循環、u < 0.2 才追加、第一擊 first、追加的一擊 first（沒有追加時 0）
+func _ds_log_ok(entries: Array, seq: Array, first: float = 100.0) -> bool:
+	for i in range(entries.size()):
+		var x: Dictionary = entries[i]
+		var want: float = float(seq[i % seq.size()])
+		if not (is_equal_approx(float(x.u), want) and x.hit == (want < 0.2) and _ls_near(x.first, first, 1e-6) and _ls_near(x.second, first if x.hit else 0.0, 1e-6)):
+			return false
+	return true
+
+## 相鄰兩次攻擊的遊戲時間差都在 want ± tol 之內、每次冷卻用的攻擊間隔都是 want（攻擊紀錄，略過最前面 skip 筆）
+func _ds_gaps(h: Node, want: float, tol: float = 0.05, skip: int = 0) -> Dictionary:
+	var al: Array = h.attack_log.slice(skip)
+	var gaps: Array = []
+	for k in range(1, al.size()):
+		gaps.append(snappedf(float(al[k].t) - float(al[k - 1].t), 0.0001))
+	var ok: bool = al.size() >= 3 and gaps.all(func(g): return absf(float(g) - want) <= tol) and al.all(func(x): return absf(float(x.interval) - want) < 1e-6)
+	return {"ok": ok, "gaps": gaps, "intervals": al.map(func(x): return snappedf(float(x.interval), 0.0001))}
+
+func _double_shot_cases() -> void:
+	# 連射-0：技能參數的判讀：double_shot_chance 是 0～1 之間（不含兩端）的有限數字才啟用（0.2、0.5、0.0001、0.9999 與經過 JSON 的 0.2）；
+	# 字串、布林、null、陣列、字典、NaN、正負無限大、0、負數、1、超過 1、沒有欄位、欄位名稱寫錯都不啟用；不認得或大小寫不同的 id、其他技能帶 double_shot_chance 也不啟用；
+	# 連射不帶其他技能，換成其他技能或沒有技能後清除；亂數是這位武將自己的一份（和閃避分開），正式遊戲沒有設定替身
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var cases0: Array = [[{"id": "double_shot", "double_shot_chance": 0.2}, 0.2], [{"id": "double_shot", "double_shot_chance": 0.5}, 0.5],
+		[{"id": "double_shot", "double_shot_chance": 0.0001}, 0.0001], [{"id": "double_shot", "double_shot_chance": 0.9999}, 0.9999]]
+	for bad in ["0.2", true, false, null, [0.2], {"v": 0.2}, NAN, INF, -INF, 0, 0.0, -0.2, 1, 1.0, 1.5, 20]:
+		cases0.append([{"id": "double_shot", "double_shot_chance": bad}, 0.0])
+	cases0.append_array([[{"id": "double_shot"}, 0.0], [{"id": "double_shot", "chance": 0.2}, 0.0], [{"id": "double_shot_x", "double_shot_chance": 0.2}, 0.0],
+		[{"id": "Double_Shot", "double_shot_chance": 0.2}, 0.0], [{"id": "dodge", "dodge_chance": 0.15, "double_shot_chance": 0.2}, 0.0],
+		[{"id": "first_strike", "first_attack_multiplier": 2, "double_shot_chance": 0.2}, 0.0], [null, 0.0]])
+	var bad0: Array = []
+	for c in cases0:
+		h0._read_skill({} if c[0] == null else {"skill": c[0]})
+		if h0.double_shot_chance != float(c[1]):
+			bad0.append(str(c[0]))
+	h0._read_skill({"skill": JSON.parse_string("{\"id\": \"double_shot\", \"double_shot_chance\": 0.2}")})
+	var json0: float = h0.double_shot_chance
+	var other0: Array = [h0.first_strike_multiplier, h0.range_multiplier, h0.burn_ratio, h0.sweep_ratio, h0.dodge_chance, h0.slow_aura_mult, h0.def_aura_mult,
+		h0.stun_duration, h0.lifesteal_ratio, h0.atk_speed_aura_mult, h0.counter_ratio, h0.tenacity_hp_ratio, h0.atk_down_aura_mult]
+	h0._read_skill({"skill": {"id": "counter", "counter_ratio": 0.2}})
+	var switched0: Array = [h0.double_shot_chance, h0.counter_ratio]
+	h0._read_skill({"skill": DS_SKILL.duplicate()})
+	h0._read_skill({})
+	var cleared0: float = h0.double_shot_chance
+	var rng0: bool = h0._double_shot_rng != h0._dodge_rng and not h0.double_shot_roll_override.is_valid()
+	h0.free()
+	_check("連射-0 技能參數：double_shot_chance 是 0～1 之間（不含兩端）的有限數字才啟用（0.2、0.5、0.0001、0.9999 與經過 JSON 的 0.2）；字串、布林、null、陣列、字典、NaN、無限大、0、負數、1、超過 1、沒有欄位、欄位名稱寫錯都不啟用；不認得或大小寫不同的 id、其他技能帶 double_shot_chance 都不啟用；連射不帶其他技能，換成反擊或沒有技能後清除；亂數和閃避分開、預設沒有替身",
+		bad0.is_empty() and json0 == 0.2 and other0 == [1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0] and switched0 == [0.0, 0.2] and cleared0 == 0.0 and rng0,
+		{"bad": bad0, "json": json0, "other": other0, "switched": switched0, "cleared": cleared0, "rng": rng0, "cases": cases0.size()})
+
+	# 連射-1：抽樣的邊界（單獨的孫尚香、真正的 Enemy、攻擊力 100、機率 0.2）：u＝0、0.199999 追加（這一回合敵人被打掉 200、出現「+1」）；
+	# u＝0.2、0.5、0.9999999 不追加（100、沒有「+1」）；每一回合只抽一次（替身被呼叫 1 次）；紀錄是 [u, 是否追加, 第一擊 100, 追加 100 或 0]。
+	# 替身回傳無效的值（NaN、負數、1、超過 1、無限大、字串、null、布林、陣列）一律不追加（安全的普通攻擊），也只抽一次。
+	# 沒有替身時用真正的亂數：兩位孫尚香各自的前 40 次抽樣不同（各自的種子）；1000 回合追加 140～260 次（期望 200），抽樣都在 [0,1)、u < 0.2 的才追加，
+	# 敵人被打掉的生命＝100 ×（攻擊次數＋追加次數）
+	var c1: Array = []
+	for u1 in [0.0, 0.199999, 0.2, 0.5, 0.9999999]:
+		var res1: Dictionary = await _ds_case([u1])
+		c1.append([u1, res1])
+	var bad1: Array = []
+	for pair in c1:
+		var hit1: bool = float(pair[0]) < 0.2
+		var r1: Dictionary = pair[1]
+		var ok_one: bool = r1.rounds == [[200.0 if hit1 else 100.0, 1, 1 if hit1 else 0, 1]] and r1.calls == 1 and r1.texts == (1 if hit1 else 0) \
+			and r1.log.size() == 1 and r1.log[0].hit == hit1 and _ls_near(r1.log[0].first, 100.0) and _ls_near(r1.log[0].second, 100.0 if hit1 else 0.0) \
+			and _ls_near(r1.dealt, 100.0 if hit1 else 0.0)
+		if not ok_one:
+			bad1.append({"u": pair[0], "r": r1})
+	var inv1: Array = []
+	for u1b in [NAN, -0.1, -INF, 1.0, 1.5, INF, "0.1", null, true, [0.1]]:
+		var rb: Dictionary = await _ds_case([u1b])
+		if not (rb.rounds == [[100.0, 1, 0, 1]] and rb.calls == 1 and rb.texts == 0 and rb.count == 0):
+			inv1.append({"u": str(u1b), "rounds": rb.rounds, "texts": rb.texts})
+	var hr := _dodge_holder()
+	var wr := R20Wave.new()
+	hr.add_child(wr)
+	var hr1: Node = _ds_hero(hr, wr)
+	var hr2: Node = _ds_hero(hr, wr)
+	var er: Node = _ls_enemy(hr, wr, 1.0e12)
+	for i1 in range(40):
+		hr1._atk_timer = 0.0
+		hr1._process(1.0 / 60.0)
+		hr2._atk_timer = 0.0
+		hr2._process(1.0 / 60.0)
+	var us1: Array = hr1.double_shot_log.map(func(x): return x.u)
+	var us2: Array = hr2.double_shot_log.map(func(x): return x.u)
+	for i1b in range(960):
+		hr1._atk_timer = 0.0
+		hr1._process(1.0 / 60.0)
+	var logs1: Array = hr1.double_shot_log + hr2.double_shot_log
+	var real1: Dictionary = {"rolls": [hr1.double_shot_rolls, hr2.double_shot_rolls], "count": [hr1.double_shot_count, hr2.double_shot_count],
+		"attacks": [hr1.attack_count, hr2.attack_count], "differ": us1 != us2,
+		"in_range": logs1.all(func(x): return float(x.u) >= 0.0 and float(x.u) < 1.0),
+		"hit_rule": logs1.all(func(x): return x.hit == (float(x.u) < 0.2)),
+		"lost": snappedf(1.0e12 - er.current_hp, 0.0001)}
+	var ok1r: bool = real1.rolls == [1000, 40] and real1.attacks == [1000, 40] and hr1.double_shot_count >= 140 and hr1.double_shot_count <= 260 and real1.differ \
+		and real1.in_range and real1.hit_rule and _ls_near(real1.lost, 100.0 * float(1040 + hr1.double_shot_count + hr2.double_shot_count), 1e-3) \
+		and not hr1.double_shot_roll_override.is_valid()
+	hr.queue_free()
+	_check("連射-1 抽樣的邊界：u＝0、0.199999 追加（這一回合 200、金色「+1」）；u＝0.2、0.5、0.9999999 不追加（100、沒有「+1」）；每回合只抽一次；無效的替身值（NaN、負數、1 以上、無限大、字串、null、布林、陣列）都不追加；真正的亂數：兩位孫尚香的抽樣不同，1000 回合追加 140～260 次、抽樣都在 [0,1)、u < 0.2 才追加、被打掉的生命＝100 ×（攻擊＋追加）",
+		bad1.is_empty() and inv1.is_empty() and ok1r, {"bad": bad1, "invalid": inv1, "real": real1})
+
+	# 連射-2：真正的 Enemy 的生命（抽樣都是 0）：a 血量 150：第一擊 100、追加的一擊打倒它（實際只扣 50，紀錄的追加是 50），死亡信號一次，之後沒有目標；
+	# b 血量 100：第一擊就打倒，不抽亂數（替身沒有被呼叫、沒有「+1」），死亡信號一次；c 血量 250：第一回合 200、第二回合第一擊打倒剩下的 50，不抽；
+	# d 攻擊力 0.01：第一擊 0.01、追加 0.01（不取整）；e 攻擊力 0、NaN：攻擊照常算一次，但沒有實際傷害、不抽亂數
+	var c2: Dictionary = {}
+	c2["over"] = await _ds_case([0.0], 150.0, 2)
+	c2["first_kill"] = await _ds_case([0.0], 100.0, 2)
+	c2["two"] = await _ds_case([0.0], 250.0, 2)
+	c2["tiny"] = await _ds_case([0.0], 99999.0, 1, 0.01)
+	c2["zero"] = await _ds_case([0.0], 99999.0, 1, 0.0)
+	c2["nan"] = await _ds_case([0.0], 99999.0, 1, NAN)
+	var ok2: Dictionary = {}
+	ok2["over"] = c2.over.rounds == [[150.0, 1, 1, 1], [0.0, 0, 0, 0]] and c2.over.died == 1 and c2.over.dead and c2.over.calls == 1 and c2.over.texts == 1 \
+		and c2.over.log.size() == 1 and _ls_near(c2.over.log[0].second, 50.0) and _ls_near(c2.over.dealt, 50.0)
+	ok2["first_kill"] = c2.first_kill.rounds == [[100.0, 0, 0, 1], [0.0, 0, 0, 0]] and c2.first_kill.calls == 0 and c2.first_kill.died == 1 \
+		and c2.first_kill.texts == 0 and c2.first_kill.log.is_empty()
+	ok2["two"] = c2.two.rounds == [[200.0, 1, 1, 1], [50.0, 0, 0, 1]] and c2.two.calls == 1 and c2.two.died == 1
+	ok2["tiny"] = c2.tiny.rounds == [[0.02, 1, 1, 1]] and _ls_near(c2.tiny.dealt, 0.01, 1e-12)
+	ok2["zero"] = c2.zero.rounds == [[0.0, 0, 0, 1]] and c2.zero.calls == 0 and c2.zero.log.is_empty()
+	ok2["nan"] = c2.nan.rounds == [[0.0, 0, 0, 1]] and c2.nan.calls == 0 and c2.nan.log.is_empty()
+	var bad2: Array = ok2.keys().filter(func(k): return not ok2[k])
+	_check("連射-2 敵人的生命（抽樣 0）：血量 150 → 第一擊 100、追加的一擊打倒它只扣 50（溢出不算）、死亡一次；血量 100 → 第一擊就打倒、不抽亂數；血量 250 → 200 後第一擊打倒剩下的 50、不抽；攻擊力 0.01 追加 0.01；攻擊力 0 與 NaN 攻擊照常算一次但不抽",
+		bad2.is_empty(), {"bad": bad2, "cases": c2})
+
+	# 連射-3：不抽亂數的情況（替身是 0，每一種都沒有被呼叫）：a 目標正要被移除（已經 queue_free、還在清單裡）：攻擊照常算一次、沒有傷害；
+	# b 唯一的敵人在射程外：沒有攻擊、冷卻待命在 0；c 目標已經倒下：沒有目標；d 目標的受傷沒有回傳數字（測試用的假目標）：攻擊完成（命中一次）但不抽；
+	# e 不能對空的職業、射程內只有飛行敵人：沒有目標
+	var r3: Dictionary = {}
+	var hz := _dodge_holder()
+	for k3 in ["queued", "far", "dead", "no_return", "air"]:
+		var w3 := R20Wave.new()
+		hz.add_child(w3)
+		var rr3 := DsRolls.new([0.0])
+		var s3: Node = _ds_hero(hz, w3, rr3)
+		var t3: Node = null
+		if k3 == "queued":
+			t3 = _ls_enemy(hz, w3, 99999.0)
+			t3.queue_free()
+		elif k3 == "far":
+			t3 = _ls_enemy(hz, w3, 99999.0, 48.0 * 5.0)
+		elif k3 == "dead":
+			t3 = _ls_enemy(hz, w3, 99999.0)
+			t3.take_damage(1.0e9)
+		elif k3 == "no_return":
+			t3 = R20Target.new()
+			hz.add_child(t3)
+			t3.position = Vector2(48.0, 0.0)
+			w3.enemies.append(t3)
+		else:
+			s3.can_hit_air = false
+			t3 = _stn_enemy(hz, 0.0, {"hp": 99999.0, "movement_type": "flying"})
+			t3.position = Vector2(48.0, 0.0)
+			w3.enemies.append(t3)
+		var row3: Array = _ds_round(s3, t3)
+		r3[k3] = {"round": row3, "calls": rr3.calls, "timer": s3._atk_timer, "hits": t3.hits if k3 == "no_return" else -1}
+	hz.queue_free()
+	var ok3: bool = r3.queued.round == [0.0, 0, 0, 1] and r3.far.round == [0.0, 0, 0, 0] and r3.far.timer == 0.0 and r3.dead.round == [0.0, 0, 0, 0] \
+		and r3.no_return.round == [0.0, 0, 0, 1] and r3.no_return.hits == 1 and r3.air.round == [0.0, 0, 0, 0] \
+		and [r3.queued.calls, r3.far.calls, r3.dead.calls, r3.no_return.calls, r3.air.calls] == [0, 0, 0, 0, 0]
+	_check("連射-3 不抽亂數：目標正要被移除（攻擊算一次、沒有傷害）、射程外沒有敵人（不攻擊、冷卻待命 0）、目標已倒下、目標的受傷沒有回傳數字（命中一次）、不能對空的職業只有飛行敵人：替身都沒有被呼叫、沒有追加",
+		ok3, r3)
+
+	# 連射-4：每回合最多追加一擊、只打原來的目標：a 兩個敵人都在射程內、抽樣都是 0：5 個回合都只打第一個目標（每回合 200），另一個完全沒受傷，
+	# 抽亂數與替身呼叫都是 5 次（追加之後不會再抽）；b 第一個目標只剩 150：第一擊 100、追加的一擊打倒它（50），同一回合不會改打另一個敵人；下一回合才打另一個（200）；
+	# c 第一個目標只剩 100：第一擊就打倒，這一回合不抽亂數、也不改打旁邊的敵人（旁邊的敵人沒受傷）
+	var h4 := _dodge_holder()
+	var w4 := R20Wave.new()
+	h4.add_child(w4)
+	var rr4 := DsRolls.new([0.0])
+	var s4: Node = _ds_hero(h4, w4, rr4)
+	var ea4: Node = _ls_enemy(h4, w4, 99999.0, 48.0)
+	var eb4: Node = _ls_enemy(h4, w4, 99999.0, 60.0)
+	var rows4: Array = []
+	for i4 in range(5):
+		var b4: float = eb4.current_hp
+		var rw4: Array = _ds_round(s4, ea4)
+		rw4.append(snappedf(b4 - eb4.current_hp, 0.0001))
+		rows4.append(rw4)
+	var a4: Dictionary = {"rows": rows4, "calls": rr4.calls, "rolls": s4.double_shot_rolls}
+	var w4b := R20Wave.new()
+	h4.add_child(w4b)
+	var rr4b := DsRolls.new([0.0])
+	var s4b: Node = _ds_hero(h4, w4b, rr4b)
+	var ec4: Node = _ls_enemy(h4, w4b, 150.0, 48.0)
+	var ed4: Node = _ls_enemy(h4, w4b, 99999.0, 60.0)
+	var b4a: Array = _ds_round(s4b, ec4)
+	var b4side: float = snappedf(99999.0 - ed4.current_hp, 0.0001)
+	var b4b: Array = _ds_round(s4b, ed4)
+	var b4: Dictionary = {"first": b4a, "side_after_first": b4side, "second": b4b, "dead": ec4.is_dead(), "calls": rr4b.calls}
+	var w4c := R20Wave.new()
+	h4.add_child(w4c)
+	var rr4c := DsRolls.new([0.0])
+	var s4c: Node = _ds_hero(h4, w4c, rr4c)
+	var ee4: Node = _ls_enemy(h4, w4c, 100.0, 48.0)
+	var ef4: Node = _ls_enemy(h4, w4c, 99999.0, 60.0)
+	var c4a: Array = _ds_round(s4c, ee4)
+	var c4: Dictionary = {"round": c4a, "side": snappedf(99999.0 - ef4.current_hp, 0.0001), "dead": ee4.is_dead(), "calls": rr4c.calls}
+	h4.queue_free()
+	_check("連射-4 每回合最多追加一擊、只打原來的目標：兩個敵人都在射程內、抽樣都是 0 → 5 回合都只打第一個目標（每回合 200）、另一個沒受傷，抽亂數 5 次；目標只剩 150 → 第一擊 100、追加打倒（50），同一回合另一個敵人沒受傷，下一回合才打它（200）；目標只剩 100 → 第一擊打倒，不抽、旁邊的敵人沒受傷",
+		rows4.all(func(x): return x == [200.0, 1, 1, 1, 0.0]) and a4.calls == 5 and a4.rolls == 5 \
+			and b4a == [150.0, 1, 1, 1] and b4side == 0.0 and b4b == [200.0, 1, 1, 1] and b4.dead and b4.calls == 2 \
+			and c4a == [100.0, 0, 0, 1] and c4.side == 0.0 and c4.dead and c4.calls == 0,
+		{"a": a4, "b": b4, "c": c4})
+
+	# 連射-5：追加的一擊不引發其他技能（測試直接設定欄位；正式資料一位武將只有一個技能）：同時有吸血 15%（生命 500）、暈眩 0.5 秒、灼燒、橫掃原型（半徑 2 格、2 人、50%），
+	# 抽樣 0：主目標這一回合被打掉 200（第一擊 100＋追加 100）；吸血只算第一擊（恢復 15、1 筆紀錄）；暈眩只套用一次（武將 1 次、敵人 1 次）；
+	# 灼燒只套用一次；橫掃只有第一擊（1 次、副目標各 50）；只抽一次亂數
+	var h5 := _dodge_holder()
+	var w5 := R20Wave.new()
+	h5.add_child(w5)
+	var rr5 := DsRolls.new([0.0])
+	var s5: Node = _ds_hero(h5, w5, rr5)
+	s5.lifesteal_ratio = 0.15
+	s5.current_hp = 500.0
+	s5.stun_duration = 0.5
+	s5.burn_ratio = 0.2
+	s5.burn_ticks = 3
+	s5.burn_interval = 1.0
+	s5.sweep_ratio = 0.5
+	s5.sweep_radius = 2.0
+	s5.sweep_max_targets = 2
+	var e5: Node = DsEnemy.new()
+	h5.add_child(e5)
+	e5.set_physics_process(false)
+	e5.setup({"enemy_id": "ds", "hp": 99999.0, "speed": 0.0}, [Vector2.ZERO, Vector2(40.0 * 48.0, 0.0)])
+	e5.position = Vector2(48.0, 0.0)
+	w5.enemies.append(e5)
+	var side5: Array = [_ls_enemy(h5, w5, 99999.0, 60.0), _ls_enemy(h5, w5, 99999.0, 72.0)]
+	var r5: Array = _ds_round(s5, e5)
+	var d5: Dictionary = {"round": r5, "heal": snappedf(s5.current_hp - 500.0, 0.0001), "lifesteal": [s5.lifesteal_count, s5.lifesteal_log.size()],
+		"stun": [s5.stun_count, e5.stun_count], "burn_calls": e5.burn_calls, "sweep": [s5.sweep_count, s5.sweep_hits],
+		"side": side5.map(func(x): return snappedf(99999.0 - x.current_hp, 0.0001)), "calls": rr5.calls}
+	h5.queue_free()
+	_check("連射-5 追加的一擊不引發其他技能：主目標這一回合 200；吸血只算第一擊（恢復 15、1 筆）；暈眩只套用一次；灼燒只套用一次；橫掃只有第一擊（1 次、副目標各 50）；只抽一次亂數",
+		r5 == [200.0, 1, 1, 1] and d5.heal == 15.0 and d5.lifesteal == [1, 1] and d5.stun == [1, 1] and d5.burn_calls == 1 and d5.sweep == [1, 2] \
+			and d5.side == [50.0, 50.0] and d5.calls == 1,
+		d5)
+
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 連射-6：實際引擎（時間倍率、部署慢速、手動暫停）：孫尚香（弓兵）在建築格 (5,4)、射程 2.5 格、攻擊間隔 1 秒、攻擊力 100；不會移動的地面兵在 (4,5)；
+	# 抽樣替身輪流回傳 0.1 與 0.7（第 1、3、5…次追加）。1 倍打 3 回合 → 2 倍再 3 回合 → 打開部署選單（0.1 倍）1 回合 → 關閉選單、回到 1 倍後手動暫停 1 秒（牆鐘）→ 繼續後再 1 回合：
+	# 每一個物理步進敵人被打掉的生命只會是 0、100、200（追加的一擊和第一擊在同一步，不延後）；記錄期間 200 與 100 的步數＝武將紀錄裡對應這幾次攻擊的追加與不追加次數；
+	# 抽亂數次數＝攻擊次數＝替身被呼叫的次數，紀錄照替身的順序、u < 0.2 的才追加；敵人總共被打掉的生命＝100 ×（攻擊次數＋追加次數）；
+	# 每次冷卻都是 1 秒（相鄰兩次攻擊的遊戲時間差在 1 秒 ± 0.05 內，追加不會重設或延後冷卻）；暫停中沒有攻擊、沒有抽亂數
+	var seq6: Array = [0.1, 0.7]
+	var d6: Dictionary = {}
+	var ok6: bool = false
+	_ds_load(rec, "ds-6", [[_grp("ds_post", 1, 0.02)]], [_ds_ss()], {"sun_shang_xiang": Vector2i(5, 4)})
+	var rr6 := DsRolls.new(seq6, true)
+	var ss6: Node = _ds_place_rolls(rr6)
+	var e6: Node = await _stn_start(Vector2i(4, 5))
+	if e6 != null and ss6 != null:
+		var st6: Dictionary = {"hits": 0, "phase": 0, "menu": {}, "pause": {}, "rec": rec, "h": ss6, "paused": []}
+		var each6 := func(row: Dictionary) -> void:
+			if float(row.de) > 0.0:
+				st6.hits = int(st6.hits) + 1
+			var ph6: int = int(st6.phase)
+			if ph6 == 3:
+				st6.paused.append(row)
+			if ph6 == 0 and int(st6.hits) >= 3:
+				_r19_speed(st6.rec, 2.0)
+				st6.phase = 1
+			elif ph6 == 1 and int(st6.hits) >= 6:
+				st6.menu = _r19_open(st6.rec, 2)
+				st6.phase = 2
+			elif ph6 == 2 and int(st6.hits) >= 7:
+				_r19_close(st6.rec, st6.menu)
+				_r19_speed(st6.rec, 1.0)
+				st6.pause = {"rolls": st6.h.double_shot_rolls, "attacks": st6.h.attack_count, "wall": Time.get_ticks_msec(), "reply": _r20_pause(st6.rec, true)}
+				st6.phase = 3
+			elif ph6 == 3 and Time.get_ticks_msec() - int(st6.pause.wall) >= 1000:
+				st6.pause["rolls2"] = st6.h.double_shot_rolls
+				st6.pause["attacks2"] = st6.h.attack_count
+				st6.pause["frozen"] = _r20_frozen()
+				_r20_pause(st6.rec, false)
+				st6.phase = 4
+		var rows6: Array = await _ls_track(ss6, e6, 60000, func(_r): return int(st6.phase) == 4 and int(st6.hits) >= 8, each6)
+		var lost6: float = e6.max_hp - e6.current_hp
+		var bad_rows6: Array = rows6.filter(func(r): return not (float(r.de) == 0.0 or absf(float(r.de) - 100.0) < 1e-3 or absf(float(r.de) - 200.0) < 1e-3))
+		var doubles6: int = rows6.filter(func(r): return absf(float(r.de) - 200.0) < 1e-3).size()
+		var singles6: int = rows6.filter(func(r): return absf(float(r.de) - 100.0) < 1e-3).size()
+		# 記錄開始前可能已經打過第一擊：追蹤到的攻擊對應武將紀錄的最後幾筆
+		var tail6: Array = ss6.double_shot_log.slice(ss6.double_shot_log.size() - int(st6.hits))
+		var tail_hits6: int = tail6.filter(func(x): return x.hit).size()
+		var want_c6: int = 0
+		for k6 in range(ss6.attack_count):
+			if float(seq6[k6 % 2]) < 0.2:
+				want_c6 += 1
+		var gaps6: Dictionary = _ds_gaps(ss6, 1.0)
+		var hit_ts6: Array = rows6.filter(func(r): return float(r.de) > 0.0).map(func(r): return snappedf(float(r.ts), 0.01))
+		var p6: Dictionary = st6.pause
+		d6 = {"phase": st6.phase, "hits": st6.hits, "attacks": ss6.attack_count, "rolls": ss6.double_shot_rolls, "calls": rr6.calls, "count": ss6.double_shot_count,
+			"want_count": want_c6, "tracked": [doubles6, singles6], "tail_hits": tail_hits6, "tail": tail6.size(), "lost": lost6, "bad_rows": bad_rows6.slice(0, 5),
+			"log_ok": _ds_log_ok(ss6.double_shot_log, seq6), "gaps": gaps6, "hit_ts": hit_ts6,
+			"pause": {"rolls": [p6.get("rolls"), p6.get("rolls2")], "attacks": [p6.get("attacks"), p6.get("attacks2")], "frozen": p6.get("frozen"), "rows": st6.paused.size(),
+				"moved": st6.paused.filter(func(r): return float(r.de) != 0.0 or float(r.dt) != 0.0).size()},
+			"menu": not st6.menu.is_empty(), "ts_now": Engine.time_scale}
+		ok6 = int(st6.phase) == 4 and int(st6.hits) >= 8 and bad_rows6.is_empty() and doubles6 == tail_hits6 and singles6 == tail6.size() - tail_hits6 and tail6.size() == int(st6.hits) and ss6.double_shot_rolls == ss6.attack_count \
+			and rr6.calls == ss6.attack_count and ss6.double_shot_count == want_c6 and d6.log_ok and _ls_near(lost6, 100.0 * float(ss6.attack_count + ss6.double_shot_count), 1e-6) \
+			and gaps6.ok and hit_ts6.has(2.0) and hit_ts6.has(0.1) and hit_ts6.has(1.0) \
+			and p6.get("rolls") == p6.get("rolls2") and p6.get("attacks") == p6.get("attacks2") and p6.get("frozen") == true and int(d6.pause.rows) >= 20 and int(d6.pause.moved) == 0 \
+			and not st6.menu.is_empty() and is_equal_approx(Engine.time_scale, 1.0)
+	_check("連射-6 實際引擎（1 倍、2 倍、部署慢速、手動暫停，抽樣輪流 0.1／0.7）：每一步敵人只會被打掉 0、100 或 200（追加和第一擊在同一步）；抽亂數＝攻擊次數＝替身呼叫次數，奇數次追加；敵人被打掉的生命＝100 ×（攻擊＋追加）；相鄰兩次攻擊的遊戲時間差都是 1 秒 ± 0.05（追加不重設冷卻）；暫停 1 秒中沒有攻擊與抽樣",
+		ok6, d6)
+
+	# 連射-6b：攻速光環：曹操（指揮 1.15）在 (7,4)（射程 3 格，打不到 (4,5) 的敵人，孫尚香在光環內）：孫尚香每次冷卻都是 1 ÷ 1.15 秒，
+	# 相鄰兩次攻擊的遊戲時間差都在 1 ÷ 1.15 ± 0.05 內；抽亂數＝攻擊次數＝替身呼叫次數；敵人被打掉的生命＝100 ×（攻擊＋追加）
+	var d6b: Dictionary = {}
+	var ok6b: bool = false
+	_ds_load(rec, "ds-6b", [[_grp("ds_post", 1, 0.02)]], [_ds_ss(), _r12_hero("cao_cao", SPD_AURA_SKILL.duplicate())],
+		{"sun_shang_xiang": Vector2i(5, 4), "cao_cao": Vector2i(7, 4)})
+	var rr6b := DsRolls.new(seq6, true)
+	var ss6b: Node = _ds_place_rolls(rr6b)
+	var e6b: Node = await _stn_start(Vector2i(4, 5))
+	if e6b != null and ss6b != null:
+		await _wait_until(func(): return is_instance_valid(ss6b) and ss6b.attack_count >= 6, 15.0)
+		# 第一擊時光環可能還沒套上：略過第一筆
+		var gaps6b: Dictionary = _ds_gaps(ss6b, 1.0 / 1.15, 0.05, 1)
+		d6b = {"attacks": ss6b.attack_count, "rolls": ss6b.double_shot_rolls, "calls": rr6b.calls, "count": ss6b.double_shot_count, "bonus": ss6b.atk_speed_bonus_mult,
+			"lost": e6b.max_hp - e6b.current_hp, "gaps": gaps6b, "log_ok": _ds_log_ok(ss6b.double_shot_log, seq6)}
+		ok6b = ss6b.attack_count >= 6 and ss6b.double_shot_rolls == ss6b.attack_count and rr6b.calls == ss6b.attack_count and is_equal_approx(ss6b.atk_speed_bonus_mult, 1.15) \
+			and gaps6b.ok and d6b.log_ok and _ls_near(float(d6b.lost), 100.0 * float(ss6b.attack_count + ss6b.double_shot_count), 1e-6)
+	_check("連射-6b 攻速光環：曹操的光環裡孫尚香每次冷卻都是 1 ÷ 1.15 秒（相鄰攻擊的時間差 ± 0.05），抽亂數＝攻擊次數＝替身呼叫次數，被打掉的生命＝100 ×（攻擊＋追加）",
+		ok6b, d6b)
+
+	# 連射-7：目標的種類（實際引擎，抽樣都是 0）：a 弓兵打不會移動的飛行兵：每回合 200、抽亂數＝追加＝攻擊次數；
+	# b 兩個不會移動的地面兵都在射程內 (4,5)、(6,5)：只有一個被打（每回合 200），另一個完全沒受傷；
+	# c 職業改成步兵、射程內只有飛行兵：2 秒內沒有攻擊、沒有抽亂數
+	var d7: Dictionary = {}
+	_ds_load(rec, "ds-7a", [[_grp("ds_fly", 1, 0.02)]], [_ds_ss()], {"sun_shang_xiang": Vector2i(5, 4)})
+	var rr7a := DsRolls.new([0.0])
+	var ss7a: Node = _ds_place_rolls(rr7a)
+	var e7a: Node = await _stn_start(Vector2i(5, 5))
+	var ok7a: bool = false
+	if e7a != null and ss7a != null:
+		await _wait_until(func(): return is_instance_valid(ss7a) and ss7a.attack_count >= 3, 10.0)
+		d7["a"] = {"flying": e7a.is_flying(), "attacks": ss7a.attack_count, "rolls": ss7a.double_shot_rolls, "count": ss7a.double_shot_count, "lost": e7a.max_hp - e7a.current_hp}
+		ok7a = e7a.is_flying() and ss7a.attack_count >= 3 and ss7a.double_shot_rolls == ss7a.attack_count and ss7a.double_shot_count == ss7a.attack_count \
+			and _ls_near(float(d7.a.lost), 200.0 * float(ss7a.attack_count), 1e-6)
+	_ds_load(rec, "ds-7b", [[_grp("ds_post", 2, 0.02)]], [_ds_ss()], {"sun_shang_xiang": Vector2i(5, 4)})
+	var rr7b := DsRolls.new([0.0])
+	var ss7b: Node = _ds_place_rolls(rr7b)
+	_bm().player_start_battle()
+	await _wait_until(func(): return _wm().get_active_enemy_count() >= 2, 5.0)
+	var es7b: Array = _wm().get_active_enemies().duplicate()
+	var ok7b: bool = false
+	if es7b.size() == 2 and ss7b != null:
+		es7b[0].global_position = main.game_map.grid_to_world(Vector2i(4, 5))
+		es7b[1].global_position = main.game_map.grid_to_world(Vector2i(6, 5))
+		var lost0: Array = [es7b[0].max_hp - es7b[0].current_hp, es7b[1].max_hp - es7b[1].current_hp]
+		var n7b: int = ss7b.attack_count
+		await _wait_until(func(): return is_instance_valid(ss7b) and ss7b.attack_count >= n7b + 3, 10.0)
+		var lost7: Array = [es7b[0].max_hp - es7b[0].current_hp - lost0[0], es7b[1].max_hp - es7b[1].current_hp - lost0[1]]
+		var rounds7b: int = ss7b.attack_count - n7b
+		d7["b"] = {"lost": lost7, "rounds": rounds7b, "rolls": ss7b.double_shot_rolls, "attacks": ss7b.attack_count, "count": ss7b.double_shot_count}
+		ok7b = rounds7b >= 3 and minf(lost7[0], lost7[1]) == 0.0 and _ls_near(maxf(lost7[0], lost7[1]), 200.0 * float(rounds7b), 1e-6) \
+			and ss7b.double_shot_rolls == ss7b.attack_count and ss7b.double_shot_count == ss7b.attack_count
+	_ds_load(rec, "ds-7c", [[_grp("ds_fly", 1, 0.02)]], [_ds_ss()], {"sun_shang_xiang": Vector2i(5, 4)}, "infantry")
+	var rr7c := DsRolls.new([0.0])
+	var ss7c: Node = _ds_place_rolls(rr7c)
+	var e7c: Node = await _stn_start(Vector2i(5, 5))
+	var g7c: float = _pt()
+	await _wait_until(func(): return _pt() - g7c >= 2.0, 10.0)
+	d7["c"] = [ss7c.can_hit_air if ss7c != null else true, ss7c.attack_count if ss7c != null else -1, ss7c.double_shot_rolls if ss7c != null else -1, rr7c.calls,
+		e7c.current_hp == e7c.max_hp if is_instance_valid(e7c) else false]
+	_check("連射-7 目標的種類：弓兵打飛行兵每回合 200、每回合都追加；兩個地面兵都在射程內時只有一個被打（每回合 200）、另一個沒受傷；步兵打不到射程內的飛行兵（沒有攻擊、沒有抽亂數）",
+		ok7a and ok7b and d7.c == [false, 0, 0, 0, true], d7)
+
+	# 連射-8：移位、換技能、移除、新的一場與結算（實際引擎）：
+	# a 打過之後移到 (3,4)（仍在射程內）：移動本身不改變統計，之後照樣抽樣（紀錄照替身順序接續），抽亂數＝攻擊次數、被打掉的生命＝100 ×（攻擊＋追加）；
+	# b 換成反擊（update_team）：機率變成 0，之後的攻擊不再抽亂數（抽亂數次數不變），每回合只打 100；
+	# c 移出隊伍：孫尚香不在場上、敵人之後不再被打；d 新的一場：抽亂數、追加、攻擊次數都是 0、沒有紀錄；
+	# e 唯一的敵人血量 150、抽樣 0：第一回合 100＋追加打倒（50）：擊殺 1、戰鬥金幣只加一次（5）、結算一次（勝利）；
+	# f 唯一的敵人血量 100：第一擊就打倒、不抽亂數，擊殺 1、結算一次；
+	# g 首擊加倍（測試直接替場上的孫尚香設定 2 倍）：第一回合第一擊 200、追加的一擊是攻擊力 100（不是 200）；之後每回合 100＋100
+	var d8: Dictionary = {}
+	_ds_load(rec, "ds-8a", [[_grp("ds_post", 1, 0.02)]], [_ds_ss()], {"sun_shang_xiang": Vector2i(5, 4)})
+	var rr8 := DsRolls.new(seq6, true)
+	var ss8: Node = _ds_place_rolls(rr8)
+	var e8: Node = await _stn_start(Vector2i(4, 5))
+	var ok8a: bool = false
+	var ok8b: bool = false
+	if e8 != null and ss8 != null:
+		await _wait_until(func(): return is_instance_valid(ss8) and ss8.attack_count >= 2, 5.0)
+		var before8: Array = [ss8.attack_count, ss8.double_shot_rolls, ss8.double_shot_count]
+		ss8.reposition(Vector2i(3, 4), main.game_map.grid_to_world(Vector2i(3, 4)), main.game_map)
+		var moved8: Array = [ss8.attack_count, ss8.double_shot_rolls, ss8.double_shot_count]
+		await _wait_until(func(): return is_instance_valid(ss8) and ss8.attack_count >= int(before8[0]) + 3, 6.0)
+		d8["a"] = {"before": before8, "moved": moved8, "attacks": ss8.attack_count, "rolls": ss8.double_shot_rolls, "count": ss8.double_shot_count,
+			"lost": e8.max_hp - e8.current_hp, "log_ok": _ds_log_ok(ss8.double_shot_log, seq6), "cell": ss8.get_cell()}
+		ok8a = moved8 == before8 and ss8.attack_count >= int(before8[0]) + 3 and ss8.double_shot_rolls == ss8.attack_count and rr8.calls == ss8.attack_count \
+			and d8.a.log_ok and _ls_near(float(d8.a.lost), 100.0 * float(ss8.attack_count + ss8.double_shot_count), 1e-6) and ss8.get_cell() == Vector2i(3, 4)
+		var before8b: Array = [ss8.attack_count, ss8.double_shot_rolls, ss8.double_shot_count, e8.max_hp - e8.current_hp]
+		_r19_js(rec, {"type": "update_team", "team_list": [_ds_ss({"id": "counter", "counter_ratio": 0.2})]})
+		await _def_frames(2)
+		var same8: bool = _fly_hero("sun_shang_xiang") == ss8
+		await _wait_until(func(): return is_instance_valid(ss8) and ss8.attack_count >= int(before8b[0]) + 3, 6.0)
+		var n8b: int = ss8.attack_count - int(before8b[0])
+		d8["b"] = {"same": same8, "chance": ss8.double_shot_chance, "counter": ss8.counter_ratio, "rolls": [before8b[1], ss8.double_shot_rolls],
+			"count": [before8b[2], ss8.double_shot_count], "rounds": n8b, "lost": (e8.max_hp - e8.current_hp) - float(before8b[3]), "calls": rr8.calls}
+		ok8b = same8 and ss8.double_shot_chance == 0.0 and is_equal_approx(ss8.counter_ratio, 0.2) and ss8.double_shot_rolls == int(before8b[1]) \
+			and ss8.double_shot_count == int(before8b[2]) and n8b >= 3 and _ls_near(float(d8.b.lost), 100.0 * float(n8b), 1e-6) and rr8.calls == int(before8b[1])
+	_r19_js(rec, {"type": "update_team", "team_list": []})
+	await _def_frames(3)
+	var hp8c: float = e8.current_hp if is_instance_valid(e8) else -1.0
+	var g8c: float = _pt()
+	await _wait_until(func(): return _pt() - g8c >= 1.5, 8.0)
+	d8["c"] = [_fly_hero("sun_shang_xiang") == null, is_instance_valid(e8) and e8.current_hp == hp8c]
+
+	_ds_load(rec, "ds-8d", [[_grp("ds_post", 1, 0.02)]], [_ds_ss()], {"sun_shang_xiang": Vector2i(5, 4)})
+	await _def_frames()
+	var ss8d: Node = _fly_hero("sun_shang_xiang")
+	d8["d"] = [ss8d.double_shot_rolls if ss8d != null else -1, ss8d.double_shot_count if ss8d != null else -1, ss8d.attack_count if ss8d != null else -1,
+		ss8d.double_shot_log.size() if ss8d != null else -1, ss8d.double_shot_chance if ss8d != null else -1.0, _first_enemy() == null]
+
+	_ds_load(rec, "ds-8e", [[_grp("ds_150", 1, 0.02)]], [_ds_ss()], {"sun_shang_xiang": Vector2i(5, 4)})
+	var rr8e := DsRolls.new([0.0])
+	var ss8e: Node = _ds_place_rolls(rr8e)
+	var ended8e: int = battle_ended_count
+	var gold8e: int = _bm().battle_gold
+	await _stn_start(Vector2i(4, 5))
+	await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 5.0)
+	await _wait(0.3)
+	d8["e"] = {"log": ss8e.double_shot_log.duplicate(true) if is_instance_valid(ss8e) else [], "kills": _bm().kills, "gold": _bm().battle_gold - gold8e,
+		"ended": battle_ended_count - ended8e, "win": last_result.get("result", ""), "calls": rr8e.calls}
+	var ok8e: bool = d8.e.log.size() == 1 and d8.e.log[0].hit == true and _ls_near(d8.e.log[0].first, 100.0) and _ls_near(d8.e.log[0].second, 50.0) \
+		and d8.e.kills == 1 and d8.e.gold == BattleManager.GOLD_PER_KILL and d8.e.ended == 1 and str(d8.e.win) == "WIN" and d8.e.calls == 1
+
+	_ds_load(rec, "ds-8f", [[_grp("ds_100", 1, 0.02)]], [_ds_ss()], {"sun_shang_xiang": Vector2i(5, 4)})
+	var rr8f := DsRolls.new([0.0])
+	var ss8f: Node = _ds_place_rolls(rr8f)
+	var ended8f: int = battle_ended_count
+	await _stn_start(Vector2i(4, 5))
+	await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 5.0)
+	await _wait(0.3)
+	d8["f"] = {"rolls": ss8f.double_shot_rolls if is_instance_valid(ss8f) else -1, "calls": rr8f.calls, "kills": _bm().kills, "ended": battle_ended_count - ended8f}
+	var ok8f: bool = d8.f.rolls == 0 and d8.f.calls == 0 and d8.f.kills == 1 and d8.f.ended == 1
+
+	_ds_load(rec, "ds-8g", [[_grp("ds_post", 1, 0.02)]], [_ds_ss()], {"sun_shang_xiang": Vector2i(5, 4)})
+	var rr8g := DsRolls.new([0.0])
+	var ss8g: Node = _ds_place_rolls(rr8g)
+	var ok8g: bool = false
+	if ss8g != null:
+		ss8g.first_strike_multiplier = 2.0
+		var e8g: Node = await _stn_start(Vector2i(4, 5))
+		await _wait_until(func(): return is_instance_valid(ss8g) and ss8g.attack_count >= 3, 6.0)
+		var lg8: Array = ss8g.double_shot_log.map(func(x): return [snappedf(float(x.first), 0.0001), snappedf(float(x.second), 0.0001)])
+		d8["g"] = {"log": lg8, "lost": e8g.max_hp - e8g.current_hp if is_instance_valid(e8g) else -1.0, "attacks": ss8g.attack_count}
+		ok8g = lg8.size() >= 3 and lg8[0] == [200.0, 100.0] and lg8.slice(1).all(func(x): return x == [100.0, 100.0]) \
+			and _ls_near(float(d8.g.lost), 100.0 + 200.0 * float(ss8g.attack_count), 1e-6)
+	_check("連射-8 移位、換技能、移除、新的一場與結算：移位不改統計、之後照樣抽樣；換成反擊後不再抽亂數（每回合 100）；移出隊伍後敵人不再被打；新的一場統計歸零；追加的一擊打倒唯一的敵人時擊殺 1、金幣只加一次、結算一次（勝利）；第一擊就打倒時不抽、結算一次；首擊加倍時追加的一擊仍是攻擊力 100",
+		ok8a and ok8b and d8.c == [true, true] and d8.d == [0, 0, 0, 0, 0.2, true] and ok8e and ok8f and ok8g, d8)
 
 	rec.payload_received.disconnect(main._on_payload_received)
 	main.web_bridge = original

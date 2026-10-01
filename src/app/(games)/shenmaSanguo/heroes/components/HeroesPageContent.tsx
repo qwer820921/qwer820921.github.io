@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Container,
@@ -17,6 +17,7 @@ import { HeroState, HeroConfig, Rarity } from "../../types";
 import HeroSkillInfo from "../../components/HeroSkillInfo";
 import HeroAntiAir from "../../components/HeroAntiAir";
 import HeroFilterBar from "../../components/HeroFilterBar";
+import { FOCUSABLE } from "../../components/useDialogFocus";
 import { attackIntervalSec, formatSec } from "../../utils/heroStats";
 import {
   DEFAULT_HERO_FILTER,
@@ -61,11 +62,62 @@ function UpgradeModal({
   // 寫入限制中不能升級（store 也會拒絕）：按鈕停用並說明
   const writeHold = usePlayerStore((s) => s.writeHold);
   const blocked = loading || !canAfford || writeHold;
+  const titleId = useId();
+
+  // 升級處理中按鈕停用，焦點會掉到頁面本身（Tab／Esc 照樣由 Modal 處理）：處理完後焦點還在頁面本身時，
+  // 放回升級按鈕（仍然可以按時），否則放回「關閉」
+  const upgradeRef = useRef<HTMLButtonElement>(null);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const restoreRef = useRef(false);
+  useEffect(() => {
+    if (loading || !restoreRef.current) return;
+    restoreRef.current = false;
+    const a = document.activeElement;
+    if (a && a !== document.body) return;
+    const up = upgradeRef.current;
+    (up && !up.disabled ? up : closeBtnRef.current)?.focus();
+  });
+
+  // Tab／Shift+Tab 只在詳情裡的控制項之間循環。Modal 的焦點鎖定要等焦點離開視窗後才拉回視窗外框：
+  // 最後一個控制項按 Tab 時焦點會先離開頁面，第一個按 Shift+Tab 會停在外框。這裡只補邊界：最後一個 → 第一個、
+  // 第一個 → 最後一個；焦點在外框或頁面本身（升級處理中按鈕停用時）按 Tab 到第一個、Shift+Tab 到最後一個。
+  // 停用的按鈕不算；開啟、Esc 關閉與還焦點照舊由 Modal 處理
+  const boxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const box = boxRef.current;
+      if (e.key !== "Tab" || e.defaultPrevented || !box) return;
+      const dialog = box.closest('[role="dialog"]');
+      const active = document.activeElement;
+      // 焦點在別的視窗裡，或焦點不在任何視窗裡、而最上層的視窗不是這個詳情時不處理
+      const owner =
+        active instanceof Element ? active.closest('[role="dialog"]') : null;
+      const modals = document.querySelectorAll(
+        '[role="dialog"][aria-modal="true"]'
+      );
+      if (owner ? owner !== dialog : modals[modals.length - 1] !== dialog)
+        return;
+      const items = Array.from(box.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      let next: HTMLElement | null = null;
+      if (!active || !box.contains(active)) next = e.shiftKey ? last : first;
+      else if (e.shiftKey && active === first) next = last;
+      else if (!e.shiftKey && active === last) next = first;
+      if (!next) return;
+      e.preventDefault();
+      next.focus();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const handleUpgrade = async () => {
     setLoading(true);
     setFeedback(null);
     const result = await onUpgrade();
+    restoreRef.current = true;
     setLoading(false);
     if (result.success) {
       setFeedback({ type: "success", msg: "升級成功！" });
@@ -112,10 +164,12 @@ function UpgradeModal({
       show
       onHide={onClose}
       centered
+      aria-labelledby={titleId}
       contentClassName="border-0 p-0"
       style={{ "--bs-modal-bg": "transparent" } as React.CSSProperties}
     >
       <div
+        ref={boxRef}
         style={{
           background: C.surface,
           border: `1px solid ${color}40`,
@@ -138,7 +192,7 @@ function UpgradeModal({
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-            <span style={{ fontWeight: 700, fontSize: "1.1rem" }}>
+            <span id={titleId} style={{ fontWeight: 700, fontSize: "1.1rem" }}>
               {config.name}
             </span>
             <span
@@ -155,7 +209,9 @@ function UpgradeModal({
             </span>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="關閉武將詳情"
             style={{
               background: "none",
               border: "none",
@@ -367,6 +423,8 @@ function UpgradeModal({
           {/* 按鈕 */}
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button
+              ref={closeBtnRef}
+              type="button"
               onClick={onClose}
               disabled={loading}
               style={{
@@ -383,6 +441,8 @@ function UpgradeModal({
               關閉
             </button>
             <button
+              ref={upgradeRef}
+              type="button"
               onClick={handleUpgrade}
               disabled={blocked}
               style={{
@@ -429,16 +489,19 @@ function HeroCard({
   const rarity = rarityInfo(config.rarity);
   const job = jobInfo(config.job);
   const color = rarity.color;
+  // 原生按鈕：Tab 可以移到卡片，Enter／空白鍵開啟詳情（樣式見 heroCardButton）。按鈕裡只能放行內的內容，原本的區塊都用 span（顯示方式由樣式決定，版面不變）
   return (
-    <div
-      className={`${styles.heroCard} ${rarityBgClass[rarity.value] ?? ""}`}
+    <button
+      type="button"
+      className={`${styles.heroCard} ${styles.heroCardButton} ${rarityBgClass[rarity.value] ?? ""}`}
       data-hero-id={config.hero_id}
+      aria-haspopup="dialog"
       onClick={onClick}
       style={{ borderColor: `${color}30` }}
     >
-      <div className={styles.heroJobBar} style={{ background: job.color }} />
-      <div className={styles.heroCardInner}>
-        <div
+      <span className={styles.heroJobBar} style={{ background: job.color }} />
+      <span className={styles.heroCardInner}>
+        <span
           style={{
             display: "flex",
             justifyContent: "space-between",
@@ -446,7 +509,7 @@ function HeroCard({
             marginBottom: "0.25rem",
           }}
         >
-          <div className={styles.heroName}>{config.name}</div>
+          <span className={styles.heroName}>{config.name}</span>
           <span
             style={{
               background: `${color}22`,
@@ -463,8 +526,8 @@ function HeroCard({
           >
             {rarity.label}
           </span>
-        </div>
-        <div
+        </span>
+        <span
           style={{
             display: "flex",
             gap: "0.3rem",
@@ -492,16 +555,16 @@ function HeroCard({
               {"★".repeat(hero.star)}
             </span>
           )}
-        </div>
-        <div className={styles.heroStats}>
+        </span>
+        <span className={styles.heroStats}>
           <span style={{ color: "var(--sg-red)" }}>ATK {hero.atk}</span>
           <span style={{ color: "var(--sg-blue)" }}>DEF {hero.def}</span>
           <span style={{ color: "var(--sg-green)" }}>HP {hero.hp}</span>
-        </div>
+        </span>
         <HeroSkillInfo heroId={config.hero_id} variant="tag" />
-        <div className={styles.heroHint}>點擊升級</div>
-      </div>
-    </div>
+        <span className={styles.heroHint}>點擊升級</span>
+      </span>
+    </button>
   );
 }
 
@@ -515,6 +578,26 @@ export default function HeroesPageContent() {
   // 搜尋／職業／排序只影響這一頁的顯示；離開頁面（元件卸載）就回到預設
   const [criteria, setCriteria] =
     useState<HeroFilterCriteria>(DEFAULT_HERO_FILTER);
+  // 詳情（react-bootstrap Modal）關閉時會把焦點還給開啟它的卡片；卡片已經不在畫面上、或開啟時沒有焦點（焦點留在頁面本身）時，
+  // 改交給同一位武將的卡片，沒有時交給搜尋框
+  const lastDetailRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (selectedHeroId) {
+      lastDetailRef.current = selectedHeroId;
+      return;
+    }
+    const id = lastDetailRef.current;
+    lastDetailRef.current = null;
+    const a = document.activeElement;
+    if (!id || (a && a !== document.body)) return;
+    const card = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-hero-id]")
+    ).find((el) => el.dataset.heroId === id && el.tagName === "BUTTON");
+    (
+      card ??
+      document.querySelector<HTMLElement>('[data-testid="hero-filter-search"]')
+    )?.focus();
+  }, [selectedHeroId]);
 
   if (!player || configLoading || !staticConfig) {
     return (

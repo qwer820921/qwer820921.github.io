@@ -10,6 +10,7 @@
 ## 攻速光環（曹操「指揮」）：範圍內其他武將之後開始的攻擊冷卻用加成後的攻擊間隔（見 atk_speed_aura_mult、effective_attack_interval），不改 attack_speed
 ## 反擊（夏侯惇）：受到敵人的直接攻擊、實際扣血後仍然活著時，把實扣生命的一定比例反彈給這個敵人（見 counter_ratio；攻擊者由 Enemy 傳入 take_damage）
 ## 堅韌（廖化）：受傷前的生命比例不高於門檻時，防禦計算後的傷害再乘上倍率（見 tenacity_hp_ratio、tenacity_damage_mult），不改防禦與最大生命
+## 威壓（顏良）：範圍內敵人對阻路武將的直接攻擊力乘上倍率（見 atk_down_aura_mult；倍率記在敵人身上，Enemy.atk_mult），不改敵人設定的攻擊力
 
 class_name Hero
 extends Node2D
@@ -199,6 +200,36 @@ var tenacity_log: Array = []
 const TENACITY_LOG_MAX: int = 40
 ## 堅韌生效時的提示顏色（古銅色：血條外框與小盾牌；和淺綠色的防禦光環、淡紫色的攻速光環區分）
 const TENACITY_COLOR: Color = Color(0.85, 0.6, 0.25, 1.0)
+## 威壓（atk_down_aura，顏良）：戰鬥中（BATTLE）、這位武將活著且在場上時，以武將為中心、目前有效射程內（含邊界，比中心距離）的
+## 所有存活敵人對阻路武將的直接攻擊力 × atk_down_aura_mult（0.9 ＝ 降低 10%）。地面、飛行、免疫減速的敵人都算（威壓不是減速）；
+## 不需要普通攻擊的目標、不看攻擊冷卻，也不改變自己的普通攻擊；敵人的移動速度、攻擊間隔與冷卻、抵達城池扣的城防都不變。
+## 每一幀重新判斷：離開範圍、移位／升級改變範圍、倒下、被移除、換掉技能、戰鬥結束時撤除自己的來源（最遲下一幀）。
+## 一個敵人同時在幾個威壓裡時由敵人取最強的一個（Enemy.atk_mult），不相乘、不累加。atk_down_aura_mult 1.0 代表沒有這個技能
+var atk_down_aura_mult: float = 1.0
+## 這位武將施加威壓時用的來源（每個武將節點各自不同：移除後重新放置也是新的來源）
+var atk_down_aura_source: String = ""
+## 目前被這位武將的威壓影響的敵人（instance id → 敵人）
+var _atk_downed: Dictionary = {}
+## 威壓的範圍圈（戰鬥中）：暗紅色，和敵人身上的向下箭頭同色
+const ATK_DOWN_AURA_COLOR: Color = Color(0.85, 0.22, 0.28, 1.0)
+var _atk_down_aura_shown: bool = false
+## 連射（double_shot，孫尚香）：每次普通攻擊對目標實際造成正的有限傷害、而且目標被這一擊打過後仍然活著時，抽一個 [0,1) 的亂數 u，
+## u < double_shot_chance 就在同一個攻擊回合立刻對同一個目標再打一擊（這次普通攻擊的攻擊力 × 1）。
+## 追加的一擊走敵人一般的受傷與死亡流程（擊殺與金幣只算一次），不再引發首擊、橫掃、灼燒、暈眩、吸血，也不會再連射；
+## 攻擊冷卻、攻擊次數與攻擊紀錄仍算一次攻擊。沒有目標、傷害無效、第一擊就打倒目標時不抽亂數。
+## double_shot_chance 0 代表沒有這個技能；機率不是 0～1 之間（不含兩端）的有限數字時不啟用
+var double_shot_chance: float = 0.0
+## 連射用的亂數：每位武將各自一份，建立時隨機取種子（正式遊戲不固定種子，也沒有訊息或設定欄位可以控制它）
+var _double_shot_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+## 測試替身：有設定時用它回傳的值取代亂數（回傳的不是數字時當作沒有抽中）。只有 Godot 測試直接設定這個屬性
+var double_shot_roll_override: Callable = Callable()
+## 測試用唯讀統計（debug_snapshot）：抽亂數的次數、追加的次數、追加的一擊實際扣掉的生命總量，
+## 以及最近 DOUBLE_SHOT_LOG_MAX 次抽樣的值、是否追加、第一擊與追加的一擊實際扣掉的生命
+var double_shot_rolls: int = 0
+var double_shot_count: int = 0
+var double_shot_dealt: float = 0.0
+var double_shot_log: Array = []
+const DOUBLE_SHOT_LOG_MAX: int = 40
 ## 測試用唯讀統計（debug_snapshot）：這位武將的遊戲時間（_process 的 delta 累加，受時間倍率影響、手動暫停時不前進）、
 ## 普通攻擊的次數，以及最近 ATTACK_LOG_MAX 次攻擊的時間、這次冷卻用的攻擊間隔與當時的攻速加成
 var _age: float = 0.0
@@ -216,10 +247,12 @@ var body_color: Color     = Color(0.20, 0.40, 0.80, 1)  # 預設藍
 # ═══════════════════════════════════════════
 func _init() -> void:
 	_dodge_rng.randomize()
+	_double_shot_rng.randomize()
 	slow_source = "hero_road#%d" % get_instance_id()
 	aura_source = "hero_aura#%d" % get_instance_id()
 	def_aura_source = "hero_def_aura#%d" % get_instance_id()
 	atk_speed_aura_source = "hero_atk_speed_aura#%d" % get_instance_id()
+	atk_down_aura_source = "hero_atk_down_aura#%d" % get_instance_id()
 
 func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: bool, wave_mgr: Node, battle_mgr: Node = null) -> void:
 	hero_id    = str(state.get("hero_id", ""))
@@ -311,6 +344,8 @@ func _read_skill(state: Dictionary) -> void:
 	counter_ratio = 0.0
 	tenacity_hp_ratio = 0.0
 	tenacity_damage_mult = 1.0
+	atk_down_aura_mult = 1.0
+	double_shot_chance = 0.0
 	var skill = state.get("skill", null)
 	if not (skill is Dictionary):
 		return
@@ -380,6 +415,16 @@ func _read_skill(state: Dictionary) -> void:
 			if _open_unit(lr) and _open_unit(lm):
 				tenacity_hp_ratio = float(lr)
 				tenacity_damage_mult = float(lm)
+		"atk_down_aura":
+			# 倍率要是 0～1 之間（不含兩端）的有限數字；字串、布林、null、NaN、無限大、0 以下、1 以上、沒有欄位都不啟用（當作普通武將）
+			var w: Variant = skill.get("atk_mult")
+			if _open_unit(w):
+				atk_down_aura_mult = float(w)
+		"double_shot":
+			# 機率要是 0～1 之間（不含兩端）的有限數字；字串、布林、null、NaN、無限大、0 以下、1 以上、沒有欄位都不啟用（當作普通攻擊）
+			var q: Variant = skill.get("double_shot_chance")
+			if _open_unit(q):
+				double_shot_chance = float(q)
 
 ## 技能參數是正的有限數字（JSON 的數字在 Godot 是 float；字串、布林、null、NaN、無限大、0 以下都不是）
 static func _positive_finite(v: Variant) -> bool:
@@ -411,12 +456,13 @@ func _compute_range(cfg: Dictionary) -> float:
 ## - 攻擊間隔是攻擊當下的有效攻擊間隔（effective_attack_interval）：加成只影響這一擊之後新開始的冷卻
 func _process(delta: float) -> void:
 	_age += delta
-	# 減速（道路阻擋、光環）、防禦光環與攻速光環每一幀更新，不看攻擊冷卻；受到的防禦與攻速加成照遊戲時間倒數有效期
+	# 減速（道路阻擋、光環）、防禦光環、攻速光環與威壓每一幀更新，不看攻擊冷卻；受到的防禦與攻速加成照遊戲時間倒數有效期
 	_update_slows()
 	_tick_def_sources(delta)
 	_update_def_aura()
 	_tick_atk_speed_sources(delta)
 	_update_atk_speed_aura()
+	_update_atk_down_aura()
 	var was_ready: bool = _atk_timer <= 0.0
 	_atk_timer -= delta
 	
@@ -463,6 +509,9 @@ func _process(delta: float) -> void:
 		stun_count += 1
 	if sweep_ratio > 0.0:
 		_sweep(hit_pos, target, damage * sweep_ratio)
+	# 連射：第一擊實際扣到生命、目標仍然活著時抽一次亂數，抽中就在這個攻擊回合對同一個目標再打一擊（不經過上面的技能，也不再連射）
+	if double_shot_chance > 0.0:
+		_double_shot(target, dealt)
 	_is_attacking = true
 	_anim_timer   = 0.22
 	# 保留這一幀越過零點的時間（零頭）；待命後的第一擊、或零頭長過一個間隔（極長的一幀）時從這一擊起算完整的間隔。
@@ -571,12 +620,46 @@ func _show_heal(gain: float) -> void:
 	parent.add_child(ft)
 	ft.setup("+" + shown, LIFESTEAL_COLOR, global_position + Vector2(0, -hero_half - 16))
 
+## 連射：first 是第一擊實際扣掉的生命（目標的受傷沒有回傳數字時當作沒有扣到）。第一擊沒有扣到生命、目標已經倒下或正要被移除時不抽亂數。
+## 抽中時追加的一擊直接呼叫敵人的受傷（攻擊力 × 1，不含首擊加倍），上方出現金色的「+1」（Godot 專案沒有中文字型，技能說明裡寫明這個標記）
+func _double_shot(target: Node, first: Variant) -> void:
+	var f: float = float(first) if (first is float or first is int) else 0.0
+	if not (f > 0.0 and is_finite(f)) or not _enemy_alive(target):
+		return
+	var u: float = _double_shot_roll()
+	var hit: bool = u >= 0.0 and u < 1.0 and u < double_shot_chance
+	double_shot_rolls += 1
+	var second: float = 0.0
+	if hit:
+		var r: Variant = target.take_damage(atk)
+		second = float(r) if (r is float or r is int) else 0.0
+		double_shot_count += 1
+		double_shot_dealt += second
+		_show_skill_text("+1")
+	double_shot_log.append({"u": u, "hit": hit, "first": f, "second": second})
+	if double_shot_log.size() > DOUBLE_SHOT_LOG_MAX:
+		double_shot_log.pop_front()
+
+## 連射判定用的亂數 u（0 ≤ u < 1，和閃避相同的取法）。有測試替身時改用替身的值（測試用來驗證 0、0.199999、0.2、接近 1 這些邊界）；
+## 替身回傳的不是數字時是 NaN（不會抽中）
+func _double_shot_roll() -> float:
+	if double_shot_roll_override.is_valid():
+		var v: Variant = double_shot_roll_override.call()
+		return float(v) if (v is float or v is int) else NAN
+	return float(_double_shot_rng.randi()) / 4294967296.0
+
+## 測試用唯讀資訊（debug_snapshot）：Godot 實際讀到的機率、抽亂數與追加的次數、追加的一擊實際扣掉的生命總量、普通攻擊的次數與最近幾次的抽樣
+func double_shot_state() -> Dictionary:
+	return {"chance": double_shot_chance, "rolls": double_shot_rolls, "count": double_shot_count, "dealt": double_shot_dealt,
+		"attacks": attack_count, "log": double_shot_log.duplicate(true)}
+
 ## 技能觸發時在武將上方顯示的文字（金色、放大，和一般的傷害數字區分）
+const SKILL_TEXT_COLOR: Color = Color(1.0, 0.85, 0.2)
 func _show_skill_text(text: String) -> void:
 	var ft = load("res://ui/FloatingText.gd").new()
 	get_parent().add_child(ft)
 	ft.scale = Vector2(1.5, 1.5)
-	ft.setup(text, Color(1.0, 0.85, 0.2), global_position + Vector2(0, -hero_half - 12))
+	ft.setup(text, SKILL_TEXT_COLOR, global_position + Vector2(0, -hero_half - 12))
 
 ## 每一幀更新這位武將自己的兩個減速來源（只動自己的來源，其他武將、防禦塔的減速不受影響）：
 ## - 道路阻擋：打過的地面敵人還在射程內（和選目標相同的距離判斷）就刷新；離開射程、倒下、武將不在道路上或正要被移除時撤除
@@ -807,10 +890,44 @@ func atk_speed_state() -> Dictionary:
 		"aura_mult": atk_speed_aura_mult, "aura_active": _atk_speed_aura_shown, "radius": attack_range, "buffed": buffed,
 		"aura_source": atk_speed_aura_source}
 
+## 每一幀更新這位武將的威壓（只動自己的來源，其他武將的威壓不受影響）：範圍內（和選目標相同的中心距離，含邊界）
+## 存活的敵人刷新，離開範圍、倒下或被移除的撤除；這位武將正要被移除、倒下、沒有這個技能，或不在戰鬥中時全部撤除
+func _update_atk_down_aura() -> void:
+	var leaving: bool = is_queued_for_deletion() or current_hp <= 0.0
+	var active: bool = atk_down_aura_mult < 1.0 and not leaving and _wave_mgr != null and _in_battle()
+	var keep: Dictionary = {}
+	if active:
+		var radius_px: float = attack_range * tile_size + AURA_EDGE_EPS
+		for e in _wave_mgr.get_active_enemies():
+			if _enemy_alive(e) and global_position.distance_to(e.global_position) <= radius_px:
+				e.apply_atk_down_from(atk_down_aura_source, atk_down_aura_mult, Enemy.ATK_DOWN_REFRESH_TTL)
+				if e.has_atk_down_from(atk_down_aura_source):
+					keep[e.get_instance_id()] = e
+	for id in _atk_downed:
+		if not keep.has(id) and is_instance_valid(_atk_downed[id]):
+			_atk_downed[id].remove_atk_down_from(atk_down_aura_source)
+	_atk_downed = keep
+	if active != _atk_down_aura_shown:
+		_atk_down_aura_shown = active
+		queue_redraw()
+
+## 撤除這位武將的威壓（被移除、倒下、切換關卡時離開場景樹）
+func _release_atk_down_aura() -> void:
+	for id in _atk_downed:
+		if is_instance_valid(_atk_downed[id]):
+			_atk_downed[id].remove_atk_down_from(atk_down_aura_source)
+	_atk_downed.clear()
+
+## 測試用唯讀資訊（debug_snapshot）：威壓的倍率、半徑（格）、是否作用、目前影響的敵人與來源的識別字串
+func atk_down_state() -> Dictionary:
+	return {"aura_mult": atk_down_aura_mult, "radius": attack_range, "aura_active": _atk_down_aura_shown,
+		"affected": _atk_downed.keys().map(func(k): return str(k)), "aura_source": atk_down_aura_source}
+
 func _exit_tree() -> void:
 	_release_slows()
 	_release_def_aura()
 	_release_atk_speed_aura()
+	_release_atk_down_aura()
 
 ## 戰鬥中（BATTLE）才有光環；沒有 BattleManager（單獨建立的武將）時視為戰鬥中
 func _in_battle() -> bool:
@@ -955,6 +1072,11 @@ func _draw() -> void:
 		var sr: float = attack_range * tile_size
 		draw_circle(Vector2.ZERO, sr, Color(ATK_SPEED_AURA_COLOR, 0.06))
 		draw_arc(Vector2.ZERO, sr, 0, TAU, 48, Color(ATK_SPEED_AURA_COLOR, 0.45), 1.5)
+	# 威壓的範圍（戰鬥中）：暗紅色的淡圈，半徑是目前的有效射程
+	if _atk_down_aura_shown:
+		var wr: float = attack_range * tile_size
+		draw_circle(Vector2.ZERO, wr, Color(ATK_DOWN_AURA_COLOR, 0.06))
+		draw_arc(Vector2.ZERO, wr, 0, TAU, 48, Color(ATK_DOWN_AURA_COLOR, 0.45), 1.5)
 
 	# 射程圈（選中時顯示）
 	if _is_selected:

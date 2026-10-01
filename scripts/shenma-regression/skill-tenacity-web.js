@@ -244,9 +244,9 @@ async (page) => {
     await H.waitHud(page);
     await waitSync("idle");
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
-    const card = await page.locator('div[class*="heroCard"]', { has: page.locator('div[class*="heroName"]', { hasText: "廖化" }) }).first().innerText();
-    await page.locator('div[class*="heroName"]', { hasText: "廖化" }).first().click();
+    await page.waitForSelector('[class*="heroName"]');
+    const card = await page.locator('[data-hero-id][class*="heroCard"]', { has: page.locator('[class*="heroName"]', { hasText: "廖化" }) }).first().innerText();
+    await page.locator('[class*="heroName"]', { hasText: "廖化" }).first().click();
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { card, detail, shot: await H.shot(page, "tenacity-a-skill-detail") };
     run.check("A-1 主頁武將視窗：廖化的卡片是「技能：堅韌」；詳情寫明受傷前生命不高於 30%（含剛好）、防禦計算後降低 20%、不是提高防禦、301 扣 50 到 251 下一擊才扣 40、不保底不復活、只在戰場不影響存檔",
@@ -283,8 +283,8 @@ async (page) => {
     await page.goto(H.BASE + "/shenmaSanguo");
     await H.waitHud(page);
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
-    await page.locator('div[class*="heroName"]', { hasText: "廖化" }).first().click();
+    await page.waitForSelector('[class*="heroName"]');
+    await page.locator('[class*="heroName"]', { hasText: "廖化" }).first().click();
     await page.waitForSelector('[data-testid="hero-skill-detail"]');
     await page.locator('[data-testid="hero-skill-detail"]').first().scrollIntoViewIfNeeded();
     await H.sleep(300);

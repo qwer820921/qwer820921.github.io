@@ -53,7 +53,7 @@ async (page) => {
   };
   const openHeroDetail = async () => {
     await H.clickButton(page, "武將");
-    await page.locator('div[class*="heroName"]', { hasText: "關羽" }).first().click();
+    await page.locator('[class*="heroName"]', { hasText: "關羽" }).first().click();
   };
   const closeModals = async () => {
     for (let i = 0; i < 4 && (await page.locator('button[class*="modalClose"]').count()) > 0; i++) {

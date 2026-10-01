@@ -423,6 +423,8 @@ export default function SinglePageContent() {
   const stageBtnRef = useRef<HTMLButtonElement>(null);
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [showHeroModal, setShowHeroModal] = useState(false);
+  // HUD 的「武將」：武將列表關閉時，開啟前沒有焦點（例如用滑鼠點開又沒有取得焦點）就把焦點交給它
+  const heroBtnRef = useRef<HTMLButtonElement>(null);
   const [showPlayerModal, setShowPlayerModal] = useState(false);
   // HUD 的「玩家資訊」：玩家資訊關閉時，開啟前沒有焦點（例如用滑鼠點開又沒有取得焦點）就把焦點交給它
   const playerBtnRef = useRef<HTMLButtonElement>(null);
@@ -1378,6 +1380,7 @@ export default function SinglePageContent() {
               </div>
               <div className={styles.hudActionBarRight}>
                 <button
+                  ref={heroBtnRef}
                   className={styles.hudBarBtn}
                   onClick={() => setShowHeroModal(true)}
                 >
@@ -1442,6 +1445,7 @@ export default function SinglePageContent() {
         <HeroListModal
           onClose={() => setShowHeroModal(false)}
           onHeroUpgraded={sendTeamUpdate}
+          fallbackFocusRef={heroBtnRef}
         />
       )}
       {showPlayerModal && (

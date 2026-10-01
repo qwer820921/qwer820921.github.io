@@ -232,9 +232,9 @@ async (page) => {
     await H.waitHud(page);
     await waitSync("idle");
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
-    const card = await page.locator('div[class*="heroCard"]', { has: page.locator('div[class*="heroName"]', { hasText: "魏延" }) }).first().innerText();
-    await page.locator('div[class*="heroName"]', { hasText: "魏延" }).first().click();
+    await page.waitForSelector('[class*="heroName"]');
+    const card = await page.locator('[data-hero-id][class*="heroCard"]', { has: page.locator('[class*="heroName"]', { hasText: "魏延" }) }).first().innerText();
+    await page.locator('[class*="heroName"]', { hasText: "魏延" }).first().click();
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { card, detail, shot: await H.shot(page, "lifesteal-a-skill-detail") };
     run.check("A-1 主頁武將視窗：魏延的卡片是「技能：吸血」；詳情寫明 15%、打掉 100 恢復 15、打倒的那一擊也恢復但溢出不算（剩 30 時 4.5）、不超過最大生命、不復活、只在戰場不影響存檔",
@@ -271,8 +271,8 @@ async (page) => {
     await page.goto(H.BASE + "/shenmaSanguo");
     await H.waitHud(page);
     await H.clickButton(page, "武將");
-    await page.waitForSelector('div[class*="heroName"]');
-    await page.locator('div[class*="heroName"]', { hasText: "魏延" }).first().click();
+    await page.waitForSelector('[class*="heroName"]');
+    await page.locator('[class*="heroName"]', { hasText: "魏延" }).first().click();
     await page.waitForSelector('[data-testid="hero-skill-detail"]');
     await page.locator('[data-testid="hero-skill-detail"]').first().scrollIntoViewIfNeeded();
     await H.sleep(300);
