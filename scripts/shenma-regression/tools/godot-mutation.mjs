@@ -1,4 +1,4 @@
-// Godot 技能（包括閃避、首擊加倍、防禦光環與暈眩）、飛行敵人、敵人阻路冷卻、關卡沒有波次的拒絕、敵人的攻擊力與免疫減速測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
+// Godot 技能（包括閃避、首擊加倍、防禦光環、暈眩、吸血與攻速光環）、敵人受傷的入口、飛行敵人、敵人阻路冷卻、關卡沒有波次的拒絕、敵人的攻擊力與免疫減速測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
 // 對遊戲程式套用一個刻意的錯誤，只跑指定的測試組（SHENMA_TEST_ONLY），確認測試「該失敗時一定失敗」。
 // 用法：GODOT=<Godot 4.6.2 console 執行檔> node scripts/shenma-regression/tools/godot-mutation.mjs <變異名稱|none|list>
 // - none：不改程式，同一組測試必須全部通過、log 也要通過 check-log.mjs 的檢查（確認基準）
@@ -632,6 +632,137 @@ const MUTATIONS = {
     to: "\t\t\tif s != null:\n",
     only: "stun",
     expect: ["暈眩-0 "],
+  },
+  // 魏延的吸血（SHENMA_TEST_ONLY=lifesteal）
+  "lifesteal-nominal-damage": {
+    why: "用這一擊的名義傷害計算（溢出的傷害也算）",
+    file: HERO,
+    from: "\tvar dealt: Variant = target.take_damage(damage)\n",
+    to: "\ttarget.take_damage(damage)\n\tvar dealt: Variant = damage\n",
+    only: "lifesteal",
+    expect: ["吸血-1 ", "吸血-3 "],
+  },
+  "lifesteal-no-cap": {
+    why: "恢復不檢查最大生命（可以超過最大生命）",
+    file: HERO,
+    from: "\tvar gain: float = minf(dealt * lifesteal_ratio, max_hp - current_hp)\n",
+    to: "\tvar gain: float = dealt * lifesteal_ratio\n",
+    only: "lifesteal",
+    expect: ["吸血-1 "],
+  },
+  "lifesteal-skips-kill": {
+    why: "打倒敵人的那一擊不恢復",
+    file: HERO,
+    from: "\tif lifesteal_ratio > 0.0:\n\t\t_lifesteal(float(dealt)",
+    to: "\tif lifesteal_ratio > 0.0 and _enemy_alive(target):\n\t\t_lifesteal(float(dealt)",
+    only: "lifesteal",
+    expect: ["吸血-1 ", "吸血-3 "],
+  },
+  "lifesteal-reads-invalid": {
+    why: "吸血比例只檢查是不是數字（NaN、無限大、0、負數、超過 1 也啟用）",
+    file: HERO,
+    from: "\t\t\tif (r is float or r is int) and is_finite(float(r)) and float(r) > 0.0 and float(r) <= 1.0:\n",
+    to: "\t\t\tif r is float or r is int:\n",
+    only: "lifesteal",
+    expect: ["吸血-0 "],
+  },
+  "lifesteal-revives": {
+    why: "已經倒下或正要被移除的武將也恢復生命",
+    file: HERO,
+    from: "\tif not (dealt > 0.0 and is_finite(dealt)) or not _hero_alive(self):\n",
+    to: "\tif not (dealt > 0.0 and is_finite(dealt)):\n",
+    only: "lifesteal",
+    expect: ["吸血-1b "],
+  },
+  "lifesteal-counts-sweep": {
+    why: "橫掃副目標的傷害也恢復生命",
+    file: HERO,
+    from: "\t\t\te.take_damage(sweep_damage)\n\t\t\tsweep_hits += 1\n",
+    to: "\t\t\tvar sd: float = e.take_damage(sweep_damage)\n\t\t\tif lifesteal_ratio > 0.0:\n\t\t\t\t_lifesteal(sd)\n\t\t\tsweep_hits += 1\n",
+    only: "lifesteal",
+    expect: ["吸血-1c "],
+  },
+  // 曹操的攻速光環（SHENMA_TEST_ONLY=atkspeed）
+  "atk-speed-multiplies": {
+    why: "多個攻速光環的倍率相乘（不是取最強）",
+    file: HERO,
+    from: "\t\tm = maxf(m, float(_atk_speed_sources[s].mult))\n",
+    to: "\t\tm *= float(_atk_speed_sources[s].mult)\n",
+    only: "atkspeed",
+    expect: ["指揮-3 "],
+  },
+  "atk-speed-interval-085": {
+    why: "攻擊間隔直接減少 15%（× 0.85），不是除以 1.15",
+    file: HERO,
+    from: "\treturn attack_speed / atk_speed_bonus_mult\n",
+    to: "\treturn attack_speed * (2.0 - atk_speed_bonus_mult)\n",
+    only: "atkspeed",
+    expect: ["指揮-1 ", "指揮-5 "],
+  },
+  "atk-speed-zero-cooldown": {
+    why: "加成改變時把正在倒數的冷卻歸零（立刻補打）",
+    file: HERO,
+    from: "\tif m != atk_speed_bonus_mult:\n\t\tatk_speed_bonus_mult = m\n",
+    to: "\tif m != atk_speed_bonus_mult:\n\t\tatk_speed_bonus_mult = m\n\t\t_atk_timer = 0.0\n",
+    only: "atkspeed",
+    expect: ["指揮-2 "],
+  },
+  "atk-speed-rescale-cooldown": {
+    why: "加成改變時照新的倍率重新計算正在倒數的冷卻",
+    file: HERO,
+    from: "\tif m != atk_speed_bonus_mult:\n\t\tatk_speed_bonus_mult = m\n",
+    to: "\tif m != atk_speed_bonus_mult:\n\t\t_atk_timer = _atk_timer * atk_speed_bonus_mult / m\n\t\tatk_speed_bonus_mult = m\n",
+    only: "atkspeed",
+    expect: ["指揮-2 "],
+  },
+  "atk-speed-buffs-self": {
+    why: "攻速光環也加成曹操自己",
+    file: HERO,
+    from: "\t\tfor h in get_parent().get_children():\n\t\t\tif h == self or not (h is Hero) or not _hero_alive(h):\n\t\t\t\tcontinue\n\t\t\tif global_position.distance_to(h.global_position) <= radius_px:\n\t\t\t\th.apply_atk_speed_from(",
+    to: "\t\tfor h in get_parent().get_children():\n\t\t\tif not (h is Hero) or not _hero_alive(h):\n\t\t\t\tcontinue\n\t\t\tif global_position.distance_to(h.global_position) <= radius_px:\n\t\t\t\th.apply_atk_speed_from(",
+    only: "atkspeed",
+    expect: ["指揮-1 ", "指揮-3 "],
+  },
+  "atk-speed-reads-invalid": {
+    why: "攻速倍率只檢查是不是數字（NaN、無限大、1 以下也啟用）",
+    file: HERO,
+    from: "\t\t\tif (a is float or a is int) and is_finite(float(a)) and float(a) > 1.0:\n",
+    to: "\t\t\tif a is float or a is int:\n",
+    only: "atkspeed",
+    expect: ["指揮-0 "],
+  },
+  "atk-speed-outside-battle": {
+    why: "攻速光環在備戰與結算後也作用",
+    file: HERO,
+    from: "\tvar active: bool = atk_speed_aura_mult > 1.0 and not leaving and _in_battle() and get_parent() != null\n",
+    to: "\tvar active: bool = atk_speed_aura_mult > 1.0 and not leaving and get_parent() != null\n",
+    only: "atkspeed",
+    expect: ["指揮-5 "],
+  },
+  // 敵人受傷的入口（SHENMA_TEST_ONLY=damage）
+  "damage-accepts-invalid": {
+    why: "無效的傷害（0、負數、NaN、無限大）只把回傳值當 0，仍然扣血、顯示數字、播放音效與觸發死亡",
+    file: ENEMY,
+    from: "\tif _is_dead or is_queued_for_deletion() or not (amount > 0.0 and is_finite(amount)):\n\t\treturn 0.0\n\tvar dealt: float = minf(amount, maxf(current_hp, 0.0))\n",
+    to: "\tif _is_dead:\n\t\treturn 0.0\n\tvar dealt: float = minf(amount, maxf(current_hp, 0.0)) if amount > 0.0 and is_finite(amount) else 0.0\n",
+    only: "damage",
+    expect: ["受傷-1 ", "受傷-2 "],
+  },
+  "damage-hits-queued": {
+    why: "正要被移除（還沒倒下）的敵人仍然受傷、可以被打倒",
+    file: ENEMY,
+    from: "\tif _is_dead or is_queued_for_deletion() or not (amount > 0.0 and is_finite(amount)):\n",
+    to: "\tif _is_dead or not (amount > 0.0 and is_finite(amount)):\n",
+    only: "damage",
+    expect: ["受傷-1 "],
+  },
+  "damage-nominal-return": {
+    why: "回傳這一擊的名義傷害（致死時溢出的部分也算）",
+    file: ENEMY,
+    from: "\treturn dealt\n",
+    to: "\treturn amount\n",
+    only: "damage",
+    expect: ["受傷-1 ", "受傷-2 "],
   },
 };
 

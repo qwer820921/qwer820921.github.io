@@ -2603,6 +2603,18 @@
   font-size: 0.72rem;
 }
 
+/* 武將受到攻速光環加成：選取當下的有效攻擊間隔（戰場加成，不改存檔）；淡紫色和戰場上的外框一致 */
+.atkSpeedAuraNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(209, 153, 255, 0.12);
+  border: 1px solid rgba(209, 153, 255, 0.45);
+  color: #dcbcff;
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
 .lockNotice {
   margin-bottom: 8px;
   padding: 4px 8px;

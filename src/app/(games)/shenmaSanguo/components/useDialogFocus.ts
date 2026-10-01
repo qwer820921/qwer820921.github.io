@@ -21,10 +21,12 @@ interface Options {
 }
 
 /**
- * 視窗的鍵盤操作（主頁的關卡選擇、關卡的敵軍預覽、戰場內的「下一波」共用）：
+ * 視窗的鍵盤操作（主頁的玩家資訊與關卡選擇、關卡的敵軍預覽、戰場內的「下一波」共用）：
  * 開啟時焦點移到 initialRef（右上的關閉鈕），焦點被移到視窗外時（例如輔助工具）拉回視窗裡，
  * 關閉時還給開啟前的元素（觸發的按鈕；見 Options.fallbackFocus）。回傳的 onKeyDown 放在視窗上：
  * Esc 只關閉這個視窗（不再傳到後面），Tab 只在視窗內循環（不能操作背後的按鈕）。
+ * 焦點所在的按鈕在處理中停用、或所在的區塊收起時，焦點會掉到頁面本身（按鍵不會經過視窗）：
+ * 這時最上層的視窗照樣處理 Esc（關閉）與 Tab（回到視窗裡的第一個控制項，Shift+Tab 是最後一個）。
  * 視窗裡再開另一個視窗時，只有最上層的視窗拉回焦點、處理 Esc 與 Tab；最上層關閉後由下一層接手
  */
 export function useDialogFocus(
@@ -36,8 +38,10 @@ export function useDialogFocus(
   // 這個視窗在 openDialogs 裡的識別（元件存在期間不變）
   const keyRef = useRef<object>({});
   const fallbackRef = useRef(options?.fallbackFocus);
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
     fallbackRef.current = options?.fallbackFocus;
+    onCloseRef.current = onClose;
   });
 
   useEffect(() => {
@@ -56,9 +60,29 @@ export function useDialogFocus(
         initialRef.current?.focus();
       }
     };
+    // 焦點掉到頁面本身（沒有任何元素有焦點）時的 Esc 與 Tab；焦點在元素上時交給視窗的 onKeyDown 與 onFocusIn
+    const onDocKeyDown = (e: KeyboardEvent) => {
+      if (!isTop(key)) return;
+      const a = document.activeElement;
+      if (a && a !== document.body) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab" || !panelRef.current) return;
+      const items = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)
+      );
+      if (items.length === 0) return;
+      e.preventDefault();
+      (e.shiftKey ? items[items.length - 1] : items[0]).focus();
+    };
     document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("keydown", onDocKeyDown);
     return () => {
       document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("keydown", onDocKeyDown);
       const i = openDialogs.lastIndexOf(key);
       if (i >= 0) openDialogs.splice(i, 1);
       if (prev && prev.isConnected) {

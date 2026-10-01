@@ -314,6 +314,22 @@ export type HeroSkillPayload =
       id: "stun";
       /** 每次普通攻擊命中（目標還活著）後的暈眩時間（秒，遊戲時間）；不是正的有限數字時 Godot 當作沒有這個技能 */
       stun_sec: number;
+    }
+  | {
+      id: "lifesteal";
+      /**
+       * 每次普通攻擊命中後，恢復這一擊實際扣掉敵人生命的比例（0.15＝15%；不含溢出的傷害）；
+       * 不是大於 0、不超過 1 的有限數字時 Godot 當作沒有這個技能
+       */
+      lifesteal_ratio: number;
+    }
+  | {
+      id: "atk_speed_aura";
+      /**
+       * 範圍（目前有效射程內）其他友軍武將每秒攻擊次數的倍率（1.15＝攻速提升 15%，攻擊間隔 ÷ 1.15）；
+       * 不是大於 1 的有限數字時 Godot 當作沒有這個技能
+       */
+      atk_speed_mult: number;
     };
 
 export interface ExpeditionPayload {

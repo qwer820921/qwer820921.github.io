@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { Form, Spinner, Alert } from "react-bootstrap";
 import { Trophy, Inboxes } from "react-bootstrap-icons";
 import { getPlayerKey } from "../../api/gameApi";
@@ -8,14 +8,28 @@ import { usePlayerStore } from "../../store/playerStore";
 import { useStaticConfigStore } from "../../store/staticConfigStore";
 import { describePlayerError } from "../../utils/playerErrors";
 import { SyncStatus } from "../../types";
+import { useDialogFocus } from "../useDialogFocus";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 interface Props {
   onClose: () => void;
   onOpenStage: () => void;
+  /** 關閉後開啟它的按鈕已經不在畫面上時，焦點改交給這個元素（主頁 HUD 的「玩家資訊」按鈕） */
+  fallbackFocusRef?: React.RefObject<HTMLElement | null>;
 }
 
-export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
+/**
+ * 玩家資訊：存檔金鑰、切換金鑰、強制從雲端同步、前往關卡選擇。
+ * 鍵盤：開啟時焦點移到右上的關閉鈕，Tab 只在視窗內循環（不會進到背後的戰場與 HUD），Esc 關閉，關閉後焦點回到開啟它的按鈕。
+ * 「切換」展開或收起金鑰表單時焦點留在「切換」上；切換成功表單收起、或處理中按鈕停用讓焦點掉到頁面上時，
+ * 處理完把焦點放回「切換」、金鑰輸入框（切換失敗）或「強制從雲端同步」。焦點的處理不會送出表單或觸發同步。
+ * 「關卡選擇」先關閉這個視窗再打開關卡選擇：焦點先回到 HUD 的按鈕，取消關卡選擇時回到那裡
+ */
+export default function PlayerInfoModal({
+  onClose,
+  onOpenStage,
+  fallbackFocusRef,
+}: Props) {
   const { player, initFromGAS, refreshProfile, syncError, writeHold } =
     usePlayerStore();
   const { config: staticConfig } = useStaticConfigStore();
@@ -33,6 +47,35 @@ export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
   } | null>(null);
   const [showKeySwitch, setShowKeySwitch] = useState(false);
 
+  const titleId = useId();
+  const formId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const syncRef = useRef<HTMLButtonElement>(null);
+  const onKeyDown = useDialogFocus(panelRef, closeRef, onClose, {
+    fallbackFocus: () => fallbackFocusRef?.current ?? null,
+  });
+  // 切換或同步處理完後，焦點已經不在視窗裡的元素上時（處理中按鈕停用、表單收起）要放回哪裡
+  const restoreRef = useRef<"toggle" | "input" | "sync" | null>(null);
+  useEffect(() => {
+    if (isLoading || !restoreRef.current) return;
+    const want = restoreRef.current;
+    restoreRef.current = null;
+    const a = document.activeElement;
+    const lost = !a || a === document.body || !panelRef.current?.contains(a);
+    if (!lost) return;
+    const target =
+      want === "input"
+        ? inputRef.current
+        : want === "sync"
+          ? syncRef.current
+          : toggleRef.current;
+    // 要放回的元素已經不在畫面上時（例如金鑰表單已經收起），改回「切換」
+    (target?.isConnected ? target : toggleRef.current)?.focus();
+  });
+
   const handleKeySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = inputKey.trim();
@@ -41,6 +84,7 @@ export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
     setFeedback(null);
     // 目前存檔的未同步修改會先保存；保存或讀取失敗時維持原帳號與資料
     const result = await initFromGAS(trimmed);
+    restoreRef.current = result.ok ? "toggle" : "input";
     setIsLoading(false);
     if (result.ok) {
       setFeedback({
@@ -64,6 +108,7 @@ export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
     // 先保存本機未同步的修改，成功後才讀取雲端資料；失敗時保留本機資料
     const [, profile] = await Promise.all([refreshConfig(), refreshProfile()]);
     const configError = useStaticConfigStore.getState().error;
+    restoreRef.current = "sync";
     setIsLoading(false);
     if (!profile.ok) {
       if (!profile.superseded) {
@@ -85,13 +130,26 @@ export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
   return (
     <div className={styles.modalBackdrop} onClick={onClose}>
       <div
+        ref={panelRef}
         className={styles.modalPanel}
         style={{ maxWidth: 400 }}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={onKeyDown}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
       >
         <div className={styles.modalHeader}>
-          <span className={styles.modalTitle}>玩家資訊</span>
-          <button className={styles.modalClose} onClick={onClose}>
+          <span id={titleId} className={styles.modalTitle}>
+            玩家資訊
+          </span>
+          <button
+            ref={closeRef}
+            className={styles.modalClose}
+            onClick={onClose}
+            aria-label="關閉玩家資訊"
+          >
             ×
           </button>
         </div>
@@ -196,6 +254,7 @@ export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
                   {currentKey}
                 </code>
                 <button
+                  ref={toggleRef}
                   className={styles.btnOutline}
                   style={{
                     fontSize: "0.72rem",
@@ -203,6 +262,8 @@ export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
                     whiteSpace: "nowrap",
                   }}
                   onClick={() => setShowKeySwitch((v) => !v)}
+                  aria-expanded={showKeySwitch}
+                  aria-controls={formId}
                 >
                   切換
                 </button>
@@ -213,6 +274,7 @@ export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
           {/* 切換金鑰 */}
           {showKeySwitch && (
             <div
+              id={formId}
               className={styles.sgCard}
               style={{ padding: "1rem", marginBottom: "1rem" }}
             >
@@ -228,6 +290,7 @@ export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
               </p>
               <Form onSubmit={handleKeySubmit}>
                 <Form.Control
+                  ref={inputRef}
                   type="text"
                   placeholder="例：eric_sanguo_2026"
                   value={inputKey}
@@ -294,6 +357,7 @@ export default function PlayerInfoModal({ onClose, onOpenStage }: Props) {
             style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}
           >
             <button
+              ref={syncRef}
               className={styles.btnOutline}
               style={{ width: "100%", fontSize: "0.85rem" }}
               disabled={isLoading}

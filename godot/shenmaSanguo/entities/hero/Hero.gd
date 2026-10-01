@@ -6,6 +6,8 @@
 ## 對空：弓兵（archer）、法師（mage）可以攻擊地面與飛行敵人；步兵、騎兵、砲兵與不認得的職業只打地面
 ## 防禦光環（劉備）：範圍內其他武將受傷時用提高後的防禦計算（見 def_aura_mult、effective_def），不改 def_stat
 ## 暈眩（張飛）：普通攻擊命中後目標還活著時讓它暈眩（見 stun_duration；暈眩的狀態記在敵人身上，Enemy.apply_stun）
+## 吸血（魏延）：普通攻擊命中後恢復這一擊實際扣掉敵人生命的一定比例（見 lifesteal_ratio；扣掉多少由 Enemy.take_damage 回傳）
+## 攻速光環（曹操「指揮」）：範圍內其他武將之後開始的攻擊冷卻用加成後的攻擊間隔（見 atk_speed_aura_mult、effective_attack_interval），不改 attack_speed
 
 class_name Hero
 extends Node2D
@@ -131,6 +133,46 @@ const DEF_REFRESH_TTL: float = 0.5
 var stun_duration: float = 0.0
 ## 測試用唯讀統計（debug_snapshot）：這位武將讓敵人暈眩（包括刷新）的次數
 var stun_count: int = 0
+## 吸血（lifesteal，魏延）：每次普通攻擊命中後，恢復這一擊實際扣掉敵人的生命 × lifesteal_ratio（Enemy.take_damage 的回傳值）：
+## 只算實際扣掉的部分（敵人剩 30、這一擊 100 時用 30），打倒敵人的那一擊也算；沒有目標、目標已經倒下、0 或無效的傷害都不恢復。
+## 只算自己這一擊的直接傷害：灼燒、橫掃原型的副目標、其他武將與防禦塔的傷害都不算。恢復後不超過最大生命（只改戰場上的 current_hp），
+## 已經倒下或正要被移除時不恢復（不會復活）；不另外計時，恢復的次數就是普通攻擊命中的次數。
+## lifesteal_ratio 0 代表沒有這個技能；比例不是 0～1（不含 0、含 1）的有限數字時不啟用（當作普通攻擊）
+var lifesteal_ratio: float = 0.0
+## 測試用唯讀統計（debug_snapshot）：實際恢復（大於 0）的次數、恢復的總量，以及最近 LIFESTEAL_LOG_MAX 次命中的
+## 實際傷害、恢復量與恢復前後的生命（包括恢復 0 的命中，例如滿血時）
+var lifesteal_count: int = 0
+var lifesteal_total: float = 0.0
+var lifesteal_log: Array = []
+const LIFESTEAL_LOG_MAX: int = 40
+## 恢復提示的顏色（綠色，和紅色的受傷數字、金色的技能倍率、藍白色的「MISS」區分）
+const LIFESTEAL_COLOR: Color = Color(0.4, 1.0, 0.45)
+## 攻速光環（atk_speed_aura，曹操「指揮」）：戰鬥中（BATTLE）、這位武將活著且在場上時，以武將為中心、目前有效射程內（含邊界，比中心距離）的
+## 其他存活武將每秒攻擊次數 × atk_speed_aura_mult（1.15 ＝ 提高 15%：攻擊間隔 ÷ 1.15，不是把間隔減少 15%）；不含自己，防禦塔與城池不受影響，
+## 友軍的職業不限。不需要普通攻擊的目標、不看攻擊冷卻，也不改變自己的普通攻擊；攻擊力、射程、attack_speed（目前等級的攻擊間隔）都不變。
+## 每一幀重新判斷：離開範圍、移位／升級改變範圍、倒下、被移除、戰鬥結束時撤除自己的來源（最遲下一幀）。
+## 一位武將同時在幾個攻速光環裡時取最強的一個（atk_speed_bonus_mult），不相乘、不累加。atk_speed_aura_mult 1.0 代表沒有這個技能
+var atk_speed_aura_mult: float = 1.0
+## 這位武將施加攻速光環時用的來源（每個武將節點各自不同：移除後重新放置也是新的來源）
+var atk_speed_aura_source: String = ""
+## 目前被這位武將的攻速光環加成的武將（instance id → 武將）
+var _atk_speed_buffed: Dictionary = {}
+## 攻速光環的顯示：範圍圈（戰鬥中）與受到加成的武將外框都是淡紫色，和減速光環的淺藍色、防禦光環的淺綠色區分
+const ATK_SPEED_AURA_COLOR: Color = Color(0.82, 0.6, 1.0, 1.0)
+var _atk_speed_aura_shown: bool = false
+## 受到的攻速加成（其他武將的攻速光環）：每個來源各自保存 {倍率, 剩餘有效期}；生效的倍率 atk_speed_bonus_mult ＝ 所有來源中最大的，
+## 沒有來源時是 1。同一個來源再次套用只刷新倍率與有效期；有效期用 _process 的 delta 倒數（遊戲時間，手動暫停時不前進）。
+## 倍率只用在之後新開始的攻擊冷卻（effective_attack_interval）：正在倒數的冷卻不重設、不縮短、不延長，也不會因此立刻補打
+var atk_speed_bonus_mult: float = 1.0
+var _atk_speed_sources: Dictionary = {}
+## 每一幀重新套用的攻速加成的有效期：施加者每一幀都會刷新；施加者停止處理又沒有撤除時，最多再維持這麼久
+const ATK_SPEED_REFRESH_TTL: float = 0.5
+## 測試用唯讀統計（debug_snapshot）：這位武將的遊戲時間（_process 的 delta 累加，受時間倍率影響、手動暫停時不前進）、
+## 普通攻擊的次數，以及最近 ATTACK_LOG_MAX 次攻擊的時間、這次冷卻用的攻擊間隔與當時的攻速加成
+var _age: float = 0.0
+var attack_count: int = 0
+var attack_log: Array = []
+const ATTACK_LOG_MAX: int = 40
 ## BattleManager：記錄這一場哪些武將已用過首擊加倍（記在這裡而不是武將節點，移位、重新放置都不會重置）
 var _battle_mgr: Node     = null
 
@@ -145,6 +187,7 @@ func _init() -> void:
 	slow_source = "hero_road#%d" % get_instance_id()
 	aura_source = "hero_aura#%d" % get_instance_id()
 	def_aura_source = "hero_def_aura#%d" % get_instance_id()
+	atk_speed_aura_source = "hero_atk_speed_aura#%d" % get_instance_id()
 
 func setup(state: Dictionary, heroes_config: Array, cell: Vector2i, on_road: bool, wave_mgr: Node, battle_mgr: Node = null) -> void:
 	hero_id    = str(state.get("hero_id", ""))
@@ -231,6 +274,8 @@ func _read_skill(state: Dictionary) -> void:
 	slow_aura_mult = 1.0
 	def_aura_mult = 1.0
 	stun_duration = 0.0
+	lifesteal_ratio = 0.0
+	atk_speed_aura_mult = 1.0
 	var skill = state.get("skill", null)
 	if not (skill is Dictionary):
 		return
@@ -276,6 +321,16 @@ func _read_skill(state: Dictionary) -> void:
 			var s: Variant = skill.get("stun_sec")
 			if (s is float or s is int) and is_finite(float(s)) and float(s) > 0.0:
 				stun_duration = float(s)
+		"lifesteal":
+			# 比例要是大於 0、不超過 1 的有限數字；字串、布林、null、NaN、無限大、0 以下、超過 1 都不啟用（當作普通攻擊）
+			var r: Variant = skill.get("lifesteal_ratio")
+			if (r is float or r is int) and is_finite(float(r)) and float(r) > 0.0 and float(r) <= 1.0:
+				lifesteal_ratio = float(r)
+		"atk_speed_aura":
+			# 倍率要是大於 1 的有限數字；字串、布林、null、NaN、無限大、1 以下都不啟用（當作普通攻擊）
+			var a: Variant = skill.get("atk_speed_mult")
+			if (a is float or a is int) and is_finite(float(a)) and float(a) > 1.0:
+				atk_speed_aura_mult = float(a)
 
 ## 有效射程（格）＝（基礎射程 + (等級-1) × 射程成長）× 技能倍率。
 ## 每次都從設定重新計算，不在目前的值上再乘：更新隊伍、升級、移位、重新放置都不會疊乘
@@ -291,12 +346,16 @@ func _compute_range(cfg: Dictionary) -> float:
 ## - 持續有目標時，下一擊排在「上一擊的預定時間＋攻擊間隔」，越過零點的零頭保留到下一次，不因幀長逐擊落後（1 倍與 2 倍的擊數相同）
 ## - 冷卻好了但沒有目標時停在 0（待命），不累積欠下的攻擊；取得目標的那一幀打一擊，之後照攻擊間隔
 ## - 一幀最多打一擊：單幀長過攻擊間隔時其餘的攻擊作廢（受幀率限制），下一擊從這一擊起算一個完整的攻擊間隔，不補發
-## 切換速度、部署慢速、手動暫停、升級、重選目標都不重設這個計時器
+## 切換速度、部署慢速、手動暫停、升級、重選目標、攻速光環的加成改變都不重設這個計時器
+## - 攻擊間隔是攻擊當下的有效攻擊間隔（effective_attack_interval）：加成只影響這一擊之後新開始的冷卻
 func _process(delta: float) -> void:
-	# 減速（道路阻擋、光環）與防禦光環每一幀更新，不看攻擊冷卻；受到的防禦加成照遊戲時間倒數有效期
+	_age += delta
+	# 減速（道路阻擋、光環）、防禦光環與攻速光環每一幀更新，不看攻擊冷卻；受到的防禦與攻速加成照遊戲時間倒數有效期
 	_update_slows()
 	_tick_def_sources(delta)
 	_update_def_aura()
+	_tick_atk_speed_sources(delta)
+	_update_atk_speed_aura()
 	var was_ready: bool = _atk_timer <= 0.0
 	_atk_timer -= delta
 	
@@ -330,7 +389,11 @@ func _process(delta: float) -> void:
 			_show_skill_text("x%s!" % (str(int(m)) if is_equal_approx(m, roundf(m)) else String.num(m, 2)))
 	# 橫掃以主目標被打中時的位置為中心：先記下位置，主目標被這一擊打倒也照樣生效
 	var hit_pos: Vector2 = target.global_position
-	target.take_damage(damage)
+	# 實際扣掉敵人的生命（不含溢出的部分，打倒目標的這一擊也照算；無效的傷害回傳 0、不改變敵人）
+	var dealt: Variant = target.take_damage(damage)
+	# 吸血：用這一擊實際扣掉的生命計算，不讀之後可能已經無效的目標；回傳的不是數字時（沒有回傳值的目標）當作沒有扣血，攻擊照常完成
+	if lifesteal_ratio > 0.0:
+		_lifesteal(float(dealt) if (dealt is float or dealt is int) else 0.0)
 	# 火攻：這一擊命中後附加灼燒（快照是這次命中時的攻擊力）；目標被這一擊打倒時不附加
 	if burn_ratio > 0.0 and is_instance_valid(target) and not target.is_dead():
 		target.apply_burn(atk * burn_ratio, burn_ticks, burn_interval)
@@ -341,9 +404,15 @@ func _process(delta: float) -> void:
 		_sweep(hit_pos, target, damage * sweep_ratio)
 	_is_attacking = true
 	_anim_timer   = 0.22
-	# 保留這一幀越過零點的時間（零頭）；待命後的第一擊、或零頭長過一個間隔（極長的一幀）時從這一擊起算完整的間隔
+	# 保留這一幀越過零點的時間（零頭）；待命後的第一擊、或零頭長過一個間隔（極長的一幀）時從這一擊起算完整的間隔。
+	# 間隔用這一擊當下的有效攻擊間隔（攻速光環的加成在這裡才生效，已在倒數的冷卻不受影響）
+	var interval: float = effective_attack_interval()
 	var late: float = 0.0 if was_ready else -_atk_timer
-	_atk_timer    = attack_speed - (late if late < attack_speed else 0.0)
+	_atk_timer    = interval - (late if late < interval else 0.0)
+	attack_count += 1
+	attack_log.append({"t": _age, "late": late, "interval": interval, "bonus": atk_speed_bonus_mult})
+	if attack_log.size() > ATTACK_LOG_MAX:
+		attack_log.pop_front()
 	queue_redraw()
 
 	# ROAD 武將：在攻擊的回合對目標施加緩速（模擬阻擋；飛行敵人不被武將擋住，不施加）。之後每一幀在射程內就刷新（_update_slows）。
@@ -407,6 +476,39 @@ func _show_sweep_fx(center: Vector2, radius_px: float) -> void:
 	fx.top_level = true
 	add_child(fx)
 	fx.global_position = center
+
+## 吸血：恢復 dealt × lifesteal_ratio，不超過最大生命；這位武將已經倒下或正要被移除、dealt 不是正的有限數字時不恢復
+func _lifesteal(dealt: float) -> void:
+	if not (dealt > 0.0 and is_finite(dealt)) or not _hero_alive(self):
+		return
+	var before: float = current_hp
+	var gain: float = minf(dealt * lifesteal_ratio, max_hp - current_hp)
+	if not (gain > 0.0):
+		gain = 0.0
+	lifesteal_log.append({"dealt": dealt, "heal": gain, "before": before, "after": before + gain})
+	if lifesteal_log.size() > LIFESTEAL_LOG_MAX:
+		lifesteal_log.pop_front()
+	if gain <= 0.0:
+		return
+	current_hp = before + gain
+	lifesteal_count += 1
+	lifesteal_total += gain
+	_show_heal(gain)
+	queue_redraw()  # 血條
+
+## 吸血的恢復提示：武將上方出現綠色的「+恢復量」（整數不帶小數，其餘到小數一位，不到 0.1 時兩位）；顯示成 0 的極少量不顯示，生命照樣恢復。
+## FloatingText 照遊戲時間移動、淡出：受時間倍率影響，手動暫停時跟著停住
+func _show_heal(gain: float) -> void:
+	var parent: Node = get_parent()
+	if parent == null:
+		return
+	var shown: String = ("%.1f" if gain >= 0.1 else "%.2f") % gain
+	if is_zero_approx(shown.to_float()):
+		return
+	shown = shown.rstrip("0").rstrip(".")
+	var ft = load("res://ui/FloatingText.gd").new()
+	parent.add_child(ft)
+	ft.setup("+" + shown, LIFESTEAL_COLOR, global_position + Vector2(0, -hero_half - 16))
 
 ## 技能觸發時在武將上方顯示的文字（金色、放大，和一般的傷害數字區分）
 func _show_skill_text(text: String) -> void:
@@ -552,9 +654,102 @@ func def_state() -> Dictionary:
 		"aura_mult": def_aura_mult, "aura_active": _def_aura_shown, "radius": attack_range, "buffed": buffed,
 		"aura_source": def_aura_source}
 
+## 每一幀更新這位武將的攻速光環（只動自己的來源，其他攻速光環不受影響）：範圍內（和選目標相同的中心距離，含邊界）
+## 其他存活的武將刷新加成，離開範圍、倒下或被移除的撤除；這位武將正要被移除、倒下，或不在戰鬥中時全部撤除。
+## 友軍是同一層（UnitsLayer）裡的其他武將：防禦塔、敵人、城池都不是武將
+func _update_atk_speed_aura() -> void:
+	var leaving: bool = is_queued_for_deletion() or current_hp <= 0.0
+	var active: bool = atk_speed_aura_mult > 1.0 and not leaving and _in_battle() and get_parent() != null
+	var keep: Dictionary = {}
+	if active:
+		var radius_px: float = attack_range * tile_size + AURA_EDGE_EPS
+		for h in get_parent().get_children():
+			if h == self or not (h is Hero) or not _hero_alive(h):
+				continue
+			if global_position.distance_to(h.global_position) <= radius_px:
+				h.apply_atk_speed_from(atk_speed_aura_source, atk_speed_aura_mult, ATK_SPEED_REFRESH_TTL)
+				if h.has_atk_speed_from(atk_speed_aura_source):
+					keep[h.get_instance_id()] = h
+	for id in _atk_speed_buffed:
+		if not keep.has(id) and is_instance_valid(_atk_speed_buffed[id]):
+			_atk_speed_buffed[id].remove_atk_speed_from(atk_speed_aura_source)
+	_atk_speed_buffed = keep
+	if active != _atk_speed_aura_shown:
+		_atk_speed_aura_shown = active
+		queue_redraw()
+
+## 撤除這位武將的攻速光環給其他武將的加成（被移除、倒下、切換關卡時離開場景樹）
+func _release_atk_speed_aura() -> void:
+	for id in _atk_speed_buffed:
+		if is_instance_valid(_atk_speed_buffed[id]):
+			_atk_speed_buffed[id].remove_atk_speed_from(atk_speed_aura_source)
+	_atk_speed_buffed.clear()
+
+## 套用（或刷新）source 這個來源的攻速加成：mult 是每秒攻擊次數的倍率（1.15 ＝ 提高 15%），duration 是有效期（秒，遊戲時間）。
+## 不套用：已經倒下或正要被移除、來源是空字串、倍率不是大於 1 的有限數字、有效期不是正的有限數字
+func apply_atk_speed_from(source: String, mult: float, duration: float) -> void:
+	if source == "" or current_hp <= 0.0 or is_queued_for_deletion():
+		return
+	if not (is_finite(mult) and mult > 1.0 and is_finite(duration) and duration > 0.0):
+		return
+	_atk_speed_sources[source] = {"mult": mult, "left": duration}
+	_refresh_atk_speed_bonus()
+
+## 撤除 source 這個來源的攻速加成；其他來源不受影響（沒有這個來源時什麼都不做）。正在倒數的攻擊冷卻不變
+func remove_atk_speed_from(source: String) -> void:
+	if _atk_speed_sources.erase(source):
+		_refresh_atk_speed_bonus()
+
+func has_atk_speed_from(source: String) -> bool:
+	return _atk_speed_sources.has(source)
+
+func _refresh_atk_speed_bonus() -> void:
+	var m: float = 1.0
+	for s in _atk_speed_sources:
+		m = maxf(m, float(_atk_speed_sources[s].mult))
+	if m != atk_speed_bonus_mult:
+		atk_speed_bonus_mult = m
+		queue_redraw()  # 受到加成的外框
+
+## 倒數每個攻速加成來源的有效期（遊戲時間）；到期的來源移除
+func _tick_atk_speed_sources(delta: float) -> void:
+	if _atk_speed_sources.is_empty():
+		return
+	var expired: Array = []
+	for s in _atk_speed_sources:
+		var e: Dictionary = _atk_speed_sources[s]
+		e.left = float(e.left) - delta
+		if e.left <= 0.0:
+			expired.append(s)
+	for s in expired:
+		_atk_speed_sources.erase(s)
+	if not expired.is_empty():
+		_refresh_atk_speed_bonus()
+
+## 有效攻擊間隔（秒）：目前等級的攻擊間隔 ÷ 攻速加成（1.15 時 1 秒變成約 0.8696 秒）。attack_speed 本身不變，升級後照新的間隔重新相除
+func effective_attack_interval() -> float:
+	return attack_speed / atk_speed_bonus_mult
+
+## 測試用唯讀資訊（debug_snapshot）：目前等級的攻擊間隔、受到的加成與來源、有效攻擊間隔、攻擊次數與最近的攻擊紀錄；
+## 自己的攻速光環（倍率、半徑、是否作用、目前加成的武將）
+func atk_speed_state() -> Dictionary:
+	var src: Dictionary = {}
+	for s in _atk_speed_sources:
+		src[s] = {"mult": _atk_speed_sources[s].mult, "left": _atk_speed_sources[s].left}
+	var buffed: Array = []
+	for id in _atk_speed_buffed:
+		if is_instance_valid(_atk_speed_buffed[id]):
+			buffed.append(_atk_speed_buffed[id].hero_id)
+	buffed.sort()
+	return {"interval": attack_speed, "bonus": atk_speed_bonus_mult, "effective": effective_attack_interval(), "sources": src,
+		"age": _age, "attacks": attack_count, "log": attack_log.duplicate(true), "cooldown": _atk_timer,
+		"aura_mult": atk_speed_aura_mult, "aura_active": _atk_speed_aura_shown, "radius": attack_range, "buffed": buffed,
+		"aura_source": atk_speed_aura_source}
+
 func _exit_tree() -> void:
 	_release_slows()
 	_release_def_aura()
+	_release_atk_speed_aura()
 
 ## 戰鬥中（BATTLE）才有光環；沒有 BattleManager（單獨建立的武將）時視為戰鬥中
 func _in_battle() -> bool:
@@ -650,6 +845,11 @@ func _draw() -> void:
 		var dr: float = attack_range * tile_size
 		draw_circle(Vector2.ZERO, dr, Color(DEF_AURA_COLOR, 0.06))
 		draw_arc(Vector2.ZERO, dr, 0, TAU, 48, Color(DEF_AURA_COLOR, 0.45), 1.5)
+	# 攻速光環的範圍（戰鬥中）：淡紫色的淡圈，半徑是目前的有效射程
+	if _atk_speed_aura_shown:
+		var sr: float = attack_range * tile_size
+		draw_circle(Vector2.ZERO, sr, Color(ATK_SPEED_AURA_COLOR, 0.06))
+		draw_arc(Vector2.ZERO, sr, 0, TAU, 48, Color(ATK_SPEED_AURA_COLOR, 0.45), 1.5)
 
 	# 射程圈（選中時顯示）
 	if _is_selected:
@@ -685,6 +885,9 @@ func _draw() -> void:
 	# 受到防禦光環加成：淺綠色的外框（貼圖與純色共用；選取時的金色邊框畫在它上面）
 	if def_bonus_mult > 1.0:
 		draw_rect(rect.grow(2), Color(DEF_AURA_COLOR, 0.9), false, 2.0)
+	# 受到攻速光環加成：淡紫色的外框，畫在防禦光環外框的外面（兩種加成同時都看得到）
+	if atk_speed_bonus_mult > 1.0:
+		draw_rect(rect.grow(4.5), Color(ATK_SPEED_AURA_COLOR, 0.9), false, 2.0)
 
 	# HP 條（貼圖與純色共用）
 	var bar_w: float = float(hero_half * 2)

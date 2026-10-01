@@ -22,6 +22,8 @@ interface UpgradePanelProps {
     level: number;
     atk: number;
     atk_spd: number;
+    /** 武將：選取當下的有效每秒攻擊次數（含攻速光環的戰場加成；Godot 計算，舊版遊戲沒有送） */
+    atk_spd_effective?: number;
     range: number;
     hp?: number;
     /** 武將：隊伍資料的防禦（存檔的數值）與受傷時用的有效防禦（含防禦光環的戰場加成；Godot 在選取當下計算） */
@@ -99,6 +101,15 @@ export default function UpgradePanel({
     typeof def === "number" &&
     typeof defEffective === "number" &&
     defEffective > def + 1e-6;
+  // 武將的攻擊間隔：有攻速光環的戰場加成時分開列出原本與加成後的間隔（加成不寫回存檔）
+  const spdEffective =
+    data.unit_type === "hero" &&
+    typeof data.atk_spd_effective === "number" &&
+    Number.isFinite(data.atk_spd_effective)
+      ? data.atk_spd_effective
+      : data.atk_spd;
+  const spdBoosted =
+    data.atk_spd > 0 && spdEffective > data.atk_spd * (1 + 1e-6);
   const s = sell && isSameTower(data, sell) ? sell : null;
   const confirming = s?.phase === "confirm" || s?.phase === "pending";
   const pending = s?.phase === "pending";
@@ -132,8 +143,14 @@ export default function UpgradePanel({
             <span
               className={styles.upgStatValue}
               data-testid="upgrade-panel-interval"
+              data-atk-spd={data.atk_spd}
+              data-atk-spd-effective={spdEffective}
             >
-              {data.atk_spd > 0 ? `${formatSec(1 / data.atk_spd)}秒` : "—"}
+              {data.atk_spd <= 0
+                ? "—"
+                : spdBoosted
+                  ? `${formatSec(1 / data.atk_spd)} → ${formatSec(1 / spdEffective)}秒`
+                  : `${formatSec(1 / data.atk_spd)}秒`}
             </span>
           </div>
           <div className={styles.upgStatItem}>
@@ -145,7 +162,13 @@ export default function UpgradePanel({
           {data.unit_type === "hero" && (
             <div className={styles.upgStatItem}>
               <span className={styles.upgStatLabel}>生命值</span>
-              <span className={styles.upgStatValue}>{data.hp?.toFixed(0)}</span>
+              <span
+                className={styles.upgStatValue}
+                data-testid="unit-panel-hp"
+                data-hp={data.hp}
+              >
+                {data.hp?.toFixed(0)}
+              </span>
             </div>
           )}
           {typeof def === "number" && (
@@ -197,6 +220,17 @@ export default function UpgradePanel({
           <div className={styles.defAuraNote} data-testid="unit-panel-def-note">
             防禦光環：戰場上的防禦是 {defEffective?.toFixed(0)}
             （原本 {def?.toFixed(0)}），只在範圍內生效，不改存檔
+          </div>
+        )}
+
+        {spdBoosted && (
+          <div
+            className={styles.atkSpeedAuraNote}
+            data-testid="unit-panel-atk-speed-note"
+          >
+            指揮：選取時的攻擊間隔是 {formatSec(1 / spdEffective)}秒（原本{" "}
+            {formatSec(1 / data.atk_spd)}
+            秒），之後開始的攻擊才套用，只在範圍內生效，不改存檔
           </div>
         )}
 

@@ -172,12 +172,13 @@ func _run() -> void:
 		battle_ended_count += 1
 		last_result = r)
 
-	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩）、橫掃原型與攻速成長；
+	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環）、橫掃原型與攻速成長；
 	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行；
 	# route 跑飛行與地面的路線無效（出兵前擋下）；blocker 只跑敵人攻擊阻路武將的冷卻；
 	# dodge 只跑趙雲「閃避」；firststrike 只跑首擊加倍（馬超「衝鋒」）；
 	# stagedata 跑關卡資料未完成（沒有波次、波次或路線的格式不對）；enemyatk 跑敵人設定的對武將攻擊力；immune 跑免疫減速；
-	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）；stun 只跑張飛的暈眩（skills 也包含）
+	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）；stun 只跑張飛的暈眩（skills 也包含）；lifesteal 只跑魏延的吸血（skills 也包含）；
+	# atkspeed 只跑曹操的攻速光環（skills 也包含）；damage 只跑敵人受傷的入口（拒絕無效的傷害）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -190,6 +191,8 @@ func _run() -> void:
 			await _slow_aura_cases()
 			await _def_aura_cases()
 			await _stun_cases()
+			await _lifesteal_cases()
+			await _atk_speed_aura_cases()
 		elif only == "blocker":
 			await _blocker_cases()
 		elif only == "dodge":
@@ -224,8 +227,14 @@ func _run() -> void:
 			await _def_aura_cases()
 		elif only == "stun":
 			await _stun_cases()
+		elif only == "lifesteal":
+			await _lifesteal_cases()
+		elif only == "damage":
+			await _damage_input_cases()
+		elif only == "atkspeed":
+			await _atk_speed_aura_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage）", false)
 		_finish()
 		return
 
@@ -438,6 +447,15 @@ func _run() -> void:
 
 	# ── 張飛的暈眩（命中後目標暈眩 0.5 秒：不移動、不攻擊，刷新不累加）──
 	await _stun_cases()
+
+	# ── 敵人受傷的入口（拒絕 0、負數、NaN、無限大的傷害與已經倒下、正要被移除的敵人）──
+	await _damage_input_cases()
+
+	# ── 魏延的吸血（命中後恢復實際傷害的 15%，不含溢出、不超過最大生命、不復活）──
+	await _lifesteal_cases()
+
+	# ── 曹操的攻速光環（範圍內其他武將每秒攻擊次數 × 1.15，取最強不疊加，只影響之後新開始的冷卻）──
+	await _atk_speed_aura_cases()
 
 	_finish()
 
@@ -7567,6 +7585,1065 @@ func _stun_cases() -> void:
 	d9["d"] = [prep9, e9d._stun_left if e9d != null else -1.0, e9d.stun_count if e9d != null else -1, e9d.stun_log.size() if e9d != null else -1]
 	_check("暈眩-9 施加者離開與清理：暈眩後張飛被移出隊伍，這一段仍到 0.5 秒才結束、之後照原速移動且不再暈眩；被擋住又暈眩時張飛陣亡，下一步不再被擋住、到暈眩結束才走、之後照原速；暈眩中的敵人被打倒只擊殺與結算一次；新的一場沒有殘留的敵人、新的敵人沒有暈眩",
 		ok9a and ok9b and d9.c == [true, 1, 1, true] and d9.d == [true, 0.0, 0, 0], d9)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 曹操「指揮」（攻速光環）──
+# 以曹操為中心、目前有效射程內（含邊界）的其他存活武將每秒攻擊次數 × 1.15（攻擊間隔 ÷ 1.15，不是減少 15%）；
+# 不含自己與防禦塔；多個攻速光環取最強、不相乘不累加；只在戰鬥中；加成只用在之後新開始的攻擊冷卻（正在倒數的不重設、不補打）；
+# 離開範圍、移位、升級、移除、倒下、戰鬥結束、新的一場都撤除；attack_speed、攻擊力與射程都不變
+
+## 曹操的攻速光環（和網頁 utils/heroSkills 的出征參數相同）
+const SPD_AURA_SKILL: Dictionary = {"id": "atk_speed_aura", "atk_speed_mult": 1.15}
+## 單獨的武將每一步的時間（秒）
+const SPD_DT: float = 1.0 / 60.0
+## 實際引擎用的敵人：不會移動的地面兵（血量很多，讓戰鬥持續）
+const SPD_ENEMIES: Array = [
+	{"enemy_id": "spd_post", "name": "P", "hp": 1.0e9, "speed": 0.0},
+]
+
+## 取到小數第四位（除以 10000 的結果是最接近的浮點數，可以直接和 1.15 這類字面值比較；snappedf 乘回去會差最後一位）
+func _spd_r4(x: float) -> float:
+	return roundf(x * 10000.0) / 10000.0
+
+## 攻擊紀錄相鄰兩次的預定時間（攻擊當下的時間 − 零頭）差應該正好是前一次冷卻用的攻擊間隔；回傳不符合的位置（最多 5 個）
+func _spd_gaps_bad(log: Array) -> Array:
+	var bad: Array = []
+	for i in range(1, log.size()):
+		var gap: float = (float(log[i].t) - float(log[i].late)) - (float(log[i - 1].t) - float(log[i - 1].late))
+		if absf(gap - float(log[i - 1].interval)) > 1e-6:
+			bad.append({"i": i, "gap": gap, "want": log[i - 1].interval})
+	return bad.slice(0, 5)
+
+## 紀錄裡每一次冷卻用的攻擊間隔都是 v
+func _spd_all(log: Array, v: float) -> bool:
+	return not log.is_empty() and log.all(func(x): return absf(float(x.interval) - v) < 1e-9)
+
+## 紀錄裡每一次冷卻用的攻擊間隔（取到 0.0001）
+func _spd_intervals(log: Array) -> Array:
+	return log.map(func(x): return _spd_r4(float(x.interval)))
+
+## 單獨的武將（真正的 Hero 腳本，不經過 Main、測試自己呼叫 _process）：位置 pos、射程 range_t 格、攻擊間隔 interval 秒、攻擊力 100、
+## 生命 1000；skill 是技能參數（null 表示沒有技能）；wave 是假的 WaveManager（R20Wave），目標放在 wave.enemies
+func _spd_hero(holder: Node, wave: Node, hid: String, pos: Vector2, range_t: float, interval: float, skill: Variant = null) -> Node:
+	var h: Node = load("res://entities/hero/Hero.gd").new()
+	holder.add_child(h)
+	h.set_process(false)
+	h.hero_id = hid
+	h.tile_size = 48
+	h.position = pos
+	h.attack_range = range_t
+	h.attack_speed = interval
+	h.atk = 100.0
+	h.max_hp = 1000.0
+	h.current_hp = 1000.0
+	h._read_skill({} if skill == null else {"skill": skill})
+	h._wave_mgr = wave
+	return h
+
+## 讓 heroes 依序各處理 steps 步（每步 SPD_DT）；each(i) 在第 i 步（從 0 起算）之前呼叫，回傳 true 時提早結束
+func _spd_steps(heroes: Array, steps: int, each: Callable = Callable()) -> void:
+	for i in range(steps):
+		if each.is_valid() and each.call(i):
+			return
+		for h in heroes:
+			if is_instance_valid(h) and h.is_inside_tree():
+				h._process(SPD_DT)
+
+## 實際引擎：載入一場（經過 JSON）並依 cells 的順序放置武將（hero_id → 格子）、放置防禦塔（[種類, 格子]），不開戰。
+## 曹操射程 3 格、攻擊間隔 1 秒、射程成長 0.5；spd_a／spd_b 是弓兵、攻擊間隔 0.5 秒、射程 6／12 格；
+## 組合用的魏延、張飛、馬超、周瑜射程 4 格、攻擊間隔 0.5 秒
+func _spd_load(rec: Node, battle_id: String, waves: Array, team: Array, cells: Dictionary, towers: Array = []) -> void:
+	var p: Dictionary = _r12_payload("spd_" + battle_id, waves, battle_id, team)
+	p["heroes_config"] = [
+		{"hero_id": "cao_cao", "name": "曹操", "job": "infantry", "attack_range": 3.0, "attack_speed": 1.0, "range_growth": 0.5},
+		{"hero_id": "spd_a", "name": "A", "job": "archer", "attack_range": 6.0, "attack_speed": 0.5},
+		{"hero_id": "spd_b", "name": "B", "job": "archer", "attack_range": 12.0, "attack_speed": 0.5},
+		{"hero_id": "wei_yan", "name": "魏延", "job": "infantry", "attack_range": 4.0, "attack_speed": 0.5},
+		{"hero_id": "zhang_fei", "name": "張飛", "job": "infantry", "attack_range": 4.0, "attack_speed": 0.5},
+		{"hero_id": "ma_chao", "name": "馬超", "job": "cavalry", "attack_range": 4.0, "attack_speed": 0.5},
+		{"hero_id": "zhou_yu", "name": "周瑜", "job": "mage", "attack_range": 4.0, "attack_speed": 0.5},
+	]
+	for c in SPD_ENEMIES:
+		p["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p)
+	for hid in cells:
+		_r12_place(hid, cells[hid])
+	for t in towers:
+		main._on_web_place_tower({"tower_type": t[0], "cell_x": t[1].x, "cell_y": t[1].y})
+
+## 場上武將受到的攻速加成（hero_id → 倍率；不在場上是 -1）
+func _spd_bonus(ids: Array) -> Array:
+	var out: Array = []
+	for hid in ids:
+		var h: Node = _fly_hero(hid)
+		out.append(_spd_r4(h.atk_speed_bonus_mult) if h != null else -1.0)
+	return out
+
+## 實際引擎：等遊戲時間前進 sec 秒（或牆鐘 wall_ms 毫秒），每一幀記錄防禦塔 tw 的攻擊（冷卻變大的地方）攻擊後的冷卻
+func _spd_watch(sec: float, tw: Node, out: Array, wall_ms: int = 15000) -> void:
+	var end_gt: float = _gt() + sec
+	var w_end: int = Time.get_ticks_msec() + wall_ms
+	var prev: float = tw._atk_timer if is_instance_valid(tw) else 0.0
+	while _gt() < end_gt and Time.get_ticks_msec() < w_end:
+		await process_frame
+		if is_instance_valid(tw):
+			var cur: float = tw._atk_timer
+			if cur > prev + 1e-9:
+				out.append(cur)
+			prev = cur
+
+## 武將 h 的攻擊紀錄中，攻擊當下的時間在 [from, to] 的次數
+func _spd_count(h: Node, from: float, to: float) -> int:
+	return h.attack_log.filter(func(x): return float(x.t) >= from and float(x.t) <= to).size()
+
+func _atk_speed_aura_cases() -> void:
+	# 指揮-0：技能參數的判讀：atk_speed_mult 是大於 1 的有限數字才啟用（1.15、2、1.0001、經過 JSON 的 1.15）；
+	# 字串、1、1.0、0.9、0、負數、布林、null、陣列、NaN、正負無限大、沒有欄位、不認得或大小寫不同的 id、其他技能都不啟用；不帶其他技能，改成沒有技能後清除
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var bad0: Array = []
+	for c in [[{"id": "atk_speed_aura", "atk_speed_mult": 1.15}, 1.15], [{"id": "atk_speed_aura", "atk_speed_mult": 2}, 2.0],
+			[{"id": "atk_speed_aura", "atk_speed_mult": 1.0001}, 1.0001], [{"id": "atk_speed_aura", "atk_speed_mult": "1.15"}, 1.0],
+			[{"id": "atk_speed_aura", "atk_speed_mult": 1}, 1.0], [{"id": "atk_speed_aura", "atk_speed_mult": 1.0}, 1.0],
+			[{"id": "atk_speed_aura", "atk_speed_mult": 0.9}, 1.0], [{"id": "atk_speed_aura", "atk_speed_mult": 0}, 1.0],
+			[{"id": "atk_speed_aura", "atk_speed_mult": -1.15}, 1.0], [{"id": "atk_speed_aura", "atk_speed_mult": true}, 1.0],
+			[{"id": "atk_speed_aura", "atk_speed_mult": null}, 1.0], [{"id": "atk_speed_aura", "atk_speed_mult": [1.15]}, 1.0],
+			[{"id": "atk_speed_aura", "atk_speed_mult": NAN}, 1.0], [{"id": "atk_speed_aura", "atk_speed_mult": INF}, 1.0],
+			[{"id": "atk_speed_aura", "atk_speed_mult": -INF}, 1.0], [{"id": "atk_speed_aura"}, 1.0],
+			[{"id": "atk_speed_aura_x", "atk_speed_mult": 1.15}, 1.0], [{"id": "Atk_Speed_Aura", "atk_speed_mult": 1.15}, 1.0],
+			[{"id": "def_aura", "def_mult": 1.2}, 1.0], [{"id": "lifesteal", "lifesteal_ratio": 0.15}, 1.0], [null, 1.0]]:
+		var st: Dictionary = {} if c[0] == null else {"skill": c[0]}
+		h0._read_skill(st)
+		if not is_equal_approx(h0.atk_speed_aura_mult, float(c[1])):
+			bad0.append(str(c[0]))
+	h0._read_skill({"skill": JSON.parse_string("{\"id\": \"atk_speed_aura\", \"atk_speed_mult\": 1.15}")})
+	var json0: float = h0.atk_speed_aura_mult
+	var other0: Array = [h0.def_aura_mult, h0.slow_aura_mult, h0.stun_duration, h0.lifesteal_ratio, h0.dodge_chance, h0.first_strike_multiplier, h0.range_multiplier, h0.burn_ratio, h0.sweep_ratio]
+	h0._read_skill({})
+	var cleared0: float = h0.atk_speed_aura_mult
+	h0.free()
+	_check("指揮-0 技能參數：atk_speed_mult 1.15、2、1.0001 與經過 JSON 的 1.15 啟用；字串、1、0.9、0、負數、布林、null、陣列、NaN、正負無限大、沒有欄位、不認得或大小寫不同的 id、其他技能都不啟用；不帶其他技能、改成沒有技能後清除",
+		bad0.is_empty() and is_equal_approx(json0, 1.15) and other0 == [1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0] and cleared0 == 1.0,
+		{"bad": bad0, "json": json0, "other": other0, "cleared": cleared0})
+
+	# 指揮-1：範圍與次數（單獨的武將，每步 1/60 秒、共 1212 步＝20.2 秒遊戲時間；曹操在原點、射程 3 格、攻擊間隔 1 秒，
+	# 其他武將攻擊間隔 0.5 秒、射程 50 格；唯一的敵人不會移動、在曹操旁邊）：
+	# 正好 3 格（含邊界）與 1 格的友軍每次冷卻都是 0.5 ÷ 1.15、各打 47 下（不是間隔 0.425 的 48 下，也不是沒有加成的 41 下）；
+	# 3.02 格的友軍沒有加成（0.5 秒、41 下）；曹操自己沒有加成（1 秒、21 下）；相鄰兩次攻擊的預定時間差都是前一次的間隔；
+	# attack_speed、攻擊力、射程都不變，敵人扣的血＝100 × 總攻擊次數。友軍先處理時第一下還沒有加成（0.5），之後都是 0.5 ÷ 1.15、次數相同
+	var buffed_i: float = 0.5 / 1.15
+	var d1: Dictionary = {}
+	var ok1: bool = true
+	for order in ["cao_first", "ally_first"]:
+		var holder := _dodge_holder()
+		var wave := R20Wave.new()
+		holder.add_child(wave)
+		var e1: Node = _stn_enemy(holder, 0.0, {"hp": 1.0e9})
+		e1.position = Vector2(24.0, 24.0)
+		wave.enemies.append(e1)
+		var cc: Node = _spd_hero(holder, wave, "cao_cao", Vector2.ZERO, 3.0, 1.0, SPD_AURA_SKILL.duplicate())
+		var edge: Node = _spd_hero(holder, wave, "edge", Vector2(144.0, 0.0), 50.0, 0.5)
+		var near: Node = _spd_hero(holder, wave, "near", Vector2(0.0, -48.0), 50.0, 0.5)
+		var out: Node = _spd_hero(holder, wave, "out", Vector2(0.0, 3.02 * 48.0), 50.0, 0.5)
+		var heroes: Array = [cc, edge, near, out] if order == "cao_first" else [edge, near, out, cc]
+		# 攻擊紀錄只留最近 40 次：第一下的間隔在第 1 步之後先記下
+		_spd_steps(heroes, 1)
+		var first: Array = [_spd_r4(float(edge.attack_log[0].interval)), _spd_r4(float(near.attack_log[0].interval))] if edge.attack_count == 1 and near.attack_count == 1 else []
+		_spd_steps(heroes, 1211)
+		var counts: Array = [edge.attack_count, near.attack_count, out.attack_count, cc.attack_count]
+		var total: int = counts[0] + counts[1] + counts[2] + counts[3]
+		var r: Dictionary = {"edge/near/out/cao_cao": counts, "bonus": [edge.atk_speed_bonus_mult, near.atk_speed_bonus_mult, out.atk_speed_bonus_mult, cc.atk_speed_bonus_mult],
+			"edge_intervals": _spd_intervals(edge.attack_log.slice(0, 3)), "out_intervals": _spd_intervals(out.attack_log.slice(0, 3)),
+			"gaps_bad": _spd_gaps_bad(edge.attack_log) + _spd_gaps_bad(near.attack_log) + _spd_gaps_bad(out.attack_log) + _spd_gaps_bad(cc.attack_log),
+			"unchanged": [edge.attack_speed, edge.atk, edge.attack_range, cc.attack_speed], "enemy_lost": 1.0e9 - e1.current_hp, "total": total,
+			"buffed": cc.atk_speed_state().buffed, "first": first}
+		var want_first: Array = [_spd_r4(buffed_i), _spd_r4(buffed_i)] if order == "cao_first" else [0.5, 0.5]
+		var buffed_ok: bool = _spd_all(edge.attack_log, buffed_i) and _spd_all(near.attack_log, buffed_i) and first == want_first
+		ok1 = ok1 and counts == [47, 47, 41, 21] and buffed_ok and _spd_all(out.attack_log, 0.5) and _spd_all(cc.attack_log, 1.0) \
+			and r.gaps_bad.is_empty() and r.unchanged == [0.5, 100.0, 50.0, 1.0] and is_equal_approx(r.enemy_lost, 100.0 * total) \
+			and is_equal_approx(edge.atk_speed_bonus_mult, 1.15) and out.atk_speed_bonus_mult == 1.0 and cc.atk_speed_bonus_mult == 1.0 and r.buffed == ["edge", "near"]
+		d1[order] = r
+		holder.queue_free()
+	_check("指揮-1 範圍與次數（20.2 秒遊戲時間）：正好 3 格與 1 格的友軍每次冷卻 0.5 ÷ 1.15、各 47 下（不是 0.425 秒的 48 下、沒有加成的 41 下）；3.02 格的友軍 0.5 秒、41 下；曹操自己 1 秒、21 下；相鄰攻擊的預定時間差都是前一次的間隔；attack_speed、攻擊力、射程不變、敵人扣血＝100 × 總次數；兩種處理順序次數相同（友軍先處理時第一下沒有加成）",
+		ok1, d1)
+
+	# 指揮-2：加成改變不重設正在倒數的冷卻（友軍攻擊間隔 1 秒；曹操一開始在範圍外，每一步曹操先處理）：
+	# 第 1 步友軍打第 1 下；第 30 步曹操移進範圍：第 31～60 步沒有攻擊（不補打），第 2 下的預定時間仍是第 1 下 + 1 秒；之後的冷卻是 1 ÷ 1.15；
+	# 第 4 下之後 0.3 秒曹操移出範圍：第 5 下的預定時間是第 4 下 + 1 ÷ 1.15（不重設），之後回到 1 秒；第 6 下之後馬上移回範圍：第 7 下仍是第 6 下 + 1 秒；
+	# 第 7 下之後 0.2 秒曹操倒下（生命 0）：第 8 下是第 7 下 + 1 ÷ 1.15，之後回到 1 秒。每次冷卻用的間隔依序是 1、0.8696、0.8696、0.8696、1、1、0.8696、1、1
+	var holder2 := _dodge_holder()
+	var wave2 := R20Wave.new()
+	holder2.add_child(wave2)
+	var e2: Node = _stn_enemy(holder2, 0.0, {"hp": 1.0e9})
+	e2.position = Vector2(24.0, 0.0)
+	wave2.enemies.append(e2)
+	var far: Vector2 = Vector2(480.0, 480.0)
+	var cc2: Node = _spd_hero(holder2, wave2, "cao_cao", far, 3.0, 1.0, SPD_AURA_SKILL.duplicate())
+	var a2: Node = _spd_hero(holder2, wave2, "ally", Vector2.ZERO, 50.0, 1.0)
+	var st2: Dictionary = {"t4": -1.0, "t7": -1.0, "moved_out": false, "moved_back": false, "killed": false, "count_60": -1, "timer_29": -1.0}
+	var n2: Dictionary = {"a": a2, "cc": cc2}
+	var step2 := func(i: int) -> bool:
+		var a2n: Node = n2.a
+		var cc2n: Node = n2.cc
+		if i == 29:
+			st2.timer_29 = a2n._atk_timer
+			cc2n.position = Vector2(48.0, 0.0)
+		if i == 60:
+			st2.count_60 = a2n.attack_count
+		if a2n.attack_count >= 4 and st2.t4 < 0.0:
+			st2.t4 = a2n._age
+		if st2.t4 >= 0.0 and not st2.moved_out and a2n._age >= st2.t4 + 0.3:
+			st2.moved_out = true
+			cc2n.position = far
+		if a2n.attack_count >= 6 and not st2.moved_back:
+			st2.moved_back = true
+			cc2n.position = Vector2(48.0, 0.0)
+		if a2n.attack_count >= 7 and st2.t7 < 0.0:
+			st2.t7 = a2n._age
+		if st2.t7 >= 0.0 and not st2.killed and a2n._age >= st2.t7 + 0.2:
+			st2.killed = true
+			cc2n.current_hp = 0.0
+		return a2n.attack_count >= 9
+	_spd_steps([cc2, a2], 1200, step2)
+	var want2: Array = [1.0, 0.8696, 0.8696, 0.8696, 1.0, 1.0, 0.8696, 1.0, 1.0]
+	var iv2: Array = _spd_intervals(a2.attack_log)
+	var gaps2: Array = _spd_gaps_bad(a2.attack_log)
+	holder2.queue_free()
+	_check("指揮-2 加成改變不重設冷卻：曹操移進範圍後不補打（第 31～60 步沒有攻擊）、第 2 下仍在第 1 下 + 1 秒；移出範圍、移回範圍、曹操倒下時正在倒數的冷卻都照原本的時間；每次冷卻的間隔依序 1、0.8696、0.8696、0.8696、1、1、0.8696、1、1，預定時間差都等於前一次的間隔",
+		st2.count_60 == 1 and iv2 == want2 and gaps2.is_empty() and st2.moved_out and st2.killed,
+		{"intervals": iv2, "gaps_bad": gaps2, "count_at_60": st2.count_60, "state": st2})
+
+	# 指揮-3：兩個攻速光環（曹操 1.15、測試武將 1.3，都涵蓋友軍），兩種放置順序：友軍 1.3（不是相乘的 1.495、相加的 1.45）、兩個來源、冷卻 0.5 ÷ 1.3；
+	# 兩位光環武將互相加成、不加自己（曹操 1.3、測試武將 1.15）；把 1.3 的移出場景後友軍馬上剩 1.15（1 個來源）、之後的冷卻 0.5 ÷ 1.15；
+	# 曹操停止處理後，加成照遊戲時間 0.5 秒到期（0.3 秒時還在、0.55 秒時沒有）；無效的套用（倍率 0.9、1、NaN、無限大、有效期 0、空的來源）都不算、重複套用只刷新
+	var d3: Dictionary = {}
+	var ok3: bool = true
+	for order in [["cao_cao", "strong"], ["strong", "cao_cao"]]:
+		var holder3 := _dodge_holder()
+		var wave3 := R20Wave.new()
+		holder3.add_child(wave3)
+		var e3: Node = _stn_enemy(holder3, 0.0, {"hp": 1.0e9})
+		e3.position = Vector2(24.0, 0.0)
+		wave3.enemies.append(e3)
+		var auras: Dictionary = {}
+		for hid in order:
+			var pos: Vector2 = Vector2(48.0, 0.0) if hid == "cao_cao" else Vector2(-48.0, 0.0)
+			var sk: Dictionary = SPD_AURA_SKILL.duplicate() if hid == "cao_cao" else {"id": "atk_speed_aura", "atk_speed_mult": 1.3}
+			auras[hid] = _spd_hero(holder3, wave3, hid, pos, 3.0, 1.0, sk)
+		var a3: Node = _spd_hero(holder3, wave3, "ally", Vector2.ZERO, 50.0, 0.5)
+		_spd_steps([auras[order[0]], auras[order[1]], a3], 120)
+		var r: Dictionary = {"ally": [_spd_r4(a3.atk_speed_bonus_mult), a3._atk_speed_sources.size(), _spd_r4(float(a3.attack_log.back().interval))],
+			"cao_cao/strong": [_spd_r4(auras.cao_cao.atk_speed_bonus_mult), _spd_r4(auras.strong.atk_speed_bonus_mult)]}
+		holder3.remove_child(auras.strong)
+		r["removed_strong"] = [_spd_r4(a3.atk_speed_bonus_mult), a3._atk_speed_sources.size()]
+		_spd_steps([auras.cao_cao, a3], 60)
+		r["after_removed"] = _spd_r4(float(a3.attack_log.back().interval))
+		_spd_steps([a3], 18)
+		r["ttl_0_3"] = a3.atk_speed_bonus_mult
+		_spd_steps([a3], 15)
+		r["ttl_0_55"] = [a3.atk_speed_bonus_mult, a3._atk_speed_sources.size()]
+		a3.apply_atk_speed_from("src_w", 1.1, 0.5)
+		for i in range(3):
+			a3.apply_atk_speed_from("src_w", 1.1, 0.5)
+		for bad in [["x1", 0.9, 0.5], ["x2", 1.0, 0.5], ["x3", NAN, 0.5], ["x4", INF, 0.5], ["x5", 1.5, 0.0], ["", 1.5, 0.5]]:
+			a3.apply_atk_speed_from(bad[0], bad[1], bad[2])
+		r["kept"] = [a3._atk_speed_sources.keys(), _spd_r4(a3.atk_speed_bonus_mult)]
+		auras.strong.free()
+		holder3.queue_free()
+		ok3 = ok3 and r.ally == [1.3, 2, _spd_r4(0.5 / 1.3)] and r["cao_cao/strong"] == [1.3, 1.15] and r.removed_strong == [1.15, 1] \
+			and r.after_removed == _spd_r4(buffed_i) and is_equal_approx(r.ttl_0_3, 1.15) and r.ttl_0_55 == [1.0, 0] and r.kept == [["src_w"], 1.1]
+		d3[",".join(order)] = r
+	_check("指揮-3 兩個攻速光環（1.15 與 1.3）兩種放置順序：友軍 1.3（不相乘、不相加）、兩個來源、冷卻 0.5 ÷ 1.3；兩位光環武將互相加成、不加自己；移除 1.3 的馬上剩 1.15、冷卻 0.5 ÷ 1.15；停止更新後 0.3 秒還在、0.55 秒到期；無效的套用不算、重複套用只刷新",
+		ok3, d3)
+
+	# 指揮-4：升級與不疊乘（apply_stat_update；設定表：曹操射程 3、射程成長 0.5，友軍攻擊間隔 0.5、攻速成長 0.1）：
+	# 1 級時 3.3 格的友軍沒有加成、1 格的有；曹操升到 2 級（射程 3.5）後兩位都有；同樣的資料再送 3 次，曹操的倍率仍是 1.15、友軍的加成仍是 1.15；
+	# 友軍升到 2 級後 attack_speed 是 0.45、有效間隔 0.45 ÷ 1.15（不是 0.5 ÷ 1.15 ÷ 1.15），之後的冷卻用 0.45 ÷ 1.15；攻擊力照隊伍資料
+	var holder4 := _dodge_holder()
+	var wave4 := R20Wave.new()
+	holder4.add_child(wave4)
+	var e4: Node = _stn_enemy(holder4, 0.0, {"hp": 1.0e9})
+	e4.position = Vector2(24.0, 0.0)
+	wave4.enemies.append(e4)
+	var cfg4: Array = [
+		{"hero_id": "cao_cao", "attack_range": 3.0, "range_growth": 0.5, "attack_speed": 1.0},
+		{"hero_id": "far_ally", "attack_range": 50.0, "attack_speed": 0.5, "atk_spd_growth": 0.1},
+		{"hero_id": "near_ally", "attack_range": 50.0, "attack_speed": 0.5, "atk_spd_growth": 0.1},
+	]
+	var cc4: Node = _spd_hero(holder4, wave4, "cao_cao", Vector2.ZERO, 3.0, 1.0, SPD_AURA_SKILL.duplicate())
+	var fa: Node = _spd_hero(holder4, wave4, "far_ally", Vector2(3.3 * 48.0, 0.0), 50.0, 0.5)
+	var na: Node = _spd_hero(holder4, wave4, "near_ally", Vector2(48.0, 0.0), 50.0, 0.5)
+	_spd_steps([cc4, fa, na], 3)
+	var d4: Dictionary = {"lv1": [fa.atk_speed_bonus_mult, _spd_r4(na.atk_speed_bonus_mult)]}
+	var cc_lv2: Dictionary = {"hero_id": "cao_cao", "level": 2, "atk": 100.0, "def": 50.0, "hp": 1000.0, "skill": SPD_AURA_SKILL.duplicate()}
+	for i in range(4):
+		cc4.apply_stat_update(cc_lv2.duplicate(true), cfg4)
+		_spd_steps([cc4, fa, na], 3)
+	d4["lv2"] = [_spd_r4(fa.atk_speed_bonus_mult), _spd_r4(na.atk_speed_bonus_mult), cc4.attack_range, cc4.atk_speed_aura_mult, cc4.atk_speed_bonus_mult]
+	var na_lv2: Dictionary = {"hero_id": "near_ally", "level": 2, "atk": 120.0, "def": 50.0, "hp": 1000.0}
+	for i in range(3):
+		na.apply_stat_update(na_lv2.duplicate(true), cfg4)
+	_spd_steps([cc4, fa, na], 120)
+	d4["ally_lv2"] = [_spd_r4(na.attack_speed), _spd_r4(na.effective_attack_interval()), _spd_r4(float(na.attack_log.back().interval)), na.atk,
+		_spd_r4(na.atk_speed_bonus_mult)]
+	holder4.queue_free()
+	_check("指揮-4 升級與不疊乘：1 級時 3.3 格的友軍沒有加成、1 格的有；曹操升到 2 級（射程 3.5）兩位都有，同樣的資料送 4 次倍率仍是 1.15、曹操自己沒有加成；友軍升到 2 級 attack_speed 0.45、有效間隔與之後的冷卻都是 0.45 ÷ 1.15（不疊乘）、攻擊力 120",
+		d4.lv1 == [1.0, 1.15] and d4.lv2 == [1.15, 1.15, 3.5, 1.15, 1.0] and d4.ally_lv2 == [0.45, _spd_r4(0.45 / 1.15), _spd_r4(0.45 / 1.15), 120.0, 1.15], d4)
+
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 指揮-5：實際引擎（曹操在建築格 (2,4)、射程 3 格；spd_a 在 (3,4)＝1 格、spd_b 在 (8,6)＝範圍外；弓兵塔在 (1,6)＝範圍內；
+	# 唯一的敵人不會移動、在起點 (0,5)，所有單位都打得到）：
+	# 備戰時光環不作用、spd_a 沒有加成；開戰後 spd_a 1.15、spd_b 與曹操 1；1 倍 3 秒、2 倍 3 秒、部署選單的慢速 1 秒（牆鐘）、手動暫停 1 秒（牆鐘）、
+	# 恢復後 2 秒：spd_a 第一下之後每次冷卻都是 0.5 ÷ 1.15、spd_b 都是 0.5、曹操都是 1，相鄰攻擊的預定時間差都是前一次的間隔；
+	# 暫停中攻擊次數與武將的遊戲時間不變、加成仍在（1 個來源）；同一段遊戲時間 spd_a 的次數是 spd_b 的 1.15 倍（各差不到 1 下）；
+	# 防禦塔每次攻擊後的冷卻仍是 0.8 秒（不受加成）；spd_a 的 attack_speed、攻擊力、射程不變；
+	# 快照：曹操的光環作用中、倍率 1.15、半徑 3、加成 spd_a；面板：spd_a 每秒 2 次、有效 2.3 次，spd_b 2／2；
+	# 把曹操移出隊伍：spd_a 馬上（下一幀內）沒有加成、正在倒數的冷卻照原本的時間，之後是 0.5；重新放置曹操（新的來源）又有；
+	# 打倒敵人後勝利且只結算一次、沒有加成、光環不作用；新的一場沒有殘留，開戰後又有
+	var d5: Dictionary = {}
+	var ok5: bool = false
+	var team5: Array = [_r12_hero("cao_cao", SPD_AURA_SKILL.duplicate()), _r12_hero("spd_a", null), _r12_hero("spd_b", null)]
+	team5[1]["slot"] = 2
+	team5[2]["slot"] = 3
+	var cells5: Dictionary = {"cao_cao": Vector2i(2, 4), "spd_a": Vector2i(3, 4), "spd_b": Vector2i(8, 6)}
+	_spd_load(rec, "spd-5", [[_grp("spd_post", 1, 0.02)]], team5, cells5, [["archer", Vector2i(1, 6)]])
+	await _def_frames()
+	var cc5: Node = _fly_hero("cao_cao")
+	var sa: Node = _fly_hero("spd_a")
+	var sb: Node = _fly_hero("spd_b")
+	var tw5: Array = _slw_towers()
+	if cc5 != null and sa != null and sb != null and tw5.size() == 1:
+		d5["prep"] = _spd_bonus(["spd_a", "spd_b", "cao_cao"]) + [cc5.atk_speed_state().aura_active]
+		var ended0: int = battle_ended_count
+		_bm().player_start_battle()
+		await _wait_until(func(): return _sw_enemies().size() >= 1, 5.0)
+		await _def_frames()
+		d5["battle"] = _spd_bonus(["spd_a", "spd_b", "cao_cao"])
+		var t0: float = sa._age
+		var tower_cd: Array = []
+		await _spd_watch(3.0, tw5[0], tower_cd)
+		_r19_speed(rec, 2.0)
+		await _spd_watch(3.0, tw5[0], [])
+		_r19_speed(rec, 1.0)
+		var menu5: Dictionary = _r19_open(rec, 5)
+		d5["slow_ts"] = Engine.time_scale
+		await _wait_real(1.0)
+		_r19_close(rec, menu5)
+		_r20_pause(rec, true)
+		await _def_frames()
+		var pa: Array = [sa.attack_count, sa._age, sb.attack_count]
+		await _wait_real(1.0)
+		d5["paused"] = [sa.attack_count == pa[0], sa._age == pa[1], sb.attack_count == pa[2], _spd_r4(sa.atk_speed_bonus_mult), sa._atk_speed_sources.size()]
+		_r20_pause(rec, false)
+		await _spd_watch(2.0, tw5[0], [])
+		var t1: float = sa._age
+		d5["window"] = snappedf(t1 - t0, 0.001)
+		var na5: int = _spd_count(sa, t0, t1)
+		var nb5: int = _spd_count(sb, t0, t1)
+		d5["counts_a/b"] = [na5, nb5, snappedf((t1 - t0) / buffed_i, 0.01), snappedf((t1 - t0) / 0.5, 0.01)]
+		d5["intervals_a"] = _spd_intervals(sa.attack_log.slice(1, 4))
+		d5["gaps_bad"] = _spd_gaps_bad(sa.attack_log) + _spd_gaps_bad(sb.attack_log) + _spd_gaps_bad(cc5.attack_log)
+		d5["tower_cd"] = tower_cd.map(func(x): return snappedf(float(x), 0.001))
+		d5["unchanged"] = [sa.attack_speed, sa.atk, sa.attack_range]
+		var snap5: Dictionary = _fly_snapshot(rec)
+		var hs: Dictionary = snap5.get("hero_atk_speed", {})
+		var ccs: Dictionary = hs.get("cao_cao", {})
+		d5["snapshot"] = [ccs.get("aura_active"), _spd_r4(float(ccs.get("aura_mult", 0.0))), ccs.get("radius"), ccs.get("buffed"),
+			_spd_r4(float(hs.get("spd_a", {}).get("effective", 0.0))), hs.get("spd_a", {}).get("interval")]
+		var np: int = rec.sent_panels.size()
+		main._on_hero_clicked(sa)
+		var pa5: Dictionary = rec.sent_panels.back() if rec.sent_panels.size() > np else {}
+		main._on_hero_clicked(sb)
+		var pb5: Dictionary = rec.sent_panels.back() if rec.sent_panels.size() > np + 1 else {}
+		main._deselect_unit()
+		d5["panel_a/b"] = [_spd_r4(float(pa5.get("atk_spd", 0.0))), _spd_r4(float(pa5.get("atk_spd_effective", 0.0))),
+			_spd_r4(float(pb5.get("atk_spd", 0.0))), _spd_r4(float(pb5.get("atk_spd_effective", 0.0)))]
+		var log_ok: bool = _spd_all(sa.attack_log.slice(1), buffed_i) and _spd_all(sb.attack_log, 0.5) and _spd_all(cc5.attack_log, 1.0)
+		var src5: String = cc5.atk_speed_aura_source
+		var n_before: int = sa.attack_count
+		var timer_before: float = sa._atk_timer
+		_r19_js(rec, {"type": "update_team", "team_list": [team5[1], team5[2]]})
+		await process_frame
+		d5["removed"] = [_spd_bonus(["spd_a"])[0], sa._atk_speed_sources.size(), _fly_hero("cao_cao") == null]
+		await _spd_watch(2.0, tw5[0], [])
+		var after: Array = sa.attack_log.slice(sa.attack_log.size() - (sa.attack_count - n_before))
+		d5["after_removed"] = {"first_gap_ok": _spd_gaps_bad(sa.attack_log).is_empty(), "intervals": _spd_intervals(after.slice(0, 3)), "timer_before": _spd_r4(timer_before)}
+		_r19_js(rec, {"type": "update_team", "team_list": team5})
+		_r12_place("cao_cao", Vector2i(2, 4))
+		await _def_frames()
+		var cc5b: Node = _fly_hero("cao_cao")
+		d5["replaced"] = [_spd_bonus(["spd_a"])[0], cc5b != null and cc5b.atk_speed_aura_source != src5]
+		for e in _sw_enemies():
+			e.take_damage(1.0e12)
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 5.0)
+		await _def_frames()
+		d5["result"] = [_spd_bonus(["spd_a"])[0], cc5b.atk_speed_state().aura_active if cc5b != null else null, battle_ended_count - ended0, last_result.get("result")]
+		_spd_load(rec, "spd-5b", [[_grp("spd_post", 1, 0.02)]], team5, cells5)
+		await _def_frames()
+		var sa2: Node = _fly_hero("spd_a")
+		d5["new_prep"] = [sa2._atk_speed_sources.size() if sa2 != null else -1, sa2.atk_speed_bonus_mult if sa2 != null else -1.0, sa2.attack_count if sa2 != null else -1]
+		_bm().player_start_battle()
+		await _wait_until(func(): return _sw_enemies().size() >= 1, 5.0)
+		await _def_frames()
+		d5["new_battle"] = _spd_bonus(["spd_a"])
+		var after_ok: bool = d5.after_removed.first_gap_ok and not d5.after_removed.intervals.is_empty() and d5.after_removed.intervals.all(func(x): return x == 0.5)
+		ok5 = d5.prep == [1.0, 1.0, 1.0, false] and d5.battle == [1.15, 1.0, 1.0] and d5.slow_ts < 1.0 and d5.paused == [true, true, true, 1.15, 1] \
+			and absf(float(na5) - (t1 - t0) / buffed_i) <= 1.0 and absf(float(nb5) - (t1 - t0) / 0.5) <= 1.0 and log_ok and d5.gaps_bad.is_empty() \
+			and not tower_cd.is_empty() and tower_cd.all(func(x): return float(x) <= 0.8 + 1e-6 and float(x) >= 0.74) and d5.unchanged == [0.5, 100.0, 6.0] \
+			and d5.snapshot == [true, 1.15, 3.0, ["spd_a"], _spd_r4(buffed_i), 0.5] and d5["panel_a/b"] == [2.0, 2.3, 2.0, 2.0] \
+			and d5.removed == [1.0, 0, true] and after_ok and d5.replaced == [1.15, true] and d5.result == [1.0, false, 1, "WIN"] \
+			and d5.new_prep == [0, 1.0, 0] and d5.new_battle == [1.15]
+	_check("指揮-5 實際引擎：備戰時不作用；開戰後範圍內的友軍 1.15、範圍外與曹操 1；1 倍、2 倍、部署慢速、手動暫停之後每次冷卻都是 0.5 ÷ 1.15（範圍外 0.5、曹操 1），預定時間差都是前一次的間隔；暫停中次數與遊戲時間不變、加成仍在；同一段遊戲時間的次數各差不到 1 下；防禦塔的冷卻仍是 0.8；快照與面板（2 次 → 2.3 次）；移出曹操馬上沒有加成、正在倒數的不重設；重新放置又有；勝利只結算一次後沒有加成；新的一場沒有殘留",
+		ok5, d5)
+
+	# 指揮-6：和其他技能一起（實際引擎；曹操 (2,4)，魏延 (1,4)、張飛 (3,4)、馬超 (1,6)、周瑜 (2,6) 都在範圍內、都打得到不會移動的敵人）：
+	# 四位的每次冷卻都是 0.5 ÷ 1.15（第一下之後）；魏延（生命先設成 300）每一擊恢復 15、恢復次數＝攻擊次數；張飛的暈眩次數＝攻擊次數；
+	# 馬超的首擊加倍只用一次；周瑜的灼燒間隔仍是 1 秒（不受攻速加成）；打倒敵人後勝利且只結算一次、擊殺 1
+	var d6: Dictionary = {}
+	var ok6: bool = false
+	var team6: Array = [_r12_hero("cao_cao", SPD_AURA_SKILL.duplicate()), _r12_hero("wei_yan", {"id": "lifesteal", "lifesteal_ratio": 0.15}),
+		_r12_hero("zhang_fei", {"id": "stun", "stun_sec": 0.5}), _r12_hero("ma_chao", {"id": "first_strike", "first_attack_multiplier": 2}),
+		_r12_hero("zhou_yu", {"id": "burn", "burn_ratio": 0.2, "burn_ticks": 3, "burn_interval": 1.0})]
+	for i in range(team6.size()):
+		team6[i]["slot"] = i + 1
+	_spd_load(rec, "spd-6", [[_grp("spd_post", 1, 0.02)]], team6,
+		{"cao_cao": Vector2i(2, 4), "wei_yan": Vector2i(1, 4), "zhang_fei": Vector2i(3, 4), "ma_chao": Vector2i(1, 6), "zhou_yu": Vector2i(2, 6)})
+	await _def_frames()
+	var ids6: Array = ["wei_yan", "zhang_fei", "ma_chao", "zhou_yu"]
+	var all6: bool = _fly_hero("cao_cao") != null and ids6.all(func(h): return _fly_hero(h) != null)
+	if all6:
+		_fly_hero("wei_yan").current_hp = 300.0
+		var ended6: int = battle_ended_count
+		var kills6: int = _bm().kills
+		_bm().player_start_battle()
+		await _wait_until(func(): return _sw_enemies().size() >= 1, 5.0)
+		var e6: Node = _sw_enemies()[0] if not _sw_enemies().is_empty() else null
+		await _spd_watch(3.0, null, [])
+		var wy: Node = _fly_hero("wei_yan")
+		var zf: Node = _fly_hero("zhang_fei")
+		d6["bonus"] = _spd_bonus(ids6)
+		d6["intervals_ok"] = ids6.map(func(h): return _spd_all(_fly_hero(h).attack_log.slice(1), buffed_i) and _spd_gaps_bad(_fly_hero(h).attack_log).is_empty())
+		d6["wei_yan"] = [wy.attack_count, wy.lifesteal_count, _spd_r4(wy.lifesteal_total)]
+		d6["zhang_fei"] = [zf.attack_count, zf.stun_count]
+		d6["first_strike_used"] = _bm()._first_strike_used.keys()
+		d6["burn"] = [e6._burn_interval, e6.burn_state().ticks_left > 0] if is_instance_valid(e6) else []
+		if is_instance_valid(e6):
+			e6.take_damage(1.0e12)
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 5.0)
+		await _def_frames()
+		d6["result"] = [battle_ended_count - ended6, _bm().kills - kills6, last_result.get("result")]
+		ok6 = d6.bonus == [1.15, 1.15, 1.15, 1.15] and d6.intervals_ok == [true, true, true, true] and d6.wei_yan[0] >= 6 and d6.wei_yan[1] == d6.wei_yan[0] \
+			and is_equal_approx(float(d6.wei_yan[2]), 15.0 * d6.wei_yan[0]) and d6.zhang_fei[0] >= 6 and d6.zhang_fei[1] == d6.zhang_fei[0] \
+			and d6.first_strike_used == ["ma_chao"] and d6.burn == [1.0, true] and d6.result == [1, 1, "WIN"]
+	_check("指揮-6 和其他技能一起：魏延、張飛、馬超、周瑜都在範圍內，每次冷卻都是 0.5 ÷ 1.15；魏延每一擊恢復 15、恢復次數＝攻擊次數；張飛的暈眩次數＝攻擊次數；馬超的首擊加倍只用一次；周瑜的灼燒間隔仍是 1 秒；勝利只結算一次、擊殺 1",
+		ok6, d6)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 敵人受傷的入口：拒絕無效的傷害 ──
+# 傷害不是正的有限數字（0、負數、NaN、正負無限大），或敵人已經倒下、正要被移除時：回傳 0，生命、傷害數字、閃爍、音效都不變，
+# 不發死亡信號（不會被擊殺、不影響結算）；正常的傷害照常扣血，回傳實際扣掉的生命（致死的一擊不含溢出的部分）
+
+## parent 底下目前的傷害數字（FloatingText）數量
+func _dmg_texts(parent: Node) -> int:
+	var n: int = 0
+	for c in parent.get_children():
+		if c is FloatingText and not c.is_queued_for_deletion():
+			n += 1
+	return n
+
+## 受擊與死亡音效的節省模式冷卻（播放後才會大於 0）：測試前歸零，之後讀取就知道有沒有播放
+func _dmg_sfx_reset(sfx: Node) -> void:
+	sfx._cooldowns["enemy_hit"] = 0.0
+	sfx._cooldowns["enemy_die"] = 0.0
+
+func _dmg_sfx_state(sfx: Node) -> Array:
+	return [float(sfx._cooldowns.get("enemy_hit", 0.0)), float(sfx._cooldowns.get("enemy_die", 0.0))]
+
+func _damage_input_cases() -> void:
+	# 受傷-1：單獨的敵人（真正的 Enemy 程式，血量 100，不在戰鬥流程裡）。音效打開、節省模式，用冷卻判斷有沒有播放：
+	# a 0、-5、NaN、+∞、-∞：回傳 0，生命仍是有限的 100、沒有倒下、死亡信號 0、沒有傷害數字、沒有閃爍、受擊與死亡音效都沒有播放；
+	# b 正要被移除（queue_free 之後、還沒倒下，例如切換關卡時被清掉）受到 500：回傳 0、生命 100、死亡信號 0、沒有傷害數字；
+	# c 灼燒的每跳傷害是 NaN 或 +∞（灼燒只擋 0 以下）：每一跳都被拒絕，生命仍是 100、沒有倒下；
+	# d 正常：受到 30 回傳 30（剩 70、有傷害數字、閃爍、受擊音效），剩 70 時受到 100 回傳 70（溢出的 30 不算；生命 0、倒下、死亡信號一次），
+	#   倒下後再受到 10、+∞、NaN 都回傳 0，死亡信號仍是一次、沒有新的傷害數字
+	var sfx: Node = root.get_node("SFXManager")
+	var sfx_prev: Array = [sfx.sfx_enabled, sfx.sfx_polyphony]
+	sfx.sfx_enabled = true
+	sfx.sfx_polyphony = "single"
+	var holder := _dodge_holder()
+	var a1: Dictionary = {}
+	var bad_a: Array = []
+	for pair in [["zero", 0.0], ["negative", -5.0], ["nan", NAN], ["+inf", INF], ["-inf", -INF]]:
+		var e: Node = _stn_enemy(holder, 0.0, {"hp": 100.0})
+		var deaths: Array = [0]
+		e.died.connect(func(_x): deaths[0] += 1)
+		_dmg_sfx_reset(sfx)
+		var t0: int = _dmg_texts(holder)
+		var ret: float = e.take_damage(pair[1])
+		var row: Array = [ret, e.current_hp, is_finite(e.current_hp), e.is_dead(), deaths[0], _dmg_texts(holder) - t0, e._flash_timer, _dmg_sfx_state(sfx)]
+		a1[pair[0]] = row
+		if row != [0.0, 100.0, true, false, 0, 0, 0.0, [0.0, 0.0]]:
+			bad_a.append(pair[0])
+	var eq: Node = _stn_enemy(holder, 0.0, {"hp": 100.0})
+	var dq: Array = [0]
+	eq.died.connect(func(_x): dq[0] += 1)
+	eq.queue_free()
+	var tq: int = _dmg_texts(holder)
+	var b1: Array = [eq.take_damage(500.0), eq.current_hp, dq[0], _dmg_texts(holder) - tq]
+	var c1: Dictionary = {}
+	for pair in [["nan", NAN], ["+inf", INF]]:
+		var eb: Node = _stn_enemy(holder, 0.0, {"hp": 100.0})
+		var db: Array = [0]
+		eb.died.connect(func(_x): db[0] += 1)
+		eb.apply_burn(pair[1], 3, 0.1)
+		for i in range(6):
+			eb._physics_process(0.1)
+		c1[pair[0]] = [eb.current_hp, eb.is_dead(), db[0]]
+	var en: Node = _stn_enemy(holder, 0.0, {"hp": 100.0})
+	var dn: Array = [0]
+	en.died.connect(func(_x): dn[0] += 1)
+	_dmg_sfx_reset(sfx)
+	var tn: int = _dmg_texts(holder)
+	var d_hit: Array = [en.take_damage(30.0), en.current_hp, _dmg_texts(holder) - tn, en._flash_timer > 0.0, _dmg_sfx_state(sfx)[0] > 0.0]
+	var d_kill: Array = [en.take_damage(100.0), en.current_hp, en.is_dead(), dn[0]]
+	var tk: int = _dmg_texts(holder)
+	var d_after: Array = [en.take_damage(10.0), en.take_damage(INF), en.take_damage(NAN), en.current_hp, dn[0], _dmg_texts(holder) - tk]
+	holder.queue_free()
+	for p in sfx._players:
+		p.stop()
+	sfx.sfx_enabled = sfx_prev[0]
+	sfx.sfx_polyphony = sfx_prev[1]
+	_check("受傷-1 無效的傷害不改變敵人：0、負數、NaN、正負無限大回傳 0，生命仍是 100、沒有倒下、沒有死亡信號、傷害數字、閃爍與音效；正要被移除的敵人受到 500 也不變；灼燒每跳是 NaN／無限大時不扣血；正常受到 30 回傳 30（數字、閃爍、音效照常），剩 70 時受到 100 回傳 70、死亡信號一次，倒下後再受傷都回傳 0、不重複死亡",
+		bad_a.is_empty() and b1 == [0.0, 100.0, 0, 0] and c1.nan == [100.0, false, 0] and c1["+inf"] == [100.0, false, 0]
+			and d_hit == [30.0, 70.0, 1, true, true] and d_kill == [70.0, 0.0, true, 1] and d_after == [0.0, 0.0, 0.0, 0.0, 1, 0],
+		{"bad": bad_a, "invalid": a1, "queued": b1, "burn": c1, "hit": d_hit, "kill": d_kill, "after": d_after})
+
+	# 受傷-2：實際引擎（Main、WaveManager、BattleManager）：一波只有一隻不會移動的敵人（血量 130），開戰並出兵後：
+	# 0、負數、NaN、+∞、-∞ 的傷害都回傳 0，0.3 秒後生命仍是 130、場上仍有 1 隻、擊殺 0、戰鬥金幣不變、仍在戰鬥中、沒有結算；
+	# 之後受到 1000 回傳 130（溢出的 870 不算），同一幀再受到 1000、+∞ 都回傳 0；勝利且只結算一次、擊殺 1、金幣只加一次擊殺獎勵
+	_load(_payload("dmg_input", [[_grp("ember", 1, 0.1)]]))
+	var ended0: int = battle_ended_count
+	var gold0: int = _bm().battle_gold
+	_bm().player_start_battle()
+	await _wait_until(func(): return _wm().get_active_enemy_count() == 1, 2.0)
+	var e2: Node = null
+	for c in main.units_layer.get_children():
+		if c is Enemy and not c.is_queued_for_deletion():
+			e2 = c
+	# 敵人被打倒後會被釋放，之後不能再用 e2 判斷有沒有找到
+	var found2: bool = e2 != null
+	var inv2: Array = []
+	var mid2: Dictionary = {}
+	var fin2: Dictionary = {}
+	if found2:
+		for v in [0.0, -5.0, NAN, INF, -INF]:
+			inv2.append(e2.take_damage(v))
+		await _wait(0.3)
+		mid2 = {"ret": inv2, "hp": e2.current_hp, "active": _wm().get_active_enemy_count(), "kills": _bm().kills,
+			"gold": _bm().battle_gold - gold0, "state": _bm().game_state, "ended": battle_ended_count - ended0}
+		fin2["ret"] = [e2.take_damage(1000.0), e2.take_damage(1000.0), e2.take_damage(INF)]
+		await _wait_until(func(): return _bm().game_state == 3, 3.0)
+		await _wait(0.3)
+		fin2.merge({"kills": _bm().kills, "gold": _bm().battle_gold - gold0, "ended": battle_ended_count - ended0,
+			"result": last_result.get("result"), "kills_result": last_result.get("kills")})
+	_check("受傷-2 實際引擎：場上的敵人受到 0、負數、NaN、正負無限大的傷害後生命仍是 130、仍在場上、擊殺 0、金幣不變、沒有結算；受到 1000 回傳 130、同一幀再打都回傳 0；勝利且只結算一次、擊殺 1、金幣只加一次擊殺獎勵",
+		found2 and inv2 == [0.0, 0.0, 0.0, 0.0, 0.0] and mid2.get("hp") == 130.0 and mid2.get("active") == 1 and mid2.get("kills") == 0
+			and mid2.get("gold") == 0 and mid2.get("state") == 2 and mid2.get("ended") == 0
+			and fin2.get("ret") == [130.0, 0.0, 0.0] and fin2.get("kills") == 1 and fin2.get("gold") == BattleManager.GOLD_PER_KILL
+			and fin2.get("ended") == 1 and fin2.get("result") == "WIN" and fin2.get("kills_result") == 1,
+		{"found": found2, "mid": mid2, "final": fin2})
+	_load(_stage_b())
+
+# ── 吸血（魏延）──
+# 每次普通攻擊命中後，恢復這一擊實際扣掉敵人的生命 × 15%（不含溢出的傷害；打倒敵人的那一擊也算）；
+# 不超過最大生命、已經倒下或正要被移除時不恢復；只算自己這一擊的直接傷害（灼燒、橫掃原型的副目標、其他武將與防禦塔都不算）
+
+## 魏延的吸血（和網頁 utils/heroSkills 的出征參數相同）
+const LS_SKILL: Dictionary = {"id": "lifesteal", "lifesteal_ratio": 0.15}
+## 實際引擎用的敵人：不會移動的地面兵（血量很多）、慢速地面兵（每秒 20 像素、攻擊力 100；普通與免疫減速）、不會移動的飛行兵、
+## 血量 30 的不會移動的地面兵（魏延一擊打倒，實際只扣 30）
+const LS_ENEMIES: Array = [
+	{"enemy_id": "ls_post", "name": "P", "hp": 99999.0, "speed": 0.0},
+	{"enemy_id": "ls_walk", "name": "W", "hp": 99999.0, "speed": 20.0, "atk": 100},
+	{"enemy_id": "ls_walk_imm", "name": "I", "hp": 99999.0, "speed": 20.0, "atk": 100, "trait": "immune_slow"},
+	{"enemy_id": "ls_fly", "name": "F", "hp": 99999.0, "speed": 0.0, "movement_type": "flying"},
+	{"enemy_id": "ls_soft", "name": "S", "hp": 30.0, "speed": 0.0},
+]
+## 阻路的魏延（防禦 50）在劉備的防禦光環裡（防禦 60）被攻擊力 100 的敵人打一下實際扣的血：100 × 100 ÷（60 ＋ 100）
+const LS_BLOCK_AURA_DMG: float = 100.0 * 100.0 / 160.0
+
+func _ls_near(a: Variant, b: float, eps: float = 1e-9) -> bool:
+	return (a is float or a is int) and absf(float(a) - b) < eps
+
+## 每一擊的 [武將生命的變化, 敵人生命的變化] 和 want 逐一相符（容許浮點誤差）
+func _ls_hits_ok(hits: Array, want: Array) -> bool:
+	if hits.size() != want.size():
+		return false
+	for i in range(hits.size()):
+		if not (_ls_near(hits[i][0], float(want[i][0]), 1e-6) and _ls_near(hits[i][1], float(want[i][1]), 1e-6)):
+			return false
+	return true
+
+## 單獨的魏延（真正的 Hero 腳本，不經過 Main、測試自己呼叫 _process）：攻擊力 atk_v、射程 3 格、攻擊間隔 1 秒、最大生命 1000、目前生命 hp；
+## skill 是 null 時帶吸血的參數；wave 是假的 WaveManager（R20Wave），敵人放在 wave.enemies
+func _ls_hero(holder: Node, wave: Node, hp: float, atk_v: float = 100.0, skill: Variant = null) -> Node:
+	var h: Node = load("res://entities/hero/Hero.gd").new()
+	holder.add_child(h)
+	h.set_process(false)
+	h.hero_id = "wei_yan"
+	h.attack_range = 3.0
+	h.attack_speed = 1.0
+	h.atk = atk_v
+	h.max_hp = 1000.0
+	h.current_hp = hp
+	h._read_skill({"skill": LS_SKILL.duplicate() if skill == null else skill})
+	h._wave_mgr = wave
+	return h
+
+## 固定步進用的敵人（不會移動）：血量 hp，放在 (x, 0)（武將在原點，射程 3 格＝144 像素）
+func _ls_enemy(holder: Node, wave: Node, hp: float, x: float = 48.0) -> Node:
+	var e: Node = _stn_enemy(holder, 0.0, {"hp": hp})
+	e.position = Vector2(x, 0.0)
+	wave.enemies.append(e)
+	return e
+
+## 讓武將打一擊（攻擊冷卻歸零後處理一步）：回傳 [武將生命的變化, 敵人被打掉的生命]
+func _ls_hit(h: Node, e: Node) -> Array:
+	var h0: float = h.current_hp
+	var e0: float = e.current_hp
+	h._atk_timer = 0.0
+	h._process(1.0 / 60.0)
+	return [h.current_hp - h0, e0 - e.current_hp]
+
+## 單獨的魏延對一個敵人連打 n 擊：每一擊的 [武將生命的變化, 敵人被打掉的生命]、目前生命、實際恢復的次數與總量、紀錄、
+## 敵人的死亡信號次數與是否倒下、恢復提示（綠色的「+」文字）
+func _ls_case(hp: float, enemy_hp: float, n: int = 1, atk_v: float = 100.0, skill: Variant = null) -> Dictionary:
+	var holder := _dodge_holder()
+	var wave := R20Wave.new()
+	holder.add_child(wave)
+	var h: Node = _ls_hero(holder, wave, hp, atk_v, skill)
+	var e: Node = _ls_enemy(holder, wave, enemy_hp)
+	var died: Array = [0]
+	var on_died := func(_x) -> void:
+		died[0] = int(died[0]) + 1
+	e.died.connect(on_died)
+	var hits: Array = []
+	for i in range(n):
+		hits.append(_ls_hit(h, e))
+	var r: Dictionary = {"hits": hits, "hp": h.current_hp, "count": h.lifesteal_count, "total": h.lifesteal_total, "log": h.lifesteal_log.duplicate(true),
+		"ratio": h.lifesteal_ratio, "died": died[0], "dead": e.is_dead()}
+	r["texts"] = (await _dodge_texts(holder)).filter(func(t): return str(t).begins_with("+"))
+	holder.queue_free()
+	return r
+
+## 實際引擎：載入一場（經過 JSON）並依 cells 放置武將（hero_id → 格子），不開戰。
+## 魏延的職業 wy_job、射程 wy_range 格、攻擊間隔 1 秒；張飛（射程 2.5 格、攻擊間隔 1.5 秒）與劉備（射程 3 格）用來測組合
+func _ls_load(rec: Node, battle_id: String, waves: Array, team: Array, cells: Dictionary, wy_job: String = "infantry", wy_range: float = 2.5) -> void:
+	var p: Dictionary = _r12_payload("ls_" + battle_id, waves, battle_id, team)
+	p["heroes_config"] = [
+		{"hero_id": "wei_yan", "name": "魏延", "job": wy_job, "attack_range": wy_range, "attack_speed": 1.0},
+		{"hero_id": "zhang_fei", "name": "張飛", "job": "infantry", "attack_range": 2.5, "attack_speed": 1.5},
+		{"hero_id": "liu_bei", "name": "劉備", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5},
+	]
+	for c in LS_ENEMIES:
+		p["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p)
+	for hid in cells:
+		_r12_place(hid, cells[hid])
+
+## 出征的魏延（攻擊力 100、防禦 50、最大生命 1000）；skill 是 null 時帶吸血的參數
+func _ls_wy(skill: Variant = null) -> Dictionary:
+	return _r12_hero("wei_yan", LS_SKILL.duplicate() if skill == null else skill)
+
+## 載入後把場上的魏延的生命改成 hp（測試的起點，不是治療）；回傳魏延（不在場上時是 null）
+func _ls_set_hp(hp: float) -> Node:
+	var wy: Node = _fly_hero("wei_yan")
+	if wy != null:
+		wy.current_hp = hp
+	return wy
+
+## 實際引擎：逐個物理步進記錄魏延 h 與敵人 e 的生命變化（在 physics_frame 信號當下讀取），直到 stop(rows) 回傳 true 或牆鐘 wall_ms 毫秒。
+## 每一列：dh＝魏延的生命變化、de＝敵人被打掉的生命、dt＝物理時鐘前進的時間、ts＝時間倍率。each(row) 在每一列之後呼叫
+func _ls_track(h: Node, e: Node, wall_ms: int, stop: Callable, each: Callable = Callable()) -> Array:
+	var rows: Array = []
+	var w_end: int = Time.get_ticks_msec() + wall_ms
+	await physics_frame
+	var ph: float = h.current_hp
+	var pe: float = e.current_hp
+	var pt: float = _pt()
+	while Time.get_ticks_msec() < w_end:
+		await physics_frame
+		if not is_instance_valid(h) or not is_instance_valid(e) or e.is_queued_for_deletion():
+			break
+		var row: Dictionary = {"dh": snappedf(h.current_hp - ph, 0.0001), "de": snappedf(pe - e.current_hp, 0.0001), "dt": _pt() - pt, "ts": Engine.time_scale}
+		ph = h.current_hp
+		pe = e.current_hp
+		pt = _pt()
+		rows.append(row)
+		if each.is_valid():
+			each.call(row)
+		if stop.call(rows):
+			break
+	return rows
+
+## 每一列：被打掉 100 的列魏延同一步恢復 15、沒有命中的列生命不變；回傳不符合的列（最多 5 列）
+func _ls_bad_rows(rows: Array) -> Array:
+	var bad: Array = []
+	for i in range(rows.size()):
+		var r: Dictionary = rows[i]
+		var ok: bool = (float(r.de) == 0.0 and float(r.dh) == 0.0) or (absf(float(r.de) - 100.0) < 1e-3 and absf(float(r.dh) - 15.0) < 1e-3)
+		if not ok:
+			bad.append({"i": i, "row": r})
+	return bad.slice(0, 5)
+
+func _lifesteal_cases() -> void:
+	# 吸血-0：技能參數的判讀：lifesteal_ratio 是大於 0、不超過 1 的有限數字才啟用（0.15、0.5、1、1.0、0.0001、經過 JSON 的 0.15）；
+	# 字串、布林、null、陣列、NaN、無限大、0、負數、超過 1、沒有欄位、不認得或大小寫不同的 id、其他技能都不啟用；吸血不帶其他技能，改成沒有技能後清除
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var bad0: Array = []
+	for c in [[{"id": "lifesteal", "lifesteal_ratio": 0.15}, 0.15], [{"id": "lifesteal", "lifesteal_ratio": 0.5}, 0.5], [{"id": "lifesteal", "lifesteal_ratio": 1}, 1.0],
+			[{"id": "lifesteal", "lifesteal_ratio": 1.0}, 1.0], [{"id": "lifesteal", "lifesteal_ratio": 0.0001}, 0.0001],
+			[{"id": "lifesteal", "lifesteal_ratio": "0.15"}, 0.0], [{"id": "lifesteal", "lifesteal_ratio": true}, 0.0], [{"id": "lifesteal", "lifesteal_ratio": null}, 0.0],
+			[{"id": "lifesteal", "lifesteal_ratio": [0.15]}, 0.0], [{"id": "lifesteal", "lifesteal_ratio": NAN}, 0.0], [{"id": "lifesteal", "lifesteal_ratio": INF}, 0.0],
+			[{"id": "lifesteal", "lifesteal_ratio": -INF}, 0.0], [{"id": "lifesteal", "lifesteal_ratio": 0}, 0.0], [{"id": "lifesteal", "lifesteal_ratio": 0.0}, 0.0],
+			[{"id": "lifesteal", "lifesteal_ratio": -0.15}, 0.0], [{"id": "lifesteal", "lifesteal_ratio": 1.0001}, 0.0], [{"id": "lifesteal", "lifesteal_ratio": 15}, 0.0],
+			[{"id": "lifesteal"}, 0.0], [{"id": "lifesteal_x", "lifesteal_ratio": 0.15}, 0.0], [{"id": "Lifesteal", "lifesteal_ratio": 0.15}, 0.0],
+			[{"id": "stun", "stun_sec": 0.5}, 0.0], [{"id": "def_aura", "def_mult": 1.2}, 0.0], [null, 0.0]]:
+		var st: Dictionary = {} if c[0] == null else {"skill": c[0]}
+		h0._read_skill(st)
+		if h0.lifesteal_ratio != float(c[1]):
+			bad0.append(str(c[0]))
+	h0._read_skill({"skill": JSON.parse_string("{\"id\": \"lifesteal\", \"lifesteal_ratio\": 0.15}")})
+	var json0: float = h0.lifesteal_ratio
+	var other0: Array = [h0.stun_duration, h0.slow_aura_mult, h0.def_aura_mult, h0.dodge_chance, h0.first_strike_multiplier, h0.range_multiplier, h0.burn_ratio, h0.sweep_ratio]
+	h0._read_skill({})
+	var cleared0: float = h0.lifesteal_ratio
+	h0.free()
+	_check("吸血-0 技能參數：lifesteal_ratio 0.15、0.5、1、1.0、0.0001 與經過 JSON 的 0.15 啟用；字串、布林、null、陣列、NaN、無限大、0、負數、超過 1、沒有欄位、不認得或大小寫不同的 id、其他技能都不啟用（當作普通攻擊）；吸血不帶其他技能、改成沒有技能後清除",
+		bad0.is_empty() and json0 == 0.15 and other0 == [0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0] and cleared0 == 0.0,
+		{"bad": bad0, "json": json0, "other": other0, "cleared": cleared0})
+
+	# 吸血-0b：敵人受傷的回傳值（實際扣掉的生命，不含溢出的部分）：血量 100 的敵人受到 30 回傳 30（剩 70）、0 回傳 0（不變）、
+	# 100 回傳 70（打倒、死亡信號一次）、倒下後再受到 10 回傳 0（死亡信號仍是一次）；負數、NaN、無限大的傷害回傳 0，
+	# 而且生命仍是 100、沒有倒下（無效的傷害被拒絕，不是只把回傳值當 0；其餘狀態見受傷-1）
+	var holder := _dodge_holder()
+	var died0: Array = [0]
+	var on_died0 := func(_x) -> void:
+		died0[0] = int(died0[0]) + 1
+	var ea: Node = _stn_enemy(holder, 0.0, {"hp": 100.0})
+	ea.died.connect(on_died0)
+	var r0: Array = [ea.take_damage(30.0), ea.current_hp, ea.take_damage(0.0), ea.current_hp, ea.take_damage(100.0), ea.current_hp, ea.is_dead(), int(died0[0])]
+	r0 += [ea.take_damage(10.0), int(died0[0])]
+	var eb: Node = _stn_enemy(holder, 0.0, {"hp": 100.0})
+	var eb_r: Array = [eb.take_damage(-5.0), eb.current_hp, eb.is_dead()]
+	var ec: Node = _stn_enemy(holder, 0.0, {"hp": 100.0})
+	var ec_r: Array = [ec.take_damage(NAN), ec.current_hp, ec.is_dead()]
+	var ed: Node = _stn_enemy(holder, 0.0, {"hp": 100.0})
+	var ed_r: Array = [ed.take_damage(INF), ed.current_hp, ed.is_dead()]
+	holder.queue_free()
+	_check("吸血-0b 敵人受傷的回傳值：受到 30 回傳 30、0 回傳 0、剩 70 時受到 100 回傳 70（打倒、死亡信號一次）、倒下後回傳 0（死亡信號仍是一次）；負數、NaN、無限大的傷害回傳 0，生命仍是 100、沒有倒下",
+		r0 == [30.0, 70.0, 0.0, 70.0, 70.0, 0.0, true, 1, 0.0, 1] and eb_r == [0.0, 100.0, false] and ec_r == [0.0, 100.0, false] and ed_r == [0.0, 100.0, false],
+		{"a": r0, "negative": eb_r, "nan": ec_r, "inf": ed_r})
+
+	# 吸血-1：單獨的魏延（真正的 Hero 程式，攻擊力 100、最大生命 1000），每一擊之前冷卻歸零：
+	# a 生命 500 打一擊：敵人扣 100、魏延同一步恢復 15（515），紀錄是實際傷害 100、恢復 15，出現綠色的「+15」；
+	# b 敵人只剩 30：這一擊打倒它、只恢復 4.5（不是 15），「+4.5」，死亡信號一次；之後沒有目標，再打兩次都不恢復；
+	# c 比例 1 時打倒只剩 30 的敵人只恢復 30；d 生命 998 只恢復到 1000（+2）；e 滿血：恢復 0、不顯示提示，紀錄的恢復是 0；
+	# f 攻擊力 0.01：恢復 0.0015（不取整、不吞掉，提示太小不顯示）；g 攻擊力 0：沒有傷害、不恢復也不記錄；
+	# h 技能 id 不認得（lifesteal_x）：照常扣 100、不恢復；i 生命 100 連打 5 擊：每擊恢復 15，175、恢復 5 次共 75
+	var c1: Dictionary = {}
+	c1["hit"] = await _ls_case(500.0, 99999.0)
+	c1["kill"] = await _ls_case(500.0, 30.0, 3)
+	c1["kill_all"] = await _ls_case(500.0, 30.0, 1, 100.0, {"id": "lifesteal", "lifesteal_ratio": 1})
+	c1["cap"] = await _ls_case(998.0, 99999.0)
+	c1["full"] = await _ls_case(1000.0, 99999.0)
+	c1["tiny"] = await _ls_case(500.0, 99999.0, 1, 0.01)
+	c1["zero"] = await _ls_case(500.0, 99999.0, 1, 0.0)
+	c1["unknown"] = await _ls_case(500.0, 99999.0, 1, 100.0, {"id": "lifesteal_x", "lifesteal_ratio": 0.15})
+	c1["multi"] = await _ls_case(100.0, 99999.0, 5)
+	var ok1: Dictionary = {}
+	ok1["hit"] = _ls_hits_ok(c1.hit.hits, [[15, 100]]) and _ls_near(c1.hit.hp, 515.0) and c1.hit.count == 1 and c1.hit.texts == ["+15"] \
+		and c1.hit.log.size() == 1 and _ls_near(c1.hit.log[0].dealt, 100.0) and _ls_near(c1.hit.log[0].heal, 15.0)
+	ok1["kill"] = _ls_hits_ok(c1.kill.hits, [[4.5, 30], [0, 0], [0, 0]]) and _ls_near(c1.kill.hp, 504.5) and c1.kill.count == 1 and c1.kill.died == 1 \
+		and c1.kill.dead and c1.kill.texts == ["+4.5"] and c1.kill.log.size() == 1 and _ls_near(c1.kill.log[0].dealt, 30.0)
+	ok1["kill_all"] = _ls_hits_ok(c1.kill_all.hits, [[30, 30]]) and _ls_near(c1.kill_all.hp, 530.0)
+	ok1["cap"] = _ls_hits_ok(c1.cap.hits, [[2, 100]]) and c1.cap.hp == 1000.0 and c1.cap.texts == ["+2"]
+	ok1["full"] = _ls_hits_ok(c1.full.hits, [[0, 100]]) and c1.full.hp == 1000.0 and c1.full.count == 0 and c1.full.texts.is_empty() \
+		and c1.full.log.size() == 1 and float(c1.full.log[0].heal) == 0.0
+	ok1["tiny"] = _ls_hits_ok(c1.tiny.hits, [[0.0015, 0.01]]) and _ls_near(c1.tiny.hp, 500.0015, 1e-9) and c1.tiny.count == 1 and c1.tiny.texts.is_empty()
+	ok1["zero"] = _ls_hits_ok(c1.zero.hits, [[0, 0]]) and c1.zero.count == 0 and c1.zero.log.is_empty() and c1.zero.texts.is_empty()
+	ok1["unknown"] = _ls_hits_ok(c1.unknown.hits, [[0, 100]]) and c1.unknown.count == 0 and c1.unknown.ratio == 0.0
+	ok1["multi"] = _ls_hits_ok(c1.multi.hits, [[15, 100], [15, 100], [15, 100], [15, 100], [15, 100]]) and _ls_near(c1.multi.hp, 175.0) \
+		and c1.multi.count == 5 and _ls_near(c1.multi.total, 75.0)
+	var bad1: Array = ok1.keys().filter(func(k): return not ok1[k])
+	_check("吸血-1 單獨的魏延：普通命中 100 恢復 15（「+15」）；打倒只剩 30 的敵人恢復 4.5（比例 1 時 30），之後沒有目標不恢復；只差 2 時恢復 2；滿血恢復 0、不顯示；攻擊力 0.01 恢復 0.0015（不取整）；攻擊力 0 不恢復；不認得的 id 不恢復；連打 5 擊共恢復 75",
+		bad1.is_empty(), {"bad": bad1, "cases": c1})
+
+	# 吸血-1b：不會恢復：傷害 0、負數、NaN、無限大；生命 0（已經倒下）；正要被移除（queue_free 之後）；
+	# 被敵人打倒的魏延即使再處理一次攻擊，也不恢復、生命仍是 0（不會復活）；
+	# 目標的受傷沒有回傳值（測試用的假目標）：攻擊照常完成（命中一次、冷卻設回攻擊間隔），不恢復、沒有 script error
+	var hz := _dodge_holder()
+	var wz := R20Wave.new()
+	hz.add_child(wz)
+	var hi: Node = _ls_hero(hz, wz, 500.0)
+	for v in [0.0, -10.0, NAN, INF, -INF]:
+		hi._lifesteal(v)
+	var hd: Node = _ls_hero(hz, wz, 0.0)
+	hd._lifesteal(100.0)
+	var hq: Node = _ls_hero(hz, wz, 500.0)
+	hq.queue_free()
+	hq._lifesteal(100.0)
+	var hk: Node = _ls_hero(hz, wz, 50.0)
+	var ek: Node = _ls_enemy(hz, wz, 99999.0)
+	hk.take_damage(1.0e12)
+	var k1: Array = _ls_hit(hk, ek)
+	var wv := R20Wave.new()
+	hz.add_child(wv)
+	var hv: Node = _ls_hero(hz, wv, 500.0)
+	var tv := R20Target.new()
+	hz.add_child(tv)
+	tv.position = Vector2(48.0, 0.0)
+	wv.enemies.append(tv)
+	hv._atk_timer = 0.0
+	hv._process(1.0 / 60.0)
+	var d1b: Dictionary = {"invalid": [hi.current_hp, hi.lifesteal_count, hi.lifesteal_log.size()], "dead": [hd.current_hp, hd.lifesteal_count],
+		"queued": [hq.current_hp, hq.lifesteal_count], "killed": [hk.current_hp, hk.lifesteal_count, hk.is_queued_for_deletion(), k1],
+		"no_return": [tv.hits, hv.current_hp, hv.lifesteal_count, hv._atk_timer]}
+	hz.queue_free()
+	_check("吸血-1b 不恢復：傷害 0／負數／NaN／無限大；生命 0；正要被移除；被打倒的魏延再處理一次攻擊也不恢復（生命仍是 0，不會復活）；目標的受傷沒有回傳值時攻擊照常完成（命中一次、冷卻設回 1 秒）、不恢復",
+		d1b.invalid == [500.0, 0, 0] and d1b.dead == [0.0, 0] and d1b.queued == [500.0, 0] and d1b.killed[0] == 0.0 and d1b.killed[1] == 0 and d1b.killed[2] == true
+			and d1b.no_return == [1, 500.0, 0, 1.0],
+		d1b)
+
+	# 吸血-1c：只算自己這一擊的直接傷害：
+	# a 同時設定橫掃原型（測試直接設定欄位；正式資料一位武將只有一個技能）：主目標扣 100、兩個副目標各扣 50，魏延只恢復 15（一次）；
+	# b 之後灼燒 3 跳（每跳 50）、直接受到 100（防禦塔的傷害走同一個入口）、另一位沒有吸血的武將普通攻擊，魏延的生命都不變
+	var hs := _dodge_holder()
+	var ws := R20Wave.new()
+	hs.add_child(ws)
+	var h_s: Node = _ls_hero(hs, ws, 500.0)
+	h_s.sweep_ratio = 0.5
+	h_s.sweep_radius = 2.0
+	h_s.sweep_max_targets = 2
+	var es: Array = [_ls_enemy(hs, ws, 99999.0, 48.0), _ls_enemy(hs, ws, 99999.0, 60.0), _ls_enemy(hs, ws, 99999.0, 72.0)]
+	var hp_s0: float = h_s.current_hp
+	h_s._atk_timer = 0.0
+	h_s._process(1.0 / 60.0)
+	var lost_s: Array = es.map(func(e): return snappedf(99999.0 - e.current_hp, 0.0001))
+	lost_s.sort()
+	var a1c: Dictionary = {"heal": h_s.current_hp - hp_s0, "lost": lost_s, "sweep": [h_s.sweep_count, h_s.sweep_hits], "count": h_s.lifesteal_count}
+	var hp_s1: float = h_s.current_hp
+	var eb1: Node = es[0]
+	var hp_b0: float = eb1.current_hp
+	eb1.apply_burn(50.0, 3, 0.1)
+	for i in range(8):
+		eb1._physics_process(0.05)
+	var burn_lost: float = snappedf(hp_b0 - eb1.current_hp, 0.0001)
+	eb1.take_damage(100.0)
+	var other: Node = _ls_hero(hs, ws, 500.0, 100.0, {"id": "stun", "stun_sec": 0.5})
+	other._atk_timer = 0.0
+	other._process(1.0 / 60.0)
+	var b1c: Dictionary = {"wy": h_s.current_hp - hp_s1, "burn_lost": burn_lost, "burn_left": eb1._burn_ticks_left, "other_ratio": other.lifesteal_ratio,
+		"other_stuns": other.stun_count, "wy_count": h_s.lifesteal_count}
+	hs.queue_free()
+	_check("吸血-1c 只算自己這一擊的直接傷害：帶橫掃原型時主目標 100、副目標各 50，只恢復 15；灼燒 3 跳（150）、直接受到 100、另一位武將的普通攻擊都不讓魏延恢復",
+		_ls_near(a1c.heal, 15.0, 1e-6) and a1c.lost == [50.0, 50.0, 100.0] and a1c.sweep == [1, 2] and a1c.count == 1
+			and b1c.wy == 0.0 and b1c.burn_lost == 150.0 and b1c.burn_left == 0 and b1c.other_ratio == 0.0 and b1c.other_stuns == 1 and b1c.wy_count == 1,
+		{"a": a1c, "b": b1c})
+
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 吸血-2：實際引擎（時間倍率與暫停）：魏延在建築格 (5,4)、射程 2.5 格、攻擊間隔 1 秒、攻擊力 100，生命先改成 300；不會移動的地面兵在 (4,5)。
+	# 1 倍打 3 擊 → 切到 2 倍再打 3 擊 → 打開部署選單（0.1 倍）打 1 擊 → 關閉選單、回到 1 倍後手動暫停 1 秒（牆鐘）→ 繼續後再打 1 擊：
+	# 每一步：敵人被打掉 100 時魏延同一步恢復 15，沒有命中的步數生命不變（沒有另外計時的回血）；暫停中沒有命中、生命不變；
+	# 恢復次數＝敵人被命中的次數＝紀錄筆數，最後的生命＝300 ＋ 15 × 命中次數
+	var d2: Dictionary = {}
+	var ok2: bool = false
+	_ls_load(rec, "ls-2", [[_grp("ls_post", 1, 0.02)]], [_ls_wy()], {"wei_yan": Vector2i(5, 4)})
+	var wy2: Node = _ls_set_hp(300.0)
+	var e2: Node = await _stn_start(Vector2i(4, 5))
+	if e2 != null and wy2 != null:
+		var st2: Dictionary = {"hits": 0, "phase": 0, "menu": {}, "pause": {}, "rec": rec, "h": wy2, "paused": []}
+		var each2 := func(row: Dictionary) -> void:
+			if float(row.de) > 0.0:
+				st2.hits = int(st2.hits) + 1
+			var ph: int = int(st2.phase)
+			if ph == 3:
+				st2.paused.append(row)
+			if ph == 0 and int(st2.hits) >= 3:
+				_r19_speed(st2.rec, 2.0)
+				st2.phase = 1
+			elif ph == 1 and int(st2.hits) >= 6:
+				st2.menu = _r19_open(st2.rec, 2)
+				st2.phase = 2
+			elif ph == 2 and int(st2.hits) >= 7:
+				_r19_close(st2.rec, st2.menu)
+				_r19_speed(st2.rec, 1.0)
+				st2.pause = {"hits": st2.hits, "hp": st2.h.current_hp, "wall": Time.get_ticks_msec(), "reply": _r20_pause(st2.rec, true)}
+				st2.phase = 3
+			elif ph == 3 and Time.get_ticks_msec() - int(st2.pause.wall) >= 1000:
+				st2.pause["hits2"] = st2.hits
+				st2.pause["hp2"] = st2.h.current_hp
+				st2.pause["frozen"] = _r20_frozen()
+				_r20_pause(st2.rec, false)
+				st2.phase = 4
+		var rows2: Array = await _ls_track(wy2, e2, 60000, func(_r): return int(st2.phase) == 4 and int(st2.hits) >= 8, each2)
+		var ever: int = roundi((e2.max_hp - e2.current_hp) / 100.0)
+		var hit_ts: Array = rows2.filter(func(r): return float(r.de) > 0.0).map(func(r): return snappedf(float(r.ts), 0.01))
+		var p2: Dictionary = st2.pause
+		d2 = {"phase": st2.phase, "hits": st2.hits, "ever": ever, "count": wy2.lifesteal_count, "log": wy2.lifesteal_log.size(), "hp": wy2.current_hp,
+			"bad_rows": _ls_bad_rows(rows2), "hit_ts": hit_ts, "pause": {"hits": [p2.get("hits"), p2.get("hits2")], "hp": [p2.get("hp"), p2.get("hp2")],
+			"frozen": p2.get("frozen"), "rows": st2.paused.size(), "moved": st2.paused.filter(func(r): return float(r.de) != 0.0 or float(r.dh) != 0.0 or float(r.dt) != 0.0).size()},
+			"menu": not st2.menu.is_empty(), "ts_now": Engine.time_scale}
+		ok2 = int(st2.phase) == 4 and int(st2.hits) >= 8 and d2.bad_rows.is_empty() and ever == wy2.lifesteal_count and ever == wy2.lifesteal_log.size() \
+			and _ls_near(wy2.current_hp, 300.0 + 15.0 * float(ever), 1e-6) and hit_ts.has(2.0) and hit_ts.has(0.1) and hit_ts.has(1.0) \
+			and p2.get("hits") == p2.get("hits2") and p2.get("hp") == p2.get("hp2") and p2.get("frozen") == true and int(d2.pause.rows) >= 20 and int(d2.pause.moved) == 0 \
+			and not st2.menu.is_empty() and is_equal_approx(Engine.time_scale, 1.0)
+	_check("吸血-2 實際引擎（1 倍、2 倍、部署慢速、手動暫停）：每次命中敵人扣 100、魏延同一步恢復 15，沒有命中的步數生命不變；暫停 1 秒中沒有命中、生命不變；恢復次數＝命中次數＝紀錄筆數，生命＝300 ＋ 15 × 命中次數",
+		ok2, d2)
+
+	# 吸血-3：組合與結算（實際引擎）：
+	# a 致死：血量 30 的敵人被魏延一擊打倒：恢復 4.5（不是 15），擊殺 1、只結算一次；
+	# b 組合：魏延在道路 (4,5) 擋住免疫減速的敵人（攻擊力 100）、劉備在 (5,4)（防禦光環）、張飛在 (4,6)（暈眩）；魏延生命 600、記錄 6 秒遊戲時間：
+	#   魏延的每次恢復都是實際傷害 100 的 15（三位武將都在打同一個敵人），魏延有劉備的加成（1.2），敵人有被暈眩、沒有任何減速；
+	#   魏延的生命變化＝恢復總量 − 敵人攻擊次數 × 62.5（防禦 60 的公式）；
+	# c 對空：步兵魏延打不到射程內不會移動的飛行兵（2 秒不扣血、不恢復）；職業改成弓兵時打得到，每擊 100 恢復 15；
+	# d 空目標：唯一的敵人在射程外 1.5 秒：沒有攻擊、不恢復、冷卻待命在 0；
+	# e 技能 id 不認得（lifesteal_x）：照常扣 100，但不恢復
+	var d3: Dictionary = {}
+	_ls_load(rec, "ls-3a", [[_grp("ls_soft", 1, 0.02)]], [_ls_wy()], {"wei_yan": Vector2i(5, 4)})
+	var wy3a: Node = _ls_set_hp(300.0)
+	var ended3: int = battle_ended_count
+	await _stn_start(Vector2i(4, 5))
+	await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 5.0)
+	await _wait(0.3)
+	d3["a"] = {"hp": wy3a.current_hp if is_instance_valid(wy3a) else -1.0, "log": wy3a.lifesteal_log.duplicate(true) if is_instance_valid(wy3a) else [],
+		"kills": _bm().kills, "ended": battle_ended_count - ended3, "result": _bm().game_state == BattleManager.GameState.RESULT}
+	var ok3a: bool = _ls_near(d3.a.hp, 304.5, 1e-6) and d3.a.log.size() == 1 and _ls_near(d3.a.log[0].dealt, 30.0, 1e-6) and _ls_near(d3.a.log[0].heal, 4.5, 1e-6) \
+		and d3.a.kills == 1 and d3.a.ended == 1 and d3.a.result
+
+	var ok3b: bool = false
+	_ls_load(rec, "ls-3b", [[_grp("ls_walk_imm", 1, 0.02)]], [_ls_wy(), _r12_hero("liu_bei", DEF_AURA_SKILL.duplicate()), _stn_zf()],
+		{"wei_yan": Vector2i(4, 5), "liu_bei": Vector2i(5, 4), "zhang_fei": Vector2i(4, 6)}, "infantry", 1.5)
+	var wy3b: Node = _ls_set_hp(600.0)
+	var e3b: Node = await _stn_start(Vector2i(4, 5), Vector2(-0.4, 0.0))
+	if e3b != null and wy3b != null:
+		await _wait_until(func(): return is_instance_valid(e3b) and e3b._blocker != null, 5.0)
+		var hp0: float = wy3b.current_hp
+		var atk0: int = e3b.blocker_attacks
+		var tot0: float = wy3b.lifesteal_total
+		var n0: int = wy3b.lifesteal_count
+		var g3: float = _pt()
+		await _wait_until(func(): return _pt() - g3 >= 6.0, 30.0)
+		var logs: Array = wy3b.lifesteal_log.slice(n0) if wy3b.lifesteal_log.size() == wy3b.lifesteal_count else wy3b.lifesteal_log.duplicate()
+		var attacks: int = e3b.blocker_attacks - atk0
+		var heals: float = wy3b.lifesteal_total - tot0
+		var expect_hp: float = hp0 + heals - float(attacks) * LS_BLOCK_AURA_DMG
+		d3["b"] = {"heals": wy3b.lifesteal_count - n0, "heal_total": heals, "attacks": attacks, "hp": wy3b.current_hp, "expect_hp": expect_hp,
+			"logs_ok": logs.all(func(x): return absf(float(x.dealt) - 100.0) < 1e-6 and absf(float(x.heal) - 15.0) < 1e-6), "bonus": wy3b.def_bonus_mult,
+			"stuns": e3b.stun_count, "immune": e3b.immune_slow, "sources": e3b._slow_sources.size(), "mult": e3b.speed_mult, "blocked": e3b._blocker == wy3b}
+		ok3b = int(d3.b.heals) >= 3 and attacks >= 1 and d3.b.logs_ok and _ls_near(wy3b.current_hp, expect_hp, 1e-6) and is_equal_approx(wy3b.def_bonus_mult, 1.2) \
+			and e3b.stun_count >= 1 and e3b.immune_slow and e3b._slow_sources.is_empty() and e3b.speed_mult == 1.0 and d3.b.blocked
+
+	var ok3c: bool = false
+	_ls_load(rec, "ls-3c", [[_grp("ls_fly", 1, 0.02)]], [_ls_wy()], {"wei_yan": Vector2i(5, 4)})
+	var wy3c: Node = _ls_set_hp(500.0)
+	var e3c: Node = await _stn_start(Vector2i(4, 5))
+	var g3c: float = _pt()
+	await _wait_until(func(): return _pt() - g3c >= 2.0, 10.0)
+	var c_inf: Array = [e3c.is_flying() if is_instance_valid(e3c) else false, e3c.current_hp == e3c.max_hp if is_instance_valid(e3c) else false,
+		wy3c.lifesteal_count if wy3c != null else -1, wy3c.current_hp if wy3c != null else -1.0, wy3c.can_hit_air if wy3c != null else true]
+	_ls_load(rec, "ls-3c2", [[_grp("ls_fly", 1, 0.02)]], [_ls_wy()], {"wei_yan": Vector2i(5, 4)}, "archer")
+	var wy3c2: Node = _ls_set_hp(500.0)
+	var e3c2: Node = await _stn_start(Vector2i(4, 5))
+	await _wait_until(func(): return wy3c2 != null and is_instance_valid(wy3c2) and wy3c2.lifesteal_count >= 2, 10.0)
+	var c_arc: Array = []
+	if wy3c2 != null and is_instance_valid(e3c2):
+		var ever3c: int = roundi((e3c2.max_hp - e3c2.current_hp) / 100.0)
+		c_arc = [wy3c2.can_hit_air, ever3c, wy3c2.lifesteal_count, _ls_near(wy3c2.current_hp, 500.0 + 15.0 * float(wy3c2.lifesteal_count), 1e-6)]
+		ok3c = c_inf == [true, true, 0, 500.0, false] and c_arc[0] == true and int(c_arc[2]) >= 2 and abs(int(c_arc[1]) - int(c_arc[2])) <= 1 and c_arc[3] == true
+	d3["c"] = {"infantry": c_inf, "archer": c_arc}
+
+	_ls_load(rec, "ls-3d", [[_grp("ls_post", 1, 0.02)]], [_ls_wy()], {"wei_yan": Vector2i(10, 4)})
+	var wy3d: Node = _ls_set_hp(500.0)
+	_bm().player_start_battle()
+	await _wait_until(func(): return _first_enemy() != null, 5.0)
+	var e3d: Node = _first_enemy()
+	var g3d: float = _pt()
+	await _wait_until(func(): return _pt() - g3d >= 1.5, 8.0)
+	d3["d"] = [wy3d.lifesteal_count if wy3d != null else -1, wy3d._atk_timer if wy3d != null else -1.0, wy3d.current_hp if wy3d != null else -1.0,
+		e3d.current_hp == e3d.max_hp if is_instance_valid(e3d) else false]
+
+	_ls_load(rec, "ls-3e", [[_grp("ls_post", 1, 0.02)]], [_ls_wy({"id": "lifesteal_x", "lifesteal_ratio": 0.15})], {"wei_yan": Vector2i(5, 4)})
+	var wy3e: Node = _ls_set_hp(500.0)
+	var e3e: Node = await _stn_start(Vector2i(4, 5))
+	var g3e: float = _pt()
+	await _wait_until(func(): return _pt() - g3e >= 2.5, 10.0)
+	d3["e"] = [roundi((e3e.max_hp - e3e.current_hp) / 100.0) if is_instance_valid(e3e) else -1, wy3e.lifesteal_ratio if wy3e != null else -1.0,
+		wy3e.lifesteal_count if wy3e != null else -1, wy3e.current_hp if wy3e != null else -1.0]
+	_check("吸血-3 組合與結算：致死只恢復 4.5、擊殺與結算一次；和劉備的防禦光環、張飛的暈眩、免疫減速的敵人一起時，每次恢復都是 100 的 15、生命＝恢復 − 敵人攻擊 × 62.5，防禦加成 1.2、敵人有暈眩沒有減速；步兵打不到飛行兵（不恢復），弓兵打得到（每擊恢復 15）；射程內沒有敵人時不攻擊不恢復；不認得的 id 不恢復",
+		ok3a and ok3b and ok3c and d3.d == [0, 0.0, 500.0, true] and int(d3.e[0]) >= 2 and d3.e[1] == 0.0 and d3.e[2] == 0 and d3.e[3] == 500.0, d3)
+
+	# 吸血-4：移位、移除、陣亡與新的一場（實際引擎）：
+	# a 魏延（生命 400）打不會移動的敵人，恢復過之後移到 (3,4)（仍在射程內）：移動本身不改變生命，之後每擊照樣恢復 15，生命＝400 ＋ 15 × 恢復次數；
+	# b 把魏延移出隊伍（update_team）：魏延不在場上，敵人之後不再被打；
+	# c 魏延在道路 (4,5) 擋住敵人時陣亡：之後不在場上（不會被恢復拉回來），敵人不再被擋住、照常前進；
+	# d 新的一場：魏延的恢復次數 0、生命是最大生命 1000、沒有紀錄
+	var d4: Dictionary = {}
+	_ls_load(rec, "ls-4a", [[_grp("ls_post", 1, 0.02)]], [_ls_wy()], {"wei_yan": Vector2i(5, 4)})
+	var wy4: Node = _ls_set_hp(400.0)
+	var e4: Node = await _stn_start(Vector2i(4, 5))
+	await _wait_until(func(): return wy4 != null and is_instance_valid(wy4) and wy4.lifesteal_count >= 1, 5.0)
+	var before_move: Array = [wy4.current_hp, wy4.lifesteal_count]
+	wy4.reposition(Vector2i(3, 4), main.game_map.grid_to_world(Vector2i(3, 4)), main.game_map)
+	var after_move: float = wy4.current_hp
+	await _wait_until(func(): return is_instance_valid(wy4) and wy4.lifesteal_count >= int(before_move[1]) + 2, 6.0)
+	d4["a"] = {"before": before_move, "after_move": after_move, "count": wy4.lifesteal_count, "hp": wy4.current_hp,
+		"ok": _ls_near(wy4.current_hp, 400.0 + 15.0 * float(wy4.lifesteal_count), 1e-6)}
+	_r19_js(rec, {"type": "update_team", "team_list": []})
+	await _def_frames(3)
+	var hp4b: float = e4.current_hp if is_instance_valid(e4) else -1.0
+	var g4: float = _pt()
+	await _wait_until(func(): return _pt() - g4 >= 1.5, 8.0)
+	d4["b"] = [_fly_hero("wei_yan") == null, is_instance_valid(e4) and e4.current_hp == hp4b]
+
+	_ls_load(rec, "ls-4c", [[_grp("ls_walk", 1, 0.02)]], [_ls_wy()], {"wei_yan": Vector2i(4, 5)}, "infantry", 1.5)
+	var wy4c: Node = _ls_set_hp(400.0)
+	var e4c: Node = await _stn_start(Vector2i(4, 5), Vector2(-0.4, 0.0))
+	var ok4c: bool = false
+	if e4c != null and wy4c != null:
+		await _wait_until(func(): return is_instance_valid(e4c) and e4c._blocker != null and is_instance_valid(wy4c) and wy4c.lifesteal_count >= 1, 5.0)
+		var x0: float = e4c.global_position.x
+		wy4c.take_damage(1.0e12)
+		await _def_frames(5)
+		var g4c: float = _pt()
+		await _wait_until(func(): return _pt() - g4c >= 1.0, 8.0)
+		d4["c"] = {"gone": _fly_hero("wei_yan") == null, "blocker": e4c._blocker == null if is_instance_valid(e4c) else false,
+			"moved": (e4c.global_position.x - x0) / float(main._tile_size) if is_instance_valid(e4c) else 0.0}
+		ok4c = bool(d4.c.gone) and bool(d4.c.blocker) and float(d4.c.moved) > 0.2
+
+	_ls_load(rec, "ls-4d", [[_grp("ls_post", 1, 0.02)]], [_ls_wy()], {"wei_yan": Vector2i(5, 4)})
+	await _def_frames()
+	var wy4d: Node = _fly_hero("wei_yan")
+	d4["d"] = [wy4d.lifesteal_count if wy4d != null else -1, wy4d.current_hp if wy4d != null else -1.0, wy4d.max_hp if wy4d != null else -1.0,
+		wy4d.lifesteal_log.size() if wy4d != null else -1, _first_enemy() == null]
+	_check("吸血-4 移位、移除、陣亡與新的一場：移位不改變生命、之後照樣每擊恢復 15；移出隊伍後不在場上、敵人不再被打；擋路時陣亡後不在場上（不會復活），敵人不再被擋住、照常前進；新的一場恢復次數 0、生命 1000、沒有紀錄",
+		d4.a.after_move == float(d4.a.before[0]) and int(d4.a.count) >= int(d4.a.before[1]) + 2 and d4.a.ok and d4.b == [true, true] and ok4c and d4.d == [0, 1000.0, 1000.0, 0, true],
+		d4)
 
 	rec.payload_received.disconnect(main._on_payload_received)
 	main.web_bridge = original

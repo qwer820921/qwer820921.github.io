@@ -282,10 +282,14 @@ func _physics_process(delta: float) -> void:
 # ═══════════════════════════════════════════
 #  受傷 / 死亡
 # ═══════════════════════════════════════════
-## is_burn：灼燒的跳傷（數字用橘色、稍微往上，和普通攻擊區分）；死亡、擊殺與金幣照一般流程只觸發一次
-func take_damage(amount: float, is_burn: bool = false) -> void:
-	if _is_dead:
-		return
+## is_burn：灼燒的跳傷（數字用橘色、稍微往上，和普通攻擊區分）；死亡、擊殺與金幣照一般流程只觸發一次。
+## 回傳這一擊實際扣掉的生命，不含超過剩餘生命的部分（剩 30 時受到 100 回傳 30，打倒的這一擊也照算；魏延的吸血用它計算恢復量）。
+## 拒絕無效的受傷：傷害不是正的有限數字（0、負數、NaN、正負無限大），或這個敵人已經倒下、正要被移除時，立即回傳 0，
+## 生命、傷害數字、音效、閃爍都不變，也不會發出死亡信號（不會被擊殺、不會重複死亡、不影響結算）
+func take_damage(amount: float, is_burn: bool = false) -> float:
+	if _is_dead or is_queued_for_deletion() or not (amount > 0.0 and is_finite(amount)):
+		return 0.0
+	var dealt: float = minf(amount, maxf(current_hp, 0.0))
 	current_hp -= amount
 	_flash_timer = FLASH_TIME
 
@@ -303,6 +307,7 @@ func take_damage(amount: float, is_burn: bool = false) -> void:
 	else:
 		_sfx("enemy_hit")  # 死亡時由 _die() 播音，避免重疊
 	queue_redraw()
+	return dealt
 
 ## 套用（或刷新）source 這個來源的倍率減速：mult 是移動速度的倍率（0.9 ＝ 降低 10%），duration 是有效期（秒，遊戲時間）。
 ## 不套用：免疫減速、已經倒下、來源是空字串、倍率不在 0～1 之間（不含兩端）、有效期不是正的有限數字

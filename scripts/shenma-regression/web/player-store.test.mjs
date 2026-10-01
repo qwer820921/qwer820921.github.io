@@ -2867,9 +2867,133 @@ await test("暈眩-S1", async () => {
   );
 });
 
+// 魏延「吸血」（設定表的被動描述「吸血：恢復生命」，沒有寫比例與觸發方式）：參數與說明文字出自同一份定義（utils/heroSkills）；
+// 15%、按實際扣掉的生命（不含溢出的傷害）、不超過最大生命、不復活是第一版的設計值
+await test("吸血-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    slowAuraPercent,
+    defAuraPercent,
+    lifestealPercent,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const wei = heroSkillOf("wei_yan");
+  const payload = heroSkillPayload("wei_yan");
+  const text = describeHeroSkill(wei, 2, 130);
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "gan_ning",
+  ].filter((id) => heroSkillOf(id)?.id === "lifesteal");
+  check(
+    "吸血-S1 魏延的吸血：送進 Godot 的參數（lifesteal、lifesteal_ratio 0.15，只有這兩個欄位）與說明文字出自同一份定義；說明寫出 15%、打掉 100 恢復 15、致死也恢復但溢出不算（剩 30 時恢復 4.5）、不超過最大生命、不復活、只算自己的普通攻擊（灼燒、其他武將與防禦塔不算）、綠色提示、面板是選取時的生命、只在戰場不影響存檔；射程與其他技能的計算不受影響；其他武將沒有吸血",
+    wei?.id === "lifesteal" &&
+      wei.name === "吸血" &&
+      wei.lifestealRatio === 0.15 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({ skill: { id: "lifesteal", lifesteal_ratio: 0.15 } }) &&
+      lifestealPercent(wei) === 15 &&
+      lifestealPercent(heroSkillOf("zhang_fei")) === 0 &&
+      lifestealPercent(null) === 0 &&
+      effectiveRange(wei, 2) === 2 &&
+      burnTickDamage(wei, 130) === 0 &&
+      slowAuraPercent(wei) === 0 &&
+      defAuraPercent(wei) === 0 &&
+      text.includes(
+        "恢復這一擊實際造成傷害的 15% 生命（例如打掉 100 恢復 15）"
+      ) &&
+      text.includes("打倒敵人的那一擊也會恢復") &&
+      text.includes("敵人只剩 30 時恢復 4.5，不是 15") &&
+      text.includes("不會超過最大生命") &&
+      text.includes("不會因此復活") &&
+      text.includes("灼燒、其他武將與防禦塔造成的傷害也不算") &&
+      text.includes("職業打不到飛行敵人") &&
+      text.includes("沒有另外計時的回血") &&
+      text.includes("綠色的「+恢復量」") &&
+      text.includes("重新點選武將可以看到恢復後的生命") &&
+      text.includes("只在戰場生效") &&
+      text.includes("不影響存檔") &&
+      !text.includes("130") &&
+      others.length === 0,
+    { wei, payload, text, others }
+  );
+});
+
+// 曹操「指揮」（設定表的被動描述「指揮：提升友軍攻速」，沒有寫數值與範圍）：參數與說明文字出自同一份定義（utils/heroSkills）；
+// 每秒攻擊次數 × 1.15（攻擊間隔 ÷ 1.15）、範圍是目前射程、不含自己、取最強不疊加、只影響之後新開始的冷卻是第一版的設計值
+await test("指揮-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    slowAuraPercent,
+    defAuraPercent,
+    lifestealPercent,
+    atkSpeedAuraPercent,
+    boostedAttackInterval,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const cao = heroSkillOf("cao_cao");
+  const payload = heroSkillPayload("cao_cao");
+  const text = describeHeroSkill(cao, 3.5, 130);
+  const noRange = describeHeroSkill(cao);
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "gan_ning",
+  ].filter((id) => heroSkillOf(id)?.id === "atk_speed_aura");
+  check(
+    "指揮-S1 曹操的攻速光環：送進 Godot 的參數（atk_speed_aura、atk_speed_mult 1.15，只有這兩個欄位）與說明文字出自同一份定義；加成後的間隔是除以 1.15（1 秒約 0.8696 秒，不是 0.85 秒）；說明寫出 15%、每秒攻擊次數 1.15 倍、目前的範圍半徑、不含自己與防禦塔、正在倒數的冷卻照原本的時間不補打、取最強不疊加、淡紫色、面板是選取時的數值、存檔不變；其他技能的計算不受影響；其他武將沒有攻速光環",
+    cao?.id === "atk_speed_aura" &&
+      cao.name === "指揮" &&
+      cao.attackSpeedMultiplier === 1.15 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({ skill: { id: "atk_speed_aura", atk_speed_mult: 1.15 } }) &&
+      atkSpeedAuraPercent(cao) === 15 &&
+      atkSpeedAuraPercent(heroSkillOf("liu_bei")) === 0 &&
+      atkSpeedAuraPercent(null) === 0 &&
+      Math.abs(boostedAttackInterval(1, 1.15) - 1 / 1.15) < 1e-12 &&
+      Math.abs(boostedAttackInterval(1, 1.15) - 0.85) > 0.01 &&
+      effectiveRange(cao, 3.5) === 3.5 &&
+      burnTickDamage(cao, 130) === 0 &&
+      slowAuraPercent(cao) === 0 &&
+      defAuraPercent(cao) === 0 &&
+      lifestealPercent(cao) === 0 &&
+      text.includes("其他友軍武將攻擊速度提升 15%") &&
+      text.includes("每秒攻擊次數變成 1.15 倍") &&
+      text.includes("1 秒變成約 0.87 秒，不是直接少 15%") &&
+      text.includes("目前等級的範圍半徑是 3.5 格") &&
+      !noRange.includes("範圍半徑是") &&
+      text.includes("不含自己，防禦塔與城池不受影響") &&
+      text.includes("正在倒數的冷卻照原本的時間打完，不會立刻補打") &&
+      text.includes("取最強的一個，不會疊加") &&
+      text.includes("淡紫色") &&
+      text.includes("選取當時的數值") &&
+      text.includes("存檔與屬性表的攻擊間隔不會改變") &&
+      !text.includes("130") &&
+      others.length === 0,
+    { cao, payload, text, others }
+  );
+});
+
 // 技能綁定和正式設定表 heroes_config 的被動描述（passive）對照：趙雲是閃避、馬超是衝鋒（首擊加倍）；
 // 關羽是減速光環（「周圍敵人減速10%」）；劉備是防禦光環（「光環：提升友軍防禦」）；張飛是暈眩（「攻擊使敵人暈眩」）；
-// 甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
+// 魏延是吸血（「吸血：恢復生命」）；曹操是攻速光環（「指揮：提升友軍攻速」）；甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
 await test("技能對照-S1", async () => {
   const { heroSkillOf, heroSkillPayload } = require(
     join(GAME, "utils/heroSkills.ts")
@@ -2883,6 +3007,8 @@ await test("技能對照-S1", async () => {
     "gan_ning",
     "liu_bei",
     "zhang_fei",
+    "wei_yan",
+    "cao_cao",
   ];
   const got = Object.fromEntries(
     ids.map((id) => [id, heroSkillOf(id)?.id ?? null])
@@ -2891,7 +3017,7 @@ await test("技能對照-S1", async () => {
     (id) => heroSkillPayload(id).skill?.id === "first_strike"
   );
   check(
-    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
+    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
     JSON.stringify(got) ===
       JSON.stringify({
         ma_chao: "first_strike",
@@ -2902,6 +3028,8 @@ await test("技能對照-S1", async () => {
         gan_ning: null,
         liu_bei: "def_aura",
         zhang_fei: "stun",
+        wei_yan: "lifesteal",
+        cao_cao: "atk_speed_aura",
       }) &&
       JSON.stringify(firstStrike) === '["ma_chao"]' &&
       !Object.values(got).includes("sweep") &&

@@ -518,6 +518,8 @@ func _on_hero_clicked(hero: Node) -> void:
 		"level": hero.hero_level,
 		"atk": hero.atk,
 		"atk_spd": 1.0 / hero.attack_speed,
+		# 攻速光環（曹操「指揮」）的加成：選取當下的有效每秒攻擊次數（1 ÷ 有效攻擊間隔；沒有加成時和 atk_spd 相同，只在戰場，不改存檔）
+		"atk_spd_effective": 1.0 / hero.effective_attack_interval(),
 		"range": hero.attack_range,
 		"hp": hero.current_hp,
 		# 防禦：隊伍資料的防禦（def）與受傷時用的有效防禦（def_effective，含防禦光環的加成；只在戰場，不改存檔）
@@ -885,6 +887,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 每個敵人攻擊阻路武將的次數（包括被閃避的）；場上還在顯示的「MISS」數（閃避提示）
 	var enemy_blocker_attacks: Dictionary = {}
 	var dodge_texts: int = 0
+	# 場上還在顯示的吸血恢復提示（綠色的「+恢復量」）
+	var heal_texts: Array = []
 	# 每個敵人 Godot 實際套用的對武將攻擊力（enemies_config 的 atk 或預設 20）、是否免疫減速、目前的減速倍率（1 表示沒有被武將或步兵塔減速）
 	var enemy_atk: Dictionary = {}
 	var enemy_immune: Dictionary = {}
@@ -918,6 +922,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			enemy_blocker_attacks[str(child.get_instance_id())] = child.blocker_attacks
 		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == "MISS":
 			dodge_texts += 1
+		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text.begins_with("+"):
+			heal_texts.append(child._label.text)
 		elif child is Tower and not child.is_queued_for_deletion():
 			# screen：塔在畫面上的位置（和升級面板定位用的是同一套座標），測試用來點選塔
 			var sp: Vector2 = child.get_global_transform_with_canvas().origin
@@ -940,16 +946,24 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var hero_def: Dictionary = {}
 	# 暈眩（張飛）：Godot 實際讀到的暈眩時間（沒有啟用時不列出）與讓敵人暈眩的次數
 	var hero_stun: Dictionary = {}
+	# 吸血（魏延）：Godot 實際讀到的比例（沒有啟用時不列出）、實際恢復的次數與總量、目前與最大生命、最近幾次命中的實際傷害與恢復量
+	var hero_lifesteal: Dictionary = {}
+	# 每位武將的攻擊間隔：目前等級的間隔、受到的攻速加成與來源、有效間隔、攻擊次數與最近的攻擊紀錄；自己的攻速光環（曹操）
+	var hero_atk_speed: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
 			continue
 		if hero.stun_duration > 0.0:
 			hero_stun[hid] = {"sec": hero.stun_duration, "count": hero.stun_count}
+		if hero.lifesteal_ratio > 0.0:
+			hero_lifesteal[hid] = {"ratio": hero.lifesteal_ratio, "count": hero.lifesteal_count, "total": hero.lifesteal_total,
+				"hp": hero.current_hp, "max_hp": hero.max_hp, "log": hero.lifesteal_log.duplicate(true)}
 		hero_ranges[hid] = hero.attack_range
 		hero_hp[hid] = hero.current_hp
 		hero_slow[hid] = hero.slow_state()
 		hero_def[hid] = hero.def_state()
+		hero_atk_speed[hid] = hero.atk_speed_state()
 		hero_air[hid] = hero.can_hit_air
 		if hero.dodge_chance > 0.0:
 			hero_dodge[hid] = {"chance": hero.dodge_chance, "rolls": hero.dodge_rolls, "dodges": hero.dodge_count,
@@ -1020,6 +1034,11 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		# 暈眩（張飛）
 		"hero_stun":         hero_stun,
 		"enemy_stun":        enemy_stun,
+		# 吸血（魏延）
+		"hero_lifesteal":    hero_lifesteal,
+		"heal_texts":        heal_texts,
+		# 攻速光環（曹操）與每位武將的攻擊間隔
+		"hero_atk_speed":    hero_atk_speed,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)

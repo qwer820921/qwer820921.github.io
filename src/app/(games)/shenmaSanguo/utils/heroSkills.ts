@@ -1,7 +1,7 @@
 import { HeroSkillPayload } from "../types";
 
 /**
- * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」）
+ * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」）
  * 這裡是技能規則的唯一來源：武將列表／詳情的說明，與隨出征資料送進 Godot 的參數都由這裡產生。
  * 技能是戰場效果：不寫進玩家存檔，也不需要後端（GAS）支援。
  * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊。
@@ -69,6 +69,27 @@ export type HeroSkill =
       name: string;
       /** 每次命中的暈眩時間（秒，遊戲時間） */
       stunSec: number;
+    }
+  | {
+      /**
+       * 吸血：每次普通攻擊命中後，恢復這一擊實際扣掉敵人的生命 × lifestealRatio（不含超過敵人剩餘生命的部分，打倒敵人的那一擊也算）。
+       * 不超過最大生命、不復活；只算自己普通攻擊的直接傷害（灼燒、其他武將與防禦塔的傷害不算）；只改戰場上的生命
+       */
+      id: "lifesteal";
+      name: string;
+      /** 恢復的比例（0.15＝實際傷害的 15%） */
+      lifestealRatio: number;
+    }
+  | {
+      /**
+       * 攻速光環：戰鬥中，以武將為中心、目前有效射程內（含邊界）的其他友軍武將攻擊速度提升（每秒攻擊次數 × 倍率，攻擊間隔 ÷ 倍率）。
+       * 不含自己、防禦塔與城池；不需要普通攻擊的目標；和其他攻速光環取最強的一個，不相乘、不疊加；
+       * 加成只用在之後新開始的攻擊冷卻，正在倒數的冷卻不重設
+       */
+      id: "atk_speed_aura";
+      name: string;
+      /** 範圍內其他友軍武將每秒攻擊次數的倍率（1.15＝攻速提升 15%，攻擊間隔變成原本的 1 ÷ 1.15） */
+      attackSpeedMultiplier: number;
     };
 
 const HERO_SKILLS: Record<string, HeroSkill> = {
@@ -95,6 +116,13 @@ const HERO_SKILLS: Record<string, HeroSkill> = {
   // 正式設定表的被動描述「攻擊使敵人暈眩」沒有寫時間與疊加方式。第一版的設計值，尚未做過平衡：每次普通攻擊命中、目標還活著時暈眩 0.5 秒；
   // 暈眩中不能移動也不能攻擊、照常受傷；再次命中取較長的剩餘時間（不累加）；不是減速（免疫減速的敵人也會暈眩）；只在戰鬥中
   zhang_fei: { id: "stun", name: "暈眩", stunSec: 0.5 },
+  // 正式設定表的被動描述「吸血：恢復生命」沒有寫比例與觸發方式。第一版的設計值，尚未做過平衡：每次普通攻擊命中後恢復這一擊實際扣掉敵人生命的 15%
+  // （不含溢出的傷害，打倒敵人的那一擊也算）；不超過最大生命、不復活；只算自己普通攻擊的直接傷害；只在戰鬥中、不改最大生命與存檔
+  wei_yan: { id: "lifesteal", name: "吸血", lifestealRatio: 0.15 },
+  // 正式設定表的被動描述「指揮：提升友軍攻速」沒有寫數值與範圍。第一版的設計值，尚未做過平衡：每秒攻擊次數 × 1.15
+  // （攻擊間隔 ÷ 1.15，不是減少 15%）、範圍是目前有效射程（含邊界）、只影響其他友軍武將（不含自己、防禦塔與城池）、
+  // 多個攻速光環取最強不疊加、只在戰鬥中；加成只用在之後新開始的攻擊冷卻，不改攻擊力、射程與存檔
+  cao_cao: { id: "atk_speed_aura", name: "指揮", attackSpeedMultiplier: 1.15 },
 };
 
 export const heroSkillOf = (heroId: string): HeroSkill | null =>
@@ -132,6 +160,29 @@ export function defAuraPercent(skill: HeroSkill | null): number {
     : 0;
 }
 
+/** 吸血恢復的百分比（0.15 → 15；沒有吸血時是 0） */
+export function lifestealPercent(skill: HeroSkill | null): number {
+  return skill?.id === "lifesteal" ? round3(skill.lifestealRatio * 100) : 0;
+}
+
+/** 攻速光環讓攻擊速度（每秒攻擊次數）提升的百分比（1.15 → 15；沒有攻速光環時是 0） */
+export function atkSpeedAuraPercent(skill: HeroSkill | null): number {
+  return skill?.id === "atk_speed_aura"
+    ? round3((skill.attackSpeedMultiplier - 1) * 100)
+    : 0;
+}
+
+/**
+ * 攻速光環加成後的攻擊間隔（秒）：攻擊間隔 ÷ 倍率（和 Godot 相同）。
+ * 是除以倍率、不是減少同樣的百分比：1.15 倍時 1 秒變成約 0.8696 秒，不是 0.85 秒
+ */
+export function boostedAttackInterval(
+  intervalSec: number,
+  attackSpeedMultiplier: number
+): number {
+  return intervalSec / attackSpeedMultiplier;
+}
+
 /**
  * 受到攻擊時實際扣的血（和 Godot 的防禦公式相同）：攻擊力 × 100 ÷（防禦 ＋ 100）。
  * 防禦光環乘在防禦上（防禦不是正數時不乘），不是直接少扣一定比例的傷害
@@ -142,7 +193,7 @@ export function damageAfterDefense(atk: number, def: number): number {
 
 /**
  * 技能的完整規則（顯示在武將詳情）
- * - rawRange：這位武將目前等級屬性表上的射程；有提供時，射程技能會寫出戰場上的實際射程，減速光環與防禦光環會寫出目前的範圍半徑
+ * - rawRange：這位武將目前等級屬性表上的射程；有提供時，射程技能會寫出戰場上的實際射程，減速光環、防禦光環與攻速光環會寫出目前的範圍半徑
  * - atk：這位武將目前的攻擊力；有提供時，火攻會寫出每次灼燒的傷害
  */
 export function describeHeroSkill(
@@ -207,6 +258,38 @@ export function describeHeroSkill(
       "暈眩中的敵人頭上有轉動的黃色星星。只在戰場生效，不影響存檔。"
     );
   }
+  if (skill.id === "lifesteal") {
+    const pct = lifestealPercent(skill);
+    const full = round3(100 * skill.lifestealRatio);
+    const kill = round3(30 * skill.lifestealRatio);
+    return (
+      `每次普通攻擊命中敵人後，這位武將恢復這一擊實際造成傷害的 ${pct}% 生命（例如打掉 100 恢復 ${full}）。` +
+      `只算實際扣掉的生命：打倒敵人的那一擊也會恢復，但超過敵人剩餘生命的部分不算（敵人只剩 30 時恢復 ${kill}，不是 ${full}）。` +
+      "恢復後不會超過最大生命，滿血時不恢復；已經陣亡的武將不會因此復活。" +
+      "只算這位武將自己普通攻擊的直接傷害：沒有命中（沒有目標、職業打不到飛行敵人）就不恢復，灼燒、其他武將與防禦塔造成的傷害也不算；" +
+      "普通攻擊的傷害、攻擊間隔與射程不變，也沒有另外計時的回血。" +
+      "恢復時武將上方出現綠色的「+恢復量」；戰場上的單位面板顯示的是選取當時的生命，重新點選武將可以看到恢復後的生命。" +
+      "只在戰場生效：恢復的是這場戰鬥中的生命，最大生命與屬性不變，不影響存檔。"
+    );
+  }
+  if (skill.id === "atk_speed_aura") {
+    const pct = atkSpeedAuraPercent(skill);
+    const m = skill.attackSpeedMultiplier;
+    const current =
+      rawRange === undefined
+        ? ""
+        : `目前等級的範圍半徑是 ${effectiveRange(skill, rawRange)} 格。`;
+    const oneSec = boostedAttackInterval(1, m).toFixed(2);
+    return (
+      `戰鬥中，以這位武將為中心、目前射程內（含邊界）的其他友軍武將攻擊速度提升 ${pct}%：每秒攻擊次數變成 ${m} 倍，攻擊間隔變成原本的 1 ÷ ${m}（例如 1 秒變成約 ${oneSec} 秒，不是直接少 ${pct}%）。` +
+      current +
+      "不含自己，防禦塔與城池不受影響；友軍的職業不限，也不需要普通攻擊的目標。範圍跟著射程：升級射程變長時範圍一起變大。友軍的攻擊力與射程不變。" +
+      "加成只用在之後開始的攻擊冷卻：進入範圍時正在倒數的冷卻照原本的時間打完，不會立刻補打；離開範圍，或這位武將移位、被移除、陣亡、戰鬥結束時加成解除，正在倒數的冷卻同樣照原本的時間。" +
+      "同時在幾個攻速光環範圍內時取最強的一個，不會疊加。" +
+      "戰鬥中武將周圍會顯示淡紫色的範圍圈，受到加成的友軍有淡紫色的外框；在戰場上選取友軍時會分開列出原本與加成後的攻擊間隔（選取當時的數值）。" +
+      "只在戰場生效：存檔與屬性表的攻擊間隔不會改變。"
+    );
+  }
   if (skill.id === "dodge") {
     const pct = round3(skill.dodgeChance * 100);
     return (
@@ -266,6 +349,16 @@ export function heroSkillPayload(heroId: string): { skill?: HeroSkillPayload } {
   }
   if (skill.id === "stun") {
     return { skill: { id: skill.id, stun_sec: skill.stunSec } };
+  }
+  if (skill.id === "lifesteal") {
+    return {
+      skill: { id: skill.id, lifesteal_ratio: skill.lifestealRatio },
+    };
+  }
+  if (skill.id === "atk_speed_aura") {
+    return {
+      skill: { id: skill.id, atk_speed_mult: skill.attackSpeedMultiplier },
+    };
   }
   return {
     skill: {

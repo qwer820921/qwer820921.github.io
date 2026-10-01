@@ -424,6 +424,8 @@ export default function SinglePageContent() {
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [showHeroModal, setShowHeroModal] = useState(false);
   const [showPlayerModal, setShowPlayerModal] = useState(false);
+  // HUD 的「玩家資訊」：玩家資訊關閉時，開啟前沒有焦點（例如用滑鼠點開又沒有取得焦點）就把焦點交給它
+  const playerBtnRef = useRef<HTMLButtonElement>(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   // ── 初始化 ─────────────────────────────────────────────────
@@ -1257,8 +1259,11 @@ export default function SinglePageContent() {
             {/* 頂欄 */}
             <div className={styles.hudTopBar}>
               <button
+                ref={playerBtnRef}
                 className={styles.hudAvatar}
                 onClick={() => setShowPlayerModal(true)}
+                aria-label="玩家資訊"
+                title="玩家資訊"
               >
                 👤
               </button>
@@ -1446,6 +1451,7 @@ export default function SinglePageContent() {
             setShowPlayerModal(false);
             setShowStageModal(true);
           }}
+          fallbackFocusRef={playerBtnRef}
         />
       )}
       {showSettingsModal && (
