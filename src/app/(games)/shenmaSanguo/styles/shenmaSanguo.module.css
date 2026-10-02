@@ -2669,6 +2669,18 @@
   overflow-wrap: anywhere;
 }
 
+/* 呼風喚雨（諸葛亮）：選取面板的範圍規則；顏色和戰場上的淡藍色風雨圈一致 */
+.stormNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(115, 184, 255, 0.12);
+  border: 1px solid rgba(115, 184, 255, 0.45);
+  color: #cfe6ff;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
 .lockNotice {
   margin-bottom: 8px;
   padding: 4px 8px;

@@ -56,6 +56,12 @@ interface UpgradePanelProps {
       ratio: number;
       max_jumps: number;
     };
+    /** 武將的呼風喚雨（諸葛亮）：Godot 實際讀到的範圍半徑（格）、傷害比例與最多人數；沒有這個技能（或舊版遊戲）時沒有 */
+    storm?: {
+      radius: number;
+      ratio: number;
+      max_targets: number;
+    };
     screen_pos: { x: number; y: number };
   };
   onUpgrade: () => void;
@@ -150,6 +156,17 @@ export default function UpgradePanel({
         Number((chain.ratio ** (i + 1) * 100).toFixed(1))
       )
     : [];
+  // 武將的呼風喚雨：Godot 實際讀到的範圍、比例與人數（以被打中的敵人為中心，主要目標除外）
+  const storm = data.unit_type === "hero" ? data.storm : undefined;
+  const stormOk =
+    !!storm &&
+    Number.isFinite(storm.radius) &&
+    storm.radius > 0 &&
+    Number.isFinite(storm.ratio) &&
+    storm.ratio > 0 &&
+    storm.ratio < 1 &&
+    Number.isInteger(storm.max_targets) &&
+    storm.max_targets >= 1;
   const s = sell && isSameTower(data, sell) ? sell : null;
   const confirming = s?.phase === "confirm" || s?.phase === "pending";
   const pending = s?.phase === "pending";
@@ -294,6 +311,15 @@ export default function UpgradePanel({
               chain.radius.toFixed(3)
             )}{" "}
             格內最近的下一個敵人
+          </div>
+        )}
+
+        {stormOk && (
+          <div className={styles.stormNote} data-testid="unit-panel-storm">
+            呼風喚雨：普通攻擊打到敵人後，以它為中心{" "}
+            {Number(storm.radius.toFixed(3))} 格內最多 {storm.max_targets}{" "}
+            名其他敵人各受 {Number((storm.ratio * 100).toFixed(1))}
+            %（主要目標除外，不遞減）
           </div>
         )}
 

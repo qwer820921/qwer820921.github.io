@@ -3429,11 +3429,122 @@ await test("連環計-S1", async () => {
   );
 });
 
+await test("呼風喚雨-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    slowAuraPercent,
+    defAuraPercent,
+    lifestealPercent,
+    atkSpeedAuraPercent,
+    counterPercent,
+    tenacityPercents,
+    atkDownAuraPercent,
+    doubleShotPercent,
+    chainPercents,
+    stormPercent,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const zg = heroSkillOf("zhu_ge_liang");
+  const payload = heroSkillPayload("zhu_ge_liang");
+  const text = describeHeroSkill(zg, 5, 118);
+  const noAtk = describeHeroSkill(zg);
+  const small = describeHeroSkill(
+    {
+      id: "storm",
+      name: "呼風喚雨",
+      stormRadius: 1.5,
+      stormRatio: 0.3,
+      stormMaxTargets: 2,
+    },
+    5,
+    100
+  );
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "cao_cao",
+    "gan_ning",
+    "xia_hou_dun",
+    "liao_hua",
+    "yan_liang",
+    "sun_shang_xiang",
+    "pang_tong",
+    "zhuge_liang",
+    "zhu_ge",
+    "Zhu_Ge_Liang",
+  ].filter((id) => heroSkillOf(id)?.id === "storm");
+  check(
+    "呼風喚雨-S1 諸葛亮（zhu_ge_liang）的呼風喚雨：送進 Godot 的參數（storm、storm_radius 2、storm_ratio 0.5、storm_max_targets 4，只有這四個欄位）與說明文字出自同一份定義；範圍內每一名的百分比是 50；說明寫出以被打中的敵人為中心 2 格內（含邊界）最多 4 名其他敵人各 50%、主要目標不會再被範圍打一次、中心不是諸葛亮、近的先算與距離相同先出現的優先、目前攻擊力 118 時主要目標 118 與每一名 59、不遞減也不往外傳（和連環計不同）、主要目標倒下照樣生效、打不到的不受傷而免疫減速的照樣受傷、擊殺與金幣只算一次、沒打到或沒有其他敵人就是一般攻擊、自動觸發沒有冷卻、不算攻擊不引發其他技能、淡藍色風雨圈、只在戰場不影響存檔；沒有攻擊力時不寫目前攻擊力；1.5 格、30%、2 名的定義照樣寫出；其他技能的計算不受影響；其他武將（含寫錯的 id）沒有呼風喚雨",
+    zg?.id === "storm" &&
+      zg.name === "呼風喚雨" &&
+      zg.stormRadius === 2 &&
+      zg.stormRatio === 0.5 &&
+      zg.stormMaxTargets === 4 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: {
+            id: "storm",
+            storm_radius: 2,
+            storm_ratio: 0.5,
+            storm_max_targets: 4,
+          },
+        }) &&
+      stormPercent(zg) === 50 &&
+      stormPercent(null) === 0 &&
+      stormPercent(heroSkillOf("pang_tong")) === 0 &&
+      JSON.stringify(chainPercents(zg)) === "[]" &&
+      doubleShotPercent(zg) === 0 &&
+      effectiveRange(zg, 5) === 5 &&
+      burnTickDamage(zg, 118) === 0 &&
+      slowAuraPercent(zg) === 0 &&
+      defAuraPercent(zg) === 0 &&
+      lifestealPercent(zg) === 0 &&
+      atkSpeedAuraPercent(zg) === 0 &&
+      counterPercent(zg) === 0 &&
+      atkDownAuraPercent(zg) === 0 &&
+      JSON.stringify(tenacityPercents(zg)) ===
+        JSON.stringify({ threshold: 0, reduction: 0 }) &&
+      text.includes(
+        "以這個敵人被打中的位置為中心，2 格內（含邊界）最多 4 名其他敵人各受到這次普通攻擊傷害的 50%"
+      ) &&
+      text.includes("被打中的主要目標照常受到普通攻擊的傷害，不會再被範圍打一次") &&
+      text.includes("中心是被打中的敵人，不是諸葛亮自己") &&
+      text.includes("離中心近的先算，距離相同時先出現的敵人優先，超過 4 名時較遠的不受影響") &&
+      text.includes(
+        "目前攻擊力 118：主要目標受到 118，範圍內其他敵人每一名受到 59。"
+      ) &&
+      !noAtk.includes("目前攻擊力") &&
+      text.includes("不會遞減，也不會從被打中的敵人再往外傳（和龐統的連環計不同）") &&
+      text.includes("主要目標被這一擊打倒時，照樣以它倒下的位置生效") &&
+      text.includes("打不到的敵人不會受到範圍傷害") &&
+      text.includes("免疫減速的敵人照樣受傷") &&
+      text.includes("擊殺與金幣只算一次") &&
+      text.includes("範圍內沒有其他敵人時就是一般的攻擊") &&
+      text.includes("自動觸發，沒有手動施放或冷卻") &&
+      text.includes("範圍傷害不算一次攻擊、不會引發其他技能，攻擊間隔與射程不變") &&
+      text.includes("淡藍色的風雨圈") &&
+      text.includes("只在戰場生效，不影響存檔") &&
+      small.includes("1.5 格內（含邊界）最多 2 名其他敵人各受到這次普通攻擊傷害的 30%") &&
+      small.includes("範圍內其他敵人每一名受到 30。") &&
+      others.length === 0,
+    { zg, payload, text, noAtk, small, others }
+  );
+});
+
 // 技能綁定和正式設定表 heroes_config 的被動描述（passive）對照：趙雲是閃避、馬超是衝鋒（首擊加倍）；
 // 關羽是減速光環（「周圍敵人減速10%」）；劉備是防禦光環（「光環：提升友軍防禦」）；張飛是暈眩（「攻擊使敵人暈眩」）；
 // 魏延是吸血（「吸血：恢復生命」）；曹操是攻速光環（「指揮：提升友軍攻速」）；夏侯惇是反擊（「反擊：受傷時反彈傷害」）；
 // 廖化是堅韌（「堅韌：低血量減傷」）；顏良是威壓（「威壓：降低敵軍攻擊」）；孫尚香是連射（「連射：有機率二次攻擊」）；
-// 龐統是連環計（「連環計：傳遞傷害」，鏈式傳遞，不是橫掃）；
+// 龐統是連環計（「連環計：傳遞傷害」，鏈式傳遞，不是橫掃）；諸葛亮是呼風喚雨（「呼風喚雨：大範圍傷害」，以被打中的敵人為中心的範圍，不是橫掃原型）；
 // 甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
 await test("技能對照-S1", async () => {
   const { heroSkillOf, heroSkillPayload } = require(
@@ -3455,6 +3566,7 @@ await test("技能對照-S1", async () => {
     "yan_liang",
     "sun_shang_xiang",
     "pang_tong",
+    "zhu_ge_liang",
   ];
   const got = Object.fromEntries(
     ids.map((id) => [id, heroSkillOf(id)?.id ?? null])
@@ -3463,7 +3575,7 @@ await test("技能對照-S1", async () => {
     (id) => heroSkillPayload(id).skill?.id === "first_strike"
   );
   check(
-    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）、顏良 atk_down_aura（威壓）、孫尚香 double_shot（連射）、龐統 chain（連環計）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
+    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）、顏良 atk_down_aura（威壓）、孫尚香 double_shot（連射）、龐統 chain（連環計）、諸葛亮 storm（呼風喚雨）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
     JSON.stringify(got) ===
       JSON.stringify({
         ma_chao: "first_strike",
@@ -3481,6 +3593,7 @@ await test("技能對照-S1", async () => {
         yan_liang: "atk_down_aura",
         sun_shang_xiang: "double_shot",
         pang_tong: "chain",
+        zhu_ge_liang: "storm",
       }) &&
       JSON.stringify(firstStrike) === '["ma_chao"]' &&
       !Object.values(got).includes("sweep") &&

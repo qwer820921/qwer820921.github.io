@@ -172,14 +172,14 @@ func _run() -> void:
 		battle_ended_count += 1
 		last_result = r)
 
-	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、廖化的堅韌、顏良的威壓、孫尚香的連射、龐統的連環計）、橫掃原型與攻速成長；
+	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、廖化的堅韌、顏良的威壓、孫尚香的連射、龐統的連環計、諸葛亮的呼風喚雨）、橫掃原型與攻速成長；
 	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行；
 	# route 跑飛行與地面的路線無效（出兵前擋下）；blocker 只跑敵人攻擊阻路武將的冷卻；
 	# dodge 只跑趙雲「閃避」；firststrike 只跑首擊加倍（馬超「衝鋒」）；
 	# stagedata 跑關卡資料未完成（沒有波次、波次或路線的格式不對）；enemyatk 跑敵人設定的對武將攻擊力；immune 跑免疫減速；
 	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）；stun 只跑張飛的暈眩（skills 也包含）；lifesteal 只跑魏延的吸血（skills 也包含）；
 	# atkspeed 只跑曹操的攻速光環（skills 也包含）；damage 只跑敵人受傷的入口（拒絕無效的傷害）；
-	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；chain 只跑龐統的連環計（skills 也包含）
+	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；chain 只跑龐統的連環計（skills 也包含）；storm 只跑諸葛亮的呼風喚雨（skills 也包含）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -200,6 +200,7 @@ func _run() -> void:
 			await _atk_down_cases()
 			await _double_shot_cases()
 			await _chain_cases()
+			await _storm_cases()
 		elif only == "blocker":
 			await _blocker_cases()
 		elif only == "dodge":
@@ -252,8 +253,10 @@ func _run() -> void:
 			await _double_shot_cases()
 		elif only == "chain":
 			await _chain_cases()
+		elif only == "storm":
+			await _storm_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、chain）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、chain、storm）", false)
 		_finish()
 		return
 
@@ -494,6 +497,9 @@ func _run() -> void:
 	# ── 龐統的連環計（普通攻擊實際打到主目標後，從前一個被打中的敵人附近依序傳遞 50%、25%，每跳 1.5 格）──
 	await _chain_cases()
 
+	# ── 諸葛亮的呼風喚雨（普通攻擊實際打到主目標後，以它為中心 2 格內最多 4 名其他敵人各受 50%）──
+	await _storm_cases()
+
 	_finish()
 
 # ── 輸出 ──
@@ -689,6 +695,8 @@ func _r12_payload(stage_id: String, waves: Array, battle_id: String, team: Array
 		{"hero_id": "sweep_proto", "name": "原型", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5},
 		# 龐統（法師，射程與攻擊間隔和其他測試武將相同；正式設定是射程 4、攻擊間隔 0.9）
 		{"hero_id": "pang_tong", "name": "龐統", "job": "mage", "attack_range": 3.0, "attack_speed": 0.5},
+		# 諸葛亮（法師，射程與攻擊間隔和其他測試武將相同；正式設定是射程 5、攻擊間隔 0.9）
+		{"hero_id": "zhu_ge_liang", "name": "諸葛亮", "job": "mage", "attack_range": 3.0, "attack_speed": 0.5},
 	]
 	return p
 
@@ -11713,6 +11721,627 @@ func _chain_cases() -> void:
 		es = await _ch_start(rec, "chain-27b", 3)
 		d27["new_battle"] = [_ch_main_hero().chain_count, _ch_main_hero().chain_hits, _ch_fx_of(_ch_main_hero()).size()] if _ch_main_hero() != null else null
 	_check("連環計-27 換成其他技能（反擊）：比例 0、只有主目標 100（傳遞次數不增加）；移出隊伍時連線效果清除、之後 1.2 秒沒有傷害；新的一場統計從 0 開始、沒有殘留的效果",
+		d27.get("fx_before") == 1 and d27.get("plain_ratio") == 0.0 and d27.get("plain_hit", {}).get("dmg") == [100.0, 0.0, 0.0] and d27.plain_hit.count == 0
+			and d27.get("fx_after_remove") == 0 and d27.get("fx_node_freed") == true and d27.get("no_damage_after_remove") == true and d27.get("new_battle") == [0, 0, 0], d27)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 諸葛亮的呼風喚雨（storm）──
+# 普通攻擊實際扣到主目標的生命後，以主目標被打中時的位置為中心、2 格內（含邊界）最多 4 名其他仍存活、諸葛亮打得到的敵人，
+# 各受這次普通攻擊傷害的 50%（由近到遠，距離相同時生成序號小的優先；主目標除外）。每一名同樣的比例（不遞減、不往外傳），
+# 走敵人一般的受傷與死亡流程，不引發其他技能、不算攻擊次數、不改冷卻；和連環計（從被打中的敵人往外傳）、橫掃原型是不同的技能
+const ST_SKILL: Dictionary = {"id": "storm", "storm_radius": 2, "storm_ratio": 0.5, "storm_max_targets": 4}
+const ST_HERO: String = "zhu_ge_liang"
+
+## 單獨的諸葛亮（真正的 Hero 腳本，不經過 Main、測試自己呼叫 _process）：在原點、攻擊力 atk_v、射程 3 格、攻擊間隔 1 秒、職業 job
+## （法師、弓兵能對空；測試自己寫一份，不讀遊戲的常數）；skill 是 null 時帶呼風喚雨的參數
+func _st_hero(holder: Node, wave: Node, atk_v: float = 100.0, skill: Variant = null, job: String = "mage") -> Node:
+	var h: Node = load("res://entities/hero/Hero.gd").new()
+	holder.add_child(h)
+	h.set_process(false)
+	h.hero_id = ST_HERO
+	h.job = job
+	h.can_hit_air = job == "mage" or job == "archer"
+	h.attack_range = 3.0
+	h.attack_speed = 1.0
+	h.atk = atk_v
+	h.max_hp = 1000.0
+	h.current_hp = 1000.0
+	h._read_skill({"skill": ST_SKILL.duplicate() if skill == null else skill})
+	h._wave_mgr = wave
+	return h
+
+## 不會移動的敵人：血量 hp、放在 cell（格；諸葛亮在原點）、生成序號 seq，extra 是另外的設定（飛行、免疫減速）；加進假的 WaveManager 清單的最後面。
+## 地面敵人的路線進度都相同，所以主目標是清單裡第一個在射程內的敵人
+func _st_enemy(holder: Node, wave: Node, hp: float, cell: Vector2, seq: int, extra: Dictionary = {}) -> Node:
+	var cfg: Dictionary = {"hp": hp}
+	cfg.merge(extra, true)
+	var e: Node = _stn_enemy(holder, 0.0, cfg)
+	e.position = cell * 48.0
+	e.spawn_seq = seq
+	wave.enemies.append(e)
+	return e
+
+## 武將底下還在顯示的風雨圈
+func _st_fx_of(h: Node) -> Array:
+	var out: Array = []
+	if h == null or not is_instance_valid(h):
+		return out
+	for c in h.get_children():
+		if c is Hero.StormFx and not c.is_queued_for_deletion():
+			out.append(c)
+	return out
+
+## 諸葛亮打一個攻擊回合（冷卻歸零後處理一步）：每個敵人這一回合被打掉的生命（倒下的記成倒下前的生命）、
+## 有範圍傷害的攻擊次數／範圍命中次數／範圍命中實扣總量／攻擊次數的增加、這一回合之後的冷卻、風雨圈（數量、位置、半徑與落點）、最新一筆紀錄
+func _st_round(h: Node, es: Array) -> Dictionary:
+	var before: Array = []
+	for e in es:
+		before.append(e.current_hp if is_instance_valid(e) and not e.is_dead() else 0.0)
+	var c0: int = h.storm_count
+	var k0: int = h.storm_hits
+	var d0: float = h.storm_dealt
+	var a0: int = h.attack_count
+	var fx0: int = _st_fx_of(h).size()
+	h._atk_timer = 0.0
+	h._process(1.0 / 60.0)
+	var dmg: Array = []
+	for i in range(es.size()):
+		var now: float = es[i].current_hp if is_instance_valid(es[i]) else 0.0
+		dmg.append(snappedf(float(before[i]) - now, 0.0001))
+	var fx: Array = _st_fx_of(h)
+	var r: Dictionary = {"dmg": dmg, "count": h.storm_count - c0, "hits": h.storm_hits - k0, "dealt": snappedf(h.storm_dealt - d0, 0.0001),
+		"attacks": h.attack_count - a0, "timer": h._atk_timer, "fx": fx.size() - fx0,
+		"log": h.storm_log.back().duplicate(true) if not h.storm_log.is_empty() else {}}
+	if not fx.is_empty():
+		var f: Node = fx[fx.size() - 1]
+		r["fx_pos"] = f.global_position
+		r["fx_radius"] = f.radius
+		r["fx_points"] = Array(f.points).map(func(p): return Vector2(snappedf(p.x, 0.001), snappedf(p.y, 0.001)))
+	return r
+
+## 單獨的諸葛亮對 cells 上的敵人（第一個是主目標）打一個回合：hps 是每個敵人的血量（預設 99999）、flying／immune 是飛行與免疫減速敵人的索引、
+## seqs 是生成序號（預設依序 0、1、2…）。回傳 _st_round 的結果，加上每個敵人的死亡信號次數與 Godot 的呼風喚雨狀態
+func _st_case(cells: Array, hps: Array = [], atk_v: float = 100.0, skill: Variant = null, job: String = "mage", flying: Array = [], seqs: Array = [], immune: Array = []) -> Dictionary:
+	var holder := _dodge_holder()
+	var wave := R20Wave.new()
+	holder.add_child(wave)
+	var h: Node = _st_hero(holder, wave, atk_v, skill, job)
+	var es: Array = []
+	var died: Array = []
+	for i in range(cells.size()):
+		var extra: Dictionary = {}
+		if flying.has(i):
+			extra["movement_type"] = "flying"
+		if immune.has(i):
+			extra["trait"] = "immune_slow"
+		var e: Node = _st_enemy(holder, wave, float(hps[i]) if i < hps.size() else 99999.0, cells[i], int(seqs[i]) if i < seqs.size() else i, extra)
+		es.append(e)
+		died.append(0)
+		var idx: int = i
+		e.died.connect(func(_x) -> void: died[idx] = int(died[idx]) + 1)
+	var r: Dictionary = _st_round(h, es)
+	r["died"] = died.duplicate()
+	r["state"] = h.storm_state()
+	r["immune"] = es.map(func(e): return e.immune_slow)
+	holder.queue_free()
+	return r
+
+## 每一名的 [生成序號, 離中心的距離（格）, 傷害, 實扣] 和 want 逐一相符（容許浮點誤差）
+func _st_hits_ok(log: Dictionary, want: Array) -> bool:
+	var hs: Array = log.get("hits", [])
+	if hs.size() != want.size():
+		return false
+	for i in range(hs.size()):
+		var j: Dictionary = hs[i]
+		var w: Array = want[i]
+		if not (int(j.seq) == int(w[0]) and _ls_near(j.dist, float(w[1]), 1e-3) and _ls_near(j.amount, float(w[2]), 1e-6) and _ls_near(j.dealt, float(w[3]), 1e-6)):
+			return false
+	return true
+
+## 實際引擎用的諸葛亮（法師、射程 3 格、攻擊間隔 0.5 秒，和 _r12_payload 的設定相同）
+func _st_member(skill: Variant = null, level: int = 1, atk_v: float = 100.0) -> Dictionary:
+	var h: Dictionary = _r12_hero(ST_HERO, ST_SKILL.duplicate() if skill == null else skill)
+	h["level"] = level
+	h["atk"] = atk_v
+	return h
+
+func _st_main_hero() -> Node:
+	return main._placed_heroes.get(ST_HERO)
+
+## 載入一場只有 n 個 post 的關卡（經過 JSON）、把諸葛亮放在 (3,4)、開戰並等 n 個敵人都出現。manual 為 true 時停掉諸葛亮自己的 _process，由測試決定何時攻擊
+func _st_start(rec: Node, battle_id: String, n: int, team: Variant = null, manual: bool = true) -> Array:
+	var t: Array = team if team != null else [_st_member()]
+	_r19_js(rec, _r12_payload("storm_a", [[_grp("post", n, 0.02)]], battle_id, t))
+	_r12_place(ST_HERO, Vector2i(3, 4))
+	if manual and _st_main_hero() != null:
+		_st_main_hero().set_process(false)
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == n, 5.0)
+	return _sw_enemies()
+
+## 主目標（第一個）放在諸葛亮右邊 2 格；其他敵人放在主目標加上 offs[i]（格）的位置。回傳主目標的位置
+func _st_place(es: Array, offs: Array) -> Vector2:
+	var g: Node = _st_main_hero()
+	var t: float = float(g.tile_size)
+	var center: Vector2 = g.global_position + Vector2(2.0 * t, 0.0)
+	for i in range(es.size()):
+		var o: Vector2 = offs[i] if i < offs.size() else Vector2(6.0, 0.0)
+		es[i].global_position = center + o * t
+	return center
+
+## 場上的諸葛亮打一次（呼叫一次 _process）：每個敵人受到的傷害、擊殺數與戰鬥金幣的變化、呼風喚雨統計與風雨圈數的變化
+func _st_hit(es: Array, delta: float = 0.0) -> Dictionary:
+	var g: Node = _st_main_hero()
+	var before: Array = []
+	for e in es:
+		before.append(e.current_hp if is_instance_valid(e) and not e.is_dead() else 0.0)
+	var k0: int = _bm().kills
+	var gold0: int = _bm().battle_gold
+	var c0: int = g.storm_count
+	var h0: int = g.storm_hits
+	var a0: int = g.attack_count
+	var fx0: int = _st_fx_of(g).size()
+	g._process(delta)
+	var dmg: Array = []
+	for i in range(es.size()):
+		var now: float = es[i].current_hp if is_instance_valid(es[i]) else 0.0
+		dmg.append(snappedf(float(before[i]) - now, 0.01))
+	return {"dmg": dmg, "kills": _bm().kills - k0, "gold": _bm().battle_gold - gold0, "count": g.storm_count - c0, "hits": g.storm_hits - h0,
+		"attacks": g.attack_count - a0, "fx": _st_fx_of(g).size() - fx0,
+		"log": g.storm_log.back().duplicate(true) if not g.storm_log.is_empty() else {}}
+
+## 真引擎：主目標與兩名範圍內的敵人（offs3：主目標右邊 1 格、下方 1 格），記錄 sec 秒遊戲時間內每一次攻擊。
+## 回傳攻擊時間、每次的 [主 100, 範圍 50] 筆數、不是這兩種的下降、範圍傷害次數與攻擊次數
+func _st_run(es: Array, sec: float) -> Dictionary:
+	var g: Node = _st_main_hero()
+	var c0: int = g.storm_count
+	var a0: int = g.attack_count
+	var r: Dictionary = await _r19_hits(es, sec)
+	var by_t: Dictionary = {}
+	var bad: Array = []
+	for h in r.hits:
+		if not by_t.has(h.t):
+			by_t[h.t] = [0, 0]
+		var d: float = float(h.dmg)
+		if is_equal_approx(d, 100.0):
+			by_t[h.t][0] += 1
+		elif is_equal_approx(d, 50.0):
+			by_t[h.t][1] += 1
+		else:
+			bad.append(h)
+	var ts: Array = by_t.keys()
+	ts.sort()
+	var per: Array = []
+	for t in ts:
+		per.append(by_t[t])
+	return {"t": ts, "per_attack": per, "bad": bad, "dmax": r.dmax, "count": g.storm_count - c0, "attacks": g.attack_count - a0}
+
+## 每次攻擊都是主目標 100＋兩名各 50（同一幀）、攻擊時間符合累積時程、範圍傷害次數＝攻擊次數
+func _st_run_ok(r: Dictionary, n_min: int, n_max: int) -> bool:
+	if r.t.size() < n_min or r.t.size() > n_max or not r.bad.is_empty() or r.count != r.t.size() or r.attacks != r.t.size():
+		return false
+	for p in r.per_attack:
+		if p != [1, 2]:
+			return false
+	return _r16_interval_ok({"hits": r.t, "dmax": r.dmax}, 0.5)
+
+func _storm_cases() -> void:
+	# 呼風喚雨-0：技能參數的判讀：storm_radius 是正的有限數字、storm_ratio 是 0～1 之間（不含兩端）的有限數字、storm_max_targets 是 1～4 的整數（JSON 的 4.0 也算），
+	# 三個都合理才啟用；字串、布林、null、陣列、字典、NaN、無限大、0、負數、比例 1 以上、人數小數或 5 以上、缺欄位、欄位名稱寫錯、不認得或大小寫不同的 id、
+	# 其他技能帶這些欄位都不啟用（三個值都是 0）；呼風喚雨不帶其他技能（連環計、橫掃原型都不啟用）；換成反擊或沒有技能後清除
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var good0: Array = [
+		[{"id": "storm", "storm_radius": 2, "storm_ratio": 0.5, "storm_max_targets": 4}, [2.0, 0.5, 4]],
+		[{"id": "storm", "storm_radius": 1.5, "storm_ratio": 0.25, "storm_max_targets": 1}, [1.5, 0.25, 1]],
+		[{"id": "storm", "storm_radius": 0.001, "storm_ratio": 0.9999, "storm_max_targets": 4.0}, [0.001, 0.9999, 4]],
+		[{"id": "storm", "storm_radius": 3, "storm_ratio": 0.0001, "storm_max_targets": 2.0}, [3.0, 0.0001, 2]],
+	]
+	var bad0: Array = []
+	for v in ["2", true, false, null, [2], {"v": 2}, NAN, INF, -INF, 0, 0.0, -2]:
+		bad0.append({"id": "storm", "storm_radius": v, "storm_ratio": 0.5, "storm_max_targets": 4})
+	for v in ["0.5", true, null, [0.5], NAN, INF, -INF, 0, 0.0, -0.5, 1, 1.0, 1.5]:
+		bad0.append({"id": "storm", "storm_radius": 2, "storm_ratio": v, "storm_max_targets": 4})
+	for v in ["4", true, false, null, [4], NAN, INF, 0, 0.0, -1, -4.0, 1.5, 3.5, 5, 5.0, 100]:
+		bad0.append({"id": "storm", "storm_radius": 2, "storm_ratio": 0.5, "storm_max_targets": v})
+	bad0.append_array([{"id": "storm"}, {"id": "storm", "storm_radius": 2, "storm_ratio": 0.5},
+		{"id": "storm", "storm_radius": 2, "storm_max_targets": 4}, {"id": "storm", "storm_ratio": 0.5, "storm_max_targets": 4},
+		{"id": "storm", "radius": 2, "ratio": 0.5, "max_targets": 4},
+		{"id": "Storm", "storm_radius": 2, "storm_ratio": 0.5, "storm_max_targets": 4}, {"id": "storm_x", "storm_radius": 2, "storm_ratio": 0.5, "storm_max_targets": 4},
+		{"id": "sweep", "sweep_radius": 1.0, "sweep_max_targets": 2, "sweep_ratio": 0.5, "storm_radius": 2, "storm_ratio": 0.5, "storm_max_targets": 4},
+		{"id": "chain", "chain_radius": 1.5, "chain_ratio": 0.5, "chain_max_jumps": 2, "storm_radius": 2, "storm_ratio": 0.5, "storm_max_targets": 4}])
+	var wrong0: Array = []
+	for c in good0:
+		h0._read_skill({"skill": c[0]})
+		if [h0.storm_radius, h0.storm_ratio, h0.storm_max_targets] != c[1]:
+			wrong0.append({"skill": str(c[0]), "got": [h0.storm_radius, h0.storm_ratio, h0.storm_max_targets]})
+	for c in bad0:
+		h0._read_skill({"skill": c})
+		if [h0.storm_radius, h0.storm_ratio, h0.storm_max_targets] != [0.0, 0.0, 0]:
+			wrong0.append({"skill": str(c), "got": [h0.storm_radius, h0.storm_ratio, h0.storm_max_targets]})
+	h0._read_skill({"skill": JSON.parse_string("{\"id\": \"storm\", \"storm_radius\": 2, \"storm_ratio\": 0.5, \"storm_max_targets\": 4}")})
+	var json0: Array = [h0.storm_radius, h0.storm_ratio, h0.storm_max_targets]
+	var other0: Array = [h0.first_strike_multiplier, h0.range_multiplier, h0.burn_ratio, h0.sweep_ratio, h0.dodge_chance, h0.slow_aura_mult, h0.def_aura_mult,
+		h0.stun_duration, h0.lifesteal_ratio, h0.atk_speed_aura_mult, h0.counter_ratio, h0.tenacity_hp_ratio, h0.atk_down_aura_mult, h0.double_shot_chance, h0.chain_ratio]
+	h0._read_skill({"skill": {"id": "chain", "chain_radius": 1.5, "chain_ratio": 0.5, "chain_max_jumps": 2}})
+	var chain0: Array = [h0.chain_ratio, h0.storm_ratio]
+	h0._read_skill({"skill": ST_SKILL.duplicate()})
+	h0._read_skill({"skill": {"id": "counter", "counter_ratio": 0.2}})
+	var switched0: Array = [h0.storm_radius, h0.storm_ratio, h0.storm_max_targets, h0.counter_ratio]
+	h0._read_skill({"skill": ST_SKILL.duplicate()})
+	h0._read_skill({})
+	var cleared0: Array = [h0.storm_radius, h0.storm_ratio, h0.storm_max_targets]
+	h0.free()
+	_check("呼風喚雨-0 技能參數：半徑是正的有限數字、比例是 0～1 之間（不含兩端）、人數是 1～4 的整數（經過 JSON 的 4.0 也算）三個都合理才啟用；字串、布林、null、陣列、字典、NaN、無限大、0、負數、比例 1 以上、人數小數或 5 以上、缺欄位、欄位名稱寫錯、不認得或大小寫不同的 id、其他技能帶這些欄位都不啟用；呼風喚雨不帶其他技能（連環計也不帶呼風喚雨），換成反擊或沒有技能後清除",
+		wrong0.is_empty() and json0 == [2.0, 0.5, 4] and other0 == [1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+			and chain0 == [0.5, 0.0] and switched0 == [0.0, 0.0, 0, 0.2] and cleared0 == [0.0, 0.0, 0],
+		{"wrong": wrong0, "json": json0, "other": other0, "chain": chain0, "switched": switched0, "cleared": cleared0, "cases": good0.size() + bad0.size()})
+
+	# 呼風喚雨-1：沒有其他敵人（只有主目標、或其他敵人在範圍外）時就是普通攻擊：沒有範圍傷害、不計次、沒有風雨圈、攻擊次數 +1
+	var r1a: Dictionary = _st_case([Vector2(1, 0)])
+	var r1b: Dictionary = _st_case([Vector2(1, 0), Vector2(3.1, 0)])
+	_check("呼風喚雨-1 只有主目標、或另一名在 2.1 格外：只有主目標受 100（另一名 0），範圍傷害 0 次、沒有風雨圈、沒有紀錄，攻擊次數 +1",
+		r1a.dmg == [100.0] and r1a.count == 0 and r1a.hits == 0 and r1a.fx == 0 and r1a.attacks == 1 and r1a.state.log.is_empty()
+			and r1b.dmg == [100.0, 0.0] and r1b.count == 0 and r1b.fx == 0 and r1b.attacks == 1, {"alone": r1a, "outside": r1b})
+
+	# 呼風喚雨-2：最多 4 名、由近到遠：六名其他敵人在主目標 0.5～1.9 格（清單順序打亂）→ 最近的四名（0.5、0.8、1.0、1.2 格）各受 50，1.5 與 1.9 格的不受傷；
+	# 每一名都是 50（不遞減），範圍傷害 1 次、命中 4 名、實扣 200、攻擊次數只加 1
+	var cells2: Array = [Vector2(1, 0), Vector2(1, 1.9), Vector2(1.5, 0), Vector2(1, -1.2), Vector2(2, 0), Vector2(0.2, 0), Vector2(1, 1.5)]
+	var r2: Dictionary = _st_case(cells2)
+	_check("呼風喚雨-2 最多 4 名、由近到遠：六名在主目標 0.5～1.9 格內時，0.5、0.8、1.0、1.2 格的四名各受 50（不遞減），1.5 與 1.9 格的 0；主目標 100；範圍傷害 1 次、命中 4、實扣 200、攻擊 +1；紀錄的每一名是 [序號, 距離, 傷害, 實扣]",
+		r2.dmg == [100.0, 0.0, 50.0, 50.0, 50.0, 50.0, 0.0] and r2.count == 1 and r2.hits == 4 and _ls_near(r2.dealt, 200.0, 1e-6) and r2.attacks == 1
+			and _st_hits_ok(r2.log, [[2, 0.5, 50.0, 50.0], [5, 0.8, 50.0, 50.0], [4, 1.0, 50.0, 50.0], [3, 1.2, 50.0, 50.0]])
+			and _ls_near(r2.log.get("base"), 100.0) and _ls_near(r2.log.get("first"), 100.0), r2)
+
+	# 呼風喚雨-3：距離相同時生成序號小的優先（和清單順序無關）：五名都離主目標 1 格（序號 5、3、1、4、2）→ 打序號 1～4，序號 5 不受傷
+	var r3: Dictionary = _st_case([Vector2(1, 0), Vector2(2, 0), Vector2(0, 0), Vector2(1, 1), Vector2(1, -1), Vector2(1.6, 0.8)], [], 100.0, null, "mage", [], [0, 5, 3, 1, 4, 2])
+	_check("呼風喚雨-3 五名都在 1 格（清單順序是序號 5、3、1、4、2）：打序號 1、2、3、4 各 50，序號 5 是 0",
+		r3.dmg == [100.0, 0.0, 50.0, 50.0, 50.0, 50.0] and _st_hits_ok(r3.log, [[1, 1.0, 50.0, 50.0], [2, 1.0, 50.0, 50.0], [3, 1.0, 50.0, 50.0], [4, 1.0, 50.0, 50.0]]), r3)
+
+	# 呼風喚雨-4：範圍含邊界：水平正好 2 格、斜向 (1.2,1.6) 正好 2 格算在內，2.02 格不算
+	var r4: Dictionary = _st_case([Vector2(1, 0), Vector2(3, 0), Vector2(2.2, 1.6), Vector2(1, -2.02)])
+	_check("呼風喚雨-4 範圍含邊界：水平與斜向正好 2 格的各受 50，2.02 格的 0",
+		r4.dmg == [100.0, 50.0, 50.0, 0.0] and r4.hits == 2 and _st_hits_ok(r4.log, [[1, 2.0, 50.0, 50.0], [2, 2.0, 50.0, 50.0]]), r4)
+
+	# 呼風喚雨-5：中心是被打中的主目標，不是諸葛亮：主目標在 (2.5,0)；離諸葛亮 0.5 格、離主目標 2.55 格的不受傷；離諸葛亮 4 格（射程外）、離主目標 1.5 格的受 50
+	var r5: Dictionary = _st_case([Vector2(2.5, 0), Vector2(0, 0.5), Vector2(4, 0)])
+	_check("呼風喚雨-5 中心是主目標：武將旁邊 0.5 格（離主目標 2.55 格）的 0；武將射程外但離主目標 1.5 格的受 50；風雨圈在主目標的位置 (120,0)、半徑 96 像素",
+		r5.dmg == [100.0, 0.0, 50.0] and r5.hits == 1 and _st_hits_ok(r5.log, [[2, 1.5, 50.0, 50.0]])
+			and r5.get("fx_pos", Vector2.INF).is_equal_approx(Vector2(120.0, 0.0)) and _ls_near(r5.get("fx_radius", 0.0), 96.0), r5)
+
+	# 呼風喚雨-6：主目標被這一擊打倒（血量 100）仍以它被打中的位置生效；死亡信號只有主目標一次
+	var r6: Dictionary = _st_case([Vector2(1, 0), Vector2(2, 0), Vector2(1, 1)], [100.0])
+	_check("呼風喚雨-6 主目標被這一擊打倒：照樣以它的位置打兩名各 50；主目標死亡一次、其他沒有倒下",
+		r6.dmg == [100.0, 50.0, 50.0] and r6.died == [1, 0, 0] and r6.hits == 2, r6)
+
+	# 呼風喚雨-7：超殺：範圍內只剩 30 與 50 的敵人各受 50 → 實扣 30、50（統計不算溢出的 20），各倒下一次；傷害仍記 50
+	var r7: Dictionary = _st_case([Vector2(1, 0), Vector2(2, 0), Vector2(1, 1)], [99999.0, 30.0, 50.0])
+	_check("呼風喚雨-7 範圍內只剩 30 與 50 的敵人：各倒下一次（實扣 30、50），實扣總量 80（不含溢出），傷害仍記 50",
+		r7.dmg == [100.0, 30.0, 50.0] and r7.died == [0, 1, 1] and _ls_near(r7.dealt, 80.0, 1e-6) and _st_hits_ok(r7.log, [[1, 1.0, 50.0, 30.0], [2, 1.0, 50.0, 50.0]]), r7)
+
+	# 呼風喚雨-8：無效的對象都略過、不存取已釋放的節點：比有效敵人更近的「正要被移除」、「已倒下但還在清單」、「已釋放」、「已經漏到城池」的敵人都不算
+	var holder8 := _dodge_holder()
+	var wave8 := R20Wave.new()
+	holder8.add_child(wave8)
+	var g8: Node = _st_hero(holder8, wave8)
+	var p8: Node = _st_enemy(holder8, wave8, 99999.0, Vector2(1, 0), 0)
+	var q8: Node = _st_enemy(holder8, wave8, 99999.0, Vector2(1.2, 0), 1)
+	var d8n: Node = _st_enemy(holder8, wave8, 99999.0, Vector2(1.3, 0), 2)
+	var f8: Node = _st_enemy(holder8, wave8, 99999.0, Vector2(1.1, 0), 3)
+	var b8: Node = _st_enemy(holder8, wave8, 99999.0, Vector2(1.4, 0), 4)
+	var v8: Node = _st_enemy(holder8, wave8, 99999.0, Vector2(2.0, 0), 5)
+	q8.queue_free()
+	d8n._is_dead = true
+	f8.free()
+	b8._on_reached_base()
+	var hp8: Array = [q8.current_hp, d8n.current_hp, b8.current_hp]
+	var r8: Dictionary = _st_round(g8, [p8, v8])
+	var d8: Dictionary = {"dmg": r8.dmg, "hits": r8.hits, "untouched": [q8.current_hp, d8n.current_hp, b8.current_hp] == hp8, "log": r8.log}
+	holder8.queue_free()
+	_check("呼風喚雨-8 比有效敵人更近的正要被移除、已倒下（還在清單）、已釋放、已經漏到城池的敵人都略過（不受傷、不佔名額、不出錯）：有效的敵人（1 格）受 50（命中 1）",
+		d8.dmg == [100.0, 50.0] and d8.hits == 1 and d8.untouched and _st_hits_ok(d8.log, [[5, 1.0, 50.0, 50.0]]), d8)
+
+	# 呼風喚雨-9：飛行與免疫減速：法師打得到範圍內的飛行敵人；不能對空的版本略過飛行敵人；免疫減速的地面敵人照樣受傷
+	var r9a: Dictionary = _st_case([Vector2(1, 0), Vector2(1.5, 0), Vector2(2, 0)], [], 100.0, null, "mage", [1], [], [2])
+	var r9b: Dictionary = _st_case([Vector2(1, 0), Vector2(1.5, 0), Vector2(2, 0)], [], 100.0, null, "infantry", [1], [], [2])
+	_check("呼風喚雨-9 法師：範圍內的飛行敵人與免疫減速的敵人各受 50；不能對空的職業略過飛行敵人（0），免疫減速的照樣 50",
+		r9a.dmg == [100.0, 50.0, 50.0] and r9a.hits == 2 and r9a.immune == [false, false, true] and r9b.dmg == [100.0, 0.0, 50.0] and r9b.hits == 1,
+		{"mage": r9a.dmg, "infantry": r9b.dmg, "immune": r9a.immune})
+
+	# 呼風喚雨-10：不是連環計：敵人排成一列（1.5、2.5、3.4 格）時只打 2 格內的那一名（50），不會從它再往外傳到 1 格外的下一名，也不遞減
+	var r10: Dictionary = _st_case([Vector2(1, 0), Vector2(2.5, 0), Vector2(3.5, 0), Vector2(4.4, 0)])
+	_check("呼風喚雨-10 不往外傳、不遞減：一列敵人只有 1.5 格的受 50，2.5 格（離它 1 格）與 3.4 格的都是 0；命中 1",
+		r10.dmg == [100.0, 50.0, 0.0, 0.0] and r10.hits == 1 and r10.count == 1, r10)
+
+	# 呼風喚雨-11：範圍傷害不引發其他技能、不遞迴：諸葛亮同時被硬塞了吸血與灼燒的數值（只在這個測試直接設定）時，吸血只算主目標的實扣、灼燒只附加在主目標；
+	# 範圍傷害不再引發新的呼風喚雨（範圍內每一名只受一次，計次只有 1）
+	var holder11 := _dodge_holder()
+	var wave11 := R20Wave.new()
+	holder11.add_child(wave11)
+	var g11: Node = _st_hero(holder11, wave11)
+	g11.current_hp = 500.0
+	g11.lifesteal_ratio = 0.1
+	g11.burn_ratio = 0.2
+	g11.burn_ticks = 3
+	g11.burn_interval = 1.0
+	var es11: Array = []
+	for i in range(4):
+		var e11 := DsEnemy.new()
+		holder11.add_child(e11)
+		e11.set_physics_process(false)
+		e11.setup({"enemy_id": "stn", "hp": 99999.0, "speed": 0.0}, [Vector2.ZERO, Vector2(40.0 * 48.0, 0.0)])
+		e11.position = [Vector2(1, 0), Vector2(2, 0), Vector2(1, 1), Vector2(1, -1)][i] * 48.0
+		e11.spawn_seq = i
+		wave11.enemies.append(e11)
+		es11.append(e11)
+	var r11: Dictionary = _st_round(g11, es11)
+	var d11: Dictionary = {"dmg": r11.dmg, "heal": snappedf(g11.current_hp - 500.0, 0.0001), "burn_calls": es11.map(func(e): return e.burn_calls), "hits": r11.hits, "count": r11.count}
+	holder11.queue_free()
+	_check("呼風喚雨-11 範圍傷害不引發其他技能：吸血只回復主目標實扣的 10%（+10，不含範圍的 150）、灼燒只附加在主目標；三名各受一次 50、計次 1",
+		d11.dmg == [100.0, 50.0, 50.0, 50.0] and _ls_near(d11.heal, 10.0, 1e-6) and d11.burn_calls == [1, 0, 0, 0] and d11.hits == 3 and d11.count == 1, d11)
+
+	# 呼風喚雨-12：攻擊次數與冷卻：有範圍傷害的回合和沒有技能的武將相同（攻擊次數 +1、冷卻 1 秒）；連打 3 回合：攻擊 3、範圍傷害 3、命中 6、紀錄 3 筆
+	var r12p: Dictionary = _st_case([Vector2(1, 0), Vector2(2, 0), Vector2(1, 1)], [], 100.0, {})
+	var holder12 := _dodge_holder()
+	var wave12 := R20Wave.new()
+	holder12.add_child(wave12)
+	var g12: Node = _st_hero(holder12, wave12)
+	var es12: Array = [_st_enemy(holder12, wave12, 99999.0, Vector2(1, 0), 0), _st_enemy(holder12, wave12, 99999.0, Vector2(2, 0), 1), _st_enemy(holder12, wave12, 99999.0, Vector2(1, 1), 2)]
+	var rounds12: Array = []
+	for i in range(3):
+		var rr: Dictionary = _st_round(g12, es12)
+		rounds12.append([rr.dmg, rr.attacks, snappedf(rr.timer, 0.0001)])
+	var s12: Dictionary = g12.storm_state()
+	holder12.queue_free()
+	_check("呼風喚雨-12 範圍傷害不算一次攻擊、不改冷卻：沒有技能時 [100,0,0]、攻擊 +1、冷卻 1 秒；諸葛亮每回合 [100,50,50]、攻擊 +1、冷卻 1 秒；3 回合後攻擊 3、範圍傷害 3、命中 6、實扣 300、紀錄 3 筆",
+		r12p.dmg == [100.0, 0.0, 0.0] and r12p.attacks == 1 and is_equal_approx(r12p.timer, 1.0)
+			and rounds12 == [[[100.0, 50.0, 50.0], 1, 1.0], [[100.0, 50.0, 50.0], 1, 1.0], [[100.0, 50.0, 50.0], 1, 1.0]]
+			and s12.attacks == 3 and s12.count == 3 and s12.hits == 6 and _ls_near(s12.dealt, 300.0, 1e-6) and s12.log.size() == 3, {"plain": r12p, "rounds": rounds12, "state": s12})
+
+	# 呼風喚雨-13：不觸發：攻擊力 0（主目標沒有實際扣血）時沒有範圍傷害、沒有風雨圈；射程內沒有敵人時不攻擊
+	var r13a: Dictionary = _st_case([Vector2(1, 0), Vector2(1.5, 0)], [], 0.0)
+	var r13b: Dictionary = _st_case([Vector2(4, 0), Vector2(4.5, 0)])
+	_check("呼風喚雨-13 主目標沒有實際扣血（攻擊力 0）沒有範圍傷害（0、0，計次 0、沒有風雨圈）；射程外的敵人不攻擊也沒有範圍傷害",
+		r13a.dmg == [0.0, 0.0] and r13a.count == 0 and r13a.hits == 0 and r13a.fx == 0
+			and r13b.dmg == [0.0, 0.0] and r13b.attacks == 0 and r13b.count == 0, {"atk0": r13a, "out": r13b})
+
+	# 呼風喚雨-14：風雨圈：1 個，在主目標被打中的位置 (48,0)、半徑 96 像素（2 格），落點是被打中的四名相對於中心的位置；
+	# 照遊戲時間消失：0 秒不前進、0.44 秒還在、0.46 秒消失
+	var d14: Dictionary = {"fx": r2.fx, "pos": r2.get("fx_pos"), "radius": r2.get("fx_radius"), "points": r2.get("fx_points")}
+	var ok14a: bool = r2.fx == 1 and r2.get("fx_pos", Vector2.INF).is_equal_approx(Vector2(48.0, 0.0)) and _ls_near(r2.get("fx_radius", 0.0), 96.0)
+	if ok14a:
+		var want14: Array = [Vector2(24.0, 0.0), Vector2(-38.4, 0.0), Vector2(48.0, 0.0), Vector2(0.0, -57.6)]
+		ok14a = r2.fx_points.size() == 4
+		for i in range(mini(4, r2.fx_points.size())):
+			ok14a = ok14a and r2.fx_points[i].is_equal_approx(want14[i])
+	var holder14 := _dodge_holder()
+	var wave14 := R20Wave.new()
+	holder14.add_child(wave14)
+	var g14: Node = _st_hero(holder14, wave14)
+	var es14: Array = [_st_enemy(holder14, wave14, 99999.0, Vector2(1, 0), 0), _st_enemy(holder14, wave14, 99999.0, Vector2(2, 0), 1)]
+	_st_round(g14, es14)
+	var fx14: Array = _st_fx_of(g14)
+	d14["life_fx"] = fx14.size()
+	if fx14.size() == 1:
+		var f14: Node = fx14[0]
+		f14._process(0.0)
+		d14["after0"] = f14.elapsed
+		f14._process(0.44)
+		d14["alive_044"] = not f14.is_queued_for_deletion()
+		f14._process(0.02)
+		d14["gone_046"] = f14.is_queued_for_deletion()
+	holder14.queue_free()
+	_check("呼風喚雨-14 風雨圈：1 個，在主目標被打中的位置 (48,0)、半徑 96 像素，落點是被打中的四名（相對於中心）；0.45 秒（遊戲時間）後消失：0 秒不前進、0.44 秒還在、0.46 秒消失；沒有其他敵人時沒有風雨圈（呼風喚雨-1）",
+		ok14a and d14.get("life_fx") == 1 and is_equal_approx(float(d14.get("after0", -1.0)), 0.0) and d14.get("alive_044") == true and d14.get("gone_046") == true, d14)
+
+	# ── 實際引擎（Main、經過 JSON 的出征資料）──
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+	var offs3: Array = [Vector2.ZERO, Vector2(1.0, 0.0), Vector2(0.0, 1.0)]
+
+	# 呼風喚雨-20：Godot 讀到出征資料的參數；選取面板帶 storm（半徑、比例、人數）；快照的 hero_storm 有參數與統計；
+	# 六名敵人（主目標＋五名在 0.5、1.0、1.2、1.5、1.9 格）手動打一次：最近的四名各 50、1.9 格的 0、擊殺 0
+	var es: Array = await _st_start(rec, "storm-20", 6)
+	var d20: Dictionary = {}
+	if es.size() == 6 and _st_main_hero() != null:
+		var g: Node = _st_main_hero()
+		d20["read"] = [g.storm_radius, g.storm_ratio, g.storm_max_targets, g.can_hit_air]
+		_st_place(es, [Vector2.ZERO, Vector2(0.5, 0.0), Vector2(0.0, 1.0), Vector2(-1.2, 0.0), Vector2(0.0, -1.5), Vector2(1.9, 0.0)])
+		var r20: Dictionary = _st_hit(es)
+		d20["hit"] = r20
+		var n_panel: int = rec.sent_panels.size()
+		main._on_hero_clicked(g)
+		d20["panel"] = rec.sent_panels.back().get("storm") if rec.sent_panels.size() > n_panel else null
+		var n_snap: int = rec.sent_snapshots.size()
+		main._on_debug_snapshot_requested("storm-20")
+		var snap: Dictionary = rec.sent_snapshots.back() if rec.sent_snapshots.size() > n_snap else {}
+		var hs: Dictionary = snap.get("hero_storm", {}).get(ST_HERO, {})
+		d20["snap"] = {"radius": hs.get("radius"), "ratio": hs.get("ratio"), "max_targets": hs.get("max_targets"), "count": hs.get("count"), "hits": hs.get("hits"), "dealt": hs.get("dealt"), "attacks": hs.get("attacks"), "fx": hs.get("fx")}
+	_check("呼風喚雨-20 實際引擎：讀到出征資料的參數（2 格、0.5、4 名，法師能對空）；六名敵人時手動打一次 100、最近四名各 50、1.9 格的 0（範圍傷害 1、命中 4、攻擊 +1、風雨圈 1、擊殺 0）；選取面板帶 storm {2, 0.5, 4}；快照的 hero_storm 有參數與統計",
+		d20.get("read") == [2.0, 0.5, 4, true] and d20.has("hit") and d20.hit.dmg == [100.0, 50.0, 50.0, 50.0, 50.0, 0.0] and d20.hit.count == 1 and d20.hit.hits == 4 and d20.hit.attacks == 1 and d20.hit.fx == 1 and d20.hit.kills == 0
+			and d20.get("panel") == {"radius": 2.0, "ratio": 0.5, "max_targets": 4}
+			and d20.get("snap", {}).get("radius") == 2.0 and d20.snap.ratio == 0.5 and d20.snap.max_targets == 4 and d20.snap.count == 1 and d20.snap.hits == 4 and _ls_near(d20.snap.dealt, 200.0, 1e-6) and d20.snap.attacks == 1 and d20.snap.fx == 1, d20)
+
+	# 呼風喚雨-20b：首擊加倍（只在這個測試直接設定倍率）時，範圍傷害照這次打出去的傷害計算：第一擊 200、範圍各 100；之後 100、各 50
+	es = await _st_start(rec, "storm-20b", 3)
+	var d20b: Dictionary = {}
+	if es.size() == 3 and _st_main_hero() != null:
+		var g20b: Node = _st_main_hero()
+		g20b.first_strike_multiplier = 2.0
+		_st_place(es, offs3)
+		var a: Dictionary = _st_hit(es)
+		_st_place(es, offs3)
+		var b: Dictionary = _st_hit(es, g20b.attack_speed)
+		d20b = {"first": a.dmg, "first_base": a.log.get("base"), "second": b.dmg, "attacks": a.attacks + b.attacks, "count": a.count + b.count}
+	_check("呼風喚雨-20b 首擊加倍時範圍傷害照這次打出去的傷害：第一擊 200、兩名各 100（紀錄的 base 200）；第二擊 100、各 50；攻擊 2、範圍傷害 2",
+		d20b.get("first") == [200.0, 100.0, 100.0] and _ls_near(d20b.get("first_base"), 200.0) and d20b.get("second") == [100.0, 50.0, 50.0] and d20b.get("attacks") == 2 and d20b.get("count") == 2, d20b)
+
+	# 呼風喚雨-21：主目標與兩名範圍內的敵人同一擊全部倒下（血量 100、50、50）：擊殺 3、金幣 3 份；清波後只結算一次，結算的擊殺數是 3
+	var ended0: int = battle_ended_count
+	es = await _st_start(rec, "storm-21", 3)
+	var d21: Dictionary = {}
+	if es.size() == 3:
+		es[0].current_hp = 100.0
+		es[1].current_hp = 50.0
+		es[2].current_hp = 50.0
+		_st_place(es, offs3)
+		d21 = _st_hit(es)
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 3.0)
+		await _wait(0.3)
+		d21["ended"] = battle_ended_count - ended0
+		d21["result_kills"] = last_result.get("kills")
+		d21["result_bid"] = last_result.get("battle_id")
+	_check("呼風喚雨-21 主目標與兩名範圍內的敵人同一擊全部倒下：擊殺 3、金幣 +15；只結算一次，結算的擊殺數是 3",
+		d21.get("dmg") == [100.0, 50.0, 50.0] and d21.get("kills") == 3 and d21.get("gold") == 3 * BattleManager.GOLD_PER_KILL and d21.get("ended") == 1
+			and int(d21.get("result_kills", -1)) == 3 and d21.get("result_bid") == "storm-21", d21)
+
+	# 呼風喚雨-22：1× 與 2× 各 3 秒遊戲時間：每次攻擊都是主目標 100＋兩名各 50（同一幀），攻擊時間符合累積時程，次數 6～8、兩種倍率相差不超過 1，範圍傷害次數＝攻擊次數
+	var runs: Dictionary = {}
+	for sp in [1.0, 2.0]:
+		es = await _st_start(rec, "storm-22-x%d" % int(sp), 3, null, false)
+		if es.size() != 3:
+			continue
+		_r19_speed(rec, sp)
+		_st_place(es, offs3)
+		runs[sp] = await _st_run(es, 3.0)
+		runs[sp]["time_scale"] = Engine.time_scale
+	var ok22: bool = runs.size() == 2
+	for sp in runs:
+		ok22 = ok22 and _st_run_ok(runs[sp], 6, 8)
+	if ok22:
+		ok22 = absi(runs[1.0].t.size() - runs[2.0].t.size()) <= 1 and runs[2.0].time_scale == 2.0
+	_check("呼風喚雨-22 1× 與 2× 各 3 秒遊戲時間：每次攻擊都是 100＋50＋50（同一幀），攻擊時間符合累積時程，次數 6～8 且兩種倍率相差不超過 1，範圍傷害次數＝攻擊次數", ok22, runs)
+
+	# 呼風喚雨-23：部署選單的暫時慢速（0.1×）：0.6 秒遊戲時間內攻擊 1～2 次，每次照樣 100＋50＋50
+	es = await _st_start(rec, "storm-23", 3, null, false)
+	var r23: Dictionary = {}
+	if es.size() == 3:
+		var menu: Dictionary = _r19_open(rec)
+		r23["time_scale"] = Engine.time_scale
+		_st_place(es, offs3)
+		r23["run"] = await _st_run(es, 0.6)
+		_r19_close(rec, menu)
+	var ok23: bool = r23.has("run") and is_equal_approx(float(r23.time_scale), 0.1) and not r23.run.t.is_empty() and r23.run.t.size() <= 2 and r23.run.bad.is_empty() and r23.run.count == r23.run.t.size()
+	if ok23:
+		for p in r23.run.per_attack:
+			ok23 = ok23 and p == [1, 2]
+		if r23.run.t.size() == 2:
+			ok23 = ok23 and float(r23.run.t[1]) - float(r23.run.t[0]) >= 0.5 - float(r23.run.dmax) - 0.0005
+	_check("呼風喚雨-23 部署選單開著（0.1×）：0.6 秒遊戲時間內攻擊 1～2 次，每次 100＋50＋50，攻擊間隔照遊戲時間", ok23, r23)
+
+	# 呼風喚雨-24：風雨圈的時間是遊戲時間：1× 與 2× 都在 0.45 秒遊戲時間（± 一幀）後消失
+	var life: Dictionary = {}
+	for sp in [1.0, 2.0]:
+		es = await _st_start(rec, "storm-24-x%d" % int(sp), 3, null, false)
+		if es.size() != 3:
+			continue
+		_r19_speed(rec, sp)
+		var c0: int = _st_main_hero().storm_count
+		_st_place(es, offs3)
+		await _wait_until(func(): return _st_main_hero().storm_count > c0, 3.0)
+		var fxs: Array = _st_fx_of(_st_main_hero())
+		if fxs.is_empty():
+			continue
+		var f: Node = fxs[0]
+		var t0: float = _gt() - float(f.elapsed)
+		var prev: float = _gt()
+		var dmax: float = 0.0
+		var wall_end: int = Time.get_ticks_msec() + 5000
+		while is_instance_valid(f) and not f.is_queued_for_deletion() and Time.get_ticks_msec() < wall_end:
+			await process_frame
+			dmax = maxf(dmax, _gt() - prev)
+			prev = _gt()
+		life[sp] = {"life": snappedf(_gt() - t0, 0.0001), "dmax": snappedf(dmax, 0.0001), "time_scale": Engine.time_scale}
+	var ok24: bool = life.size() == 2
+	for sp in life:
+		ok24 = ok24 and float(life[sp].life) >= 0.45 - 0.0005 and float(life[sp].life) <= 0.45 + float(life[sp].dmax) + 0.0005
+	_check("呼風喚雨-24 風雨圈 0.45 秒遊戲時間後消失：1× 與 2× 都在 0.45 秒到＋一幀之間", ok24, life)
+
+	# 呼風喚雨-25：手動暫停：風雨圈、攻擊冷卻、三個敵人的血量、遊戲時間與範圍傷害次數都不前進；繼續後風雨圈照剩下的時間消失、之後照常生效
+	es = await _st_start(rec, "storm-25", 3, null, false)
+	var d25: Dictionary = {}
+	if es.size() == 3:
+		var c0: int = _st_main_hero().storm_count
+		_st_place(es, offs3)
+		await _wait_until(func(): return _st_main_hero().storm_count > c0, 3.0)
+		var fxs: Array = _st_fx_of(_st_main_hero())
+		d25["fx"] = fxs.size()
+		if fxs.size() == 1:
+			var f: Node = fxs[0]
+			var p: Dictionary = _r20_pause(rec, true)
+			d25["paused_reply"] = p.get("paused")
+			var b: Array = [f.elapsed, _st_main_hero()._atk_timer, es.map(func(e): return e.current_hp), _gt(), _st_main_hero().storm_count]
+			await _wait_real(0.6)
+			var a: Array = [f.elapsed if is_instance_valid(f) else -1.0, _st_main_hero()._atk_timer, es.map(func(e): return e.current_hp), _gt(), _st_main_hero().storm_count]
+			d25["frozen"] = is_instance_valid(f) and b == a
+			d25["before"] = b
+			d25["after"] = a
+			_r20_pause(rec, false)
+			var left: float = 0.45 - float(b[0])
+			var tr: float = _gt()
+			# 效果節點會被釋放：lambda 不直接捕捉它（捕捉到已釋放的物件會印出錯誤），改用 weakref
+			var wr: WeakRef = weakref(f)
+			await _wait_until_real(func(): return wr.get_ref() == null or wr.get_ref().is_queued_for_deletion(), 3.0)
+			d25["fx_left"] = snappedf(left, 0.0001)
+			d25["fx_gone_after"] = snappedf(_gt() - tr, 0.0001)
+			var c1: int = _st_main_hero().storm_count
+			await _wait_until(func(): return _st_main_hero().storm_count > c1, 3.0)
+			d25["resumed"] = _st_main_hero().storm_count > c1
+	_check("呼風喚雨-25 手動暫停 0.6 秒：風雨圈、攻擊冷卻、三個敵人的血量、遊戲時間與範圍傷害次數都不變；繼續後風雨圈照剩下的時間消失，之後照常生效",
+		d25.get("fx") == 1 and d25.get("paused_reply") == true and d25.get("frozen") == true and float(d25.get("fx_gone_after", 99.0)) <= float(d25.get("fx_left", 0.0)) + 0.1 and d25.get("resumed") == true, d25)
+
+	# 呼風喚雨-26：升級（更新隊伍：2 級、攻擊力 150）後範圍、比例與人數不變，傷害跟著攻擊力（150、75、75），本場的統計不歸零；
+	# 移位到 (5,4) 後統計照樣累加、照常生效
+	es = await _st_start(rec, "storm-26", 3)
+	var d26: Dictionary = {}
+	if es.size() == 3 and _st_main_hero() != null:
+		_st_place(es, offs3)
+		_st_hit(es)
+		main._on_payload_received({"type": "update_team", "team_list": [_st_member(null, 2, 150.0)]})
+		var g26: Node = _st_main_hero()
+		g26.set_process(false)
+		d26["after_upgrade"] = [g26.hero_level, g26.atk, g26.storm_radius, g26.storm_ratio, g26.storm_max_targets, g26.storm_count, g26.attack_count]
+		_st_place(es, offs3)
+		d26["hit_upgraded"] = _st_hit(es, g26.attack_speed).dmg
+		_blk_move(g26, Vector2i(5, 4))
+		_st_place(es, offs3)
+		var r26: Dictionary = _st_hit(es, g26.attack_speed)
+		d26["hit_moved"] = r26.dmg
+		d26["after_move"] = [g26.storm_count, g26.storm_hits, g26.attack_count]
+	_check("呼風喚雨-26 升級到 2 級（攻擊力 150）後範圍 2、比例 0.5、4 名不變，傷害 150、75、75；本場統計不歸零；移位後照常生效、統計累加到 3 次（命中 6、攻擊 3）",
+		d26.get("after_upgrade") == [2, 150.0, 2.0, 0.5, 4, 1, 1] and d26.get("hit_upgraded") == [150.0, 75.0, 75.0] and d26.get("hit_moved") == [150.0, 75.0, 75.0]
+			and d26.get("after_move") == [3, 6, 3], d26)
+
+	# 呼風喚雨-27：換成其他技能（反擊）後不再有範圍傷害（統計保留、不再增加）；移出隊伍時風雨圈跟著清除、之後 1.2 秒沒有任何傷害；新的一場的諸葛亮統計從 0 開始、沒有殘留的效果
+	es = await _st_start(rec, "storm-27", 3)
+	var d27: Dictionary = {}
+	if es.size() == 3 and _st_main_hero() != null:
+		_st_place(es, offs3)
+		_st_hit(es)
+		var fx_a: Array = _st_fx_of(_st_main_hero())
+		d27["fx_before"] = fx_a.size()
+		main._on_payload_received({"type": "update_team", "team_list": [_r12_hero(ST_HERO, {"id": "counter", "counter_ratio": 0.2})]})
+		var g27: Node = _st_main_hero()
+		g27.set_process(false)
+		_st_place(es, offs3)
+		d27["plain_hit"] = _st_hit(es, g27.attack_speed)
+		d27["plain_ratio"] = g27.storm_ratio
+		main._on_payload_received({"type": "update_team", "team_list": []})
+		await process_frame
+		await process_frame
+		d27["fx_after_remove"] = _st_fx_of(g27).size() if is_instance_valid(g27) else 0
+		d27["fx_node_freed"] = fx_a.size() == 1 and not is_instance_valid(fx_a[0])
+		var hp_before: Array = es.map(func(e): return e.current_hp)
+		await _wait(1.2)
+		d27["no_damage_after_remove"] = es.map(func(e): return e.current_hp) == hp_before
+		es = await _st_start(rec, "storm-27b", 3)
+		d27["new_battle"] = [_st_main_hero().storm_count, _st_main_hero().storm_hits, _st_fx_of(_st_main_hero()).size()] if _st_main_hero() != null else null
+	_check("呼風喚雨-27 換成其他技能（反擊）：比例 0、只有主目標 100（範圍傷害次數不增加）；移出隊伍時風雨圈清除、之後 1.2 秒沒有傷害；新的一場統計從 0 開始、沒有殘留的效果",
 		d27.get("fx_before") == 1 and d27.get("plain_ratio") == 0.0 and d27.get("plain_hit", {}).get("dmg") == [100.0, 0.0, 0.0] and d27.plain_hit.count == 0
 			and d27.get("fx_after_remove") == 0 and d27.get("fx_node_freed") == true and d27.get("no_damage_after_remove") == true and d27.get("new_battle") == [0, 0, 0], d27)
 

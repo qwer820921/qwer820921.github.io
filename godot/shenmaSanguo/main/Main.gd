@@ -536,6 +536,9 @@ func _on_hero_clicked(hero: Node) -> void:
 	# 連環計（龐統）：Godot 實際讀到的每跳範圍（格）、傳遞比例與最多跳數；沒有啟用這個技能的武將不帶這個欄位
 	if hero.chain_ratio > 0.0:
 		info["chain"] = {"radius": hero.chain_radius, "ratio": hero.chain_ratio, "max_jumps": hero.chain_max_jumps}
+	# 呼風喚雨（諸葛亮）：Godot 實際讀到的範圍半徑（格）、傷害比例與最多人數；沒有啟用這個技能的武將不帶這個欄位
+	if hero.storm_ratio > 0.0:
+		info["storm"] = {"radius": hero.storm_radius, "ratio": hero.storm_ratio, "max_targets": hero.storm_max_targets}
 	web_bridge.send_show_upgrade_panel(info)
 
 func _on_tower_clicked(tower: Node) -> void:
@@ -983,6 +986,9 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 連環計（龐統）：Godot 實際讀到的半徑、比例與跳數（沒有啟用時不列出）、有傳遞的攻擊次數、追加命中的次數與實際扣掉的生命總量、
 	# 普通攻擊的次數、還在顯示的連線效果數與最近幾次傳遞的每一跳
 	var hero_chain: Dictionary = {}
+	# 呼風喚雨（諸葛亮）：Godot 實際讀到的半徑、比例與人數（沒有啟用時不列出）、有範圍傷害的攻擊次數、範圍命中的次數與實際扣掉的生命總量、
+	# 普通攻擊的次數、還在顯示的風雨圈數與最近幾次的中心與每一名
+	var hero_storm: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
@@ -1005,6 +1011,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			hero_double_shot[hid] = hero.double_shot_state()
 		if hero.chain_ratio > 0.0:
 			hero_chain[hid] = hero.chain_state()
+		if hero.storm_ratio > 0.0:
+			hero_storm[hid] = hero.storm_state()
 		hero_ranges[hid] = hero.attack_range
 		hero_hp[hid] = hero.current_hp
 		hero_slow[hid] = hero.slow_state()
@@ -1098,6 +1106,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"double_shot_texts": double_shot_texts,
 		# 連環計（龐統）
 		"hero_chain":        hero_chain,
+		# 呼風喚雨（諸葛亮）
+		"hero_storm":        hero_storm,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)

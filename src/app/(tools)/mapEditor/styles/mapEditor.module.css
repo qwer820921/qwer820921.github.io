@@ -509,6 +509,15 @@
   color: #6b7280;
 }
 
+/* 狀態列被較新的操作取代後，較舊操作的結果 */
+.sheetAside {
+  font-size: 0.72rem;
+  color: #6b7280;
+  border-left: 3px solid #d1d5db;
+  padding-left: 0.4rem;
+  overflow-wrap: anywhere;
+}
+
 .metaRow {
   display: flex;
   align-items: center;
@@ -907,4 +916,219 @@
   background: #fef3c7;
   color: #ef4444;
   border-color: #ef4444;
+}
+
+/* ── 地圖資訊的提示與錯誤 ── */
+.metaInputInvalid {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
+
+.metaError {
+  font-size: 0.75rem;
+  color: #b91c1c;
+  margin-bottom: 0.4rem;
+}
+
+.metaHint {
+  font-size: 0.72rem;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+/* ── 素材轉換 ── */
+/* 檔案選擇框：看不見但仍可以用鍵盤（Tab）聚焦 */
+.visuallyHiddenInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.uploadFileBtn:focus-within {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
+}
+
+.assetError {
+  flex-basis: 100%;
+  font-size: 0.75rem;
+  color: #b91c1c;
+}
+
+.assetResult {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.assetPreview {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  image-rendering: pixelated;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.assetInfo {
+  font-size: 0.75rem;
+  color: #334155;
+  word-break: break-all;
+}
+
+/* ── 地圖資料檢查 ── */
+.integrityNote {
+  font-size: 0.75rem;
+  color: #6b7280;
+  line-height: 1.5;
+  margin-bottom: 0.5rem;
+}
+
+.integrityError {
+  font-size: 0.75rem;
+  color: #b91c1c;
+  line-height: 1.5;
+  margin-bottom: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.integrityWarn {
+  font-size: 0.75rem;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.5;
+}
+
+.integrityFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.integrityList {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.integrityItem {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  border: none;
+  border-bottom: 1px solid #f3f4f6;
+  background: #fff;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.integrityItem:hover {
+  background: #f9fafb;
+}
+
+.integrityItem:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: -2px;
+}
+
+.integrityItemActive {
+  background: #eff6ff;
+}
+
+.integrityItemName {
+  overflow-wrap: anywhere;
+}
+
+.integrityChip {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.integrityChipOk {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.integrityChipWarn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.integrityChipBad {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.integrityDetail {
+  font-size: 0.75rem;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.integrityDetailHead {
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+  overflow-wrap: anywhere;
+}
+
+.integrityProblem {
+  color: #92400e;
+  margin-bottom: 0.3rem;
+}
+
+.integrityWaves {
+  margin: 0;
+  padding-left: 1.2rem;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.integrityWaves > li[data-rejected="1"] {
+  color: #b91c1c;
+}
+
+.integrityWaveTitle {
+  font-weight: 600;
+}
+
+.integrityGroups {
+  margin: 0.1rem 0 0.3rem;
+  padding-left: 1rem;
+  color: #374151;
+}
+
+.integrityGroupNote {
+  color: #b45309;
+}
+
+.integrityDraft {
+  border-top: 1px dashed #d1d5db;
+  padding-top: 0.5rem;
+  margin-top: 0.25rem;
 }

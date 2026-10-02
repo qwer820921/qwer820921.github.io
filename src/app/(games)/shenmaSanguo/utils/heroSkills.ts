@@ -1,7 +1,7 @@
 import { HeroSkillPayload } from "../types";
 
 /**
- * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」、廖化「堅韌」、顏良「威壓」、孫尚香「連射」、龐統「連環計」）
+ * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」、廖化「堅韌」、顏良「威壓」、孫尚香「連射」、龐統「連環計」、諸葛亮「呼風喚雨」）
  * 這裡是技能規則的唯一來源：武將列表／詳情的說明，與隨出征資料送進 Godot 的參數都由這裡產生。
  * 技能是戰場效果：不寫進玩家存檔，也不需要後端（GAS）支援。
  * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊。
@@ -146,6 +146,21 @@ export type HeroSkill =
       chainRatio: number;
       /** 最多傳遞幾次（1 或 2） */
       chainMaxJumps: number;
+    }
+  | {
+      /**
+       * 呼風喚雨：每次普通攻擊實際打到主目標後，以主目標被打中的位置為中心、stormRadius 格內（含邊界），
+       * 最多 stormMaxTargets 名其他敵人各受這次普通攻擊傷害 × stormRatio（由近到遠，距離相同時先出現的優先）。
+       * 主目標不會再被範圍打一次；每一名都是同樣的比例（不遞減、不傳遞）；範圍傷害不引發其他技能、不算一次攻擊；只在戰場
+       */
+      id: "storm";
+      name: string;
+      /** 範圍半徑（格，含邊界），以主目標被打中的位置為中心（不是武將的位置） */
+      stormRadius: number;
+      /** 範圍內每一名受到的傷害比例（0.5＝這次普通攻擊傷害的 50%；0～1 之間、不含兩端） */
+      stormRatio: number;
+      /** 最多幾名其他敵人（1～4） */
+      stormMaxTargets: number;
     };
 
 const HERO_SKILLS: Record<string, HeroSkill> = {
@@ -209,6 +224,16 @@ const HERO_SKILLS: Record<string, HeroSkill> = {
     chainRadius: 1.5,
     chainRatio: 0.5,
     chainMaxJumps: 2,
+  },
+  // 正式設定表的被動描述「呼風喚雨：大範圍傷害」沒有寫範圍、比例、人數與觸發方式。第一版的設計值，尚未做過平衡：普通攻擊實際打到主目標後，
+  // 以主目標被打中的位置為中心、2 格內（含邊界）最多 4 名其他敵人各受這次普通攻擊傷害的 50%（由近到遠，主目標不重複；不遞減、不傳遞，不是連環計）；
+  // 自動觸發、沒有手動施放與冷卻；範圍傷害不引發其他技能、不算一次攻擊、攻擊間隔不變；只在戰鬥中、不改屬性與存檔
+  zhu_ge_liang: {
+    id: "storm",
+    name: "呼風喚雨",
+    stormRadius: 2,
+    stormRatio: 0.5,
+    stormMaxTargets: 4,
   },
 };
 
@@ -299,6 +324,11 @@ export function chainPercents(skill: HeroSkill | null): number[] {
   return out;
 }
 
+/** 呼風喚雨範圍內每一名受到的傷害百分比（0.5 → 50；沒有呼風喚雨時是 0） */
+export function stormPercent(skill: HeroSkill | null): number {
+  return skill?.id === "storm" ? round3(skill.stormRatio * 100) : 0;
+}
+
 /**
  * 攻速光環加成後的攻擊間隔（秒）：攻擊間隔 ÷ 倍率（和 Godot 相同）。
  * 是除以倍率、不是減少同樣的百分比：1.15 倍時 1 秒變成約 0.8696 秒，不是 0.85 秒
@@ -321,7 +351,7 @@ export function damageAfterDefense(atk: number, def: number): number {
 /**
  * 技能的完整規則（顯示在武將詳情）
  * - rawRange：這位武將目前等級屬性表上的射程；有提供時，射程技能會寫出戰場上的實際射程，減速光環、防禦光環、攻速光環與威壓會寫出目前的範圍半徑
- * - atk：這位武將目前的攻擊力；有提供時，火攻會寫出每次灼燒的傷害，連射會寫出追加一擊的傷害，連環計會寫出每次傳遞的傷害
+ * - atk：這位武將目前的攻擊力；有提供時，火攻會寫出每次灼燒的傷害，連射會寫出追加一擊的傷害，連環計會寫出每次傳遞的傷害，呼風喚雨會寫出範圍內每一名受到的傷害
  */
 export function describeHeroSkill(
   skill: HeroSkill,
@@ -501,6 +531,25 @@ export function describeHeroSkill(
       "普通攻擊沒有打到敵人時不會傳遞；傳遞不算一次攻擊、不會引發其他技能，攻擊間隔不變。傳遞時會出現紫色的連線。只在戰場生效，不影響存檔。"
     );
   }
+  if (skill.id === "storm") {
+    const pct = stormPercent(skill);
+    const r = skill.stormRadius;
+    const n = skill.stormMaxTargets;
+    const current =
+      atk === undefined
+        ? ""
+        : `目前攻擊力 ${round3(atk)}：主要目標受到 ${round3(atk)}，範圍內其他敵人每一名受到 ${round3((atk * pct) / 100)}。`;
+    return (
+      `每次普通攻擊實際打到敵人後，以這個敵人被打中的位置為中心，${r} 格內（含邊界）最多 ${n} 名其他敵人各受到這次普通攻擊傷害的 ${pct}%；` +
+      `被打中的主要目標照常受到普通攻擊的傷害，不會再被範圍打一次。中心是被打中的敵人，不是諸葛亮自己；離中心近的先算，距離相同時先出現的敵人優先，超過 ${n} 名時較遠的不受影響。` +
+      current +
+      `範圍內每一名都是同樣的 ${pct}%，不會遞減，也不會從被打中的敵人再往外傳（和龐統的連環計不同）。` +
+      "主要目標被這一擊打倒時，照樣以它倒下的位置生效；打不到的敵人不會受到範圍傷害（飛行敵人要能對空的職業才打得到），免疫減速的敵人照樣受傷。" +
+      "範圍傷害照常可以打倒敵人，擊殺與金幣只算一次；普通攻擊沒有打到敵人、或範圍內沒有其他敵人時就是一般的攻擊。" +
+      "自動觸發，沒有手動施放或冷卻；範圍傷害不算一次攻擊、不會引發其他技能，攻擊間隔與射程不變。" +
+      "觸發時以被打中的敵人為中心出現淡藍色的風雨圈，大小就是範圍。只在戰場生效，不影響存檔。"
+    );
+  }
   if (skill.id === "dodge") {
     const pct = round3(skill.dodgeChance * 100);
     return (
@@ -598,6 +647,16 @@ export function heroSkillPayload(heroId: string): { skill?: HeroSkillPayload } {
         chain_radius: skill.chainRadius,
         chain_ratio: skill.chainRatio,
         chain_max_jumps: skill.chainMaxJumps,
+      },
+    };
+  }
+  if (skill.id === "storm") {
+    return {
+      skill: {
+        id: skill.id,
+        storm_radius: skill.stormRadius,
+        storm_ratio: skill.stormRatio,
+        storm_max_targets: skill.stormMaxTargets,
       },
     };
   }

@@ -11,14 +11,36 @@ import {
   WaveRow,
 } from "../types";
 import { SHENMA_SANGUO_GAS_URL } from "@/app/(games)/shenmaSanguo/api/gameApi";
+import type { EnemyConfig, MapConfig } from "@/app/(games)/shenmaSanguo/types";
 import {
   ADMIN_TOKEN_MISSING,
   adminErrorText,
   forgetAdminToken,
   requireAdminToken,
 } from "../utils/adminToken";
+import {
+  CHAPTER_INVALID,
+  META_LABEL,
+  MapMetaFields,
+  MapMetaOriginal,
+  mapMetaUpdate,
+  metaReadbackDiff,
+  metaText,
+  parseChapter,
+} from "../utils/mapMeta";
+import {
+  cleanWavesForSave,
+  droppedGroupsText,
+  expectedSavedWaves,
+  normalizeWaves,
+  wavesSig,
+} from "../utils/waveSave";
+import MapIntegrityPanel, { LoadState } from "./mapIntegrityPanel";
 
 type Tool = "waypoint" | "build" | "obstacle" | "erase" | "texture";
+
+// 素材的「加入開發素材」只在本機開發（npm run dev）提供：正式網站是靜態網站，沒有寫入 public 的服務
+const IS_DEV = process.env.NODE_ENV === "development";
 
 const DEFAULT_COLS = 14;
 const DEFAULT_ROWS = 11;
@@ -109,6 +131,201 @@ function cellLabel(
   return uniqueLabels[0] || "";
 }
 
+// ── 地圖 JSON → 編輯器內容（純函式：載入時也用來記下「已保存」的畫面內容）──
+
+/** 編輯器裡一張地圖的內容（地圖資訊是輸入框的文字） */
+interface EditorMap {
+  mapId: string;
+  name: string;
+  chapter: string;
+  unlockStage: string;
+  textures: TileTextures;
+  cols: number;
+  rows: number;
+  paths: Record<string, [number, number][]>;
+  activePathId: string;
+  bgTexture: string;
+  grid: GridCell[][];
+}
+
+function editorMapFromJson(json: MapJson): EditorMap {
+  const {
+    cols: c,
+    rows: r,
+    waypoints: wps,
+    paths: pths,
+    build_zones,
+    obstacles,
+    tile_textures,
+    cell_textures,
+    background_texture,
+    map_id,
+    name,
+    chapter: ch,
+    unlock_stage,
+  } = json;
+
+  const rawTx = tile_textures || {};
+  const normalizedTx = Object.fromEntries(
+    Object.entries(rawTx).map(([k, v]) => [k, normalizeTex(String(v))])
+  ) as Partial<TileTextures>;
+  const tx: TileTextures = { ...DEFAULT_TEXTURES, ...normalizedTx };
+
+  const nc = c || DEFAULT_COLS;
+  const nr = r || DEFAULT_ROWS;
+
+  let loadedPaths: Record<string, [number, number][]> = {};
+  if (pths && Object.keys(pths).length > 0) {
+    loadedPaths = { ...pths } as Record<string, [number, number][]>;
+  } else if (wps && wps.length > 0) {
+    loadedPaths = { path_a: wps as [number, number][] };
+  } else {
+    loadedPaths = { path_a: [] };
+  }
+
+  const bgTex =
+    background_texture && background_texture.startsWith("maps/")
+      ? background_texture
+      : "maps/bg_forest.webp";
+  const finalGrid = makeGrid(nc, nr, DEFAULT_TEXTURES.empty);
+
+  // 路徑：texture 依位置推算（spawn/road/base）
+  Object.entries(loadedPaths).forEach(([pid, pts]) => {
+    pts.forEach(([col, row], i) => {
+      if (col >= 0 && col < nc && row >= 0 && row < nr) {
+        const isSpawn = i === 0;
+        const isBase = i === pts.length - 1 && pts.length > 1;
+        finalGrid[row][col] = {
+          type: "road",
+          waypointIndex: i,
+          pathId: pid,
+          texture: isSpawn ? tx.spawn : isBase ? tx.base : tx.road,
+        };
+      }
+    });
+  });
+
+  (build_zones || []).forEach(([col, row]) => {
+    if (col >= 0 && col < nc && row >= 0 && row < nr) {
+      if (finalGrid[row][col].type === "empty")
+        finalGrid[row][col] = { type: "build", texture: tx.build };
+    }
+  });
+
+  (obstacles || []).forEach(([col, row]) => {
+    if (col >= 0 && col < nc && row >= 0 && row < nr)
+      finalGrid[row][col] = { type: "obstacle", texture: tx.obstacle };
+  });
+
+  // 新格式：cell_textures 直接覆蓋每格 texture
+  if (cell_textures) {
+    Object.entries(cell_textures).forEach(([key, tex]) => {
+      const [colStr, rowStr] = key.split(",");
+      const col = Number(colStr),
+        row = Number(rowStr);
+      if (finalGrid[row]?.[col])
+        finalGrid[row][col].texture = normalizeTex(tex);
+    });
+  }
+
+  return {
+    mapId: map_id || "",
+    // 照原值顯示，不補預設值（沒有修改的欄位保存時不送，後端保留原本的格子）
+    name: metaText(name),
+    chapter: metaText(ch),
+    unlockStage: metaText(unlock_stage),
+    textures: tx,
+    cols: nc,
+    rows: nr,
+    paths: loadedPaths,
+    activePathId: Object.keys(loadedPaths)[0] || "path_a",
+    bgTexture: bgTex,
+    grid: finalGrid,
+  };
+}
+
+/** 輸出 JSON 用到的編輯器內容 */
+type EditorMapContent = Pick<
+  EditorMap,
+  | "mapId"
+  | "name"
+  | "chapter"
+  | "unlockStage"
+  | "cols"
+  | "rows"
+  | "paths"
+  | "bgTexture"
+  | "grid"
+>;
+
+/** 編輯器內容 → 地圖 JSON（path_json）；chapter 是寫進 JSON 的章節 */
+function mapJsonOf(m: EditorMapContent, chapter: number | string): MapJson {
+  const buildZones: number[][] = [];
+  const obstacles: number[][] = [];
+  const cellTextures: Record<string, string> = {};
+  m.grid.forEach((rowArr, rowIdx) =>
+    rowArr.forEach((cell, colIdx) => {
+      if (cell.type === "build") buildZones.push([colIdx, rowIdx]);
+      if (cell.type === "obstacle") obstacles.push([colIdx, rowIdx]);
+      cellTextures[`${colIdx},${rowIdx}`] = cell.texture;
+    })
+  );
+  // 向後相容（若只有 path_a 就提取給 waypoints）
+  const legacyWaypoints = m.paths["path_a"]
+    ? m.paths["path_a"].map(([c, r]) => [c, r])
+    : [];
+  const spawn = legacyWaypoints[0] ? [...legacyWaypoints[0]] : [];
+  const base =
+    legacyWaypoints.length > 1
+      ? [...legacyWaypoints[legacyWaypoints.length - 1]]
+      : [];
+
+  // 過濾掉空的路徑
+  const cleanPaths: Record<string, number[][]> = {};
+  for (const [pid, pts] of Object.entries(m.paths)) {
+    if (pts.length > 0) {
+      cleanPaths[pid] = pts.map(([c, r]) => [c, r]);
+    }
+  }
+
+  return {
+    map_id: m.mapId,
+    name: m.name,
+    chapter,
+    unlock_stage: m.unlockStage,
+    cols: m.cols,
+    rows: m.rows,
+    paths: cleanPaths,
+    waypoints: legacyWaypoints,
+    spawn,
+    base,
+    build_zones: buildZones,
+    obstacles,
+    background_texture: m.bgTexture,
+    cell_textures: cellTextures,
+  };
+}
+
+/** 畫面內容的比對字串（地圖與地圖資訊；章節用輸入框的文字）：判斷有沒有尚未保存的修改 */
+function editorMapSig(m: EditorMapContent): string {
+  return JSON.stringify(mapJsonOf(m, m.chapter));
+}
+
+/** get_map_config 的一張地圖 → 地圖 JSON（頂層的地圖資訊優先於 path_json 裡的同名欄位） */
+function mapJsonFromConfig(map: Record<string, unknown>, id: string): MapJson {
+  const pathJson =
+    map.path_json && typeof map.path_json === "object"
+      ? (map.path_json as Partial<MapJson>)
+      : {};
+  return {
+    ...pathJson,
+    map_id: id,
+    name: map.name,
+    chapter: map.chapter,
+    unlock_stage: map.unlock_stage,
+  } as MapJson;
+}
+
 // ── GAS 呼叫 ─────────────────────────────────────────────────
 
 async function gasCall(action: string, payload: object) {
@@ -120,18 +337,90 @@ async function gasCall(action: string, payload: object) {
 }
 
 /**
+ * 設定寫入失敗：unknown 是結果不明（請求送出後連線失敗或回應看不懂，後端可能已經寫入），
+ * 其他是確定沒有完成（沒有送出，或後端回了錯誤狀態）
+ */
+class AdminCallError extends Error {
+  constructor(
+    message: string,
+    readonly unknown: boolean
+  ) {
+    super(message);
+  }
+}
+
+/**
  * 設定寫入：帶管理密碼（只在 POST 內容裡，不放網址）。沒有輸入就不送出；
- * 後端拒絕密碼時清掉，下次儲存重新詢問。回傳和 gasCall 相同，錯誤代碼轉成說明文字
+ * 後端拒絕密碼時清掉，下次儲存重新詢問。回傳和 gasCall 相同，錯誤代碼轉成說明文字（AdminCallError）
  */
 async function gasAdminCall(action: string, payload: object) {
   const token = await requireAdminToken();
-  if (!token) throw new Error(adminErrorText(ADMIN_TOKEN_MISSING));
-  const data = await gasCall(action, { ...payload, admin_token: token });
+  if (!token) {
+    throw new AdminCallError(adminErrorText(ADMIN_TOKEN_MISSING), false);
+  }
+  let data;
+  try {
+    data = await gasCall(action, { ...payload, admin_token: token });
+  } catch (e) {
+    throw new AdminCallError(e instanceof Error ? e.message : String(e), true);
+  }
   if (data?.error === "ADMIN_REQUIRED") forgetAdminToken();
   if (data?.status !== 200) {
-    throw new Error(adminErrorText(String(data?.error || "儲存失敗")));
+    throw new AdminCallError(
+      adminErrorText(String(data?.error || "儲存失敗")),
+      typeof data?.status !== "number"
+    );
   }
   return data;
+}
+
+const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** get_all_maps 的地圖清單（只留有 map_id 的地圖） */
+function mapsOf(data: { maps?: unknown }): MapConfig[] {
+  return (Array.isArray(data.maps) ? data.maps : []).filter(
+    (m): m is MapConfig =>
+      !!m && typeof m === "object" && typeof m.map_id === "string"
+  );
+}
+
+/** 保存後讀回：哪一張地圖、送出的地圖資訊、送出當下的畫面內容 */
+interface ReadbackCtx {
+  mapId: string;
+  /** 送出當下的畫面意圖序號（之後載入、新地圖或匯入時，讀回不再改畫面） */
+  intent: number;
+  sent: MapMetaFields;
+  sentSig: string;
+  /** 送出的 path_json（JSON 字串，和讀回的比對） */
+  sentPathJson: string;
+  /** 後端回報保存成功；false 是寫入結果不明 */
+  saved: boolean;
+}
+
+/** 波次保存後讀回：哪一張地圖、送出當下畫面上的波次、設定裡應該得到的波次 */
+interface WavesReadbackCtx {
+  mapId: string;
+  intent: number;
+  /** 送出當下畫面上的波次（含沒有選敵人、被濾掉的組） */
+  sentSig: string;
+  /** 送出後設定裡應該有的波次 */
+  expectedSig: string;
+  /** 被濾掉、沒有保存的組（說明文字） */
+  dropped: string;
+  /** 後端回報保存成功；false 是寫入結果不明 */
+  saved: boolean;
+}
+
+type SheetStatus = "idle" | "loading" | "saving" | "ok" | "error";
+
+/** 轉換好的 WebP 素材（只在這個頁面預覽與下載，不會加入素材選單） */
+interface ConvertedAsset {
+  url: string;
+  fileName: string;
+  type: "tile" | "map";
+  width: number;
+  height: number;
+  blob: Blob;
 }
 
 // ── 主元件 ───────────────────────────────────────────────────
@@ -171,10 +460,45 @@ export default function MapTab({
   const [outputTab, setOutputTab] = useState<"standard" | "sheets">("standard");
   const [copied, setCopied] = useState(false);
   const [loadMapId, setLoadMapId] = useState("chapter1_1");
-  const [mapList, setMapList] = useState<
-    { map_id: string; name: string; chapter: number }[]
-  >([]);
-  const [listLoading, setListLoading] = useState(false);
+  const [mapListState, setMapListState] = useState<LoadState<MapConfig[]>>({
+    status: "idle",
+  });
+  const mapList = mapListState.status === "loaded" ? mapListState.data : [];
+  const listLoading = mapListState.status === "loading";
+  const [enemiesState, setEnemiesState] = useState<LoadState<EnemyConfig[]>>({
+    status: "idle",
+  });
+  // 從設定載入的地圖資訊原值（含型別）：沒有修改的欄位不送，後端保留原本的格子
+  const [metaOriginal, setMetaOriginal] = useState<MapMetaOriginal | null>(
+    null
+  );
+  const [chapterError, setChapterError] = useState("");
+  // 保存後讀回失敗、或寫入結果不明時，可以只讀地重新讀回（不重送寫入）
+  const [readbackPending, setReadbackPending] = useState<ReadbackCtx | null>(
+    null
+  );
+  const [wavesReadbackPending, setWavesReadbackPending] =
+    useState<WavesReadbackCtx | null>(null);
+  // 最後一次從設定載入（或保存後讀回）時的畫面內容：用來顯示「尚未保存的修改」
+  const [savedMapSig, setSavedMapSig] = useState<string | null>(null);
+  const [savedWavesSig, setSavedWavesSig] = useState<string | null>(null);
+  // 畫面是新地圖或匯入的 JSON（設定裡還沒有這些內容）
+  const [unsavedDraft, setUnsavedDraft] = useState(false);
+  // 畫面意圖的序號：開始載入、套用載入、新地圖、匯入時加一。
+  // 在這之前開始的載入或讀回，回來時不再改畫面（較新的選擇與之後的修改不會被舊回應蓋掉）
+  const intentSeq = useRef(0);
+  // 狀態列的操作序號：較新的操作開始後，較舊操作的結果顯示在「其他操作的結果」
+  const statusSeq = useRef(0);
+  const readbackSeq = useRef(0);
+  const wavesReadSeq = useRef(0);
+  const listSeq = useRef(0);
+  const enemiesLoading = useRef(false);
+  const draftSigRef = useRef("");
+  const wavesSigRef = useRef("");
+  const mapIdRef = useRef("");
+  const [loadingMapId, setLoadingMapId] = useState<string | null>(null);
+  const [savingMap, setSavingMap] = useState(false);
+  const [readingBack, setReadingBack] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
   const [newMapId, setNewMapId] = useState("");
   const [newMapName, setNewMapName] = useState("");
@@ -182,12 +506,16 @@ export default function MapTab({
   const [newUnlockStage, setNewUnlockStage] = useState("");
   const [newCols, setNewCols] = useState(String(DEFAULT_COLS));
   const [newRows, setNewRows] = useState(String(DEFAULT_ROWS));
-  const [sheetStatus, setSheetStatus] = useState<
-    "idle" | "loading" | "saving" | "ok" | "error"
-  >("idle");
+  const [sheetStatus, setSheetStatus] = useState<SheetStatus>("idle");
   const [sheetMsg, setSheetMsg] = useState("");
+  const [sheetAside, setSheetAside] = useState("");
   const [waves, setWaves] = useState<WaveRow[]>([]);
-  const [enemyOptions, setEnemyOptions] = useState<string[]>([]);
+  const enemyOptions =
+    enemiesState.status === "loaded"
+      ? enemiesState.data
+          .map((e) => String(e.enemy_id || e.id || ""))
+          .filter(Boolean)
+      : [];
   const [waveStatus, setWaveStatus] = useState<
     "idle" | "saving" | "ok" | "error"
   >("idle");
@@ -204,9 +532,13 @@ export default function MapTab({
     x: number;
     y: number;
   } | null>(null);
-  const [uploadStatus, setUploadStatus] = useState<
-    "idle" | "uploading" | "ok" | "error"
+  const [converted, setConverted] = useState<ConvertedAsset | null>(null);
+  const [convertStatus, setConvertStatus] = useState<
+    "idle" | "converting" | "error"
   >("idle");
+  const [convertError, setConvertError] = useState("");
+  const [devAddMsg, setDevAddMsg] = useState("");
+  const convertedUrlRef = useRef<string | null>(null);
   // 點擊 split button 左側縮圖時彈出的材質選擇器
   const [texPicker, setTexPicker] = useState<{
     key: keyof TileTextures;
@@ -380,57 +712,100 @@ export default function MapTab({
     isPainting.current = false;
     mouseDownCell.current = null;
   };
-  const handleUploadImage = useCallback(
-    async (file: File, type: "tile" | "map") => {
-      const canvas = uploadCanvasRef.current;
-      if (!canvas) return;
-      setUploadStatus("uploading");
-      try {
-        const url = URL.createObjectURL(file);
-        const img = document.createElement("img");
-        await new Promise<void>((res, rej) => {
-          img.onload = () => res();
-          img.onerror = rej;
-          img.src = url;
-        });
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext("2d")!;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0);
-        URL.revokeObjectURL(url);
-
-        const blob = await new Promise<Blob | null>((res) =>
-          canvas.toBlob(res, "image/webp", 0.9)
-        );
-        if (!blob) throw new Error("webp 轉換失敗");
-
-        const baseName = file.name.replace(/\.[^.]+$/, "") + ".webp";
-        const fd = new FormData();
-        fd.append("file", blob, baseName);
-        fd.append("type", type);
-        fd.append("name", baseName);
-
-        const resp = await fetch("/mapEditor/api/upload", {
-          method: "POST",
-          body: fd,
-        });
-        const json = await resp.json();
-        if (!resp.ok || json.error) throw new Error(json.error || "上傳失敗");
-
-        const savedPath: string = json.path; // e.g. "tiles/my_img.webp"
-        if (type === "tile") setExtraTileImages((p) => [...p, savedPath]);
-        else setExtraMapImages((p) => [...p, savedPath]);
-        setUploadStatus("ok");
-        setTimeout(() => setUploadStatus("idle"), 2000);
-      } catch (e) {
-        console.error(e);
-        setUploadStatus("error");
-        setTimeout(() => setUploadStatus("idle"), 3000);
-      }
+  // ── 素材轉換：在瀏覽器把圖片轉成 WebP，預覽並下載（不上傳；正式網站是靜態網站） ──
+  const replaceConverted = (next: ConvertedAsset | null) => {
+    if (convertedUrlRef.current) URL.revokeObjectURL(convertedUrlRef.current);
+    convertedUrlRef.current = next ? next.url : null;
+    setConverted(next);
+  };
+  useEffect(
+    () => () => {
+      if (convertedUrlRef.current) URL.revokeObjectURL(convertedUrlRef.current);
     },
     []
   );
+
+  const handleConvertImage = async (file: File, type: "tile" | "map") => {
+    const canvas = uploadCanvasRef.current;
+    if (!canvas) return;
+    replaceConverted(null);
+    setDevAddMsg("");
+    setConvertError("");
+    setConvertStatus("converting");
+    const src = URL.createObjectURL(file);
+    try {
+      const img = document.createElement("img");
+      await new Promise<void>((res, rej) => {
+        img.onload = () => res();
+        img.onerror = () => rej(new Error("load"));
+        img.src = src;
+      });
+      if (!img.naturalWidth || !img.naturalHeight) throw new Error("empty");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("canvas");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+      const blob = await new Promise<Blob | null>((res) =>
+        canvas.toBlob(res, "image/webp", 0.9)
+      );
+      // 不支援 WebP 的瀏覽器會改成 PNG：不能當成 WebP 下載
+      if (!blob || blob.type !== "image/webp") throw new Error("webp");
+      replaceConverted({
+        url: URL.createObjectURL(blob),
+        fileName: file.name.replace(/\.[^.]+$/, "") + ".webp",
+        type,
+        width: canvas.width,
+        height: canvas.height,
+        blob,
+      });
+      setConvertStatus("idle");
+    } catch (e) {
+      setConvertStatus("error");
+      setConvertError(
+        e instanceof Error && e.message === "webp"
+          ? "這個瀏覽器無法轉成 WebP，請改用 Chrome、Edge 或 Firefox"
+          : "無法讀取這個檔案（不是圖片，或瀏覽器不支援這種格式），沒有產生素材"
+      );
+    } finally {
+      URL.revokeObjectURL(src);
+    }
+  };
+
+  // 只在本機開發：把轉換好的素材寫進本機 public（Next 開發伺服器的 api/upload），加入這個頁面的素材選單。
+  // 遊戲引擎讀的是 Godot 專案的素材，仍要另外加入並重新匯出
+  const handleDevAddAsset = async () => {
+    if (!IS_DEV || !converted) return;
+    setDevAddMsg("加入中…");
+    try {
+      const fd = new FormData();
+      fd.append("file", converted.blob, converted.fileName);
+      fd.append("type", converted.type);
+      fd.append("name", converted.fileName);
+      const resp = await fetch("/mapEditor/api/upload", {
+        method: "POST",
+        body: fd,
+      });
+      const json = await resp.json();
+      if (!resp.ok || json.error) throw new Error(json.error || "加入失敗");
+      const savedPath: string = json.path; // e.g. "tiles/my_img.webp"
+      if (converted.type === "tile") {
+        setExtraTileImages((p) =>
+          p.includes(savedPath) ? p : [...p, savedPath]
+        );
+      } else {
+        setExtraMapImages((p) =>
+          p.includes(savedPath) ? p : [...p, savedPath]
+        );
+      }
+      setDevAddMsg(
+        `✓ 已寫進本機 public/images/shenmaSanguo/${savedPath}；遊戲要使用還需加入 Godot 素材並重新匯出`
+      );
+    } catch (e) {
+      setDevAddMsg(`✗ ${errText(e)}`);
+    }
+  };
 
   const handleClear = () => {
     setGrid(makeGrid(cols, rows, textures.empty));
@@ -438,128 +813,47 @@ export default function MapTab({
     setActivePathId("path_a");
   };
 
-  // ── JSON → Grid（從 Sheet 載入時使用）──
-  const loadFromJson = useCallback(
-    (json: MapJson) => {
-      const {
-        cols: c,
-        rows: r,
-        waypoints: wps,
-        paths: pths,
-        build_zones,
-        obstacles,
-        tile_textures,
-        cell_textures,
-        background_texture,
-        map_id,
-        name,
-        chapter: ch,
-        unlock_stage,
-      } = json;
-
-      setMapId(map_id || "");
-      setMapName(name || "");
-      setChapter(String(ch || 1));
-      setUnlockStage(unlock_stage || "");
-      const rawTx = tile_textures || {};
-      const normalizedTx = Object.fromEntries(
-        Object.entries(rawTx).map(([k, v]) => [k, normalizeTex(String(v))])
-      ) as Partial<TileTextures>;
-      const tx: TileTextures = { ...DEFAULT_TEXTURES, ...normalizedTx };
-      setTextures(tx);
-
-      const nc = c || DEFAULT_COLS;
-      const nr = r || DEFAULT_ROWS;
-      setCols(nc);
-      setRows(nr);
-      setColsInput(String(nc));
-      setRowsInput(String(nr));
-
-      let loadedPaths: Record<string, [number, number][]> = {};
-      if (pths && Object.keys(pths).length > 0) {
-        loadedPaths = { ...pths } as Record<string, [number, number][]>;
-      } else if (wps && wps.length > 0) {
-        loadedPaths = { path_a: wps as [number, number][] };
-      } else {
-        loadedPaths = { path_a: [] };
-      }
-      setPaths(loadedPaths);
-      setActivePathId(Object.keys(loadedPaths)[0] || "path_a");
-
-      const bgTex =
-        background_texture && background_texture.startsWith("maps/")
-          ? background_texture
-          : "maps/bg_forest.webp";
-      setBgTexture(bgTex);
-      const finalGrid = makeGrid(nc, nr, DEFAULT_TEXTURES.empty);
-
-      // 路徑：texture 依位置推算（spawn/road/base）
-      Object.entries(loadedPaths).forEach(([pid, pts]) => {
-        pts.forEach(([col, row], i) => {
-          if (col >= 0 && col < nc && row >= 0 && row < nr) {
-            const isSpawn = i === 0;
-            const isBase = i === pts.length - 1 && pts.length > 1;
-            finalGrid[row][col] = {
-              type: "road",
-              waypointIndex: i,
-              pathId: pid,
-              texture: isSpawn ? tx.spawn : isBase ? tx.base : tx.road,
-            };
-          }
-        });
-      });
-
-      (build_zones || []).forEach(([col, row]) => {
-        if (col >= 0 && col < nc && row >= 0 && row < nr) {
-          if (finalGrid[row][col].type === "empty")
-            finalGrid[row][col] = { type: "build", texture: tx.build };
-        }
-      });
-
-      (obstacles || []).forEach(([col, row]) => {
-        if (col >= 0 && col < nc && row >= 0 && row < nr)
-          finalGrid[row][col] = { type: "obstacle", texture: tx.obstacle };
-      });
-
-      // 新格式：cell_textures 直接覆蓋每格 texture
-      if (cell_textures) {
-        Object.entries(cell_textures).forEach(([key, tex]) => {
-          const [colStr, rowStr] = key.split(",");
-          const col = Number(colStr),
-            row = Number(rowStr);
-          if (finalGrid[row]?.[col])
-            finalGrid[row][col].texture = normalizeTex(tex);
-        });
-      }
-
-      setGrid(finalGrid);
-    },
-    [
-      setPaths,
-      setActivePathId,
-      setTextures,
-      setBgTexture,
-      setCols,
-      setRows,
-      setGrid,
-      setMapId,
-      setMapName,
-      setChapter,
-      setUnlockStage,
-    ]
-  );
+  // ── JSON → Grid（從 Sheet 載入、匯入 JSON 時使用）──
+  const loadFromJson = (json: MapJson): EditorMap => {
+    const m = editorMapFromJson(json);
+    setMapId(m.mapId);
+    setMapName(m.name);
+    setChapter(m.chapter);
+    setUnlockStage(m.unlockStage);
+    setChapterError("");
+    setTextures(m.textures);
+    setCols(m.cols);
+    setRows(m.rows);
+    setColsInput(String(m.cols));
+    setRowsInput(String(m.rows));
+    setPaths(m.paths);
+    setActivePathId(m.activePathId);
+    setBgTexture(m.bgTexture);
+    setGrid(m.grid);
+    return m;
+  };
 
   // ── 波次操作 ──
-  const handleLoadEnemies = async () => {
-    if (enemyOptions.length > 0) return;
+  // 敵人設定（波次的敵人選單、地圖資料檢查的每一組判讀）：讀過就不再讀；force 是讀取失敗後的重試
+  const handleLoadEnemies = async (force = false) => {
+    if (enemiesLoading.current) return;
+    if (!force && enemiesState.status === "loaded") return;
+    enemiesLoading.current = true;
+    setEnemiesState({ status: "loading" });
     try {
       const data = await gasCall("get_enemies_config", {});
-      if (data.status !== 200) return;
-      const ids: string[] = (data.enemies as Record<string, string>[]).map(
-        (e) => String(e.enemy_id || e.id || "")
-      );
-      setEnemyOptions(ids.filter(Boolean));
-    } catch {}
+      if (data?.status !== 200 || !Array.isArray(data.enemies)) {
+        throw new Error(String(data?.error || "讀取失敗"));
+      }
+      setEnemiesState({
+        status: "loaded",
+        data: data.enemies as EnemyConfig[],
+      });
+    } catch (e) {
+      setEnemiesState({ status: "error", error: errText(e) });
+    } finally {
+      enemiesLoading.current = false;
+    }
   };
 
   const addWave = () =>
@@ -617,34 +911,192 @@ export default function MapTab({
       )
     );
 
-  const handleSaveWaves = async () => {
-    setWaveStatus("saving");
-    setWaveMsg("儲存中...");
-    try {
-      // 過濾掉 enemy_id 為空的群組，以及過濾後 enemies 為空的波次
-      const cleanWaves = waves
-        .map((w) => ({
-          ...w,
-          enemies: w.enemies.filter((e) => e.enemy_id.trim() !== ""),
-        }))
-        .filter((w) => w.enemies.length > 0);
+  // 回應回來時畫面還是同一張地圖（期間沒有載入、新地圖或匯入，map_id 也沒有改）
+  const stillOn = (c: { intent: number; mapId: string }) =>
+    intentSeq.current === c.intent && mapIdRef.current === c.mapId;
 
+  // 儲存波次：沒有選敵人的組（與濾完沒有組的波次）不送出；成功後只讀地重新讀回，以讀回的波次為「已保存」的基準
+  const handleSaveWaves = async () => {
+    const cleanWaves = cleanWavesForSave(waves);
+    const ctx: WavesReadbackCtx = {
+      mapId,
+      intent: intentSeq.current,
+      sentSig: wavesSig(waves),
+      expectedSig: wavesSig(expectedSavedWaves(cleanWaves)),
+      dropped: droppedGroupsText(waves),
+      saved: true,
+    };
+    setWavesReadbackPending(null);
+    setWaveStatus("saving");
+    setWaveMsg(`「${mapId}」波次儲存中...`);
+    try {
       await gasAdminCall("save_waves_config", {
         map_id: mapId,
         waves: cleanWaves,
       });
-      setWaveStatus("ok");
-      setWaveMsg("✓ 波次儲存成功");
     } catch (e) {
       setWaveStatus("error");
-      setWaveMsg(`✗ ${e instanceof Error ? e.message : String(e)}`);
+      if (e instanceof AdminCallError && e.unknown) {
+        setWaveMsg(
+          `✗ 「${ctx.mapId}」無法確定波次是否已保存（${e.message}）：可能已寫入，也可能沒有；不會自動重送，可以按「重新讀回波次」確認設定裡的波次`
+        );
+        setWavesReadbackPending({ ...ctx, saved: false });
+      } else {
+        setWaveMsg(`✗ 「${ctx.mapId}」的波次沒有保存：${errText(e)}`);
+      }
+      return;
     }
+    setWaveMsg(`✓ 「${ctx.mapId}」波次已保存，正在重新讀回…`);
+    await readBackWaves(ctx);
+  };
+
+  /**
+   * 只讀：重新讀回剛才保存的波次，以設定裡實際的波次為「已保存」的基準；不重送寫入。
+   * - 期間沒有修改：畫面換成讀回的波次（被濾掉的空白組不會留在畫面上假裝已保存）
+   * - 期間又改了波次：保留畫面上的修改，和讀回的內容比較（標示尚未保存）
+   * - 已經換成別的地圖：不改畫面
+   */
+  const readBackWaves = async (ctx: WavesReadbackCtx) => {
+    const seq = ++wavesReadSeq.current;
+    setWavesReadbackPending(null);
+    setWaveStatus("saving");
+    let got: WaveRow[];
+    try {
+      const data = await gasCall("get_map_config", { map_id: ctx.mapId });
+      if (data?.status !== 200 || !data.map) {
+        throw new Error(String(data?.error || "讀回失敗"));
+      }
+      got = normalizeWaves(data.map.waves);
+    } catch (e) {
+      if (seq !== wavesReadSeq.current) return;
+      const same = stillOn(ctx);
+      // 後端回報成功：設定裡是濾過的內容（畫面上的空白組仍標示尚未保存）
+      if (ctx.saved && same) setSavedWavesSig(ctx.expectedSig);
+      setWaveStatus("error");
+      setWaveMsg(
+        ctx.saved
+          ? `⚠ 「${ctx.mapId}」波次已保存（後端回報成功），但重新讀回失敗（${errText(e)}）：沒有重送` +
+              (ctx.dropped ? `；${ctx.dropped}沒有選敵人，沒有保存` : "") +
+              "；可以按「重新讀回波次」再試"
+          : `✗ 重新讀回「${ctx.mapId}」的波次失敗（${errText(e)}），仍無法確定這次有沒有保存；沒有重送，可以再按「重新讀回波次」`
+      );
+      setWavesReadbackPending(ctx);
+      return;
+    }
+    if (seq !== wavesReadSeq.current) return;
+    // 已讀取的地圖清單重新讀取（只讀），讓地圖資料檢查顯示保存後的波次
+    if (mapListState.status !== "idle") handleLoadMapList();
+    const gotSig = wavesSig(got);
+    const sameAsSent = gotSig === ctx.expectedSig;
+    const same = stillOn(ctx);
+    const untouched = same && wavesSigRef.current === ctx.sentSig;
+    // 寫入結果不明而且設定和送出的不同：這次沒有生效，畫面保留修改
+    const replace = untouched && (ctx.saved || sameAsSent);
+    if (same) {
+      if (replace) setWaves(got);
+      setSavedWavesSig(gotSig);
+    }
+    const dropped = ctx.dropped
+      ? `；${ctx.dropped}沒有選敵人，沒有保存${replace ? "（已從畫面移除）" : ""}`
+      : "";
+    const elsewhere = "；目前畫面已經不是這張地圖，沒有改變";
+    if (!ctx.saved) {
+      setWaveStatus(sameAsSent ? "ok" : "error");
+      setWaveMsg(
+        sameAsSent
+          ? `✓ 讀回確認：設定裡「${ctx.mapId}」的波次和這次送出的相同，這次波次已保存${same ? dropped : elsewhere}`
+          : `✗ 讀回確認：設定裡「${ctx.mapId}」的波次和這次送出的不同，這次波次保存沒有生效（或已被其他修改蓋過）；沒有重送` +
+              (same ? "，畫面保留你的修改" : elsewhere)
+      );
+      return;
+    }
+    if (!sameAsSent) {
+      setWaveStatus("error");
+      setWaveMsg(
+        `⚠ 「${ctx.mapId}」波次已保存，但讀回的波次和送出的不同（可能同時有其他修改）` +
+          (!same
+            ? elsewhere
+            : replace
+              ? "；畫面已改成設定裡的波次"
+              : "；畫面保留你的修改")
+      );
+      return;
+    }
+    setWaveStatus("ok");
+    setWaveMsg(
+      !same
+        ? `✓ 「${ctx.mapId}」波次儲存成功並重新讀回${elsewhere}`
+        : untouched
+          ? `✓ 「${ctx.mapId}」波次儲存成功並重新讀回，畫面和設定一致${dropped}`
+          : `✓ 「${ctx.mapId}」波次儲存成功並重新讀回；保存期間你又改了波次，那些修改還沒保存（畫面保留你的修改）${dropped}`
+    );
+  };
+
+  // ── 輸出 JSON ──
+  // 目前畫面的內容（地圖與地圖資訊，尚未保存的修改也在內）
+  const editorMap: EditorMapContent = {
+    mapId,
+    name: mapName,
+    chapter,
+    unlockStage,
+    cols,
+    rows,
+    paths,
+    bgTexture,
+    grid,
+  };
+  const draftSig = editorMapSig(editorMap);
+  const draftWavesSig = wavesSig(waves);
+  // 非同步的讀取／讀回完成時要比對「當下」的畫面內容
+  useEffect(() => {
+    draftSigRef.current = draftSig;
+    wavesSigRef.current = draftWavesSig;
+    mapIdRef.current = mapId;
+  }, [draftSig, draftWavesSig, mapId]);
+  const mapDirty = savedMapSig !== null && savedMapSig !== draftSig;
+  const wavesDirty = savedWavesSig !== null && savedWavesSig !== draftWavesSig;
+
+  // ── 狀態列 ──
+  // 操作開始時取得狀態列（清掉上一次其他操作的結果）；結束時若已有較新的操作開始，結果改顯示在「其他操作的結果」
+  const beginStatus = (status: SheetStatus, msg: string) => {
+    const op = ++statusSeq.current;
+    setSheetStatus(status);
+    setSheetMsg(msg);
+    setSheetAside("");
+    return op;
+  };
+  const endStatus = (op: number, status: SheetStatus, msg: string) => {
+    if (op === statusSeq.current) {
+      setSheetStatus(status);
+      setSheetMsg(msg);
+    } else {
+      setSheetAside(msg);
+    }
+  };
+
+  // 畫面換成另一份內容（套用載入、新地圖、匯入）：在這之前開始的載入或讀回，回來時不再改畫面
+  const replaceContext = () => {
+    intentSeq.current++;
+    setLoadingMapId(null);
+  };
+
+  // path_json 裡的地圖資訊和保存後的頂層欄位相同（沒有修改的章節是原值）；章節無效時照輸入的文字（不會送出）
+  const buildMapJson = (): MapJson => {
+    const meta = mapMetaUpdate(metaOriginal, mapId, {
+      name: mapName,
+      chapter,
+      unlockStage,
+    });
+    const c = meta.ok ? meta.effective.chapter : chapter;
+    return mapJsonOf(editorMap, typeof c === "number" ? c : metaText(c));
   };
 
   // ── 新增地圖（modal 確認後）──
   const handleNewMapConfirm = () => {
     const nc = parseInt(newCols) || 14;
     const nr = parseInt(newRows) || 11;
+    const cancelled = loadingMapId;
+    replaceContext();
     setCols(nc);
     setRows(nr);
     setColsInput(String(nc));
@@ -656,7 +1108,19 @@ export default function MapTab({
     setGrid(makeGrid(nc, nr));
     setPaths({ path_a: [] });
     setActivePathId("path_a");
+    // 新地圖不是從設定載入的：沒有原值（保存時三欄都送出），也沒有「已保存」的內容。
+    // 之前保存的重新讀回按鈕標示的是那張地圖，保留（只讀，不改這個畫面）
+    setMetaOriginal(null);
+    setChapterError("");
+    setSavedMapSig(null);
+    setSavedWavesSig(null);
+    setUnsavedDraft(true);
     setShowNewModal(false);
+    beginStatus(
+      "ok",
+      `✓ 已建立新地圖「${newMapId.trim()}」的草稿（還沒保存到設定）` +
+        (cancelled ? `；先前「${cancelled}」的載入已取消，不會套用` : "")
+    );
   };
 
   const openNewModal = () => {
@@ -670,139 +1134,292 @@ export default function MapTab({
   };
 
   // ── Sheet 操作 ──
+  // 地圖清單（含路線與波次，地圖資料檢查用）：只讀，不改編輯中的畫面；同時有兩次讀取時以較晚送出的為準
   const handleLoadMapList = async () => {
-    setListLoading(true);
+    const seq = ++listSeq.current;
+    setMapListState({ status: "loading" });
+    handleLoadEnemies();
     try {
       const data = await gasCall("get_all_maps", {});
-      if (data.status !== 200) throw new Error(data.error || "載入失敗");
-      const list =
-        (data.maps as { map_id: string; name: string; chapter: number }[]) ||
-        [];
-      setMapList(list);
-      if (list.length > 0) setLoadMapId(list[0].map_id);
+      if (data?.status !== 200 || !Array.isArray(data.maps)) {
+        throw new Error(String(data?.error || "載入失敗"));
+      }
+      if (seq !== listSeq.current) return;
+      const list = mapsOf(data);
+      setMapListState({ status: "loaded", data: list });
+      // 原本選的地圖還在清單裡就保留
+      setLoadMapId((cur) =>
+        list.some((m) => m.map_id === cur) ? cur : (list[0]?.map_id ?? cur)
+      );
     } catch (e) {
-      setSheetStatus("error");
-      setSheetMsg(`✗ ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setListLoading(false);
+      if (seq !== listSeq.current) return;
+      // 失敗原因與重試在地圖資料檢查面板（重試成功後不留下舊的錯誤）
+      setMapListState({ status: "error", error: errText(e) });
     }
   };
 
+  /**
+   * 把設定裡的一張地圖放進編輯器，並記下原值與「已保存」的內容。
+   * withWaves 為 false 時不動波次（保存地圖後的讀回不能蓋掉尚未保存的波次）
+   */
+  const applyLoadedMap = (
+    map: Record<string, unknown>,
+    id: string,
+    withWaves: boolean
+  ) => {
+    const m = loadFromJson(mapJsonFromConfig(map, id));
+    setMetaOriginal({
+      mapId: id,
+      name: map.name,
+      chapter: map.chapter,
+      unlock_stage: map.unlock_stage,
+    });
+    setSavedMapSig(editorMapSig(m));
+    setUnsavedDraft(false);
+    if (withWaves) {
+      const w = normalizeWaves(map.waves);
+      setWaves(w);
+      setSavedWavesSig(wavesSig(w));
+    }
+  };
+
+  /**
+   * 載入設定裡的一張地圖（使用者按「載入」）。按下時畫面上尚未保存的內容會被取代（訊息會說明）；
+   * 等待回應期間如果又改了畫面、建立新地圖或匯入 JSON，回應回來時不套用，保留較新的畫面
+   */
   const handleLoadFromSheet = async () => {
-    setSheetStatus("loading");
-    setSheetMsg("載入中...");
+    const id = loadMapId;
+    const intent = ++intentSeq.current;
+    const startSig = `${draftSigRef.current}\n${wavesSigRef.current}`;
+    const replacing = mapDirty || wavesDirty || unsavedDraft;
+    const op = beginStatus("loading", `「${id}」載入中...`);
+    setLoadingMapId(id);
+    let map: Record<string, unknown>;
     try {
-      const data = await gasCall("get_map_config", { map_id: loadMapId });
-      if (data.status !== 200) throw new Error(data.error || "載入失敗");
-      const {
-        path_json,
-        name,
-        chapter: ch,
-        unlock_stage,
-        waves: loadedWaves,
-      } = data.map;
-      loadFromJson({
-        ...path_json,
-        map_id: loadMapId,
-        name,
-        chapter: ch,
-        unlock_stage,
-      });
-      if (Array.isArray(loadedWaves)) setWaves(loadedWaves as WaveRow[]);
-      setSheetStatus("ok");
-      setSheetMsg("✓ 載入成功");
+      const data = await gasCall("get_map_config", { map_id: id });
+      if (data?.status !== 200 || !data.map) {
+        throw new Error(String(data?.error || "載入失敗"));
+      }
+      map = data.map;
     } catch (e) {
-      setSheetStatus("error");
-      setSheetMsg(`✗ ${e instanceof Error ? e.message : String(e)}`);
+      // 新地圖、匯入或較新的載入已經取代這次載入：不改畫面與狀態
+      if (intent !== intentSeq.current) return;
+      setLoadingMapId(null);
+      endStatus(
+        op,
+        "error",
+        `✗ 「${id}」載入失敗：${errText(e)}；畫面沒有改變`
+      );
+      return;
     }
+    if (intent !== intentSeq.current) return;
+    if (`${draftSigRef.current}\n${wavesSigRef.current}` !== startSig) {
+      setLoadingMapId(null);
+      endStatus(
+        op,
+        "error",
+        `⚠ 「${id}」已讀到，但等待期間畫面有新的修改，為保留這些修改沒有套用；要換成「${id}」請再按一次「載入」（會取代畫面上尚未保存的內容）`
+      );
+      return;
+    }
+    replaceContext();
+    applyLoadedMap(map, id, true);
+    endStatus(
+      op,
+      "ok",
+      `✓ 「${id}」載入成功` +
+        (replacing ? "；原本畫面上尚未保存的內容已被取代" : "")
+    );
   };
 
+  /**
+   * 只讀：重新讀回剛才保存的地圖（與已讀取的清單），讓畫面和設定一致；不重送寫入。
+   * - 保存後開始了載入、建立新地圖或匯入時不改畫面（結果照樣說明）
+   * - 保存期間又改了畫面、或寫入結果不明而設定和送出的不同時，保留畫面上的修改（還沒保存）
+   * op 是這次保存（或按「重新讀回」）在狀態列的操作序號
+   */
+  const readBack = async (ctx: ReadbackCtx, op: number) => {
+    const seq = ++readbackSeq.current;
+    setReadbackPending(null);
+    setReadingBack(true);
+    let map: Record<string, unknown>;
+    try {
+      const data = await gasCall("get_map_config", { map_id: ctx.mapId });
+      if (data?.status !== 200 || !data.map) {
+        throw new Error(String(data?.error || "讀回失敗"));
+      }
+      map = data.map;
+    } catch (e) {
+      if (seq !== readbackSeq.current) return;
+      setReadingBack(false);
+      endStatus(
+        op,
+        "error",
+        ctx.saved
+          ? `⚠ 「${ctx.mapId}」已保存（後端回報成功），但重新讀回失敗（${errText(e)}）：` +
+              (stillOn(ctx)
+                ? "畫面仍是你送出的內容"
+                : "目前畫面已經不是這張地圖") +
+              "，沒有重送；可以按「重新讀回」再試"
+          : `✗ 重新讀回「${ctx.mapId}」失敗（${errText(e)}），仍無法確定這次更新有沒有保存；沒有重送，可以再按「重新讀回」`
+      );
+      setReadbackPending(ctx);
+      return;
+    }
+    if (seq !== readbackSeq.current) return;
+    setReadingBack(false);
+    if (mapListState.status !== "idle") handleLoadMapList();
+
+    const diff = metaReadbackDiff(ctx.sent, map);
+    const sameAsSent =
+      JSON.stringify(map.path_json) === ctx.sentPathJson && diff.length === 0;
+    const sameMap = stillOn(ctx);
+    const untouched = sameMap && draftSigRef.current === ctx.sentSig;
+    // 寫入結果不明而且設定和送出的不同：這次的更新沒有生效，畫面保留修改
+    const keepDraft = !untouched || (!ctx.saved && !sameAsSent);
+    if (sameMap && !keepDraft) {
+      applyLoadedMap(map, ctx.mapId, false);
+    } else if (sameMap) {
+      // 保留畫面上的修改；原值與「已保存」的內容改成設定裡的
+      setMetaOriginal({
+        mapId: ctx.mapId,
+        name: map.name,
+        chapter: map.chapter,
+        unlock_stage: map.unlock_stage,
+      });
+      setSavedMapSig(
+        editorMapSig(editorMapFromJson(mapJsonFromConfig(map, ctx.mapId)))
+      );
+    }
+
+    const elsewhere = "；目前畫面已經不是這張地圖，沒有改變";
+    if (!ctx.saved) {
+      endStatus(
+        op,
+        sameAsSent ? "ok" : "error",
+        sameAsSent
+          ? `✓ 讀回確認：設定裡「${ctx.mapId}」的內容和這次送出的相同，這次更新已保存${sameMap ? "" : elsewhere}`
+          : `✗ 讀回確認：設定裡「${ctx.mapId}」的內容和這次送出的不同，這次更新沒有生效（或已被其他修改蓋過）；沒有重送` +
+              (sameMap ? "，畫面保留你的修改" : elsewhere)
+      );
+      return;
+    }
+    if (!sameAsSent) {
+      const detail = diff
+        .map((d) => `${META_LABEL[d.field]}是「${d.got}」（送出「${d.sent}」）`)
+        .join("、");
+      endStatus(
+        op,
+        "error",
+        `⚠ 「${ctx.mapId}」已保存，但讀回的內容和送出的不同${detail ? `：${detail}` : "（地圖內容）"}` +
+          (untouched ? "；畫面已改成設定裡的內容" : sameMap ? "" : elsewhere)
+      );
+      return;
+    }
+    endStatus(
+      op,
+      "ok",
+      untouched
+        ? `✓ 「${ctx.mapId}」已保存並重新讀回，畫面和設定一致`
+        : sameMap
+          ? `✓ 「${ctx.mapId}」已保存並重新讀回；保存期間你又改了畫面，那些修改還沒保存（畫面保留你的修改）`
+          : `✓ 「${ctx.mapId}」已保存並重新讀回${elsewhere}`
+    );
+  };
+
+  // 更新既有地圖：地圖內容（path_json）和有修改的地圖資訊（頂層的 name／chapter／unlock_stage）一起送出。
+  // 章節不是 1 以上的整數時留在畫面上，不問管理密碼、不送出；成功後只讀地重新讀回
   const handleUpdateSheet = async () => {
-    setSheetStatus("saving");
-    setSheetMsg("更新中...");
+    const meta = mapMetaUpdate(metaOriginal, mapId, {
+      name: mapName,
+      chapter,
+      unlockStage,
+    });
+    if (!meta.ok) {
+      setChapterError(meta.error);
+      setSheetStatus("error");
+      setSheetMsg(`✗ ${meta.error}；沒有送出`);
+      return;
+    }
+    setChapterError("");
+    setReadbackPending(null);
+    const pathJson = buildMapJson();
+    const ctx: ReadbackCtx = {
+      mapId,
+      intent: intentSeq.current,
+      sent: meta.fields,
+      sentSig: draftSig,
+      sentPathJson: JSON.stringify(pathJson),
+      saved: true,
+    };
+    const op = beginStatus("saving", `「${mapId}」更新中...`);
+    setSavingMap(true);
     try {
       await gasAdminCall("update_map_config", {
         map_id: mapId,
-        path_json: buildMapJson(),
+        path_json: pathJson,
+        ...meta.fields,
       });
-      setSheetStatus("ok");
-      setSheetMsg("✓ 更新成功");
     } catch (e) {
-      setSheetStatus("error");
-      setSheetMsg(`✗ ${e instanceof Error ? e.message : String(e)}`);
+      setSavingMap(false);
+      if (e instanceof AdminCallError && e.unknown) {
+        endStatus(
+          op,
+          "error",
+          `✗ 「${ctx.mapId}」無法確定是否已保存（${e.message}）：可能已寫入，也可能沒有；不會自動重送，可以按「重新讀回」確認設定裡的內容`
+        );
+        setReadbackPending({ ...ctx, saved: false });
+      } else {
+        endStatus(op, "error", `✗ 「${ctx.mapId}」沒有保存：${errText(e)}`);
+      }
+      return;
     }
+    setSavingMap(false);
+    endStatus(op, "loading", `✓ 「${ctx.mapId}」已保存，正在重新讀回…`);
+    await readBack(ctx, op);
   };
 
   const handleCreateSheet = async () => {
-    setSheetStatus("saving");
-    setSheetMsg("新增中...");
+    const n = parseChapter(chapter);
+    if (n === null) {
+      setChapterError(CHAPTER_INVALID);
+      setSheetStatus("error");
+      setSheetMsg(`✗ ${CHAPTER_INVALID}；沒有送出`);
+      return;
+    }
+    setChapterError("");
+    const id = mapId;
+    const op = beginStatus("saving", `「${id}」新增中...`);
+    setSavingMap(true);
     try {
       await gasAdminCall("create_map_config", {
-        map_id: mapId,
-        chapter: parseInt(chapter) || 1,
+        map_id: id,
+        chapter: n,
         name: mapName,
         unlock_stage: unlockStage,
-        path_json: buildMapJson(),
+        path_json: mapJsonOf(editorMap, n),
       });
-      setSheetStatus("ok");
-      setSheetMsg("✓ 新增成功");
+      endStatus(op, "ok", `✓ 「${id}」新增成功`);
     } catch (e) {
-      setSheetStatus("error");
-      setSheetMsg(`✗ ${e instanceof Error ? e.message : String(e)}`);
+      endStatus(op, "error", `✗ 「${id}」沒有新增：${errText(e)}`);
+    } finally {
+      setSavingMap(false);
     }
   };
 
-  // ── 輸出 JSON ──
-  const buildMapJson = (): MapJson => {
-    const buildZones: number[][] = [];
-    const obstacles: number[][] = [];
-    const cellTextures: Record<string, string> = {};
-    grid.forEach((rowArr, rowIdx) =>
-      rowArr.forEach((cell, colIdx) => {
-        if (cell.type === "build") buildZones.push([colIdx, rowIdx]);
-        if (cell.type === "obstacle") obstacles.push([colIdx, rowIdx]);
-        cellTextures[`${colIdx},${rowIdx}`] = cell.texture;
-      })
-    );
-    // 向後相容（若只有 path_a 就提取給 waypoints）
-    const legacyWaypoints = paths["path_a"]
-      ? paths["path_a"].map(([c, r]) => [c, r])
-      : [];
-    const spawn = legacyWaypoints[0] ? [...legacyWaypoints[0]] : [];
-    const base =
-      legacyWaypoints.length > 1
-        ? [...legacyWaypoints[legacyWaypoints.length - 1]]
-        : [];
-
-    // 過濾掉空的路徑
-    const cleanPaths: Record<string, number[][]> = {};
-    for (const [pid, pts] of Object.entries(paths)) {
-      if (pts.length > 0) {
-        cleanPaths[pid] = pts.map(([c, r]) => [c, r]);
-      }
-    }
-
-    return {
-      map_id: mapId,
-      name: mapName,
-      chapter: parseInt(chapter) || 1,
-      unlock_stage: unlockStage,
-      cols,
-      rows,
-      paths: cleanPaths,
-      waypoints: legacyWaypoints,
-      spawn,
-      base,
-      build_zones: buildZones,
-      obstacles,
-      background_texture: bgTexture,
-      cell_textures: cellTextures,
-    };
-  };
-
-  const standardJson = () => JSON.stringify(buildMapJson(), null, 2);
-  const sheetsJson = () => JSON.stringify(buildMapJson()).replace(/"/g, '""');
+  const mapJsonNow = buildMapJson();
+  const standardJson = () => JSON.stringify(mapJsonNow, null, 2);
+  const sheetsJson = () => JSON.stringify(mapJsonNow).replace(/"/g, '""');
   const outputText = outputTab === "standard" ? standardJson() : sheetsJson();
+  // 地圖資料檢查的「目前畫面」：地圖用畫面的 path_json，波次用畫面上的波次（都還沒保存也照樣檢查）
+  const draftConfig = {
+    map_id: mapId,
+    name: mapName,
+    chapter: mapJsonNow.chapter,
+    unlock_stage: unlockStage,
+    path_json: mapJsonNow,
+    waves,
+  } as unknown as MapConfig;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(outputText).then(() => {
@@ -818,9 +1435,18 @@ export default function MapTab({
       const targetJson = (json as any).path_json
         ? (json as any).path_json
         : json;
-      loadFromJson(targetJson);
-      setSheetStatus("ok");
-      setSheetMsg("✓ 匯入成功");
+      const cancelled = loadingMapId;
+      const m = loadFromJson(targetJson);
+      replaceContext();
+      // 匯入的 JSON 不是從設定載入的：沒有原值（保存時三欄都送出），也沒有「已保存」的內容
+      setMetaOriginal(null);
+      setSavedMapSig(null);
+      setUnsavedDraft(true);
+      beginStatus(
+        "ok",
+        `✓ 匯入成功：「${m.mapId}」（還沒保存到設定）` +
+          (cancelled ? `；先前「${cancelled}」的載入已取消，不會套用` : "")
+      );
       setImportJson("");
     } catch (e) {
       alert("JSON 格式錯誤：" + e);
@@ -1069,9 +1695,9 @@ export default function MapTab({
         ))}
       </div>
 
-      {/* ── 上傳圖片區（統一入口）── */}
-      <div className={styles.uploadBar}>
-        <span className={styles.toolLabel}>上傳圖片：</span>
+      {/* ── 素材轉換：轉成 WebP 預覽並下載（正式網站不能上傳；新素材要加入遊戲並發布才能使用）── */}
+      <div className={styles.uploadBar} data-testid="asset-convert">
+        <span className={styles.toolLabel}>素材轉換：</span>
         <div className={styles.uploadTypeGroup}>
           <label
             className={`${styles.uploadTypeBtn} ${uploadType === "tile" ? styles.uploadTypeBtnActive : ""}`}
@@ -1101,28 +1727,82 @@ export default function MapTab({
           </label>
         </div>
         <label className={styles.uploadFileBtn}>
-          {uploadStatus === "uploading"
-            ? "⏳ 上傳中…"
-            : uploadStatus === "ok"
-              ? "✅ 完成"
-              : uploadStatus === "error"
-                ? "❌ 失敗"
-                : "＋ 選擇檔案"}
+          {convertStatus === "converting" ? "⏳ 轉換中…" : "＋ 選擇圖片"}
           <input
             type="file"
             accept="image/*"
-            style={{ display: "none" }}
-            disabled={uploadStatus === "uploading"}
+            className={styles.visuallyHiddenInput}
+            data-testid="asset-convert-input"
+            disabled={convertStatus === "converting"}
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) handleUploadImage(f, uploadType);
+              if (f) handleConvertImage(f, uploadType);
               e.target.value = "";
             }}
           />
         </label>
         <span className={styles.uploadHint}>
-          → 儲存至 {uploadType === "tile" ? "tiles/" : "maps/"}（自動轉 webp）
+          在瀏覽器轉成 WebP 後下載（不會上傳）
         </span>
+        {convertStatus === "error" && (
+          <div
+            className={styles.assetError}
+            role="alert"
+            data-testid="asset-convert-error"
+          >
+            ✗ {convertError}
+          </div>
+        )}
+        {converted && (
+          <div
+            className={styles.assetResult}
+            data-testid="asset-convert-result"
+          >
+            <Image
+              src={converted.url}
+              alt={`轉換後的預覽：${converted.fileName}`}
+              width={48}
+              height={48}
+              className={styles.assetPreview}
+              unoptimized
+            />
+            <span className={styles.assetInfo}>
+              {converted.fileName}（{converted.width}×{converted.height}，
+              {Math.max(1, Math.round(converted.blob.size / 1024))} KB）
+            </span>
+            <a
+              className={styles.uploadFileBtn}
+              href={converted.url}
+              download={converted.fileName}
+              data-testid="asset-convert-download"
+            >
+              ⬇ 下載 WebP
+            </a>
+            {IS_DEV && (
+              <button
+                type="button"
+                className={styles.toolBtn}
+                onClick={handleDevAddAsset}
+                data-testid="asset-dev-add"
+              >
+                加入開發素材（本機）
+              </button>
+            )}
+            <span
+              className={styles.uploadHint}
+              data-testid="asset-convert-hint"
+            >
+              這個素材還沒加入遊戲：下載後要放進遊戲素材的
+              {converted.type === "tile"
+                ? "格子貼圖（tiles）"
+                : "地圖背景（maps）"}
+              並重新發布，才會出現在素材選單、才能用在地圖上。
+            </span>
+            {devAddMsg && (
+              <span className={styles.uploadHint}>{devAddMsg}</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── 主體 ── */}
@@ -1231,9 +1911,22 @@ export default function MapTab({
                       : styles.waveStatusBusy
                 }
                 style={{ marginBottom: "0.5rem" }}
+                role="status"
+                data-testid="wave-status"
               >
                 {waveMsg}
               </div>
+            )}
+            {wavesReadbackPending && (
+              <button
+                type="button"
+                className={`${styles.toolBtn} mb-2`}
+                onClick={() => readBackWaves(wavesReadbackPending)}
+                disabled={waveStatus === "saving"}
+                data-testid="waves-readback-retry"
+              >
+                重新讀回「{wavesReadbackPending.mapId}」的波次（只讀，不重送）
+              </button>
             )}
 
             {waves.length === 0 && (
@@ -1243,7 +1936,7 @@ export default function MapTab({
             )}
 
             {waves.map((wave, wi) => (
-              <div key={wi} className={styles.waveItem}>
+              <div key={wi} className={styles.waveItem} data-testid="wave-item">
                 <div className={styles.waveItemHeader}>
                   <span className={styles.waveItemTitle}>波次 {wave.wave}</span>
                   <button
@@ -1279,6 +1972,14 @@ export default function MapTab({
                                 })
                               }
                             >
+                              {/* 還沒選、或不在敵人設定裡的值照實顯示（不顯示成第一個敵人；沒有選敵人的組不會保存） */}
+                              {!enemyOptions.includes(enemy.enemy_id) && (
+                                <option value={enemy.enemy_id}>
+                                  {enemy.enemy_id.trim()
+                                    ? `${enemy.enemy_id}（不在敵人設定）`
+                                    : "（未選擇敵人）"}
+                                </option>
+                              )}
                               {enemyOptions.map((id) => (
                                 <option key={id} value={id}>
                                   {id}
@@ -1374,25 +2075,74 @@ export default function MapTab({
         {/* 側邊面板 */}
         <div className={styles.sidePanel}>
           {/* 地圖資訊 */}
-          <div className={styles.panelCard}>
+          <div className={styles.panelCard} data-testid="map-meta">
             <div className={styles.panelTitle}>地圖資訊</div>
             {(
               [
-                { label: "map_id", val: mapId, set: setMapId },
-                { label: "名稱", val: mapName, set: setMapName },
-                { label: "章節", val: chapter, set: setChapter },
-                { label: "解鎖條件", val: unlockStage, set: setUnlockStage },
-              ] as { label: string; val: string; set: (v: string) => void }[]
-            ).map(({ label, val, set }) => (
-              <div key={label} className={styles.metaRow}>
-                <span className={styles.metaLabel}>{label}</span>
-                <input
-                  className={styles.metaInput}
-                  value={val}
-                  onChange={(e) => set(e.target.value)}
-                />
+                { key: "map_id", label: "map_id", val: mapId, set: setMapId },
+                { key: "name", label: "名稱", val: mapName, set: setMapName },
+                {
+                  key: "chapter",
+                  label: "章節",
+                  val: chapter,
+                  set: (v: string) => {
+                    setChapter(v);
+                    setChapterError("");
+                  },
+                },
+                {
+                  key: "unlock_stage",
+                  label: "解鎖條件",
+                  val: unlockStage,
+                  set: setUnlockStage,
+                },
+              ] as {
+                key: string;
+                label: string;
+                val: string;
+                set: (v: string) => void;
+              }[]
+            ).map(({ key, label, val, set }) => {
+              const invalid = key === "chapter" && !!chapterError;
+              return (
+                <div key={key} className={styles.metaRow}>
+                  <label
+                    className={styles.metaLabel}
+                    htmlFor={`map-meta-${key}`}
+                  >
+                    {label}
+                  </label>
+                  <input
+                    id={`map-meta-${key}`}
+                    className={`${styles.metaInput} ${invalid ? styles.metaInputInvalid : ""}`}
+                    value={val}
+                    inputMode={key === "chapter" ? "numeric" : undefined}
+                    aria-invalid={invalid || undefined}
+                    aria-describedby={
+                      invalid
+                        ? "map-meta-chapter-error"
+                        : key === "unlock_stage"
+                          ? "map-meta-unlock-hint"
+                          : undefined
+                    }
+                    onChange={(e) => set(e.target.value)}
+                  />
+                </div>
+              );
+            })}
+            {chapterError && (
+              <div
+                id="map-meta-chapter-error"
+                className={styles.metaError}
+                role="alert"
+                data-testid="map-meta-chapter-error"
+              >
+                {chapterError}
               </div>
-            ))}
+            )}
+            <div id="map-meta-unlock-hint" className={styles.metaHint}>
+              解鎖條件只記錄在設定表：遊戲目前依關卡順序（map_id）與玩家的進度解鎖，改這一欄不會改變遊戲的解鎖順序。
+            </div>
           </div>
 
           {/* Sheet 連動 */}
@@ -1413,6 +2163,8 @@ export default function MapTab({
                 {mapList.length > 0 ? (
                   <select
                     className={styles.sheetInput}
+                    aria-label="要載入的地圖"
+                    data-testid="sheet-map-select"
                     value={loadMapId}
                     onChange={(e) => setLoadMapId(e.target.value)}
                   >
@@ -1433,7 +2185,7 @@ export default function MapTab({
                 <button
                   className={styles.toolBtn}
                   onClick={handleLoadFromSheet}
-                  disabled={sheetStatus === "loading"}
+                  disabled={loadingMapId !== null}
                 >
                   載入
                 </button>
@@ -1442,7 +2194,7 @@ export default function MapTab({
                 <button
                   className={styles.toolBtn}
                   onClick={handleUpdateSheet}
-                  disabled={sheetStatus === "saving"}
+                  disabled={savingMap}
                   style={{ flex: 1 }}
                 >
                   更新至 Sheet
@@ -1450,19 +2202,65 @@ export default function MapTab({
                 <button
                   className={styles.toolBtn}
                   onClick={handleCreateSheet}
-                  disabled={sheetStatus === "saving"}
+                  disabled={savingMap}
                   style={{ flex: 1 }}
                 >
                   新增至 Sheet
                 </button>
               </div>
               {sheetMsg && (
-                <div className={`${styles.sheetStatus} ${statusClass}`}>
+                <div
+                  className={`${styles.sheetStatus} ${statusClass}`}
+                  role="status"
+                  data-testid="sheet-status"
+                >
                   {sheetMsg}
                 </div>
               )}
+              {sheetAside && (
+                <div
+                  className={styles.sheetAside}
+                  role="status"
+                  data-testid="sheet-status-aside"
+                >
+                  其他操作的結果：{sheetAside}
+                </div>
+              )}
+              {readbackPending && (
+                <button
+                  type="button"
+                  className={styles.toolBtn}
+                  onClick={() =>
+                    readBack(
+                      readbackPending,
+                      beginStatus(
+                        "loading",
+                        `重新讀回「${readbackPending.mapId}」中...`
+                      )
+                    )
+                  }
+                  disabled={readingBack}
+                  data-testid="map-readback-retry"
+                >
+                  重新讀回「{readbackPending.mapId}」（只讀，不重送）
+                </button>
+              )}
             </div>
           </div>
+
+          {/* 地圖資料檢查（路線、波次是否齊全） */}
+          <MapIntegrityPanel
+            list={mapListState}
+            enemies={enemiesState}
+            selectedId={loadMapId}
+            onSelect={setLoadMapId}
+            onReloadList={handleLoadMapList}
+            onReloadEnemies={() => handleLoadEnemies(true)}
+            draft={draftConfig}
+            draftLoaded={savedMapSig !== null}
+            draftMapDirty={mapDirty}
+            draftWavesDirty={wavesDirty}
+          />
 
           {/* 航點清單 */}
           <div className={styles.panelCard}>

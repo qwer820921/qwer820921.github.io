@@ -1,0 +1,921 @@
+async (page) => {
+  // 地圖編輯器：既有地圖的名稱／章節／解鎖條件保存、保存後讀回、地圖資料檢查、素材轉換下載（瀏覽器，mock）
+  // - 後端照 update_map_config 的契約：只有頂層的 name／chapter／unlock_stage 會寫進 maps_config 的同名欄（path_json 裡的同名欄位不算）；
+  //   沒有送的欄位保留原本的格子（含型別）。只把地圖資訊塞進 path_json 的寫法，重新讀取後名稱不會改變
+  // - 地圖資料用正式設定快照（fixtures/map-config-snapshot.json：100 張，6 張完整、1 張缺波次、93 張路線與波次都缺）
+  // - 情境：清單未讀取／讀取失敗不是 0 張、篩選與詳細、改三欄→成功→讀回→重新整理後仍相同、只改一欄時其他欄不送、
+  //   有意清空、章節錯誤不問密碼不送出、錯誤的管理密碼、結果不明不重送（已套用／沒有送到）、保存成功但讀回失敗的唯讀重試、
+  //   讀回期間又改了畫面、尚未保存的波次不被讀回蓋掉、重新讀取清單不換掉草稿、新地圖的草稿、
+  //   載入等待中建立新地圖／改了畫面／匯入 JSON 時舊回應不套用（失敗也不顯示）、再按一次載入才取代、
+  //   保存回應還沒回來時載入別的地圖或建立新地圖（結果另外列出、不改目前畫面與原值）、
+  //   波次保存以讀回的內容為基準（整波空白、有效與空白的組混在一起、保存期間又改、讀回失敗、結果不明、
+  //   保存期間切換地圖、管理密碼錯誤）、
+  //   素材轉換（有效圖片、無效檔案、取消）不加入素材選單、下載的檔案是 WebP；390 寬與矮畫面、鍵盤
+  // - 預設用腳本內建的模擬後端；tools/run-browser.mjs 設定 GAS_BACKEND 為提供 setMapTables 等介面的模組時，
+  //   改由那個模組處理（例如在模擬試算表上執行真正的後端程式）
+  // - 正式靜態匯出（LOCAL_ASSETS=1）時沒有「加入開發素材」，也不會有上傳請求；開發模式另外檢查加入開發素材（攔截請求，不寫檔）
+  // 全部虛構資料，測試用密碼
+  const S = page.context().__shenma;
+  if (!S) return { error: "請先執行 harness.js" };
+  const { H } = S;
+  const ctx = page.context();
+  const run = H.begin();
+  const out = {};
+  const TOKEN = "test-map-meta-token-7c1";
+  const proc = globalThis.process;
+  const fs = proc && proc.getBuiltinModule ? proc.getBuiltinModule("node:fs") : null;
+  if (!fs) return { error: "需要 Node 的 fs（用 tools/run-browser.mjs 執行）讀取地圖設定快照" };
+  const PROD = proc.env.LOCAL_ASSETS === "1";
+  const snap = JSON.parse(fs.readFileSync("scripts/shenma-regression/fixtures/map-config-snapshot.json", "utf8"));
+
+  // 快照 → 試算表（get_all_maps 的空白路線是空白格）
+  const emptyPath = (pj) => !pj || (Array.isArray(pj.paths) && pj.paths.length === 0 && !pj.cols);
+  const tables = {
+    maps: {
+      header: ["map_id", "chapter", "name", "unlock_stage", "path_json"],
+      rows: snap.maps.map((m) => [m.map_id, m.chapter, m.name, m.unlock_stage, emptyPath(m.path_json) ? "" : JSON.stringify(m.path_json)]),
+    },
+    waves: {
+      header: ["map_id", "wave", "enemy_id", "count", "interval", "path"],
+      rows: snap.maps.flatMap((m) => m.waves.flatMap((w) => w.enemies.map((e) => [m.map_id, w.wave, e.enemy_id, e.count, e.interval, e.path]))),
+    },
+    enemies: { header: snap.columns, rows: snap.enemies.map((e) => snap.columns.map((h) => (e[h] === undefined ? "" : e[h]))) },
+  };
+
+  // ── 後端（內建模擬或 GAS_BACKEND 的模組）──
+  const factory = ctx.__shenmaGasBackendFactory;
+  const candidate = factory ? factory() : null;
+  const node = candidate && typeof candidate.setMapTables === "function" ? candidate : null;
+  out.backend = node ? node.kind + ":" + node.file() : "built-in";
+  if (node) {
+    node.setAdminToken(TOKEN);
+    node.setMapTables(tables);
+    try {
+      await ctx.exposeBinding("__shenmaMapBackend", (_src, body) => node.handle(body));
+    } catch {
+      /* 同一個 context 已經登記過 */
+    }
+  }
+  await ctx.addInitScript(({ token }) => {
+    if (window.top !== window) return;
+    const inner = window.fetch.bind(window);
+    const TABLES = "__shenma_mapmeta_tables";
+    const LOG = "__shenma_mapmeta_log";
+    const CTRL = "__shenma_mapmeta_ctrl";
+    const read = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+    const write = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+    window.__mapmetaHeld = [];
+    window.__mapmetaHeldSave = [];
+    const objs = (t) => t.rows.map((r) => Object.fromEntries(t.header.map((h, i) => [h, r[i] === undefined ? "" : r[i]])));
+    const parsePath = (raw) => { try { return raw ? JSON.parse(raw) : { paths: [], spawn: [], base: [] }; } catch { return { paths: [], spawn: [], base: [] }; } };
+    const group = (rows) => {
+      const m = {};
+      rows.forEach((r) => { const w = Number(r.wave); (m[w] = m[w] || []).push({ enemy_id: r.enemy_id, count: Number(r.count), interval: Number(r.interval), path: r.path || "path_a" }); });
+      return Object.keys(m).map(Number).sort((a, b) => a - b).map((w) => ({ wave: w, enemies: m[w] }));
+    };
+    // 內建的模擬後端：update_map_config 只改頂層有送的 name／chapter／unlock_stage（型別照送來的），path_json 存成 JSON 字串
+    const builtIn = (body) => {
+      const t = read(TABLES, null);
+      if (!t) return { status: 500, error: "MOCK_NO_TABLE" };
+      const p = body.payload || {};
+      const maps = objs(t.maps);
+      const waves = objs(t.waves);
+      const toMap = (m) => ({ ...m, path_json: parsePath(m.path_json), waves: group(waves.filter((w) => w.map_id === m.map_id)) });
+      switch (body.action) {
+        case "get_all_maps":
+          return { status: 200, maps: maps.map((m) => ({ map_id: m.map_id, chapter: m.chapter, name: m.name, unlock_stage: m.unlock_stage, path_json: parsePath(m.path_json), waves: group(waves.filter((w) => w.map_id === m.map_id)) })) };
+        case "get_map_config": {
+          const m = maps.find((x) => x.map_id === p.map_id);
+          return m ? { status: 200, map: toMap(m) } : { status: 404, error: "MAP_NOT_FOUND" };
+        }
+        case "get_enemies_config":
+          return { status: 200, enemies: objs(t.enemies), columns: t.enemies.header };
+        default:
+          break;
+      }
+      if (p.admin_token !== token) return { status: 403, error: "ADMIN_REQUIRED" };
+      if (body.action === "update_map_config") {
+        if (!p.map_id) return { status: 400, error: "MISSING_MAP_ID" };
+        if (!p.path_json || typeof p.path_json !== "object") return { status: 400, error: "MISSING_PATH_JSON" };
+        const i = t.maps.rows.findIndex((r) => String(r[0]).trim() === String(p.map_id).trim());
+        if (i < 0) return { status: 404, error: "MAP_NOT_FOUND" };
+        const set = (c, v) => { const j = t.maps.header.indexOf(c); if (j >= 0) t.maps.rows[i][j] = v === undefined || v === null ? "" : v; };
+        set("path_json", JSON.stringify(p.path_json));
+        if (p.name !== undefined) set("name", p.name);
+        if (p.chapter !== undefined) set("chapter", p.chapter);
+        if (p.unlock_stage !== undefined) set("unlock_stage", p.unlock_stage);
+        write(TABLES, t);
+        return { status: 200, success: true, message: "MAP_UPDATED" };
+      }
+      if (body.action === "save_waves_config") {
+        const id = String(p.map_id).trim();
+        t.waves.rows = t.waves.rows.filter((r) => String(r[0]).trim() !== id);
+        (p.waves || []).forEach((w) => (w.enemies || []).forEach((e) => t.waves.rows.push([id, w.wave, e.enemy_id, Number(e.count), Number(e.interval), e.path || "path_a"])));
+        write(TABLES, t);
+        return { status: 200, success: true, message: "WAVES_SAVED" };
+      }
+      return { status: 400, error: "MOCK_UNSUPPORTED_" + body.action };
+    };
+    const ACTIONS = ["get_all_maps", "get_map_config", "get_enemies_config", "update_map_config", "save_waves_config", "create_map_config"];
+    window.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : (input && input.url) || String(input);
+      const mode = localStorage.getItem("__shenma_mapmeta_on");
+      if (!mode || !url.startsWith("https://script.google.com/")) return inner(input, init);
+      let body = {};
+      try { body = JSON.parse((init && init.body) || "{}"); } catch { body = {}; }
+      if (!ACTIONS.includes(body.action)) return inner(input, init);
+      const reply = (o) => new Response(JSON.stringify(o), { status: 200, headers: { "Content-Type": "application/json" } });
+      const p = body.payload || {};
+      const log = (e) => write(LOG, [...read(LOG, []), { t: Date.now(), action: body.action, ...e }]);
+      const ctrl = read(CTRL, {});
+      const once = (k) => { const c = read(CTRL, {}); const v = c[k]; delete c[k]; write(CTRL, c); return v; };
+      await new Promise((r) => setTimeout(r, 80));
+      if (body.action === "get_map_config" && ctrl.holdGet) await new Promise((r) => window.__mapmetaHeld.push(r));
+      // 保存的請求暫停在送到後端之前（保存期間切換地圖、建立新地圖、又改了畫面）
+      if ((body.action === "update_map_config" || body.action === "save_waves_config") && ctrl.holdSave) await new Promise((r) => window.__mapmetaHeldSave.push(r));
+      if (body.action === "get_all_maps" && ctrl.failList) { once("failList"); log({ status: 500, injected: true }); return reply({ status: 500, error: "MOCK_LIST_FAILED" }); }
+      if (body.action === "get_map_config" && ctrl.failGet) { once("failGet"); log({ status: 500, injected: true, map_id: p.map_id }); return reply({ status: 500, error: "MOCK_READ_FAILED" }); }
+      // 連線失敗：network 是請求沒有送到後端；applied-network 是後端已寫入、回應遺失（地圖用 updateMode、波次用 wavesMode）
+      let updateMode = null;
+      if (body.action === "update_map_config" && ctrl.updateMode) updateMode = once("updateMode");
+      if (body.action === "save_waves_config" && ctrl.wavesMode) updateMode = once("wavesMode");
+      if (updateMode === "network") { log({ network: "not-sent", map_id: p.map_id }); throw new TypeError("Failed to fetch"); }
+      const res = mode === "node" && window.__shenmaMapBackend ? await window.__shenmaMapBackend(body) : builtIn(body);
+      const keys = Object.keys(p).filter((k) => k !== "admin_token" && k !== "path_json");
+      log({
+        status: res.status, error: res.error || null, map_id: p.map_id, hasAdminToken: !!p.admin_token,
+        top: Object.fromEntries(keys.map((k) => [k, p[k]])),
+        ...(body.action === "update_map_config" ? { pathName: p.path_json && p.path_json.name, applied: res.status === 200 } : {}),
+        ...(updateMode ? { network: "applied-then-lost" } : {}),
+      });
+      if (updateMode === "applied-network") throw new TypeError("Failed to fetch");
+      return reply(res);
+    };
+  }, { token: TOKEN });
+
+  // ── 輔助 ──
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const reqLog = () => page.evaluate(() => JSON.parse(localStorage.getItem("__shenma_mapmeta_log") || "[]"));
+  const count = async (action) => (await reqLog()).filter((e) => e.action === action).length;
+  const lastOf = async (action) => (await reqLog()).filter((e) => e.action === action).pop();
+  const setCtrl = (o) => page.evaluate((o) => localStorage.setItem("__shenma_mapmeta_ctrl", JSON.stringify({ ...JSON.parse(localStorage.getItem("__shenma_mapmeta_ctrl") || "{}"), ...o })), o);
+  const serverTables = async () => {
+    if (node) {
+      const t = node.mapTables();
+      return { maps: { header: t.maps[0], rows: t.maps.slice(1) }, waves: { header: t.waves[0], rows: t.waves.slice(1) } };
+    }
+    return page.evaluate(() => JSON.parse(localStorage.getItem("__shenma_mapmeta_tables")));
+  };
+  const row = async (id) => {
+    const t = await serverTables();
+    const r = t.maps.rows.find((x) => x[0] === id);
+    return r ? Object.fromEntries(t.maps.header.map((h, i) => [h, r[i]])) : null;
+  };
+  const text = (testId) => page.locator(`[data-testid="${testId}"]`).first().innerText().catch(() => "");
+  const status = () => text("sheet-status");
+  const waitStatus = (re, timeout = 15000) =>
+    page.waitForFunction((src) => new RegExp(src).test(document.querySelector('[data-testid="sheet-status"]')?.innerText || ""), re.source, { timeout });
+  const val = (id) => page.locator(`#map-meta-${id}`).inputValue();
+  const fill = (id, v) => page.locator(`#map-meta-${id}`).fill(v);
+  const btn = (name) => page.getByRole("button", { name, exact: true });
+  const promptVisible = () => page.locator('[data-testid="admin-token-input"]').isVisible().catch(() => false);
+  const enterToken = async (t) => {
+    await page.locator('[data-testid="admin-token-input"]').waitFor({ timeout: 10000 });
+    await page.locator('[data-testid="admin-token-input"]').fill(t);
+    await page.locator('[data-testid="admin-token-submit"]').click();
+  };
+  const update = () => btn("更新至 Sheet").click();
+  const section = async (name, fn) => {
+    try {
+      await fn();
+    } catch (e) {
+      run.check(`${name}：執行時發生例外`, false, String(e && e.stack ? e.stack.split("\n").slice(0, 3).join(" | ") : e).slice(0, 400));
+      try { out[name + "_shot"] = await H.shot(page, `map-editor-save-${name}-exception`); } catch { /* 截圖失敗不影響判定 */ }
+    }
+  };
+  // 開新的編輯器頁面（React 狀態與管理密碼都從頭開始），等到按鈕可以操作（水合完成）
+  const openEditor = async () => {
+    await page.goto(H.BASE + "/mapEditor");
+    const b = btn("載入清單");
+    await b.waitFor({ timeout: 60000 });
+    await page.waitForFunction(() => {
+      const el = [...document.querySelectorAll("button")].find((x) => x.textContent === "載入清單");
+      return !!el && Object.keys(el).some((k) => k.startsWith("__reactFiber"));
+    }, null, { timeout: 60000 });
+  };
+  const loadList = async () => {
+    await btn("載入清單").click();
+    await page.waitForFunction(() => /共 \d+ 張|讀取失敗/.test(document.querySelector('[data-testid="map-integrity"]')?.innerText || ""), null, { timeout: 15000 });
+  };
+  const loadMap = async (id) => {
+    await page.locator('[data-testid="sheet-map-select"]').selectOption(id);
+    await btn("載入").click();
+    await waitStatus(new RegExp(`「${id}」載入成功`));
+  };
+  const selectInList = (id) => page.locator(`[data-testid="integrity-list"] button`, { hasText: id + " " }).first().click();
+  // 暫停中的請求：讀取地圖（holdGet）與保存（holdSave）
+  const waitHeld = (k) => page.waitForFunction((k) => (window[k] || []).length > 0, k, { timeout: 10000 });
+  const releaseGets = () => page.evaluate(() => window.__mapmetaHeld.splice(0).forEach((r) => r()));
+  const releaseSaves = () => page.evaluate(() => window.__mapmetaHeldSave.splice(0).forEach((r) => r()));
+  const aside = () => text("sheet-status-aside");
+  const waitAside = (re, timeout = 15000) =>
+    page.waitForFunction((src) => new RegExp(src).test(document.querySelector('[data-testid="sheet-status-aside"]')?.innerText || ""), re.source, { timeout });
+  const dirtyText = async () => ((await page.locator('[data-testid="integrity-dirty"]').count()) ? text("integrity-dirty") : "");
+  const newMap = async (id, name) => {
+    await btn("＋ 新增地圖").click();
+    const inputs = page.locator('[class*="modal"] input');
+    await inputs.nth(0).fill(id);
+    await inputs.nth(1).fill(name);
+    await btn("確定").click();
+  };
+  // 波次：畫面上每一波的標題與每一組（敵人、數量），試算表裡這張地圖的列（波次、敵人、數量）
+  const waveText = () => text("wave-status");
+  const waitWave = (re, timeout = 15000) =>
+    page.waitForFunction((src) => new RegExp(src).test(document.querySelector('[data-testid="wave-status"]')?.innerText || ""), re.source, { timeout });
+  const screenWaves = () => page.locator('[data-testid="wave-item"]').evaluateAll((items) => items.map((w) => ({
+    title: w.querySelector("span")?.textContent || "",
+    rows: [...w.querySelectorAll("tbody tr")].map((tr) => { const f = tr.querySelectorAll("select, input"); return [f[0]?.value ?? null, Number(f[1]?.value)]; }),
+  })));
+  const serverWaves = async (id) => (await serverTables()).waves.rows.filter((r) => String(r[0]) === id).map((r) => [Number(r[1]), r[2], Number(r[3])]);
+  const waveItem = (wi) => page.locator('[data-testid="wave-item"]').nth(wi);
+  const addWave = async () => {
+    const n = await page.locator('[data-testid="wave-item"]').count();
+    await btn("＋ 新增波次").click();
+    await page.locator('[data-testid="wave-item"]').nth(n).locator("tbody tr select").first().waitFor({ timeout: 10000 });
+  };
+  const addEnemyTo = (wi) => waveItem(wi).getByRole("button", { name: "＋ 新增敵人" }).click();
+  const setEnemy = (wi, ei, id) => waveItem(wi).locator("tbody tr").nth(ei).locator("select").first().selectOption(id);
+  const setCount = (wi, ei, n) => waveItem(wi).locator("tbody tr").nth(ei).locator('input[type="number"]').first().fill(String(n));
+  const saveWaves = () => btn("儲存波次至 Sheet").click();
+
+  // 每次開始用新的資料表與紀錄（同一個頁面來源）
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(H.BASE + "/games/shenmaSanguo/index.offline.html");
+  await page.evaluate(({ tables, mode }) => {
+    localStorage.setItem("__shenma_mapmeta_tables", JSON.stringify(tables));
+    localStorage.setItem("__shenma_mapmeta_log", "[]");
+    localStorage.setItem("__shenma_mapmeta_ctrl", "{}");
+    localStorage.setItem("__shenma_mapmeta_on", mode);
+  }, { tables, mode: node ? "node" : "builtin" });
+
+  // ── 1. 還沒讀取、讀取失敗都不是 0 張；重試後顯示正式快照的統計 ──
+  await section("list", async () => {
+    await openEditor();
+    const idle = await text("integrity-state");
+    await setCtrl({ failList: 1 });
+    await loadList();
+    const failed = await text("integrity-state");
+    const summaryWhileFailed = await page.locator('[data-testid="integrity-summary"]').count();
+    await H.shot(page, "map-editor-save-list-failed");
+    run.check("資料檢查-1 還沒讀取清單時說明要先讀取；讀取失敗時說明失敗、不是 0 張，沒有顯示統計",
+      /還沒讀取地圖清單/.test(idle) && !/0 張/.test(idle) && /讀取失敗/.test(failed) && /不是 0 張/.test(failed) && summaryWhileFailed === 0,
+      { idle, failed, summaryWhileFailed });
+    await page.getByRole("button", { name: "重新讀取清單" }).click();
+    await page.waitForSelector('[data-testid="integrity-summary"]', { timeout: 15000 });
+    const summary = await text("integrity-summary");
+    const filters = await page.getByRole("group", { name: "依資料狀態篩選地圖" }).locator("button").allInnerTexts();
+    const items = await page.locator('[data-testid="integrity-list"] button').count();
+    run.check("資料檢查-2 重試成功：共 100 張、資料完整 6、待補資料 94（有路線缺波次 1、路線與波次都缺 93）；篩選按鈕的數字相同，清單列出 100 張",
+      summary === "共 100 張：資料完整 6、待補資料 94（有路線缺波次 1、路線與波次都缺 93）" && same(filters, ["全部 100", "資料完整 6", "待補資料 94"]) && items === 100,
+      { summary, filters, items });
+  });
+
+  // ── 2. 篩選與詳細 ──
+  await section("filter", async () => {
+    const group = page.getByRole("group", { name: "依資料狀態篩選地圖" });
+    await group.getByRole("button", { name: "資料完整 6" }).click();
+    const complete = await page.locator('[data-testid="integrity-list"] button').evaluateAll((els) => els.map((e) => [e.textContent, e.getAttribute("data-kind")]));
+    const pressed = await group.getByRole("button", { name: "資料完整 6" }).getAttribute("aria-pressed");
+    await group.getByRole("button", { name: "待補資料 94" }).click();
+    const incomplete = await page.locator('[data-testid="integrity-list"] button').evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")));
+    run.check("資料檢查-3 篩選「資料完整」只列出 chapter1_1～1_6（按鈕 aria-pressed）；「待補資料」列出 94 張（1 張缺波次、93 張都缺）",
+      complete.length === 6 && complete.every(([t, k]) => k === "complete" && /^chapter1_[1-6] /.test(t)) && pressed === "true" &&
+        incomplete.length === 94 && incomplete.filter((k) => k === "waves").length === 1 && incomplete.filter((k) => k === "both").length === 93,
+      { complete, pressed, kinds: { waves: incomplete.filter((k) => k === "waves").length, both: incomplete.filter((k) => k === "both").length } });
+    const nameBefore = await val("name");
+    await selectInList("chapter1_7");
+    const d17 = await text("integrity-selected");
+    await selectInList("chapter1_8");
+    const d18 = await text("integrity-selected");
+    await group.getByRole("button", { name: "全部 100" }).click();
+    await selectInList("chapter1_6");
+    const waves16 = await page.locator('[data-testid="integrity-selected"] [data-testid="integrity-waves"] > li').evaluateAll((els) => els.map((e) => e.getAttribute("data-rejected")));
+    const d16 = await text("integrity-selected");
+    const selectValue = await page.locator('[data-testid="sheet-map-select"]').inputValue();
+    const nameAfter = await val("name");
+    await H.shot(page, "map-editor-save-detail");
+    run.check("資料檢查-4 選 chapter1_7：缺波次（沒有波次資料）；chapter1_8：缺路線與波次；chapter1_6：資料完整、9 波都有可出兵的組。選取只改「要載入的地圖」，不換掉編輯中的畫面",
+      /缺波次/.test(d17) && /沒有波次資料/.test(d17) && /缺路線與波次/.test(d18) && /沒有可用的路線、沒有波次資料/.test(d18) &&
+        /資料完整/.test(d16) && waves16.length === 9 && waves16.every((r) => r === "0") && selectValue === "chapter1_6" && nameAfter === nameBefore,
+      { d17: d17.slice(0, 120), d18: d18.slice(0, 120), waves16, selectValue, nameBefore, nameAfter });
+    const note = await page.locator('[data-testid="map-integrity"]').innerText();
+    run.check("資料檢查-5 說明「資料完整」和玩家是否已解鎖無關、不保證每一波都能出兵或過關",
+      /和玩家是否已解鎖無關/.test(note) && /不保證每一波都能出兵或過關/.test(note), note.slice(-120));
+  });
+
+  // ── 3. 改三欄 → 保存 → 讀回 → 重新整理後仍相同 ──
+  await section("save", async () => {
+    await loadMap("chapter1_2");
+    const loaded = [await val("name"), await val("chapter"), await val("unlock_stage")];
+    await fill("name", "桃園結義（改）");
+    await fill("chapter", "2");
+    await fill("unlock_stage", "chapter1_3");
+    const before = await count("update_map_config");
+    await update();
+    await enterToken(TOKEN);
+    await waitStatus(/已保存[^，]*重新讀回|讀回的內容和送出的不同|失敗/);
+    const saveMsg = await status();
+    const upd = await lastOf("update_map_config");
+    const r = await row("chapter1_2");
+    // 清單重新讀取完成（沒有完成時由下面的斷言列出）
+    await page.waitForFunction(() => /桃園結義（改）/.test(document.querySelector('[data-testid="integrity-list"]')?.innerText || ""), null, { timeout: 10000 }).catch(() => {});
+    const gets = (await reqLog()).filter((e) => e.action === "get_map_config" && e.t >= upd.t).length;
+    const lists = (await reqLog()).filter((e) => e.action === "get_all_maps" && e.t >= upd.t).length;
+    const option = await page.locator('[data-testid="sheet-map-select"] option[value="chapter1_2"]').innerText();
+    const inputs = [await val("name"), await val("chapter"), await val("unlock_stage")];
+    const dirty = await page.locator('[data-testid="integrity-dirty"]').count();
+    await H.shot(page, "map-editor-save-saved");
+    run.check("保存-1 載入 chapter1_2 顯示原值（桃園結義、1、chapter1_1）；改三欄後更新：名稱、章節（數字 2）、解鎖條件放在頂層送出，試算表的同名欄改成新值",
+      same(loaded, ["桃園結義", "1", "chapter1_1"]) && (await count("update_map_config")) === before + 1 && /已保存並重新讀回，畫面和設定一致/.test(saveMsg) &&
+        same(upd.top, { map_id: "chapter1_2", name: "桃園結義（改）", chapter: 2, unlock_stage: "chapter1_3" }) &&
+        r.name === "桃園結義（改）" && r.chapter === 2 && r.unlock_stage === "chapter1_3",
+      { loaded, saveMsg, upd, r: { name: r.name, chapter: r.chapter, unlock_stage: r.unlock_stage } });
+    run.check("保存-2 成功後只讀地重新讀回這張地圖與清單：畫面和設定一致，清單與選單顯示新名稱，沒有尚未保存的提示",
+      gets >= 1 && lists >= 1 && /桃園結義（改）/.test(option) && same(inputs, ["桃園結義（改）", "2", "chapter1_3"]) && dirty === 0,
+      { gets, lists, option, inputs, dirty });
+    // 重新整理（新的頁面狀態）後再載入
+    await openEditor();
+    await loadList();
+    await loadMap("chapter1_2");
+    const again = [await val("name"), await val("chapter"), await val("unlock_stage")];
+    run.check("保存-3 重新整理後重新讀取清單並載入，名稱、章節、解鎖條件仍是保存的值",
+      same(again, ["桃園結義（改）", "2", "chapter1_3"]), again);
+  });
+
+  // ── 4. 只改一欄：其他欄不送、型別不變；有意清空 ──
+  await section("partial", async () => {
+    await fill("name", "桃園結義（再改）");
+    await update();
+    await enterToken(TOKEN); // 重新整理後要重新輸入
+    await waitStatus(/已保存並重新讀回/);
+    const upd = await lastOf("update_map_config");
+    const r = await row("chapter1_2");
+    run.check("保存-4 只改名稱：只送 name（沒有 chapter、unlock_stage）；試算表的章節仍是數字 2、解鎖條件不變",
+      same(Object.keys(upd.top).sort(), ["map_id", "name"]) && r.name === "桃園結義（再改）" && r.chapter === 2 && typeof r.chapter === "number" && r.unlock_stage === "chapter1_3",
+      { top: upd.top, r: { name: r.name, chapter: r.chapter, t: typeof r.chapter, unlock_stage: r.unlock_stage } });
+    await fill("unlock_stage", "");
+    await update();
+    await waitStatus(/已保存並重新讀回/);
+    const upd2 = await lastOf("update_map_config");
+    const r2 = await row("chapter1_2");
+    run.check("保存-5 有意清空解鎖條件：送出空字串（不補值），試算表的格子變成空白，讀回後輸入框是空白",
+      same(upd2.top, { map_id: "chapter1_2", unlock_stage: "" }) && r2.unlock_stage === "" && (await val("unlock_stage")) === "",
+      { top: upd2.top, unlock: r2.unlock_stage });
+  });
+
+  // ── 5. 章節錯誤：留在畫面、不問密碼、不送出 ──
+  await section("chapter", async () => {
+    const before = await count("update_map_config");
+    const results = [];
+    for (const bad of ["2abc", "0", "", "1.5"]) {
+      await fill("chapter", bad);
+      await update();
+      await page.waitForSelector('[data-testid="map-meta-chapter-error"]', { timeout: 5000 });
+      results.push({
+        bad,
+        error: await text("map-meta-chapter-error"),
+        invalid: await page.locator("#map-meta-chapter").getAttribute("aria-invalid"),
+        prompt: await promptVisible(),
+        status: await status(),
+      });
+    }
+    await H.shot(page, "map-editor-save-chapter-error");
+    const after = await count("update_map_config");
+    await fill("chapter", "2");
+    const cleared = await page.locator('[data-testid="map-meta-chapter-error"]').count();
+    run.check("保存-6 章節填 2abc、0、空白、1.5：錯誤留在畫面（aria-invalid），不跳管理密碼、不送出；改回後錯誤消失",
+      results.every((x) => /1 以上的整數/.test(x.error) && x.invalid === "true" && !x.prompt && /沒有送出/.test(x.status)) && after === before && cleared === 0,
+      { results, before, after, cleared });
+  });
+
+  // ── 6. 錯誤的管理密碼 ──
+  await section("token", async () => {
+    await openEditor();
+    await loadList();
+    await loadMap("chapter1_3");
+    const orig = await row("chapter1_3");
+    await fill("name", "密碼錯誤時的名稱");
+    const gets0 = await count("get_map_config");
+    await update();
+    await enterToken("wrong-map-token");
+    await waitStatus(/管理密碼不正確/);
+    const upd = await lastOf("update_map_config");
+    const r = await row("chapter1_3");
+    const gets1 = await count("get_map_config");
+    run.check("保存-7 錯誤的管理密碼：後端拒絕（403），試算表沒有改變、沒有讀回，畫面保留修改",
+      upd.status === 403 && r.name === orig.name && gets1 === gets0 && (await val("name")) === "密碼錯誤時的名稱",
+      { upd, name: r.name, gets0, gets1 });
+    await update();
+    await enterToken(TOKEN);
+    await waitStatus(/已保存並重新讀回/);
+    run.check("保存-8 重新輸入正確的密碼後保存成功", (await row("chapter1_3")).name === "密碼錯誤時的名稱");
+  });
+
+  // ── 7. 結果不明：不自動重送，唯讀確認 ──
+  await section("unknown", async () => {
+    const before = await count("update_map_config");
+    await setCtrl({ updateMode: "applied-network" });
+    await fill("name", "已套用但回應遺失");
+    await update();
+    await waitStatus(/無法確定是否已保存/);
+    const msg = await status();
+    const retryShown = await page.locator('[data-testid="map-readback-retry"]').isVisible();
+    await H.sleep(800);
+    const sent = (await count("update_map_config")) - before;
+    await page.locator('[data-testid="map-readback-retry"]').click();
+    await waitStatus(/讀回確認/);
+    const confirm = await status();
+    const sent2 = (await count("update_map_config")) - before;
+    run.check("保存-9 寫入已套用但回應遺失：顯示「無法確定是否已保存」與唯讀的重新讀回，不自動重送；讀回後確認和送出的相同、已保存",
+      /不會自動重送/.test(msg) && retryShown && sent === 1 && sent2 === 1 && /相同，這次更新已保存/.test(confirm) && (await row("chapter1_3")).name === "已套用但回應遺失",
+      { msg, retryShown, sent, sent2, confirm });
+    await setCtrl({ updateMode: "network" });
+    await fill("name", "沒有送到的名稱");
+    const before2 = await count("update_map_config");
+    await update();
+    await waitStatus(/無法確定是否已保存/);
+    await page.locator('[data-testid="map-readback-retry"]').click();
+    await waitStatus(/讀回確認/);
+    const notSaved = await status();
+    const kept = await val("name");
+    const dirty = await text("integrity-dirty");
+    await H.shot(page, "map-editor-save-unknown-not-applied");
+    run.check("保存-10 請求沒有送到：讀回確認設定和送出的不同、這次更新沒有生效；畫面保留修改並標示尚未保存，沒有重送",
+      /不同，這次更新沒有生效/.test(notSaved) && kept === "沒有送到的名稱" && /地圖有尚未保存的修改/.test(dirty) &&
+        (await count("update_map_config")) === before2 + 1 && (await row("chapter1_3")).name === "已套用但回應遺失",
+      { notSaved, kept, dirty });
+  });
+
+  // ── 8. 保存成功但讀回失敗：唯讀重試 ──
+  await section("readback", async () => {
+    const before = await count("update_map_config");
+    await setCtrl({ failGet: 1 });
+    await fill("chapter", "3");
+    await update();
+    await waitStatus(/重新讀回失敗/);
+    const msg = await status();
+    const r = await row("chapter1_3");
+    await page.locator('[data-testid="map-readback-retry"]').click();
+    await waitStatus(/已保存並重新讀回/);
+    run.check("保存-11 保存成功但讀回失敗：說明「已保存、讀回失敗」，試算表已是新值；按重新讀回（只讀）後成功，沒有重送寫入",
+      /已保存（後端回報成功），但重新讀回失敗/.test(msg) && r.chapter === 3 && (await count("update_map_config")) === before + 1 && (await val("chapter")) === "3",
+      { msg, chapter: r.chapter });
+  });
+
+  // ── 9. 讀回期間又改了畫面 ──
+  await section("edit-during", async () => {
+    await setCtrl({ holdGet: true });
+    await fill("name", "保存時的名稱");
+    await update();
+    await page.waitForFunction(() => window.__mapmetaHeld.length > 0, null, { timeout: 10000 });
+    await fill("name", "保存期間又改的名稱");
+    await setCtrl({ holdGet: false });
+    await page.evaluate(() => window.__mapmetaHeld.splice(0).forEach((r) => r()));
+    await waitStatus(/保存期間你又改了畫面/);
+    const kept = await val("name");
+    const dirty = await text("integrity-dirty");
+    run.check("保存-12 讀回期間又改了名稱：讀回不蓋掉修改（畫面保留、標示尚未保存）；試算表是保存時的名稱",
+      kept === "保存期間又改的名稱" && /地圖有尚未保存的修改/.test(dirty) && (await row("chapter1_3")).name === "保存時的名稱",
+      { kept, dirty });
+  });
+
+  // ── 10. 尚未保存的波次不被讀回蓋掉；草稿檢查；重新讀取清單不換掉草稿 ──
+  await section("waves", async () => {
+    await loadMap("chapter1_7");
+    const draft0 = await text("integrity-draft-detail");
+    await page.getByRole("button", { name: "＋ 新增波次" }).click();
+    const sel = page.locator("table select").first();
+    await sel.waitFor({ timeout: 10000 });
+    await sel.selectOption("grunt_lv1");
+    const draft1 = await text("integrity-draft-detail");
+    const dirty1 = await text("integrity-dirty");
+    const listItem = await page.locator('[data-testid="integrity-list"] button[data-kind]', { hasText: "chapter1_7 " }).getAttribute("data-kind");
+    await fill("name", "汜水關（改）");
+    await update();
+    await enterToken(TOKEN).catch(() => {}); // 這個頁面已經輸入過時不會再問
+    await waitStatus(/已保存並重新讀回/);
+    const wavesAfter = await page.locator("table tbody tr").count();
+    const dirty2 = await text("integrity-dirty");
+    await H.shot(page, "map-editor-save-unsaved-waves");
+    run.check("草稿-1 chapter1_7 載入後草稿是缺波次；畫面上加一波（普通兵LV1）後草稿檢查是資料完整、標示波次尚未保存，清單仍是設定裡的缺波次",
+      /缺波次/.test(draft0) && /資料完整/.test(draft1) && /共 5 隻/.test(draft1) && /波次有尚未保存的修改/.test(dirty1) && /分別保存/.test(dirty1) && listItem === "waves",
+      { draft0: draft0.slice(0, 80), draft1: draft1.slice(0, 120), dirty1, listItem });
+    run.check("草稿-2 保存地圖資訊後的讀回不蓋掉尚未保存的波次（仍是 1 組、仍標示波次尚未保存）",
+      wavesAfter === 1 && /波次有尚未保存的修改/.test(dirty2) && !/地圖有尚未保存的修改/.test(dirty2), { wavesAfter, dirty2 });
+    // 重新讀取清單不換掉草稿
+    await fill("name", "清單重讀時的草稿");
+    await loadList();
+    const kept = await val("name");
+    const wavesKept = await page.locator("table tbody tr").count();
+    run.check("草稿-3 有尚未保存的修改時重新讀取清單：名稱與波次的草稿都沒有被換掉", kept === "清單重讀時的草稿" && wavesKept === 1, { kept, wavesKept });
+    // 保存波次後清單更新
+    await page.getByRole("button", { name: "儲存波次至 Sheet" }).click();
+    await page.waitForFunction(() => /波次儲存成功/.test(document.body.innerText), null, { timeout: 15000 });
+    await page.waitForFunction(() => document.querySelector('[data-testid="integrity-list"] button[data-kind="complete"]') && [...document.querySelectorAll('[data-testid="integrity-list"] button')].some((b) => b.textContent.startsWith("chapter1_7 ") && b.getAttribute("data-kind") === "complete"), null, { timeout: 15000 });
+    const dirty3 = await page.locator('[data-testid="integrity-dirty"]').innerText().catch(() => "");
+    run.check("草稿-4 儲存波次後清單重新讀取：chapter1_7 變成資料完整（模擬資料），波次不再標示尚未保存",
+      !/波次有尚未保存的修改/.test(dirty3), { dirty3 });
+  });
+
+  // ── 11. 新地圖的草稿 ──
+  await section("new-map", async () => {
+    await page.getByRole("button", { name: "＋ 新增地圖" }).click();
+    const inputs = page.locator('[class*="modal"] input');
+    await inputs.nth(0).fill("chapter_test_new");
+    await inputs.nth(1).fill("測試新地圖");
+    await page.getByRole("button", { name: "確定" }).click();
+    const draft = await text("integrity-draft");
+    run.check("草稿-5 新地圖：草稿標示不是從設定載入、路線與波次的檢查照畫面（缺路線）",
+      /不是從設定載入的地圖/.test(draft) && /缺路線/.test(draft), draft.slice(0, 200));
+  });
+
+  // ── 12. 載入等待中：新地圖、畫面上的修改、匯入都不被較慢的舊回應蓋掉 ──
+  await section("stale-load", async () => {
+    await openEditor();
+    await loadList();
+    await loadMap("chapter1_1");
+    const select = page.locator('[data-testid="sheet-map-select"]');
+    // (a) 等待中建立新地圖
+    await setCtrl({ holdGet: true });
+    await select.selectOption("chapter1_2");
+    await btn("載入").click();
+    await waitHeld("__mapmetaHeld");
+    await newMap("chapter_review_new", "較新的草稿");
+    const msgNew = await status();
+    await setCtrl({ holdGet: false });
+    await releaseGets();
+    await H.sleep(600);
+    const a = { id: await val("map_id"), name: await val("name"), status: await status(), aside: await aside(), draft: await text("integrity-draft"), loadEnabled: await btn("載入").isEnabled() };
+    await H.shot(page, "map-editor-save-stale-load-new");
+    run.check("載入-1 載入 chapter1_2 等待中建立新地圖：舊回應回來後仍是新地圖（chapter_review_new／較新的草稿），狀態說明先前的載入已取消、沒有「載入成功」；新地圖標示不是從設定載入；載入按鈕可以再按",
+      a.id === "chapter_review_new" && a.name === "較新的草稿" && /已建立新地圖「chapter_review_new」/.test(msgNew) && /「chapter1_2」的載入已取消/.test(a.status) &&
+        !/載入成功/.test(a.status + a.aside) && /不是從設定載入的地圖/.test(a.draft) && a.loadEnabled,
+      { msgNew, ...a, draft: a.draft.slice(0, 60) });
+
+    // (b) 等待中改了名稱、加了一波
+    await loadMap("chapter1_1");
+    await setCtrl({ holdGet: true });
+    await select.selectOption("chapter1_2");
+    await btn("載入").click();
+    await waitHeld("__mapmetaHeld");
+    await fill("name", "載入等待中新增的編輯");
+    await addWave();
+    const wavesBefore = await screenWaves();
+    await setCtrl({ holdGet: false });
+    await releaseGets();
+    await waitStatus(/「chapter1_2」(已讀到|載入成功)/);
+    const b = { id: await val("map_id"), name: await val("name"), waves: await screenWaves(), status: await status(), dirty: await dirtyText() };
+    await H.shot(page, "map-editor-save-stale-load-edits");
+    run.check("載入-2 載入等待中改了名稱、加了一波：回應回來後不套用（仍是 chapter1_1，名稱與 4 波都保留），說明已讀到但為了保留修改沒有套用、不是「載入成功」；標示地圖與波次尚未保存",
+      b.id === "chapter1_1" && b.name === "載入等待中新增的編輯" && same(b.waves, wavesBefore) && b.waves.length === 4 && /沒有套用/.test(b.status) && !/載入成功/.test(b.status) &&
+        /地圖有尚未保存的修改/.test(b.dirty) && /波次有尚未保存的修改/.test(b.dirty),
+      { ...b, waves: b.waves.length });
+
+    // (c) 使用者再按一次載入：照選擇換成 chapter1_2，說明尚未保存的內容被取代
+    const r12 = await row("chapter1_2");
+    await loadMap("chapter1_2");
+    const c = { id: await val("map_id"), name: await val("name"), waves: (await screenWaves()).length, status: await status(), dirty: await dirtyText() };
+    run.check("載入-3 再按一次載入：換成 chapter1_2（名稱是設定裡的值、3 波），說明原本畫面上尚未保存的內容已被取代；沒有尚未保存的提示",
+      c.id === "chapter1_2" && c.name === r12.name && c.waves === 3 && /尚未保存的內容已被取代/.test(c.status) && c.dirty === "", c);
+
+    // (d) 等待中匯入 JSON
+    await setCtrl({ holdGet: true });
+    await select.selectOption("chapter1_1");
+    await btn("載入").click();
+    await waitHeld("__mapmetaHeld");
+    await page.getByPlaceholder("貼上 JSON 進行匯入...").fill(JSON.stringify({ map_id: "chapter_import_new", name: "匯入的草稿", chapter: 1, cols: 6, rows: 4, paths: { path_a: [[0, 0], [5, 0]] } }));
+    await btn("匯入").click();
+    const msgImport = await status();
+    await setCtrl({ holdGet: false });
+    await releaseGets();
+    await H.sleep(600);
+    const d = { id: await val("map_id"), name: await val("name"), status: await status(), aside: await aside() };
+    run.check("載入-4 載入 chapter1_1 等待中匯入 JSON：舊回應回來後仍是匯入的 chapter_import_new，狀態說明先前的載入已取消、沒有「載入成功」",
+      d.id === "chapter_import_new" && d.name === "匯入的草稿" && /匯入成功：「chapter_import_new」/.test(msgImport) && /「chapter1_1」的載入已取消/.test(d.status) && !/載入成功/.test(d.status + d.aside),
+      { msgImport, ...d });
+
+    // (e) 等待中建立新地圖，舊的載入之後失敗
+    await setCtrl({ holdGet: true, failGet: 1 });
+    await select.selectOption("chapter1_3");
+    await btn("載入").click();
+    await waitHeld("__mapmetaHeld");
+    await newMap("chapter_review_new2", "失敗前建立的草稿");
+    await setCtrl({ holdGet: false });
+    await releaseGets();
+    await page.waitForFunction(() => !JSON.parse(localStorage.getItem("__shenma_mapmeta_ctrl") || "{}").failGet, null, { timeout: 10000 });
+    await H.sleep(400);
+    const e = { id: await val("map_id"), name: await val("name"), status: await status(), aside: await aside() };
+    run.check("載入-5 載入 chapter1_3 等待中建立新地圖、舊的載入之後失敗：不顯示舊的載入失敗，新地圖不變",
+      e.id === "chapter_review_new2" && e.name === "失敗前建立的草稿" && /「chapter1_3」的載入已取消/.test(e.status) && !/載入失敗/.test(e.status + e.aside), e);
+  });
+
+  // ── 13. 保存回應還沒回來時載入別的地圖、建立新地圖 ──
+  await section("save-pending", async () => {
+    await openEditor();
+    await loadList();
+    await loadMap("chapter1_4");
+    const r15 = await row("chapter1_5");
+    await fill("name", "保存中切換前的名稱");
+    await setCtrl({ holdSave: true });
+    await update();
+    await enterToken(TOKEN);
+    await waitHeld("__mapmetaHeldSave");
+    await loadMap("chapter1_5");
+    await setCtrl({ holdSave: false });
+    await releaseSaves();
+    await waitAside(/「chapter1_4」已保存並重新讀回/);
+    const a = { id: await val("map_id"), name: await val("name"), status: await status(), aside: await aside(), dirty: await dirtyText() };
+    const r14 = await row("chapter1_4");
+    await H.shot(page, "map-editor-save-pending-load");
+    run.check("保存中-1 chapter1_4 保存中載入 chapter1_5：畫面是 chapter1_5（設定裡的名稱），chapter1_4 的保存回來後只讀讀回、不改畫面；狀態列仍是 chapter1_5 載入成功，chapter1_4 的結果另外列出；沒有尚未保存的提示；試算表 chapter1_4 是新名稱",
+      a.id === "chapter1_5" && a.name === r15.name && /「chapter1_5」載入成功/.test(a.status) && /「chapter1_4」已保存並重新讀回/.test(a.aside) && /目前畫面已經不是這張地圖/.test(a.aside) &&
+        a.dirty === "" && r14.name === "保存中切換前的名稱",
+      { ...a, r14: r14.name });
+    // 之後保存 chapter1_5：原值屬於 chapter1_5，只送名稱
+    await fill("name", r15.name + "（改）");
+    await update();
+    await waitStatus(/「chapter1_5」已保存並重新讀回，畫面和設定一致/);
+    const upd = await lastOf("update_map_config");
+    run.check("保存中-2 之後保存 chapter1_5：只送 chapter1_5 的名稱（原值沒有被 chapter1_4 的讀回換掉），讀回一致",
+      same(Object.keys(upd.top).sort(), ["map_id", "name"]) && upd.top.map_id === "chapter1_5" && (await row("chapter1_5")).name === r15.name + "（改）", { top: upd.top });
+
+    // 保存中建立新地圖
+    await fill("name", "保存中建新圖前的名稱");
+    await setCtrl({ holdSave: true });
+    await update();
+    await waitHeld("__mapmetaHeldSave");
+    await newMap("chapter_review_new3", "保存中建立的新地圖");
+    await setCtrl({ holdSave: false });
+    await releaseSaves();
+    await waitAside(/「chapter1_5」已保存並重新讀回/);
+    const b = { id: await val("map_id"), name: await val("name"), status: await status(), aside: await aside(), draft: await text("integrity-draft"), dirty: await dirtyText() };
+    run.check("保存中-3 chapter1_5 保存中建立新地圖：保存回來後不改新地圖，新地圖仍標示不是從設定載入、沒有尚未保存的提示；狀態列是新地圖，chapter1_5 的結果另外列出；試算表 chapter1_5 是新名稱",
+      b.id === "chapter_review_new3" && b.name === "保存中建立的新地圖" && /已建立新地圖「chapter_review_new3」/.test(b.status) && /目前畫面已經不是這張地圖/.test(b.aside) &&
+        /不是從設定載入的地圖/.test(b.draft) && b.dirty === "" && (await row("chapter1_5")).name === "保存中建新圖前的名稱",
+      { ...b, draft: b.draft.slice(0, 60) });
+
+    // 保存中建立 map_id 相同的新地圖：讀回的是同一個 map_id，也不能把設定裡的原值套到新的草稿
+    await loadMap("chapter1_4");
+    await fill("name", "同 id 新圖前保存的名稱");
+    await setCtrl({ holdSave: true });
+    await update();
+    await waitHeld("__mapmetaHeldSave");
+    await newMap("chapter1_4", "同 id 的新草稿");
+    await setCtrl({ holdSave: false });
+    await releaseSaves();
+    await waitAside(/「chapter1_4」已保存並重新讀回/);
+    const c = { id: await val("map_id"), name: await val("name"), aside: await aside(), draft: await text("integrity-draft"), dirty: await dirtyText() };
+    await update();
+    await waitStatus(/「chapter1_4」已保存並重新讀回/);
+    const upd4 = await lastOf("update_map_config");
+    run.check("保存中-4 chapter1_4 保存中建立 map_id 相同的新地圖：讀回不改新草稿（名稱、仍標示不是從設定載入、沒有尚未保存的提示），結果說明目前畫面不是保存時的地圖；之後保存新草稿時三欄都送（沒有借用設定裡的原值）",
+      c.id === "chapter1_4" && c.name === "同 id 的新草稿" && /目前畫面已經不是這張地圖/.test(c.aside) && /不是從設定載入的地圖/.test(c.draft) && c.dirty === "" &&
+        same(Object.keys(upd4.top).sort(), ["chapter", "map_id", "name", "unlock_stage"]) && upd4.top.name === "同 id 的新草稿",
+      { ...c, draft: c.draft.slice(0, 60), top: upd4.top });
+  });
+
+  // ── 14. 波次保存：以讀回的波次為已保存的基準 ──
+  await section("waves-save", async () => {
+    await openEditor();
+    await loadList();
+    // (1) 沒有選敵人的一波：送出 0 波，畫面也是 0 波
+    await loadMap("chapter1_8");
+    await addWave();
+    const shown = await waveItem(0).locator("tbody tr select").first().evaluate((s) => s.options[s.selectedIndex].text);
+    await saveWaves();
+    await enterToken(TOKEN);
+    await waitWave(/波次儲存成功/);
+    const w1 = { msg: await waveText(), screen: await screenWaves(), server: await serverWaves("chapter1_8"), dirty: await dirtyText(), sent: (await lastOf("save_waves_config")).top.waves };
+    await H.shot(page, "map-editor-save-waves-empty");
+    run.check("波次-1 chapter1_8 新增一波但沒有選敵人：下拉照實顯示「（未選擇敵人）」；送出 0 波、試算表 0 列；讀回後畫面也是 0 波、沒有尚未保存的提示，說明波次 1（整波）沒有選敵人、沒有保存",
+      shown === "（未選擇敵人）" && same(w1.sent, []) && w1.server.length === 0 && w1.screen.length === 0 && w1.dirty === "" && /波次 1（整波）沒有選敵人，沒有保存（已從畫面移除）/.test(w1.msg),
+      { shown, ...w1 });
+
+    // (2) 有效的組與空白的組混在一起：不補敵人、不重新編號
+    await loadMap("chapter1_9");
+    await addWave();
+    await addEnemyTo(0);
+    await addWave();
+    await addWave();
+    await setEnemy(2, 0, "cavalry_lv1");
+    const before2 = await screenWaves();
+    await saveWaves();
+    await waitWave(/波次儲存成功/);
+    const w2 = { msg: await waveText(), screen: await screenWaves(), server: await serverWaves("chapter1_9"), dirty: await dirtyText() };
+    run.check("波次-2 第 1 波一組空白＋一組普通兵、第 2 波整波空白、第 3 波騎兵：試算表是第 1 波普通兵、第 3 波騎兵（不補敵人、不重新編號）；畫面換成讀回的 2 波，說明哪些組沒有保存，沒有尚未保存的提示",
+      same(before2.map((w) => w.rows.length), [2, 1, 1]) && same(w2.server, [[1, "grunt_lv1", 5], [3, "cavalry_lv1", 5]]) &&
+        same(w2.screen, [{ title: "波次 1", rows: [["grunt_lv1", 5]] }, { title: "波次 3", rows: [["cavalry_lv1", 5]] }]) && w2.dirty === "" &&
+        /波次 1 的 1 組、波次 2（整波）沒有選敵人，沒有保存（已從畫面移除）/.test(w2.msg),
+      { before: before2, ...w2 });
+
+    // (3) 保存期間又改了數量：保留修改，和讀回的內容比較
+    await loadMap("chapter1_10");
+    await addWave();
+    await setEnemy(0, 0, "grunt_lv2");
+    await setCtrl({ holdSave: true });
+    await saveWaves();
+    await waitHeld("__mapmetaHeldSave");
+    await setCount(0, 0, 7);
+    await setCtrl({ holdSave: false });
+    await releaseSaves();
+    await waitWave(/保存期間你又改了波次/);
+    const w3 = { screen: await screenWaves(), server: await serverWaves("chapter1_10"), dirty: await dirtyText() };
+    run.check("波次-3 保存期間把數量改成 7：試算表是送出時的 5，畫面保留 7 並標示波次尚未保存",
+      same(w3.server, [[1, "grunt_lv2", 5]]) && same(w3.screen, [{ title: "波次 1", rows: [["grunt_lv2", 7]] }]) && /波次有尚未保存的修改/.test(w3.dirty), w3);
+
+    // (4) 保存成功但讀回失敗：說明已保存、空白的組沒有保存，唯讀重試不重送
+    await loadMap("chapter2_1");
+    await addWave();
+    await setEnemy(0, 0, "siege_lv1");
+    await addWave();
+    const n4 = await count("save_waves_config");
+    await setCtrl({ failGet: 1 });
+    await saveWaves();
+    await waitWave(/重新讀回失敗/);
+    const w4 = { msg: await waveText(), retry: await page.locator('[data-testid="waves-readback-retry"]').isVisible(), screen: (await screenWaves()).length, server: await serverWaves("chapter2_1"), dirty: await dirtyText() };
+    await page.locator('[data-testid="waves-readback-retry"]').click();
+    await waitWave(/波次儲存成功並重新讀回/);
+    const w4b = { msg: await waveText(), screen: await screenWaves(), dirty: await dirtyText(), sent: (await count("save_waves_config")) - n4 };
+    await H.shot(page, "map-editor-save-waves-readback");
+    run.check("波次-4 保存成功但讀回失敗：說明已保存（後端回報成功）、讀回失敗、波次 2（整波）沒有保存，有唯讀重試；畫面保留 2 波並標示尚未保存（空白的那波不在設定裡）；試算表是第 1 波攻城",
+      /已保存（後端回報成功），但重新讀回失敗/.test(w4.msg) && /波次 2（整波）沒有選敵人，沒有保存/.test(w4.msg) && w4.retry && w4.screen === 2 &&
+        /波次有尚未保存的修改/.test(w4.dirty) && same(w4.server, [[1, "siege_lv1", 5]]),
+      w4);
+    run.check("波次-5 按重新讀回波次（只讀）：畫面換成讀回的 1 波、沒有尚未保存的提示；整個過程只送出一次保存",
+      same(w4b.screen, [{ title: "波次 1", rows: [["siege_lv1", 5]] }]) && w4b.dirty === "" && w4b.sent === 1, w4b);
+
+    // (5) 結果不明：後端已寫入但回應遺失 → 唯讀確認已保存
+    await loadMap("chapter2_2");
+    await addWave();
+    await setEnemy(0, 0, "grunt_lv3");
+    const n5 = await count("save_waves_config");
+    await setCtrl({ wavesMode: "applied-network" });
+    await saveWaves();
+    await waitWave(/「chapter2_2」無法確定波次是否已保存/);
+    const m5 = await waveText();
+    await H.sleep(800);
+    const sent5 = (await count("save_waves_config")) - n5;
+    await page.locator('[data-testid="waves-readback-retry"]').click();
+    await waitWave(/讀回確認/);
+    const w5 = { msg: await waveText(), screen: await screenWaves(), server: await serverWaves("chapter2_2"), dirty: await dirtyText(), sent: (await count("save_waves_config")) - n5 };
+    run.check("波次-6 已寫入但回應遺失：說明無法確定、不會自動重送；唯讀讀回確認和送出的相同、已保存，畫面與試算表一致、沒有尚未保存的提示",
+      /不會自動重送/.test(m5) && sent5 === 1 && /相同，這次波次已保存/.test(w5.msg) && same(w5.server, [[1, "grunt_lv3", 5]]) &&
+        same(w5.screen, [{ title: "波次 1", rows: [["grunt_lv3", 5]] }]) && w5.dirty === "" && w5.sent === 1,
+      { m5, sent5, ...w5 });
+
+    // (6) 結果不明：請求沒有送到 → 唯讀確認沒有生效，畫面保留修改
+    await setCount(0, 0, 9);
+    const n6 = await count("save_waves_config");
+    await setCtrl({ wavesMode: "network" });
+    await saveWaves();
+    await waitWave(/無法確定/);
+    await page.locator('[data-testid="waves-readback-retry"]').click();
+    await waitWave(/讀回確認/);
+    const w6 = { msg: await waveText(), screen: await screenWaves(), server: await serverWaves("chapter2_2"), dirty: await dirtyText(), sent: (await count("save_waves_config")) - n6 };
+    run.check("波次-7 請求沒有送到：讀回確認和送出的不同、沒有生效；畫面保留 9 並標示尚未保存，試算表仍是 5，沒有重送",
+      /不同，這次波次保存沒有生效/.test(w6.msg) && same(w6.screen, [{ title: "波次 1", rows: [["grunt_lv3", 9]] }]) && same(w6.server, [[1, "grunt_lv3", 5]]) &&
+        /波次有尚未保存的修改/.test(w6.dirty) && w6.sent === 1,
+      w6);
+
+    // (7) 保存期間載入別的地圖：結果標示原本的地圖，不改目前畫面
+    await loadMap("chapter2_3");
+    await addWave();
+    await setEnemy(0, 0, "cavalry_lv2");
+    await setCtrl({ holdSave: true });
+    await saveWaves();
+    await waitHeld("__mapmetaHeldSave");
+    await loadMap("chapter1_6");
+    await setCtrl({ holdSave: false });
+    await releaseSaves();
+    await waitWave(/「chapter2_3」波次儲存成功並重新讀回/);
+    const w7 = { msg: await waveText(), id: await val("map_id"), screen: (await screenWaves()).length, server: await serverWaves("chapter2_3"), dirty: await dirtyText() };
+    run.check("波次-8 chapter2_3 的波次保存中載入 chapter1_6：結果標示 chapter2_3、說明目前畫面不是這張地圖；畫面仍是 chapter1_6 的 9 波、沒有尚未保存的提示；試算表 chapter2_3 是騎兵",
+      /目前畫面已經不是這張地圖/.test(w7.msg) && w7.id === "chapter1_6" && w7.screen === 9 && w7.dirty === "" && same(w7.server, [[1, "cavalry_lv2", 5]]), w7);
+
+    // (8) 管理密碼錯誤：沒有保存、不讀回
+    await openEditor();
+    await loadList();
+    await loadMap("chapter2_4");
+    await addWave();
+    await setEnemy(0, 0, "grunt_lv1");
+    const gets8 = await count("get_map_config");
+    await saveWaves();
+    await enterToken("wrong-wave-token");
+    await waitWave(/管理密碼不正確/);
+    await H.sleep(300);
+    const w8 = { msg: await waveText(), server: await serverWaves("chapter2_4"), screen: (await screenWaves()).length, dirty: await dirtyText(), retry: await page.locator('[data-testid="waves-readback-retry"]').count(), gets: (await count("get_map_config")) - gets8 };
+    run.check("波次-9 管理密碼錯誤：說明沒有保存，試算表 0 列、沒有讀回、沒有重試按鈕；畫面保留 1 波並標示尚未保存",
+      /沒有保存/.test(w8.msg) && w8.server.length === 0 && w8.gets === 0 && w8.retry === 0 && w8.screen === 1 && /波次有尚未保存的修改/.test(w8.dirty), w8);
+  });
+
+  // ── 15. 素材轉換：有效圖片、無效檔案、取消；不加入素材選單 ──
+  await section("asset", async () => {
+    const uploads = [];
+    const onReq = (r) => { if (/\/mapEditor\/api\/upload/.test(r.url())) uploads.push(r.method()); };
+    page.on("request", onReq);
+    const options = () => page.evaluate(() => ({
+      thumbs: document.querySelectorAll('button[class*="textureOption"]').length,
+      blobOptions: [...document.querySelectorAll('button[class*="textureOption"] img')].filter((i) => (i.getAttribute("src") || "").startsWith("blob:")).length,
+      blobCells: [...document.querySelectorAll('div[title^="["]')].filter((d) => /blob:/.test(d.style.backgroundImage)).length,
+    }));
+    const opt0 = await options();
+    const input = page.locator('[data-testid="asset-convert-input"]');
+    // 有效的 PNG（2×2）
+    const Buf = globalThis.Buffer;
+    const PNG = Buf.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGP4z8DwHwyBNIQBBUIhAAD1Fw/x3zN7kAAAAABJRU5ErkJggg==", "base64");
+    await input.setInputFiles({ name: "my_tile.png", mimeType: "image/png", buffer: PNG });
+    await page.waitForSelector('[data-testid="asset-convert-result"]', { timeout: 10000 });
+    const result = await text("asset-convert-result");
+    const preview = await page.locator('[data-testid="asset-convert-result"] img').evaluate((i) => ({ ok: i.complete && i.naturalWidth > 0, w: i.naturalWidth, src: i.getAttribute("src").slice(0, 5) }));
+    const [download] = await Promise.all([page.waitForEvent("download"), page.locator('[data-testid="asset-convert-download"]').click()]);
+    const savedTo = `${H.EVIDENCE}/converted-${download.suggestedFilename()}`;
+    await download.saveAs(savedTo);
+    const bytes = fs.readFileSync(savedTo);
+    const isWebp = bytes.subarray(0, 4).toString("latin1") === "RIFF" && bytes.subarray(8, 12).toString("latin1") === "WEBP";
+    const opt1 = await options();
+    await H.shot(page, "map-editor-save-asset");
+    run.check("素材-1 選擇有效圖片：預覽載入成功，說明尚未加入遊戲（要加入遊戲素材並重新發布）；下載的檔名是 my_tile.webp、內容是 WebP（RIFF／WEBP）",
+      /my_tile\.webp（2×2/.test(result) && /還沒加入遊戲/.test(result) && /重新發布/.test(result) && preview.ok && preview.src === "blob:" &&
+        download.suggestedFilename() === "my_tile.webp" && isWebp,
+      { result, preview, file: download.suggestedFilename(), isWebp, size: bytes.length });
+    run.check("素材-2 轉換後的素材不加入素材選單、不用在任何格子（選項數不變、沒有 blob: 的選項或格子）",
+      opt1.thumbs === opt0.thumbs && opt1.blobOptions === 0 && opt1.blobCells === 0, { opt0, opt1 });
+    // 無效的檔案
+    await input.setInputFiles({ name: "broken.png", mimeType: "image/png", buffer: Buf.from("這不是圖片") });
+    await page.waitForSelector('[data-testid="asset-convert-error"]', { timeout: 10000 });
+    const err = await text("asset-convert-error");
+    const resultGone = await page.locator('[data-testid="asset-convert-result"]').count();
+    // 取消（沒有選檔）
+    await input.setInputFiles([]);
+    await H.sleep(300);
+    const opt2 = await options();
+    run.check("素材-3 無效檔案：顯示無法讀取、沒有產生素材；取消選檔沒有變化；素材選單不變",
+      /無法讀取這個檔案/.test(err) && resultGone === 0 && opt2.thumbs === opt0.thumbs && opt2.blobOptions === 0 && opt2.blobCells === 0, { err, resultGone, opt2 });
+    // 開發模式：加入開發素材（攔截請求，不寫檔）；正式靜態匯出：沒有這個按鈕、沒有上傳請求
+    await input.setInputFiles({ name: "dev_tile.png", mimeType: "image/png", buffer: PNG });
+    await page.waitForSelector('[data-testid="asset-convert-result"]', { timeout: 10000 });
+    const devBtn = await page.locator('[data-testid="asset-dev-add"]').count();
+    if (PROD) {
+      run.check("素材-4 正式靜態匯出：沒有「加入開發素材」，整個流程沒有任何上傳請求", devBtn === 0 && uploads.length === 0, { devBtn, uploads });
+    } else {
+      const tile = await page.request.get(H.BASE + "/images/shenmaSanguo/tiles/tile_grass1.webp");
+      const tileBody = await tile.body();
+      await page.route("**/mapEditor/api/upload", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ path: "tiles/__dev_added_test.webp" }) }));
+      await page.route("**/images/shenmaSanguo/tiles/__dev_added_test.webp", (r) => r.fulfill({ status: 200, contentType: "image/webp", body: tileBody }));
+      await page.locator('[data-testid="asset-dev-add"]').click();
+      await page.waitForFunction(() => /已寫進本機 public/.test(document.querySelector('[data-testid="asset-convert-result"]')?.innerText || ""), null, { timeout: 10000 });
+      const devMsg = await text("asset-convert-result");
+      const added = await page.locator('button[title="tiles/__dev_added_test.webp"]').count();
+      await page.unroute("**/mapEditor/api/upload");
+      await page.unroute("**/images/shenmaSanguo/tiles/__dev_added_test.webp");
+      run.check("素材-4 開發模式：有「加入開發素材」，送出後加入這個頁面的素材選單，說明遊戲還要加入 Godot 素材並重新匯出（請求以攔截回應，沒有寫檔）",
+        devBtn === 1 && uploads.filter((m) => m === "POST").length === 1 && added > 0 && /Godot/.test(devMsg), { devBtn, uploads, added, devMsg: devMsg.slice(-80) });
+    }
+    page.off("request", onReq);
+  });
+
+  // ── 13. 390 寬、矮畫面與鍵盤 ──
+  await section("narrow", async () => {
+    await page.setViewportSize({ width: 390, height: 600 });
+    await openEditor();
+    await loadList();
+    const panel = page.locator('[data-testid="map-integrity"]');
+    await panel.scrollIntoViewIfNeeded();
+    const box = await panel.evaluate((el) => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, vw: window.innerWidth }; });
+    const filter = page.getByRole("group", { name: "依資料狀態篩選地圖" }).getByRole("button", { name: /^待補資料 [0-9]+$/ });
+    await filter.focus();
+    await page.keyboard.press("Enter");
+    const pressed = await filter.getAttribute("aria-pressed");
+    await page.keyboard.press("Tab");
+    const focused = await page.evaluate(() => ({ text: document.activeElement?.textContent || "", inList: !!document.activeElement?.closest('[data-testid="integrity-list"]') }));
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    // 回到清單第一項並用空白鍵選取
+    await page.locator('[data-testid="integrity-list"] button').first().focus();
+    await page.keyboard.press(" ");
+    await page.waitForSelector('[data-testid="integrity-selected"]', { timeout: 5000 });
+    const sel = await text("integrity-selected");
+    const visible = await page.locator('[data-testid="integrity-selected"]').evaluate((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.right <= window.innerWidth + 1; });
+    await page.locator('[data-testid="integrity-selected"]').scrollIntoViewIfNeeded();
+    await H.shot(page, "map-editor-save-390x600");
+    run.check("窄版-1 390×600：資料檢查面板在畫面寬度內；篩選按鈕用 Enter 切換（aria-pressed），Tab 進到清單項目，空白鍵選取後顯示詳細",
+      box.left >= 0 && box.right <= box.vw + 1 && pressed === "true" && focused.inList && /待補資料|缺/.test(sel) && visible,
+      { box, pressed, focused, sel: sel.slice(0, 80), visible });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 800 }).catch(() => {});
+  out.requests = (await reqLog().catch(() => [])).length;
+  if (node) out.backendLog = node.log.length;
+  return run.finish(out);
+}

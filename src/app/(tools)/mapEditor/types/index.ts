@@ -33,7 +33,8 @@ export interface TileTextures {
 export interface MapJson {
   map_id: string;
   name: string;
-  chapter: number;
+  /** 章節：數字；設定裡原本不是數字、使用者也沒有修改時保留原值 */
+  chapter: number | string;
   unlock_stage?: string;
   cols: number;
   rows: number;

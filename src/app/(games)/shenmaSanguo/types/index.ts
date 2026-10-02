@@ -376,6 +376,18 @@ export type HeroSkillPayload =
       chain_ratio: number;
       /** 最多傳遞幾次（只接受 1 或 2）；其他值時 Godot 當作沒有這個技能 */
       chain_max_jumps: number;
+    }
+  | {
+      id: "storm";
+      /** 範圍半徑（格，含邊界），以主目標被打中的位置為中心；不是正的有限數字時 Godot 當作沒有這個技能 */
+      storm_radius: number;
+      /**
+       * 範圍內每一名受到的傷害比例（0.5＝這次普通攻擊傷害的 50%）；
+       * 不是 0～1 之間（不含兩端）的有限數字時 Godot 當作沒有這個技能
+       */
+      storm_ratio: number;
+      /** 最多幾名其他敵人（只接受 1～4 的整數）；其他值時 Godot 當作沒有這個技能 */
+      storm_max_targets: number;
     };
 
 export interface ExpeditionPayload {

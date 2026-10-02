@@ -12,6 +12,7 @@
 ## 堅韌（廖化）：受傷前的生命比例不高於門檻時，防禦計算後的傷害再乘上倍率（見 tenacity_hp_ratio、tenacity_damage_mult），不改防禦與最大生命
 ## 威壓（顏良）：範圍內敵人對阻路武將的直接攻擊力乘上倍率（見 atk_down_aura_mult；倍率記在敵人身上，Enemy.atk_mult），不改敵人設定的攻擊力
 ## 連環計（龐統）：普通攻擊實際扣到主目標的生命後，依序傳給前一個被打中的敵人附近的下一個敵人（見 chain_ratio、_chain），傷害逐跳遞減
+## 呼風喚雨（諸葛亮）：普通攻擊實際扣到主目標的生命後，以主目標被打中的位置為中心，範圍內最多幾名其他敵人各受一定比例的傷害（見 storm_ratio、_storm），不遞減、不傳遞
 
 class_name Hero
 extends Node2D
@@ -252,6 +253,26 @@ const CHAIN_LOG_MAX: int = 40
 const CHAIN_FX_TIME: float = 0.35
 ## 半徑邊界的容許誤差（像素）：正好在半徑上的敵人算在內
 const CHAIN_EDGE_EPS: float = 0.001
+## 呼風喚雨（storm，諸葛亮）：每次普通攻擊對主目標實際造成正的有限傷害後，以主目標被打中時的位置為中心、半徑 storm_radius 格（含邊界）內，
+## 對最多 storm_max_targets 名其他仍存活、這位武將打得到的敵人，各造成這次普通攻擊打出去的傷害（含首擊加倍）× storm_ratio
+## （由近到遠，距離相同時生成序號小的優先，每名最多一次）。中心是主目標，不是武將；主目標被這一擊打倒也照樣以它被打中的位置生效。
+## 每一名都是同樣的傷害（不遞減、不從被打中的敵人再往外傳，和連環計不同），走敵人一般的受傷與死亡流程（擊殺與金幣照常只算一次）；
+## 不再引發首擊、吸血、灼燒、暈眩、橫掃、連射、連環計或新的呼風喚雨，不增加攻擊次數、不改攻擊冷卻。
+## storm_ratio 0 代表沒有這個技能；半徑要是正的有限數字、比例是 0～1 之間（不含兩端）的有限數字、人數只接受 1～4 的整數（JSON 的 4.0 也算），
+## 任何一個缺少或不合理就當作普通攻擊（不補預設值）
+var storm_ratio: float = 0.0
+var storm_radius: float = 0.0
+var storm_max_targets: int = 0
+## 測試用唯讀統計（debug_snapshot）：有範圍傷害的攻擊次數、範圍命中的次數、範圍命中實際扣掉的生命總量（超過敵人剩餘生命的部分不算），
+## 以及最近 STORM_LOG_MAX 次的中心與每一名（生成序號、離中心的距離（格）、傷害與實際扣掉的生命）
+var storm_count: int = 0
+var storm_hits: int = 0
+var storm_dealt: float = 0.0
+var storm_log: Array = []
+const STORM_LOG_MAX: int = 40
+const STORM_FX_TIME: float = 0.45
+## 範圍邊界的容許誤差（像素）：距離正好是半徑的敵人算在範圍內
+const STORM_EDGE_EPS: float = 0.001
 ## 測試用唯讀統計（debug_snapshot）：這位武將的遊戲時間（_process 的 delta 累加，受時間倍率影響、手動暫停時不前進）、
 ## 普通攻擊的次數，以及最近 ATTACK_LOG_MAX 次攻擊的時間、這次冷卻用的攻擊間隔與當時的攻速加成
 var _age: float = 0.0
@@ -371,6 +392,9 @@ func _read_skill(state: Dictionary) -> void:
 	chain_ratio = 0.0
 	chain_radius = 0.0
 	chain_max_jumps = 0
+	storm_ratio = 0.0
+	storm_radius = 0.0
+	storm_max_targets = 0
 	var skill = state.get("skill", null)
 	if not (skill is Dictionary):
 		return
@@ -460,6 +484,16 @@ func _read_skill(state: Dictionary) -> void:
 				chain_radius = float(cr)
 				chain_ratio = float(ck)
 				chain_max_jumps = int(cj)
+		"storm":
+			# 半徑要是正的有限數字、比例是 0～1 之間（不含兩端）、人數是 1～4 的整數；三個都合理才啟用，任何一個缺少或不合理就當作普通攻擊（不補預設值）。
+			# 字串、布林、null、NaN、無限大、0 以下、小數或 5 以上的人數都不合理
+			var sr: Variant = skill.get("storm_radius")
+			var sk: Variant = skill.get("storm_ratio")
+			var st: Variant = skill.get("storm_max_targets")
+			if _positive_finite(sr) and _open_unit(sk) and _positive_whole(st) and float(st) <= 4.0:
+				storm_radius = float(sr)
+				storm_ratio = float(sk)
+				storm_max_targets = int(st)
 
 ## 技能參數是正的有限數字（JSON 的數字在 Godot 是 float；字串、布林、null、NaN、無限大、0 以下都不是）
 static func _positive_finite(v: Variant) -> bool:
@@ -551,6 +585,9 @@ func _process(delta: float) -> void:
 	# 連環計：主目標這一擊實際扣到生命時，從主目標被打中的位置開始傳遞（主目標被打倒也照樣傳；傳遞不經過上面的技能，也不算一次攻擊）
 	if chain_ratio > 0.0:
 		_chain(hit_pos, primary_id, damage, dealt)
+	# 呼風喚雨：主目標這一擊實際扣到生命時，以主目標被打中的位置為中心打範圍內的其他敵人（主目標被打倒也照樣生效；範圍傷害不經過上面的技能，也不算一次攻擊）
+	if storm_ratio > 0.0:
+		_storm(hit_pos, primary_id, damage, dealt)
 	_is_attacking = true
 	_anim_timer   = 0.22
 	# 保留這一幀越過零點的時間（零頭）；待命後的第一擊、或零頭長過一個間隔（極長的一幀）時從這一擊起算完整的間隔。
@@ -768,6 +805,76 @@ func chain_state() -> Dictionary:
 			fx_n += 1
 	return {"radius": chain_radius, "ratio": chain_ratio, "max_jumps": chain_max_jumps, "count": chain_count, "hits": chain_hits,
 		"dealt": chain_dealt, "attacks": attack_count, "fx": fx_n, "log": chain_log.duplicate(true)}
+
+## 呼風喚雨：center 是主目標被打中時的位置、primary_id 是主目標（不會再被打）、base 是這次主攻擊打出去的傷害、first 是主目標實際扣掉的生命。
+## 主目標沒有實際扣到生命（無效的傷害、沒有回傳數字）時不生效。先選好全部對象、記下距離，再依序造成傷害
+## （受傷可能讓敵人死亡並從 WaveManager 的清單移除，不能邊走訪邊打）；候選和選目標一樣排除已釋放、正要移除（包括已經漏到城池）、已倒下、
+## 這位武將打不到的敵人（不能對空的職業遇到飛行敵人）；免疫減速的敵人照樣受傷
+func _storm(center: Vector2, primary_id: int, base: float, first: Variant) -> void:
+	var hit: float = float(first) if (first is float or first is int) else 0.0
+	if not (hit > 0.0 and is_finite(hit)) or not (base > 0.0 and is_finite(base)) or not _wave_mgr:
+		return
+	var radius_px: float = storm_radius * tile_size
+	var picks: Array = []
+	for e in _wave_mgr.get_active_enemies():
+		if not _enemy_alive(e) or e.get_instance_id() == primary_id or not can_target(e):
+			continue
+		var raw: float = center.distance_to(e.global_position)
+		if raw > radius_px + STORM_EDGE_EPS:
+			continue
+		# 距離取到 0.001 像素再比較：浮點誤差造成的極小差距視為等距，交給生成序號決定
+		picks.append({"e": e, "d": snappedf(raw, 0.001), "seq": int(e.spawn_seq)})
+	picks.sort_custom(func(x, y): return x.d < y.d or (x.d == y.d and x.seq < y.seq))
+	picks = picks.slice(0, storm_max_targets)
+	# 範圍內沒有其他敵人：就是一般的普通攻擊（不顯示效果、不計次）
+	if picks.is_empty():
+		return
+	var amount: float = base * storm_ratio
+	var hits: Array = []
+	var points: PackedVector2Array = PackedVector2Array()
+	for p in picks:
+		var e: Node = p.e
+		if not _enemy_alive(e):
+			continue
+		points.append(e.global_position - center)
+		var r: Variant = e.take_damage(amount)
+		var got: float = float(r) if (r is float or r is int) else 0.0
+		if not (got > 0.0 and is_finite(got)):
+			got = 0.0
+		hits.append({"seq": int(p.seq), "dist": snappedf(float(p.d) / float(tile_size), 0.0001), "amount": amount, "dealt": got})
+		storm_hits += 1
+		storm_dealt += got
+	if hits.is_empty():
+		return
+	storm_count += 1
+	storm_log.append({"base": base, "first": hit, "center": center, "hits": hits})
+	if storm_log.size() > STORM_LOG_MAX:
+		storm_log.pop_front()
+	_show_storm_fx(center, radius_px, points)
+
+## 呼風喚雨的範圍效果：以主目標被打中的位置為中心、半徑和實際範圍相同的風雨圈，STORM_FX_TIME 秒（遊戲時間）後消失。
+## 掛在武將底下（不跟著武將移動）：手動暫停時跟著停住，武將被移除或切換關卡時一起清除
+func _show_storm_fx(origin: Vector2, radius_px: float, points: PackedVector2Array) -> void:
+	var fx := StormFx.new()
+	fx.radius = radius_px
+	fx.points = points
+	fx.duration = STORM_FX_TIME
+	fx.top_level = true
+	add_child(fx)
+	fx.global_position = origin
+
+## 測試用唯讀資訊（debug_snapshot）：Godot 實際讀到的半徑（格）、比例與人數（沒有啟用時比例是 0）、有範圍傷害的攻擊次數、範圍命中的次數與實際扣掉的生命總量、
+## 普通攻擊的次數、目前還在顯示的風雨圈數與最近幾次的每一名
+func storm_state() -> Dictionary:
+	var fx_n: int = 0
+	for c in get_children():
+		if c is StormFx and not c.is_queued_for_deletion():
+			fx_n += 1
+	var entries: Array = []
+	for x in storm_log:
+		entries.append({"base": x.base, "first": x.first, "center": [x.center.x, x.center.y], "hits": x.hits.duplicate(true)})
+	return {"radius": storm_radius, "ratio": storm_ratio, "max_targets": storm_max_targets, "count": storm_count, "hits": storm_hits,
+		"dealt": storm_dealt, "attacks": attack_count, "fx": fx_n, "log": entries}
 
 ## 技能觸發時在武將上方顯示的文字（金色、放大，和一般的傷害數字區分）
 const SKILL_TEXT_COLOR: Color = Color(1.0, 0.85, 0.2)
@@ -1335,3 +1442,43 @@ class ChainFx extends Node2D:
 			draw_line(points[i - 1], points[i], Color(0.62, 0.42, 1.0, 0.95 * k), 4.0, true)
 		for i in range(points.size()):
 			draw_circle(points[i], 6.0, Color(0.8, 0.65, 1.0, 0.6 * k))
+
+## 呼風喚雨的範圍效果（不用文字，Godot 專案沒有中文字型）：淡藍色的圓（半徑＝實際範圍）、旋轉的風弧與落下的雨絲，被打中的敵人位置有小圈；
+## 半透明、不接收點擊，隨時間淡出
+class StormFx extends Node2D:
+	var radius: float = 96.0
+	## 被打中的敵人位置（相對於中心）
+	var points: PackedVector2Array = PackedVector2Array()
+	var duration: float = 0.45
+	## 已經過的遊戲時間（秒）：_process 的 delta，受時間倍率影響、手動暫停時不前進
+	var elapsed: float = 0.0
+
+	func _ready() -> void:
+		z_index = 50
+
+	func _process(delta: float) -> void:
+		elapsed += delta
+		if elapsed >= duration:
+			queue_free()
+			return
+		queue_redraw()
+
+	func _draw() -> void:
+		var k: float = clampf(1.0 - elapsed / duration, 0.0, 1.0)
+		var t: float = elapsed / maxf(duration, 0.001)
+		draw_circle(Vector2.ZERO, radius, Color(0.45, 0.72, 1.0, 0.14 * k))
+		draw_arc(Vector2.ZERO, radius, 0.0, TAU, 48, Color(0.72, 0.88, 1.0, 0.8 * k), 2.0, true)
+		# 風：三段跟著時間旋轉的弧
+		for i in range(3):
+			var a0: float = t * PI * 1.6 + i * TAU / 3.0
+			draw_arc(Vector2.ZERO, radius * (0.45 + 0.17 * i), a0, a0 + PI * 0.55, 16, Color(0.85, 0.95, 1.0, 0.75 * k), 3.0, true)
+		# 雨：固定位置的斜線，隨時間往下落（只畫在圓內）
+		for i in range(12):
+			var gx: float = (float(i % 4) - 1.5) / 2.0
+			var gy: float = (floorf(float(i) / 4.0) - 1.0) / 1.6
+			var p: Vector2 = Vector2(gx, gy + fmod(t * 1.2 + 0.13 * i, 0.6) - 0.3) * radius
+			if p.length() > radius * 0.92:
+				continue
+			draw_line(p, p + Vector2(-0.06, 0.16) * radius, Color(0.78, 0.9, 1.0, 0.7 * k), 2.0, true)
+		for p in points:
+			draw_arc(p, 9.0, 0.0, TAU, 16, Color(0.9, 0.97, 1.0, 0.9 * k), 2.0, true)
