@@ -941,6 +941,38 @@
   border-radius: 50%;
   transition: opacity 0.3s ease;
 }
+/* 載入的階段（存檔與設定、遊戲引擎的下載大小）、第一次下載的提醒、停住時的說明 */
+.tkStage {
+  max-width: 260px;
+  padding: 0 0.75rem;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: #cbd5e1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.tkStageHint {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+.tkStalled {
+  max-width: 260px;
+  padding: 0 0.75rem;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: #fcd34d;
+  text-align: center;
+}
+/* 遊戲引擎無法啟動時，瀏覽器回報的原始訊息（英文） */
+.engineFailDetail {
+  margin: 0;
+  max-width: 260px;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
 
 /* SW 版本更新 banner */
 .swUpdateBanner {

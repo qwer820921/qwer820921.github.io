@@ -131,7 +131,10 @@ self.addEventListener("fetch", (e) => {
 **難度：** 低  
 **影響：** 不縮短實際時間，但大幅降低使用者放棄率
 
-**現況：** `SinglePageContent.tsx` 只顯示 Spinner + 「載入戰場中...」
+**現況（2026-10-02 已實作另一種做法）：** 主頁載入動畫下面寫出「存檔與設定」與「遊戲引擎」各自的階段，引擎下載中寫出已下載／總共的大小（`utils/engineLoad.ts`、`components/useEngineLoad.ts`）。不另外預先下載：直接讀同源遊戲 iframe 外殼頁自己的進度條（`#status-progress` 的 value／max，Godot 的 onProgress，解壓縮後的位元組），不重複下載、不改遊戲產物。30 秒沒有收到資料（啟動中 90 秒）說明停住了並提供重新載入；外殼頁顯示錯誤、或瀏覽器缺少 WebGL2 時改顯示原因。原本 120 秒逾時在 iframe 外殼頁載入時就停止計時，下載很慢時畫面上只有轉圈、進度條在存檔讀完後就停在 100%。
+當時的正式版：`index.wasm` 35.7 MB（gzip 傳輸約 10 MB）、`index.pck` 4.7 MB；在開發機的網路下載 GitHub Pages 實測約 30～60 KB/s（同時 cdnjs 約 1 MB/s），wasm 要 3～5 分鐘。
+
+**原本的現況：** `SinglePageContent.tsx` 只顯示 Spinner + 「載入戰場中...」
 
 **作法：**
 用 `XMLHttpRequest` 預先下載 `.pck`，追蹤 `onprogress` 事件顯示百分比：

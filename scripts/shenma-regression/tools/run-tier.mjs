@@ -145,6 +145,10 @@ const AREAS = {
     what: "存檔比較與備份檔預覽的鍵盤操作（對話框名稱、Tab 留在視窗裡、Esc、處理中不能關閉、焦點歸還與退路）",
     scripts: ["save-dialog-keyboard-web.js"],
   },
+  "engine-load": {
+    what: "主頁載入畫面的遊戲引擎進度：下載大小、停住時的重新載入、引擎無法啟動與缺少 WebGL2 的說明（需要 Godot 產物）",
+    scripts: ["engine-load-web.js"],
+  },
   "battle-tips": {
     what: "戰場的玩法提示：兩個戰鬥入口的位置（不疊在遊戲畫面上）、開關與收起、記住收起、不暫停戰鬥（需要 Godot 產物）",
     scripts: ["battle-tips-web.js"],
@@ -320,6 +324,7 @@ const FULL = [
   "read-retry-web.js",
   "save-dialog-keyboard-web.js",
   "battle-tips-web.js",
+  "engine-load-web.js",
 ];
 
 const [mode, ...rest] = process.argv.slice(2);
