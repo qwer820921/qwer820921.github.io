@@ -1,7 +1,7 @@
 import { HeroSkillPayload } from "../types";
 
 /**
- * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」、廖化「堅韌」、顏良「威壓」、孫尚香「連射」、龐統「連環計」、諸葛亮「呼風喚雨」、呂布「戰神」、魯肅「補給」）
+ * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」、廖化「堅韌」、顏良「威壓」、孫尚香「連射」、龐統「連環計」、諸葛亮「呼風喚雨」、呂布「戰神」、魯肅「補給」、許褚「怪力」、典韋「護衛」、孫權「守護」）
  * 這裡是技能規則的唯一來源：武將列表／詳情的說明，與隨出征資料送進 Godot 的參數都由這裡產生。
  * 技能是戰場效果：不寫進玩家存檔，也不需要後端（GAS）支援。
  * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊。
@@ -183,6 +183,40 @@ export type HeroSkill =
       name: string;
       /** 每次擊殺戰鬥金幣的倍率（1.2＝增加 20%，5 變成 6；大於 1、不超過 2） */
       goldMultiplier: number;
+    }
+  | {
+      /**
+       * 怪力：這位武將自己的普通攻擊打中主目標、實際扣到生命、目標還活著時，把這個地面敵人沿它自己走過的路線往回推 knockbackTiles 格，
+       * 成功推動後冷卻 cooldownSec 秒（戰鬥中的遊戲時間）。傷害照普通攻擊，不另外加傷害；冷卻在同一場保留，新的一場重新開始；只在戰場
+       */
+      id: "knockback";
+      name: string;
+      /** 往回推的距離（格；大於 0、不超過 1） */
+      knockbackTiles: number;
+      /** 成功推動後的冷卻（秒；大於 0、不超過 10） */
+      cooldownSec: number;
+    }
+  | {
+      /**
+       * 護衛：這位武將部署在戰場上、還活著時，radiusTiles 格內（兩人中心的距離、含邊界）其他友軍武將受到敵人的直接攻擊，
+       * 照友軍自己的閃避、防禦與堅韌算出要扣的生命後，由這位武將直接承擔其中的 shareRatio（不超過自己剩下的生命）。只在戰場
+       */
+      id: "guard_share";
+      name: string;
+      /** 承擔的比例（0.2＝20%；大於 0、不超過 0.5） */
+      shareRatio: number;
+      /** 保護範圍（格；大於 0、不超過 5） */
+      radiusTiles: number;
+    }
+  | {
+      /**
+       * 守護：這位武將部署在戰場上、還活著時，敵人漏到城池的傷害乘上 baseDamageMultiplier，和部署的位置無關。
+       * 城防仍是整數：這一場累計的漏城傷害無條件進位後才是扣掉的城防（0.8 時漏 5 隻扣 4）。只在戰場
+       */
+      id: "base_guard";
+      name: string;
+      /** 漏城傷害的倍率（0.8＝每隻 0.8 點；0.5 以上、小於 1） */
+      baseDamageMultiplier: number;
     };
 
 const HERO_SKILLS: Record<string, HeroSkill> = {
@@ -270,6 +304,30 @@ const HERO_SKILLS: Record<string, HeroSkill> = {
   // 魯肅部署在戰場上、還活著時，全隊每次有效擊殺的戰鬥金幣 × 1.2（5 → 6，向下取整），任何方式打倒的敵人都算、擊殺數只算一次；
   // 多個補給取最高的倍率、不疊加；只增加這一場的戰鬥金幣：建造與升級的花費、拆除的返還、結算的戰場點數與玩家的金幣、經驗、存檔都不變
   lu_su: { id: "supply", name: "補給", goldMultiplier: 1.2 },
+  // 正式設定表的被動描述「怪力：擊退效果」沒有寫距離、觸發條件、冷卻與免疫。第一版的設計值，尚未做過平衡：
+  // 許褚自己的普通攻擊實際扣到主目標的生命、目標還活著（不是這一擊打倒的）時，把這個地面敵人沿它自己走過的路線往回推 0.5 格，
+  // 成功推動後冷卻 3 秒（戰鬥中的遊戲時間）；已在路線起點推不動時不用掉冷卻。傷害、攻擊間隔與選目標不變；免疫減速的敵人照樣被推，
+  // 打不到飛行敵人（步兵不能對空）；冷卻在同一場保留（換波次、移位、升級、移出再放回），新的一場重新開始
+  xu_chu: {
+    id: "knockback",
+    name: "怪力",
+    knockbackTiles: 0.5,
+    cooldownSec: 3,
+  },
+  // 正式設定表的被動描述「護衛：替隊友分擔傷害」沒有寫比例、範圍、扣血順序與多名護衛的規則。第一版的設計值，尚未做過平衡：
+  // 典韋部署在戰場上、還活著時，2 格內（兩人中心的距離、含邊界）其他友軍武將受到敵人的直接攻擊，先照友軍自己的閃避、防禦與堅韌算出要扣的生命，
+  // 典韋直接承擔其中的 20%（不再用典韋的防禦減少，也不超過典韋剩下的生命）、友軍扣其餘的部分；不保護自己、防禦塔與城池；
+  // 同時有幾名護衛時只由一名承擔（比例高、距離近的優先），不疊加、承擔的部分不再轉給別人；只在戰鬥中、不改屬性與存檔
+  dian_wei: {
+    id: "guard_share",
+    name: "護衛",
+    shareRatio: 0.2,
+    radiusTiles: 2,
+  },
+  // 正式設定表的被動描述「守護：提升基地防禦」沒有寫數值；遊戲的城池也沒有防禦屬性（城防 20 點、每隻漏城扣 1）。第一版的設計值，尚未做過平衡：
+  // 孫權部署在戰場上、還活著時，敵人漏到城池的傷害 × 0.8（和部署位置無關）；城防仍是整數，這一場累計的漏城傷害無條件進位後才是扣掉的城防
+  // （漏 5 隻扣 4、10 隻扣 8），不增加城防上限、不回復；累計在這一場保留，新的一場歸零；多個守護取最強、不疊加；不改結算公式與存檔
+  sun_quan: { id: "base_guard", name: "守護", baseDamageMultiplier: 0.8 },
 };
 
 export const heroSkillOf = (heroId: string): HeroSkill | null =>
@@ -392,6 +450,61 @@ export function supplyKillGold(skill: HeroSkill | null): number {
 /** 補給讓每次擊殺戰鬥金幣增加的百分比（1.2 → 20；沒有補給時是 0） */
 export function supplyPercent(skill: HeroSkill | null): number {
   return skill?.id === "supply" ? round3((skill.goldMultiplier - 1) * 100) : 0;
+}
+
+/** 護衛承擔的百分比（0.2 → 20；沒有護衛時是 0） */
+export function guardSharePercent(skill: HeroSkill | null): number {
+  return skill?.id === "guard_share" ? round3(skill.shareRatio * 100) : 0;
+}
+
+/**
+ * 護衛的分攤（和 Godot 相同）：damage 是友軍照自己的閃避、防禦與堅韌算完後要扣的生命，guardHp 是護衛剩下的生命。
+ * 護衛承擔 min(damage × 比例, 護衛剩下的生命)，友軍扣其餘的部分（用完整的傷害分攤，不先截成友軍剩下的生命）
+ */
+export function guardShareSplit(
+  damage: number,
+  ratio: number,
+  guardHp: number
+): { ally: number; guard: number } {
+  const guard = Math.max(0, Math.min(damage * ratio, guardHp));
+  return { ally: damage - guard, guard };
+}
+
+/** 守護讓漏城傷害減少的百分比（0.8 → 20；沒有守護時是 0） */
+export function baseGuardPercent(skill: HeroSkill | null): number {
+  return skill?.id === "base_guard"
+    ? round3((1 - skill.baseDamageMultiplier) * 100)
+    : 0;
+}
+
+/**
+ * 戰場上方城防旁顯示的守護減傷百分比：Godot update_stats 的 base_guard_mult（這一場此刻生效的漏城傷害倍率）。
+ * 不是 0.5 以上、小於 1 的有限數字（沒有生效的守護、舊版遊戲沒有這個欄位）時是 0，不顯示
+ */
+export function baseGuardHudPercent(mult: unknown): number {
+  return typeof mult === "number" &&
+    Number.isFinite(mult) &&
+    mult >= 0.5 &&
+    mult < 1
+    ? round3((1 - mult) * 100)
+    : 0;
+}
+
+/**
+ * 連續漏城時每一隻實際扣掉的城防（和 Godot 的 BattleManager 相同）：累計的漏城傷害 T 每隻加上倍率，
+ * 目標扣損＝ceil(T − 1e-6)，這一隻扣「目標扣損 − 已經扣掉的」。0.8 時 5 隻是 [1, 1, 1, 1, 0]
+ */
+export function baseGuardLosses(mult: number, count: number): number[] {
+  const out: number[] = [];
+  let total = 0;
+  let lost = 0;
+  for (let i = 0; i < count; i++) {
+    total += mult;
+    const target = Math.ceil(total - 1e-6);
+    out.push(target - lost);
+    lost = target;
+  }
+  return out;
 }
 
 /** 戰神的有效攻擊力（和 Godot 相同）：目前等級的攻擊力 ×（1 ＋ 每層比例 × 層數），加法疊加、不是連乘 */
@@ -655,6 +768,47 @@ export function describeHeroSkill(
       "在戰場選取這位武將時，單位面板顯示選取當時是否生效與每次擊殺的金幣（重新點選可以更新）。只在戰場生效，不影響存檔。"
     );
   }
+  if (skill.id === "knockback") {
+    return (
+      `這位武將自己的普通攻擊打中目標、實際扣到生命，而且目標沒有被這一擊打倒時，把這名地面敵人沿它自己走過的路線往回推 ${skill.knockbackTiles} 格；` +
+      `成功推動後冷卻 ${skill.cooldownSec} 秒（戰鬥中的遊戲時間：2 倍速時跟著加快，暫停與備戰時不計），冷卻中的攻擊照常造成傷害、只是不推。` +
+      "沿原路往回退：轉彎處會退回上一段路，最多退到敵人出發的地方，不會被推到別條路或直接推離武將；已在出發的地方推不動時不用掉冷卻。" +
+      "傷害照普通攻擊，不另外加傷害、暈眩或攻擊次數，攻擊間隔與射程不變；被推開的敵人不再攻擊原本擋住它的武將，走回武將面前時照常被擋住、照原本的攻擊間隔攻擊。" +
+      "只推這一擊的主要目標：其他武將、防禦塔、灼燒等造成的傷害都不會推；打不到飛行敵人（步兵不能對空）；免疫減速的敵人照樣會被推，減速、暈眩、灼燒等狀態照常保留。" +
+      "冷卻只在這一場保留：換波次、移動位置、升級、移出隊伍再放回都不會重置；切換關卡或重新開始後重新計算。" +
+      "成功推動時敵人上方出現淺藍色的「PUSH」；在戰場選取這位武將時，單位面板顯示選取當時剩下的冷卻（重新點選可以更新）。只在戰場生效，不影響存檔。"
+    );
+  }
+  if (skill.id === "guard_share") {
+    const pct = guardSharePercent(skill);
+    const r = skill.radiusTiles;
+    const full = guardShareSplit(100, skill.shareRatio, Infinity);
+    const low = guardShareSplit(100, skill.shareRatio, 5);
+    return (
+      `部署在戰場上、還活著時，替 ${r} 格內（含邊界，以受傷當下兩人中心的距離計算）的其他友軍武將承擔敵人直接攻擊的 ${pct}%。` +
+      `順序是友軍先照自己的閃避、防禦（含防禦光環）與堅韌算出這一擊要扣的生命，這位武將再直接承擔其中的 ${pct}%：例如要扣 100 時友軍扣 ${round3(full.ally)}、這位武將扣 ${round3(full.guard)}。` +
+      `承擔的部分直接從這位武將的生命扣掉，不再用它自己的防禦、閃避或堅韌減少；生命不夠時只承擔得了剩下的生命（只剩 5 時友軍扣 ${round3(low.ally)}、這位武將扣 ${round3(low.guard)}），不會免費多擋。` +
+      "分攤用的是完整的傷害：友軍生命很少時照樣按完整的傷害分攤，該倒下時照常倒下；這位武將也可能因為承擔而倒下。" +
+      "不保護自己、防禦塔與城池；閃避的攻擊沒有傷害，不分攤；灼燒等不是敵人直接攻擊的扣血也不分攤。" +
+      "同時有幾名護衛時只由一名承擔（比例高的優先，比例相同時距離近的優先），不疊加；兩名護衛互相保護時，承擔的部分不會再轉給另一名。" +
+      "只在戰鬥中、受傷的當下判斷：陣亡、被移出隊伍、移到範圍外時立刻停止，備戰、結算與暫停時不分攤。被保護的夏侯惇反擊時只算自己實際被扣的部分。" +
+      "成功承擔時這位武將上方出現「GUARD」並短暫加上描邊；在戰場選取這位武將時，單位面板顯示選取當時能否提供與範圍內的友軍（重新點選可以更新）。只在戰場生效，不影響存檔。"
+    );
+  }
+  if (skill.id === "base_guard") {
+    const pct = baseGuardPercent(skill);
+    const m = skill.baseDamageMultiplier;
+    const five = baseGuardLosses(m, 5);
+    const ten = baseGuardLosses(m, 10).reduce((a, b) => a + b, 0);
+    return (
+      `部署在戰場上、還活著時，敵人漏到城池時城防受到的傷害減少 ${pct}%（每隻從 1 點變成 ${round3(m)} 點），和部署的位置無關。` +
+      `城防仍是 20 點整數，不增加上限、不回復：這一場累計的漏城傷害無條件進位後才是實際扣掉的城防，例如連續漏 5 隻依序扣 ${five.join("、")}，共扣 ${five.reduce((a, b) => a + b, 0)}；漏 10 隻共扣 ${ten}。` +
+      "累計在這一場保留：換波次、移動位置、升級、陣亡、移出隊伍再放回都不清除；沒有守護時每隻照 1 點累計，不會補扣先前少扣的部分；切換關卡或重新開始才歸零。" +
+      "只影響敵人漏到城池扣的城防：防禦塔與武將受到的傷害不變，敵人照常離場、照常進入下一波；同時有幾名守護時取最強的一個，不疊加。" +
+      "結算的星數與戰場點數照實際剩下的城防計算，不另外加獎勵、金幣或經驗。" +
+      "保住城防（這一隻沒有扣）時城池旁出現「SHIELD」；戰場上方的城防旁顯示目前的漏城減傷，選取這位武將時單位面板顯示選取當時是否生效（重新點選可以更新）。只在戰場生效，不影響存檔。"
+    );
+  }
   if (skill.id === "dodge") {
     const pct = round3(skill.dodgeChance * 100);
     return (
@@ -777,6 +931,29 @@ export function heroSkillPayload(heroId: string): { skill?: HeroSkillPayload } {
   if (skill.id === "supply") {
     return {
       skill: { id: skill.id, supply_gold_multiplier: skill.goldMultiplier },
+    };
+  }
+  if (skill.id === "knockback") {
+    return {
+      skill: {
+        id: skill.id,
+        knockback_distance: skill.knockbackTiles,
+        knockback_cooldown: skill.cooldownSec,
+      },
+    };
+  }
+  if (skill.id === "guard_share") {
+    return {
+      skill: {
+        id: skill.id,
+        guard_share_ratio: skill.shareRatio,
+        guard_radius: skill.radiusTiles,
+      },
+    };
+  }
+  if (skill.id === "base_guard") {
+    return {
+      skill: { id: skill.id, base_damage_mult: skill.baseDamageMultiplier },
     };
   }
   return {

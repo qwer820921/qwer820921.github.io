@@ -172,14 +172,14 @@ func _run() -> void:
 		battle_ended_count += 1
 		last_result = r)
 
-	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、廖化的堅韌、顏良的威壓、孫尚香的連射、龐統的連環計、諸葛亮的呼風喚雨、呂布的戰神、魯肅的補給）、橫掃原型與攻速成長；
+	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、廖化的堅韌、顏良的威壓、孫尚香的連射、龐統的連環計、諸葛亮的呼風喚雨、呂布的戰神、魯肅的補給、許褚的怪力、典韋的護衛、孫權的守護）、橫掃原型與攻速成長；
 	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行；
 	# route 跑飛行與地面的路線無效（出兵前擋下）；blocker 只跑敵人攻擊阻路武將的冷卻；
 	# dodge 只跑趙雲「閃避」；firststrike 只跑首擊加倍（馬超「衝鋒」）；
 	# stagedata 跑關卡資料未完成（沒有波次、波次或路線的格式不對）；enemyatk 跑敵人設定的對武將攻擊力；immune 跑免疫減速；
 	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）；stun 只跑張飛的暈眩（skills 也包含）；lifesteal 只跑魏延的吸血（skills 也包含）；
 	# atkspeed 只跑曹操的攻速光環（skills 也包含）；damage 只跑敵人受傷的入口（拒絕無效的傷害）；
-	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；chain 只跑龐統的連環計（skills 也包含）；storm 只跑諸葛亮的呼風喚雨（skills 也包含）；berserk 只跑呂布的戰神（skills 也包含）；supply 只跑魯肅的補給（skills 也包含）
+	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；chain 只跑龐統的連環計（skills 也包含）；storm 只跑諸葛亮的呼風喚雨（skills 也包含）；berserk 只跑呂布的戰神（skills 也包含）；supply 只跑魯肅的補給（skills 也包含）；knockback 只跑許褚的怪力（skills 也包含）；guard 只跑典韋的護衛（skills 也包含）；baseguard 只跑孫權的守護（skills 也包含）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -203,6 +203,9 @@ func _run() -> void:
 			await _storm_cases()
 			await _berserk_cases()
 			await _supply_cases()
+			await _knockback_cases()
+			await _guard_cases()
+			await _base_guard_cases()
 		elif only == "blocker":
 			await _blocker_cases()
 		elif only == "dodge":
@@ -261,8 +264,14 @@ func _run() -> void:
 			await _berserk_cases()
 		elif only == "supply":
 			await _supply_cases()
+		elif only == "knockback":
+			await _knockback_cases()
+		elif only == "guard":
+			await _guard_cases()
+		elif only == "baseguard":
+			await _base_guard_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、chain、storm、berserk、supply）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、chain、storm、berserk、supply、knockback、guard、baseguard）", false)
 		_finish()
 		return
 
@@ -512,6 +521,15 @@ func _run() -> void:
 	# ── 魯肅的補給（在場上、還活著時，全隊每次有效擊殺的戰鬥金幣 × 1.2，5 → 6；多個來源取最強）──
 	await _supply_cases()
 
+	# ── 許褚的怪力（普通攻擊打中仍活著的地面主目標時，沿它走過的路線往回推 0.5 格；成功後冷卻 3 秒戰鬥時間）──
+	await _knockback_cases()
+
+	# ── 典韋的護衛（2 格內其他友軍受到敵人直接攻擊時，防禦與堅韌算完後承擔 20%，直接扣自己的生命、不超過剩下的生命）──
+	await _guard_cases()
+
+	# ── 孫權的守護（在場上、還活著時漏城傷害 × 0.8，累計後無條件進位才扣城防；5 次扣 4）──
+	await _base_guard_cases()
+
 	_finish()
 
 # ── 輸出 ──
@@ -713,6 +731,8 @@ func _r12_payload(stage_id: String, waves: Array, battle_id: String, team: Array
 		{"hero_id": "lv_bu", "name": "呂布", "job": "cavalry", "attack_range": 3.0, "attack_speed": 0.5},
 		# 魯肅（法師，射程與攻擊間隔和其他測試武將相同；正式設定是射程 5、攻擊間隔 0.9）
 		{"hero_id": "lu_su", "name": "魯肅", "job": "mage", "attack_range": 3.0, "attack_speed": 0.5},
+		# 許褚（步兵，射程與攻擊間隔和其他測試武將相同；正式設定是射程 1、攻擊間隔 0.9）
+		{"hero_id": "xu_chu", "name": "許褚", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5},
 	]
 	return p
 
@@ -13373,3 +13393,1462 @@ func _supply_cases() -> void:
 	main.web_bridge = original
 	rec.free()
 	_load(_stage_b())
+
+# ── 許褚的怪力（knockback）──
+# 自己的普通攻擊打中主目標、實扣是正的有限數字、目標打中前後都活著，而且冷卻好了時，把這個地面敵人沿它自己走過的路線往回推 0.5 格（24 像素）。
+# 依路點索引倒退（彎道、重複路點、環狀自交都照走過的順序），最多退到起點；推不動、致死、無效傷害都不用掉冷卻。
+# 成功後冷卻 3 秒戰鬥時間（BattleManager.battle_time：只在戰鬥中、照倍率前進，暫停與備戰不前進）；冷卻記在 BattleManager（依 hero_id），
+# 跨波次、移位、升級、移出再放回、重新讀技能都保留，新的一場清空。實際推開時解除阻擋，之後照現有的佔格檢查重新判斷
+const KB_SKILL: Dictionary = {"id": "knockback", "knockback_distance": 0.5, "knockback_cooldown": 3}
+const KB_HERO: String = "xu_chu"
+const KB_PX: float = 24.0
+
+## 單獨的敵人（真正的 Enemy 腳本，不經過場景樹的物理處理）：wps 是路線（像素）、idx 是下一個要走向的路點、pos 是目前位置；
+## 速度 speed、血量 hp，extra 另外加進設定（飛行、免疫減速）
+func _kb_enemy(holder: Node, wps: Array, idx: int, pos: Vector2, extra: Dictionary = {}, hp: float = 99999.0, speed: float = 20.0) -> Node:
+	var e: Node = load("res://entities/enemy/Enemy.gd").new()
+	holder.add_child(e)
+	e.set_physics_process(false)
+	var cfg: Dictionary = {"enemy_id": "kb", "hp": hp, "speed": speed}
+	cfg.merge(extra, true)
+	e.setup(cfg, wps)
+	e._wp_index = idx
+	e.position = pos
+	return e
+
+## 推一次：實際退距、推完的位置（取到 0.001）、路點索引、剩餘路程的增加
+func _kb_push(e: Node, d: float) -> Dictionary:
+	var b: Dictionary = e.path_state()
+	var moved: float = e.knockback(d)
+	var a: Dictionary = e.path_state()
+	return {"moved": snappedf(moved, 0.0001), "pos": [snappedf(e.position.x, 0.001), snappedf(e.position.y, 0.001)], "idx": int(a.index),
+		"drem": snappedf(float(a.remaining) - float(b.remaining), 0.0001)}
+
+func _kb_is(r: Dictionary, moved: float, pos: Array, idx: int, drem: float) -> bool:
+	return _ls_near(r.moved, moved, 1e-3) and _ls_near(r.pos[0], float(pos[0]), 1e-3) and _ls_near(r.pos[1], float(pos[1]), 1e-3) and r.idx == idx and _ls_near(r.drem, drem, 1e-3)
+
+## 擋路的武將 blk、攻擊冷卻 0.4、減速 0.5、暈眩 1 秒、灼燒 3 跳、威壓 0.8（推不動時這些都要原樣保留）
+func _kb_load_states(e: Node, blk: Node) -> void:
+	e._blocker = blk
+	e._blocked_cell = Vector2i(4, 0)
+	e._blocker_atk_timer = 0.4
+	e.apply_slow_from("kb_test_slow", 0.5, 2.0)
+	e.apply_stun(1.0)
+	e.apply_burn(10.0, 3, 1.0)
+	e.apply_atk_down_from("kb_test_down", 0.8, 2.0)
+
+## 推動前後比對的狀態（位置與剩餘路程用文字，NaN、無限大也能比對）
+func _kb_frozen(e: Node, blk: Node) -> Array:
+	return [str(e.position), e._wp_index, str(e.get_remaining_distance()), e._blocker == blk, e._blocked_cell, e._blocker_atk_timer,
+		e.speed_mult, e.slow_sources_state(), e._stun_left, e.stun_count, e._burn_ticks_left, e._burn_damage, e.atk_mult, e.current_hp]
+
+## 單獨的許褚（真正的 Hero 腳本，不經過 Main、測試自己呼叫 _process）：步兵（打不到飛行）、射程 3 格、攻擊間隔 1 秒、攻擊力 atk_v，
+## 位置 pos；冷卻記在 bm（測試自己建立、不在場景樹的 BattleManager，battle_time 由測試設定）；skill 是 null 時帶怪力的參數
+func _kb_hero(holder: Node, wave: Node, bm: Node, pos: Vector2, atk_v: float = 100.0, skill: Variant = null, hid: String = KB_HERO) -> Node:
+	var h: Node = load("res://entities/hero/Hero.gd").new()
+	holder.add_child(h)
+	h.set_process(false)
+	h.hero_id = hid
+	h.job = "infantry"
+	h.can_hit_air = false
+	h.attack_range = 3.0
+	h.attack_speed = 1.0
+	h.atk = atk_v
+	h.max_hp = 1000.0
+	h.current_hp = 1000.0
+	h.position = pos
+	h._battle_mgr = bm
+	h._read_skill({"skill": KB_SKILL.duplicate() if skill == null else skill})
+	h._wave_mgr = wave
+	return h
+
+## 武將打一個攻擊回合（冷卻歸零後處理一步）：每個敵人被打掉的生命、移動的距離（像素）、這一擊後這位武將的成功次數、剩下的冷卻、攻擊次數的增加、攻擊冷卻
+func _kb_round(h: Node, es: Array) -> Dictionary:
+	var hp0: Array = []
+	var pos0: Array = []
+	for e in es:
+		var alive: bool = is_instance_valid(e) and not e.is_dead()
+		hp0.append(e.current_hp if alive else 0.0)
+		pos0.append(e.position if alive else Vector2.ZERO)
+	var a0: int = h.attack_count
+	h._atk_timer = 0.0
+	h._process(1.0 / 60.0)
+	var dmg: Array = []
+	var mv: Array = []
+	for i in range(es.size()):
+		var alive: bool = is_instance_valid(es[i]) and not es[i].is_dead()
+		dmg.append(snappedf(float(hp0[i]) - (es[i].current_hp if alive else 0.0), 0.0001))
+		mv.append(snappedf((es[i].position as Vector2).distance_to(pos0[i]), 0.0001) if alive else -1.0)
+	var bm: Node = h._battle_mgr
+	var rec: Dictionary = bm.knockback_record(h.hero_id) if bm != null else {}
+	return {"dmg": dmg, "moved": mv, "count": int(rec.get("count", 0)), "remaining": snappedf(bm.knockback_remaining(h.hero_id), 0.0001) if bm != null else -1.0,
+		"attacks": h.attack_count - a0, "timer": snappedf(h._atk_timer, 0.0001)}
+
+## 掛在 holder 底下、文字是 PUSH 的浮動文字（文字在加入後的下一幀才設定）
+func _kb_texts(holder: Node) -> int:
+	var n: int = 0
+	for c in holder.get_children():
+		if c is FloatingText and not c.is_queued_for_deletion() and c._label != null and c._label.text == Hero.KNOCKBACK_TEXT:
+			n += 1
+	return n
+
+## 實際引擎用的許褚（步兵、射程 3 格、攻擊間隔 0.5 秒，和 _r12_payload 的設定相同；正式設定是射程 1、攻擊間隔 0.9）
+func _kb_member(level: int = 1, skill: Variant = null) -> Dictionary:
+	var h: Dictionary = _r12_hero(KB_HERO, KB_SKILL.duplicate() if skill == null else skill)
+	h["level"] = level
+	return h
+
+func _kb_main_hero() -> Node:
+	return main._placed_heroes.get(KB_HERO)
+
+## 載入一場關卡（waves 經過 JSON）、把許褚放在 cell、開戰並等第一波的 n 個敵人都出現。manual 為 true 時停掉許褚自己的 _process
+func _kb_start(rec: Node, battle_id: String, n: int, team: Variant = null, manual: bool = true, waves: Variant = null, cell: Vector2i = Vector2i(3, 4)) -> Array:
+	var t: Array = team if team != null else [_kb_member()]
+	var ws: Array = waves if waves != null else [[_grp("post", n, 0.02)]]
+	_r19_js(rec, _r12_payload("knockback_a", ws, battle_id, t))
+	_r12_place(KB_HERO, cell)
+	if manual and _kb_main_hero() != null:
+		_kb_main_hero().set_process(false)
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == n, 5.0)
+	return _sw_enemies()
+
+## 不會移動的敵人放在路線起點右邊 dx 像素（地圖的 path_a 是第 5 列的直線）
+func _kb_put(e: Node, dx: float) -> void:
+	e.position = (e._waypoints[0] as Vector2) + Vector2(dx, 0.0)
+
+## 場上的許褚打一次（呼叫一次 _process）：每個敵人受到的傷害與 x 的變化、擊殺數的變化、成功次數與剩下的冷卻
+func _kb_hit(es: Array, delta: float = 0.0) -> Dictionary:
+	var g: Node = _kb_main_hero()
+	var hp0: Array = []
+	var x0: Array = []
+	for e in es:
+		var alive: bool = is_instance_valid(e) and not e.is_dead()
+		hp0.append(e.current_hp if alive else 0.0)
+		x0.append(e.position.x if alive else 0.0)
+	var k0: int = _bm().kills
+	g._process(delta)
+	var dmg: Array = []
+	var dx: Array = []
+	for i in range(es.size()):
+		var alive: bool = is_instance_valid(es[i]) and not es[i].is_dead()
+		dmg.append(snappedf(float(hp0[i]) - (es[i].current_hp if alive else 0.0), 0.0001))
+		dx.append(snappedf((es[i].position.x if alive else 0.0) - float(x0[i]), 0.0001))
+	return {"dmg": dmg, "dx": dx, "kills": _bm().kills - k0, "count": int(_bm().knockback_record(KB_HERO).get("count", 0)), "remaining": _bm().knockback_remaining(KB_HERO)}
+
+func _knockback_cases() -> void:
+	# 怪力-0：技能參數的判讀：knockback_distance 是大於 0、不超過 1 的有限數字（格）、knockback_cooldown 是大於 0、不超過 10 的有限數字（秒），
+	# 兩個都合理才啟用；字串、布林、null、陣列、字典、NaN、無限大、0、負數、超過上限、缺欄位、欄位名稱寫錯、不認得或大小寫不同的 id、
+	# 其他技能帶這兩個欄位都不啟用（0）；怪力不帶其他技能；換成反擊或沒有技能後清除
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var good0: Array = [
+		[{"id": "knockback", "knockback_distance": 0.5, "knockback_cooldown": 3}, [0.5, 3.0]],
+		[{"id": "knockback", "knockback_distance": 1, "knockback_cooldown": 10}, [1.0, 10.0]],
+		[{"id": "knockback", "knockback_distance": 0.0001, "knockback_cooldown": 0.1}, [0.0001, 0.1]],
+	]
+	var bad0: Array = []
+	for v in ["0.5", true, false, null, [0.5], {"v": 0.5}, NAN, INF, -INF, 0, 0.0, -0.5, 1.0001, 2]:
+		bad0.append({"id": "knockback", "knockback_distance": v, "knockback_cooldown": 3})
+	for v in ["3", true, null, [3], NAN, INF, 0, -3, 10.0001, 30]:
+		bad0.append({"id": "knockback", "knockback_distance": 0.5, "knockback_cooldown": v})
+	bad0.append_array([{"id": "knockback"}, {"id": "knockback", "knockback_distance": 0.5}, {"id": "knockback", "knockback_cooldown": 3},
+		{"id": "knockback", "distance": 0.5, "cooldown": 3}, {"id": "Knockback", "knockback_distance": 0.5, "knockback_cooldown": 3},
+		{"id": "knockback_x", "knockback_distance": 0.5, "knockback_cooldown": 3},
+		{"id": "supply", "supply_gold_multiplier": 1.2, "knockback_distance": 0.5, "knockback_cooldown": 3},
+		{"id": "stun", "stun_sec": 0.5, "knockback_distance": 0.5, "knockback_cooldown": 3}])
+	var wrong0: Array = []
+	for c in good0:
+		h0._read_skill({"skill": c[0]})
+		if not (_ls_near(h0.knockback_distance, float(c[1][0])) and _ls_near(h0.knockback_cooldown, float(c[1][1]))):
+			wrong0.append({"skill": str(c[0]), "got": [h0.knockback_distance, h0.knockback_cooldown]})
+	for c in bad0:
+		h0._read_skill({"skill": c})
+		if h0.knockback_distance != 0.0 or h0.knockback_cooldown != 0.0:
+			wrong0.append({"skill": str(c), "got": [h0.knockback_distance, h0.knockback_cooldown]})
+	h0._read_skill({"skill": JSON.parse_string("{\"id\": \"knockback\", \"knockback_distance\": 0.5, \"knockback_cooldown\": 3}")})
+	var json0: Array = [h0.knockback_distance, h0.knockback_cooldown]
+	var other0: Array = [h0.first_strike_multiplier, h0.burn_ratio, h0.stun_duration, h0.lifesteal_ratio, h0.counter_ratio, h0.berserk_ratio, h0.supply_gold_multiplier, h0.chain_ratio, h0.storm_ratio]
+	h0._read_skill({"skill": {"id": "counter", "counter_ratio": 0.2}})
+	var switched0: Array = [h0.knockback_distance, h0.knockback_cooldown, h0.counter_ratio]
+	h0._read_skill({"skill": KB_SKILL.duplicate()})
+	h0._read_skill({})
+	var cleared0: Array = [h0.knockback_distance, h0.knockback_cooldown]
+	h0.free()
+	_check("怪力-0 技能參數：距離是大於 0、不超過 1 的有限數字、冷卻是大於 0、不超過 10 的有限數字（經過 JSON 的 0.5、整數 3 也算）兩個都合理才啟用；字串、布林、null、陣列、字典、NaN、無限大、0、負數、超過上限、缺欄位、欄位名稱寫錯、不認得或大小寫不同的 id、其他技能帶這兩個欄位都不啟用（0）；怪力不帶其他技能，換成反擊或沒有技能後清除",
+		wrong0.is_empty() and _ls_near(json0[0], 0.5) and _ls_near(json0[1], 3.0) and other0 == [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+			and switched0 == [0.0, 0.0, 0.2] and cleared0 == [0.0, 0.0],
+		{"wrong": wrong0, "json": json0, "other": other0, "switched": switched0, "cleared": cleared0, "cases": good0.size() + bad0.size()})
+
+	# 怪力-1：沿已走的路線倒退（依路點索引，不重新投影）：直線 24；彎道跨段（剩 10 退到折點、再沿上一段退 14，索引 2 → 1）；
+	# 剩 10 退到起點就停（實際 10）；剛好在折點上（索引 2 → 1、再退 24）；重複的路點（零長段跳過，索引 4 → 1）；
+	# 環狀自交的路線在最後一段（退 24 仍在最後一段，不會跳到交叉的第一段）；環內跨折點（索引 4 → 3）；剩餘路程都增加實際退距
+	var holder1 := _dodge_holder()
+	var straight: Array = [Vector2(0, 0), Vector2(480, 0)]
+	var corner: Array = [Vector2(0, 0), Vector2(240, 0), Vector2(240, 240)]
+	var dup: Array = [Vector2(0, 0), Vector2(240, 0), Vector2(240, 0), Vector2(240, 0), Vector2(240, 240)]
+	var loop: Array = [Vector2(0, 0), Vector2(240, 0), Vector2(240, 240), Vector2(120, 240), Vector2(120, -120)]
+	var r1: Dictionary = {
+		"straight": _kb_push(_kb_enemy(holder1, straight, 1, Vector2(200, 0)), KB_PX),
+		"corner": _kb_push(_kb_enemy(holder1, corner, 2, Vector2(240, 10)), KB_PX),
+		"short": _kb_push(_kb_enemy(holder1, straight, 1, Vector2(10, 0)), KB_PX),
+		"vertex": _kb_push(_kb_enemy(holder1, corner, 2, Vector2(240, 0)), KB_PX),
+		"dup": _kb_push(_kb_enemy(holder1, dup, 4, Vector2(240, 5)), KB_PX),
+		"loop": _kb_push(_kb_enemy(holder1, loop, 4, Vector2(120, -10)), KB_PX),
+		"loop_turn": _kb_push(_kb_enemy(holder1, loop, 4, Vector2(120, 230)), KB_PX),
+	}
+	_check("怪力-1 沿已走的路線倒退：直線 200 → 176；彎道 (240,10) 先退到折點再沿上一段到 (226,0)、索引 2→1；剩 10 時退到起點 (0,0) 實際 10；在折點上 (240,0) → (216,0)、索引 2→1；重複路點 (240,5) → (221,0)、索引 4→1；環狀自交的最後一段 (120,-10) → (120,14) 仍是索引 4（沒有跳到交叉的第一段）；環內 (120,230) 跨折點到 (134,240)、索引 4→3；剩餘路程都增加實際退距",
+		_kb_is(r1.straight, 24.0, [176, 0], 1, 24.0) and _kb_is(r1.corner, 24.0, [226, 0], 1, 24.0) and _kb_is(r1.short, 10.0, [0, 0], 1, 10.0)
+			and _kb_is(r1.vertex, 24.0, [216, 0], 1, 24.0) and _kb_is(r1.dup, 24.0, [221, 0], 1, 24.0) and _kb_is(r1.loop, 24.0, [120, 14], 4, 24.0)
+			and _kb_is(r1.loop_turn, 24.0, [134, 240], 3, 24.0), r1)
+
+	# 怪力-2：推不動或不處理時什麼都不改、回傳 0：在起點、距離 0／負數／NaN／正負無限大、已倒下、正要被移除、飛行、路點索引 0 或超過路點數、只有一個路點
+	var bad2: Dictionary = {}
+	var at_start: Node = _kb_enemy(holder1, straight, 1, Vector2(0, 0))
+	bad2["start"] = _kb_push(at_start, KB_PX)
+	for d in [0.0, -24.0, NAN, INF, -INF]:
+		bad2["d=" + str(d)] = _kb_push(_kb_enemy(holder1, straight, 1, Vector2(200, 0)), d)
+	var dead2: Node = _kb_enemy(holder1, straight, 1, Vector2(200, 0))
+	dead2._is_dead = true
+	bad2["dead"] = _kb_push(dead2, KB_PX)
+	var fly2: Node = _kb_enemy(holder1, straight, 1, Vector2(200, 0), {"movement_type": "flying"})
+	bad2["flying"] = _kb_push(fly2, KB_PX)
+	bad2["idx0"] = _kb_push(_kb_enemy(holder1, straight, 0, Vector2(200, 0)), KB_PX)
+	bad2["idx3"] = _kb_push(_kb_enemy(holder1, straight, 3, Vector2(200, 0)), KB_PX)
+	var single2: Node = _kb_enemy(holder1, [Vector2(100, 0)], 1, Vector2(100, 0))
+	bad2["single"] = _kb_push(single2, KB_PX)
+	var q2: Node = _kb_enemy(holder1, straight, 1, Vector2(200, 0))
+	q2.queue_free()
+	bad2["queued"] = _kb_push(q2, KB_PX)
+	var ok2: bool = (_kb_is(bad2.start, 0.0, [0, 0], 1, 0.0) and _kb_is(bad2.dead, 0.0, [200, 0], 1, 0.0) and _kb_is(bad2.flying, 0.0, [200, 0], 1, 0.0)
+		and _kb_is(bad2.idx0, 0.0, [200, 0], 0, 0.0) and _kb_is(bad2.idx3, 0.0, [200, 0], 3, 0.0) and _kb_is(bad2.single, 0.0, [100, 0], 1, 0.0)
+		and _kb_is(bad2.queued, 0.0, [200, 0], 1, 0.0))
+	for d in [0.0, -24.0, NAN, INF, -INF]:
+		ok2 = ok2 and _kb_is(bad2["d=" + str(d)], 0.0, [200, 0], 1, 0.0)
+	_check("怪力-2 不處理時位置、索引、剩餘路程都不變、回傳 0：已在起點、距離 0／負數／NaN／正負無限大、已倒下、正要被移除、飛行、路點索引 0 或超過路點數、只有一個路點",
+		ok2, bad2)
+
+	# 怪力-3：推完之後的下一步照原路往終點走：彎道推到 (226,0) 後每步 2 像素朝 (240,0) 前進，走到折點後轉向 (240,240)（索引 1→2→3），
+	# 推動前已走到終點還沒處理抵達的（索引＝路點數）可以退：退到 (456,0)、索引 1，之後只在真的走到終點時抵達一次
+	var e3: Node = _kb_enemy(holder1, corner, 2, Vector2(240, 10))
+	e3.knockback(KB_PX)
+	var steps3: Array = []
+	for i in range(10):
+		e3._physics_process(0.1)
+		steps3.append([snappedf(e3.position.x, 0.001), snappedf(e3.position.y, 0.001), e3._wp_index])
+	var end3: Node = _kb_enemy(holder1, straight, 2, Vector2(480, 0))
+	var arrived3: Array = []
+	end3.reached_base.connect(func(x): arrived3.append(x))
+	var p3: Dictionary = _kb_push(end3, KB_PX)
+	var mid3: Array = []
+	for i in range(11):
+		end3._physics_process(0.1)
+		mid3.append(arrived3.size())
+	var at3: Array = [snappedf(end3.position.x, 0.001), end3._wp_index]
+	for i in range(5):
+		if is_instance_valid(end3) and not end3.is_queued_for_deletion():
+			end3._physics_process(0.1)
+	_check("怪力-3 推完的下一步照原路往終點走：彎道推到 (226,0) 後 0.1 秒一步、每步 2 像素到 (240,0)、再轉向往 (240,240)（索引 1→2）；已走到終點（索引 2＝路點數）但還沒抵達的可以推：退到 (456,0)、索引 1，之後走 12 步（24 像素）回到終點，只在真的抵達時發出一次抵達",
+		steps3[0] == [228.0, 0.0, 1] and steps3[5] == [238.0, 0.0, 1] and steps3[6] == [240.0, 0.0, 2] and steps3[7] == [240.0, 2.0, 2] and steps3[9] == [240.0, 6.0, 2]
+			and _kb_is(p3, 24.0, [456, 0], 1, 24.0) and mid3.max() == 0 and at3 == [478.0, 1] and arrived3.size() == 1,
+		{"steps": steps3, "push": p3, "mid": mid3, "at": at3, "arrived": arrived3.size()})
+
+	# 怪力-4：推開時解除阻擋、其他狀態不變：原本擋路的武將與格子清除（攻擊冷卻不重設）；減速、暈眩、灼燒、威壓都保留，之後照遊戲時間繼續倒數；
+	# 推不動（起點）時阻擋不解除
+	var blk4: Node = load("res://entities/hero/Hero.gd").new()
+	holder1.add_child(blk4)
+	blk4.set_process(false)
+	var e4: Node = _kb_enemy(holder1, straight, 1, Vector2(200, 0))
+	e4._blocker = blk4
+	e4._blocked_cell = Vector2i(4, 0)
+	e4._blocker_atk_timer = 0.4
+	e4.apply_slow_from("kb_test_slow", 0.5, 2.0)
+	e4.apply_stun(1.0)
+	e4.apply_burn(10.0, 3, 1.0)
+	e4.apply_atk_down_from("kb_test_down", 0.8, 2.0)
+	var s4a: Array = [e4.speed_mult, e4._stun_left, e4._burn_ticks_left, e4.atk_mult]
+	var m4: float = e4.knockback(KB_PX)
+	var s4b: Array = [e4.speed_mult, e4._stun_left, e4._burn_ticks_left, e4.atk_mult, e4._blocker == null, e4._blocked_cell, e4._blocker_atk_timer]
+	for i in range(5):
+		e4._physics_process(0.1)
+	var s4c: Array = [snappedf(e4._stun_left, 0.0001), e4.has_slow_from("kb_test_slow"), e4.has_atk_down_from("kb_test_down"), snappedf(e4.position.x, 0.001)]
+	var e4b: Node = _kb_enemy(holder1, straight, 1, Vector2(0, 0))
+	e4b._blocker = blk4
+	e4b._blocked_cell = Vector2i(0, 0)
+	var m4b: float = e4b.knockback(KB_PX)
+	_check("怪力-4 推開時解除阻擋（武將與格子清除、攻擊冷卻 0.4 不重設）；減速 0.5、暈眩 1 秒、灼燒 3 跳、威壓 0.8 都保留，0.5 秒後暈眩剩 0.5、減速與威壓仍在、暈眩中不移動；在起點推不動時阻擋不解除",
+		_ls_near(m4, 24.0) and s4b.slice(0, 4) == s4a and s4b[4] == true and s4b[5] == Vector2i(-1, -1) and _ls_near(s4b[6], 0.4)
+			and _ls_near(s4c[0], 0.5) and s4c[1] == true and s4c[2] == true and _ls_near(s4c[3], 176.0) and m4b == 0.0 and e4b._blocker == blk4,
+		{"moved": m4, "before": s4a, "after": s4b, "later": s4c, "start": [m4b, e4b._blocker == blk4]})
+	holder1.queue_free()
+	await process_frame
+
+	# 怪力-5：單獨的許褚（BattleManager 的戰鬥時間由測試設定）：第一擊 100、主目標沿路退 24、成功 1 次、冷卻 3、PUSH 標記 1 個、攻擊 1 次、
+	# 攻擊冷卻照攻擊間隔 1 秒；冷卻中（戰鬥時間 0、2.9）照常造成 100、不推；戰鬥時間 3.0 時再推（成功 2 次、冷卻從此刻起 3 秒）
+	var holder5 := _dodge_holder()
+	var wave5 := R20Wave.new()
+	holder5.add_child(wave5)
+	var bm5: Node = _bk_bm()
+	var road5: Array = [Vector2(0, 0), Vector2(960, 0)]
+	var g5: Node = _kb_hero(holder5, wave5, bm5, Vector2(240, 48))
+	var t5: Node = _kb_enemy(holder5, road5, 1, Vector2(240, 0), {}, 99999.0, 0.0)
+	wave5.enemies.append(t5)
+	var r5a: Dictionary = _kb_round(g5, [t5])
+	await process_frame
+	var push5a: int = _kb_texts(holder5)
+	var r5b: Dictionary = _kb_round(g5, [t5])
+	bm5.battle_time = 2.9
+	var r5c: Dictionary = _kb_round(g5, [t5])
+	bm5.battle_time = 3.0
+	var r5d: Dictionary = _kb_round(g5, [t5])
+	await process_frame
+	var push5d: int = _kb_texts(holder5)
+	var st5: Dictionary = g5.knockback_state()
+	var log5: Array = st5.get("log", [])
+	var l0: Dictionary = log5[0] if log5.size() > 0 else {}
+	_check("怪力-5 單獨的許褚：第一擊 100、主目標退 24、成功 1 次、冷卻 3、PUSH 1 個、攻擊 1 次、攻擊冷卻 1 秒；冷卻中（戰鬥時間 0、2.9）照常 100、不推；戰鬥時間 3.0 時再推（成功 2 次、冷卻 3）；紀錄 {生成序號、要求 24、實際 24、索引 1→1、剩餘路程 +24、戰鬥時間 0}",
+		r5a.dmg == [100.0] and r5a.moved == [24.0] and r5a.count == 1 and _ls_near(r5a.remaining, 3.0) and push5a == 1 and r5a.attacks == 1 and _ls_near(r5a.timer, 1.0, 1e-3)
+			and r5b.dmg == [100.0] and r5b.moved == [0.0] and r5b.count == 1 and r5c.dmg == [100.0] and r5c.moved == [0.0] and r5c.count == 1 and _ls_near(r5c.remaining, 0.1, 1e-4)
+			and r5d.dmg == [100.0] and r5d.moved == [24.0] and r5d.count == 2 and _ls_near(r5d.remaining, 3.0) and push5d == 2
+			and st5.get("count") == 2 and _ls_near(st5.get("distance"), 0.5) and _ls_near(st5.get("cooldown"), 3.0) and log5.size() == 2
+			and _ls_near(l0.get("requested"), 24.0) and _ls_near(l0.get("actual"), 24.0) and l0.get("index_before") == 1 and l0.get("index_after") == 1
+			and _ls_near(float(l0.get("remaining_after", 0.0)) - float(l0.get("remaining_before", 0.0)), 24.0, 1e-3) and _ls_near(l0.get("t"), 0.0),
+		{"a": r5a, "push_a": push5a, "b": r5b, "c": r5c, "d": r5d, "push_d": push5d, "state": st5})
+	holder5.queue_free()
+	bm5.free()
+	await process_frame
+
+	# 怪力-6：不用掉冷卻的情況：這一擊打倒主目標（血量 50）不推、成功 0 次、還可以推；攻擊力 0（無效的傷害）不受傷、不推；
+	# 主目標已在起點推不動：照常 100、成功 0 次、沒有 PUSH；之後換一個可以推的目標立刻成功（冷卻沒有被用掉）
+	var holder6 := _dodge_holder()
+	var wave6 := R20Wave.new()
+	holder6.add_child(wave6)
+	var bm6: Node = _bk_bm()
+	var g6: Node = _kb_hero(holder6, wave6, bm6, Vector2(48, 48))
+	var kill6: Node = _kb_enemy(holder6, road5, 1, Vector2(60, 0), {}, 50.0, 0.0)
+	wave6.enemies = [kill6]
+	var r6a: Dictionary = _kb_round(g6, [kill6])
+	await process_frame
+	var zero6: Node = _kb_enemy(holder6, road5, 1, Vector2(60, 0), {}, 99999.0, 0.0)
+	wave6.enemies = [zero6]
+	g6.atk = 0.0
+	var r6b: Dictionary = _kb_round(g6, [zero6])
+	g6.atk = 100.0
+	var start6: Node = _kb_enemy(holder6, road5, 1, Vector2(0, 0), {}, 99999.0, 0.0)
+	wave6.enemies = [start6]
+	var r6c: Dictionary = _kb_round(g6, [start6])
+	await process_frame
+	var push6c: int = _kb_texts(holder6)
+	wave6.enemies = [zero6]
+	var r6d: Dictionary = _kb_round(g6, [zero6])
+	_check("怪力-6 不用掉冷卻：打倒血量 50 的主目標 → 不推、成功 0 次、冷卻 0；攻擊力 0 → 不受傷、不推；主目標在起點 → 照常 100、不推、成功 0 次、沒有 PUSH；之後換一個可推的目標立刻推（成功 1 次、冷卻 3）",
+		r6a.dmg == [50.0] and r6a.count == 0 and r6a.remaining == 0.0 and r6b.dmg == [0.0] and r6b.moved == [0.0] and r6b.count == 0
+			and r6c.dmg == [100.0] and r6c.moved == [0.0] and r6c.count == 0 and push6c == 0 and r6d.dmg == [100.0] and r6d.moved == [24.0] and r6d.count == 1 and _ls_near(r6d.remaining, 3.0),
+		{"kill": r6a, "zero": r6b, "start": r6c, "push": push6c, "after": r6d})
+	holder6.queue_free()
+	bm6.free()
+	await process_frame
+
+	# 怪力-7：只推自己普通攻擊的主目標：兩個敵人在射程內只推第一個；另一位沒有技能的武將（關羽）打中、灼燒跳傷都不推、不影響許褚的冷卻；
+	# 飛行敵人打不到（步兵）、不推；免疫減速的地面敵人照樣推；兩位許褚（不同 hero_id）各自冷卻
+	var holder7 := _dodge_holder()
+	var wave7 := R20Wave.new()
+	holder7.add_child(wave7)
+	var bm7: Node = _bk_bm()
+	var g7: Node = _kb_hero(holder7, wave7, bm7, Vector2(240, 48))
+	var a7: Node = _kb_enemy(holder7, road5, 1, Vector2(240, 0), {}, 99999.0, 0.0)
+	var b7: Node = _kb_enemy(holder7, road5, 1, Vector2(260, 0), {}, 99999.0, 0.0)
+	wave7.enemies = [a7, b7]
+	var r7a: Dictionary = _kb_round(g7, [a7, b7])
+	var gy7: Node = _kb_hero(holder7, wave7, bm7, Vector2(240, 48), 100.0, {}, "guan_yu")
+	var r7b: Dictionary = _kb_round(gy7, [a7, b7])
+	b7.apply_burn(10.0, 2, 0.5)
+	var x7: float = b7.position.x
+	var hp7: float = b7.current_hp
+	for i in range(12):
+		b7._physics_process(0.1)
+	var burn7: Array = [snappedf(b7.current_hp - hp7, 0.001), snappedf(b7.position.x - x7, 0.001)]
+	var fly7: Node = _kb_enemy(holder7, road5, 1, Vector2(240, 0), {"movement_type": "flying"}, 99999.0, 0.0)
+	var imm7: Node = _kb_enemy(holder7, road5, 1, Vector2(250, 0), {"trait": "immune_slow"}, 99999.0, 0.0)
+	var g7b: Node = _kb_hero(holder7, wave7, bm7, Vector2(240, 48), 100.0, null, "xu_chu_b")
+	wave7.enemies = [fly7]
+	var r7c: Dictionary = _kb_round(g7b, [fly7])
+	wave7.enemies = [imm7]
+	var r7d: Dictionary = _kb_round(g7b, [imm7])
+	var r7e: Dictionary = _kb_round(g7, [imm7])
+	_check("怪力-7 只推主目標：兩個在射程內只推第一個（24、第二個 0）；關羽打中不推、許褚的成功次數仍 1；灼燒 2 跳（-20）不推；飛行敵人步兵打不到（0 傷害、不推）；免疫減速的地面敵人照樣被另一位許褚推 24；兩位許褚各自冷卻（xu_chu_b 成功 1 次、xu_chu 仍在冷卻：打中 100、不推）",
+		r7a.dmg == [100.0, 0.0] and r7a.moved == [24.0, 0.0] and r7a.count == 1 and r7b.dmg == [100.0, 0.0] and r7b.moved == [0.0, 0.0] and r7b.count == 0
+			and bm7.knockback_record(KB_HERO).get("count") == 1 and burn7 == [-20.0, 0.0] and r7c.dmg == [0.0] and r7c.moved == [0.0] and r7c.count == 0
+			and r7d.dmg == [100.0] and r7d.moved == [24.0] and r7d.count == 1 and r7e.dmg == [100.0] and r7e.moved == [0.0] and r7e.count == 1,
+		{"two": r7a, "guan_yu": r7b, "burn": burn7, "fly": r7c, "immune": r7d, "own_cd": r7e})
+	holder7.queue_free()
+	bm7.free()
+	await process_frame
+
+	# 怪力-8：重新讀技能不重置冷卻：推了一次（冷卻 3）後換成沒有技能 → 冷卻中與冷卻結束都不推；換回怪力 → 冷卻仍從原本的時間算（戰鬥時間 1 時剩 2，不推）；
+	# 戰鬥時間 3 時推；換成反擊再換回也一樣
+	var holder8 := _dodge_holder()
+	var wave8 := R20Wave.new()
+	holder8.add_child(wave8)
+	var bm8: Node = _bk_bm()
+	var g8: Node = _kb_hero(holder8, wave8, bm8, Vector2(240, 48))
+	var e8: Node = _kb_enemy(holder8, road5, 1, Vector2(240, 0), {}, 99999.0, 0.0)
+	wave8.enemies = [e8]
+	var r8: Array = [_kb_round(g8, [e8]).moved[0]]
+	g8._read_skill({})
+	bm8.battle_time = 1.0
+	r8.append(_kb_round(g8, [e8]).moved[0])
+	g8._read_skill({"skill": KB_SKILL.duplicate()})
+	var rem8: float = bm8.knockback_remaining(KB_HERO)
+	r8.append(_kb_round(g8, [e8]).moved[0])
+	g8._read_skill({"skill": {"id": "counter", "counter_ratio": 0.2}})
+	bm8.battle_time = 3.0
+	r8.append(_kb_round(g8, [e8]).moved[0])
+	g8._read_skill({"skill": KB_SKILL.duplicate()})
+	r8.append(_kb_round(g8, [e8]).moved[0])
+	_check("怪力-8 重新讀技能不重置冷卻：推 24 → 換成沒有技能（戰鬥時間 1）不推 → 換回怪力時剩 2 秒、不推 → 換成反擊（戰鬥時間 3）不推 → 換回怪力推 24；成功共 2 次",
+		r8 == [24.0, 0.0, 0.0, 0.0, 24.0] and _ls_near(rem8, 2.0) and bm8.knockback_record(KB_HERO).get("count") == 2, {"moved": r8, "remaining": rem8})
+	holder8.queue_free()
+	bm8.free()
+	await process_frame
+
+	# 怪力-9：戰鬥時間只在戰鬥中、沒有手動暫停時前進：BATTLE 中 0.5 秒 × 6 → 3.0（冷卻結束）；PREP 與手動暫停時不前進
+	var bm9: Node = _bk_bm()
+	bm9.record_knockback(KB_HERO, 3.0, {})
+	var r9: Array = [bm9.knockback_remaining(KB_HERO)]
+	bm9.game_state = BattleManager.GameState.PREP
+	bm9._process(1.0)
+	r9.append(bm9.knockback_remaining(KB_HERO))
+	bm9.game_state = BattleManager.GameState.BATTLE
+	bm9.manual_paused = true
+	bm9._process(1.0)
+	r9.append(bm9.knockback_remaining(KB_HERO))
+	bm9.manual_paused = false
+	for i in range(5):
+		bm9._process(0.5)
+	r9.append(snappedf(bm9.knockback_remaining(KB_HERO), 0.0001))
+	r9.append(bm9.knockback_ready(KB_HERO))
+	bm9._process(0.5)
+	r9.append(snappedf(bm9.knockback_remaining(KB_HERO), 0.0001))
+	r9.append(bm9.knockback_ready(KB_HERO))
+	bm9.free()
+	_check("怪力-9 冷卻用戰鬥時間：記下後剩 3；備戰中處理 1 秒仍 3；手動暫停中處理 1 秒仍 3；戰鬥中 0.5 秒 × 5 剩 0.5、還不能推，再 0.5 秒剩 0、可以推",
+		r9 == [3.0, 3.0, 3.0, 0.5, false, 0.0, true], r9)
+
+	# 怪力-10：路線進度對不起來時什麼都不改、回傳 0（位置、索引、剩餘路程、阻擋的武將與格子、攻擊冷卻、減速、暈眩、灼燒、威壓、生命都不變）：
+	# 偏離這一段、越過這一段的終點、索引是終點但不在終點、索引超過路點數、位置是 NaN／無限大、路點是 NaN／無限大／不是 Vector2、
+	# 剩餘路程（_tail）是 NaN 或和路線對不起來、重複路點的零長段不在那個路點上、超過容差（0.02 像素）；
+	# 對照：有效的終點（索引＝路點數、在終點）、零長段在那個路點上、容差內（0.005 像素）的偏差照常推
+	var holder10 := _dodge_holder()
+	var blk10: Node = load("res://entities/hero/Hero.gd").new()
+	holder10.add_child(blk10)
+	blk10.set_process(false)
+	var bad10: Dictionary = {
+		"off_segment": [straight, 1, Vector2(200, 80)],
+		"past_segment": [straight, 1, Vector2(520, 0)],
+		"terminal_wrong_pos": [straight, 2, Vector2(200, 0)],
+		"index_over": [straight, 3, Vector2(480, 0)],
+		"pos_inf": [straight, 1, Vector2(INF, 0)],
+		"pos_nan": [straight, 1, Vector2(NAN, 0)],
+		"pos_neg_inf_y": [straight, 1, Vector2(200, -INF)],
+		"wp_nan": [[Vector2(0, 0), Vector2(NAN, 0), Vector2(480, 0)], 2, Vector2(300, 0)],
+		"wp_inf_ahead": [[Vector2(0, 0), Vector2(240, 0), Vector2(INF, 0)], 1, Vector2(200, 0)],
+		"wp_not_vector2": [straight, 1, Vector2(200, 0), "vector2i"],
+		"tail_nan": [straight, 1, Vector2(200, 0), "tail_nan"],
+		"tail_mismatch": [straight, 1, Vector2(200, 0), "tail_short"],
+		"dup_zero_off": [dup, 3, Vector2(240, 5)],
+		"dup_zero_before": [dup, 3, Vector2(230, 0)],
+		"over_eps_side": [straight, 1, Vector2(200, 0.02)],
+		"over_eps_past_end": [straight, 1, Vector2(480.02, 0)],
+		"over_eps_before_start": [straight, 1, Vector2(-0.02, 0)],
+		"over_eps_terminal": [straight, 2, Vector2(480, 0.02)],
+	}
+	var wrong10: Dictionary = {}
+	for key in bad10:
+		var c: Array = bad10[key]
+		var e10: Node = _kb_enemy(holder10, (c[0] as Array).duplicate(), int(c[1]), Vector2.ZERO)
+		e10.position = c[2]
+		if c.size() > 3 and c[3] == "vector2i":
+			e10._waypoints = [Vector2(0, 0), Vector2i(480, 0)]
+		elif c.size() > 3 and c[3] == "tail_nan":
+			e10._tail[0] = NAN
+		elif c.size() > 3 and c[3] == "tail_short":
+			e10._tail = [100.0, 0.0]
+		_kb_load_states(e10, blk10)
+		var before10: Array = _kb_frozen(e10, blk10)
+		var m10: float = e10.knockback(KB_PX)
+		var after10: Array = _kb_frozen(e10, blk10)
+		if m10 != 0.0 or before10 != after10:
+			wrong10[key] = {"moved": m10, "before": before10, "after": after10}
+	var ok10: Dictionary = {
+		"terminal_valid": _kb_push(_kb_enemy(holder10, straight, 2, Vector2(480, 0)), KB_PX),
+		"terminal_in_eps": _kb_push(_kb_enemy(holder10, straight, 2, Vector2(480.005, 0)), KB_PX),
+		"dup_zero_on_point": _kb_push(_kb_enemy(holder10, dup, 3, Vector2(240, 0)), KB_PX),
+		"dup_zero_first": _kb_push(_kb_enemy(holder10, dup, 2, Vector2(240, 0)), KB_PX),
+		"in_eps_side": _kb_push(_kb_enemy(holder10, straight, 1, Vector2(200, 0.005)), KB_PX),
+		"in_eps_past_end": _kb_push(_kb_enemy(holder10, straight, 1, Vector2(480.005, 0)), KB_PX),
+	}
+	var eps10: float = _kb_enemy(holder10, straight, 1, Vector2(200, 0))._path_eps()
+	_check("怪力-10 路線進度對不起來時不推（回傳 0，位置、索引、剩餘路程、阻擋與攻擊冷卻、減速、暈眩、灼燒、威壓、生命都不變）：偏離這一段 (200,80)、越過這一段 (520,0)、索引是終點卻在 (200,0)、索引超過路點數、位置 NaN／無限大、路點 NaN／無限大／不是 Vector2、剩餘路程 NaN 或和路線不符、零長段不在那個路點、超過容差 0.02 像素；容差 0.01 像素；有效的終點、零長段在路點上、容差內 0.005 像素照常推 24",
+		wrong10.is_empty() and _ls_near(eps10, 0.01) and _kb_is(ok10.terminal_valid, 24.0, [456, 0], 1, 24.0) and _kb_is(ok10.terminal_in_eps, 24.0, [456.005, 0], 1, 23.995)
+			and _kb_is(ok10.dup_zero_on_point, 24.0, [216, 0], 1, 24.0) and _kb_is(ok10.dup_zero_first, 24.0, [216, 0], 1, 24.0)
+			and _kb_is(ok10.in_eps_side, 24.0, [176, 0.004], 1, 24.0) and _kb_is(ok10.in_eps_past_end, 24.0, [456.005, 0], 1, 23.99),
+		{"wrong": wrong10, "cases": bad10.size(), "eps": eps10, "ok": ok10})
+
+	# 怪力-11：實際走過的位置照常推：斜線與折線路線用不規則的步長走 60 步（浮點誤差讓位置稍微離開直線），每一步都還在目前的路段上，
+	# 走到一半推 24：沿路倒退、剩餘路程 +24
+	var diag: Array = [Vector2(0, 0), Vector2(300, 170), Vector2(310.5, 401.25), Vector2(600, 400)]
+	var e11: Node = _kb_enemy(holder10, diag, 1, Vector2(0, 0), {}, 99999.0, 80.0)
+	var steps11: Array = []
+	var max_off11: float = 0.0
+	for i in range(60):
+		e11._physics_process(0.1 if i % 3 != 0 else 0.0731)
+		steps11.append(e11._path_progress_valid())
+		if e11._wp_index < diag.size():
+			var a11: Vector2 = diag[e11._wp_index - 1]
+			var u11: Vector2 = ((diag[e11._wp_index] as Vector2) - a11).normalized()
+			max_off11 = maxf(max_off11, absf((e11.position - a11).cross(u11)))
+	var idx11: int = e11._wp_index
+	var p11: Dictionary = _kb_push(e11, KB_PX)
+	_check("怪力-11 實際走過的位置照常推：斜線與折線路線不規則步長走 60 步，每一步路線進度都合理（離開直線最多 %.6f 像素，小於容差）；之後推 24、剩餘路程 +24、索引不超過原本的" % max_off11,
+		not steps11.has(false) and max_off11 < eps10 and _ls_near(p11.moved, 24.0, 1e-3) and _ls_near(p11.drem, 24.0, 1e-3) and p11.idx <= idx11 and p11.idx >= 1,
+		{"valid_steps": steps11.count(true), "max_off": max_off11, "idx": idx11, "push": p11})
+	holder10.queue_free()
+	await process_frame
+
+	# 怪力-12：真的許褚普通攻擊路線進度對不起來的主目標：照常扣 100（實際扣血）、攻擊 1 次，但不推、不記成功、不開始冷卻、沒有 PUSH；
+	# 偏離路段、索引是終點卻不在終點、路點被改成 NaN 三種都一樣；之後換一個路線正常的目標立刻推 24（冷卻沒有被用掉）
+	var holder12 := _dodge_holder()
+	var wave12 := R20Wave.new()
+	holder12.add_child(wave12)
+	var bm12: Node = _bk_bm()
+	var g12: Node = _kb_hero(holder12, wave12, bm12, Vector2(240, 48))
+	var r12: Dictionary = {}
+	var off12: Node = _kb_enemy(holder12, [Vector2(0, 0), Vector2(960, 0)], 1, Vector2(240, 30), {}, 99999.0, 0.0)
+	var term12: Node = _kb_enemy(holder12, [Vector2(0, 0), Vector2(960, 0)], 2, Vector2(240, 0), {}, 99999.0, 0.0)
+	var nan12: Node = _kb_enemy(holder12, [Vector2(0, 0), Vector2(960, 0)], 1, Vector2(240, 0), {}, 99999.0, 0.0)
+	nan12._waypoints[0] = Vector2(NAN, 0)
+	for pair in [["off_segment", off12], ["terminal_wrong_pos", term12], ["wp_nan", nan12]]:
+		wave12.enemies = [pair[1]]
+		var path0: String = str(pair[1].position) + "/" + str(pair[1]._wp_index)
+		var rr: Dictionary = _kb_round(g12, [pair[1]])
+		rr["path_kept"] = path0 == str(pair[1].position) + "/" + str(pair[1]._wp_index)
+		r12[pair[0]] = rr
+	await process_frame
+	var push12a: int = _kb_texts(holder12)
+	var ok12: Dictionary = {}
+	var good12: Node = _kb_enemy(holder12, [Vector2(0, 0), Vector2(960, 0)], 1, Vector2(240, 0), {}, 99999.0, 0.0)
+	wave12.enemies = [good12]
+	ok12 = _kb_round(g12, [good12])
+	await process_frame
+	var push12b: int = _kb_texts(holder12)
+	var all12: bool = true
+	for key in r12:
+		var rr: Dictionary = r12[key]
+		all12 = all12 and rr.dmg == [100.0] and rr.moved == [0.0] and rr.count == 0 and rr.remaining == 0.0 and rr.attacks == 1 and rr.path_kept == true
+	_check("怪力-12 真的許褚打路線進度對不起來的主目標（偏離路段、索引是終點卻不在終點、路點 NaN）：照常扣 100、攻擊 1 次，但不推、成功 0 次、冷卻 0、沒有 PUSH；之後路線正常的目標立刻推 24（成功 1 次、冷卻 3、PUSH 1 個）",
+		all12 and push12a == 0 and ok12.dmg == [100.0] and ok12.moved == [24.0] and ok12.count == 1 and _ls_near(ok12.remaining, 3.0) and push12b == 1,
+		{"bad": r12, "push_bad": push12a, "good": ok12, "push_good": push12b})
+	holder12.queue_free()
+	bm12.free()
+	await process_frame
+
+	# ── 實際引擎 ──
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 怪力-20：Godot 讀到出征資料的參數；選取面板帶 knockback（0.5、3、剩下 0）；打中路線上的敵人（起點右邊 240）→ 傷害 100、沿路退 24、擊殺 0；
+	# 重新選取時剩下約 3（選取當下的值）；快照 hero_knockback 有參數、成功 1 次、紀錄，enemy_path 是索引 1、剩餘路程 +24，PUSH 1 個，BattleManager 的 knockback
+	var es: Array = await _kb_start(rec, "knockback-20", 1)
+	var d20: Dictionary = {}
+	if es.size() == 1 and _kb_main_hero() != null:
+		var g: Node = _kb_main_hero()
+		d20["read"] = [g.knockback_distance, g.knockback_cooldown, g.job, g.can_hit_air]
+		d20["half"] = 0.5 * float(g.tile_size)
+		var n_panel: int = rec.sent_panels.size()
+		main._on_hero_clicked(g)
+		d20["panel0"] = rec.sent_panels.back().get("knockback") if rec.sent_panels.size() > n_panel else null
+		_kb_put(es[0], 240.0)
+		var rem0: float = es[0].get_remaining_distance()
+		d20["hit"] = _kb_hit(es)
+		d20["drem"] = snappedf(es[0].get_remaining_distance() - rem0, 0.0001)
+		n_panel = rec.sent_panels.size()
+		main._on_hero_clicked(g)
+		d20["panel1"] = rec.sent_panels.back().get("knockback") if rec.sent_panels.size() > n_panel else null
+		await process_frame
+		var n_snap: int = rec.sent_snapshots.size()
+		main._on_debug_snapshot_requested("knockback-20")
+		var snap: Dictionary = rec.sent_snapshots.back() if rec.sent_snapshots.size() > n_snap else {}
+		d20["snap"] = snap.get("hero_knockback", {}).get(KB_HERO, {})
+		d20["path"] = snap.get("enemy_path", {}).get(str(es[0].get_instance_id()), {})
+		d20["push_texts"] = snap.get("push_texts")
+		d20["dbg"] = snap.get("knockback", {})
+	var p0: Dictionary = d20.get("panel0") if d20.get("panel0") is Dictionary else {}
+	var p1: Dictionary = d20.get("panel1") if d20.get("panel1") is Dictionary else {}
+	var sn: Dictionary = d20.get("snap", {})
+	var lg: Array = sn.get("log", [])
+	_check("怪力-20 實際引擎：讀到出征資料的參數（0.5、3，步兵、不能對空）；選取面板 {0.5, 3, 剩 0}；打中起點右邊 240 的敵人：傷害 100、沿路退半格（這張測試地圖一格 51 像素，x −25.5）、擊殺 0、剩餘路程 +25.5；重新選取時剩下約 3；快照 hero_knockback 成功 1 次、紀錄一筆（要求與實際都是半格）、enemy_path 索引 1、PUSH 1 個、BattleManager 的 knockback {xu_chu: 1 次}",
+		d20.get("read") == [0.5, 3.0, "infantry", false] and _ls_near(p0.get("distance"), 0.5) and _ls_near(p0.get("cooldown"), 3.0) and _ls_near(p0.get("remaining"), 0.0)
+			and d20.has("hit") and d20.hit.dmg == [100.0] and d20.hit.dx == [-float(d20.half)] and d20.hit.kills == 0 and d20.hit.count == 1 and _ls_near(d20.get("drem"), float(d20.half), 1e-3)
+			and float(p1.get("remaining", 0.0)) > 2.8 and float(p1.get("remaining", 9.0)) <= 3.0 and sn.get("count") == 1 and lg.size() == 1
+			and _ls_near(lg[0].get("requested") if lg.size() == 1 else 0.0, float(d20.half)) and _ls_near(lg[0].get("actual") if lg.size() == 1 else 0.0, float(d20.half))
+			and d20.get("path", {}).get("index") == 1 and d20.get("push_texts") == 1 and d20.get("dbg", {}).get(KB_HERO, {}).get("count") == 1, d20)
+
+	# 怪力-21：冷卻是戰鬥中的遊戲時間：自動攻擊（攻擊間隔 0.5）打同一個敵人，1× 與 2× 各推 3 次：相鄰兩次的戰鬥時間相差 3 秒以上、
+	# 不超過 3 秒＋一個攻擊間隔＋兩幀；兩次之間照常攻擊（至少 5 次），2× 的牆鐘時間約一半；攻擊次數不因推動而增加
+	var tm: Dictionary = {}
+	for sp in [1.0, 2.0]:
+		es = await _kb_start(rec, "knockback-21-x%d" % int(sp), 1, null, false)
+		if es.size() != 1 or _kb_main_hero() == null:
+			continue
+		_r19_speed(rec, sp)
+		_kb_put(es[0], 264.0)
+		var g21: Node = _kb_main_hero()
+		var a0: int = g21.attack_count
+		var w0: int = Time.get_ticks_msec()
+		var dmax: float = 0.0
+		var prev: float = _gt()
+		var wall_end: int = Time.get_ticks_msec() + 12000
+		while int(_bm().knockback_record(KB_HERO).get("count", 0)) < 3 and Time.get_ticks_msec() < wall_end:
+			await process_frame
+			dmax = maxf(dmax, _gt() - prev)
+			prev = _gt()
+		var rec21: Dictionary = _bm().knockback_record(KB_HERO)
+		var ts: Array = rec21.get("log", []).map(func(x): return float(x.t))
+		tm[sp] = {"t": ts, "wall": Time.get_ticks_msec() - w0, "attacks": g21.attack_count - a0, "dmax": snappedf(dmax, 0.0001), "time_scale": Engine.time_scale, "x": snappedf(es[0].position.x - es[0]._waypoints[0].x, 0.001), "half": 0.5 * float(g21.tile_size)}
+	var ok21: bool = tm.size() == 2
+	for sp in tm:
+		var ts: Array = tm[sp].t
+		ok21 = ok21 and ts.size() == 3 and float(tm[sp].time_scale) == sp and _ls_near(tm[sp].x, 264.0 - 3.0 * float(tm[sp].half), 1e-3)
+		for i in range(1, ts.size()):
+			var gap: float = float(ts[i]) - float(ts[i - 1])
+			ok21 = ok21 and gap >= 3.0 - 1e-6 and gap <= 3.0 + 0.5 + 2.0 * float(tm[sp].dmax) + 1e-3
+		ok21 = ok21 and int(tm[sp].attacks) >= 12 and int(tm[sp].attacks) <= int(floor((float(ts.back()) - float(ts[0])) / 0.5)) + 2 if ts.size() == 3 else false
+	if ok21:
+		ok21 = float(tm[2.0].wall) < float(tm[1.0].wall) * 0.75
+	_check("怪力-21 冷卻是戰鬥中的遊戲時間：1× 與 2× 各推 3 次（敵人從 264 退 3 個半格）；相鄰兩次的戰鬥時間相差 3 秒以上、不超過 3 秒＋一個攻擊間隔＋兩幀；之間照常攻擊、攻擊次數不超過時間÷間隔＋2；2× 的牆鐘時間少於 1× 的 0.75 倍",
+		ok21, tm)
+
+	# 怪力-22：手動暫停時冷卻、戰鬥時間、敵人位置都不前進；繼續後剩下的冷卻照遊戲時間走完才再推
+	es = await _kb_start(rec, "knockback-22", 1, null, false)
+	var d22: Dictionary = {}
+	if es.size() == 1 and _kb_main_hero() != null:
+		_kb_put(es[0], 264.0)
+		await _wait_until(func(): return int(_bm().knockback_record(KB_HERO).get("count", 0)) >= 1, 3.0)
+		var p: Dictionary = _r20_pause(rec, true)
+		d22["paused_reply"] = p.get("paused")
+		var b: Array = [snappedf(_bm().battle_time, 0.0001), snappedf(_bm().knockback_remaining(KB_HERO), 0.0001), es[0].position.x, int(_bm().knockback_record(KB_HERO).get("count", 0))]
+		await _wait_real(0.6)
+		var a: Array = [snappedf(_bm().battle_time, 0.0001), snappedf(_bm().knockback_remaining(KB_HERO), 0.0001), es[0].position.x, int(_bm().knockback_record(KB_HERO).get("count", 0))]
+		d22["frozen"] = b == a
+		d22["before"] = b
+		_r20_pause(rec, false)
+		var bt0: float = _bm().battle_time
+		await _wait_until(func(): return int(_bm().knockback_record(KB_HERO).get("count", 0)) >= 2, 5.0)
+		d22["resumed_after"] = snappedf(_bm().battle_time - bt0, 0.0001)
+		d22["count"] = int(_bm().knockback_record(KB_HERO).get("count", 0))
+	_check("怪力-22 手動暫停 0.6 秒：戰鬥時間、剩下的冷卻、敵人位置與成功次數都不變；繼續後剩下的冷卻走完（戰鬥時間至少再過剩下的秒數）才推第 2 次",
+		d22.get("paused_reply") == true and d22.get("frozen") == true and d22.get("count") == 2
+			and float(d22.get("resumed_after", 0.0)) >= float(d22.get("before", [0, 9])[1]) - 1e-3, d22)
+
+	# 怪力-23：同一場保留、新的一場清除：第 1 波推一次（冷卻約 3）；清波後備戰中剩下的冷卻不變；第 2 波立刻打中不推；移位、升級（2 級）、
+	# 移出隊伍（BattleManager 仍有紀錄）、放回（新節點）後在冷卻內打中都不推；冷卻走完後推（成功 2 次）；新的一場沒有紀錄、第一擊就推
+	var waves23: Array = [[_grp("post", 1, 0.02)], [_grp("post", 1, 0.02)]]
+	es = await _kb_start(rec, "knockback-23", 1, null, true, waves23)
+	var d23: Dictionary = {}
+	if es.size() == 1 and _kb_main_hero() != null:
+		var g23: Node = _kb_main_hero()
+		d23["half"] = 0.5 * float(g23.tile_size)
+		_kb_put(es[0], 264.0)
+		d23["w1"] = _kb_hit(es).dx
+		es[0].take_damage(999999.0)
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.PREP, 3.0)
+		var r_prep: float = _bm().knockback_remaining(KB_HERO)
+		await _wait(0.3)
+		d23["prep"] = [_bm().game_state == BattleManager.GameState.PREP, r_prep > 2.5, _ls_near(_bm().knockback_remaining(KB_HERO), r_prep, 1e-6)]
+		_bm().player_start_battle()
+		await _wait_until(func(): return _sw_enemies().size() == 1, 5.0)
+		var es2: Array = _sw_enemies()
+		if es2.size() == 1:
+			var cool: Array = []
+			_kb_put(es2[0], 264.0)
+			cool.append([_kb_hit(es2, g23.attack_speed).dx[0], _bm().knockback_remaining(KB_HERO) > 0.0])
+			_blk_move(g23, Vector2i(5, 4))
+			_kb_put(es2[0], 264.0)
+			cool.append([_kb_hit(es2, g23.attack_speed).dx[0], _bm().knockback_remaining(KB_HERO) > 0.0])
+			main._on_payload_received({"type": "update_team", "team_list": [_kb_member(2)]})
+			g23 = _kb_main_hero()
+			g23.set_process(false)
+			cool.append([_kb_hit(es2, g23.attack_speed).dx[0], _bm().knockback_remaining(KB_HERO) > 0.0, g23.hero_level])
+			var old_id: int = g23.get_instance_id()
+			main._on_payload_received({"type": "update_team", "team_list": []})
+			await process_frame
+			d23["removed"] = [main._placed_heroes.has(KB_HERO), int(_bm().knockback_record(KB_HERO).get("count", 0)), _bm().knockback_remaining(KB_HERO) > 0.0]
+			main._on_payload_received({"type": "update_team", "team_list": [_kb_member(2)]})
+			_r12_place(KB_HERO, Vector2i(3, 4))
+			var g23b: Node = _kb_main_hero()
+			if g23b != null:
+				g23b.set_process(false)
+				cool.append([_kb_hit(es2).dx[0], _bm().knockback_remaining(KB_HERO) > 0.0, g23b.get_instance_id() != old_id])
+				await _wait_until(func(): return _bm().knockback_remaining(KB_HERO) <= 0.0, 5.0)
+				d23["after_cd"] = [_kb_hit(es2, g23b.attack_speed).dx[0], int(_bm().knockback_record(KB_HERO).get("count", 0))]
+			d23["cool"] = cool
+		es = await _kb_start(rec, "knockback-23b", 1)
+		if es.size() == 1 and _kb_main_hero() != null:
+			var dbg0: Dictionary = _bm().get_debug_state().get("knockback", {})
+			_kb_put(es[0], 264.0)
+			d23["new_battle"] = [dbg0.is_empty(), _kb_hit(es).dx[0], int(_bm().knockback_record(KB_HERO).get("count", 0))]
+	var cool23: Array = d23.get("cool", [])
+	var ok23: bool = cool23.size() == 4
+	for c in cool23:
+		ok23 = ok23 and c[0] == 0.0 and c[1] == true
+	_check("怪力-23 同一場保留：第 1 波推半格；清波後備戰中剩下的冷卻不變（0.3 秒後相同）；第 2 波立刻打中、移位後、升級（2 級）後、放回（新節點）後在冷卻內都不推；移出隊伍時 BattleManager 仍有 1 次與剩下的冷卻；冷卻走完後推半格（成功 2 次）；新的一場沒有紀錄、第一擊就推半格、成功 1 次",
+		d23.get("w1") == [-float(d23.get("half", 0.0))] and d23.get("prep") == [true, true, true] and ok23 and cool23[2][2] == 2 and cool23[3][2] == true
+			and d23.get("removed") == [false, 1, true] and d23.get("after_cd") == [-float(d23.half), 2] and d23.get("new_battle") == [true, -float(d23.half), 1], d23)
+
+	# 怪力-24：阻路實打：許褚站在路上 (6,5)，走路的敵人（每秒 40、受到道路阻擋減速）走進許褚的格子後被擋住、攻擊許褚；許褚自動攻擊推開它：
+	# 推開後敵人不在許褚的格子、解除阻擋，走回許褚的格子才重新被擋住。13 秒內：至少推 3 次、敵人至少攻擊 2 次；敵人每次攻擊時都在許褚的格子裡（不會在遠處攻擊）；
+	# 敵人相鄰兩次攻擊至少相隔 1 秒（不因推開而多打）；推開後道路阻擋的減速仍在；敵人沒有越過許褚
+	es = await _kb_start(rec, "knockback-24", 1, null, false, [[_grp("gnd_walk", 1, 0.02)]], Vector2i(6, 5))
+	var d24: Dictionary = {}
+	if es.size() == 1 and _kb_main_hero() != null:
+		var g24: Node = _kb_main_hero()
+		var e24: Node = es[0]
+		var hero_cell: Vector2i = g24.get_cell()
+		# 放進許褚格子的左緣（格子大小依實際地圖）
+		e24.position.x = g24.position.x - 0.5 * float(g24.tile_size) + 2.0
+		var far_block: Array = []
+		var bad_cells: Array = []
+		var slow_after: Array = []
+		var max_x: float = -INF
+		var last_atk: int = e24.blocker_attacks
+		var last_cnt: int = 0
+		var end_t: float = _gt() + 13.0
+		var wall_end: int = Time.get_ticks_msec() + 25000
+		while _gt() < end_t and Time.get_ticks_msec() < wall_end and is_instance_valid(e24) and not e24.is_dead():
+			await process_frame
+			if not is_instance_valid(e24) or e24.is_dead():
+				break
+			if e24._blocker != null and main.game_map.world_to_grid(e24.position) != hero_cell:
+				far_block.append(snappedf(e24.position.x, 0.01))
+			if e24.blocker_attacks != last_atk:
+				last_atk = e24.blocker_attacks
+				var c: Vector2i = main.game_map.world_to_grid(e24.position)
+				if c != hero_cell:
+					bad_cells.append([c.x, c.y, snappedf(e24.position.x, 0.01)])
+			var cnt: int = int(_bm().knockback_record(KB_HERO).get("count", 0))
+			if cnt != last_cnt:
+				last_cnt = cnt
+				slow_after.append([e24._blocker == null or main.game_map.world_to_grid(e24.position) == hero_cell, e24.has_slow_from(g24.slow_source)])
+			max_x = maxf(max_x, e24.position.x)
+		var times: Array = e24.attack_log.duplicate() if is_instance_valid(e24) else []
+		var min_gap: float = INF
+		for i in range(1, times.size()):
+			min_gap = minf(min_gap, float(times[i]) - float(times[i - 1]))
+		d24 = {"pushes": last_cnt, "attacks": times.size(), "bad_cells": bad_cells, "min_gap": snappedf(min_gap, 0.0001), "slow_after": slow_after,
+			"max_x": snappedf(max_x, 0.01), "hero_x": g24.position.x, "far_block": far_block.slice(0, 10), "far_frames": far_block.size(), "hero_cell": [hero_cell.x, hero_cell.y], "hero_hp": g24.current_hp}
+	_check("怪力-24 阻路實打 13 秒（敵人出現後放進許褚的格子）：至少推 3 次、敵人至少攻擊 2 次；敵人被擋著的每一幀都在許褚的格子、每次攻擊時也在（推開後解除阻擋，沒有在遠處攻擊）；相鄰兩次攻擊至少相隔 1 秒；推開後道路阻擋的減速仍在；敵人沒有越過許褚的格子",
+		int(d24.get("pushes", 0)) >= 3 and int(d24.get("attacks", 0)) >= 2 and d24.get("bad_cells", [1]).is_empty() and d24.get("far_frames", 1) == 0 and float(d24.get("min_gap", 0.0)) >= 1.0 - 1e-4
+			and d24.get("slow_after", []).all(func(x): return x[1] == true) and float(d24.get("max_x", INF)) < float(d24.get("hero_x", 0.0)) + 24.0, d24)
+
+	# 怪力-25：飛行敵人在射程內：步兵打不到，不受傷、不推、成功 0 次
+	es = await _kb_start(rec, "knockback-25", 1, null, true, [[_grp("fly_post", 1, 0.02)]])
+	var d25: Dictionary = {}
+	if es.size() == 1 and _kb_main_hero() != null:
+		_kb_put(es[0], 240.0)
+		d25 = _kb_hit(es)
+	_check("怪力-25 飛行敵人：步兵打不到，不受傷、不推、成功 0 次", d25.get("dmg") == [0.0] and d25.get("dx") == [0.0] and d25.get("count") == 0, d25)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 典韋的護衛（guard_share）──
+# 典韋在場上、還活著時，戰鬥中 2 格內（兩人中心的距離、含邊界）其他友軍武將受到敵人的直接攻擊：友軍先照自己的閃避、防禦與堅韌算出要扣的生命 D，
+# 典韋直接承擔 S＝min(D × 0.2, 典韋剩下的生命)，友軍扣 D − S。承擔的部分不再減傷、不引發其他技能；一擊只由一名護衛承擔
+# （比例高、距離近、hero_id 小的優先），承擔的部分不再轉給別人
+const GD_SKILL: Dictionary = {"id": "guard_share", "guard_share_ratio": 0.2, "guard_radius": 2}
+const GD_HERO: String = "dian_wei"
+## 攻擊力 200 的敵人打防禦 100 的友軍：D＝200 × 100 ÷ 200＝100
+const GD_ATK: float = 200.0
+
+## 戰鬥中的 BattleManager（不在場景樹裡；測試自己設定狀態）
+func _gd_bm() -> Node:
+	var bm: Node = _bk_bm()
+	bm.game_state = BattleManager.GameState.BATTLE
+	return bm
+
+## 被保護的友軍（真正的 Hero，阻路、不攻擊）：第 3 格、防禦 100、生命 hp、位置 (3.5 格, 0)
+func _gd_ally(holder: Node, map: BlkMap, bm: Node, hp: float = 1000.0, hid: String = "ally") -> Node:
+	var h: Node = _blk_hero(holder, map, 3, hp)
+	h.hero_id = hid
+	h.def_stat = 100.0
+	h.position = Vector2(3.5 * map.tile, 0.0)
+	h._battle_mgr = bm
+	return h
+
+## 護衛（真正的 Hero，不攻擊）：位置 pos、生命 hp、防禦 50；skill 是 null 時帶護衛的參數
+func _gd_guard(holder: Node, bm: Node, pos: Vector2, hp: float = 1000.0, skill: Variant = null, hid: String = GD_HERO) -> Node:
+	var h: Node = load("res://entities/hero/Hero.gd").new()
+	holder.add_child(h)
+	h.set_process(false)
+	h.hero_id = hid
+	h.max_hp = hp
+	h.current_hp = hp
+	h.def_stat = 50.0
+	h.position = pos
+	h._battle_mgr = bm
+	h._read_skill({"skill": GD_SKILL.duplicate() if skill == null else skill})
+	return h
+
+## 一組：假地圖、戰鬥中的 BattleManager（掛在 holder 底下，跟著一起釋放）、友軍（第 3 格）、攻擊力 atk_v 的敵人（擋在友軍前面）、在友軍右邊 dx 像素的護衛
+func _gd_set(holder: Node, dx: float = 48.0, ally_hp: float = 1000.0, guard_hp: float = 1000.0, atk_v: float = GD_ATK) -> Dictionary:
+	var map := BlkMap.new()
+	holder.add_child(map)
+	var bm: Node = _gd_bm()
+	holder.add_child(bm)
+	var a: Node = _gd_ally(holder, map, bm, ally_hp)
+	var g: Node = _gd_guard(holder, bm, a.position + Vector2(dx, 0.0), guard_hp)
+	var e: Node = _ctr_enemy(holder, map, atk_v)
+	return {"map": map, "bm": bm, "a": a, "g": g, "e": e}
+
+## 直接受一擊（攻擊者 src，傷害 amount）：友軍與護衛的生命變化
+func _gd_hit(a: Node, g: Node, amount: float, src: Variant) -> Array:
+	var ah: float = a.current_hp
+	var gh: float = g.current_hp if is_instance_valid(g) else 0.0
+	a.take_damage(amount, src)
+	return [snappedf(ah - a.current_hp, 0.0001), snappedf(gh - (g.current_hp if is_instance_valid(g) else 0.0), 0.0001)]
+
+func _guard_cases() -> void:
+	# 護衛-0：技能參數：比例是大於 0、不超過 0.5 的有限數字、範圍（格）是大於 0、不超過 5 的有限數字，兩個都合理才啟用；
+	# 字串、布林、null、陣列、字典、NaN、無限大、0、負數、超過上限、缺欄位、不認得或大小寫不同的 id、其他技能帶這兩個欄位都不啟用；
+	# 換成反擊或沒有技能後清除，不帶其他技能
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var wrong0: Array = []
+	var good0: Array = [
+		[{"id": "guard_share", "guard_share_ratio": 0.2, "guard_radius": 2}, [0.2, 2.0]],
+		[{"id": "guard_share", "guard_share_ratio": 0.5, "guard_radius": 5}, [0.5, 5.0]],
+		[{"id": "guard_share", "guard_share_ratio": 0.0001, "guard_radius": 0.0001}, [0.0001, 0.0001]],
+	]
+	for c in good0:
+		h0._read_skill({"skill": c[0]})
+		if not (_ls_near(h0.guard_share_ratio, float(c[1][0])) and _ls_near(h0.guard_radius, float(c[1][1]))):
+			wrong0.append({"skill": str(c[0]), "got": [h0.guard_share_ratio, h0.guard_radius]})
+	var bad0: Array = []
+	for v in ["0.2", true, false, null, [0.2], {"v": 0.2}, NAN, INF, -INF, 0, 0.0, -0.2, 0.5001, 1]:
+		bad0.append({"id": "guard_share", "guard_share_ratio": v, "guard_radius": 2})
+	for v in ["2", true, null, [2], NAN, INF, 0, -2, 5.0001, 10]:
+		bad0.append({"id": "guard_share", "guard_share_ratio": 0.2, "guard_radius": v})
+	bad0.append_array([{"id": "guard_share"}, {"id": "guard_share", "guard_share_ratio": 0.2}, {"id": "guard_share", "guard_radius": 2},
+		{"id": "guard_share", "ratio": 0.2, "radius": 2}, {"id": "Guard_share", "guard_share_ratio": 0.2, "guard_radius": 2},
+		{"id": "guard", "guard_share_ratio": 0.2, "guard_radius": 2},
+		{"id": "counter", "counter_ratio": 0.2, "guard_share_ratio": 0.2, "guard_radius": 2},
+		{"id": "base_guard", "base_damage_mult": 0.8, "guard_share_ratio": 0.2, "guard_radius": 2}])
+	for c in bad0:
+		h0._read_skill({"skill": c})
+		if h0.guard_share_ratio != 0.0 or h0.guard_radius != 0.0:
+			wrong0.append({"skill": str(c), "got": [h0.guard_share_ratio, h0.guard_radius]})
+	h0._read_skill({"skill": JSON.parse_string("{\"id\": \"guard_share\", \"guard_share_ratio\": 0.2, \"guard_radius\": 2}")})
+	var json0: Array = [h0.guard_share_ratio, h0.guard_radius]
+	var other0: Array = [h0.first_strike_multiplier, h0.counter_ratio, h0.tenacity_hp_ratio, h0.dodge_chance, h0.def_aura_mult, h0.supply_gold_multiplier,
+		h0.knockback_distance, h0.base_guard_mult]
+	h0._read_skill({"skill": {"id": "counter", "counter_ratio": 0.2}})
+	var switched0: Array = [h0.guard_share_ratio, h0.guard_radius, h0.counter_ratio]
+	h0._read_skill({"skill": GD_SKILL.duplicate()})
+	h0._read_skill({})
+	var cleared0: Array = [h0.guard_share_ratio, h0.guard_radius]
+	h0.free()
+	_check("護衛-0 技能參數：比例是大於 0、不超過 0.5、範圍是大於 0、不超過 5 格的有限數字（經過 JSON 的 0.2、整數 2 也算）兩個都合理才啟用；字串、布林、null、陣列、字典、NaN、無限大、0、負數、超過上限、缺欄位、欄位名稱寫錯、不認得或大小寫不同的 id、其他技能帶這兩個欄位都不啟用（0）；護衛不帶其他技能，換成反擊或沒有技能後清除",
+		wrong0.is_empty() and _ls_near(json0[0], 0.2) and _ls_near(json0[1], 2.0) and other0 == [1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+			and switched0 == [0.0, 0.0, 0.2] and cleared0 == [0.0, 0.0],
+		{"wrong": wrong0, "json": json0, "other": other0, "switched": switched0, "cleared": cleared0, "cases": good0.size() + bad0.size()})
+
+	# 護衛-1：真的敵人阻路攻擊友軍（固定步進，第 2、62、122 步攻擊）：D＝100 時友軍每次扣 80、典韋扣 20（守恆 100），敵人的攻擊時間和沒有護衛時相同；
+	# 紀錄 3 筆 {友軍、生成序號、D 100、S 20、友軍與典韋扣血前後}；GUARD 3 個、描邊顯示中；典韋自己沒有受到敵人攻擊、敵人沒有被反彈
+	var h1 := _dodge_holder()
+	var s1: Dictionary = _gd_set(h1)
+	var r1: Dictionary = _ctr_steps(s1.e, s1.a, 130)
+	var g1: Node = s1.g
+	var texts1: Array = await _ctr_texts(h1)
+	var base1 := _dodge_holder()
+	var map_b := BlkMap.new()
+	base1.add_child(map_b)
+	var bm_b: Node = _gd_bm()
+	var a_b: Node = _gd_ally(base1, map_b, bm_b)
+	var e_b: Node = _ctr_enemy(base1, map_b, GD_ATK)
+	var rb: Dictionary = _ctr_steps(e_b, a_b, 130)
+	var log1: Array = g1.guard_log
+	var d1: Dictionary = {"rows": r1.atk, "odd": r1.odd, "base_rows": rb.atk, "guard_hp": g1.current_hp, "count": g1.guard_count, "total": g1.guard_total, "log": log1,
+		"guard_texts": texts1.filter(func(t): return t[0] == Hero.GUARD_TEXT).size(), "flash": g1._guard_flash_left > 0.0, "ehp": s1.e.current_hp,
+		"attacks": s1.e.blocker_attacks, "seq": s1.e.spawn_seq}
+	h1.queue_free()
+	base1.queue_free()
+	bm_b.free()
+	_check("護衛-1 真的敵人阻路攻擊（第 2、62、122 步）：D＝100 時友軍每次扣 80、典韋扣 20（共 60），沒有護衛時同樣的步數每次扣 100（敵人的攻擊時間不變）；紀錄 3 筆 {友軍 ally、敵人的生成序號、D 100、S 20、友軍 1000→920→840→760、典韋 1000→980→960→940}；GUARD 3 個、描邊顯示中；敵人沒有被扣血",
+		_ctr_rows_ok(d1.rows, [[2, 80, 0, 0], [62, 80, 0, 0], [122, 80, 0, 0]]) and d1.odd.is_empty() and _ctr_rows_ok(d1.base_rows, [[2, 100, 0, 0], [62, 100, 0, 0], [122, 100, 0, 0]])
+			and _ls_near(d1.guard_hp, 940.0, 1e-6) and d1.count == 3 and _ls_near(d1.total, 60.0, 1e-6) and log1.size() == 3
+			and log1.all(func(x): return x.ally == "ally" and x.seq == d1.seq and _ls_near(x.d, 100.0, 1e-6) and _ls_near(x.s, 20.0, 1e-6))
+			and _ls_near(log1[0].ally_before, 1000.0) and _ls_near(log1[0].ally_after, 920.0, 1e-6) and _ls_near(log1[2].ally_after, 760.0, 1e-6)
+			and _ls_near(log1[0].guard_before, 1000.0) and _ls_near(log1[0].guard_after, 980.0, 1e-6) and _ls_near(log1[2].guard_after, 940.0, 1e-6)
+			and d1.guard_texts == 3 and d1.flash and d1.ehp == 99999.0 and d1.attacks == 3,
+		d1)
+
+	# 護衛-2：低血：a 典韋只剩 5：第一擊友軍扣 95、典韋扣 5 倒下（倒下信號一次、正要被移除），下一擊友軍扣完整的 100；
+	# b 友軍只剩 10、受到巨大傷害（D＝10000）：照完整的 D 分攤（典韋扣 2000、友軍扣 8000），友軍正常倒下一次，典韋剩 3000；不先截成友軍剩下的 10
+	var h2 := _dodge_holder()
+	var s2: Dictionary = _gd_set(h2, 48.0, 1000.0, 5.0)
+	var died2: Array = [0, 0]
+	s2.g.hero_died.connect(func(_x): died2[0] += 1)
+	var r2: Dictionary = _ctr_steps(s2.e, s2.a, 70)
+	var g2: Node = s2.g
+	var d2a: Dictionary = {"rows": r2.atk, "died": died2[0], "queued": g2.is_queued_for_deletion(), "guard_hp": g2.current_hp, "log": g2.guard_log.duplicate(true)}
+	var s2b: Dictionary = _gd_set(h2, 48.0, 10.0, 5000.0, 20000.0)
+	s2b.a.hero_died.connect(func(_x): died2[1] += 1)
+	var r2b: Dictionary = _ctr_steps(s2b.e, s2b.a, 3)
+	var d2b: Dictionary = {"rows": r2b.atk, "died": died2[1], "ally_hp": s2b.a.current_hp, "guard_hp": s2b.g.current_hp, "log": s2b.g.guard_log.duplicate(true)}
+	h2.queue_free()
+	_check("護衛-2 低血：典韋只剩 5 時友軍扣 95、典韋扣 5 倒下（倒下信號一次、正要被移除），下一擊友軍扣完整的 100；友軍只剩 10 受到 D＝10000：典韋扣 2000、友軍按 8000 正常倒下一次（紀錄 D 10000、S 2000、友軍 10→0），典韋剩 3000",
+		_ctr_rows_ok(d2a.rows, [[2, 95, 0, 0], [62, 100, 0, 0]]) and d2a.died == 1 and d2a.queued and d2a.guard_hp == 0.0 and d2a.log.size() == 1 and _ls_near(d2a.log[0].s, 5.0)
+			and _ls_near(d2a.log[0].d, 100.0, 1e-6) and _ls_near(d2a.log[0].guard_after, 0.0)
+			and d2b.rows.size() == 1 and _ls_near(d2b.rows[0][1], 10.0, 1e-6) and d2b.died == 1 and d2b.ally_hp == 0.0 and _ls_near(d2b.guard_hp, 3000.0, 1e-6)
+			and d2b.log.size() == 1 and _ls_near(d2b.log[0].d, 10000.0, 1e-6) and _ls_near(d2b.log[0].s, 2000.0, 1e-6) and _ls_near(d2b.log[0].ally_before, 10.0) and d2b.log[0].ally_after == 0.0,
+		{"low_guard": d2a, "low_ally": d2b})
+
+	# 護衛-3：不分攤（友軍照常扣 100、典韋不變）：沒有攻擊者、攻擊者是 null、已倒下或正要被移除的敵人、不是敵人的假目標、已釋放的物件；
+	# 備戰中、結算後、手動暫停；友軍沒有 BattleManager、典韋屬於另一個 BattleManager；範圍外（2 格多 0.01 像素）；典韋已倒下、正要被移除、不在場上、
+	# 技能清除或換成反擊；典韋自己被打（不保護自己）；友軍閃避（兩人都不扣）；無效的傷害（0、負數、NaN、無限大）。正好 2 格（邊界）時分攤 20；
+	# 範圍內的防禦塔不算友軍
+	var h3 := _dodge_holder()
+	var s3: Dictionary = _gd_set(h3, 48.0, 100000.0)
+	var a3: Node = s3.a
+	var g3: Node = s3.g
+	var e3: Node = s3.e
+	var res3: Dictionary = {}
+	var hp_a: float = a3.current_hp
+	a3.take_damage(200.0)
+	res3["no_src"] = _gd_hit_rows(hp_a, a3, g3, 1000.0)
+	res3["null"] = _gd_hit(a3, g3, 200.0, null)
+	var dead3: Node = _ctr_enemy(h3, s3.map, GD_ATK)
+	dead3.take_damage(1.0e12)
+	res3["dead_enemy"] = _gd_hit(a3, g3, 200.0, dead3)
+	var queued3: Node = _ctr_enemy(h3, s3.map, GD_ATK)
+	queued3.queue_free()
+	res3["queued_enemy"] = _gd_hit(a3, g3, 200.0, queued3)
+	var fake3 := CtrFake.new()
+	h3.add_child(fake3)
+	res3["fake"] = _gd_hit(a3, g3, 200.0, fake3)
+	var freed3 := Node.new()
+	freed3.free()
+	res3["freed"] = _gd_hit(a3, g3, 200.0, freed3)
+	for st in [BattleManager.GameState.PREP, BattleManager.GameState.RESULT]:
+		s3.bm.game_state = st
+		res3["state_%d" % st] = _gd_hit(a3, g3, 200.0, e3)
+	s3.bm.game_state = BattleManager.GameState.BATTLE
+	s3.bm.manual_paused = true
+	res3["paused"] = _gd_hit(a3, g3, 200.0, e3)
+	s3.bm.manual_paused = false
+	a3._battle_mgr = null
+	res3["ally_no_bm"] = _gd_hit(a3, g3, 200.0, e3)
+	a3._battle_mgr = s3.bm
+	var other_bm: Node = _gd_bm()
+	g3._battle_mgr = other_bm
+	res3["other_bm"] = _gd_hit(a3, g3, 200.0, e3)
+	g3._battle_mgr = s3.bm
+	g3.position = a3.position + Vector2(96.0 + 0.01, 0.0)
+	res3["out_of_range"] = _gd_hit(a3, g3, 200.0, e3)
+	g3.position = a3.position + Vector2(0.0, 96.0)
+	res3["edge"] = _gd_hit(a3, g3, 200.0, e3)
+	g3.position = a3.position + Vector2(48.0, 0.0)
+	var tw3: Node = load("res://entities/tower/Tower.gd").new()
+	h3.add_child(tw3)
+	tw3.set_process(false)
+	tw3.position = g3.position + Vector2(48.0, 0.0)
+	res3["allies_with_tower"] = g3.guard_allies()
+	g3._read_skill({})
+	res3["cleared"] = _gd_hit(a3, g3, 200.0, e3)
+	g3._read_skill({"skill": {"id": "counter", "counter_ratio": 0.2}})
+	res3["counter_skill"] = _gd_hit(a3, g3, 200.0, e3)
+	g3._read_skill({"skill": GD_SKILL.duplicate()})
+	res3["restored"] = _gd_hit(a3, g3, 200.0, e3)
+	var gh3: float = g3.current_hp
+	g3.take_damage(150.0, e3)
+	res3["self"] = [snappedf(gh3 - g3.current_hp, 0.0001), g3.guard_count]
+	a3.dodge_chance = 0.5
+	a3.dodge_roll_override = func() -> float: return 0.0
+	res3["dodge"] = _gd_hit(a3, g3, 200.0, e3)
+	a3.dodge_chance = 0.0
+	var inv3: Array = []
+	for v in [0.0, -5.0, NAN, INF, -INF]:
+		inv3.append(_gd_hit(a3, g3, v, e3))
+	res3["invalid"] = inv3
+	var g3b: Node = _gd_guard(h3, s3.bm, a3.position + Vector2(48.0, 0.0), 1000.0, null, "dian_wei_x")
+	g3.position = a3.position + Vector2(5000.0, 0.0)
+	g3b.current_hp = 0.0
+	res3["guard_dead"] = _gd_hit(a3, g3b, 200.0, e3)
+	g3b.current_hp = 1000.0
+	g3b.queue_free()
+	res3["guard_queued"] = _gd_hit(a3, g3b, 200.0, e3)
+	var g3c: Node = _gd_guard(h3, s3.bm, a3.position + Vector2(48.0, 0.0), 1000.0, null, "dian_wei_y")
+	h3.remove_child(g3c)
+	res3["guard_removed"] = _gd_hit(a3, g3c, 200.0, e3)
+	g3c.free()
+	other_bm.free()
+	var ok3: bool = true
+	var bad3: Array = []
+	for k in ["null", "dead_enemy", "queued_enemy", "fake", "freed", "state_1", "state_3", "paused", "ally_no_bm", "other_bm", "out_of_range", "cleared", "counter_skill",
+			"guard_dead", "guard_queued", "guard_removed"]:
+		if res3[k] != [100.0, 0.0]:
+			ok3 = false
+			bad3.append(k)
+	ok3 = ok3 and res3.no_src == [100.0, 0.0] and res3.edge == [80.0, 20.0] and res3.restored == [80.0, 20.0] and res3.allies_with_tower == ["ally"]
+	ok3 = ok3 and res3.self == [100.0, 2] and res3.dodge == [0.0, 0.0] and inv3.all(func(x): return x == [0.0, 0.0]) and fake3.calls == 0
+	h3.queue_free()
+	_check("護衛-3 不分攤（友軍扣完整的 100、典韋不變）：沒有攻擊者、null、已倒下／正要被移除的敵人、假目標、已釋放的物件；備戰中、結算後、手動暫停；友軍沒有 BattleManager、典韋屬於另一場；範圍外 2 格多 0.01 像素；典韋已倒下、正要被移除、不在場上、技能清除或換成反擊；正好 2 格時分攤 20、恢復技能後分攤 20；範圍內的防禦塔不算友軍；典韋自己被打（攻擊 150、防禦 50）扣完整的 100、承擔次數不變（不保護自己）；友軍閃避時兩人都不扣；無效的傷害都不扣",
+		ok3, {"bad": bad3, "res": res3, "fake_calls": fake3.calls})
+
+	# 護衛-4：先防禦與堅韌、後分攤：防禦光環裡（防禦 120）D＝90.909 → 典韋 18.18、友軍 72.73；堅韌生效（生命 300／1000、門檻 0.3、倍率 0.8）D＝80 →
+	# 典韋 16、友軍 64，堅韌紀錄 {raw 100、after_tenacity 80、shared 16、taken 64}；沒有護衛時 {after_tenacity 80、shared 0、taken 80}（taken 照舊是實際扣掉的生命）
+	var h4 := _dodge_holder()
+	var s4: Dictionary = _gd_set(h4)
+	s4.a.apply_def_from("gd_test_def", 1.2, 1.0e9)
+	var aura4: Array = _gd_hit(s4.a, s4.g, 200.0, s4.e)
+	s4.a.remove_def_from("gd_test_def")
+	s4.a._read_skill({"skill": {"id": "tenacity", "low_hp_ratio": 0.3, "damage_mult": 0.8}})
+	s4.a.current_hp = 300.0
+	var ten4: Array = _gd_hit(s4.a, s4.g, 200.0, s4.e)
+	var tlog4: Dictionary = s4.a.tenacity_log.back() if not s4.a.tenacity_log.is_empty() else {}
+	s4.g.position = s4.a.position + Vector2(5000.0, 0.0)
+	s4.a.current_hp = 300.0
+	var ten4b: Array = _gd_hit(s4.a, s4.g, 200.0, s4.e)
+	var tlog4b: Dictionary = s4.a.tenacity_log.back() if not s4.a.tenacity_log.is_empty() else {}
+	h4.queue_free()
+	_check("護衛-4 先防禦與堅韌、後分攤：防禦光環裡 D＝90.909 → 友軍 72.727、典韋 18.182；堅韌生效 D＝80 → 友軍 64、典韋 16，紀錄 {raw 100、after_tenacity 80、shared 16、taken 64、reduced}；典韋在範圍外時 {after_tenacity 80、shared 0、taken 80}",
+		_ls_near(aura4[0], 72.7273, 1e-3) and _ls_near(aura4[1], 18.1818, 1e-3) and ten4 == [64.0, 16.0] and _ls_near(tlog4.get("raw", 0.0), 100.0, 1e-6)
+			and _ls_near(tlog4.get("after_tenacity", 0.0), 80.0, 1e-6) and _ls_near(tlog4.get("shared", 0.0), 16.0, 1e-6) and _ls_near(tlog4.get("taken", 0.0), 64.0, 1e-6)
+			and tlog4.get("reduced") == true and ten4b == [80.0, 0.0] and _ls_near(tlog4b.get("after_tenacity", 0.0), 80.0, 1e-6) and tlog4b.get("shared") == 0.0
+			and _ls_near(tlog4b.get("taken", 0.0), 80.0, 1e-6),
+		{"aura": aura4, "tenacity": ten4, "log": tlog4, "no_guard": ten4b, "log_no_guard": tlog4b})
+
+	# 護衛-5：被保護的夏侯惇（反擊 0.2）：D＝100 → 自己扣 80、典韋扣 20，反彈只算自己實際被扣的 80（16），不是 20；反擊紀錄 taken 80、reflect 16；
+	# 典韋承擔的部分不反彈、典韋沒有反擊紀錄
+	var h5 := _dodge_holder()
+	var s5: Dictionary = _gd_set(h5)
+	s5.a._read_skill({"skill": CTR_SKILL.duplicate()})
+	var r5: Dictionary = _ctr_steps(s5.e, s5.a, 5)
+	var d5: Dictionary = {"rows": r5.atk, "log": s5.a.counter_log.duplicate(true), "guard_counter": s5.g.counter_count, "guard_hp": s5.g.current_hp}
+	h5.queue_free()
+	_check("護衛-5 被保護的夏侯惇：第 2 步自己扣 80、典韋扣 20，敵人被反彈 16（自己實際被扣的 80 × 0.2，不含典韋承擔的 20）；反擊紀錄 taken 80、reflect 16；典韋沒有反彈",
+		_ctr_rows_ok(d5.rows, [[2, 80, 16, 1]]) and d5.log.size() == 1 and _ls_near(d5.log[0].taken, 80.0, 1e-6) and _ls_near(d5.log[0].reflect, 16.0, 1e-6)
+			and d5.guard_counter == 0 and _ls_near(d5.guard_hp, 980.0, 1e-6),
+		d5)
+
+	# 護衛-6：多名護衛：同比例時近的承擔（1 格的 20、1.5 格的 0）；比例高的優先（1.5 格的 0.3 承擔 30、1 格的 0.2 不承擔）；同比例同距離時 hero_id 小的承擔；
+	# 一擊只由一名承擔（總承擔就是 S）；兩名護衛互相保護：甲被打（防禦 50，D＝133.33）由乙承擔 26.67、甲扣 106.67，乙承擔的部分不再轉回給甲（甲的承擔次數 0）
+	var h6 := _dodge_holder()
+	var s6: Dictionary = _gd_set(h6)
+	var near6: Node = s6.g
+	var far6: Node = _gd_guard(h6, s6.bm, s6.a.position + Vector2(-72.0, 0.0), 1000.0, null, "dian_wei_far")
+	var c6a: Array = _gd_hit(s6.a, near6, 200.0, s6.e)
+	var hi6: Node = _gd_guard(h6, s6.bm, s6.a.position + Vector2(0.0, 72.0), 1000.0, {"id": "guard_share", "guard_share_ratio": 0.3, "guard_radius": 2}, "dian_wei_hi")
+	var hp6: Array = [s6.a.current_hp, near6.current_hp, far6.current_hp, hi6.current_hp]
+	s6.a.take_damage(200.0, s6.e)
+	var c6b: Array = [snappedf(hp6[0] - s6.a.current_hp, 0.0001), snappedf(hp6[1] - near6.current_hp, 0.0001), snappedf(hp6[2] - far6.current_hp, 0.0001), snappedf(hp6[3] - hi6.current_hp, 0.0001)]
+	hi6.queue_free()
+	near6.position = s6.a.position + Vector2(0.0, -48.0)
+	var twin6: Node = _gd_guard(h6, s6.bm, s6.a.position + Vector2(0.0, 48.0), 1000.0, null, "dian_wei_a")
+	far6.position = s6.a.position + Vector2(5000.0, 0.0)
+	var hp6c: Array = [s6.a.current_hp, near6.current_hp, twin6.current_hp]
+	s6.a.take_damage(200.0, s6.e)
+	var c6c: Array = [snappedf(hp6c[0] - s6.a.current_hp, 0.0001), snappedf(hp6c[1] - near6.current_hp, 0.0001), snappedf(hp6c[2] - twin6.current_hp, 0.0001)]
+	var m6 := _dodge_holder()
+	var bm6: Node = _gd_bm()
+	var p6: Node = _gd_guard(m6, bm6, Vector2(100.0, 0.0), 1000.0, null, "dian_wei_p")
+	var q6: Node = _gd_guard(m6, bm6, Vector2(148.0, 0.0), 1000.0, null, "dian_wei_q")
+	var map6 := BlkMap.new()
+	m6.add_child(map6)
+	var e6: Node = _ctr_enemy(m6, map6, GD_ATK)
+	var mutual6: Array = _gd_hit(p6, q6, 200.0, e6)
+	var d6: Dictionary = {"closer": c6a, "higher_ratio": c6b, "same_dist": c6c, "mutual": mutual6, "counts": [p6.guard_count, q6.guard_count],
+		"far_count": far6.guard_count, "twin_count": twin6.guard_count}
+	h6.queue_free()
+	m6.queue_free()
+	bm6.free()
+	_check("護衛-6 多名護衛：同比例時 1 格的承擔 20、1.5 格的不承擔；1.5 格的比例 0.3 優先承擔 30（1 格的 0.2 與 1.5 格的都 0，友軍扣 70）；同比例同距離時 hero_id 小的（dian_wei 對 dian_wei_a）承擔；兩名護衛互相保護：甲被打 D＝133.33 由乙承擔 26.67、甲扣 106.67，乙承擔的部分不再轉回（甲承擔 0 次、乙 1 次）",
+		c6a == [80.0, 20.0] and d6.far_count == 0 and _ls_near(c6b[0], 70.0, 1e-4) and c6b[1] == 0.0 and c6b[2] == 0.0 and _ls_near(c6b[3], 30.0, 1e-4)
+			and c6c == [80.0, 20.0, 0.0] and d6.twin_count == 0 and _ls_near(mutual6[0], 106.6667, 1e-3) and _ls_near(mutual6[1], 26.6667, 1e-3) and d6.counts == [0, 1],
+		d6)
+
+	# 護衛-7：受傷當下才判斷：典韋移到範圍外不分攤、移回來分攤；被移除（正要被移除）後不分攤、新的典韋節點（重新部署）照常分攤、紀錄從 0 開始；
+	# 技能失效後不分攤、恢復後分攤；沒有永久加成（友軍的防禦、最大生命不變）
+	var h7 := _dodge_holder()
+	var s7: Dictionary = _gd_set(h7)
+	var seq7: Array = []
+	seq7.append(_gd_hit(s7.a, s7.g, 200.0, s7.e))
+	s7.g.position = s7.a.position + Vector2(200.0, 0.0)
+	seq7.append(_gd_hit(s7.a, s7.g, 200.0, s7.e))
+	s7.g.position = s7.a.position + Vector2(48.0, 0.0)
+	seq7.append(_gd_hit(s7.a, s7.g, 200.0, s7.e))
+	s7.g.queue_free()
+	seq7.append(_gd_hit(s7.a, s7.g, 200.0, s7.e))
+	var g7b: Node = _gd_guard(h7, s7.bm, s7.a.position + Vector2(48.0, 0.0))
+	seq7.append(_gd_hit(s7.a, g7b, 200.0, s7.e))
+	g7b._read_skill({"skill": {"id": "guard_share", "guard_share_ratio": NAN, "guard_radius": 2}})
+	seq7.append(_gd_hit(s7.a, g7b, 200.0, s7.e))
+	g7b._read_skill({"skill": GD_SKILL.duplicate()})
+	seq7.append(_gd_hit(s7.a, g7b, 200.0, s7.e))
+	var d7: Dictionary = {"seq": seq7, "new_count": g7b.guard_count, "ally_def": [s7.a.def_stat, s7.a.effective_def(), s7.a.max_hp]}
+	h7.queue_free()
+	_check("護衛-7 受傷當下才判斷：分攤 → 移到範圍外不分攤 → 移回來分攤 → 正要被移除後不分攤 → 新的典韋節點分攤（紀錄從 0 開始，2 次）→ 技能參數 NaN（失效）不分攤 → 恢復後分攤；友軍的防禦與最大生命不變",
+		seq7 == [[80.0, 20.0], [100.0, 0.0], [80.0, 20.0], [100.0, 0.0], [80.0, 20.0], [100.0, 0.0], [80.0, 20.0]] and d7.new_count == 2 and d7.ally_def == [100.0, 100.0, 1000.0],
+		d7)
+
+	# 護衛-8：承擔走專用的扣血：典韋同時設定極高的防禦、必定閃避（抽樣 0）、堅韌（門檻 0.99、倍率 0.5）、反擊 1（測試直接設定欄位）：仍然直接扣 20，
+	# 不抽閃避、不減傷、不反彈（敵人不扣血）、典韋沒有堅韌紀錄；承擔不改敵人的攻擊冷卻（下一擊照常在第 62 步）
+	var h8 := _dodge_holder()
+	var s8: Dictionary = _gd_set(h8)
+	s8.g.def_stat = 1.0e6
+	s8.g.dodge_chance = 1.0
+	s8.g.dodge_roll_override = func() -> float: return 0.0
+	s8.g.tenacity_hp_ratio = 0.99
+	s8.g.tenacity_damage_mult = 0.5
+	s8.g.counter_ratio = 1.0
+	var r8: Dictionary = _ctr_steps(s8.e, s8.a, 70)
+	var d8: Dictionary = {"rows": r8.atk, "guard_hp": s8.g.current_hp, "rolls": s8.g.dodge_rolls, "ten_log": s8.g.tenacity_log.size(), "counter": s8.g.counter_count, "ehp": s8.e.current_hp}
+	h8.queue_free()
+	_check("護衛-8 承擔走專用的扣血：典韋有極高防禦、必定閃避、堅韌、反擊 1 時仍直接扣 20、20（第 2、62 步，敵人的攻擊時間不變）；沒有抽閃避、沒有堅韌紀錄、沒有反彈（敵人不扣血）",
+		_ctr_rows_ok(d8.rows, [[2, 80, 0, 0], [62, 80, 0, 0]]) and _ls_near(d8.guard_hp, 960.0, 1e-6) and d8.rolls == 0 and d8.ten_log == 0 and d8.counter == 0 and d8.ehp == 99999.0,
+		d8)
+	await process_frame
+
+	# ── 實際引擎 ──
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 護衛-20：Godot 讀到出征資料的參數；關羽在路上 (6,5) 擋路、典韋在旁邊 (6,4)；慢速兵（攻擊力 100）打關羽（防禦 50，D＝66.667）：
+	# 每次關羽扣 53.333、典韋扣 13.333；選取面板 guard_share {0.2, 2, 可以提供, [guan_yu]}；快照 hero_guard 紀錄、GUARD 標記；
+	# 典韋移到 (10,4)（4 格外）後不分攤、移回 (6,4) 再分攤
+	var es: Array = await _gd_start(rec, "guard-20", [_gd_member(), _r12_hero("guan_yu", null)], {GD_HERO: Vector2i(2, 4), "guan_yu": Vector2i(2, 5)})
+	var d20: Dictionary = {}
+	var gd: Node = main._placed_heroes.get(GD_HERO)
+	var gy: Node = main._placed_heroes.get("guan_yu")
+	if es.size() == 1 and gd != null and gy != null:
+		d20["read"] = [gd.guard_share_ratio, gd.guard_radius]
+		await _wait_until(func(): return gd.guard_count >= 2, 12.0)
+		d20["log"] = gd.guard_log.duplicate(true)
+		d20["gy_hp"] = gy.current_hp
+		var n_panel: int = rec.sent_panels.size()
+		main._on_hero_clicked(gd)
+		d20["panel"] = rec.sent_panels.back().get("guard_share") if rec.sent_panels.size() > n_panel else null
+		await process_frame
+		var n_snap: int = rec.sent_snapshots.size()
+		main._on_debug_snapshot_requested("guard-20")
+		var snap: Dictionary = rec.sent_snapshots.back() if rec.sent_snapshots.size() > n_snap else {}
+		d20["snap"] = snap.get("hero_guard", {}).get(GD_HERO, {})
+		d20["texts"] = snap.get("guard_texts")
+		_blk_move(gd, Vector2i(10, 4))
+		var c0: int = gd.guard_count
+		var a0: int = es[0].blocker_attacks
+		await _wait_until(func(): return es[0].blocker_attacks >= a0 + 2, 8.0)
+		d20["away"] = [gd.guard_count - c0, es[0].blocker_attacks - a0]
+		_blk_move(gd, Vector2i(2, 4))
+		await _wait_until(func(): return gd.guard_count >= c0 + 1, 8.0)
+		d20["back"] = gd.guard_count - c0
+	var lg20: Array = d20.get("log", [])
+	var p20: Dictionary = d20.get("panel") if d20.get("panel") is Dictionary else {}
+	_check("護衛-20 實際引擎：讀到 0.2、2；慢速兵打路上的關羽（D＝66.667）：每次關羽扣 53.333、典韋扣 13.333（紀錄的友軍是 guan_yu）；選取面板 {0.2, 2, 可以提供, [guan_yu]}；快照 hero_guard 次數與紀錄、GUARD 標記；典韋移到 4 格外後敵人再攻擊 2 次都不分攤，移回來後再分攤",
+		d20.get("read") == [0.2, 2.0] and lg20.size() >= 2 and lg20.all(func(x): return x.ally == "guan_yu" and _ls_near(x.d, 200.0 / 3.0, 1e-3) and _ls_near(x.s, 40.0 / 3.0, 1e-3))
+			and _ls_near(p20.get("ratio", 0.0), 0.2) and _ls_near(p20.get("radius", 0.0), 2.0) and p20.get("active") == true and p20.get("allies") == ["guan_yu"]
+			and int(d20.get("snap", {}).get("count", 0)) >= 2 and int(d20.get("texts", 0)) >= 1 and d20.get("away", [1, 0])[0] == 0 and d20.get("away", [1, 0])[1] >= 2
+			and int(d20.get("back", 0)) >= 1,
+		d20)
+
+	# 護衛-21：典韋只剩 10 被承擔的傷害打倒：第一擊典韋承擔 10（不是 13.333）、關羽扣 56.667；典韋倒下一次、Main 清掉它的格子與隊伍紀錄；之後關羽每次扣完整的 66.667
+	var t21: Dictionary = _gd_member()
+	t21["hp"] = 10.0
+	es = await _gd_start(rec, "guard-21", [t21, _r12_hero("guan_yu", null)], {GD_HERO: Vector2i(2, 4), "guan_yu": Vector2i(2, 5)})
+	var d21: Dictionary = {}
+	gd = main._placed_heroes.get(GD_HERO)
+	gy = main._placed_heroes.get("guan_yu")
+	if es.size() == 1 and gd != null and gy != null:
+		var died21: Array = [0]
+		gd.hero_died.connect(func(_x): died21[0] += 1)
+		# 紀錄在倒下之後才寫入（承擔的扣血先發出倒下信號）：先拿到同一個陣列的參照，節點釋放後仍讀得到
+		var glog21: Array = gd.guard_log
+		var hp0: float = gy.current_hp
+		await _wait_until(func(): return died21[0] >= 1, 8.0)
+		var hp1: float = gy.current_hp
+		await process_frame
+		d21 = {"died": died21[0], "log": glog21.duplicate(true), "first": snappedf(hp0 - hp1, 0.001), "placed": main._placed_heroes.has(GD_HERO),
+			"cell": main.game_map.get_occupant(Vector2i(2, 4)) != null}
+		var a1: int = es[0].blocker_attacks
+		var hp2: float = gy.current_hp
+		await _wait_until(func(): return es[0].blocker_attacks >= a1 + 1, 6.0)
+		d21["next"] = snappedf(hp2 - gy.current_hp, 0.001)
+	var lg21: Array = d21.get("log", [])
+	_check("護衛-21 典韋只剩 10：第一擊承擔 10、關羽扣 56.667（守恆 66.667）；典韋倒下一次、Main 清掉它的格子與隊伍紀錄；之後關羽每次扣完整的 66.667",
+		d21.get("died") == 1 and lg21.size() == 1 and _ls_near(lg21[0].s, 10.0, 1e-6) and _ls_near(d21.get("first", 0.0), 56.667, 2e-3) and d21.get("placed") == false
+			and d21.get("cell") == false and _ls_near(d21.get("next", 0.0), 66.667, 2e-3),
+		d21)
+
+	# 護衛-22：新的一場：新的典韋節點、承擔次數從 0 開始；只有典韋（沒有其他友軍）時選取面板寫可以提供、範圍內沒有友軍
+	es = await _gd_start(rec, "guard-22", [_gd_member()], {GD_HERO: Vector2i(2, 4)})
+	var d22: Dictionary = {}
+	gd = main._placed_heroes.get(GD_HERO)
+	if gd != null:
+		var n_panel: int = rec.sent_panels.size()
+		main._on_hero_clicked(gd)
+		d22 = {"count": gd.guard_count, "log": gd.guard_log.size(), "panel": rec.sent_panels.back().get("guard_share") if rec.sent_panels.size() > n_panel else null}
+	var p22: Dictionary = d22.get("panel") if d22.get("panel") is Dictionary else {}
+	_check("護衛-22 新的一場：承擔次數 0、沒有紀錄；只有典韋時選取面板 {可以提供, 範圍內沒有友軍}",
+		d22.get("count") == 0 and d22.get("log") == 0 and p22.get("active") == true and p22.get("allies") == [], d22)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+## 直接呼叫受傷後的生命變化（友軍受傷前的生命 hp_a、典韋受傷前的生命 hp_g）
+func _gd_hit_rows(hp_a: float, a: Node, g: Node, hp_g: float) -> Array:
+	return [snappedf(hp_a - a.current_hp, 0.0001), snappedf(hp_g - g.current_hp, 0.0001)]
+
+## 實際引擎用的典韋（步兵、射程 3 格、攻擊間隔 0.5 秒，和其他測試武將相同；正式設定是射程 1、攻擊間隔 1.1）
+func _gd_member(skill: Variant = null) -> Dictionary:
+	return _r12_hero(GD_HERO, GD_SKILL.duplicate() if skill == null else skill)
+
+## 載入一場關卡（經過 JSON）：team 出征、cells 依序放置（hero_id → 格子，停掉武將自己的 _process），開戰並等第一波的慢速兵出現。
+## 慢速兵每秒 20 像素、攻擊力 100、血量很多（走到路上的武將面前被擋住）
+func _gd_start(rec: Node, battle_id: String, team: Array, cells: Dictionary, waves: Variant = null) -> Array:
+	var p: Dictionary = _r12_payload("guard_a", waves if waves != null else [[_grp("ctr_walk", 1, 0.02)]], battle_id, team)
+	p["heroes_config"].append({"hero_id": GD_HERO, "name": "典韋", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5})
+	p["heroes_config"].append({"hero_id": BG_HERO, "name": "孫權", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5})
+	for c in CTR_ENEMIES:
+		p["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p)
+	for hid in cells:
+		_r12_place(hid, cells[hid])
+		if main._placed_heroes.get(hid) != null:
+			main._placed_heroes[hid].set_process(false)
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() >= 1, 5.0)
+	return _sw_enemies()
+
+# ── 孫權的守護（base_guard）──
+# 孫權在場上、還活著時，敵人漏到城池的傷害 × 0.8（和位置無關）；城防仍是整數：這一場累計的漏城傷害 T 無條件進位後才是扣掉的城防（同來源 5 次扣 4）。
+# T 與已扣的城防 A 這一場保留（來源失效後每隻照 1 累計，不回補、不追扣），新的一場歸零；多個來源取最強
+const BG_SKILL: Dictionary = {"id": "base_guard", "base_damage_mult": 0.8}
+const BG_HERO: String = "sun_quan"
+
+## 守護的來源（真正的 Hero，不攻擊、在場景樹裡）：bm 先設定好再讀技能（讀技能時向 BattleManager 登記）
+func _bg_hero(holder: Node, bm: Node, skill: Variant = null, hid: String = BG_HERO) -> Node:
+	var h: Node = load("res://entities/hero/Hero.gd").new()
+	holder.add_child(h)
+	h.set_process(false)
+	h.hero_id = hid
+	h.max_hp = 1000.0
+	h.current_hp = 1000.0
+	h._battle_mgr = bm
+	h._read_skill({"skill": BG_SKILL.duplicate() if skill == null else skill})
+	return h
+
+## 連續 n 次漏城，回傳每一次扣的城防
+func _bg_leaks(bm: Node, n: int) -> Array:
+	var out: Array = []
+	for i in range(n):
+		out.append(bm.on_enemy_reached_base())
+	return out
+
+func _base_guard_cases() -> void:
+	# 守護-0：技能參數：倍率是 0.5 以上、小於 1 的有限數字才啟用（0.8、0.5、0.999、經過 JSON 的 0.8）；1、1.0、0.4999、0、負數、NaN、無限大、字串、布林、null、
+	# 陣列、沒有欄位、不認得的 id、其他技能帶這個欄位都不啟用（1）；換成護衛時清除、不留前一個技能的參數
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var wrong0: Array = []
+	for c in [[0.8, 0.8], [0.5, 0.5], [0.999, 0.999], [1, 1.0], [1.0, 1.0], [0.4999, 1.0], [0, 1.0], [-0.8, 1.0], [NAN, 1.0], [INF, 1.0], ["0.8", 1.0], [true, 1.0],
+			[null, 1.0], [[0.8], 1.0]]:
+		h0._read_skill({"skill": {"id": "base_guard", "base_damage_mult": c[0]}})
+		if not _ls_near(h0.base_guard_mult, float(c[1])):
+			wrong0.append({"v": str(c[0]), "got": h0.base_guard_mult})
+	for s in [{"id": "base_guard"}, {"id": "Base_guard", "base_damage_mult": 0.8}, {"id": "supply", "supply_gold_multiplier": 1.2, "base_damage_mult": 0.8},
+			{"id": "guard_share", "guard_share_ratio": 0.2, "guard_radius": 2, "base_damage_mult": 0.8}]:
+		h0._read_skill({"skill": s})
+		if h0.base_guard_mult != 1.0:
+			wrong0.append({"skill": str(s), "got": h0.base_guard_mult})
+	h0._read_skill({"skill": JSON.parse_string("{\"id\": \"base_guard\", \"base_damage_mult\": 0.8}")})
+	var json0: float = h0.base_guard_mult
+	var guard0: Array = [h0.guard_share_ratio, h0.supply_gold_multiplier]
+	h0._read_skill({"skill": GD_SKILL.duplicate()})
+	var switched0: Array = [h0.base_guard_mult, h0.guard_share_ratio]
+	h0._read_skill({})
+	var cleared0: Array = [h0.base_guard_mult, h0.guard_share_ratio]
+	h0.free()
+	_check("守護-0 技能參數：0.8、0.5、0.999 與經過 JSON 的 0.8 啟用；1、1.0、0.4999、0、負數、NaN、無限大、字串、布林、null、陣列、沒有欄位、大小寫不同的 id、其他技能帶這個欄位都不啟用；換成護衛後是 1（護衛 0.2），沒有技能時都清除",
+		wrong0.is_empty() and _ls_near(json0, 0.8) and guard0 == [0.0, 1.0] and switched0 == [1.0, 0.2] and cleared0 == [1.0, 0.0],
+		{"wrong": wrong0, "json": json0, "switched": switched0, "cleared": cleared0})
+
+	# （守護-1～3 的 BattleManager 掛在 holder 底下：結算時的音效要用場景樹）
+	# 守護-1：累計扣損：孫權在場時 5 次依序扣 [1,1,1,1,0]（城防 16、T 4、A 4）、10 次 [1,1,1,1,0,1,1,1,1,0]（城防 12、T 8、A 8）；
+	# 沒有來源時 20 次每次扣 1，城防 0 時結束一次（battle_ended 一次、結果是失敗），之後的抵達回傳 -1、城防不變
+	var hb := _dodge_holder()
+	var bm1: Node = _gd_bm()
+	hb.add_child(bm1)
+	var sq1: Node = _bg_hero(hb, bm1)
+	var five: Array = _bg_leaks(bm1, 5)
+	var st5: Array = [bm1.base_hp, bm1._leak_total, bm1._leak_lost]
+	var more: Array = _bg_leaks(bm1, 5)
+	var st10: Array = [bm1.base_hp, bm1._leak_total, bm1._leak_lost]
+	var dbg1: Dictionary = bm1.base_guard_debug()
+	var bm2: Node = _gd_bm()
+	hb.add_child(bm2)
+	var ended2: Array = []
+	bm2.battle_ended.connect(func(r): ended2.append(r.result))
+	var twenty: Array = _bg_leaks(bm2, 20)
+	var after2: Array = [bm2.on_enemy_reached_base(), bm2.base_hp, bm2.game_state]
+	_check("守護-1 累計扣損：孫權在場時 5 次 [1,1,1,1,0]（城防 16、T 4、A 4）、再 5 次 [1,1,1,1,0]（城防 12、T 8、A 8；紀錄每筆的倍率 0.8、來源 sun_quan）；沒有來源時 20 次每次扣 1、城防 0 時結束一次（失敗），之後的抵達回傳 -1、城防不變",
+		five == [1, 1, 1, 1, 0] and st5[0] == 16 and _ls_near(st5[1], 4.0, 1e-9) and st5[2] == 4 and more == [1, 1, 1, 1, 0] and st10[0] == 12 and _ls_near(st10[1], 8.0, 1e-9) and st10[2] == 8 and dbg1.log.size() == 10
+			and dbg1.log.all(func(x): return _ls_near(x.mult, 0.8) and x.source == BG_HERO) and twenty.all(func(x): return x == 1) and twenty.size() == 20
+			and ended2 == ["LOSE"] and after2 == [-1, 0, BattleManager.GameState.RESULT],
+		{"five": five, "st5": st5, "more": more, "st10": st10, "twenty": twenty, "ended": ended2, "after": after2, "log0": dbg1.log[0] if dbg1.log.size() > 0 else null})
+
+	# 守護-2：來源失效與重新部署：4 次（T 3.2、A 4）後孫權正要被移除 → 第 5 次扣 1（T 4.2、A 5，不是 0，也不回補）；重新部署新的孫權 → 第 6 次扣 0（T 5.0）、
+	# 第 7 次扣 1；孫權倒下（生命 0）後每次扣 1；技能失效（讀到不合理的倍率）不算；多個來源取最強（0.8 與 0.6 時 0.6，0.6 移除後回到 0.8，不相乘）；
+	# 新的一場（initialize）T、A、來源、紀錄都歸零
+	var bm3: Node = _gd_bm()
+	hb.add_child(bm3)
+	var sq3: Node = _bg_hero(hb, bm3)
+	var seq3: Array = _bg_leaks(bm3, 4)
+	var t4: Array = [bm3._leak_total, bm3._leak_lost]
+	sq3.queue_free()
+	seq3.append_array(_bg_leaks(bm3, 1))
+	var t5: Array = [bm3._leak_total, bm3._leak_lost]
+	var sq3b: Node = _bg_hero(hb, bm3)
+	seq3.append_array(_bg_leaks(bm3, 2))
+	sq3b.current_hp = 0.0
+	seq3.append_array(_bg_leaks(bm3, 1))
+	sq3b.current_hp = 1000.0
+	sq3b._read_skill({"skill": {"id": "base_guard", "base_damage_mult": 1.5}})
+	seq3.append_array(_bg_leaks(bm3, 1))
+	var src_a: Node = _bg_hero(hb, bm3, null, "sun_quan_a")
+	var src_b: Node = _bg_hero(hb, bm3, {"id": "base_guard", "base_damage_mult": 0.6}, "sun_quan_b")
+	var multi: Array = [bm3.base_guard_source()]
+	src_b.queue_free()
+	multi.append(bm3.base_guard_source())
+	bm3.initialize(1, "bg_reset", null, null, "bg-reset")
+	var reset3: Dictionary = bm3.base_guard_debug()
+	_check("守護-2 來源失效與重新部署：4 次 [1,1,1,1]（T 3.2、A 4）→ 孫權移除後第 5 次扣 1（T 4.2、A 5）→ 新的孫權第 6、7 次扣 0、1 → 孫權倒下時扣 1 → 倍率不合理（失效）時扣 1；0.8 與 0.6 同時在場取 0.6、0.6 移除後 0.8；新的一場 T、A、來源、紀錄都歸零",
+		seq3 == [1, 1, 1, 1, 1, 0, 1, 1, 1] and _ls_near(t4[0], 3.2, 1e-9) and t4[1] == 4 and _ls_near(t5[0], 4.2, 1e-9) and t5[1] == 5 and multi[0].hero_id == "sun_quan_b" and _ls_near(multi[0].mult, 0.6)
+			and multi[1].hero_id == "sun_quan_a" and _ls_near(multi[1].mult, 0.8) and reset3.total == 0.0 and reset3.lost == 0 and reset3.sources.is_empty()
+			and reset3.log.is_empty() and reset3.base_hp == BattleManager.MAX_BASE_HP,
+		{"seq": seq3, "t4": t4, "t5": t5, "multi": multi, "reset": reset3})
+
+	# 守護-3：星數與戰場點數照實際的城防：5 次守護漏城後城防 16（失去 4）：2 星、戰場點數 16 × 20 ＋ 300＝620；勝利結算 {stars 2、kills 0、battle_points 620}，只送一次
+	var bm4: Node = _gd_bm()
+	hb.add_child(bm4)
+	var sq4: Node = _bg_hero(hb, bm4)
+	_bg_leaks(bm4, 5)
+	var ended4: Array = []
+	bm4.battle_ended.connect(func(r): ended4.append(r.duplicate(true)))
+	var calc4: Array = [bm4._calc_stars(), bm4._calc_battle_points()]
+	bm4._end_battle(true)
+	bm4._end_battle(true)
+	var r4: Dictionary = ended4[0] if not ended4.is_empty() else {}
+	_check("守護-3 星數與戰場點數照實際的城防：5 次守護漏城後城防 16：2 星、戰場點數 620；勝利結算只送一次 {stars 2、kills 0、battle_points 620}",
+		calc4 == [2, 620] and ended4.size() == 1 and r4.get("stars_earned") == 2 and r4.get("kills") == 0 and r4.get("loots", [{}])[0].get("count") == 620,
+		{"calc": calc4, "result": r4, "sent": ended4.size()})
+	hb.queue_free()
+	await process_frame
+
+	# ── 實際引擎 ──
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 守護-20：孫權在 (3,4)（不在路上），一波 5 隻快速兵全部漏城：扣 [1,1,1,1,0]、城防 16；零扣的那一隻照樣離場、波次結束（只有一波：勝利、只結算一次、2 星、點數 620）；
+	# update_stats 的城防 16、base_guard_mult 0.8；選取面板 base_guard {0.8, 生效, 0.8}；看得到 SHIELD；1× 與 2× 相同；沒有孫權時城防 15
+	var d20: Dictionary = {}
+	for mode in ["x1", "x2", "none"]:
+		var team: Array = [_bg_member()] if mode != "none" else [_r12_hero("guan_yu", null)]
+		var cells: Dictionary = {BG_HERO: Vector2i(3, 4)} if mode != "none" else {}
+		var n_res: int = rec.sent_results.size()
+		var p: Dictionary = _r12_payload("guard_b", [[_grp("c_fast", 5, 0.3)]], "base-guard-20-" + mode, team)
+		p["heroes_config"].append({"hero_id": BG_HERO, "name": "孫權", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5})
+		_r19_js(rec, p)
+		for hid in cells:
+			_r12_place(hid, cells[hid])
+			if main._placed_heroes.get(hid) != null:
+				main._placed_heroes[hid].set_process(false)
+		await process_frame
+		await process_frame
+		var row: Dictionary = {}
+		if mode != "none" and main._placed_heroes.get(BG_HERO) != null:
+			var n_panel: int = rec.sent_panels.size()
+			main._on_hero_clicked(main._placed_heroes[BG_HERO])
+			row["panel"] = rec.sent_panels.back().get("base_guard") if rec.sent_panels.size() > n_panel else null
+			row["stats_mult"] = rec.sent_stats.back().get("base_guard_mult") if not rec.sent_stats.is_empty() else null
+		if mode == "x2":
+			_r19_speed(rec, 2)
+		_bm().player_start_battle()
+		var shields: Array = [0]
+		var end_t: int = Time.get_ticks_msec() + 15000
+		while Time.get_ticks_msec() < end_t and _bm().game_state != BattleManager.GameState.RESULT:
+			await process_frame
+			var n: int = 0
+			for c in main.units_layer.get_children():
+				if c is FloatingText and not c.is_queued_for_deletion() and c._label != null and c._label.text == "SHIELD":
+					n += 1
+			shields[0] = maxi(shields[0], n)
+		await _wait(0.3)
+		var dbg: Dictionary = _bm().base_guard_debug()
+		var res: Array = rec.sent_results.slice(n_res)
+		row["losses"] = dbg.log.map(func(x): return x.loss)
+		row["hp"] = _bm().base_hp
+		row["web_hp"] = rec.sent_stats.back().get("hp") if not rec.sent_stats.is_empty() else null
+		row["results"] = res.size()
+		row["result"] = res[0] if res.size() > 0 else {}
+		row["shields"] = shields[0]
+		row["leaked_left"] = _sw_enemies().size()
+		d20[mode] = row
+	var ok20: bool = true
+	for mode in ["x1", "x2"]:
+		var r: Dictionary = d20.get(mode, {})
+		var pnl: Dictionary = r.get("panel") if r.get("panel") is Dictionary else {}
+		ok20 = ok20 and (r.get("losses") == [1, 1, 1, 1, 0] and r.get("hp") == 16 and r.get("web_hp") == 16 and r.get("results") == 1
+			and r.get("result", {}).get("result") == "WIN" and r.get("result", {}).get("stars_earned") == 2 and r.get("result", {}).get("loots", [{}])[0].get("count") == 620
+			and int(r.get("shields", 0)) >= 1 and r.get("leaked_left") == 0 and _ls_near(pnl.get("mult", 0.0), 0.8) and pnl.get("active") == true
+			and _ls_near(pnl.get("effective_mult", 0.0), 0.8) and _ls_near(float(r.get("stats_mult", 0.0)), 0.8))
+	var rn: Dictionary = d20.get("none", {})
+	ok20 = ok20 and (rn.get("losses") == [1, 1, 1, 1, 1] and rn.get("hp") == 15 and rn.get("results") == 1 and int(rn.get("shields", 1)) == 0
+		and rn.get("result", {}).get("loots", [{}])[0].get("count") == 600)
+	_check("守護-20 實際引擎：孫權在 (3,4)，5 隻快速兵全部漏城：扣 [1,1,1,1,0]、城防 16（update_stats 也是 16、base_guard_mult 0.8），零扣的那一隻照樣離場、波次結束後勝利只結算一次（2 星、點數 620）、看得到 SHIELD；選取面板 {0.8, 生效, 0.8}；2× 相同；沒有孫權時 [1,1,1,1,1]、城防 15、點數 600、沒有 SHIELD",
+		ok20, d20)
+
+	# 守護-21：場上的孫權被移出隊伍後 update_stats 的 base_guard_mult 回到 1（稍後送出）；新的一場 T、A 歸零
+	var p21: Dictionary = _r12_payload("guard_b", [[_grp("post", 1, 0.02)]], "base-guard-21", [_bg_member()])
+	p21["heroes_config"].append({"hero_id": BG_HERO, "name": "孫權", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5})
+	_r19_js(rec, p21)
+	_r12_place(BG_HERO, Vector2i(3, 4))
+	await process_frame
+	await process_frame
+	var d21: Dictionary = {"placed_mult": rec.sent_stats.back().get("base_guard_mult") if not rec.sent_stats.is_empty() else null}
+	main._on_payload_received({"type": "update_team", "team_list": []})
+	await process_frame
+	await process_frame
+	await process_frame
+	d21["removed_mult"] = rec.sent_stats.back().get("base_guard_mult") if not rec.sent_stats.is_empty() else null
+	d21["debug"] = _bm().base_guard_debug()
+	_check("守護-21 部署孫權後 update_stats 的 base_guard_mult 0.8；移出隊伍後重新送出 1；新的一場 T 0、A 0、沒有紀錄",
+		_ls_near(float(d21.get("placed_mult", 0.0)), 0.8) and _ls_near(float(d21.get("removed_mult", 0.0)), 1.0) and d21.debug.total == 0.0 and d21.debug.lost == 0
+			and d21.debug.log.is_empty(),
+		d21)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+## 實際引擎用的孫權（步兵、射程 3 格、攻擊間隔 0.5 秒，和其他測試武將相同；正式設定是射程 1、攻擊間隔 1）
+func _bg_member(skill: Variant = null) -> Dictionary:
+	return _r12_hero(BG_HERO, BG_SKILL.duplicate() if skill == null else skill)

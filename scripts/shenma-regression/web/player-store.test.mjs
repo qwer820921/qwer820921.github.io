@@ -3738,12 +3738,273 @@ await test("補給-S1", async () => {
   );
 });
 
+await test("怪力-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    berserkPercents,
+    supplyKillGold,
+    stormPercent,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const xc = heroSkillOf("xu_chu");
+  const payload = heroSkillPayload("xu_chu");
+  const text = describeHeroSkill(xc, 1, 103);
+  const other = describeHeroSkill(
+    { id: "knockback", name: "怪力", knockbackTiles: 1, cooldownSec: 5 },
+    1,
+    103
+  );
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "cao_cao",
+    "gan_ning",
+    "xia_hou_dun",
+    "liao_hua",
+    "yan_liang",
+    "sun_shang_xiang",
+    "pang_tong",
+    "zhu_ge_liang",
+    "lv_bu",
+    "lu_su",
+    "zhou_cang",
+    "xuchu",
+    "xu_chuu",
+    "Xu_Chu",
+  ].filter((id) => heroSkillOf(id)?.id === "knockback");
+  check(
+    "怪力-S1 許褚（xu_chu）的怪力：送進 Godot 的參數（knockback、knockback_distance 0.5、knockback_cooldown 3，只有這三個欄位）與說明文字出自同一份定義；說明寫出自己的普通攻擊實際扣到生命、目標沒被打倒時沿它走過的路線往回推 0.5 格、成功後冷卻 3 秒戰鬥中的遊戲時間（2 倍速加快、暫停與備戰不計）、冷卻中照常傷害、轉彎退回上一段最多到出發處、推不動不用掉冷卻、不另外加傷害、被推開不再攻擊原本擋住的武將、只推主要目標、其他來源不推、打不到飛行、免疫減速照樣推、狀態保留、冷卻同一場保留新的一場重算、PUSH 標記、面板是選取當時剩下的冷卻；1 格、5 秒的定義照樣寫出；其他技能的計算不受影響；其他武將（含周倉與寫錯的 id）沒有怪力",
+    xc?.id === "knockback" &&
+      xc.name === "怪力" &&
+      xc.knockbackTiles === 0.5 &&
+      xc.cooldownSec === 3 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: {
+            id: "knockback",
+            knockback_distance: 0.5,
+            knockback_cooldown: 3,
+          },
+        }) &&
+      effectiveRange(xc, 1) === 1 &&
+      burnTickDamage(xc, 103) === 0 &&
+      stormPercent(xc) === 0 &&
+      supplyKillGold(xc) === 5 &&
+      JSON.stringify(berserkPercents(xc)) ===
+        JSON.stringify({ perStack: 0, max: 0 }) &&
+      text.includes(
+        "這位武將自己的普通攻擊打中目標、實際扣到生命，而且目標沒有被這一擊打倒時，把這名地面敵人沿它自己走過的路線往回推 0.5 格"
+      ) &&
+      text.includes(
+        "成功推動後冷卻 3 秒（戰鬥中的遊戲時間：2 倍速時跟著加快，暫停與備戰時不計），冷卻中的攻擊照常造成傷害、只是不推"
+      ) &&
+      text.includes("轉彎處會退回上一段路，最多退到敵人出發的地方") &&
+      text.includes("已在出發的地方推不動時不用掉冷卻") &&
+      text.includes("傷害照普通攻擊，不另外加傷害、暈眩或攻擊次數") &&
+      text.includes("被推開的敵人不再攻擊原本擋住它的武將") &&
+      text.includes("只推這一擊的主要目標") &&
+      text.includes("其他武將、防禦塔、灼燒等造成的傷害都不會推") &&
+      text.includes("打不到飛行敵人（步兵不能對空）") &&
+      text.includes(
+        "免疫減速的敵人照樣會被推，減速、暈眩、灼燒等狀態照常保留"
+      ) &&
+      text.includes("換波次、移動位置、升級、移出隊伍再放回都不會重置") &&
+      text.includes("切換關卡或重新開始後重新計算") &&
+      text.includes("「PUSH」") &&
+      text.includes("選取當時剩下的冷卻（重新點選可以更新）") &&
+      text.includes("只在戰場生效，不影響存檔") &&
+      other.includes("往回推 1 格") &&
+      other.includes("冷卻 5 秒") &&
+      others.length === 0,
+    { xc, payload, text, other, others }
+  );
+});
+
+await test("護衛-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    guardSharePercent,
+    guardShareSplit,
+    supplyKillGold,
+    effectiveRange,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const dw = heroSkillOf("dian_wei");
+  const payload = heroSkillPayload("dian_wei");
+  const text = describeHeroSkill(dw, 1, 149);
+  const other = describeHeroSkill(
+    { id: "guard_share", name: "護衛", shareRatio: 0.3, radiusTiles: 3 },
+    1,
+    149
+  );
+  const splits = [
+    guardShareSplit(100, 0.2, 1000),
+    guardShareSplit(100, 0.2, 5),
+    guardShareSplit(10000, 0.2, 5000),
+    guardShareSplit(100, 0.2, 0),
+  ];
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "liu_bei",
+    "xia_hou_dun",
+    "liao_hua",
+    "lu_su",
+    "xu_chu",
+    "sun_quan",
+    "dianwei",
+    "dian_weii",
+    "Dian_Wei",
+  ].filter((id) => heroSkillOf(id)?.id === "guard_share");
+  check(
+    "護衛-S1 典韋（dian_wei）的護衛：送進 Godot 的參數（guard_share、guard_share_ratio 0.2、guard_radius 2，只有這三個欄位）與說明文字出自同一份定義；說明寫出 2 格內（受傷當下兩人中心的距離、含邊界）其他友軍承擔 20%、先友軍的閃避／防禦（含防禦光環）／堅韌再承擔（100 → 友軍 80、典韋 20）、直接扣典韋的生命不再減傷、只剩 5 時友軍 95、典韋 5、按完整傷害分攤、不保護自己與塔／城池、閃避與灼燒不分攤、只由一名承擔不疊加且不再轉出、受傷當下判斷、備戰／結算／暫停不分攤、反擊只算自己被扣的、GUARD 與描邊、面板是選取當時；分攤的計算（100 → 80／20、典韋只剩 5 → 95／5、10000 → 8000／2000、典韋 0 → 100／0）；0.3、3 格的定義照樣寫出；其他技能的計算不受影響；其他武將（含孫權與寫錯的 id）沒有護衛",
+    dw?.id === "guard_share" &&
+      dw.name === "護衛" &&
+      dw.shareRatio === 0.2 &&
+      dw.radiusTiles === 2 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: { id: "guard_share", guard_share_ratio: 0.2, guard_radius: 2 },
+        }) &&
+      guardSharePercent(dw) === 20 &&
+      guardSharePercent(heroSkillOf("lu_su")) === 0 &&
+      JSON.stringify(splits) ===
+        JSON.stringify([
+          { ally: 80, guard: 20 },
+          { ally: 95, guard: 5 },
+          { ally: 8000, guard: 2000 },
+          { ally: 100, guard: 0 },
+        ]) &&
+      effectiveRange(dw, 1) === 1 &&
+      supplyKillGold(dw) === 5 &&
+      text.includes(
+        "部署在戰場上、還活著時，替 2 格內（含邊界，以受傷當下兩人中心的距離計算）的其他友軍武將承擔敵人直接攻擊的 20%"
+      ) &&
+      text.includes(
+        "友軍先照自己的閃避、防禦（含防禦光環）與堅韌算出這一擊要扣的生命，這位武將再直接承擔其中的 20%：例如要扣 100 時友軍扣 80、這位武將扣 20"
+      ) &&
+      text.includes("不再用它自己的防禦、閃避或堅韌減少") &&
+      text.includes(
+        "生命不夠時只承擔得了剩下的生命（只剩 5 時友軍扣 95、這位武將扣 5），不會免費多擋"
+      ) &&
+      text.includes("友軍生命很少時照樣按完整的傷害分攤") &&
+      text.includes("不保護自己、防禦塔與城池") &&
+      text.includes(
+        "閃避的攻擊沒有傷害，不分攤；灼燒等不是敵人直接攻擊的扣血也不分攤"
+      ) &&
+      text.includes(
+        "只由一名承擔（比例高的優先，比例相同時距離近的優先），不疊加"
+      ) &&
+      text.includes("承擔的部分不會再轉給另一名") &&
+      text.includes("備戰、結算與暫停時不分攤") &&
+      text.includes("被保護的夏侯惇反擊時只算自己實際被扣的部分") &&
+      text.includes("「GUARD」並短暫加上描邊") &&
+      text.includes("選取當時能否提供與範圍內的友軍（重新點選可以更新）") &&
+      text.includes("只在戰場生效，不影響存檔") &&
+      other.includes("替 3 格內") &&
+      other.includes("承擔敵人直接攻擊的 30%") &&
+      other.includes("友軍扣 70、這位武將扣 30") &&
+      others.length === 0,
+    { dw, payload, splits, text, other, others }
+  );
+});
+
+await test("守護-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    baseGuardPercent,
+    baseGuardLosses,
+    baseGuardHudPercent,
+    supplyKillGold,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const sq = heroSkillOf("sun_quan");
+  const payload = heroSkillPayload("sun_quan");
+  const text = describeHeroSkill(sq, 1, 115);
+  const other = describeHeroSkill(
+    { id: "base_guard", name: "守護", baseDamageMultiplier: 0.5 },
+    1,
+    115
+  );
+  const seq = {
+    five: baseGuardLosses(0.8, 5),
+    ten: baseGuardLosses(0.8, 10),
+    none: baseGuardLosses(1, 20),
+    half: baseGuardLosses(0.5, 4),
+  };
+  const hud = [0.8, 0.5, 1, 0.4999, NaN, "0.8", undefined, null].map((v) =>
+    baseGuardHudPercent(v)
+  );
+  const others = [
+    "ma_chao",
+    "lu_su",
+    "xu_chu",
+    "dian_wei",
+    "sunquan",
+    "sun_quann",
+    "Sun_Quan",
+  ].filter((id) => heroSkillOf(id)?.id === "base_guard");
+  check(
+    "守護-S1 孫權（sun_quan）的守護：送進 Godot 的參數（base_guard、base_damage_mult 0.8，只有這兩個欄位）與說明文字出自同一份定義；說明寫出漏城傷害 −20%（1 → 0.8）、和位置無關、城防整數不加上限不回復、累計後無條件進位（5 隻 1、1、1、1、0 共 4；10 隻 8）、來源失效照 1 累計不補扣、新的一場歸零、只影響漏城、敵人照常離場、多個取最強不疊加、結算照實際城防不另加獎勵、SHIELD、城防旁顯示與面板；每隻扣損的計算（0.8：5 隻 [1,1,1,1,0]、10 隻共 8；沒有守護 20 隻每隻 1；0.5：[1,0,1,0]）；城防旁的百分比只接受 0.5 以上、小於 1 的數字；0.5 的定義照樣寫出；其他技能的計算不受影響；其他武將（含典韋與寫錯的 id）沒有守護",
+    sq?.id === "base_guard" &&
+      sq.name === "守護" &&
+      sq.baseDamageMultiplier === 0.8 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: { id: "base_guard", base_damage_mult: 0.8 },
+        }) &&
+      baseGuardPercent(sq) === 20 &&
+      baseGuardPercent(heroSkillOf("dian_wei")) === 0 &&
+      JSON.stringify(seq.five) === "[1,1,1,1,0]" &&
+      seq.ten.reduce((a, b) => a + b, 0) === 8 &&
+      seq.none.every((x) => x === 1) &&
+      JSON.stringify(seq.half) === "[1,0,1,0]" &&
+      JSON.stringify(hud) === "[20,50,0,0,0,0,0,0]" &&
+      supplyKillGold(sq) === 5 &&
+      text.includes(
+        "部署在戰場上、還活著時，敵人漏到城池時城防受到的傷害減少 20%（每隻從 1 點變成 0.8 點），和部署的位置無關"
+      ) &&
+      text.includes(
+        "城防仍是 20 點整數，不增加上限、不回復：這一場累計的漏城傷害無條件進位後才是實際扣掉的城防，例如連續漏 5 隻依序扣 1、1、1、1、0，共扣 4；漏 10 隻共扣 8"
+      ) &&
+      text.includes("沒有守護時每隻照 1 點累計，不會補扣先前少扣的部分") &&
+      text.includes("切換關卡或重新開始才歸零") &&
+      text.includes(
+        "防禦塔與武將受到的傷害不變，敵人照常離場、照常進入下一波"
+      ) &&
+      text.includes("同時有幾名守護時取最強的一個，不疊加") &&
+      text.includes(
+        "結算的星數與戰場點數照實際剩下的城防計算，不另外加獎勵、金幣或經驗"
+      ) &&
+      text.includes("「SHIELD」") &&
+      text.includes("戰場上方的城防旁顯示目前的漏城減傷") &&
+      text.includes("只在戰場生效，不影響存檔") &&
+      other.includes("減少 50%（每隻從 1 點變成 0.5 點）") &&
+      other.includes("依序扣 1、0、1、0、1，共扣 3") &&
+      others.length === 0,
+    { sq, payload, seq, hud, text, other, others }
+  );
+});
+
 // 技能綁定和正式設定表 heroes_config 的被動描述（passive）對照：趙雲是閃避、馬超是衝鋒（首擊加倍）；
 // 關羽是減速光環（「周圍敵人減速10%」）；劉備是防禦光環（「光環：提升友軍防禦」）；張飛是暈眩（「攻擊使敵人暈眩」）；
 // 魏延是吸血（「吸血：恢復生命」）；曹操是攻速光環（「指揮：提升友軍攻速」）；夏侯惇是反擊（「反擊：受傷時反彈傷害」）；
 // 廖化是堅韌（「堅韌：低血量減傷」）；顏良是威壓（「威壓：降低敵軍攻擊」）；孫尚香是連射（「連射：有機率二次攻擊」）；
 // 龐統是連環計（「連環計：傳遞傷害」，鏈式傳遞，不是橫掃）；諸葛亮是呼風喚雨（「呼風喚雨：大範圍傷害」，以被打中的敵人為中心的範圍，不是橫掃原型）；
 // 呂布是戰神（「戰神：攻擊力隨殺敵增加」，自己普通攻擊的擊殺疊層）；魯肅是補給（「補給：增加資源獲取」，在場時全隊擊殺的戰鬥金幣增加）；
+// 許褚是怪力（「怪力：擊退效果」，普通攻擊沿原路推回主目標）；典韋是護衛（「護衛：替隊友分擔傷害」，範圍內友軍受到的直接攻擊分攤一部分）；
+// 孫權是守護（「守護：提升基地防禦」，城池沒有防禦屬性，改成在場時漏城傷害減少、累計後進位）；
 // 甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
 await test("技能對照-S1", async () => {
   const { heroSkillOf, heroSkillPayload } = require(
@@ -3768,6 +4029,9 @@ await test("技能對照-S1", async () => {
     "zhu_ge_liang",
     "lv_bu",
     "lu_su",
+    "xu_chu",
+    "dian_wei",
+    "sun_quan",
   ];
   const got = Object.fromEntries(
     ids.map((id) => [id, heroSkillOf(id)?.id ?? null])
@@ -3776,7 +4040,7 @@ await test("技能對照-S1", async () => {
     (id) => heroSkillPayload(id).skill?.id === "first_strike"
   );
   check(
-    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）、顏良 atk_down_aura（威壓）、孫尚香 double_shot（連射）、龐統 chain（連環計）、諸葛亮 storm（呼風喚雨）、呂布 berserk（戰神）、魯肅 supply（補給）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
+    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）、顏良 atk_down_aura（威壓）、孫尚香 double_shot（連射）、龐統 chain（連環計）、諸葛亮 storm（呼風喚雨）、呂布 berserk（戰神）、魯肅 supply（補給）、許褚 knockback（怪力）、典韋 guard_share（護衛）、孫權 base_guard（守護）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
     JSON.stringify(got) ===
       JSON.stringify({
         ma_chao: "first_strike",
@@ -3797,6 +4061,9 @@ await test("技能對照-S1", async () => {
         zhu_ge_liang: "storm",
         lv_bu: "berserk",
         lu_su: "supply",
+        xu_chu: "knockback",
+        dian_wei: "guard_share",
+        sun_quan: "base_guard",
       }) &&
       JSON.stringify(firstStrike) === '["ma_chao"]' &&
       !Object.values(got).includes("sweep") &&

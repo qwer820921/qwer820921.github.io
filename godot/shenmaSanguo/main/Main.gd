@@ -256,8 +256,17 @@ func _on_auto_btn_pressed() -> void:
 func _on_enemy_killed(enemy: Node) -> void:
 	battle_manager.on_enemy_killed(enemy)
 
-func _on_enemy_leaked(_enemy: Node) -> void:
-	battle_manager.on_enemy_reached_base()
+## 漏城：BattleManager 計算這一次扣的城防（守護累計後進位）。守護保住城防（這一隻沒有扣）時在敵人抵達的地方顯示 SHIELD
+func _on_enemy_leaked(enemy: Node) -> void:
+	var loss: int = battle_manager.on_enemy_reached_base(enemy)
+	if loss == 0 and enemy != null and is_instance_valid(enemy):
+		var ft = load("res://ui/FloatingText.gd").new()
+		units_layer.add_child(ft)
+		ft.setup(BASE_GUARD_TEXT, BASE_GUARD_COLOR, enemy.global_position + Vector2(0, -16))
+
+## 守護保住城防時顯示的英文標記（Godot 專案沒有中文字型，技能說明裡寫明這個標記）與顏色（青綠色）
+const BASE_GUARD_TEXT: String = "SHIELD"
+const BASE_GUARD_COLOR: Color = Color(0.45, 0.95, 0.8)
 
 func _on_wave_cleared(_wave_num: int) -> void:
 	battle_manager.on_wave_all_enemies_dead()
@@ -550,6 +559,18 @@ func _on_hero_clicked(hero: Node) -> void:
 		info["supply"] = {"multiplier": hero.supply_gold_multiplier, "active": hero.supply_active(), "base_gold": BattleManager.GOLD_PER_KILL,
 			"hero_kill_gold": BattleManager.kill_gold(hero.supply_gold_multiplier), "kill_gold": BattleManager.kill_gold(float(src.mult)),
 			"source": src.hero_id}
+	# 怪力（許褚）：Godot 實際讀到的距離（格）與冷卻（秒）、選取當下剩下的冷卻（秒，戰鬥時間）；沒有啟用這個技能的武將不帶這個欄位
+	if hero.knockback_distance > 0.0:
+		info["knockback"] = {"distance": hero.knockback_distance, "cooldown": hero.knockback_cooldown,
+			"remaining": battle_manager.knockback_remaining(hero.hero_id)}
+	# 護衛（典韋）：Godot 實際讀到的比例與範圍（格）、選取當下能不能提供、範圍內其他友軍的 hero_id；沒有啟用這個技能的武將不帶這個欄位
+	if hero.guard_share_ratio > 0.0:
+		info["guard_share"] = {"ratio": hero.guard_share_ratio, "radius": hero.guard_radius, "active": hero.guard_available(),
+			"allies": hero.guard_allies()}
+	# 守護（孫權）：Godot 實際讀到的倍率、選取當下這位武將能不能提供、這一場此刻生效的倍率（全場取最強）；沒有啟用這個技能的武將不帶這個欄位
+	if hero.base_guard_mult < 1.0:
+		info["base_guard"] = {"mult": hero.base_guard_mult, "active": hero.base_guard_active(),
+			"effective_mult": float(battle_manager.base_guard_source().mult)}
 	web_bridge.send_show_upgrade_panel(info)
 
 func _on_tower_clicked(tower: Node) -> void:
@@ -904,11 +925,18 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 飛行敵人：每個敵人的移動方式、到終點的剩餘路程（格；地面沿路線、飛行直線）
 	var enemy_move: Dictionary = {}
 	var enemy_remaining: Dictionary = {}
+	# 怪力：每個敵人在路線上的進度（下一個路點索引、剩餘路程像素、位置）
+	var enemy_path: Dictionary = {}
 	# 文士塔的疊加減速：每個敵人目前的減速量（0 表示沒有）；測試用來看文士塔減速的是哪一個敵人
 	var enemy_slow: Dictionary = {}
 	# 每個敵人攻擊阻路武將的次數（包括被閃避的）；場上還在顯示的「MISS」數（閃避提示）
 	var enemy_blocker_attacks: Dictionary = {}
 	var dodge_texts: int = 0
+	# 怪力：還在顯示的推動標記（PUSH）數
+	var push_texts: int = 0
+	# 護衛：還在顯示的承擔標記（GUARD）數；守護：還在顯示的保住城防標記（SHIELD）數
+	var guard_texts: int = 0
+	var shield_texts: int = 0
 	# 場上還在顯示的吸血恢復提示（綠色的「+恢復量」）
 	var heal_texts: Array = []
 	# 場上還在顯示的連射提示（金色的「+1」，不算在吸血的恢復提示裡）
@@ -947,8 +975,15 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			enemy_seq[str(child.get_instance_id())] = child.spawn_seq
 			enemy_move[str(child.get_instance_id())] = child.movement_type
 			enemy_remaining[str(child.get_instance_id())] = child.get_remaining_distance() / float(child.tile_size)
+			enemy_path[str(child.get_instance_id())] = child.path_state()
 			enemy_slow[str(child.get_instance_id())] = child._stack_slow_amount
 			enemy_blocker_attacks[str(child.get_instance_id())] = child.blocker_attacks
+		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == Hero.KNOCKBACK_TEXT:
+			push_texts += 1
+		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == Hero.GUARD_TEXT:
+			guard_texts += 1
+		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == BASE_GUARD_TEXT:
+			shield_texts += 1
 		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == "MISS":
 			dodge_texts += 1
 		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == "+1" \
@@ -1005,6 +1040,12 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var hero_berserk: Dictionary = {}
 	# 補給（魯肅）：Godot 實際讀到的倍率（沒有啟用時不列出）、此刻能不能提供、這位武將提供時每次擊殺的金幣
 	var hero_supply: Dictionary = {}
+	# 怪力（許褚）：Godot 實際讀到的距離與冷卻（沒有啟用時不列出）、這一場成功推動的次數、此刻剩下的冷卻、普通攻擊的次數與最近幾次推動
+	var hero_knockback: Dictionary = {}
+	# 護衛（典韋）：Godot 實際讀到的比例與範圍（沒有啟用時不列出）、此刻能不能提供、範圍內的友軍、承擔的次數與總量、最近幾次的紀錄
+	var hero_guard: Dictionary = {}
+	# 守護（孫權）：Godot 實際讀到的倍率（沒有啟用時不列出）與此刻能不能提供（全場生效的倍率與累計在 BattleManager 的 base_guard）
+	var hero_base_guard: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
@@ -1033,6 +1074,12 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			hero_berserk[hid] = hero.berserk_state()
 		if hero.supply_gold_multiplier > 1.0:
 			hero_supply[hid] = hero.supply_state()
+		if hero.knockback_distance > 0.0:
+			hero_knockback[hid] = hero.knockback_state()
+		if hero.guard_share_ratio > 0.0:
+			hero_guard[hid] = hero.guard_state()
+		if hero.base_guard_mult < 1.0:
+			hero_base_guard[hid] = {"mult": hero.base_guard_mult, "active": hero.base_guard_active()}
 		hero_ranges[hid] = hero.attack_range
 		hero_hp[hid] = hero.current_hp
 		hero_slow[hid] = hero.slow_state()
@@ -1130,6 +1177,15 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"hero_storm":        hero_storm,
 		"hero_berserk":      hero_berserk,
 		"hero_supply":       hero_supply,
+		# 怪力（許褚）與每個敵人在路線上的進度（下一個路點索引、剩餘路程、位置）
+		"hero_knockback":    hero_knockback,
+		"enemy_path":        enemy_path,
+		"push_texts":        push_texts,
+		# 護衛（典韋）與守護（孫權）
+		"hero_guard":        hero_guard,
+		"guard_texts":       guard_texts,
+		"hero_base_guard":   hero_base_guard,
+		"shield_texts":      shield_texts,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)

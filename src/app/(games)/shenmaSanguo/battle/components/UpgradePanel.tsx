@@ -85,6 +85,34 @@ interface UpgradePanelProps {
       kill_gold: number;
       source: string;
     };
+    /**
+     * 武將的怪力（許褚）：Godot 實際讀到的距離（格）與冷卻（秒）、選取當下剩下的冷卻（秒，戰鬥中的遊戲時間）；
+     * 沒有這個技能（或舊版遊戲）時沒有
+     */
+    knockback?: {
+      distance: number;
+      cooldown: number;
+      remaining: number;
+    };
+    /**
+     * 武將的護衛（典韋）：Godot 實際讀到的承擔比例與範圍（格）、選取當下能不能提供（在場上、還活著）、
+     * 選取當下範圍內其他友軍武將的 hero_id；沒有這個技能（或舊版遊戲）時沒有
+     */
+    guard_share?: {
+      ratio: number;
+      radius: number;
+      active: boolean;
+      allies: string[];
+    };
+    /**
+     * 武將的守護（孫權）：Godot 實際讀到的漏城傷害倍率、選取當下這位武將能不能提供（在場上、還活著）、
+     * 選取當下這一場生效的倍率（全場取最強；沒有生效的守護時是 1）；沒有這個技能（或舊版遊戲）時沒有
+     */
+    base_guard?: {
+      mult: number;
+      active: boolean;
+      effective_mult: number;
+    };
     screen_pos: { x: number; y: number };
   };
   onUpgrade: () => void;
@@ -217,6 +245,41 @@ export default function UpgradePanel({
     Number.isInteger(sup.hero_kill_gold) &&
     Number.isInteger(sup.kill_gold);
   const supPct = supOk ? Number(((sup.multiplier - 1) * 100).toFixed(1)) : 0;
+  // 武將的怪力：選取當下剩下的冷卻（Godot 計算的快照，不是倒數計時）
+  const kb = data.unit_type === "hero" ? data.knockback : undefined;
+  const kbOk =
+    !!kb &&
+    Number.isFinite(kb.distance) &&
+    kb.distance > 0 &&
+    kb.distance <= 1 &&
+    Number.isFinite(kb.cooldown) &&
+    kb.cooldown > 0 &&
+    kb.cooldown <= 10 &&
+    Number.isFinite(kb.remaining) &&
+    kb.remaining >= 0;
+  // 武將的護衛：選取當下能不能提供與範圍內的友軍（Godot 計算的快照）
+  const gs = data.unit_type === "hero" ? data.guard_share : undefined;
+  const gsOk =
+    !!gs &&
+    Number.isFinite(gs.ratio) &&
+    gs.ratio > 0 &&
+    gs.ratio <= 0.5 &&
+    Number.isFinite(gs.radius) &&
+    gs.radius > 0 &&
+    gs.radius <= 5 &&
+    typeof gs.active === "boolean" &&
+    Array.isArray(gs.allies);
+  // 武將的守護：選取當下是否生效與這一場生效的漏城傷害倍率（Godot 計算的快照；即時的數值在戰場上方的城防旁）
+  const bg = data.unit_type === "hero" ? data.base_guard : undefined;
+  const bgOk =
+    !!bg &&
+    Number.isFinite(bg.mult) &&
+    bg.mult >= 0.5 &&
+    bg.mult < 1 &&
+    typeof bg.active === "boolean" &&
+    Number.isFinite(bg.effective_mult) &&
+    bg.effective_mult > 0 &&
+    bg.effective_mult <= 1;
   const s = sell && isSameTower(data, sell) ? sell : null;
   const confirming = s?.phase === "confirm" || s?.phase === "pending";
   const pending = s?.phase === "pending";
@@ -411,6 +474,55 @@ export default function UpgradePanel({
               : `沒有生效（不在場上或已陣亡），這一場每次擊殺戰鬥金幣 ${sup.kill_gold}`}
             ；在場上、還活著時全隊擊殺 +{supPct}%（{sup.base_gold} →{" "}
             {sup.hero_kill_gold}），不影響玩家的獎勵
+          </div>
+        )}
+
+        {kbOk && (
+          <div
+            className={styles.knockbackNote}
+            data-testid="unit-panel-knockback"
+            data-remaining={kb.remaining}
+          >
+            怪力：選取時
+            {kb.remaining > 0
+              ? `冷卻中，還剩 ${Number(kb.remaining.toFixed(1))} 秒`
+              : "可以推動"}
+            ；打中仍活著的地面目標時沿原路往回推{" "}
+            {Number(kb.distance.toFixed(2))} 格，成功後冷卻{" "}
+            {Number(kb.cooldown.toFixed(1))} 秒（重新點選可以更新）
+          </div>
+        )}
+
+        {gsOk && (
+          <div
+            className={styles.guardNote}
+            data-testid="unit-panel-guard"
+            data-active={gs.active ? "1" : "0"}
+            data-allies={gs.allies.length}
+          >
+            護衛：選取時
+            {gs.active
+              ? `可以提供，${Number(gs.radius.toFixed(2))} 格內有 ${gs.allies.length} 名友軍`
+              : "沒有提供（不在場上或已陣亡）"}
+            ；戰鬥中範圍內其他友軍受到敵人直接攻擊時，防禦與堅韌算完後承擔{" "}
+            {Number((gs.ratio * 100).toFixed(1))}
+            %（直接扣自己的生命、不超過剩下的生命）（重新點選可以更新）
+          </div>
+        )}
+
+        {bgOk && (
+          <div
+            className={styles.baseGuardNote}
+            data-testid="unit-panel-base-guard"
+            data-active={bg.active ? "1" : "0"}
+            data-effective-mult={bg.effective_mult}
+          >
+            守護：選取時
+            {bg.active ? "生效中" : "沒有生效（不在場上或已陣亡）"}
+            ，這一場漏城傷害每隻 ×{Number(bg.effective_mult.toFixed(2))}
+            ；在場上、還活著時漏城傷害減少{" "}
+            {Number(((1 - bg.mult) * 100).toFixed(1))}
+            %，累計後無條件進位才扣城防，不回復城防（重新點選可以更新）
           </div>
         )}
 

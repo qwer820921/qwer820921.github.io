@@ -406,6 +406,34 @@ export type HeroSkillPayload =
        * 不是大於 1、不超過 2 的有限數字時 Godot 當作沒有這個技能
        */
       supply_gold_multiplier: number;
+    }
+  | {
+      id: "knockback";
+      /**
+       * 這位武將的普通攻擊打中、仍活著的地面主目標沿它走過的路線往回推的距離（格；0.5＝tile_size 48 時 24 像素）；
+       * 不是大於 0、不超過 1 的有限數字時 Godot 當作沒有這個技能
+       */
+      knockback_distance: number;
+      /** 成功推動後的冷卻（秒，戰鬥中的遊戲時間）；不是大於 0、不超過 10 的有限數字時 Godot 當作沒有這個技能 */
+      knockback_cooldown: number;
+    }
+  | {
+      id: "guard_share";
+      /**
+       * 範圍內其他友軍武將受到敵人直接攻擊時，這位武將承擔的比例（0.2＝友軍防禦與堅韌算完後要扣的生命的 20%）；
+       * 不是大於 0、不超過 0.5 的有限數字時 Godot 當作沒有這個技能
+       */
+      guard_share_ratio: number;
+      /** 保護範圍（格，受傷當下兩人中心的距離、含邊界）；不是大於 0、不超過 5 的有限數字時 Godot 當作沒有這個技能 */
+      guard_radius: number;
+    }
+  | {
+      id: "base_guard";
+      /**
+       * 這位武將在場上、還活著時，敵人漏到城池的傷害倍率（0.8＝每隻累計 0.8 點，累計值無條件進位後才是扣掉的城防）；
+       * 不是 0.5 以上、小於 1 的有限數字時 Godot 當作沒有這個技能
+       */
+      base_damage_mult: number;
     };
 
 export interface ExpeditionPayload {

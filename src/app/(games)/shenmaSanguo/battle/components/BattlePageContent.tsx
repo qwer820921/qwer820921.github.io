@@ -20,7 +20,7 @@ import {
   activateLatestGameWorker,
   isCompatibleEngine,
 } from "../../utils/gameEngine";
-import { heroSkillPayload } from "../../utils/heroSkills";
+import { baseGuardHudPercent, heroSkillPayload } from "../../utils/heroSkills";
 import {
   isPlayable,
   stageAccess,
@@ -73,6 +73,8 @@ interface BattleStats {
   deploy_slow?: boolean;
   /** 手動暫停：Godot 已確認的狀態 */
   paused?: boolean;
+  /** 守護（孫權）：這一場此刻生效的漏城傷害倍率（沒有生效的守護時是 1；舊版遊戲沒有這個欄位） */
+  base_guard_mult?: number;
 }
 
 const GameState = {
@@ -711,6 +713,16 @@ export default function BattlePageContent() {
                     >
                       {battleStats.hp}/{battleStats.max_hp}
                     </span>
+                    {baseGuardHudPercent(battleStats.base_guard_mult) > 0 && (
+                      <span
+                        className={styles.statBaseGuard}
+                        data-testid="hud-base-guard"
+                        title={`守護：敵人漏到城池的傷害減少 ${baseGuardHudPercent(battleStats.base_guard_mult)}%（累計後無條件進位才扣城防）`}
+                      >
+                        守護 −{baseGuardHudPercent(battleStats.base_guard_mult)}
+                        %
+                      </span>
+                    )}
                     <div
                       className={styles.hpBarMini}
                       style={

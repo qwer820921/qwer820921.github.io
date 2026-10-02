@@ -509,6 +509,107 @@ func apply_stun(duration: float) -> bool:
 func is_stunned() -> bool:
 	return _stun_left > 0.0 and not _is_dead
 
+## 許褚「怪力」：沿這個敵人自己已經走過的路線往回退最多 distance 像素，回傳實際退了多少（不能退時是 0）。
+## 依路點的索引倒退（彎道、重複的路點、繞回或交叉的路線都照走過的順序，不用距離重新投影到別段）：
+## 從目前位置退向上一個路點，退到了還有剩就把 _wp_index 減一、接著退向更前面的路點，最多退到路線起點（不越過、不換路線）。
+## 退完後 _wp_index 仍指向下一個要走向的路點，下一步照原本的路線往前走；剩餘路程增加實際退的距離。
+## 只處理地面敵人，而且要：距離是正的有限數字、還活著、沒有正要被移除、路線至少兩個路點、目前的路點索引合理（1～路點數，
+## 已經走到終點但還沒處理抵達的也可以退），而且路線進度對得起來（_path_progress_valid：位置在目前的路段上）。
+## 任何一項不符合時什麼都不改、回傳 0。退完的位置、實際距離與索引先在區域變數算好，也要合理才一次寫回。
+## 實際退了正的距離時解除原本的阻擋（不再攻擊原本擋路的武將，下一步照現有的佔格檢查重新判斷）；
+## 攻擊冷卻、減速、暈眩、灼燒、威壓都不動
+func knockback(distance: float) -> float:
+	if not (distance > 0.0 and is_finite(distance)):
+		return 0.0
+	if _is_dead or is_queued_for_deletion() or is_flying():
+		return 0.0
+	var n: int = _waypoints.size()
+	if n < 2 or _tail.size() != n or _wp_index < 1 or _wp_index > n:
+		return 0.0
+	# 位置不在目前的路段上（偏離、越過這一段、索引是終點但不在終點）、座標或路點不是有限數字時不推：不投影到別段、不修正位置
+	if not _path_progress_valid():
+		return 0.0
+	var pos: Vector2 = position
+	var k: int = _wp_index
+	var left: float = distance
+	# 每一圈不是退完，就是把 k 減一：最多 n 圈
+	while left > 0.0:
+		var prev: Vector2 = _waypoints[k - 1]
+		var d: float = pos.distance_to(prev)
+		if d >= left:
+			pos = pos + (prev - pos) / d * left if d > 0.0 else prev
+			left = 0.0
+			break
+		pos = prev
+		left -= d
+		if k - 1 <= 0:
+			break  # 已經在路線起點
+		k -= 1
+	var moved: float = distance - left
+	if not (moved > 0.0 and moved <= distance and _finite_v2(pos) and k >= 1 and k < n and _on_path_segment(pos, k)):
+		return 0.0
+	position = pos
+	_wp_index = k
+	if _blocker != null:
+		_blocker = null
+		_blocked_cell = Vector2i(-1, -1)
+	queue_redraw()
+	return moved
+
+## 判斷「位置在路段上」的容差（像素）：max(PATH_EPS_MIN, 一格 × PATH_EPS_TILE_RATIO)，一格 48～51 像素時就是 0.01 像素。
+## 敵人只沿路段的直線移動（走到路點時直接放在路點上），位置和路段的偏差只來自浮點誤差（座標幾百像素時約萬分之一像素）；
+## 0.01 像素在畫面上看不出來、遠小於一次擊退的距離，明顯偏離或越過路段（0.02 像素以上）都不會被當成在路段上
+const PATH_EPS_MIN: float = 0.01
+const PATH_EPS_TILE_RATIO: float = 1e-4
+
+func _path_eps() -> float:
+	return maxf(PATH_EPS_MIN, float(tile_size) * PATH_EPS_TILE_RATIO)
+
+static func _finite_v2(v: Variant) -> bool:
+	return v is Vector2 and is_finite((v as Vector2).x) and is_finite((v as Vector2).y)
+
+## 擊退前檢查路線進度（只檢查、不修正任何狀態）：路線至少兩個路點、每個路點都是有限的 Vector2；_tail 和路點一樣多、每一項是有限數字、
+## 終點是 0、相鄰兩項的差等於那一段的長度（容差內）；路點索引 1～路點數；位置是有限的 Vector2，而且在目前的路段上（_on_path_segment）
+func _path_progress_valid() -> bool:
+	var n: int = _waypoints.size()
+	if n < 2 or _tail.size() != n or _wp_index < 1 or _wp_index > n or not _finite_v2(position):
+		return false
+	for w in _waypoints:
+		if not _finite_v2(w):
+			return false
+	var eps: float = _path_eps()
+	for i in range(n):
+		var t: Variant = _tail[i]
+		if not ((t is float or t is int) and is_finite(float(t))):
+			return false
+		var seg: float = (_waypoints[i] as Vector2).distance_to(_waypoints[i + 1]) if i < n - 1 else 0.0
+		var nxt: float = float(_tail[i + 1]) if i < n - 1 else 0.0
+		if absf(float(t) - nxt - seg) > eps:
+			return false
+	return _on_path_segment(position, _wp_index)
+
+## p 是否在路點索引 k 的路段上（k 是 1～路點數，呼叫前已確認路點都是有限的 Vector2）：
+## k 小於路點數時是路點 k−1 到路點 k 的線段（含兩端）；k 等於路點數（已走到終點、還沒處理抵達）時只有終點本身。
+## 用投影判斷：沿路段的位置在 −容差～路段長＋容差之間、離路段直線不超過容差；只判斷，不把 p 移到投影點、不找別的路段。
+## 長度是 0 的路段（重複的路點）只接受在那個路點上（容差內）
+func _on_path_segment(p: Vector2, k: int) -> bool:
+	var eps: float = _path_eps()
+	var n: int = _waypoints.size()
+	if k == n:
+		return p.distance_to(_waypoints[n - 1]) <= eps
+	var a: Vector2 = _waypoints[k - 1]
+	var b: Vector2 = _waypoints[k]
+	var seg_len: float = a.distance_to(b)
+	if seg_len == 0.0:
+		return p.distance_to(a) <= eps
+	var u: Vector2 = (b - a) / seg_len
+	var along: float = (p - a).dot(u)
+	return along >= -eps and along <= seg_len + eps and absf((p - a).cross(u)) <= eps
+
+## 路線上的進度（測試與擊退紀錄用的唯讀資訊）：下一個要走向的路點索引、到終點的剩餘路程（像素）、目前位置
+func path_state() -> Dictionary:
+	return {"index": _wp_index, "remaining": get_remaining_distance(), "pos": [position.x, position.y]}
+
 ## 測試用唯讀資訊（debug_snapshot）：剩餘時間、生效次數、這個敵人的時間（見 _age）、暈眩區間與攻擊阻路武將的時間
 func stun_state() -> Dictionary:
 	return {"left": _stun_left, "count": stun_count, "age": _age, "log": stun_log.duplicate(true), "attacks": attack_log.duplicate()}

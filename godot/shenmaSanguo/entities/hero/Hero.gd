@@ -295,6 +295,49 @@ var berserk_last_text: String = ""
 ## 同時有幾個來源時取最高的倍率，不相乘、不相加。攻擊力、攻擊間隔、射程、防禦、生命都不變。
 ## supply_gold_multiplier 1.0 代表沒有這個技能；倍率要是大於 1、不超過 2 的有限數字，其他值（缺少、字串、布林、NaN、無限大、1 以下、超過 2）都不啟用
 var supply_gold_multiplier: float = 1.0
+## 怪力（knockback，許褚）：這位武將自己的普通攻擊打中主目標、實際扣到正的有限生命、目標打中前後都還活著（不是這一擊打倒的），
+## 而且技能冷卻已經好了時，把這個地面敵人沿它自己已經走過的路線往回推最多 knockback_distance 格（Enemy.knockback）。
+## 傷害照普通攻擊，不另外加傷害、暈眩或攻擊次數，也不改攻擊間隔與選目標。實際推動了才算成功：成功後冷卻 knockback_cooldown 秒，
+## 用 BattleManager 的戰鬥時間（只在戰鬥中、照時間倍率前進，手動暫停與備戰不前進），不累積多次；推不動（已在路線起點）、
+## 這一擊沒有扣到生命或打倒了目標都不用掉冷卻、不顯示提示。冷卻記在 BattleManager（依 hero_id）：跨波次、移位、升級、
+## 同場移出再放回、重新讀技能都保留，新的一場（initialize）才清空。其他武將、防禦塔、灼燒、反擊與範圍或傳遞的傷害都不會觸發。
+## knockback_distance 0 代表沒有這個技能；距離（格）要是大於 0、不超過 1 的有限數字，冷卻（秒）要是大於 0、不超過 10 的有限數字，
+## 任何一個缺少或不合理就當作普通攻擊（不補預設值）
+var knockback_distance: float = 0.0
+var knockback_cooldown: float = 0.0
+## 成功推動時在敵人上方顯示的英文標記（Godot 專案沒有中文字型，技能說明裡寫明這個標記）與顏色（淺藍白，和其他技能的提示區分）
+const KNOCKBACK_TEXT: String = "PUSH"
+const KNOCKBACK_COLOR: Color = Color(0.7, 0.9, 1.0)
+## 護衛（guard_share，典韋）：這位武將在場上（場景樹裡）、沒有正要被移除、生命大於 0 時，戰鬥中（BATTLE、沒有手動暫停）同一層裡的其他友軍武將
+## 受到敵人的直接攻擊（敵人攻擊阻路武將時把自己傳給 take_damage），而且受傷當下兩人中心的距離在 guard_radius 格內（含邊界）：
+## 友軍先照自己的閃避、防禦（含防禦光環）與堅韌算出這一擊要扣的生命 D，這位武將承擔 S＝min(D × guard_share_ratio, 自己剩下的生命)，
+## 友軍扣 D − S（用完整的 D 分攤，不先截成友軍剩下的生命）。承擔的部分走 absorb_guard_damage：直接扣生命，不再用這位武將的防禦、閃避、堅韌，
+## 也不引發護衛、反擊或其他技能，不改敵人的攻擊冷卻；可能因此倒下（照常發出 hero_died、離開場上）。不保護自己、防禦塔與城池；
+## 閃避、D 不是正的有限數字、沒有攻擊者（舊的呼叫方式）或攻擊者不是仍然活著的敵人時都不分攤。同時有幾名護衛時只由一名承擔
+## （比例高的優先，同比例時距離近的，再同時 hero_id 字典序小的、節點編號小的），不疊加，承擔的部分不再轉給別人。
+## 來源在受傷當下才確認（_find_guard），沒有登記、快取、永久加成或存檔欄位。
+## guard_share_ratio 0 代表沒有這個技能；比例要是大於 0、不超過 0.5 的有限數字、範圍（格）是大於 0、不超過 5 的有限數字，
+## 任何一個缺少或不合理就當作普通武將（不補預設值）
+var guard_share_ratio: float = 0.0
+var guard_radius: float = 0.0
+## 成功承擔時在這位武將上方顯示的英文標記（Godot 專案沒有中文字型，技能說明裡寫明這個標記）、描邊的顏色（銀灰色）與顯示時間（秒，遊戲時間）
+const GUARD_TEXT: String = "GUARD"
+const GUARD_COLOR: Color = Color(0.86, 0.88, 0.94)
+const GUARD_FLASH_TIME: float = 0.4
+var _guard_flash_left: float = 0.0
+## 範圍邊界的容許誤差（像素）：距離正好是半徑的友軍算在範圍內
+const GUARD_EDGE_EPS: float = 0.001
+## 測試用唯讀統計（debug_snapshot）：這位武將承擔的次數、承擔的生命總量，以及最近 GUARD_LOG_MAX 次的被保護的友軍、攻擊者的生成序號、
+## 友軍減傷後／分擔前的傷害 D、這位武將承擔的 S、友軍與這位武將扣血前後的生命
+var guard_count: int = 0
+var guard_total: float = 0.0
+var guard_log: Array = []
+const GUARD_LOG_MAX: int = 40
+## 守護（base_guard，孫權）：這位武將在場上（場景樹裡）、沒有正要被移除、生命大於 0 時，敵人抵達城池的漏城傷害乘上 base_guard_mult，
+## 和部署位置無關（BattleManager 累計後無條件進位才扣城防，見 BattleManager.on_enemy_reached_base）。登記在 BattleManager，
+## 抵達的當下才確認；多個來源取最強（倍率最小）的一個。base_guard_mult 1.0 代表沒有這個技能；
+## 倍率要是 0.5 以上、小於 1 的有限數字，其他值（缺少、字串、布林、NaN、無限大、超出範圍）都不啟用
+var base_guard_mult: float = 1.0
 ## 測試用唯讀統計（debug_snapshot）：這位武將的遊戲時間（_process 的 delta 累加，受時間倍率影響、手動暫停時不前進）、
 ## 普通攻擊的次數，以及最近 ATTACK_LOG_MAX 次攻擊的時間、這次冷卻用的攻擊間隔與當時的攻速加成
 var _age: float = 0.0
@@ -392,6 +435,12 @@ var def_stat: float = 50.0
 
 ## 讀取技能參數；沒有或不認得的技能一律當作普通攻擊。每種技能只讀自己的欄位
 func _read_skill(state: Dictionary) -> void:
+	guard_share_ratio = 0.0
+	guard_radius = 0.0
+	base_guard_mult = 1.0
+	_read_guard_skills(state)
+	knockback_distance = 0.0
+	knockback_cooldown = 0.0
 	first_strike_multiplier = 1.0
 	range_multiplier = 1.0
 	burn_ratio = 0.0
@@ -534,9 +583,36 @@ func _read_skill(state: Dictionary) -> void:
 			var g: Variant = skill.get("supply_gold_multiplier")
 			if _positive_finite(g) and float(g) > 1.0 and float(g) <= 2.0:
 				supply_gold_multiplier = float(g)
+		"knockback":
+			# 距離（格）要是大於 0、不超過 1 的有限數字，冷卻（秒）要是大於 0、不超過 10 的有限數字；兩個都合理才啟用，
+			# 任何一個缺少或不合理（字串、布林、null、NaN、無限大、0 以下、超過上限）就當作普通攻擊（不補預設值）
+			var kd: Variant = skill.get("knockback_distance")
+			var kc: Variant = skill.get("knockback_cooldown")
+			if _positive_finite(kd) and float(kd) <= 1.0 and _positive_finite(kc) and float(kc) <= 10.0:
+				knockback_distance = float(kd)
+				knockback_cooldown = float(kc)
 	if not (berserk_ratio > 0.0):
 		_drop_berserk_stacks()
 	_sync_supply()
+
+## 讀取護衛（guard_share）與守護（base_guard）的參數（_read_skill 開頭先把兩者重設成沒有技能再呼叫），並向 BattleManager 登記或取消守護。
+## 護衛：比例要是大於 0、不超過 0.5 的有限數字，範圍（格）是大於 0、不超過 5 的有限數字，兩個都合理才啟用。
+## 守護：倍率要是 0.5 以上、小於 1 的有限數字。字串、布林、null、NaN、無限大、超出範圍、沒有欄位都不啟用（不補預設值，不沿用前一個技能的參數）
+func _read_guard_skills(state: Dictionary) -> void:
+	var skill: Variant = state.get("skill", null)
+	if skill is Dictionary:
+		match str(skill.get("id", "")):
+			"guard_share":
+				var gr: Variant = skill.get("guard_share_ratio")
+				var gd: Variant = skill.get("guard_radius")
+				if _positive_finite(gr) and float(gr) <= 0.5 and _positive_finite(gd) and float(gd) <= 5.0:
+					guard_share_ratio = float(gr)
+					guard_radius = float(gd)
+			"base_guard":
+				var bg: Variant = skill.get("base_damage_mult")
+				if _positive_finite(bg) and float(bg) >= 0.5 and float(bg) < 1.0:
+					base_guard_mult = float(bg)
+	_sync_base_guard()
 
 ## 技能參數是正的有限數字（JSON 的數字在 Godot 是 float；字串、布林、null、NaN、無限大、0 以下都不是）
 static func _positive_finite(v: Variant) -> bool:
@@ -568,6 +644,10 @@ func _compute_range(cfg: Dictionary) -> float:
 ## - 攻擊間隔是攻擊當下的有效攻擊間隔（effective_attack_interval）：加成只影響這一擊之後新開始的冷卻
 func _process(delta: float) -> void:
 	_age += delta
+	# 護衛成功承擔後的描邊：照遊戲時間倒數，結束時重畫
+	if _guard_flash_left > 0.0:
+		_guard_flash_left = maxf(0.0, _guard_flash_left - delta)
+		queue_redraw()
 	# 減速（道路阻擋、光環）、防禦光環、攻速光環與威壓每一幀更新，不看攻擊冷卻；受到的防禦與攻速加成照遊戲時間倒數有效期
 	_update_slows()
 	_tick_def_sources(delta)
@@ -614,6 +694,8 @@ func _process(delta: float) -> void:
 	var primary_id: int = target.get_instance_id()
 	# 戰神：攻擊前就已經倒下、正要被移除的敵人不可能是這一擊打倒的
 	var target_was_alive: bool = berserk_ratio > 0.0 and _enemy_alive(target)
+	# 怪力：只推打中前還活著的主目標
+	var push_alive: bool = knockback_distance > 0.0 and _enemy_alive(target)
 	# 實際扣掉敵人的生命（不含溢出的部分，打倒目標的這一擊也照算；無效的傷害回傳 0、不改變敵人）
 	var dealt: Variant = target.take_damage(damage)
 	if target_was_alive:
@@ -638,6 +720,9 @@ func _process(delta: float) -> void:
 	# 呼風喚雨：主目標這一擊實際扣到生命時，以主目標被打中的位置為中心打範圍內的其他敵人（主目標被打倒也照樣生效；範圍傷害不經過上面的技能，也不算一次攻擊）
 	if storm_ratio > 0.0:
 		_storm(hit_pos, primary_id, damage, dealt)
+	# 怪力：主目標這一擊實際扣到生命、打中後仍活著，冷卻好了就沿它走過的路線往回推（推不動時不用掉冷卻）
+	if push_alive:
+		_knockback(target, dealt)
 	_is_attacking = true
 	_anim_timer   = 0.22
 	# 保留這一幀越過零點的時間（零頭）；待命後的第一擊、或零頭長過一個間隔（極長的一幀）時從這一擊起算完整的間隔。
@@ -998,6 +1083,36 @@ func _sync_supply() -> void:
 func supply_state() -> Dictionary:
 	return {"mult": supply_gold_multiplier, "active": supply_active(), "kill_gold": BattleManager.kill_gold(supply_gold_multiplier)}
 
+## 怪力：dealt 是這一擊實際扣掉的生命。打中後仍活著的地面主目標、冷卻已經好了才推；實際推動了才記下這次（開始冷卻）並顯示標記
+func _knockback(target: Node, dealt: Variant) -> void:
+	var got: float = float(dealt) if (dealt is float or dealt is int) else 0.0
+	if not (got > 0.0 and is_finite(got)) or _battle_mgr == null or hero_id == "":
+		return
+	if not _enemy_alive(target) or target.is_flying() or not target.has_method("knockback"):
+		return
+	if not _battle_mgr.knockback_ready(hero_id):
+		return
+	var requested: float = knockback_distance * float(tile_size)
+	var before: Dictionary = target.path_state()
+	var moved: float = target.knockback(requested)
+	if not (moved > 0.0):
+		return
+	var after: Dictionary = target.path_state()
+	_battle_mgr.record_knockback(hero_id, knockback_cooldown, {"seq": int(target.spawn_seq), "requested": requested, "actual": moved,
+		"index_before": before.index, "index_after": after.index, "remaining_before": before.remaining, "remaining_after": after.remaining})
+	var parent: Node = get_parent()
+	if parent != null:
+		var ft = load("res://ui/FloatingText.gd").new()
+		parent.add_child(ft)
+		ft.setup(KNOCKBACK_TEXT, KNOCKBACK_COLOR, target.global_position + Vector2(0, -20))
+
+## 怪力（測試用唯讀資訊）：Godot 實際讀到的距離（格）與冷卻（秒）、這一場成功推動的次數、此刻剩下的冷卻（秒）與最近幾次推動
+## （敵人的生成序號、要求與實際推動的像素、推動前後的路點索引與剩餘路程）；沒有 BattleManager 時次數是 0
+func knockback_state() -> Dictionary:
+	var rec: Dictionary = _battle_mgr.knockback_record(hero_id) if _battle_mgr != null else {}
+	return {"distance": knockback_distance, "cooldown": knockback_cooldown, "count": int(rec.get("count", 0)),
+		"remaining": _battle_mgr.knockback_remaining(hero_id) if _battle_mgr != null else 0.0, "attacks": attack_count, "log": rec.get("log", [])}
+
 ## 技能觸發時在武將上方顯示的文字（金色、放大，和一般的傷害數字區分）
 const SKILL_TEXT_COLOR: Color = Color(1.0, 0.85, 0.2)
 func _show_skill_text(text: String) -> void:
@@ -1273,6 +1388,9 @@ func _exit_tree() -> void:
 	_release_def_aura()
 	_release_atk_speed_aura()
 	_release_atk_down_aura()
+	# 守護的來源離開場上（陣亡、移出隊伍、切換關卡）：請 BattleManager 稍後把目前生效的漏城倍率重新送給網頁
+	if base_guard_mult < 1.0 and _battle_mgr != null and is_instance_valid(_battle_mgr):
+		_battle_mgr.notify_base_guard_changed()
 
 ## 戰鬥中（BATTLE）才有光環；沒有 BattleManager（單獨建立的武將）時視為戰鬥中
 func _in_battle() -> bool:
@@ -1314,6 +1432,7 @@ func take_damage(amount: float, source: Variant = null) -> void:
 	var d: float = effective_def()
 	var raw_dmg: float = amount * (1.0 - d / (d + 100.0))
 	var actual_dmg: float = raw_dmg
+	var ten_entry: Dictionary = {}
 	# 堅韌：用受傷前的生命判斷，防禦計算後的傷害再乘上倍率
 	if tenacity_hp_ratio > 0.0:
 		var before: float = current_hp
@@ -1322,9 +1441,19 @@ func take_damage(amount: float, source: Variant = null) -> void:
 			actual_dmg = raw_dmg * tenacity_damage_mult
 			tenacity_count += 1
 			tenacity_saved += raw_dmg - actual_dmg
-		tenacity_log.append({"before": before, "max_hp": max_hp, "raw": raw_dmg, "taken": actual_dmg, "reduced": reduced})
+		ten_entry = {"before": before, "max_hp": max_hp, "raw": raw_dmg, "reduced": reduced}
+	# 護衛（典韋）：減傷後、分擔前的傷害 actual_dmg 由範圍內的一名護衛承擔一部分，這位武將扣其餘的部分（之後的 actual_dmg 就是自己實際被扣的生命，
+	# 反擊也只用這個數字）
+	var shared: float = _take_guard_share(actual_dmg, source)
+	if not ten_entry.is_empty():
+		# 堅韌的紀錄：after_tenacity 是減傷後、分擔前的傷害，shared 是護衛承擔的部分，taken 照舊是最後實際扣掉自己的生命
+		ten_entry["after_tenacity"] = actual_dmg
+		ten_entry["shared"] = shared
+		ten_entry["taken"] = actual_dmg - shared
+		tenacity_log.append(ten_entry)
 		if tenacity_log.size() > TENACITY_LOG_MAX:
 			tenacity_log.pop_front()
+	actual_dmg -= shared
 	current_hp -= actual_dmg
 	
 	# 顯示傷害數字 (深紅色代表英雄受傷)
@@ -1360,6 +1489,131 @@ func _counter(taken: float, source: Variant) -> void:
 	counter_log.append({"taken": taken, "reflect": reflect, "dealt": dealt, "killed": source.is_dead()})
 	if counter_log.size() > COUNTER_LOG_MAX:
 		counter_log.pop_front()
+
+## 護衛：這位武將此刻能不能替友軍承擔：有這個技能、在場景樹裡（在場上）、沒有正要被移除、生命是正的有限數字（受傷的當下由友軍確認）
+func guard_available() -> bool:
+	return guard_share_ratio > 0.0 and is_inside_tree() and _hero_alive(self) and is_finite(current_hp)
+
+## 護衛：h（另一位護衛候選，和它的距離 dh）是不是比 best（距離 db）更優先：比例高的優先，同比例時距離近的，再同時 hero_id 字典序小的、節點編號小的
+static func _guard_before(h: Node, dh: float, best: Node, db: float) -> bool:
+	if h.guard_share_ratio != best.guard_share_ratio:
+		return h.guard_share_ratio > best.guard_share_ratio
+	if dh != db:
+		return dh < db
+	if h.hero_id != best.hero_id:
+		return h.hero_id < best.hero_id
+	return h.get_instance_id() < best.get_instance_id()
+
+## 護衛：這一擊（減傷後、分擔前的傷害 dmg）由哪一位護衛承擔；沒有時回傳 null。只在戰鬥中（BATTLE、沒有手動暫停）、dmg 是正的有限數字、
+## 攻擊者是仍然活著的敵人時才找。候選是同一層裡其他此刻能提供的護衛（guard_available）、屬於同一個 BattleManager，
+## 受傷當下兩人中心的距離不超過那位護衛的範圍（含邊界）
+func _find_guard(dmg: float, source: Variant) -> Node:
+	if not (dmg > 0.0 and is_finite(dmg)):
+		return null
+	if not (is_instance_valid(source) and source is Enemy) or not _enemy_alive(source):
+		return null
+	if _battle_mgr == null or _battle_mgr.game_state != BattleManager.GameState.BATTLE or _battle_mgr.manual_paused:
+		return null
+	var parent: Node = get_parent()
+	if parent == null or not is_inside_tree():
+		return null
+	var best: Node = null
+	var best_d: float = 0.0
+	for h in parent.get_children():
+		if h == self or not (h is Hero) or not h.guard_available() or h._battle_mgr != _battle_mgr:
+			continue
+		var dist: float = global_position.distance_to(h.global_position)
+		if not (dist <= h.guard_radius * float(h.tile_size) + GUARD_EDGE_EPS):
+			continue
+		if best == null or _guard_before(h, dist, best, best_d):
+			best = h
+			best_d = dist
+	return best
+
+## 護衛：找出承擔這一擊的護衛，由它承擔 min(dmg × 比例, 它剩下的生命)；回傳實際承擔的生命（沒有護衛、承擔不了時是 0）。
+## 一擊只找一次護衛：承擔的部分走護衛的 absorb_guard_damage，不會再轉給別人
+func _take_guard_share(dmg: float, source: Variant) -> float:
+	var g: Node = _find_guard(dmg, source)
+	if g == null:
+		return 0.0
+	var want: float = minf(dmg * g.guard_share_ratio, g.current_hp)
+	if not (want > 0.0 and is_finite(want)):
+		return 0.0
+	var guard_before: float = g.current_hp
+	var s: float = g.absorb_guard_damage(want)
+	if not (s > 0.0):
+		return 0.0
+	g.note_guard(hero_id, int(source.spawn_seq), dmg, s, current_hp, maxf(0.0, current_hp - (dmg - s)), guard_before)
+	return s
+
+## 護衛承擔的傷害：直接扣這位武將的生命（不再用防禦、閃避、堅韌減少，也不引發護衛、反擊或其他技能，不改敵人的攻擊冷卻）。
+## amount 不是正的有限數字、這位武將已經倒下或正要被移除時不扣、回傳 0；最多扣到 0（回傳實際扣掉的生命）。
+## 生命歸零時照常倒下：發出 hero_died（Main 清除佔格與隊伍紀錄）、離開場上（光環與減速照常撤除）
+func absorb_guard_damage(amount: float) -> float:
+	if not (amount > 0.0 and is_finite(amount)) or not _hero_alive(self):
+		return 0.0
+	var dealt: float = minf(amount, current_hp)
+	current_hp -= dealt
+	var parent: Node = get_parent()
+	if parent != null:
+		var ft = load("res://ui/FloatingText.gd").new()
+		parent.add_child(ft)
+		ft.setup("%.0f" % dealt, Color(1.0, 0.2, 0.2), global_position)
+	if current_hp <= 0.0:
+		current_hp = 0.0
+		hero_died.emit(self)
+		queue_free()
+	else:
+		queue_redraw()
+	return dealt
+
+## 護衛：記下一次承擔（被保護的友軍、攻擊者的生成序號、減傷後／分擔前的傷害 d、承擔的 s、友軍扣血前後與這位武將扣血前後的生命），
+## 顯示 GUARD 與描邊
+func note_guard(ally_id: String, seq: int, d: float, s: float, ally_before: float, ally_after: float, guard_before: float) -> void:
+	guard_count += 1
+	guard_total += s
+	guard_log.append({"ally": ally_id, "seq": seq, "d": d, "s": s, "ally_before": ally_before, "ally_after": ally_after,
+		"guard_before": guard_before, "guard_after": current_hp})
+	if guard_log.size() > GUARD_LOG_MAX:
+		guard_log.pop_front()
+	_guard_flash_left = GUARD_FLASH_TIME
+	queue_redraw()
+	var parent: Node = get_parent()
+	if parent != null:
+		var ft = load("res://ui/FloatingText.gd").new()
+		parent.add_child(ft)
+		ft.setup(GUARD_TEXT, GUARD_COLOR, global_position + Vector2(0, -hero_half - 14))
+
+## 護衛：此刻範圍內（兩人中心的距離、含邊界）其他活著、在場上的友軍武將的 hero_id（排序）；這位武將不能提供時是空陣列
+func guard_allies() -> Array:
+	var out: Array = []
+	if not guard_available() or get_parent() == null:
+		return out
+	for h in get_parent().get_children():
+		if h == self or not (h is Hero) or not _hero_alive(h) or not h.is_inside_tree():
+			continue
+		if global_position.distance_to(h.global_position) <= guard_radius * float(tile_size) + GUARD_EDGE_EPS:
+			out.append(h.hero_id)
+	out.sort()
+	return out
+
+## 護衛（測試用唯讀資訊）：Godot 實際讀到的比例與範圍（格）、此刻能不能提供、範圍內的友軍、承擔的次數與總量、最近幾次的紀錄
+func guard_state() -> Dictionary:
+	return {"ratio": guard_share_ratio, "radius": guard_radius, "active": guard_available(), "allies": guard_allies(),
+		"count": guard_count, "total": guard_total, "log": guard_log.duplicate(true), "flash": _guard_flash_left > 0.0}
+
+## 守護：這位武將此刻能不能提供：有這個技能、在場景樹裡（在場上）、沒有正要被移除、生命大於 0（敵人抵達城池的當下由 BattleManager 呼叫）
+func base_guard_active() -> bool:
+	return base_guard_mult < 1.0 and is_inside_tree() and _hero_alive(self)
+
+## 守護：讀完技能後向 BattleManager 登記或取消（只是候選名單，抵達的當下才確認）；沒有 BattleManager（單獨建立的武將）時不做事
+func _sync_base_guard() -> void:
+	if _battle_mgr == null:
+		return
+	if base_guard_mult < 1.0:
+		_battle_mgr.register_base_guard(self)
+	else:
+		_battle_mgr.unregister_base_guard(self)
 
 ## 堅韌現在是不是生效：有這個技能、還活著，而且目前的生命比例（current_hp ÷ 目前的 max_hp）不高於門檻。
 ## 最大生命不是正的有限數字、生命不是有限數字時不生效。受傷時在扣血之前判斷，血條的提示也用它
@@ -1460,6 +1714,9 @@ func _draw() -> void:
 	# 受到攻速光環加成：淡紫色的外框，畫在防禦光環外框的外面（兩種加成同時都看得到）
 	if atk_speed_bonus_mult > 1.0:
 		draw_rect(rect.grow(4.5), Color(ATK_SPEED_AURA_COLOR, 0.9), false, 2.0)
+	# 護衛剛承擔過傷害：銀灰色的描邊（短暫顯示，畫在其他外框的外面）
+	if _guard_flash_left > 0.0:
+		draw_rect(rect.grow(7.0), Color(GUARD_COLOR, 0.95), false, 2.5)
 
 	# HP 條（貼圖與純色共用）
 	var bar_w: float = float(hero_half * 2)

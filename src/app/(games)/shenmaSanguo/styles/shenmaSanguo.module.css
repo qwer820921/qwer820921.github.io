@@ -941,6 +941,38 @@
   border-radius: 50%;
   transition: opacity 0.3s ease;
 }
+/* 載入的階段（存檔與設定、遊戲引擎的下載大小）、第一次下載的提醒、停住時的說明 */
+.tkStage {
+  max-width: 260px;
+  padding: 0 0.75rem;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: #cbd5e1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.tkStageHint {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+.tkStalled {
+  max-width: 260px;
+  padding: 0 0.75rem;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: #fcd34d;
+  text-align: center;
+}
+/* 遊戲引擎無法啟動時，瀏覽器回報的原始訊息（英文） */
+.engineFailDetail {
+  margin: 0;
+  max-width: 260px;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
 
 /* SW 版本更新 banner */
 .swUpdateBanner {
@@ -2703,6 +2735,64 @@
   color: #ffe9a8;
   font-size: 0.75rem;
   overflow-wrap: anywhere;
+}
+
+/* 單位面板的怪力（許褚）：選取時剩下的冷卻（淺藍，和遊戲裡的 PUSH 標記同色系） */
+.knockbackNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(150, 210, 255, 0.12);
+  border: 1px solid rgba(150, 210, 255, 0.45);
+  color: #d6ecff;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* 單位面板的護衛（典韋）：選取時能否提供與範圍內的友軍（銀灰色，和遊戲裡的 GUARD 標記同色系） */
+.guardNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(210, 215, 225, 0.12);
+  border: 1px solid rgba(210, 215, 225, 0.45);
+  color: #eef1f6;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* 單位面板的守護（孫權）：選取時是否生效與這一場的漏城傷害倍率（青綠色，和遊戲裡的 SHIELD 標記同色系） */
+.baseGuardNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(110, 230, 200, 0.12);
+  border: 1px solid rgba(110, 230, 200, 0.45);
+  color: #d4fbef;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* 戰場上方城防旁的守護（孫權）：目前生效的漏城減傷（Godot 的 update_stats，隨部署、陣亡、移出隊伍更新） */
+.hudBaseGuard {
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(110, 230, 200, 0.18);
+  color: #9ff3dc;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+/* 獨立戰鬥頁的上方列是淺色底：同樣的標示改用深青綠色字 */
+.statBaseGuard {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(13, 148, 136, 0.12);
+  color: #0f766e;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .lockNotice {

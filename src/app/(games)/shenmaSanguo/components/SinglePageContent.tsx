@@ -17,7 +17,7 @@ import {
 } from "../utils/stagePlayability";
 import { describePlayerError } from "../utils/playerErrors";
 import { BattleSession, isBattleResultMessage } from "../utils/battleSession";
-import { heroSkillPayload } from "../utils/heroSkills";
+import { baseGuardHudPercent, heroSkillPayload } from "../utils/heroSkills";
 import { toBattleRecord } from "../utils/battleReward";
 import {
   panelAfterSellResult,
@@ -30,6 +30,7 @@ import {
   activateLatestGameWorker,
   isCompatibleEngine,
 } from "../utils/gameEngine";
+import { engineLoadRatio, engineLoadText } from "../utils/engineLoad";
 import {
   DeployMenuRef,
   GameSpeed,
@@ -60,6 +61,7 @@ import HeroListModal from "./modals/HeroListModal";
 import PlayerInfoModal from "./modals/PlayerInfoModal";
 import SettingsModal from "./modals/SettingsModal";
 import { useDialogFocus } from "./useDialogFocus";
+import { useEngineLoad } from "./useEngineLoad";
 
 interface BattleStats {
   battle_id?: string;
@@ -76,6 +78,8 @@ interface BattleStats {
   deploy_slow?: boolean;
   /** 手動暫停：Godot 已確認的狀態 */
   paused?: boolean;
+  /** 守護（孫權）：這一場此刻生效的漏城傷害倍率（沒有生效的守護時是 1；舊版遊戲沒有這個欄位） */
+  base_guard_mult?: number;
 }
 
 const GameState = { WAITING: 0, PREP: 1, BATTLE: 2, RESULT: 3 };
@@ -221,7 +225,26 @@ const KINGDOMS = [
   { char: "吳", color: "#66bb6a" },
 ] as const;
 
-function ThreeKingdomsLoader({ progress }: { progress: number }) {
+/**
+ * 載入動畫：進度條是存檔與設定加上遊戲引擎的整體進度；下面寫出兩者各自的階段（引擎寫出已下載的大小），
+ * 引擎還沒下載完時提醒第一次開啟要下載、網路慢時要等比較久。停住時（見 useEngineLoad）說明並提供重新載入，動畫照常顯示
+ */
+function ThreeKingdomsLoader({
+  progress,
+  dataText,
+  engineText,
+  downloading,
+  stalledSec,
+  onReload,
+}: {
+  progress: number;
+  dataText: string;
+  engineText: string;
+  downloading: boolean;
+  /** 停住了多久（秒）；沒有停住是 null */
+  stalledSec: number | null;
+  onReload: () => void;
+}) {
   const [idx, setIdx] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setIdx((p) => (p + 1) % 3), 900);
@@ -257,6 +280,30 @@ function ThreeKingdomsLoader({ progress }: { progress: number }) {
             />
           ))}
         </div>
+        <div className={styles.tkStage} data-testid="loading-stage">
+          <div>{dataText}</div>
+          <div data-testid="loading-engine">{engineText}</div>
+          {downloading && stalledSec === null && (
+            <div className={styles.tkStageHint}>
+              第一次開啟要下載遊戲引擎，網路慢時可能要等幾分鐘
+            </div>
+          )}
+        </div>
+        {stalledSec !== null && (
+          <div
+            className={styles.tkStalled}
+            role="status"
+            data-testid="loading-stalled"
+          >
+            <p className="mb-2">
+              已經 {stalledSec}{" "}
+              秒沒有進展，網路可能很慢或中斷了。可以檢查網路後重新載入。
+            </p>
+            <button type="button" className={styles.btnGold} onClick={onReload}>
+              重新載入
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -413,6 +460,14 @@ export default function SinglePageContent() {
   const [engineRetried, setEngineRetried] = useState(false);
   const [iframeLoading, setIframeLoading] = useState(true);
   const iframeLoadingRef = useRef(true);
+  // 遊戲引擎的下載與啟動（載入畫面的說明、停住與無法啟動的提示）：收到 game_ready 前才需要
+  const engineLoad = useEngineLoad(
+    iframeRef,
+    !godotReady && engineStatus === "loading",
+    iframeKey
+  );
+  const engineFailed =
+    engineLoad.phase === "failed" || engineLoad.phase === "unsupported";
 
   // ── 載入狀態 ───────────────────────────────────────────────
   const [loadElapsed, setLoadElapsed] = useState(0);
@@ -1178,12 +1233,59 @@ export default function SinglePageContent() {
             !keyEntryVisible &&
             !configFailed &&
             !stageBlocked &&
+            !engineFailed &&
             engineStatus !== "incompatible" && (
               <ThreeKingdomsLoader
-                progress={
-                  Math.round((fetchProgress / 3) * 50) + (player ? 50 : 0)
+                progress={Math.round(
+                  ((fetchProgress / 3 + (player ? 1 : 0)) / 2) * 30 +
+                    engineLoadRatio(engineLoad, godotReady) * 70
+                )}
+                dataText={
+                  player && staticConfig
+                    ? "存檔與設定：完成"
+                    : "存檔與設定：讀取中"
                 }
+                engineText={engineLoadText(engineLoad, godotReady)}
+                downloading={
+                  !godotReady &&
+                  (engineLoad.phase === "page" ||
+                    engineLoad.phase === "waiting" ||
+                    engineLoad.phase === "download")
+                }
+                stalledSec={
+                  !godotReady && engineLoad.stalled ? engineLoad.idleSec : null
+                }
+                onReload={() => window.location.reload()}
               />
+            )}
+
+          {/* 遊戲引擎無法啟動（外殼頁的錯誤訊息、瀏覽器缺少需要的功能）：不再顯示載入動畫，說明原因並提供重新載入 */}
+          {engineFailed &&
+            hasKey &&
+            !godotReady &&
+            !keyEntryVisible &&
+            engineStatus === "loading" && (
+              <div
+                className={styles.loadingOverlay}
+                role="alert"
+                data-testid="engine-load-failed"
+              >
+                <p className={styles.loadingText}>
+                  {engineLoad.phase === "unsupported"
+                    ? `這個瀏覽器無法執行遊戲（缺少 ${engineLoad.notice}）。請更新瀏覽器，或改用最新版的 Chrome、Safari。`
+                    : "遊戲引擎無法啟動，請重新載入；一直發生時請改用其他瀏覽器。"}
+                </p>
+                {engineLoad.phase === "failed" && engineLoad.notice && (
+                  <p className={styles.engineFailDetail}>{engineLoad.notice}</p>
+                )}
+                <button
+                  type="button"
+                  className={styles.btnGold}
+                  onClick={() => window.location.reload()}
+                >
+                  重新載入
+                </button>
+              </div>
             )}
 
           {/* 寫入限制中不開戰：不送關卡資料，說明原因（見 types 的 MigrationHold） */}
@@ -1349,6 +1451,16 @@ export default function SinglePageContent() {
                       >
                         {battleStats.hp}/{battleStats.max_hp}
                       </span>
+                      {baseGuardHudPercent(battleStats.base_guard_mult) > 0 && (
+                        <span
+                          className={styles.hudBaseGuard}
+                          data-testid="hud-base-guard"
+                          title={`守護：敵人漏到城池的傷害減少 ${baseGuardHudPercent(battleStats.base_guard_mult)}%（累計後無條件進位才扣城防）`}
+                        >
+                          守護 −
+                          {baseGuardHudPercent(battleStats.base_guard_mult)}%
+                        </span>
+                      )}
                     </span>
                   </>
                 )}
