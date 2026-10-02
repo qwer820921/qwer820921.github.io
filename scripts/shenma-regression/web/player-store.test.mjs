@@ -3321,10 +3321,119 @@ await test("連射-S1", async () => {
   );
 });
 
+await test("連環計-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    slowAuraPercent,
+    defAuraPercent,
+    lifestealPercent,
+    atkSpeedAuraPercent,
+    counterPercent,
+    tenacityPercents,
+    atkDownAuraPercent,
+    doubleShotPercent,
+    chainPercents,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const pt = heroSkillOf("pang_tong");
+  const payload = heroSkillPayload("pang_tong");
+  const text = describeHeroSkill(pt, 4, 101);
+  const noAtk = describeHeroSkill(pt);
+  const oneJump = describeHeroSkill(
+    {
+      id: "chain",
+      name: "連環計",
+      chainRadius: 2,
+      chainRatio: 0.4,
+      chainMaxJumps: 1,
+    },
+    4,
+    100
+  );
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "cao_cao",
+    "gan_ning",
+    "xia_hou_dun",
+    "liao_hua",
+    "yan_liang",
+    "sun_shang_xiang",
+    "zhuge_liang",
+    "pangtong",
+    "Pang_Tong",
+  ].filter((id) => heroSkillOf(id)?.id === "chain");
+  check(
+    "連環計-S1 龐統（pang_tong）的連環計：送進 Godot 的參數（chain、chain_radius 1.5、chain_ratio 0.5、chain_max_jumps 2，只有這四個欄位）與說明文字出自同一份定義；每次傳遞的百分比是 50、25；說明寫出最多 2 次（50%、再 25%）、每次從前一個被打中的敵人找 1.5 格內最近且還沒打過的敵人、第二個可以超過原本目標的 1.5 格、是普通攻擊傷害的百分比（不是前一個的實扣）、目前攻擊力 101 時 50.5、25.25、距離相同先出現的優先、不回頭、打不到的不傳、擊殺與金幣只算一次、倒下照樣從它的位置傳、沒打到不傳、不算攻擊不引發其他技能、紫色連線、只在戰場不影響存檔；沒有攻擊力時不寫目前攻擊力；1 次、40%、2 格的定義照樣寫出；其他技能的計算不受影響；其他武將（含寫錯的 id）沒有連環計",
+    pt?.id === "chain" &&
+      pt.name === "連環計" &&
+      pt.chainRadius === 1.5 &&
+      pt.chainRatio === 0.5 &&
+      pt.chainMaxJumps === 2 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: {
+            id: "chain",
+            chain_radius: 1.5,
+            chain_ratio: 0.5,
+            chain_max_jumps: 2,
+          },
+        }) &&
+      JSON.stringify(chainPercents(pt)) === "[50,25]" &&
+      JSON.stringify(chainPercents(null)) === "[]" &&
+      JSON.stringify(chainPercents(heroSkillOf("sun_shang_xiang"))) === "[]" &&
+      doubleShotPercent(pt) === 0 &&
+      effectiveRange(pt, 4) === 4 &&
+      burnTickDamage(pt, 101) === 0 &&
+      slowAuraPercent(pt) === 0 &&
+      defAuraPercent(pt) === 0 &&
+      lifestealPercent(pt) === 0 &&
+      atkSpeedAuraPercent(pt) === 0 &&
+      counterPercent(pt) === 0 &&
+      atkDownAuraPercent(pt) === 0 &&
+      JSON.stringify(tenacityPercents(pt)) ===
+        JSON.stringify({ threshold: 0, reduction: 0 }) &&
+      text.includes("傷害會傳遞下去，最多 2 次（50%、再 25%）") &&
+      text.includes(
+        "找 1.5 格內（含邊界）最近、這次攻擊還沒打過的另一個敵人"
+      ) &&
+      text.includes("第二個被傳到的敵人可以離原本的目標超過 1.5 格") &&
+      text.includes(
+        "每次的傷害是這次普通攻擊傷害的 50%、再 25%（不是用前一個敵人實際扣掉的生命再算）"
+      ) &&
+      text.includes("目前攻擊力 101：傳遞的傷害依序是 50.5、25.25") &&
+      !noAtk.includes("目前攻擊力") &&
+      text.includes("距離相同時先出現的敵人優先") &&
+      text.includes("不會回頭打已經打過的敵人") &&
+      text.includes("打不到的敵人不會被傳到") &&
+      text.includes("擊殺與金幣只算一次") &&
+      text.includes("照樣從它倒下的位置繼續傳") &&
+      text.includes("普通攻擊沒有打到敵人時不會傳遞") &&
+      text.includes("傳遞不算一次攻擊、不會引發其他技能，攻擊間隔不變") &&
+      text.includes("紫色的連線") &&
+      text.includes("只在戰場生效，不影響存檔") &&
+      oneJump.includes("最多 1 次（40%）") &&
+      oneJump.includes("找 2 格內") &&
+      oneJump.includes("目前攻擊力 100：傳遞的傷害依序是 40。") &&
+      others.length === 0,
+    { pt, payload, text, noAtk, oneJump, others }
+  );
+});
+
 // 技能綁定和正式設定表 heroes_config 的被動描述（passive）對照：趙雲是閃避、馬超是衝鋒（首擊加倍）；
 // 關羽是減速光環（「周圍敵人減速10%」）；劉備是防禦光環（「光環：提升友軍防禦」）；張飛是暈眩（「攻擊使敵人暈眩」）；
 // 魏延是吸血（「吸血：恢復生命」）；曹操是攻速光環（「指揮：提升友軍攻速」）；夏侯惇是反擊（「反擊：受傷時反彈傷害」）；
 // 廖化是堅韌（「堅韌：低血量減傷」）；顏良是威壓（「威壓：降低敵軍攻擊」）；孫尚香是連射（「連射：有機率二次攻擊」）；
+// 龐統是連環計（「連環計：傳遞傷害」，鏈式傳遞，不是橫掃）；
 // 甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
 await test("技能對照-S1", async () => {
   const { heroSkillOf, heroSkillPayload } = require(
@@ -3345,6 +3454,7 @@ await test("技能對照-S1", async () => {
     "liao_hua",
     "yan_liang",
     "sun_shang_xiang",
+    "pang_tong",
   ];
   const got = Object.fromEntries(
     ids.map((id) => [id, heroSkillOf(id)?.id ?? null])
@@ -3353,7 +3463,7 @@ await test("技能對照-S1", async () => {
     (id) => heroSkillPayload(id).skill?.id === "first_strike"
   );
   check(
-    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）、顏良 atk_down_aura（威壓）、孫尚香 double_shot（連射）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
+    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）、顏良 atk_down_aura（威壓）、孫尚香 double_shot（連射）、龐統 chain（連環計）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
     JSON.stringify(got) ===
       JSON.stringify({
         ma_chao: "first_strike",
@@ -3370,6 +3480,7 @@ await test("技能對照-S1", async () => {
         liao_hua: "tenacity",
         yan_liang: "atk_down_aura",
         sun_shang_xiang: "double_shot",
+        pang_tong: "chain",
       }) &&
       JSON.stringify(firstStrike) === '["ma_chao"]' &&
       !Object.values(got).includes("sweep") &&

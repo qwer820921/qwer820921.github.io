@@ -2657,6 +2657,18 @@
   color: #f3c98b;
 }
 
+/* 連環計（龐統）：選取面板的傳遞規則；顏色和戰場上的紫色連線一致 */
+.chainNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(158, 107, 255, 0.12);
+  border: 1px solid rgba(158, 107, 255, 0.45);
+  color: #d8c6ff;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
 .lockNotice {
   margin-bottom: 8px;
   padding: 4px 8px;

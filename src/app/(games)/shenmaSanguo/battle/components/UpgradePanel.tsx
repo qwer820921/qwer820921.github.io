@@ -50,6 +50,12 @@ interface UpgradePanelProps {
       damage_mult: number;
       max_hp?: number;
     };
+    /** 武將的連環計（龐統）：Godot 實際讀到的每跳範圍（格）、傳遞比例與最多次數；沒有這個技能（或舊版遊戲）時沒有 */
+    chain?: {
+      radius: number;
+      ratio: number;
+      max_jumps: number;
+    };
     screen_pos: { x: number; y: number };
   };
   onUpgrade: () => void;
@@ -128,6 +134,22 @@ export default function UpgradePanel({
   const tenReduction = tenOk
     ? Number(((1 - ten.damage_mult) * 100).toFixed(1))
     : 0;
+  // 武將的連環計：Godot 實際讀到的範圍、比例與次數（第 k 次是普通攻擊傷害 × 比例的 k 次方）
+  const chain = data.unit_type === "hero" ? data.chain : undefined;
+  const chainOk =
+    !!chain &&
+    Number.isFinite(chain.radius) &&
+    chain.radius > 0 &&
+    Number.isFinite(chain.ratio) &&
+    chain.ratio > 0 &&
+    chain.ratio < 1 &&
+    Number.isInteger(chain.max_jumps) &&
+    chain.max_jumps >= 1;
+  const chainSteps = chainOk
+    ? Array.from({ length: chain.max_jumps }, (_, i) =>
+        Number((chain.ratio ** (i + 1) * 100).toFixed(1))
+      )
+    : [];
   const s = sell && isSameTower(data, sell) ? sell : null;
   const confirming = s?.phase === "confirm" || s?.phase === "pending";
   const pending = s?.phase === "pending";
@@ -261,6 +283,17 @@ export default function UpgradePanel({
             {ten.active
               ? `堅韌生效中：選取時生命不高於 ${tenThreshold}%，受到的傷害（防禦計算後）降低 ${tenReduction}%`
               : `堅韌：生命不高於 ${tenThreshold}% 時受到的傷害（防禦計算後）降低 ${tenReduction}%；選取時未生效`}
+          </div>
+        )}
+
+        {chainOk && (
+          <div className={styles.chainNote} data-testid="unit-panel-chain">
+            連環計：普通攻擊打到敵人後最多傳遞 {chain.max_jumps} 次（
+            {chainSteps.map((p) => `${p}%`).join("、再 ")}
+            ），每次從前一個被打中的敵人找 {Number(
+              chain.radius.toFixed(3)
+            )}{" "}
+            格內最近的下一個敵人
           </div>
         )}
 

@@ -11,6 +11,7 @@
 ## 反擊（夏侯惇）：受到敵人的直接攻擊、實際扣血後仍然活著時，把實扣生命的一定比例反彈給這個敵人（見 counter_ratio；攻擊者由 Enemy 傳入 take_damage）
 ## 堅韌（廖化）：受傷前的生命比例不高於門檻時，防禦計算後的傷害再乘上倍率（見 tenacity_hp_ratio、tenacity_damage_mult），不改防禦與最大生命
 ## 威壓（顏良）：範圍內敵人對阻路武將的直接攻擊力乘上倍率（見 atk_down_aura_mult；倍率記在敵人身上，Enemy.atk_mult），不改敵人設定的攻擊力
+## 連環計（龐統）：普通攻擊實際扣到主目標的生命後，依序傳給前一個被打中的敵人附近的下一個敵人（見 chain_ratio、_chain），傷害逐跳遞減
 
 class_name Hero
 extends Node2D
@@ -230,6 +231,27 @@ var double_shot_count: int = 0
 var double_shot_dealt: float = 0.0
 var double_shot_log: Array = []
 const DOUBLE_SHOT_LOG_MAX: int = 40
+## 連環計（chain，龐統）：每次普通攻擊對主目標實際造成正的有限傷害後，從主目標被打中時的位置開始傳遞：
+## 每一跳從「上一個被打中的敵人被打中時的位置」找 chain_radius 格內（含邊界）最近、這次攻擊還沒打過、這位武將打得到的存活敵人
+## （距離相同時生成序號小的優先），最多 chain_max_jumps 跳；找不到下一位就停止。所以第二跳可以在主目標 chain_radius 格以外，只要在第一跳附近。
+## 第 k 跳的傷害＝這次主攻擊打出去的傷害（含首擊加倍）× chain_ratio 的 k 次方（0.5 時是 50%、25%），不是拿上一跳實際扣掉的生命再乘。
+## 每一跳都走敵人一般的受傷與死亡流程（擊殺與金幣照常只算一次）；被主攻擊或前一跳打倒的敵人照樣從它被打中的位置傳下一跳。
+## 傳遞不再引發首擊、吸血、灼燒、暈眩、橫掃、連射或新的連環計，不增加攻擊次數、不改攻擊冷卻；和橫掃（以主目標為中心的範圍）是不同的規則。
+## chain_ratio 0 代表沒有這個技能；半徑要是正的有限數字、比例是 0～1 之間（不含兩端）的有限數字、跳數只接受 1 或 2（JSON 的 2.0 也算），
+## 任何一個缺少或不合理就當作普通攻擊
+var chain_ratio: float = 0.0
+var chain_radius: float = 0.0
+var chain_max_jumps: int = 0
+## 測試用唯讀統計（debug_snapshot）：有傳遞出去的攻擊次數、追加命中的次數、追加命中實際扣掉的生命總量（超過敵人剩餘生命的部分不算），
+## 以及最近 CHAIN_LOG_MAX 次傳遞的每一跳（生成序號、離上一個起點的距離（格）、這一跳的傷害與實際扣掉的生命）
+var chain_count: int = 0
+var chain_hits: int = 0
+var chain_dealt: float = 0.0
+var chain_log: Array = []
+const CHAIN_LOG_MAX: int = 40
+const CHAIN_FX_TIME: float = 0.35
+## 半徑邊界的容許誤差（像素）：正好在半徑上的敵人算在內
+const CHAIN_EDGE_EPS: float = 0.001
 ## 測試用唯讀統計（debug_snapshot）：這位武將的遊戲時間（_process 的 delta 累加，受時間倍率影響、手動暫停時不前進）、
 ## 普通攻擊的次數，以及最近 ATTACK_LOG_MAX 次攻擊的時間、這次冷卻用的攻擊間隔與當時的攻速加成
 var _age: float = 0.0
@@ -346,6 +368,9 @@ func _read_skill(state: Dictionary) -> void:
 	tenacity_damage_mult = 1.0
 	atk_down_aura_mult = 1.0
 	double_shot_chance = 0.0
+	chain_ratio = 0.0
+	chain_radius = 0.0
+	chain_max_jumps = 0
 	var skill = state.get("skill", null)
 	if not (skill is Dictionary):
 		return
@@ -425,6 +450,16 @@ func _read_skill(state: Dictionary) -> void:
 			var q: Variant = skill.get("double_shot_chance")
 			if _open_unit(q):
 				double_shot_chance = float(q)
+		"chain":
+			# 半徑要是正的有限數字、比例是 0～1 之間（不含兩端）、跳數是 1 或 2；三個都合理才啟用，任何一個缺少或不合理就當作普通攻擊（不補預設值）。
+			# 字串、布林、null、NaN、無限大、0 以下、小數或 3 以上的跳數都不合理
+			var cr: Variant = skill.get("chain_radius")
+			var ck: Variant = skill.get("chain_ratio")
+			var cj: Variant = skill.get("chain_max_jumps")
+			if _positive_finite(cr) and _open_unit(ck) and _positive_whole(cj) and float(cj) <= 2.0:
+				chain_radius = float(cr)
+				chain_ratio = float(ck)
+				chain_max_jumps = int(cj)
 
 ## 技能參數是正的有限數字（JSON 的數字在 Godot 是 float；字串、布林、null、NaN、無限大、0 以下都不是）
 static func _positive_finite(v: Variant) -> bool:
@@ -494,8 +529,9 @@ func _process(delta: float) -> void:
 			# Godot 專案沒有中文字型（中文會顯示成方框），用一定顯示得出來的倍率標記（例如「x2!」）；技能說明裡寫明這個標記
 			var m: float = first_strike_multiplier
 			_show_skill_text("x%s!" % (str(int(m)) if is_equal_approx(m, roundf(m)) else String.num(m, 2)))
-	# 橫掃以主目標被打中時的位置為中心：先記下位置，主目標被這一擊打倒也照樣生效
+	# 橫掃以主目標被打中時的位置為中心、連環計從這個位置開始傳遞：先記下位置與主目標，主目標被這一擊打倒也照樣生效
 	var hit_pos: Vector2 = target.global_position
+	var primary_id: int = target.get_instance_id()
 	# 實際扣掉敵人的生命（不含溢出的部分，打倒目標的這一擊也照算；無效的傷害回傳 0、不改變敵人）
 	var dealt: Variant = target.take_damage(damage)
 	# 吸血：用這一擊實際扣掉的生命計算，不讀之後可能已經無效的目標；回傳的不是數字時（沒有回傳值的目標）當作沒有扣血，攻擊照常完成
@@ -512,6 +548,9 @@ func _process(delta: float) -> void:
 	# 連射：第一擊實際扣到生命、目標仍然活著時抽一次亂數，抽中就在這個攻擊回合對同一個目標再打一擊（不經過上面的技能，也不再連射）
 	if double_shot_chance > 0.0:
 		_double_shot(target, dealt)
+	# 連環計：主目標這一擊實際扣到生命時，從主目標被打中的位置開始傳遞（主目標被打倒也照樣傳；傳遞不經過上面的技能，也不算一次攻擊）
+	if chain_ratio > 0.0:
+		_chain(hit_pos, primary_id, damage, dealt)
 	_is_attacking = true
 	_anim_timer   = 0.22
 	# 保留這一幀越過零點的時間（零頭）；待命後的第一擊、或零頭長過一個間隔（極長的一幀）時從這一擊起算完整的間隔。
@@ -652,6 +691,83 @@ func _double_shot_roll() -> float:
 func double_shot_state() -> Dictionary:
 	return {"chance": double_shot_chance, "rolls": double_shot_rolls, "count": double_shot_count, "dealt": double_shot_dealt,
 		"attacks": attack_count, "log": double_shot_log.duplicate(true)}
+
+## 連環計：origin 是主目標被打中時的位置、primary_id 是主目標（不會再被傳到）、base 是這次主攻擊打出去的傷害、first 是主目標實際扣掉的生命。
+## 主目標沒有實際扣到生命（無效的傷害、沒有回傳數字）時不傳遞。每一跳先選好敵人、記下它被打中時的位置，再造成傷害
+## （受傷可能讓敵人死亡並從 WaveManager 的清單移除，所以每一跳都重新讀清單，不邊走訪邊打）
+func _chain(origin: Vector2, primary_id: int, base: float, first: Variant) -> void:
+	var f: float = float(first) if (first is float or first is int) else 0.0
+	if not (f > 0.0 and is_finite(f)) or not (base > 0.0 and is_finite(base)) or not _wave_mgr:
+		return
+	var radius_px: float = chain_radius * tile_size
+	var hit_ids: Dictionary = {primary_id: true}
+	var from: Vector2 = origin
+	var points: Array = [origin]
+	var jumps: Array = []
+	for k in range(1, chain_max_jumps + 1):
+		var best: Node = null
+		var best_d: float = 0.0
+		var best_seq: int = 0
+		for e in _wave_mgr.get_active_enemies():
+			# 已釋放、正要移除、已倒下、這次已打過（含主目標）、這位武將打不到（不能對空的職業遇到飛行敵人）的都不算
+			if not _enemy_alive(e) or hit_ids.has(e.get_instance_id()) or not can_target(e):
+				continue
+			var raw: float = from.distance_to(e.global_position)
+			if raw > radius_px + CHAIN_EDGE_EPS:
+				continue
+			# 距離取到 0.001 像素再比較：浮點誤差造成的極小差距視為等距，交給生成序號決定
+			var d: float = snappedf(raw, 0.001)
+			var seq: int = int(e.spawn_seq)
+			if best == null or d < best_d or (d == best_d and seq < best_seq):
+				best = e
+				best_d = d
+				best_seq = seq
+		if best == null:
+			break
+		var pos: Vector2 = best.global_position
+		var amount: float = base * pow(chain_ratio, k)
+		hit_ids[best.get_instance_id()] = true
+		var r: Variant = best.take_damage(amount)
+		var got: float = float(r) if (r is float or r is int) else 0.0
+		if not (got > 0.0 and is_finite(got)):
+			got = 0.0
+		jumps.append({"seq": best_seq, "dist": snappedf(best_d / float(tile_size), 0.0001), "amount": amount, "dealt": got})
+		chain_hits += 1
+		chain_dealt += got
+		points.append(pos)
+		from = pos
+	# 附近沒有可以傳遞的敵人：就是一般的普通攻擊（不顯示效果、不計次）
+	if jumps.is_empty():
+		return
+	chain_count += 1
+	chain_log.append({"base": base, "first": f, "jumps": jumps})
+	if chain_log.size() > CHAIN_LOG_MAX:
+		chain_log.pop_front()
+	_show_chain_fx(points)
+
+## 連環計的連線效果：從主目標被打中的位置依序連到每一跳被打中的位置，CHAIN_FX_TIME 秒（遊戲時間）後消失。
+## 掛在武將底下（不跟著武將移動）：手動暫停時跟著停住，武將被移除或切換關卡時一起清除
+func _show_chain_fx(points: Array) -> void:
+	var fx := ChainFx.new()
+	fx.duration = CHAIN_FX_TIME
+	fx.top_level = true
+	var start: Vector2 = points[0]
+	var rel: PackedVector2Array = PackedVector2Array()
+	for p in points:
+		rel.append(p - start)
+	fx.points = rel
+	add_child(fx)
+	fx.global_position = start
+
+## 測試用唯讀資訊（debug_snapshot）：Godot 實際讀到的半徑（格）、比例與跳數（沒有啟用時比例是 0）、有傳遞的攻擊次數、追加命中的次數與實際扣掉的生命總量、
+## 普通攻擊的次數、目前還在顯示的連線效果數與最近幾次傳遞的每一跳
+func chain_state() -> Dictionary:
+	var fx_n: int = 0
+	for c in get_children():
+		if c is ChainFx and not c.is_queued_for_deletion():
+			fx_n += 1
+	return {"radius": chain_radius, "ratio": chain_ratio, "max_jumps": chain_max_jumps, "count": chain_count, "hits": chain_hits,
+		"dealt": chain_dealt, "attacks": attack_count, "fx": fx_n, "log": chain_log.duplicate(true)}
 
 ## 技能觸發時在武將上方顯示的文字（金色、放大，和一般的傷害數字區分）
 const SKILL_TEXT_COLOR: Color = Color(1.0, 0.85, 0.2)
@@ -1194,3 +1310,28 @@ class SweepFx extends Node2D:
 		var k: float = clampf(1.0 - elapsed / duration, 0.0, 1.0)
 		draw_circle(Vector2.ZERO, radius, Color(1.0, 0.85, 0.2, 0.18 * k))
 		draw_arc(Vector2.ZERO, radius, -PI * 0.85, PI * 0.35, 24, Color(1.0, 0.9, 0.3, 0.95 * k), 4.0)
+
+## 連環計的連線效果（不用文字，Godot 專案沒有中文字型）：紫色的折線依序連接主目標與每一跳被打中的位置，每個落點有一個小圓
+class ChainFx extends Node2D:
+	## 相對於第一個點（主目標被打中的位置）的落點；第一個是 (0, 0)
+	var points: PackedVector2Array = PackedVector2Array()
+	var duration: float = 0.35
+	## 已經過的遊戲時間（秒）：_process 的 delta，受時間倍率影響、手動暫停時不前進
+	var elapsed: float = 0.0
+
+	func _ready() -> void:
+		z_index = 50
+
+	func _process(delta: float) -> void:
+		elapsed += delta
+		if elapsed >= duration:
+			queue_free()
+			return
+		queue_redraw()
+
+	func _draw() -> void:
+		var k: float = clampf(1.0 - elapsed / duration, 0.0, 1.0)
+		for i in range(1, points.size()):
+			draw_line(points[i - 1], points[i], Color(0.62, 0.42, 1.0, 0.95 * k), 4.0, true)
+		for i in range(points.size()):
+			draw_circle(points[i], 6.0, Color(0.8, 0.65, 1.0, 0.6 * k))

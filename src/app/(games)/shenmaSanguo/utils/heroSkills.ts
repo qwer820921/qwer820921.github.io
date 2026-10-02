@@ -1,7 +1,7 @@
 import { HeroSkillPayload } from "../types";
 
 /**
- * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」、廖化「堅韌」、顏良「威壓」、孫尚香「連射」）
+ * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」、廖化「堅韌」、顏良「威壓」、孫尚香「連射」、龐統「連環計」）
  * 這裡是技能規則的唯一來源：武將列表／詳情的說明，與隨出征資料送進 Godot 的參數都由這裡產生。
  * 技能是戰場效果：不寫進玩家存檔，也不需要後端（GAS）支援。
  * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊。
@@ -132,6 +132,20 @@ export type HeroSkill =
       name: string;
       /** 每次普通攻擊追加一擊的機率（0.2＝20%；0～1 之間、不含兩端） */
       doubleShotChance: number;
+    }
+  | {
+      /**
+       * 連環計：每次普通攻擊實際打到主目標後，從主目標被打中的位置開始，依序傳給「前一個被打中的敵人」附近範圍內最近、這次還沒被打過的敵人。
+       * 第 k 次傳遞的傷害是這次普通攻擊的傷害 × chainRatio 的 k 次方；找不到下一個敵人就停止；傳遞不引發其他技能、不算一次攻擊；只在戰場
+       */
+      id: "chain";
+      name: string;
+      /** 每一跳找下一個敵人的範圍（格，含邊界），以前一個被打中的敵人為中心 */
+      chainRadius: number;
+      /** 每跳的傷害比例（0.5＝第一次 50%、第二次 25%；0～1 之間、不含兩端） */
+      chainRatio: number;
+      /** 最多傳遞幾次（1 或 2） */
+      chainMaxJumps: number;
     };
 
 const HERO_SKILLS: Record<string, HeroSkill> = {
@@ -186,6 +200,16 @@ const HERO_SKILLS: Record<string, HeroSkill> = {
   // 敵人還活著時有 20% 的機率在同一次攻擊對同一個敵人再打一擊（這次攻擊力的 100%）；第一擊打倒敵人時不連射、不換目標、不再連射、
   // 攻擊間隔不變；追加的一擊不引發其他技能；只在戰鬥中、不改屬性與存檔
   sun_shang_xiang: { id: "double_shot", name: "連射", doubleShotChance: 0.2 },
+  // 正式設定表的被動描述「連環計：傳遞傷害」沒有寫範圍、比例與次數。第一版的設計值，尚未做過平衡：普通攻擊實際打到主目標後，
+  // 從主目標被打中的位置找 1.5 格內（含邊界）最近、這次還沒被打過的敵人受 50%，再從它的位置找下一個受 25%（最多 2 次，不是以主目標為中心的範圍）；
+  // 傳遞不引發其他技能、不算一次攻擊、攻擊間隔不變；只在戰鬥中、不改屬性與存檔
+  pang_tong: {
+    id: "chain",
+    name: "連環計",
+    chainRadius: 1.5,
+    chainRatio: 0.5,
+    chainMaxJumps: 2,
+  },
 };
 
 export const heroSkillOf = (heroId: string): HeroSkill | null =>
@@ -265,6 +289,16 @@ export function doubleShotPercent(skill: HeroSkill | null): number {
   return skill?.id === "double_shot" ? round3(skill.doubleShotChance * 100) : 0;
 }
 
+/** 連環計每一次傳遞的傷害百分比（0.5、2 次 → [50, 25]；沒有連環計時是空陣列） */
+export function chainPercents(skill: HeroSkill | null): number[] {
+  if (skill?.id !== "chain") return [];
+  const out: number[] = [];
+  for (let k = 1; k <= skill.chainMaxJumps; k++) {
+    out.push(round3(skill.chainRatio ** k * 100));
+  }
+  return out;
+}
+
 /**
  * 攻速光環加成後的攻擊間隔（秒）：攻擊間隔 ÷ 倍率（和 Godot 相同）。
  * 是除以倍率、不是減少同樣的百分比：1.15 倍時 1 秒變成約 0.8696 秒，不是 0.85 秒
@@ -287,7 +321,7 @@ export function damageAfterDefense(atk: number, def: number): number {
 /**
  * 技能的完整規則（顯示在武將詳情）
  * - rawRange：這位武將目前等級屬性表上的射程；有提供時，射程技能會寫出戰場上的實際射程，減速光環、防禦光環、攻速光環與威壓會寫出目前的範圍半徑
- * - atk：這位武將目前的攻擊力；有提供時，火攻會寫出每次灼燒的傷害，連射會寫出追加一擊的傷害
+ * - atk：這位武將目前的攻擊力；有提供時，火攻會寫出每次灼燒的傷害，連射會寫出追加一擊的傷害，連環計會寫出每次傳遞的傷害
  */
 export function describeHeroSkill(
   skill: HeroSkill,
@@ -449,6 +483,24 @@ export function describeHeroSkill(
       "攻擊間隔不變：連射不會讓下一次攻擊提早或延後。只在戰場生效，不影響存檔。"
     );
   }
+  if (skill.id === "chain") {
+    const pcts = chainPercents(skill);
+    const r = skill.chainRadius;
+    const steps = pcts.map((p) => `${p}%`).join("、再 ");
+    const current =
+      atk === undefined
+        ? ""
+        : `目前攻擊力 ${round3(atk)}：傳遞的傷害依序是 ${pcts.map((p) => round3((atk * p) / 100)).join("、")}。`;
+    return (
+      `每次普通攻擊實際打到敵人後，傷害會傳遞下去，最多 ${skill.chainMaxJumps} 次（${steps}）：從這個敵人被打中的位置，找 ${r} 格內（含邊界）最近、這次攻擊還沒打過的另一個敵人；` +
+      `下一次再從剛被傳到的敵人的位置找 ${r} 格內的下一個，所以第二個被傳到的敵人可以離原本的目標超過 ${r} 格。` +
+      `每次的傷害是這次普通攻擊傷害的 ${steps}（不是用前一個敵人實際扣掉的生命再算）；距離相同時先出現的敵人優先。` +
+      current +
+      "找不到下一個敵人就停止，不會回頭打已經打過的敵人；打不到的敵人不會被傳到（飛行敵人要能對空的職業才打得到）。" +
+      "被傳到的敵人照常受傷、可以被打倒（擊殺與金幣只算一次）；目標或被傳到的敵人被打倒時，照樣從它倒下的位置繼續傳。" +
+      "普通攻擊沒有打到敵人時不會傳遞；傳遞不算一次攻擊、不會引發其他技能，攻擊間隔不變。傳遞時會出現紫色的連線。只在戰場生效，不影響存檔。"
+    );
+  }
   if (skill.id === "dodge") {
     const pct = round3(skill.dodgeChance * 100);
     return (
@@ -537,6 +589,16 @@ export function heroSkillPayload(heroId: string): { skill?: HeroSkillPayload } {
   if (skill.id === "double_shot") {
     return {
       skill: { id: skill.id, double_shot_chance: skill.doubleShotChance },
+    };
+  }
+  if (skill.id === "chain") {
+    return {
+      skill: {
+        id: skill.id,
+        chain_radius: skill.chainRadius,
+        chain_ratio: skill.chainRatio,
+        chain_max_jumps: skill.chainMaxJumps,
+      },
     };
   }
   return {

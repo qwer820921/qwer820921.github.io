@@ -172,14 +172,14 @@ func _run() -> void:
 		battle_ended_count += 1
 		last_result = r)
 
-	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、廖化的堅韌、顏良的威壓、孫尚香的連射）、橫掃原型與攻速成長；
+	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、廖化的堅韌、顏良的威壓、孫尚香的連射、龐統的連環計）、橫掃原型與攻速成長；
 	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行；
 	# route 跑飛行與地面的路線無效（出兵前擋下）；blocker 只跑敵人攻擊阻路武將的冷卻；
 	# dodge 只跑趙雲「閃避」；firststrike 只跑首擊加倍（馬超「衝鋒」）；
 	# stagedata 跑關卡資料未完成（沒有波次、波次或路線的格式不對）；enemyatk 跑敵人設定的對武將攻擊力；immune 跑免疫減速；
 	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）；stun 只跑張飛的暈眩（skills 也包含）；lifesteal 只跑魏延的吸血（skills 也包含）；
 	# atkspeed 只跑曹操的攻速光環（skills 也包含）；damage 只跑敵人受傷的入口（拒絕無效的傷害）；
-	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）
+	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；chain 只跑龐統的連環計（skills 也包含）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -199,6 +199,7 @@ func _run() -> void:
 			await _tenacity_cases()
 			await _atk_down_cases()
 			await _double_shot_cases()
+			await _chain_cases()
 		elif only == "blocker":
 			await _blocker_cases()
 		elif only == "dodge":
@@ -249,8 +250,10 @@ func _run() -> void:
 			await _atk_down_cases()
 		elif only == "doubleshot":
 			await _double_shot_cases()
+		elif only == "chain":
+			await _chain_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、chain）", false)
 		_finish()
 		return
 
@@ -488,6 +491,9 @@ func _run() -> void:
 	# ── 孫尚香的連射（普通攻擊命中後目標還活著時 20% 機率對同一個目標再打一擊）──
 	await _double_shot_cases()
 
+	# ── 龐統的連環計（普通攻擊實際打到主目標後，從前一個被打中的敵人附近依序傳遞 50%、25%，每跳 1.5 格）──
+	await _chain_cases()
+
 	_finish()
 
 # ── 輸出 ──
@@ -681,6 +687,8 @@ func _r12_payload(stage_id: String, waves: Array, battle_id: String, team: Array
 		{"hero_id": "guan_yu", "name": "關羽", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5},
 		# 橫掃原型的合成武將（步兵，數值和關羽相同）
 		{"hero_id": "sweep_proto", "name": "原型", "job": "infantry", "attack_range": 3.0, "attack_speed": 0.5},
+		# 龐統（法師，射程與攻擊間隔和其他測試武將相同；正式設定是射程 4、攻擊間隔 0.9）
+		{"hero_id": "pang_tong", "name": "龐統", "job": "mage", "attack_range": 3.0, "attack_speed": 0.5},
 	]
 	return p
 
@@ -11109,6 +11117,604 @@ func _double_shot_cases() -> void:
 			and _ls_near(float(d8.g.lost), 100.0 + 200.0 * float(ss8g.attack_count), 1e-6)
 	_check("連射-8 移位、換技能、移除、新的一場與結算：移位不改統計、之後照樣抽樣；換成反擊後不再抽亂數（每回合 100）；移出隊伍後敵人不再被打；新的一場統計歸零；追加的一擊打倒唯一的敵人時擊殺 1、金幣只加一次、結算一次（勝利）；第一擊就打倒時不抽、結算一次；首擊加倍時追加的一擊仍是攻擊力 100",
 		ok8a and ok8b and d8.c == [true, true] and d8.d == [0, 0, 0, 0, 0.2, true] and ok8e and ok8f and ok8g, d8)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 龐統的連環計（chain）──
+# 普通攻擊實際扣到主目標的生命後，從主目標被打中的位置開始傳遞：每一跳從「前一個被打中的敵人被打中時的位置」找 1.5 格內（含邊界）最近、
+# 這次攻擊還沒打過、龐統打得到的存活敵人（距離相同時生成序號小的優先），最多 2 跳；第 k 跳是這次主攻擊的傷害 × 0.5 的 k 次方（50%、25%）。
+# 傳遞走敵人一般的受傷與死亡流程，不引發其他技能、不算攻擊次數、不改冷卻；和橫掃（以主目標為中心的範圍）是不同的規則
+const CH_SKILL: Dictionary = {"id": "chain", "chain_radius": 1.5, "chain_ratio": 0.5, "chain_max_jumps": 2}
+const CH_HERO: String = "pang_tong"
+
+## 單獨的龐統（真正的 Hero 腳本，不經過 Main、測試自己呼叫 _process）：在原點、攻擊力 atk_v、射程 3 格、攻擊間隔 1 秒、職業 job
+## （法師、弓兵能對空；測試自己寫一份，不讀遊戲的常數）；skill 是 null 時帶連環計的參數
+func _ch_hero(holder: Node, wave: Node, atk_v: float = 100.0, skill: Variant = null, job: String = "mage") -> Node:
+	var h: Node = load("res://entities/hero/Hero.gd").new()
+	holder.add_child(h)
+	h.set_process(false)
+	h.hero_id = CH_HERO
+	h.job = job
+	h.can_hit_air = job == "mage" or job == "archer"
+	h.attack_range = 3.0
+	h.attack_speed = 1.0
+	h.atk = atk_v
+	h.max_hp = 1000.0
+	h.current_hp = 1000.0
+	h._read_skill({"skill": CH_SKILL.duplicate() if skill == null else skill})
+	h._wave_mgr = wave
+	return h
+
+## 不會移動的敵人：血量 hp、放在 cell（格；龐統在原點）、生成序號 seq，flying 為 true 時是飛行敵人；加進假的 WaveManager 清單的最後面。
+## 地面敵人的路線進度都相同，所以主目標是清單裡第一個在射程內的敵人
+func _ch_enemy(holder: Node, wave: Node, hp: float, cell: Vector2, seq: int, flying: bool = false) -> Node:
+	var extra: Dictionary = {"hp": hp}
+	if flying:
+		extra["movement_type"] = "flying"
+	var e: Node = _stn_enemy(holder, 0.0, extra)
+	e.position = cell * 48.0
+	e.spawn_seq = seq
+	wave.enemies.append(e)
+	return e
+
+## 武將底下還在顯示的連線效果
+func _ch_fx_of(h: Node) -> Array:
+	var out: Array = []
+	if h == null or not is_instance_valid(h):
+		return out
+	for c in h.get_children():
+		if c is Hero.ChainFx and not c.is_queued_for_deletion():
+			out.append(c)
+	return out
+
+## 龐統打一個攻擊回合（冷卻歸零後處理一步）：每個敵人這一回合被打掉的生命（倒下的記成倒下前的生命）、
+## 有傳遞的攻擊次數／追加命中次數／追加命中實扣總量／攻擊次數的增加、這一回合之後的冷卻、連線效果（數量、位置與落點）、最新一筆紀錄
+func _ch_round(h: Node, es: Array) -> Dictionary:
+	var before: Array = []
+	for e in es:
+		before.append(e.current_hp if is_instance_valid(e) and not e.is_dead() else 0.0)
+	var c0: int = h.chain_count
+	var k0: int = h.chain_hits
+	var d0: float = h.chain_dealt
+	var a0: int = h.attack_count
+	var fx0: int = _ch_fx_of(h).size()
+	h._atk_timer = 0.0
+	h._process(1.0 / 60.0)
+	var dmg: Array = []
+	for i in range(es.size()):
+		var now: float = es[i].current_hp if is_instance_valid(es[i]) else 0.0
+		dmg.append(snappedf(float(before[i]) - now, 0.0001))
+	var fx: Array = _ch_fx_of(h)
+	var r: Dictionary = {"dmg": dmg, "count": h.chain_count - c0, "hits": h.chain_hits - k0, "dealt": snappedf(h.chain_dealt - d0, 0.0001),
+		"attacks": h.attack_count - a0, "timer": h._atk_timer, "fx": fx.size() - fx0,
+		"log": h.chain_log.back().duplicate(true) if not h.chain_log.is_empty() else {}}
+	if not fx.is_empty():
+		var f: Node = fx[fx.size() - 1]
+		r["fx_pos"] = f.global_position
+		r["fx_points"] = Array(f.points).map(func(p): return Vector2(snappedf(p.x, 0.001), snappedf(p.y, 0.001)))
+	return r
+
+## 單獨的龐統對 cells 上的敵人（第一個是主目標）打一個回合：hps 是每個敵人的血量（預設 99999）、flying 是飛行敵人的索引、seqs 是生成序號（預設依序 0、1、2…）。
+## 回傳 _ch_round 的結果，加上每個敵人的死亡信號次數與 Godot 的連環計狀態
+func _ch_case(cells: Array, hps: Array = [], atk_v: float = 100.0, skill: Variant = null, job: String = "mage", flying: Array = [], seqs: Array = []) -> Dictionary:
+	var holder := _dodge_holder()
+	var wave := R20Wave.new()
+	holder.add_child(wave)
+	var h: Node = _ch_hero(holder, wave, atk_v, skill, job)
+	var es: Array = []
+	var died: Array = []
+	for i in range(cells.size()):
+		var e: Node = _ch_enemy(holder, wave, float(hps[i]) if i < hps.size() else 99999.0, cells[i], int(seqs[i]) if i < seqs.size() else i, flying.has(i))
+		es.append(e)
+		died.append(0)
+		var idx: int = i
+		e.died.connect(func(_x) -> void: died[idx] = int(died[idx]) + 1)
+	var r: Dictionary = _ch_round(h, es)
+	r["died"] = died.duplicate()
+	r["state"] = h.chain_state()
+	holder.queue_free()
+	return r
+
+## 每一跳的 [生成序號, 距離（格）, 傷害, 實扣] 和 want 逐一相符（容許浮點誤差）
+func _ch_jumps_ok(log: Dictionary, want: Array) -> bool:
+	var js: Array = log.get("jumps", [])
+	if js.size() != want.size():
+		return false
+	for i in range(js.size()):
+		var j: Dictionary = js[i]
+		var w: Array = want[i]
+		if not (int(j.seq) == int(w[0]) and _ls_near(j.dist, float(w[1]), 1e-3) and _ls_near(j.amount, float(w[2]), 1e-6) and _ls_near(j.dealt, float(w[3]), 1e-6)):
+			return false
+	return true
+
+## 實際引擎用的龐統（法師、射程 3 格、攻擊間隔 0.5 秒，和 _r12_payload 的設定相同）
+func _ch_member(skill: Variant = null, level: int = 1, atk_v: float = 100.0) -> Dictionary:
+	var h: Dictionary = _r12_hero(CH_HERO, CH_SKILL.duplicate() if skill == null else skill)
+	h["level"] = level
+	h["atk"] = atk_v
+	return h
+
+func _ch_main_hero() -> Node:
+	return main._placed_heroes.get(CH_HERO)
+
+## 載入一場只有 n 個 post 的關卡（經過 JSON）、把龐統放在 (3,4)、開戰並等 n 個敵人都出現。manual 為 true 時停掉龐統自己的 _process，由測試決定何時攻擊
+func _ch_start(rec: Node, battle_id: String, n: int, team: Variant = null, manual: bool = true) -> Array:
+	var t: Array = team if team != null else [_ch_member()]
+	_r19_js(rec, _r12_payload("chain_a", [[_grp("post", n, 0.02)]], battle_id, t))
+	_r12_place(CH_HERO, Vector2i(3, 4))
+	if manual and _ch_main_hero() != null:
+		_ch_main_hero().set_process(false)
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == n, 5.0)
+	return _sw_enemies()
+
+## 主目標（第一個）放在龐統右邊 2 格；其他敵人放在主目標加上 offs[i]（格）的位置。回傳主目標的位置
+func _ch_place(es: Array, offs: Array) -> Vector2:
+	var g: Node = _ch_main_hero()
+	var t: float = float(g.tile_size)
+	var center: Vector2 = g.global_position + Vector2(2.0 * t, 0.0)
+	for i in range(es.size()):
+		var o: Vector2 = offs[i] if i < offs.size() else Vector2(6.0, 0.0)
+		es[i].global_position = center + o * t
+	return center
+
+## 場上的龐統打一次（呼叫一次 _process）：每個敵人受到的傷害、擊殺數與戰鬥金幣的變化、連環計統計與連線效果數的變化
+func _ch_hit(es: Array, delta: float = 0.0) -> Dictionary:
+	var g: Node = _ch_main_hero()
+	var before: Array = []
+	for e in es:
+		before.append(e.current_hp if is_instance_valid(e) and not e.is_dead() else 0.0)
+	var k0: int = _bm().kills
+	var gold0: int = _bm().battle_gold
+	var c0: int = g.chain_count
+	var h0: int = g.chain_hits
+	var a0: int = g.attack_count
+	var fx0: int = _ch_fx_of(g).size()
+	g._process(delta)
+	var dmg: Array = []
+	for i in range(es.size()):
+		var now: float = es[i].current_hp if is_instance_valid(es[i]) else 0.0
+		dmg.append(snappedf(float(before[i]) - now, 0.01))
+	return {"dmg": dmg, "kills": _bm().kills - k0, "gold": _bm().battle_gold - gold0, "count": g.chain_count - c0, "hits": g.chain_hits - h0,
+		"attacks": g.attack_count - a0, "fx": _ch_fx_of(g).size() - fx0}
+
+## 真引擎：主目標與兩名傳遞對象（offs3：主目標右邊 1.2 格、再右邊 1.2 格），記錄 sec 秒遊戲時間內每一次攻擊。
+## 回傳攻擊時間、每次的 [主 100, 第一跳 50, 第二跳 25] 筆數、不是這三種的下降、傳遞次數與攻擊次數
+func _ch_run(es: Array, sec: float) -> Dictionary:
+	var g: Node = _ch_main_hero()
+	var c0: int = g.chain_count
+	var a0: int = g.attack_count
+	var r: Dictionary = await _r19_hits(es, sec)
+	var by_t: Dictionary = {}
+	var bad: Array = []
+	for h in r.hits:
+		if not by_t.has(h.t):
+			by_t[h.t] = [0, 0, 0]
+		var d: float = float(h.dmg)
+		if is_equal_approx(d, 100.0):
+			by_t[h.t][0] += 1
+		elif is_equal_approx(d, 50.0):
+			by_t[h.t][1] += 1
+		elif is_equal_approx(d, 25.0):
+			by_t[h.t][2] += 1
+		else:
+			bad.append(h)
+	var ts: Array = by_t.keys()
+	ts.sort()
+	var per: Array = []
+	for t in ts:
+		per.append(by_t[t])
+	return {"t": ts, "per_attack": per, "bad": bad, "dmax": r.dmax, "count": g.chain_count - c0, "attacks": g.attack_count - a0}
+
+## 每次攻擊都是主目標 100＋第一跳 50＋第二跳 25（同一幀）、攻擊時間符合累積時程、傳遞次數＝攻擊次數
+func _ch_run_ok(r: Dictionary, n_min: int, n_max: int) -> bool:
+	if r.t.size() < n_min or r.t.size() > n_max or not r.bad.is_empty() or r.count != r.t.size() or r.attacks != r.t.size():
+		return false
+	for p in r.per_attack:
+		if p != [1, 1, 1]:
+			return false
+	return _r16_interval_ok({"hits": r.t, "dmax": r.dmax}, 0.5)
+
+func _chain_cases() -> void:
+	# 連環計-0：技能參數的判讀：chain_radius 是正的有限數字、chain_ratio 是 0～1 之間（不含兩端）的有限數字、chain_max_jumps 是 1 或 2（JSON 的 2.0 也算），
+	# 三個都合理才啟用；字串、布林、null、陣列、字典、NaN、無限大、0、負數、比例 1 以上、跳數 0／小數／3 以上、缺欄位、欄位名稱寫錯、不認得或大小寫不同的 id、
+	# 其他技能帶這些欄位都不啟用（三個值都是 0）；連環計不帶其他技能；換成反擊或沒有技能後清除
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var good0: Array = [
+		[{"id": "chain", "chain_radius": 1.5, "chain_ratio": 0.5, "chain_max_jumps": 2}, [1.5, 0.5, 2]],
+		[{"id": "chain", "chain_radius": 0.75, "chain_ratio": 0.25, "chain_max_jumps": 1}, [0.75, 0.25, 1]],
+		[{"id": "chain", "chain_radius": 2, "chain_ratio": 0.9999, "chain_max_jumps": 2.0}, [2.0, 0.9999, 2]],
+		[{"id": "chain", "chain_radius": 0.001, "chain_ratio": 0.0001, "chain_max_jumps": 1.0}, [0.001, 0.0001, 1]],
+	]
+	var bad0: Array = []
+	for v in ["1.5", true, false, null, [1.5], {"v": 1.5}, NAN, INF, -INF, 0, 0.0, -1.5]:
+		bad0.append({"id": "chain", "chain_radius": v, "chain_ratio": 0.5, "chain_max_jumps": 2})
+	for v in ["0.5", true, null, [0.5], NAN, INF, -INF, 0, 0.0, -0.5, 1, 1.0, 1.5]:
+		bad0.append({"id": "chain", "chain_radius": 1.5, "chain_ratio": v, "chain_max_jumps": 2})
+	for v in ["2", true, false, null, [2], NAN, INF, 0, 0.0, -1, -2.0, 1.5, 2.5, 3, 3.0, 100]:
+		bad0.append({"id": "chain", "chain_radius": 1.5, "chain_ratio": 0.5, "chain_max_jumps": v})
+	bad0.append_array([{"id": "chain"}, {"id": "chain", "chain_radius": 1.5, "chain_ratio": 0.5},
+		{"id": "chain", "chain_radius": 1.5, "chain_max_jumps": 2}, {"id": "chain", "chain_ratio": 0.5, "chain_max_jumps": 2},
+		{"id": "chain", "radius": 1.5, "ratio": 0.5, "max_jumps": 2},
+		{"id": "Chain", "chain_radius": 1.5, "chain_ratio": 0.5, "chain_max_jumps": 2}, {"id": "chain_x", "chain_radius": 1.5, "chain_ratio": 0.5, "chain_max_jumps": 2},
+		{"id": "sweep", "sweep_radius": 1.0, "sweep_max_targets": 2, "sweep_ratio": 0.5, "chain_radius": 1.5, "chain_ratio": 0.5, "chain_max_jumps": 2},
+		{"id": "double_shot", "double_shot_chance": 0.2, "chain_radius": 1.5, "chain_ratio": 0.5, "chain_max_jumps": 2}])
+	var wrong0: Array = []
+	for c in good0:
+		h0._read_skill({"skill": c[0]})
+		if [h0.chain_radius, h0.chain_ratio, h0.chain_max_jumps] != c[1]:
+			wrong0.append({"skill": str(c[0]), "got": [h0.chain_radius, h0.chain_ratio, h0.chain_max_jumps]})
+	for c in bad0:
+		h0._read_skill({"skill": c})
+		if [h0.chain_radius, h0.chain_ratio, h0.chain_max_jumps] != [0.0, 0.0, 0]:
+			wrong0.append({"skill": str(c), "got": [h0.chain_radius, h0.chain_ratio, h0.chain_max_jumps]})
+	h0._read_skill({"skill": JSON.parse_string("{\"id\": \"chain\", \"chain_radius\": 1.5, \"chain_ratio\": 0.5, \"chain_max_jumps\": 2}")})
+	var json0: Array = [h0.chain_radius, h0.chain_ratio, h0.chain_max_jumps]
+	var other0: Array = [h0.first_strike_multiplier, h0.range_multiplier, h0.burn_ratio, h0.sweep_ratio, h0.dodge_chance, h0.slow_aura_mult, h0.def_aura_mult,
+		h0.stun_duration, h0.lifesteal_ratio, h0.atk_speed_aura_mult, h0.counter_ratio, h0.tenacity_hp_ratio, h0.atk_down_aura_mult, h0.double_shot_chance]
+	h0._read_skill({"skill": {"id": "counter", "counter_ratio": 0.2}})
+	var switched0: Array = [h0.chain_radius, h0.chain_ratio, h0.chain_max_jumps, h0.counter_ratio]
+	h0._read_skill({"skill": CH_SKILL.duplicate()})
+	h0._read_skill({})
+	var cleared0: Array = [h0.chain_radius, h0.chain_ratio, h0.chain_max_jumps]
+	h0.free()
+	_check("連環計-0 技能參數：半徑是正的有限數字、比例是 0～1 之間（不含兩端）、跳數是 1 或 2（經過 JSON 的 2.0 也算）三個都合理才啟用；字串、布林、null、陣列、字典、NaN、無限大、0、負數、比例 1 以上、跳數小數或 3 以上、缺欄位、欄位名稱寫錯、不認得或大小寫不同的 id、其他技能帶這些欄位都不啟用；連環計不帶其他技能，換成反擊或沒有技能後清除",
+		wrong0.is_empty() and json0 == [1.5, 0.5, 2] and other0 == [1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0]
+			and switched0 == [0.0, 0.0, 0, 0.2] and cleared0 == [0.0, 0.0, 0],
+		{"wrong": wrong0, "json": json0, "other": other0, "switched": switched0, "cleared": cleared0, "cases": good0.size() + bad0.size()})
+
+	# 連環計-1：兩跳的鏈超出主目標的範圍：主目標 (1,0)、第一跳 (2.2,0)（離主目標 1.2 格）、第二跳 (3.4,0)（離第一跳 1.2 格、離主目標 2.4 格，在主目標的 1.5 格以外）
+	# → 100、50、25；傳遞 1 次、追加命中 2 名、實扣 75；攻擊次數只加 1；紀錄的每一跳是 [序號, 距離, 傷害, 實扣]；連線效果在主目標被打中的位置、依序連到兩個落點
+	var r1: Dictionary = _ch_case([Vector2(1, 0), Vector2(2.2, 0), Vector2(3.4, 0)])
+	_check("連環計-1 鏈超出主目標的範圍：第二跳離主目標 2.4 格（只在第一跳的 1.5 格內）也會被傳到；100、50、25，傳遞 1 次、追加命中 2、實扣 75、攻擊次數 +1",
+		r1.dmg == [100.0, 50.0, 25.0] and r1.count == 1 and r1.hits == 2 and _ls_near(r1.dealt, 75.0, 1e-6) and r1.attacks == 1
+			and _ch_jumps_ok(r1.log, [[1, 1.2, 50.0, 50.0], [2, 1.2, 25.0, 25.0]]) and _ls_near(r1.log.get("base"), 100.0) and _ls_near(r1.log.get("first"), 100.0), r1)
+	_check("連環計-1b 連線效果：1 個，位置是主目標被打中的位置 (48,0)，落點依序是 (0,0)、(57.6,0)、(115.2,0)（相對於主目標）",
+		r1.fx == 1 and r1.get("fx_pos", Vector2.INF).is_equal_approx(Vector2(48.0, 0.0))
+			and r1.get("fx_points", []).size() == 3 and r1.fx_points[0].is_equal_approx(Vector2.ZERO) and r1.fx_points[1].is_equal_approx(Vector2(57.6, 0.0)) and r1.fx_points[2].is_equal_approx(Vector2(115.2, 0.0)),
+		{"fx": r1.fx, "pos": r1.get("fx_pos"), "points": r1.get("fx_points")})
+
+	# 連環計-2：只是在主目標附近散開、彼此不相連時不成鏈（和橫掃不同）：兩名敵人都在主目標 1.2 格（上下兩側），彼此相距 2.4 格
+	# → 第一跳打序號小的 50，第二跳從它的位置找不到 1.5 格內的敵人就停止（另一名 0，主目標不會再被打）
+	var r2: Dictionary = _ch_case([Vector2(1, 0), Vector2(1, 1.2), Vector2(1, -1.2)])
+	_check("連環計-2 敵人散在主目標周圍但彼此相距 2.4 格：只傳 1 跳（序號小的 50），另一名 0、主目標只受 100；追加命中 1、實扣 50",
+		r2.dmg == [100.0, 50.0, 0.0] and r2.count == 1 and r2.hits == 1 and _ls_near(r2.dealt, 50.0, 1e-6) and _ch_jumps_ok(r2.log, [[1, 1.2, 50.0, 50.0]]), r2)
+	# 連環計-2b：第一跳就在 1.5 格外（1.6 格），即使再過去有敵人在它的 1 格內也不傳：普通攻擊（沒有傳遞、沒有連線效果）
+	var r2b: Dictionary = _ch_case([Vector2(1, 0), Vector2(2.6, 0), Vector2(2.6, 1.0)])
+	_check("連環計-2b 最近的敵人在主目標 1.6 格（範圍外）：不傳遞（0、0），傳遞 0 次、沒有連線效果，攻擊次數 +1",
+		r2b.dmg == [100.0, 0.0, 0.0] and r2b.count == 0 and r2b.hits == 0 and r2b.fx == 0 and r2b.attacks == 1 and r2b.state.log.is_empty(), r2b)
+
+	# 連環計-3：距離的邊界：正好 1.5 格算在內（水平、斜向 (0.9,1.2)），1.52 格不算
+	var r3a: Dictionary = _ch_case([Vector2(1, 0), Vector2(2.5, 0), Vector2(4.0, 0)])
+	var r3b: Dictionary = _ch_case([Vector2(1, 0), Vector2(2.52, 0)])
+	var r3c: Dictionary = _ch_case([Vector2(1, 0), Vector2(1.9, 1.2), Vector2(2.8, 2.4)])
+	_check("連環計-3 範圍含邊界：水平正好 1.5 格、再 1.5 格 → 50、25；斜向 (0.9,1.2) 正好 1.5 格、再一次 → 50、25；1.52 格 → 0",
+		r3a.dmg == [100.0, 50.0, 25.0] and r3c.dmg == [100.0, 50.0, 25.0] and r3b.dmg == [100.0, 0.0] and r3b.count == 0, {"a": r3a.dmg, "b": r3b.dmg, "c": r3c.dmg})
+
+	# 連環計-4：最近的優先、距離相同時生成序號小的優先（和清單順序無關）
+	# a：第一跳候選 1.2 格（序號 1）與 0.6 格（序號 2）→ 先打 0.6 格的 50，再從它的位置打另一名（0.6 格）25
+	var r4a: Dictionary = _ch_case([Vector2(1, 0), Vector2(2.2, 0), Vector2(1.6, 0)])
+	# b：三名都離主目標 1 格（清單順序 [主, 序號 3, 序號 1, 序號 2]）→ 第一跳是序號 1 (1,1)；從 (1,1) 看序號 3 (2,0) 1.414 格、序號 2 (1,-1) 2 格 → 第二跳是序號 3
+	var r4b: Dictionary = _ch_case([Vector2(1, 0), Vector2(2, 0), Vector2(1, 1), Vector2(1, -1)], [], 100.0, null, "mage", [], [0, 3, 1, 2])
+	_check("連環計-4 最近的優先、距離相同時生成序號小的優先（清單順序倒過來也一樣）：1.2 格與 0.6 格時先打 0.6 格（50）再打 1.2 格（25）；三名都在 1 格時先打序號 1、再從它的位置打 1.414 格的序號 3，2 格外的序號 2 是 0",
+		r4a.dmg == [100.0, 25.0, 50.0] and _ch_jumps_ok(r4a.log, [[2, 0.6, 50.0, 50.0], [1, 0.6, 25.0, 25.0]])
+			and r4b.dmg == [100.0, 25.0, 50.0, 0.0] and _ch_jumps_ok(r4b.log, [[1, 1.0, 50.0, 50.0], [3, 1.4142, 25.0, 25.0]]), {"a": r4a, "b": r4b})
+
+	# 連環計-5：主目標被這一擊打倒（血量 100）仍從它被打中的位置傳遞；死亡信號只有主目標一次
+	var r5: Dictionary = _ch_case([Vector2(1, 0), Vector2(2.2, 0), Vector2(3.4, 0)], [100.0])
+	_check("連環計-5 主目標被這一擊打倒：照樣從它的位置傳遞 50、25；主目標死亡一次、其他沒有倒下",
+		r5.dmg == [100.0, 50.0, 25.0] and r5.died == [1, 0, 0] and r5.hits == 2, r5)
+
+	# 連環計-6：低血量的溢出：第一跳的敵人只剩 30（受 50 倒下）→ 實扣 30（統計不算溢出的 20），照樣從它被打中的位置傳到下一名 25；
+	# 第二跳的敵人只剩 10 → 實扣 10。死亡各一次
+	var r6: Dictionary = _ch_case([Vector2(1, 0), Vector2(2.2, 0), Vector2(3.4, 0)], [99999.0, 30.0])
+	var r6b: Dictionary = _ch_case([Vector2(1, 0), Vector2(2.2, 0), Vector2(3.4, 0)], [99999.0, 30.0, 10.0])
+	_check("連環計-6 被傳到的敵人只剩 30：倒下（實扣 30，不是 50）並從它的位置繼續傳 25；只剩 10 的第二跳實扣 10；追加命中實扣總量 55／40（不含溢出），傷害仍記 50、25",
+		r6.dmg == [100.0, 30.0, 25.0] and r6.died == [0, 1, 0] and _ls_near(r6.dealt, 55.0, 1e-6) and _ch_jumps_ok(r6.log, [[1, 1.2, 50.0, 30.0], [2, 1.2, 25.0, 25.0]])
+			and r6b.dmg == [100.0, 30.0, 10.0] and r6b.died == [0, 1, 1] and _ls_near(r6b.dealt, 40.0, 1e-6) and _ch_jumps_ok(r6b.log, [[1, 1.2, 50.0, 30.0], [2, 1.2, 25.0, 10.0]]), {"r6": r6, "r6b": r6b})
+
+	# 連環計-7：去重與上限：六名敵人擠在主目標 0.3 格內，一次攻擊只追加 2 名（50、25），主目標不會再被打；只有主目標與一名敵人時只傳 1 跳、不回頭打主目標
+	var r7: Dictionary = _ch_case([Vector2(1, 0), Vector2(1.2, 0), Vector2(1, 0.2), Vector2(0.8, 0), Vector2(1, -0.2), Vector2(1.3, 0)])
+	var r7b: Dictionary = _ch_case([Vector2(1, 0), Vector2(1.5, 0)])
+	_check("連環計-7 最多 2 跳、每名敵人最多一次：六名擠在 0.3 格內 → 主目標 100、序號 1（0.2 格）50、再從它的位置最近的序號 5（0.1 格）25，其他 0；只有兩名敵人時只傳 1 跳（主目標仍是 100、不回頭）",
+		r7.dmg == [100.0, 50.0, 0.0, 0.0, 0.0, 25.0] and r7.hits == 2 and r7b.dmg == [100.0, 50.0] and r7b.hits == 1 and r7b.count == 1, {"r7": r7.dmg, "r7b": r7b})
+
+	# 連環計-8：無效的對象都略過、不存取已釋放的節點：比有效敵人更近的「正要被移除」（queue_free）、「已倒下但還在清單」、「已釋放」的敵人都不算
+	var holder8 := _dodge_holder()
+	var wave8 := R20Wave.new()
+	holder8.add_child(wave8)
+	var g8: Node = _ch_hero(holder8, wave8)
+	var p8: Node = _ch_enemy(holder8, wave8, 99999.0, Vector2(1, 0), 0)
+	var q8: Node = _ch_enemy(holder8, wave8, 99999.0, Vector2(1.2, 0), 1)
+	var d8n: Node = _ch_enemy(holder8, wave8, 99999.0, Vector2(1.3, 0), 2)
+	var f8: Node = _ch_enemy(holder8, wave8, 99999.0, Vector2(1.1, 0), 3)
+	var v8: Node = _ch_enemy(holder8, wave8, 99999.0, Vector2(2.0, 0), 4)
+	q8.queue_free()
+	d8n._is_dead = true
+	f8.free()
+	var hp8: Array = [q8.current_hp, d8n.current_hp]
+	var r8: Dictionary = _ch_round(g8, [p8, v8])
+	var d8: Dictionary = {"dmg": r8.dmg, "hits": r8.hits, "untouched": [q8.current_hp, d8n.current_hp] == hp8, "log": r8.log}
+	holder8.queue_free()
+	_check("連環計-8 比有效敵人更近的正要被移除、已倒下（還在清單）、已釋放的敵人都略過（不受傷、不佔名額、不出錯）：有效的敵人（1 格）受 50，之後沒有其他對象就停止（追加命中 1）",
+		d8.dmg == [100.0, 50.0] and d8.hits == 1 and d8.untouched and _ch_jumps_ok(d8.log, [[4, 1.0, 50.0, 50.0]]), d8)
+
+	# 連環計-9：打不到的敵人不會被傳到：步兵版的龐統（不能對空）遇到更近的飛行敵人時略過它、打 1.2 格的地面敵人；法師可以傳到飛行敵人，再從它傳到地面敵人
+	var r9a: Dictionary = _ch_case([Vector2(1, 0), Vector2(1.5, 0), Vector2(2.2, 0)], [], 100.0, null, "infantry", [1])
+	var r9b: Dictionary = _ch_case([Vector2(1, 0), Vector2(1.5, 0), Vector2(2.2, 0)], [], 100.0, null, "mage", [1])
+	_check("連環計-9 不能對空的職業不會傳到飛行敵人（略過 0.5 格的飛行敵人、改傳 1.2 格的地面敵人 50）；法師先傳到飛行敵人 50、再從它傳到 0.7 格的地面敵人 25",
+		r9a.dmg == [100.0, 0.0, 50.0] and r9a.hits == 1 and r9b.dmg == [100.0, 50.0, 25.0] and r9b.hits == 2, {"infantry": r9a.dmg, "mage": r9b.dmg})
+
+	# 連環計-10：不觸發：攻擊力 0（主目標沒有實際扣血）、附近沒有其他敵人時不傳遞、沒有連線效果；射程內沒有敵人時不攻擊
+	var r10a: Dictionary = _ch_case([Vector2(1, 0), Vector2(1.5, 0)], [], 0.0)
+	var r10b: Dictionary = _ch_case([Vector2(1, 0)])
+	var r10c: Dictionary = _ch_case([Vector2(4, 0), Vector2(4.5, 0)])
+	_check("連環計-10 主目標沒有實際扣血（攻擊力 0）不傳遞（0、0，傳遞 0 次）；只有主目標時是普通攻擊（沒有連線效果）；射程外的敵人不攻擊也不傳遞",
+		r10a.dmg == [0.0, 0.0] and r10a.count == 0 and r10a.hits == 0 and r10a.fx == 0
+			and r10b.dmg == [100.0] and r10b.count == 0 and r10b.fx == 0 and r10b.attacks == 1
+			and r10c.dmg == [0.0, 0.0] and r10c.attacks == 0 and r10c.count == 0, {"atk0": r10a, "alone": r10b, "out": r10c})
+
+	# 連環計-11：攻擊次數與冷卻：有傳遞的回合和沒有技能的武將相同（攻擊次數 +1、冷卻 1 秒）；連打 3 回合：攻擊 3、傳遞 3、追加命中 6、紀錄 3 筆
+	var r11p: Dictionary = _ch_case([Vector2(1, 0), Vector2(2.2, 0), Vector2(3.4, 0)], [], 100.0, {})
+	var holder11 := _dodge_holder()
+	var wave11 := R20Wave.new()
+	holder11.add_child(wave11)
+	var g11: Node = _ch_hero(holder11, wave11)
+	var es11: Array = [_ch_enemy(holder11, wave11, 99999.0, Vector2(1, 0), 0), _ch_enemy(holder11, wave11, 99999.0, Vector2(2.2, 0), 1), _ch_enemy(holder11, wave11, 99999.0, Vector2(3.4, 0), 2)]
+	var rounds11: Array = []
+	for i in range(3):
+		var rr: Dictionary = _ch_round(g11, es11)
+		rounds11.append([rr.dmg, rr.attacks, snappedf(rr.timer, 0.0001)])
+	var s11: Dictionary = g11.chain_state()
+	holder11.queue_free()
+	_check("連環計-11 傳遞不算一次攻擊、不改冷卻：沒有技能時 [100,0,0]、攻擊 +1、冷卻 1 秒；龐統每回合 [100,50,25]、攻擊 +1、冷卻 1 秒；3 回合後攻擊 3、傳遞 3、追加命中 6、實扣 225、紀錄 3 筆",
+		r11p.dmg == [100.0, 0.0, 0.0] and r11p.attacks == 1 and is_equal_approx(r11p.timer, 1.0)
+			and rounds11 == [[[100.0, 50.0, 25.0], 1, 1.0], [[100.0, 50.0, 25.0], 1, 1.0], [[100.0, 50.0, 25.0], 1, 1.0]]
+			and s11.attacks == 3 and s11.count == 3 and s11.hits == 6 and _ls_near(s11.dealt, 225.0, 1e-6) and s11.log.size() == 3, {"plain": r11p, "rounds": rounds11, "state": s11})
+
+	# 連環計-12：傳遞不引發其他技能、不遞迴：龐統同時被硬塞了吸血與灼燒的數值（只在這個測試直接設定）時，吸血只算主目標的實扣、灼燒只附加在主目標；
+	# 傳遞的傷害不再引發新的連環計（三個敵人時只有 2 跳，不會每跳再分支）
+	var holder12 := _dodge_holder()
+	var wave12 := R20Wave.new()
+	holder12.add_child(wave12)
+	var g12: Node = _ch_hero(holder12, wave12)
+	g12.current_hp = 500.0
+	g12.lifesteal_ratio = 0.1
+	g12.burn_ratio = 0.2
+	g12.burn_ticks = 3
+	g12.burn_interval = 1.0
+	var es12: Array = []
+	for i in range(4):
+		var e12 := DsEnemy.new()
+		holder12.add_child(e12)
+		e12.set_physics_process(false)
+		e12.setup({"enemy_id": "stn", "hp": 99999.0, "speed": 0.0}, [Vector2.ZERO, Vector2(40.0 * 48.0, 0.0)])
+		e12.position = [Vector2(1, 0), Vector2(2.2, 0), Vector2(3.4, 0), Vector2(3.4, 1.0)][i] * 48.0
+		e12.spawn_seq = i
+		wave12.enemies.append(e12)
+		es12.append(e12)
+	var r12: Dictionary = _ch_round(g12, es12)
+	var d12: Dictionary = {"dmg": r12.dmg, "heal": snappedf(g12.current_hp - 500.0, 0.0001), "burn_calls": es12.map(func(e): return e.burn_calls), "hits": r12.hits}
+	holder12.queue_free()
+	_check("連環計-12 傳遞不引發其他技能：吸血只回復主目標實扣的 10%（+10，不含傳遞的 75）、灼燒只附加在主目標；第三名敵人（第二跳旁邊 1 格）不會被分支打到",
+		d12.dmg == [100.0, 50.0, 25.0, 0.0] and _ls_near(d12.heal, 10.0, 1e-6) and d12.burn_calls == [1, 0, 0, 0] and d12.hits == 2, d12)
+
+	# 連環計-13：連線效果照遊戲時間消失：0.34 秒後還在、再 0.02 秒（共 0.36）後消失；手動處理 0 秒不前進
+	var holder13 := _dodge_holder()
+	var wave13 := R20Wave.new()
+	holder13.add_child(wave13)
+	var g13: Node = _ch_hero(holder13, wave13)
+	var es13: Array = [_ch_enemy(holder13, wave13, 99999.0, Vector2(1, 0), 0), _ch_enemy(holder13, wave13, 99999.0, Vector2(2.2, 0), 1)]
+	_ch_round(g13, es13)
+	var fx13: Array = _ch_fx_of(g13)
+	var d13: Dictionary = {"fx": fx13.size()}
+	if fx13.size() == 1:
+		var f13: Node = fx13[0]
+		f13._process(0.0)
+		d13["after0"] = f13.elapsed
+		f13._process(0.34)
+		d13["alive_034"] = not f13.is_queued_for_deletion()
+		f13._process(0.02)
+		d13["gone_036"] = f13.is_queued_for_deletion()
+	holder13.queue_free()
+	_check("連環計-13 連線效果 0.35 秒（遊戲時間）後消失：0 秒不前進、0.34 秒還在、0.36 秒消失",
+		d13.get("fx") == 1 and is_equal_approx(float(d13.get("after0", -1.0)), 0.0) and d13.get("alive_034") == true and d13.get("gone_036") == true, d13)
+
+	# ── 實際引擎（Main、經過 JSON 的出征資料）──
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+	var offs3: Array = [Vector2.ZERO, Vector2(1.2, 0.0), Vector2(2.4, 0.0)]
+
+	# 連環計-20：Godot 讀到出征資料的參數；選取面板帶 chain（範圍、比例、跳數）；快照的 hero_chain 有參數與統計；手動打一次 [100,50,25]、擊殺 0
+	var es: Array = await _ch_start(rec, "chain-20", 3)
+	var d20: Dictionary = {}
+	if es.size() == 3 and _ch_main_hero() != null:
+		var g: Node = _ch_main_hero()
+		d20["read"] = [g.chain_radius, g.chain_ratio, g.chain_max_jumps, g.can_hit_air]
+		_ch_place(es, offs3)
+		var r20: Dictionary = _ch_hit(es)
+		d20["hit"] = r20
+		var n_panel: int = rec.sent_panels.size()
+		main._on_hero_clicked(g)
+		d20["panel"] = rec.sent_panels.back().get("chain") if rec.sent_panels.size() > n_panel else null
+		var n_snap: int = rec.sent_snapshots.size()
+		main._on_debug_snapshot_requested("chain-20")
+		var snap: Dictionary = rec.sent_snapshots.back() if rec.sent_snapshots.size() > n_snap else {}
+		var hc: Dictionary = snap.get("hero_chain", {}).get(CH_HERO, {})
+		d20["snap"] = {"radius": hc.get("radius"), "ratio": hc.get("ratio"), "max_jumps": hc.get("max_jumps"), "count": hc.get("count"), "hits": hc.get("hits"), "dealt": hc.get("dealt"), "attacks": hc.get("attacks"), "fx": hc.get("fx")}
+	_check("連環計-20 實際引擎：讀到出征資料的參數（1.5 格、0.5、2 跳，法師能對空）；手動打一次 100、50、25（傳遞 1、追加命中 2、攻擊 +1、連線效果 1、擊殺 0）；選取面板帶 chain {1.5, 0.5, 2}；快照的 hero_chain 有參數與統計",
+		d20.get("read") == [1.5, 0.5, 2, true] and d20.has("hit") and d20.hit.dmg == [100.0, 50.0, 25.0] and d20.hit.count == 1 and d20.hit.hits == 2 and d20.hit.attacks == 1 and d20.hit.fx == 1 and d20.hit.kills == 0
+			and d20.get("panel") == {"radius": 1.5, "ratio": 0.5, "max_jumps": 2}
+			and d20.get("snap", {}).get("radius") == 1.5 and d20.snap.ratio == 0.5 and d20.snap.max_jumps == 2 and d20.snap.count == 1 and d20.snap.hits == 2 and _ls_near(d20.snap.dealt, 75.0, 1e-6) and d20.snap.attacks == 1 and d20.snap.fx == 1, d20)
+
+	# 連環計-21：主目標與兩名傳遞對象同一擊全部倒下（血量 100、50、25）：擊殺 3、金幣 3 份；清波後只結算一次，結算的擊殺數是 3
+	var ended0: int = battle_ended_count
+	es = await _ch_start(rec, "chain-21", 3)
+	var d21: Dictionary = {}
+	if es.size() == 3:
+		es[0].current_hp = 100.0
+		es[1].current_hp = 50.0
+		es[2].current_hp = 25.0
+		_ch_place(es, offs3)
+		d21 = _ch_hit(es)
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 3.0)
+		await _wait(0.3)
+		d21["ended"] = battle_ended_count - ended0
+		d21["result_kills"] = last_result.get("kills")
+		d21["result_bid"] = last_result.get("battle_id")
+	_check("連環計-21 主目標與兩名傳遞對象同一擊全部倒下：擊殺 3、金幣 +15；只結算一次，結算的擊殺數是 3",
+		d21.get("dmg") == [100.0, 50.0, 25.0] and d21.get("kills") == 3 and d21.get("gold") == 3 * BattleManager.GOLD_PER_KILL and d21.get("ended") == 1
+			and int(d21.get("result_kills", -1)) == 3 and d21.get("result_bid") == "chain-21", d21)
+
+	# 連環計-22：1× 與 2× 各 3 秒遊戲時間：每次攻擊都是主目標 100＋第一跳 50＋第二跳 25（同一幀），攻擊時間符合累積時程，次數 6～8、兩種倍率相差不超過 1，傳遞次數＝攻擊次數
+	var runs: Dictionary = {}
+	for sp in [1.0, 2.0]:
+		es = await _ch_start(rec, "chain-22-x%d" % int(sp), 3, null, false)
+		if es.size() != 3:
+			continue
+		_r19_speed(rec, sp)
+		_ch_place(es, offs3)
+		runs[sp] = await _ch_run(es, 3.0)
+		runs[sp]["time_scale"] = Engine.time_scale
+	var ok22: bool = runs.size() == 2
+	for sp in runs:
+		ok22 = ok22 and _ch_run_ok(runs[sp], 6, 8)
+	if ok22:
+		ok22 = absi(runs[1.0].t.size() - runs[2.0].t.size()) <= 1 and runs[2.0].time_scale == 2.0
+	_check("連環計-22 1× 與 2× 各 3 秒遊戲時間：每次攻擊都是 100＋50＋25（同一幀），攻擊時間符合累積時程，次數 6～8 且兩種倍率相差不超過 1，傳遞次數＝攻擊次數", ok22, runs)
+
+	# 連環計-23：部署選單的暫時慢速（0.1×）：0.6 秒遊戲時間內攻擊 1～2 次，每次照樣 100＋50＋25
+	es = await _ch_start(rec, "chain-23", 3, null, false)
+	var r23: Dictionary = {}
+	if es.size() == 3:
+		var menu: Dictionary = _r19_open(rec)
+		r23["time_scale"] = Engine.time_scale
+		_ch_place(es, offs3)
+		r23["run"] = await _ch_run(es, 0.6)
+		_r19_close(rec, menu)
+	var ok23: bool = r23.has("run") and is_equal_approx(float(r23.time_scale), 0.1) and not r23.run.t.is_empty() and r23.run.t.size() <= 2 and r23.run.bad.is_empty() and r23.run.count == r23.run.t.size()
+	if ok23:
+		for p in r23.run.per_attack:
+			ok23 = ok23 and p == [1, 1, 1]
+		if r23.run.t.size() == 2:
+			ok23 = ok23 and float(r23.run.t[1]) - float(r23.run.t[0]) >= 0.5 - float(r23.run.dmax) - 0.0005
+	_check("連環計-23 部署選單開著（0.1×）：0.6 秒遊戲時間內攻擊 1～2 次，每次 100＋50＋25，攻擊間隔照遊戲時間", ok23, r23)
+
+	# 連環計-24：連線效果的時間是遊戲時間：1× 與 2× 都在 0.35 秒遊戲時間（± 一幀）後消失
+	var life: Dictionary = {}
+	for sp in [1.0, 2.0]:
+		es = await _ch_start(rec, "chain-24-x%d" % int(sp), 3, null, false)
+		if es.size() != 3:
+			continue
+		_r19_speed(rec, sp)
+		var c0: int = _ch_main_hero().chain_count
+		_ch_place(es, offs3)
+		await _wait_until(func(): return _ch_main_hero().chain_count > c0, 3.0)
+		var fxs: Array = _ch_fx_of(_ch_main_hero())
+		if fxs.is_empty():
+			continue
+		var f: Node = fxs[0]
+		var t0: float = _gt() - float(f.elapsed)
+		var prev: float = _gt()
+		var dmax: float = 0.0
+		var wall_end: int = Time.get_ticks_msec() + 5000
+		while is_instance_valid(f) and not f.is_queued_for_deletion() and Time.get_ticks_msec() < wall_end:
+			await process_frame
+			dmax = maxf(dmax, _gt() - prev)
+			prev = _gt()
+		life[sp] = {"life": snappedf(_gt() - t0, 0.0001), "dmax": snappedf(dmax, 0.0001), "time_scale": Engine.time_scale}
+	var ok24: bool = life.size() == 2
+	for sp in life:
+		ok24 = ok24 and float(life[sp].life) >= 0.35 - 0.0005 and float(life[sp].life) <= 0.35 + float(life[sp].dmax) + 0.0005
+	_check("連環計-24 連線效果 0.35 秒遊戲時間後消失：1× 與 2× 都在 0.35 秒到＋一幀之間", ok24, life)
+
+	# 連環計-25：手動暫停：連線效果、攻擊冷卻、三個敵人的血量、遊戲時間與傳遞次數都不前進；繼續後效果照剩下的時間消失、之後照常傳遞
+	es = await _ch_start(rec, "chain-25", 3, null, false)
+	var d25: Dictionary = {}
+	if es.size() == 3:
+		var c0: int = _ch_main_hero().chain_count
+		_ch_place(es, offs3)
+		await _wait_until(func(): return _ch_main_hero().chain_count > c0, 3.0)
+		var fxs: Array = _ch_fx_of(_ch_main_hero())
+		d25["fx"] = fxs.size()
+		if fxs.size() == 1:
+			var f: Node = fxs[0]
+			var p: Dictionary = _r20_pause(rec, true)
+			d25["paused_reply"] = p.get("paused")
+			var b: Array = [f.elapsed, _ch_main_hero()._atk_timer, es.map(func(e): return e.current_hp), _gt(), _ch_main_hero().chain_count]
+			await _wait_real(0.6)
+			var a: Array = [f.elapsed if is_instance_valid(f) else -1.0, _ch_main_hero()._atk_timer, es.map(func(e): return e.current_hp), _gt(), _ch_main_hero().chain_count]
+			d25["frozen"] = is_instance_valid(f) and b == a
+			d25["before"] = b
+			d25["after"] = a
+			_r20_pause(rec, false)
+			var left: float = 0.35 - float(b[0])
+			var tr: float = _gt()
+			# 效果節點會被釋放：lambda 不直接捕捉它（捕捉到已釋放的物件會印出錯誤），改用 weakref
+			var wr: WeakRef = weakref(f)
+			await _wait_until_real(func(): return wr.get_ref() == null or wr.get_ref().is_queued_for_deletion(), 3.0)
+			d25["fx_left"] = snappedf(left, 0.0001)
+			d25["fx_gone_after"] = snappedf(_gt() - tr, 0.0001)
+			var c1: int = _ch_main_hero().chain_count
+			await _wait_until(func(): return _ch_main_hero().chain_count > c1, 3.0)
+			d25["resumed"] = _ch_main_hero().chain_count > c1
+	_check("連環計-25 手動暫停 0.6 秒：連線效果、攻擊冷卻、三個敵人的血量、遊戲時間與傳遞次數都不變；繼續後效果照剩下的時間消失，之後照常傳遞",
+		d25.get("fx") == 1 and d25.get("paused_reply") == true and d25.get("frozen") == true and float(d25.get("fx_gone_after", 99.0)) <= float(d25.get("fx_left", 0.0)) + 0.1 and d25.get("resumed") == true, d25)
+
+	# 連環計-26：升級（更新隊伍：2 級、攻擊力 150）後傳遞的範圍、比例與跳數不變，傷害跟著攻擊力（150、75、37.5），本場的統計不歸零；
+	# 移位到 (5,4) 後統計照樣累加、照常傳遞
+	es = await _ch_start(rec, "chain-26", 3)
+	var d26: Dictionary = {}
+	if es.size() == 3 and _ch_main_hero() != null:
+		_ch_place(es, offs3)
+		_ch_hit(es)
+		main._on_payload_received({"type": "update_team", "team_list": [_ch_member(null, 2, 150.0)]})
+		var g26: Node = _ch_main_hero()
+		g26.set_process(false)
+		d26["after_upgrade"] = [g26.hero_level, g26.atk, g26.chain_radius, g26.chain_ratio, g26.chain_max_jumps, g26.chain_count, g26.attack_count]
+		_ch_place(es, offs3)
+		d26["hit_upgraded"] = _ch_hit(es, g26.attack_speed).dmg
+		_blk_move(g26, Vector2i(5, 4))
+		_ch_place(es, offs3)
+		var r26: Dictionary = _ch_hit(es, g26.attack_speed)
+		d26["hit_moved"] = r26.dmg
+		d26["after_move"] = [g26.chain_count, g26.chain_hits, g26.attack_count]
+	_check("連環計-26 升級到 2 級（攻擊力 150）後範圍 1.5、比例 0.5、2 跳不變，傷害 150、75、37.5；本場統計不歸零（升級後傳遞 1 → 2）；移位後照常傳遞、統計累加到 3 次（追加命中 6、攻擊 3）",
+		d26.get("after_upgrade") == [2, 150.0, 1.5, 0.5, 2, 1, 1] and d26.get("hit_upgraded") == [150.0, 75.0, 37.5] and d26.get("hit_moved") == [150.0, 75.0, 37.5]
+			and d26.get("after_move") == [3, 6, 3], d26)
+
+	# 連環計-27：換成其他技能（反擊）後不再傳遞（統計保留、不再增加）；移出隊伍時連線效果跟著清除、之後 1.2 秒沒有任何傷害；新的一場的龐統統計從 0 開始、沒有殘留的效果
+	es = await _ch_start(rec, "chain-27", 3)
+	var d27: Dictionary = {}
+	if es.size() == 3 and _ch_main_hero() != null:
+		_ch_place(es, offs3)
+		_ch_hit(es)
+		var fx_a: Array = _ch_fx_of(_ch_main_hero())
+		d27["fx_before"] = fx_a.size()
+		main._on_payload_received({"type": "update_team", "team_list": [_r12_hero(CH_HERO, {"id": "counter", "counter_ratio": 0.2})]})
+		var g27: Node = _ch_main_hero()
+		g27.set_process(false)
+		_ch_place(es, offs3)
+		d27["plain_hit"] = _ch_hit(es, g27.attack_speed)
+		d27["plain_ratio"] = g27.chain_ratio
+		main._on_payload_received({"type": "update_team", "team_list": []})
+		await process_frame
+		await process_frame
+		d27["fx_after_remove"] = _ch_fx_of(g27).size() if is_instance_valid(g27) else 0
+		d27["fx_node_freed"] = fx_a.size() == 1 and not is_instance_valid(fx_a[0])
+		var hp_before: Array = es.map(func(e): return e.current_hp)
+		await _wait(1.2)
+		d27["no_damage_after_remove"] = es.map(func(e): return e.current_hp) == hp_before
+		es = await _ch_start(rec, "chain-27b", 3)
+		d27["new_battle"] = [_ch_main_hero().chain_count, _ch_main_hero().chain_hits, _ch_fx_of(_ch_main_hero()).size()] if _ch_main_hero() != null else null
+	_check("連環計-27 換成其他技能（反擊）：比例 0、只有主目標 100（傳遞次數不增加）；移出隊伍時連線效果清除、之後 1.2 秒沒有傷害；新的一場統計從 0 開始、沒有殘留的效果",
+		d27.get("fx_before") == 1 and d27.get("plain_ratio") == 0.0 and d27.get("plain_hit", {}).get("dmg") == [100.0, 0.0, 0.0] and d27.plain_hit.count == 0
+			and d27.get("fx_after_remove") == 0 and d27.get("fx_node_freed") == true and d27.get("no_damage_after_remove") == true and d27.get("new_battle") == [0, 0, 0], d27)
 
 	rec.payload_received.disconnect(main._on_payload_received)
 	main.web_bridge = original

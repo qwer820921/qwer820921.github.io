@@ -533,6 +533,9 @@ func _on_hero_clicked(hero: Node) -> void:
 	if hero.tenacity_hp_ratio > 0.0:
 		info["tenacity"] = {"active": hero.tenacity_on(), "low_hp_ratio": hero.tenacity_hp_ratio, "damage_mult": hero.tenacity_damage_mult,
 			"max_hp": hero.max_hp}
+	# 連環計（龐統）：Godot 實際讀到的每跳範圍（格）、傳遞比例與最多跳數；沒有啟用這個技能的武將不帶這個欄位
+	if hero.chain_ratio > 0.0:
+		info["chain"] = {"radius": hero.chain_radius, "ratio": hero.chain_ratio, "max_jumps": hero.chain_max_jumps}
 	web_bridge.send_show_upgrade_panel(info)
 
 func _on_tower_clicked(tower: Node) -> void:
@@ -977,6 +980,9 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var hero_atk_down: Dictionary = {}
 	# 連射（孫尚香）：Godot 實際讀到的機率（沒有啟用時不列出）、抽亂數與追加的次數、追加的一擊實際扣掉的生命總量、普通攻擊的次數與最近幾次的抽樣
 	var hero_double_shot: Dictionary = {}
+	# 連環計（龐統）：Godot 實際讀到的半徑、比例與跳數（沒有啟用時不列出）、有傳遞的攻擊次數、追加命中的次數與實際扣掉的生命總量、
+	# 普通攻擊的次數、還在顯示的連線效果數與最近幾次傳遞的每一跳
+	var hero_chain: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
@@ -997,6 +1003,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			hero_atk_down[hid] = hero.atk_down_state()
 		if hero.double_shot_chance > 0.0:
 			hero_double_shot[hid] = hero.double_shot_state()
+		if hero.chain_ratio > 0.0:
+			hero_chain[hid] = hero.chain_state()
 		hero_ranges[hid] = hero.attack_range
 		hero_hp[hid] = hero.current_hp
 		hero_slow[hid] = hero.slow_state()
@@ -1088,6 +1096,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		# 連射（孫尚香）
 		"hero_double_shot":  hero_double_shot,
 		"double_shot_texts": double_shot_texts,
+		# 連環計（龐統）
+		"hero_chain":        hero_chain,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)

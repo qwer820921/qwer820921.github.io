@@ -364,6 +364,18 @@ export type HeroSkillPayload =
        * 不是 0～1 之間（不含兩端）的有限數字時 Godot 當作沒有這個技能
        */
       double_shot_chance: number;
+    }
+  | {
+      id: "chain";
+      /** 每一跳從前一個被打中的敵人找下一個敵人的範圍（格，含邊界）；不是正的有限數字時 Godot 當作沒有這個技能 */
+      chain_radius: number;
+      /**
+       * 每跳的傷害比例（0.5＝第一跳是主攻擊傷害的 50%、第二跳 25%）；
+       * 不是 0～1 之間（不含兩端）的有限數字時 Godot 當作沒有這個技能
+       */
+      chain_ratio: number;
+      /** 最多傳遞幾次（只接受 1 或 2）；其他值時 Godot 當作沒有這個技能 */
+      chain_max_jumps: number;
     };
 
 export interface ExpeditionPayload {
