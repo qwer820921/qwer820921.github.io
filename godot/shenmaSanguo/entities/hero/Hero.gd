@@ -14,6 +14,7 @@
 ## 連環計（龐統）：普通攻擊實際扣到主目標的生命後，依序傳給前一個被打中的敵人附近的下一個敵人（見 chain_ratio、_chain），傷害逐跳遞減
 ## 呼風喚雨（諸葛亮）：普通攻擊實際扣到主目標的生命後，以主目標被打中的位置為中心，範圍內最多幾名其他敵人各受一定比例的傷害（見 storm_ratio、_storm），不遞減、不傳遞
 ## 戰神（呂布）：自己的普通攻擊打倒敵人後，下一擊起攻擊力加一層（見 berserk_ratio、berserk_atk；層數記在 BattleManager，這一場內保留）
+## 補給（魯肅）：在場上、還活著時，全隊每次有效擊殺的戰鬥金幣乘上倍率（見 supply_gold_multiplier；擊殺結算時由 BattleManager 確認來源）
 
 class_name Hero
 extends Node2D
@@ -288,6 +289,12 @@ var berserk_max_stacks: int = 0
 const BERSERK_COLOR: Color = Color(1.0, 0.45, 0.2)
 var berserk_shown: int = 0
 var berserk_last_text: String = ""
+## 補給（supply，魯肅）：這位武將在場上（場景樹裡）、沒有正要被移除、生命大於 0 時，這一場每次有效擊殺的戰鬥金幣＝基礎 × 倍率（向下取整）。
+## 不限自己打倒的：其他武將、防禦塔、灼燒等任何來源的有效擊殺都算，擊殺數照常只加一次；只改有效擊殺的戰鬥金幣，不改部署、升級、
+## 退款與拆除的金額，也不改玩家的獎勵。登記在 BattleManager，擊殺結算的當下才確認（陣亡、被移除、換成其他技能時立刻不算）；
+## 同時有幾個來源時取最高的倍率，不相乘、不相加。攻擊力、攻擊間隔、射程、防禦、生命都不變。
+## supply_gold_multiplier 1.0 代表沒有這個技能；倍率要是大於 1、不超過 2 的有限數字，其他值（缺少、字串、布林、NaN、無限大、1 以下、超過 2）都不啟用
+var supply_gold_multiplier: float = 1.0
 ## 測試用唯讀統計（debug_snapshot）：這位武將的遊戲時間（_process 的 delta 累加，受時間倍率影響、手動暫停時不前進）、
 ## 普通攻擊的次數，以及最近 ATTACK_LOG_MAX 次攻擊的時間、這次冷卻用的攻擊間隔與當時的攻速加成
 var _age: float = 0.0
@@ -412,9 +419,11 @@ func _read_skill(state: Dictionary) -> void:
 	storm_max_targets = 0
 	berserk_ratio = 0.0
 	berserk_max_stacks = 0
+	supply_gold_multiplier = 1.0
 	var skill = state.get("skill", null)
 	if not (skill is Dictionary):
 		_drop_berserk_stacks()
+		_sync_supply()
 		return
 	match str(skill.get("id", "")):
 		"first_strike":
@@ -520,8 +529,14 @@ func _read_skill(state: Dictionary) -> void:
 			if _open_unit(bk) and _positive_whole(bx) and float(bx) <= 10.0:
 				berserk_ratio = float(bk)
 				berserk_max_stacks = int(bx)
+		"supply":
+			# 倍率要是大於 1、不超過 2 的有限數字；字串、布林、null、NaN、無限大、1 以下、超過 2、沒有欄位都不啟用（當作普通武將）
+			var g: Variant = skill.get("supply_gold_multiplier")
+			if _positive_finite(g) and float(g) > 1.0 and float(g) <= 2.0:
+				supply_gold_multiplier = float(g)
 	if not (berserk_ratio > 0.0):
 		_drop_berserk_stacks()
+	_sync_supply()
 
 ## 技能參數是正的有限數字（JSON 的數字在 Godot 是 float；字串、布林、null、NaN、無限大、0 以下都不是）
 static func _positive_finite(v: Variant) -> bool:
@@ -965,6 +980,23 @@ func berserk_state() -> Dictionary:
 	return {"ratio": berserk_ratio, "max_stacks": berserk_max_stacks, "stacks": stacks, "mult": 1.0 + berserk_ratio * float(stacks),
 		"base_atk": atk, "effective_atk": berserk_atk(), "shown": berserk_shown, "last_text": berserk_last_text, "attacks": attack_count,
 		"kills": int(rec.get("kills", 0)), "log": rec.get("log", [])}
+
+## 補給：這位武將此刻能不能提供補給：有這個技能、在場景樹裡（在場上）、沒有正要被移除、生命大於 0（擊殺結算的當下由 BattleManager 呼叫）
+func supply_active() -> bool:
+	return supply_gold_multiplier > 1.0 and is_inside_tree() and _hero_alive(self)
+
+## 補給：讀完技能後向 BattleManager 登記或取消（登記只是候選名單，是否有效在擊殺結算時才確認）；沒有 BattleManager（單獨建立的武將）時不做事
+func _sync_supply() -> void:
+	if _battle_mgr == null:
+		return
+	if supply_gold_multiplier > 1.0:
+		_battle_mgr.register_supply(self)
+	else:
+		_battle_mgr.unregister_supply(self)
+
+## 測試用唯讀資訊（debug_snapshot）：Godot 實際讀到的倍率、此刻能不能提供補給、這位武將提供時每次擊殺的戰鬥金幣
+func supply_state() -> Dictionary:
+	return {"mult": supply_gold_multiplier, "active": supply_active(), "kill_gold": BattleManager.kill_gold(supply_gold_multiplier)}
 
 ## 技能觸發時在武將上方顯示的文字（金色、放大，和一般的傷害數字區分）
 const SKILL_TEXT_COLOR: Color = Color(1.0, 0.85, 0.2)

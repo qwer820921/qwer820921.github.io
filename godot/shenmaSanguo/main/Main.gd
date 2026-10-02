@@ -253,8 +253,8 @@ func _on_auto_btn_pressed() -> void:
 # ═══════════════════════════════════════════
 #  敵人事件：WaveManager → BattleManager
 # ═══════════════════════════════════════════
-func _on_enemy_killed(_enemy: Node) -> void:
-	battle_manager.on_enemy_killed()
+func _on_enemy_killed(enemy: Node) -> void:
+	battle_manager.on_enemy_killed(enemy)
 
 func _on_enemy_leaked(_enemy: Node) -> void:
 	battle_manager.on_enemy_reached_base()
@@ -543,6 +543,13 @@ func _on_hero_clicked(hero: Node) -> void:
 	if hero.berserk_ratio > 0.0:
 		info["berserk"] = {"ratio": hero.berserk_ratio, "max_stacks": hero.berserk_max_stacks, "stacks": hero.berserk_stacks(),
 			"base_atk": hero.atk, "effective_atk": hero.berserk_atk()}
+	# 補給（魯肅）：Godot 實際讀到的倍率、選取當下這位武將能不能提供、基礎與這位武將提供時每次擊殺的金幣、
+	# 這一場此刻每次擊殺的金幣與最強的來源（全場取最高的倍率）；沒有啟用這個技能的武將不帶這個欄位
+	if hero.supply_gold_multiplier > 1.0:
+		var src: Dictionary = battle_manager.supply_source()
+		info["supply"] = {"multiplier": hero.supply_gold_multiplier, "active": hero.supply_active(), "base_gold": BattleManager.GOLD_PER_KILL,
+			"hero_kill_gold": BattleManager.kill_gold(hero.supply_gold_multiplier), "kill_gold": BattleManager.kill_gold(float(src.mult)),
+			"source": src.hero_id}
 	web_bridge.send_show_upgrade_panel(info)
 
 func _on_tower_clicked(tower: Node) -> void:
@@ -996,6 +1003,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 戰神（呂布）：Godot 實際讀到的每層比例與上限（沒有啟用時不列出）、這一場的層數與倍率、基礎與有效攻擊力、加層提示的次數、
 	# 普通攻擊的次數與最近幾次自己的擊殺（生成序號、這一擊的傷害、實扣、加層前後）
 	var hero_berserk: Dictionary = {}
+	# 補給（魯肅）：Godot 實際讀到的倍率（沒有啟用時不列出）、此刻能不能提供、這位武將提供時每次擊殺的金幣
+	var hero_supply: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
@@ -1022,6 +1031,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			hero_storm[hid] = hero.storm_state()
 		if hero.berserk_ratio > 0.0:
 			hero_berserk[hid] = hero.berserk_state()
+		if hero.supply_gold_multiplier > 1.0:
+			hero_supply[hid] = hero.supply_state()
 		hero_ranges[hid] = hero.attack_range
 		hero_hp[hid] = hero.current_hp
 		hero_slow[hid] = hero.slow_state()
@@ -1118,6 +1129,7 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		# 呼風喚雨（諸葛亮）
 		"hero_storm":        hero_storm,
 		"hero_berserk":      hero_berserk,
+		"hero_supply":       hero_supply,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)

@@ -10,6 +10,8 @@ async (page) => {
   //   保存回應還沒回來時載入別的地圖或建立新地圖（結果另外列出、不改目前畫面與原值）、
   //   波次保存以讀回的內容為基準（整波空白、有效與空白的組混在一起、保存期間又改、讀回失敗、結果不明、
   //   保存期間切換地圖、管理密碼錯誤）、
+  //   儲存波次前確認地圖存在（設定裡沒有→不問密碼不寫入、讀取失敗→只讀重新確認、確認期間換圖或改波次→不送出）、
+  //   新增地圖後讀回（建立已保存的基準、讀回失敗、結果不明已套用／沒有送到、同 map_id 已存在、讀回期間修改或換圖）、
   //   素材轉換（有效圖片、無效檔案、取消）不加入素材選單、下載的檔案是 WebP；390 寬與矮畫面、鍵盤
   // - 預設用腳本內建的模擬後端；tools/run-browser.mjs 設定 GAS_BACKEND 為提供 setMapTables 等介面的模組時，
   //   改由那個模組處理（例如在模擬試算表上執行真正的後端程式）
@@ -41,6 +43,9 @@ async (page) => {
     },
     enemies: { header: snap.columns, rows: snap.enemies.map((e) => snap.columns.map((h) => (e[h] === undefined ? "" : e[h]))) },
   };
+  // 沒有地圖的波次列（設定裡沒有 chapter_orphan_probe 這張地圖，波次表卻有 2 波）：新增這個 map_id 後讀回時要說明
+  const ORPHAN = "chapter_orphan_probe";
+  tables.waves.rows.push([ORPHAN, 1, "grunt_lv1", 3, 1.5, "path_a"], [ORPHAN, 2, "grunt_lv2", 4, 1.5, "path_a"]);
 
   // ── 後端（內建模擬或 GAS_BACKEND 的模組）──
   const factory = ctx.__shenmaGasBackendFactory;
@@ -108,11 +113,30 @@ async (page) => {
         return { status: 200, success: true, message: "MAP_UPDATED" };
       }
       if (body.action === "save_waves_config") {
+        // 和後端相同：不檢查地圖是否存在（對不存在的 map_id 也照樣寫入）
         const id = String(p.map_id).trim();
         t.waves.rows = t.waves.rows.filter((r) => String(r[0]).trim() !== id);
         (p.waves || []).forEach((w) => (w.enemies || []).forEach((e) => t.waves.rows.push([id, w.wave, e.enemy_id, Number(e.count), Number(e.interval), e.path || "path_a"])));
         write(TABLES, t);
         return { status: 200, success: true, message: "WAVES_SAVED" };
+      }
+      // create_map_config：同一個 map_id 已存在時 409 MAP_ID_EXISTS（不改任何列）；新增一列，章節沒有時是 1、解鎖條件沒有時是空白
+      if (body.action === "create_map_config") {
+        if (!p.map_id) return { status: 400, error: "MISSING_MAP_ID" };
+        if (!p.name) return { status: 400, error: "MISSING_NAME" };
+        if (!p.path_json || typeof p.path_json !== "object") return { status: 400, error: "MISSING_PATH_JSON" };
+        if (t.maps.rows.some((r) => String(r[0]).trim() === String(p.map_id).trim())) return { status: 409, error: "MAP_ID_EXISTS" };
+        const h = t.maps.header;
+        const added = h.map(() => "");
+        const set = (c, v) => { const j = h.indexOf(c); if (j >= 0) added[j] = v; };
+        set("map_id", p.map_id);
+        set("name", p.name);
+        set("chapter", p.chapter || 1);
+        set("unlock_stage", p.unlock_stage || "");
+        set("path_json", JSON.stringify(p.path_json));
+        t.maps.rows.push(added);
+        write(TABLES, t);
+        return { status: 200, success: true, message: "MAP_CREATED" };
       }
       return { status: 400, error: "MOCK_UNSUPPORTED_" + body.action };
     };
@@ -134,11 +158,18 @@ async (page) => {
       // 保存的請求暫停在送到後端之前（保存期間切換地圖、建立新地圖、又改了畫面）
       if ((body.action === "update_map_config" || body.action === "save_waves_config") && ctrl.holdSave) await new Promise((r) => window.__mapmetaHeldSave.push(r));
       if (body.action === "get_all_maps" && ctrl.failList) { once("failList"); log({ status: 500, injected: true }); return reply({ status: 500, error: "MOCK_LIST_FAILED" }); }
-      if (body.action === "get_map_config" && ctrl.failGet) { once("failGet"); log({ status: 500, injected: true, map_id: p.map_id }); return reply({ status: 500, error: "MOCK_READ_FAILED" }); }
-      // 連線失敗：network 是請求沒有送到後端；applied-network 是後端已寫入、回應遺失（地圖用 updateMode、波次用 wavesMode）
+      // 讀取地圖失敗：failGet 是 1 時後端回 500，是 "network" 時連線失敗（逾時、斷線）
+      if (body.action === "get_map_config" && ctrl.failGet) {
+        const kind = once("failGet");
+        if (kind === "network") { log({ network: "read-failed", injected: true, map_id: p.map_id }); throw new TypeError("Failed to fetch"); }
+        log({ status: 500, injected: true, map_id: p.map_id });
+        return reply({ status: 500, error: "MOCK_READ_FAILED" });
+      }
+      // 連線失敗：network 是請求沒有送到後端；applied-network 是後端已處理、回應遺失（地圖用 updateMode、波次用 wavesMode、新增地圖用 createMode）
       let updateMode = null;
       if (body.action === "update_map_config" && ctrl.updateMode) updateMode = once("updateMode");
       if (body.action === "save_waves_config" && ctrl.wavesMode) updateMode = once("wavesMode");
+      if (body.action === "create_map_config" && ctrl.createMode) updateMode = once("createMode");
       if (updateMode === "network") { log({ network: "not-sent", map_id: p.map_id }); throw new TypeError("Failed to fetch"); }
       const res = mode === "node" && window.__shenmaMapBackend ? await window.__shenmaMapBackend(body) : builtIn(body);
       const keys = Object.keys(p).filter((k) => k !== "admin_token" && k !== "path_json");
@@ -741,8 +772,12 @@ async (page) => {
     await setEnemy(0, 0, "siege_lv1");
     await addWave();
     const n4 = await count("save_waves_config");
-    await setCtrl({ failGet: 1 });
+    // 讀回失敗要在保存送出之後才注入（送出前確認地圖存在的那次讀取要成功）
+    await setCtrl({ holdSave: true });
     await saveWaves();
+    await waitHeld("__mapmetaHeldSave");
+    await setCtrl({ holdSave: false, failGet: 1 });
+    await releaseSaves();
     await waitWave(/重新讀回失敗/);
     const w4 = { msg: await waveText(), retry: await page.locator('[data-testid="waves-readback-retry"]').isVisible(), screen: (await screenWaves()).length, server: await serverWaves("chapter2_1"), dirty: await dirtyText() };
     await page.locator('[data-testid="waves-readback-retry"]').click();
@@ -816,8 +851,8 @@ async (page) => {
     await waitWave(/管理密碼不正確/);
     await H.sleep(300);
     const w8 = { msg: await waveText(), server: await serverWaves("chapter2_4"), screen: (await screenWaves()).length, dirty: await dirtyText(), retry: await page.locator('[data-testid="waves-readback-retry"]').count(), gets: (await count("get_map_config")) - gets8 };
-    run.check("波次-9 管理密碼錯誤：說明沒有保存，試算表 0 列、沒有讀回、沒有重試按鈕；畫面保留 1 波並標示尚未保存",
-      /沒有保存/.test(w8.msg) && w8.server.length === 0 && w8.gets === 0 && w8.retry === 0 && w8.screen === 1 && /波次有尚未保存的修改/.test(w8.dirty), w8);
+    run.check("波次-9 管理密碼錯誤：說明沒有保存，試算表 0 列、沒有讀回（只有送出前確認地圖存在的 1 次讀取）、沒有重試按鈕；畫面保留 1 波並標示尚未保存",
+      /沒有保存/.test(w8.msg) && w8.server.length === 0 && w8.gets === 1 && w8.retry === 0 && w8.screen === 1 && /波次有尚未保存的修改/.test(w8.dirty), w8);
   });
 
   // ── 15. 新地圖、匯入的波次歸屬：預設不沿用、明確勾選才沿用；不借用原本地圖的保存基準、本身不送任何寫入 ──
@@ -993,7 +1028,264 @@ async (page) => {
       { delta, same11: same(srcAfter.c11, src.c11), same12: same(srcAfter.c12, src.c12), same13: same(srcAfter.c13, src.c13) });
   });
 
-  // ── 16. 素材轉換：有效圖片、無效檔案、取消；不加入素材選單 ──
+  // ── 16. 地圖存在才儲存波次；新增地圖後讀回 ──
+  // 後端的 save_waves_config 不檢查地圖是否存在：編輯器送出前先只讀確認，新增地圖成功後讀回才建立已保存的基準
+  await section("map-exists", async () => {
+    await openEditor(); // 管理密碼從頭開始（確認「沒有詢問管理密碼」）
+    await loadList();
+    const WRITES = ["update_map_config", "save_waves_config", "create_map_config"];
+    const writes = async () => {
+      const log = (await reqLog()).filter((e) => WRITES.includes(e.action));
+      return Object.fromEntries(WRITES.map((a) => [a, log.filter((e) => e.action === a).length]));
+    };
+    const delta = (a, b) => Object.fromEntries(WRITES.map((k) => [k, b[k] - a[k]]));
+    const ZERO = { update_map_config: 0, save_waves_config: 0, create_map_config: 0 };
+    const ONE_CREATE = { update_map_config: 0, save_waves_config: 0, create_map_config: 1 };
+    const create = () => btn("新增至 Sheet").click();
+    const draftNote = () => text("integrity-draft");
+    const retryBtn = () => page.locator('[data-testid="map-readback-retry"]');
+
+    // (1) 設定裡沒有的新地圖：只讀確認後說明要先新增；不問管理密碼、不寫入
+    const ID = "chapter_d118_new";
+    await newMap(ID, "還沒新增的地圖");
+    await addWave();
+    await setEnemy(0, 0, "grunt_lv1");
+    const w1 = await writes();
+    await saveWaves();
+    await waitWave(new RegExp(`設定裡沒有「${ID}」這張地圖`));
+    await H.sleep(300);
+    const r1 = { msg: await waveText(), prompt: await promptVisible(), d: delta(w1, await writes()), server: await serverWaves(ID), screen: await screenWaves(), dirty: await dirtyText(), get: await lastOf("get_map_config") };
+    await H.shot(page, "map-editor-save-exists-missing");
+    run.check("地圖存在-1 設定裡沒有的新地圖儲存波次：只讀確認（get_map_config 回 MAP_NOT_FOUND）後說明要先按「新增至 Sheet」；沒有跳管理密碼、沒有送出任何寫入，波次表沒有這個 map_id 的列；畫面保留 1 波並標示尚未保存",
+      /請先按「新增至 Sheet」/.test(r1.msg) && /沒有詢問管理密碼/.test(r1.msg) && !r1.prompt && same(r1.d, ZERO) && r1.server.length === 0 &&
+        r1.get.map_id === ID && r1.get.error === "MAP_NOT_FOUND" && r1.screen.length === 1 && /波次有尚未保存的修改/.test(r1.dirty),
+      { ...r1, screen: r1.screen.length });
+
+    // (2) 新增至 Sheet：成功後讀回，地圖與地圖資訊有已保存的基準；波次仍待另外保存
+    await create();
+    await enterToken(TOKEN);
+    await waitStatus(new RegExp(`「${ID}」已新增並重新讀回`));
+    const c2 = await lastOf("create_map_config");
+    const r2 = {
+      msg: await status(), row: await row(ID), dirty: await dirtyText(), draft: await draftNote(), screen: await screenWaves(),
+      gets: (await reqLog()).filter((e) => e.action === "get_map_config" && e.t >= c2.t && e.map_id === ID).length,
+    };
+    await H.shot(page, "map-editor-save-exists-created");
+    run.check("地圖存在-2 新增成功後只讀讀回：試算表有這張地圖（名稱、章節 1），狀態說明已新增並重新讀回、地圖與地圖資訊和設定一致、波次要另外保存；草稿不再標示不是從設定載入、沒有地圖的尚未保存提示，畫面上的 1 波不變且仍標示波次尚未保存",
+      c2.status === 200 && !!r2.row && r2.row.name === "還沒新增的地圖" && Number(r2.row.chapter) === 1 && r2.gets >= 1 && /和設定一致/.test(r2.msg) && /波次要另外按「儲存波次至 Sheet」保存/.test(r2.msg) &&
+        !/不是從設定載入的地圖/.test(r2.draft) && !/地圖有尚未保存的修改/.test(r2.dirty) && /波次有尚未保存的修改/.test(r2.dirty) && same(r2.screen, r1.screen),
+      { ...r2, draft: r2.draft.slice(0, 60), screen: r2.screen.length });
+    // 基準可用：只改名稱時只送名稱；再儲存波次時確認存在後送出
+    await fill("name", "新增後改的名稱");
+    await update();
+    await waitStatus(new RegExp(`「${ID}」已保存並重新讀回，畫面和設定一致`));
+    const upd2 = await lastOf("update_map_config");
+    await saveWaves();
+    await waitWave(new RegExp(`「${ID}」波次儲存成功並重新讀回，畫面和設定一致`));
+    const r3 = { top: upd2.top, server: await serverWaves(ID), dirty: await dirtyText(), prompt: await promptVisible() };
+    run.check("地圖存在-3 新增後的基準可用：只改名稱時更新只送 name（原值是讀回的設定）；之後儲存波次確認存在後送出，試算表有 1 列、沒有尚未保存的提示",
+      same(Object.keys(r3.top).sort(), ["map_id", "name"]) && same(r3.server, [[1, "grunt_lv1", 5]]) && r3.dirty === "" && !r3.prompt, r3);
+
+    // (3) 匯入與既有地圖同 map_id：設定裡確實有，波次照常保存
+    await page.getByPlaceholder("貼上 JSON 進行匯入...").fill(JSON.stringify({ map_id: "chapter1_4", name: "匯入的同 id", chapter: 1, cols: 6, rows: 4, paths: { path_a: [[0, 0], [5, 0]] } }));
+    await btn("匯入").click();
+    await addWave();
+    await setEnemy(0, 0, "cavalry_lv1");
+    await saveWaves();
+    await waitWave(/「chapter1_4」波次儲存成功並重新讀回/);
+    const s4 = await serverWaves("chapter1_4");
+    run.check("地圖存在-4 匯入 map_id 是 chapter1_4（設定裡已有）的地圖：確認存在後照常保存波次，試算表 chapter1_4 是匯入畫面上的 1 波", same(s4, [[1, "cavalry_lv1", 5]]), s4);
+
+    // (4) 確認存在的讀取失敗（連線失敗、後端錯誤）：不當成沒有、不送出，可以只讀重新確認
+    const w4 = await writes();
+    await setCount(0, 0, 6);
+    await setCtrl({ failGet: "network" });
+    await saveWaves();
+    await waitWave(/無法確認設定裡有沒有「chapter1_4」（Failed to fetch）/);
+    const m4a = await waveText();
+    const recheck = page.locator('[data-testid="wave-map-recheck"]');
+    const recheckShown = await recheck.isVisible();
+    await setCtrl({ failGet: 1 });
+    await recheck.click();
+    await waitWave(/仍無法確認設定裡有沒有「chapter1_4」（MOCK_READ_FAILED）/);
+    await recheck.click();
+    await waitWave(/設定裡有「chapter1_4」/);
+    const m4c = await waveText();
+    const r4 = { d: delta(w4, await writes()), server: await serverWaves("chapter1_4"), screen: await screenWaves(), dirty: await dirtyText(), recheckAfter: await recheck.count() };
+    await H.shot(page, "map-editor-save-exists-recheck");
+    run.check("地圖存在-5 確認存在的讀取連線失敗：說明無法確認、不當成沒有這張地圖，波次沒有送出、沒有詢問管理密碼；有只讀的「重新確認」，後端錯誤時仍無法確認，成功後只說明可以再按儲存；整段沒有任何寫入，畫面保留數量 6 並標示尚未保存",
+      /不當成沒有這張地圖/.test(m4a) && /波次沒有送出/.test(m4a) && recheckShown && /只確認，沒有送出波次/.test(m4c) && same(r4.d, ZERO) && same(r4.server, [[1, "cavalry_lv1", 5]]) &&
+        same(r4.screen, [{ title: "波次 1", rows: [["cavalry_lv1", 6]] }]) && /波次有尚未保存的修改/.test(r4.dirty) && r4.recheckAfter === 0,
+      { m4a, recheckShown, m4c, ...r4 });
+
+    // (5) 確認等待中建立新地圖、或改了 map_id：舊的確認回來後不送出
+    const w5 = await writes();
+    await setCtrl({ holdGet: true });
+    await saveWaves();
+    await waitHeld("__mapmetaHeld");
+    await newMap("chapter_d118_switch", "確認中建立的新地圖");
+    await setCtrl({ holdGet: false });
+    await releaseGets();
+    await waitWave(/「chapter1_4」的波次沒有送出：確認期間畫面換成了別的地圖/);
+    const r5a = { msg: await waveText(), id: await val("map_id"), screen: (await screenWaves()).length };
+    await loadMap("chapter1_4");
+    await setCount(0, 0, 8);
+    const c15 = await serverWaves("chapter1_5");
+    await setCtrl({ holdGet: true });
+    await saveWaves();
+    await waitHeld("__mapmetaHeld");
+    await fill("map_id", "chapter1_5");
+    await setCtrl({ holdGet: false });
+    await releaseGets();
+    await waitWave(/「chapter1_4」的波次沒有送出：確認期間畫面換成了別的地圖/);
+    const r5b = { d: delta(w5, await writes()), c14: await serverWaves("chapter1_4"), c15: await serverWaves("chapter1_5") };
+    run.check("地圖存在-6 確認等待中建立新地圖、或把 map_id 改成 chapter1_5：確認回來後說明換了地圖、波次沒有送出（不寫到原本或新的 map_id）；新地圖沒有波次，chapter1_4／1_5 的波次不變",
+      /不會把原本的波次寫進設定/.test(r5a.msg) && r5a.id === "chapter_d118_switch" && r5a.screen === 0 && same(r5b.d, ZERO) && same(r5b.c14, [[1, "cavalry_lv1", 5]]) && same(r5b.c15, c15),
+      { ...r5a, ...r5b });
+
+    // (6) 確認等待中又改了波次（同一張地圖）：不送出、要重按；重按後送出畫面上的內容
+    await loadMap("chapter1_4");
+    await setCount(0, 0, 7);
+    const w6 = await writes();
+    await setCtrl({ holdGet: true });
+    await saveWaves();
+    await waitHeld("__mapmetaHeld");
+    await setCount(0, 0, 9);
+    await setCtrl({ holdGet: false });
+    await releaseGets();
+    await waitWave(/確認期間你又改了波次/);
+    const r6a = { msg: await waveText(), d: delta(w6, await writes()), server: await serverWaves("chapter1_4"), screen: await screenWaves() };
+    await saveWaves();
+    await waitWave(/「chapter1_4」波次儲存成功並重新讀回，畫面和設定一致/);
+    const r6b = { d: delta(w6, await writes()), server: await serverWaves("chapter1_4") };
+    run.check("地圖存在-7 確認等待中把數量從 7 改成 9：確認回來後不送出（不改送沒確認過的內容），說明要再按一次、畫面保留 9；重按後只送出 1 次，試算表是 9",
+      /為了不送出沒有確認過的內容/.test(r6a.msg) && same(r6a.d, ZERO) && same(r6a.server, [[1, "cavalry_lv1", 5]]) && same(r6a.screen, [{ title: "波次 1", rows: [["cavalry_lv1", 9]] }]) &&
+        same(r6b.d, { update_map_config: 0, save_waves_config: 1, create_map_config: 0 }) && same(r6b.server, [[1, "cavalry_lv1", 9]]),
+      { ...r6a, ...r6b });
+
+    // (7) 新增成功但讀回失敗：說明已新增、讀回失敗，只讀重試
+    const RB = "chapter_d118_rb";
+    await newMap(RB, "讀回失敗的新地圖");
+    const w7 = await writes();
+    await setCtrl({ failGet: 1 });
+    await create();
+    await waitStatus(new RegExp(`「${RB}」已新增（後端回報成功），但重新讀回失敗`));
+    const r7a = { msg: await status(), retry: await text("map-readback-retry"), row: await row(RB), draft: await draftNote() };
+    await retryBtn().click();
+    await waitStatus(new RegExp(`「${RB}」已新增並重新讀回，地圖與地圖資訊和設定一致`));
+    const r7b = { d: delta(w7, await writes()), draft: await draftNote(), dirty: await dirtyText(), retryAfter: await retryBtn().count() };
+    await H.shot(page, "map-editor-save-exists-create-readback");
+    run.check("地圖存在-8 新增成功但讀回失敗：說明已新增（後端回報成功）、讀回失敗、沒有重送，有標示 map_id 的只讀「重新讀回」，草稿仍標示不是從設定載入（沒有建立基準）；重新讀回後一致、草稿成為設定裡的地圖；整段只新增一次",
+      !!r7a.row && /沒有重送/.test(r7a.msg) && new RegExp(`重新讀回「${RB}」`).test(r7a.retry) && /不是從設定載入的地圖/.test(r7a.draft) &&
+        same(r7b.d, ONE_CREATE) && !/不是從設定載入的地圖/.test(r7b.draft) && r7b.dirty === "" && r7b.retryAfter === 0,
+      { ...r7a, draft: r7a.draft.slice(0, 40), ...r7b, draftAfter: r7b.draft.slice(0, 40) });
+
+    // (8) 新增已處理但回應遺失：不說沒有新增、不自動重送；只讀核對後確立基準
+    const UA = "chapter_d118_ua";
+    await newMap(UA, "結果不明（已新增）");
+    const w8 = await writes();
+    await setCtrl({ createMode: "applied-network" });
+    await create();
+    await waitStatus(new RegExp(`無法確定「${UA}」是否已新增`));
+    const m8 = await status();
+    await H.sleep(800);
+    const sent8 = delta(w8, await writes());
+    const autoGets = (await reqLog()).filter((e) => e.action === "get_map_config" && e.map_id === UA).length;
+    await retryBtn().click();
+    await waitStatus(new RegExp(`讀回確認：設定裡「${UA}」的內容和這次送出的相同，這次新增已完成`));
+    const r8 = { d: delta(w8, await writes()), draft: await draftNote(), dirty: await dirtyText(), row: await row(UA) };
+    run.check("地圖存在-9 新增已處理但回應遺失：說明無法確定是否已新增（不說沒有新增）、不會自動重送，也沒有自動讀取；按重新讀回（只讀）確認內容相同、新增已完成，草稿成為設定裡的地圖；整段只新增一次",
+      /不會自動重送/.test(m8) && !/沒有新增/.test(m8) && same(sent8, ONE_CREATE) && autoGets === 0 && same(r8.d, ONE_CREATE) && !!r8.row && !/不是從設定載入的地圖/.test(r8.draft) && r8.dirty === "",
+      { m8, sent8, autoGets, ...r8, draft: r8.draft.slice(0, 40) });
+
+    // (9) 新增請求沒有送到：只讀核對設定裡沒有，保留草稿、不重送
+    const UN = "chapter_d118_un";
+    await newMap(UN, "結果不明（沒有送到）");
+    const w9 = await writes();
+    await setCtrl({ createMode: "network" });
+    await create();
+    await waitStatus(new RegExp(`無法確定「${UN}」是否已新增`));
+    await retryBtn().click();
+    await waitStatus(new RegExp(`設定裡目前沒有「${UN}」`));
+    const r9 = { msg: await status(), d: delta(w9, await writes()), row: await row(UN), draft: await draftNote(), name: await val("name"), retry: await retryBtn().count() };
+    run.check("地圖存在-10 新增請求沒有送到：重新讀回確認設定裡沒有這張地圖，說明這次新增看來沒有生效、沒有重送；草稿保留（名稱、仍標示不是從設定載入），重新讀回按鈕仍在；試算表沒有這個 map_id",
+      /沒有重送/.test(r9.msg) && same(r9.d, ONE_CREATE) && r9.row === null && /不是從設定載入的地圖/.test(r9.draft) && r9.name === "結果不明（沒有送到）" && r9.retry === 1,
+      { ...r9, draft: r9.draft.slice(0, 40) });
+
+    // (10) 新增的 map_id 已存在、內容不同：沒有新增也不覆寫
+    const orig15 = await row("chapter1_5");
+    await newMap("chapter1_5", "同 id 不同內容");
+    const w10 = await writes();
+    await create();
+    await waitStatus(/設定裡已經有「chapter1_5」，這次沒有新增/);
+    const r10 = { msg: await status(), d: delta(w10, await writes()), row: await row("chapter1_5"), draft: await draftNote(), name: await val("name"), retry: await retryBtn().count(), last: (await lastOf("create_map_config")).error };
+    run.check("地圖存在-11 新增的 map_id 已存在（chapter1_5，內容不同）：後端回 MAP_ID_EXISTS，說明沒有新增、沒有覆寫，要編輯請用載入；試算表的 chapter1_5 不變、沒有送出更新；草稿保留、仍標示不是從設定載入",
+      r10.last === "MAP_ID_EXISTS" && same(r10.row, orig15) && same(r10.d, ONE_CREATE) && /也沒有覆寫/.test(r10.msg) && /不是從設定載入的地圖/.test(r10.draft) && r10.name === "同 id 不同內容" && r10.retry === 0,
+      { ...r10, draft: r10.draft.slice(0, 40) });
+
+    // (11) 同 map_id 的新增結果不明：只讀核對發現內容不同，不建立基準、不覆寫
+    await fill("name", "同 id 結果不明");
+    const w11 = await writes();
+    await setCtrl({ createMode: "applied-network" });
+    await create();
+    await waitStatus(/無法確定「chapter1_5」是否已新增/);
+    await retryBtn().click();
+    await waitStatus(/設定裡已有「chapter1_5」，但內容和這次送出的不同/);
+    const r11 = { msg: await status(), d: delta(w11, await writes()), row: await row("chapter1_5"), draft: await draftNote(), dirty: await dirtyText(), name: await val("name") };
+    await H.shot(page, "map-editor-save-exists-duplicate");
+    run.check("地圖存在-12 同 map_id 的新增結果不明（後端其實回了 MAP_ID_EXISTS、回應遺失）：重新讀回發現設定裡的內容不同，說明這次新增沒有生效或已被蓋過、沒有覆寫；試算表的 chapter1_5 不變、沒有送出更新；草稿保留（名稱、仍標示不是從設定載入、沒有借用設定裡的內容當已保存）",
+      /沒有覆寫設定裡的地圖/.test(r11.msg) && same(r11.row, orig15) && same(r11.d, ONE_CREATE) && /不是從設定載入的地圖/.test(r11.draft) && r11.dirty === "" && r11.name === "同 id 結果不明",
+      { ...r11, draft: r11.draft.slice(0, 40) });
+
+    // (12) 新增後讀回期間改了名稱：讀回不蓋掉修改，基準是設定裡的內容
+    const ED = "chapter_d118_edit";
+    await newMap(ED, "讀回中修改");
+    await setCtrl({ holdGet: true });
+    await create();
+    await waitHeld("__mapmetaHeld");
+    await fill("name", "讀回期間改的名稱");
+    await setCtrl({ holdGet: false });
+    await releaseGets();
+    await waitStatus(new RegExp(`「${ED}」已新增並重新讀回；新增期間你又改了畫面`));
+    const r12 = { name: await val("name"), dirty: await dirtyText(), draft: await draftNote(), row: (await row(ED))?.name };
+    await update();
+    await waitStatus(new RegExp(`「${ED}」已保存並重新讀回，畫面和設定一致`));
+    const upd12 = await lastOf("update_map_config");
+    const after12 = (await row(ED))?.name;
+    run.check("地圖存在-13 新增後讀回期間改了名稱：讀回不蓋掉修改（名稱保留、標示地圖尚未保存），試算表是新增時的名稱；基準是設定裡的內容（不再標示不是從設定載入），之後更新只送名稱",
+      r12.name === "讀回期間改的名稱" && /地圖有尚未保存的修改/.test(r12.dirty) && !/不是從設定載入的地圖/.test(r12.draft) && r12.row === "讀回中修改" &&
+        same(Object.keys(upd12.top).sort(), ["map_id", "name"]) && after12 === "讀回期間改的名稱",
+      { ...r12, draft: r12.draft.slice(0, 40), top: upd12.top, after12 });
+
+    // (13) 新增後讀回期間建立另一張新地圖：讀回不改新地圖、不換掉波次
+    const SW = "chapter_d118_sw";
+    await newMap(SW, "讀回中換圖");
+    await addWave();
+    await setEnemy(0, 0, "grunt_lv2");
+    await setCtrl({ holdGet: true });
+    await create();
+    await waitHeld("__mapmetaHeld");
+    await newMap("chapter_d118_sw2", "讀回期間建立的新地圖", true);
+    const before13 = await screenWaves();
+    await setCtrl({ holdGet: false });
+    await releaseGets();
+    await waitAside(new RegExp(`「${SW}」已新增並重新讀回；目前畫面已經不是這張地圖`));
+    const r13 = { id: await val("map_id"), name: await val("name"), draft: await draftNote(), dirty: await dirtyText(), waves: await screenWaves(), row: !!(await row(SW)) };
+    run.check("地圖存在-14 新增後讀回期間建立另一張新地圖（沿用 1 波）：讀回不改新地圖（名稱、仍標示不是從設定載入），結果另外列出並說明目前畫面不是這張地圖；畫面上的波次沒有被讀回取代、仍標示尚未保存",
+      r13.id === "chapter_d118_sw2" && r13.name === "讀回期間建立的新地圖" && /不是從設定載入的地圖/.test(r13.draft) && same(r13.waves, before13) && before13.length === 1 &&
+        /波次有尚未保存的修改/.test(r13.dirty) && !/地圖有尚未保存的修改/.test(r13.dirty) && r13.row,
+      { ...r13, draft: r13.draft.slice(0, 40), waves: r13.waves.length });
+
+    // (14) 新增的 map_id 在波次表原本就有列（沒有地圖的波次）：讀回說明，不用舊波次取代畫面
+    await newMap(ORPHAN, "孤兒波次的地圖");
+    await create();
+    await waitStatus(new RegExp(`「${ORPHAN}」已新增並重新讀回`));
+    const r14 = { msg: await status(), waves: (await screenWaves()).length, server: await serverWaves(ORPHAN) };
+    run.check("地圖存在-15 新增的 map_id 在波次表原本就有 2 波（沒有地圖的列）：讀回說明設定裡原本就有 2 波、儲存波次會整批取代；畫面上的 0 波沒有被舊波次取代",
+      /原本就有 2 波波次/.test(r14.msg) && r14.waves === 0 && r14.server.length === 2, r14);
+  });
+
+  // ── 17. 素材轉換：有效圖片、無效檔案、取消；不加入素材選單 ──
   await section("asset", async () => {
     const uploads = [];
     const onReq = (r) => { if (/\/mapEditor\/api\/upload/.test(r.url())) uploads.push(r.method()); };
@@ -1059,7 +1351,7 @@ async (page) => {
     page.off("request", onReq);
   });
 
-  // ── 17. 390 寬、矮畫面與鍵盤 ──
+  // ── 18. 390 寬、矮畫面與鍵盤 ──
   await section("narrow", async () => {
     await page.setViewportSize({ width: 390, height: 600 });
     await openEditor();

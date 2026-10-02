@@ -1,7 +1,7 @@
 import { HeroSkillPayload } from "../types";
 
 /**
- * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」、廖化「堅韌」、顏良「威壓」、孫尚香「連射」、龐統「連環計」、諸葛亮「呼風喚雨」、呂布「戰神」）
+ * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」、廖化「堅韌」、顏良「威壓」、孫尚香「連射」、龐統「連環計」、諸葛亮「呼風喚雨」、呂布「戰神」、魯肅「補給」）
  * 這裡是技能規則的唯一來源：武將列表／詳情的說明，與隨出征資料送進 Godot 的參數都由這裡產生。
  * 技能是戰場效果：不寫進玩家存檔，也不需要後端（GAS）支援。
  * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊。
@@ -173,6 +173,16 @@ export type HeroSkill =
       berserkRatio: number;
       /** 最多幾層（1～10 的整數） */
       berserkMaxStacks: number;
+    }
+  | {
+      /**
+       * 補給：這位武將部署在戰場上、還活著時，全隊每次有效擊殺得到的戰鬥金幣乘上 goldMultiplier（向下取整），任何方式打倒的敵人都算。
+       * 只在隊伍裡、陣亡、移出隊伍時不生效；多個補給取最高的倍率、不疊加；只增加這一場的戰鬥金幣，花費、返還與玩家的獎勵都不變
+       */
+      id: "supply";
+      name: string;
+      /** 每次擊殺戰鬥金幣的倍率（1.2＝增加 20%，5 變成 6；大於 1、不超過 2） */
+      goldMultiplier: number;
     };
 
 const HERO_SKILLS: Record<string, HeroSkill> = {
@@ -256,6 +266,10 @@ const HERO_SKILLS: Record<string, HeroSkill> = {
     berserkRatio: 0.05,
     berserkMaxStacks: 10,
   },
+  // 正式設定表的被動描述「補給：增加資源獲取」沒有寫資源種類、倍率與生效條件。第一版的設計值，尚未做過平衡：
+  // 魯肅部署在戰場上、還活著時，全隊每次有效擊殺的戰鬥金幣 × 1.2（5 → 6，向下取整），任何方式打倒的敵人都算、擊殺數只算一次；
+  // 多個補給取最高的倍率、不疊加；只增加這一場的戰鬥金幣：建造與升級的花費、拆除的返還、結算的戰場點數與玩家的金幣、經驗、存檔都不變
+  lu_su: { id: "supply", name: "補給", goldMultiplier: 1.2 },
 };
 
 export const heroSkillOf = (heroId: string): HeroSkill | null =>
@@ -361,6 +375,23 @@ export function berserkPercents(skill: HeroSkill | null): {
         max: round3(skill.berserkRatio * skill.berserkMaxStacks * 100),
       }
     : { perStack: 0, max: 0 };
+}
+
+/** 每次有效擊殺的戰鬥金幣（和 Godot 的 BattleManager.GOLD_PER_KILL 相同） */
+export const BASE_KILL_GOLD = 5;
+
+/**
+ * 補給在場時每次擊殺的戰鬥金幣（和 Godot 相同）：基礎 × 倍率，向下取整（加上很小的容許誤差，避免小數乘法差一點點時少算 1）；
+ * 沒有補給時是基礎的 5
+ */
+export function supplyKillGold(skill: HeroSkill | null): number {
+  if (skill?.id !== "supply") return BASE_KILL_GOLD;
+  return Math.floor(BASE_KILL_GOLD * skill.goldMultiplier + 1e-6);
+}
+
+/** 補給讓每次擊殺戰鬥金幣增加的百分比（1.2 → 20；沒有補給時是 0） */
+export function supplyPercent(skill: HeroSkill | null): number {
+  return skill?.id === "supply" ? round3((skill.goldMultiplier - 1) * 100) : 0;
 }
 
 /** 戰神的有效攻擊力（和 Godot 相同）：目前等級的攻擊力 ×（1 ＋ 每層比例 × 層數），加法疊加、不是連乘 */
@@ -612,6 +643,18 @@ export function describeHeroSkill(
       "在戰場選取這位武將時，單位面板列出基礎與目前的攻擊力、層數與加成（選取當時的數值，重新點選可以更新）。只在戰場生效，不影響存檔。"
     );
   }
+  if (skill.id === "supply") {
+    const pct = supplyPercent(skill);
+    const gold = supplyKillGold(skill);
+    return (
+      `部署在戰場上、還活著時，全隊每次擊殺敵人得到的戰鬥金幣增加 ${pct}%：每次從 ${BASE_KILL_GOLD} 變成 ${gold}（向下取整）。` +
+      "不限這位武將自己打倒的：其他武將、防禦塔、灼燒等任何方式打倒的敵人都算，擊殺數照常只算一次；敵人漏到城池不算擊殺，也沒有金幣。" +
+      `只放在隊伍裡、還沒部署時不生效；陣亡或被移出隊伍時立刻恢復成每次 ${BASE_KILL_GOLD}，重新部署後再生效；換波次、移動位置、升級都維持。` +
+      "只增加這一場的戰鬥金幣（用來部署、建造、升級）：建造與升級的花費、拆除的返還、結算的戰場點數，以及玩家的金幣、經驗與存檔都不變。" +
+      "同時有幾個補給在場時取最高的倍率，不會疊加。這位武將自己的攻擊力、攻擊間隔、射程、防禦與生命不變。" +
+      "在戰場選取這位武將時，單位面板顯示選取當時是否生效與每次擊殺的金幣（重新點選可以更新）。只在戰場生效，不影響存檔。"
+    );
+  }
   if (skill.id === "dodge") {
     const pct = round3(skill.dodgeChance * 100);
     return (
@@ -729,6 +772,11 @@ export function heroSkillPayload(heroId: string): { skill?: HeroSkillPayload } {
         berserk_ratio: skill.berserkRatio,
         berserk_max_stacks: skill.berserkMaxStacks,
       },
+    };
+  }
+  if (skill.id === "supply") {
+    return {
+      skill: { id: skill.id, supply_gold_multiplier: skill.goldMultiplier },
     };
   }
   return {

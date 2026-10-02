@@ -56,6 +56,17 @@ var _first_strike_used: Dictionary = {}
 var _berserk: Dictionary = {}
 const BERSERK_LOG_MAX: int = 40
 
+# ── 武將技能：補給（supply，魯肅）──────────────────────────
+## 有補給技能的武將（instance id → WeakRef）：武將讀到補給時登記、換成其他技能時取消；initialize（新的一場）清空。
+## 只是候選名單：每次擊殺結算的當下才逐一確認（supply_source），失效、正要被移除、陣亡、不在場上、技能已經不是補給的都不算，
+## 不靠下一幀才更新的快取。只影響有效擊殺的戰鬥金幣（on_enemy_killed），不經過 earn_gold
+var _supply_sources: Dictionary = {}
+## 最近 KILL_GOLD_LOG_MAX 次有效擊殺的戰鬥金幣結算（測試用唯讀紀錄，新的一場清空）
+var _kill_gold_log: Array = []
+const KILL_GOLD_LOG_MAX: int = 40
+## 補給的倍率乘上每次擊殺的金幣後向下取整：加上很小的容許誤差，避免小數乘法差一點點時少算 1（5 × 1.2 是 6）
+const SUPPLY_EPS: float = 1e-6
+
 # ── 戰鬥速度 ──────────────────────────────────────────────
 # Engine.time_scale 只由 _apply_time_scale 寫入：實際倍率＝部署選單開著時固定 DEPLOY_TIME_SCALE，否則是玩家選的速度。
 # 敵人移動、攻擊冷卻、灼燒、減速、出兵間隔、自動下一波都照這個倍率推進；傷害、費用、獎勵不受影響
@@ -86,6 +97,8 @@ func initialize(p_total_waves: int, p_stage_id: String, wave_mgr: Node, bridge: 
 	battle_id      = p_battle_id
 	_first_strike_used.clear()
 	_berserk.clear()
+	_supply_sources.clear()
+	_kill_gold_log.clear()
 	# 新的一場：清掉上一場的部署慢速與手動暫停，速度回到 1 倍
 	_reset_speed()
 	_reset_pause()
@@ -172,11 +185,20 @@ func on_enemy_reached_base() -> void:
 	if base_hp <= 0:
 		_end_battle(false)
 
-func on_enemy_killed() -> void:
+## 有效擊殺：擊殺 +1、戰鬥金幣 + 每次擊殺的金幣。補給在結算這一次擊殺的當下確認來源（只改這個入口）；
+## enemy 是被打倒的敵人（只用來在紀錄裡寫生成序號，沒有傳入時是 -1）
+func on_enemy_killed(enemy: Node = null) -> void:
 	if game_state == GameState.RESULT:
 		return
 	kills += 1
-	earn_gold(GOLD_PER_KILL)
+	var src: Dictionary = supply_source()
+	var gold: int = kill_gold(float(src.mult))
+	var seq: Variant = enemy.get("spawn_seq") if enemy != null and is_instance_valid(enemy) else null
+	_kill_gold_log.append({"seq": int(seq) if seq != null else -1, "kills": kills, "base": GOLD_PER_KILL, "gold": gold,
+		"mult": float(src.mult), "source": str(src.hero_id)})
+	if _kill_gold_log.size() > KILL_GOLD_LOG_MAX:
+		_kill_gold_log.pop_front()
+	earn_gold(gold)
 
 # ── 波次完成（由 WaveManager 通知）────────────────────────────
 func on_wave_all_enemies_dead() -> void:
@@ -448,6 +470,47 @@ func clear_berserk(hero_id: String) -> void:
 func berserk_record(hero_id: String) -> Dictionary:
 	return _berserk.get(hero_id, {}).duplicate(true)
 
+## 補給：每次有效擊殺的戰鬥金幣＝基礎 × 倍率（向下取整）；倍率不大於 1（沒有補給）時就是基礎
+static func kill_gold(mult: float) -> int:
+	if not (mult > 1.0 and is_finite(mult)):
+		return GOLD_PER_KILL
+	return int(floor(float(GOLD_PER_KILL) * mult + SUPPLY_EPS))
+
+## 補給：登記／取消有補給技能的武將（Hero 讀完技能時呼叫）
+func register_supply(hero: Node) -> void:
+	if hero != null:
+		_supply_sources[hero.get_instance_id()] = weakref(hero)
+
+func unregister_supply(hero: Node) -> void:
+	if hero != null:
+		_supply_sources.erase(hero.get_instance_id())
+
+## 補給：此刻有效的來源 [{hero_id, mult}]（登記的順序）。逐一確認：節點仍有效、在場景樹裡、沒有正要被移除、生命大於 0、
+## 技能仍是補給且倍率合理（Hero.supply_active）。只讀，不改登記
+func supply_active_sources() -> Array:
+	var out: Array = []
+	for key in _supply_sources:
+		var h: Variant = _supply_sources[key].get_ref()
+		if h == null or not is_instance_valid(h) or not h.supply_active():
+			continue
+		out.append({"hero_id": str(h.hero_id), "mult": float(h.supply_gold_multiplier)})
+	return out
+
+## 補給：此刻最強的來源 {hero_id, mult}：多個來源只取最高的倍率（不相乘、不相加），倍率相同時取先登記的；沒有時 hero_id 是空字串、mult 是 1
+func supply_source() -> Dictionary:
+	var best: Dictionary = {"hero_id": "", "mult": 1.0}
+	for s in supply_active_sources():
+		if float(s.mult) > float(best.mult):
+			best = s
+	return best
+
+## 補給（測試用唯讀資訊）：此刻有效的來源與最強的一個、基礎與有效的每次擊殺金幣、最近幾次擊殺的金幣結算
+## （生成序號、結算後的擊殺數、基礎、實得、倍率、來源）
+func supply_debug() -> Dictionary:
+	var src: Dictionary = supply_source()
+	return {"hero_id": src.hero_id, "mult": src.mult, "base_gold": GOLD_PER_KILL, "kill_gold": kill_gold(float(src.mult)),
+		"sources": supply_active_sources(), "log": _kill_gold_log.duplicate(true)}
+
 func _berserk_summary() -> Dictionary:
 	var out: Dictionary = {}
 	for hid in _berserk:
@@ -460,6 +523,8 @@ func get_debug_state() -> Dictionary:
 		"first_strike_used": _first_strike_used.duplicate(),
 		# 戰神：這一場每位武將的層數與擊殺次數（不含紀錄；武將移出隊伍時也看得到保留的層數）
 		"berserk_stacks": _berserk_summary(),
+		# 補給：此刻有效的來源、每次擊殺的金幣與最近幾次擊殺的金幣結算
+		"supply": supply_debug(),
 		"lifecycle": _lifecycle,
 		"auto_wave_token": _auto_wave_token,
 		"auto_next_wave_pending": _auto_wave_pending,

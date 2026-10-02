@@ -339,12 +339,13 @@ async function gasCall(action: string, payload: object) {
 
 /**
  * 設定寫入失敗：unknown 是結果不明（請求送出後連線失敗或回應看不懂，後端可能已經寫入），
- * 其他是確定沒有完成（沒有送出，或後端回了錯誤狀態）
+ * 其他是確定沒有完成（沒有送出，或後端回了錯誤狀態）；code 是後端的錯誤代碼（例如 MAP_ID_EXISTS）
  */
 class AdminCallError extends Error {
   constructor(
     message: string,
-    readonly unknown: boolean
+    readonly unknown: boolean,
+    readonly code: string | null = null
   ) {
     super(message);
   }
@@ -367,15 +368,32 @@ async function gasAdminCall(action: string, payload: object) {
   }
   if (data?.error === "ADMIN_REQUIRED") forgetAdminToken();
   if (data?.status !== 200) {
+    const code = String(data?.error || "儲存失敗");
     throw new AdminCallError(
-      adminErrorText(String(data?.error || "儲存失敗")),
-      typeof data?.status !== "number"
+      adminErrorText(code),
+      typeof data?.status !== "number",
+      code
     );
   }
   return data;
 }
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/**
+ * 只讀取設定裡的一張地圖（get_map_config）：後端明確回答沒有這張地圖（MAP_NOT_FOUND）時回傳 null；
+ * 其他失敗（連線、後端錯誤、看不懂的回應）丟出錯誤，不能當成「沒有這張地圖」
+ */
+async function fetchMapConfig(
+  id: string
+): Promise<Record<string, unknown> | null> {
+  const data = await gasCall("get_map_config", { map_id: id });
+  if (data?.status === 200 && data.map && typeof data.map === "object") {
+    return data.map;
+  }
+  if (data?.status === 404 && data?.error === "MAP_NOT_FOUND") return null;
+  throw new Error(String(data?.error || "讀取失敗"));
+}
 
 /** get_all_maps 的地圖清單（只留有 map_id 的地圖） */
 function mapsOf(data: { maps?: unknown }): MapConfig[] {
@@ -387,6 +405,8 @@ function mapsOf(data: { maps?: unknown }): MapConfig[] {
 
 /** 保存後讀回：哪一張地圖、送出的地圖資訊、送出當下的畫面內容 */
 interface ReadbackCtx {
+  /** update 是更新既有地圖（update_map_config），create 是新增地圖（create_map_config） */
+  kind: "update" | "create";
   mapId: string;
   /** 送出當下的畫面意圖序號（之後載入、新地圖或匯入時，讀回不再改畫面） */
   intent: number;
@@ -480,6 +500,8 @@ export default function MapTab({
   );
   const [wavesReadbackPending, setWavesReadbackPending] =
     useState<WavesReadbackCtx | null>(null);
+  // 儲存波次前確認地圖存在的讀取失敗時，可以只讀地重新確認（記下要確認的 map_id）
+  const [waveCheckPending, setWaveCheckPending] = useState<string | null>(null);
   // 最後一次從設定載入（或保存後讀回）時的畫面內容：用來顯示「尚未保存的修改」
   const [savedMapSig, setSavedMapSig] = useState<string | null>(null);
   const [savedWavesSig, setSavedWavesSig] = useState<string | null>(null);
@@ -492,6 +514,8 @@ export default function MapTab({
   const statusSeq = useRef(0);
   const readbackSeq = useRef(0);
   const wavesReadSeq = useRef(0);
+  // 波次的確認與保存操作序號：較新的操作開始後，較舊的確認結果不再顯示、也不再送出寫入
+  const waveSaveSeq = useRef(0);
   const listSeq = useRef(0);
   const enemiesLoading = useRef(false);
   const draftSigRef = useRef("");
@@ -922,23 +946,75 @@ export default function MapTab({
   const stillOn = (c: { intent: number; mapId: string }) =>
     intentSeq.current === c.intent && mapIdRef.current === c.mapId;
 
-  // 儲存波次：沒有選敵人的組（與濾完沒有組的波次）不送出；成功後只讀地重新讀回，以讀回的波次為「已保存」的基準
+  // 設定裡沒有這張地圖時的說明（波次保存要先新增地圖）
+  const mapMissingText = (id: string) =>
+    `✗ 設定裡沒有「${id}」這張地圖：請先按「新增至 Sheet」把地圖新增到設定，再儲存波次。波次沒有送出（也沒有詢問管理密碼）`;
+
+  /**
+   * 儲存波次：沒有選敵人的組（與濾完沒有組的波次）不送出；成功後只讀地重新讀回，以讀回的波次為「已保存」的基準。
+   * 送出前先只讀地確認設定裡有這張地圖（get_map_config）：後端的 save_waves_config 不檢查地圖是否存在，
+   * 對不存在的 map_id 也會寫入，留下沒有地圖的波次列。確認只看存在與否，不改畫面、不建立已保存的基準；
+   * 確認期間換了地圖（載入、新地圖、匯入、改 map_id）或改了波次時這次不送出，要重按（不會改送沒確認過的內容）。
+   * 這只是編輯器的保護：其他入口直接呼叫、或確認後地圖才被刪除時，後端仍可能留下這種列
+   */
   const handleSaveWaves = async () => {
+    const id = mapId;
     const cleanWaves = cleanWavesForSave(waves);
     const ctx: WavesReadbackCtx = {
-      mapId,
+      mapId: id,
       intent: intentSeq.current,
       sentSig: wavesSig(waves),
       expectedSig: wavesSig(expectedSavedWaves(cleanWaves)),
       dropped: droppedGroupsText(waves),
       saved: true,
     };
+    const seq = ++waveSaveSeq.current;
     setWavesReadbackPending(null);
+    setWaveCheckPending(null);
+    if (!id.trim()) {
+      setWaveStatus("error");
+      setWaveMsg("✗ map_id 是空的，波次沒有送出");
+      return;
+    }
     setWaveStatus("saving");
-    setWaveMsg(`「${mapId}」波次儲存中...`);
+    setWaveMsg(`「${id}」確認設定裡有這張地圖（只讀）...`);
+    let found: boolean;
+    try {
+      found = (await fetchMapConfig(id)) !== null;
+    } catch (e) {
+      if (seq !== waveSaveSeq.current) return;
+      setWaveStatus("error");
+      setWaveMsg(
+        `✗ 無法確認設定裡有沒有「${id}」（${errText(e)}）：不當成沒有這張地圖；波次沒有送出（也沒有詢問管理密碼），可以按「重新確認」（只讀）再試`
+      );
+      setWaveCheckPending(id);
+      return;
+    }
+    if (seq !== waveSaveSeq.current) return;
+    const elsewhere = stillOn(ctx) ? "" : "；目前畫面已經不是這張地圖";
+    if (!found) {
+      setWaveStatus("error");
+      setWaveMsg(mapMissingText(id) + elsewhere);
+      return;
+    }
+    if (!stillOn(ctx)) {
+      setWaveStatus("error");
+      setWaveMsg(
+        `✗ 「${id}」的波次沒有送出：確認期間畫面換成了別的地圖（載入、新地圖、匯入或改了 map_id），不會把原本的波次寫進設定`
+      );
+      return;
+    }
+    if (wavesSigRef.current !== ctx.sentSig) {
+      setWaveStatus("error");
+      setWaveMsg(
+        `✗ 「${id}」的波次沒有送出：確認期間你又改了波次，為了不送出沒有確認過的內容，這次取消；畫面保留你的修改，要保存請再按一次「儲存波次至 Sheet」`
+      );
+      return;
+    }
+    setWaveMsg(`「${id}」波次儲存中...`);
     try {
       await gasAdminCall("save_waves_config", {
-        map_id: mapId,
+        map_id: ctx.mapId,
         waves: cleanWaves,
       });
     } catch (e) {
@@ -955,6 +1031,35 @@ export default function MapTab({
     }
     setWaveMsg(`✓ 「${ctx.mapId}」波次已保存，正在重新讀回…`);
     await readBackWaves(ctx);
+  };
+
+  // 只讀：重新確認設定裡有沒有這張地圖（儲存波次前的確認讀取失敗時）；不送出波次，確認有了再按一次儲存
+  const recheckWaveMap = async (id: string) => {
+    const seq = ++waveSaveSeq.current;
+    setWaveCheckPending(null);
+    setWaveStatus("saving");
+    setWaveMsg(`「${id}」重新確認中（只讀）...`);
+    let found: boolean;
+    try {
+      found = (await fetchMapConfig(id)) !== null;
+    } catch (e) {
+      if (seq !== waveSaveSeq.current) return;
+      setWaveStatus("error");
+      setWaveMsg(
+        `✗ 仍無法確認設定裡有沒有「${id}」（${errText(e)}）：波次沒有送出，可以再按「重新確認」`
+      );
+      setWaveCheckPending(id);
+      return;
+    }
+    if (seq !== waveSaveSeq.current) return;
+    const elsewhere =
+      mapIdRef.current === id ? "" : "；目前畫面已經不是這張地圖";
+    setWaveStatus(found ? "ok" : "error");
+    setWaveMsg(
+      found
+        ? `✓ 設定裡有「${id}」：要保存波次請再按「儲存波次至 Sheet」（這次只確認，沒有送出波次）${elsewhere}`
+        : mapMissingText(id) + elsewhere
+    );
   };
 
   /**
@@ -1264,12 +1369,113 @@ export default function MapTab({
   };
 
   /**
+   * 只讀：新增地圖後（或新增結果不明時）讀回設定裡的這張地圖；不重送新增。
+   * - 讀回和送出的相同、畫面還是同一張地圖：記下原值與已保存的地圖內容（之後「更新至 Sheet」以設定裡的值為基準）；
+   *   期間沒有修改時畫面換成讀回的內容，期間又改了畫面時保留修改（標示尚未保存）
+   * - 讀回和送出的不同（可能別人新增了同一個 map_id，或之後被修改）、設定裡沒有、讀取失敗：不建立基準、不改畫面，
+   *   也不覆寫設定裡的地圖；可以再按「重新讀回」，或用「載入」讀取設定裡的版本自己決定
+   * - 波次另外保存：畫面上的波次與波次的保存狀態都不變
+   */
+  const readBackCreated = async (ctx: ReadbackCtx, op: number) => {
+    const seq = ++readbackSeq.current;
+    setReadbackPending(null);
+    setReadingBack(true);
+    let map: Record<string, unknown> | null;
+    try {
+      map = await fetchMapConfig(ctx.mapId);
+    } catch (e) {
+      if (seq !== readbackSeq.current) return;
+      setReadingBack(false);
+      endStatus(
+        op,
+        "error",
+        ctx.saved
+          ? `⚠ 「${ctx.mapId}」已新增（後端回報成功），但重新讀回失敗（${errText(e)}）：沒有重送，` +
+              (stillOn(ctx) ? "畫面保留草稿" : "目前畫面已經不是這張地圖") +
+              "；可以按「重新讀回」再試"
+          : `✗ 重新讀回「${ctx.mapId}」失敗（${errText(e)}），仍無法確定這次新增有沒有完成；沒有重送，可以再按「重新讀回」`
+      );
+      setReadbackPending(ctx);
+      return;
+    }
+    if (seq !== readbackSeq.current) return;
+    setReadingBack(false);
+    if (mapListState.status !== "idle") handleLoadMapList();
+    const sameMap = stillOn(ctx);
+    const screen = sameMap ? "畫面保留草稿" : "目前畫面已經不是這張地圖";
+    if (!map) {
+      endStatus(
+        op,
+        "error",
+        ctx.saved
+          ? `⚠ 「${ctx.mapId}」新增時後端回報成功，但重新讀回時設定裡沒有這張地圖（可能隨後被刪除）：沒有重送，${screen}；可以按「重新讀回」再試`
+          : `✗ 讀回確認：設定裡目前沒有「${ctx.mapId}」，這次新增看來沒有生效（請求如果還在處理，稍後可能出現）；沒有重送，${screen}。可以再按「重新讀回」確認，確定沒有後再按「新增至 Sheet」`
+      );
+      setReadbackPending(ctx);
+      return;
+    }
+
+    const diff = metaReadbackDiff(ctx.sent, map);
+    const sameAsSent =
+      JSON.stringify(map.path_json) === ctx.sentPathJson && diff.length === 0;
+    const untouched = sameMap && draftSigRef.current === ctx.sentSig;
+    if (!sameAsSent) {
+      const detail = diff.length
+        ? `：${diff.map((d) => `${META_LABEL[d.field]}是「${d.got}」（送出「${d.sent}」）`).join("、")}`
+        : "（地圖內容）";
+      endStatus(
+        op,
+        "error",
+        (ctx.saved
+          ? `⚠ 「${ctx.mapId}」已新增，但讀回的內容和送出的不同${detail}，可能同時有其他修改`
+          : `✗ 讀回確認：設定裡已有「${ctx.mapId}」，但內容和這次送出的不同${detail}；可能別人新增了同一個 map_id 或之後被修改，這次新增沒有生效或已被蓋過`) +
+          `。沒有重送、沒有覆寫設定裡的地圖，也沒有把它當成這個畫面已保存的內容；${screen}，要看設定裡的版本請用「載入」`
+      );
+      return;
+    }
+    if (untouched) {
+      applyLoadedMap(map, ctx.mapId, false);
+    } else if (sameMap) {
+      // 保留畫面上的修改；原值與「已保存」的內容改成設定裡的（地圖已經在設定裡，不再是新草稿）
+      setMetaOriginal({
+        mapId: ctx.mapId,
+        name: map.name,
+        chapter: map.chapter,
+        unlock_stage: map.unlock_stage,
+      });
+      setSavedMapSig(
+        editorMapSig(editorMapFromJson(mapJsonFromConfig(map, ctx.mapId)))
+      );
+      setUnsavedDraft(false);
+    }
+    const configWaves = normalizeWaves(map.waves).length;
+    const wavesNote =
+      (configWaves > 0
+        ? `；設定裡這個 map_id 原本就有 ${configWaves} 波波次（新增地圖前就留在波次表），儲存波次會整批取代它們`
+        : "") + (sameMap ? "；波次要另外按「儲存波次至 Sheet」保存" : "");
+    endStatus(
+      op,
+      "ok",
+      (ctx.saved
+        ? `✓ 「${ctx.mapId}」已新增並重新讀回`
+        : `✓ 讀回確認：設定裡「${ctx.mapId}」的內容和這次送出的相同，這次新增已完成`) +
+        (untouched
+          ? "，地圖與地圖資訊和設定一致"
+          : sameMap
+            ? "；新增期間你又改了畫面，那些修改還沒保存（畫面保留你的修改）"
+            : "；目前畫面已經不是這張地圖，沒有改變") +
+        wavesNote
+    );
+  };
+
+  /**
    * 只讀：重新讀回剛才保存的地圖（與已讀取的清單），讓畫面和設定一致；不重送寫入。
    * - 保存後開始了載入、建立新地圖或匯入時不改畫面（結果照樣說明）
    * - 保存期間又改了畫面、或寫入結果不明而設定和送出的不同時，保留畫面上的修改（還沒保存）
-   * op 是這次保存（或按「重新讀回」）在狀態列的操作序號
+   * op 是這次保存（或按「重新讀回」）在狀態列的操作序號；新增地圖的讀回見 readBackCreated
    */
   const readBack = async (ctx: ReadbackCtx, op: number) => {
+    if (ctx.kind === "create") return readBackCreated(ctx, op);
     const seq = ++readbackSeq.current;
     setReadbackPending(null);
     setReadingBack(true);
@@ -1376,6 +1582,7 @@ export default function MapTab({
     setReadbackPending(null);
     const pathJson = buildMapJson();
     const ctx: ReadbackCtx = {
+      kind: "update",
       mapId,
       intent: intentSeq.current,
       sent: meta.fields,
@@ -1410,6 +1617,11 @@ export default function MapTab({
     await readBack(ctx, op);
   };
 
+  /**
+   * 新增地圖：送出畫面上完整的地圖與地圖資訊（不含波次）。成功後只讀地讀回，和送出的相同才記下已保存的基準。
+   * - 結果不明（連線失敗、看不懂的回應）：不說沒有新增、不自動重送，用「重新讀回」核對設定裡有沒有、內容是否相同
+   * - 設定裡已有同一個 map_id（MAP_ID_EXISTS）、管理密碼錯誤、資料檢查不通過：確定沒有新增，設定裡的地圖不變
+   */
   const handleCreateSheet = async () => {
     const n = parseChapter(chapter);
     if (n === null) {
@@ -1419,7 +1631,18 @@ export default function MapTab({
       return;
     }
     setChapterError("");
+    setReadbackPending(null);
     const id = mapId;
+    const pathJson = mapJsonOf(editorMap, n);
+    const ctx: ReadbackCtx = {
+      kind: "create",
+      mapId: id,
+      intent: intentSeq.current,
+      sent: { name: mapName, chapter: n, unlock_stage: unlockStage },
+      sentSig: draftSig,
+      sentPathJson: JSON.stringify(pathJson),
+      saved: true,
+    };
     const op = beginStatus("saving", `「${id}」新增中...`);
     setSavingMap(true);
     try {
@@ -1428,14 +1651,31 @@ export default function MapTab({
         chapter: n,
         name: mapName,
         unlock_stage: unlockStage,
-        path_json: mapJsonOf(editorMap, n),
+        path_json: pathJson,
       });
-      endStatus(op, "ok", `✓ 「${id}」新增成功`);
     } catch (e) {
-      endStatus(op, "error", `✗ 「${id}」沒有新增：${errText(e)}`);
-    } finally {
       setSavingMap(false);
+      if (e instanceof AdminCallError && e.unknown) {
+        endStatus(
+          op,
+          "error",
+          `✗ 無法確定「${id}」是否已新增（${e.message}）：可能已新增，也可能沒有；不會自動重送，可以按「重新讀回」確認設定裡有沒有這張地圖、內容是否相同`
+        );
+        setReadbackPending({ ...ctx, saved: false });
+      } else if (e instanceof AdminCallError && e.code === "MAP_ID_EXISTS") {
+        endStatus(
+          op,
+          "error",
+          `✗ 設定裡已經有「${id}」，這次沒有新增，也沒有覆寫設定裡的地圖；畫面保留草稿。要編輯設定裡的版本請用「載入」（會取代畫面上尚未保存的內容），或把 map_id 改成新的再新增`
+        );
+      } else {
+        endStatus(op, "error", `✗ 「${id}」沒有新增：${errText(e)}`);
+      }
+      return;
     }
+    setSavingMap(false);
+    endStatus(op, "loading", `✓ 「${id}」已新增，正在重新讀回…`);
+    await readBack(ctx, op);
   };
 
   const mapJsonNow = buildMapJson();
@@ -1977,6 +2217,17 @@ export default function MapTab({
                 data-testid="waves-readback-retry"
               >
                 重新讀回「{wavesReadbackPending.mapId}」的波次（只讀，不重送）
+              </button>
+            )}
+            {waveCheckPending && (
+              <button
+                type="button"
+                className={`${styles.toolBtn} mb-2`}
+                onClick={() => recheckWaveMap(waveCheckPending)}
+                disabled={waveStatus === "saving"}
+                data-testid="wave-map-recheck"
+              >
+                重新確認設定裡有沒有「{waveCheckPending}」（只讀，不送出波次）
               </button>
             )}
 

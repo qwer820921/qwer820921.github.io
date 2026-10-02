@@ -398,6 +398,14 @@ export type HeroSkillPayload =
       berserk_ratio: number;
       /** 最多幾層（只接受 1～10 的整數）；其他值時 Godot 當作沒有這個技能 */
       berserk_max_stacks: number;
+    }
+  | {
+      id: "supply";
+      /**
+       * 這位武將在場上、還活著時，全隊每次有效擊殺的戰鬥金幣倍率（1.2＝5 變成 6，向下取整；多個來源取最高）；
+       * 不是大於 1、不超過 2 的有限數字時 Godot 當作沒有這個技能
+       */
+      supply_gold_multiplier: number;
     };
 
 export interface ExpeditionPayload {

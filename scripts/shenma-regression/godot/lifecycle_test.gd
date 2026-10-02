@@ -172,14 +172,14 @@ func _run() -> void:
 		battle_ended_count += 1
 		last_result = r)
 
-	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、廖化的堅韌、顏良的威壓、孫尚香的連射、龐統的連環計、諸葛亮的呼風喚雨、呂布的戰神）、橫掃原型與攻速成長；
+	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、廖化的堅韌、顏良的威壓、孫尚香的連射、龐統的連環計、諸葛亮的呼風喚雨、呂布的戰神、魯肅的補給）、橫掃原型與攻速成長；
 	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行；
 	# route 跑飛行與地面的路線無效（出兵前擋下）；blocker 只跑敵人攻擊阻路武將的冷卻；
 	# dodge 只跑趙雲「閃避」；firststrike 只跑首擊加倍（馬超「衝鋒」）；
 	# stagedata 跑關卡資料未完成（沒有波次、波次或路線的格式不對）；enemyatk 跑敵人設定的對武將攻擊力；immune 跑免疫減速；
 	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）；stun 只跑張飛的暈眩（skills 也包含）；lifesteal 只跑魏延的吸血（skills 也包含）；
 	# atkspeed 只跑曹操的攻速光環（skills 也包含）；damage 只跑敵人受傷的入口（拒絕無效的傷害）；
-	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；chain 只跑龐統的連環計（skills 也包含）；storm 只跑諸葛亮的呼風喚雨（skills 也包含）；berserk 只跑呂布的戰神（skills 也包含）
+	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；chain 只跑龐統的連環計（skills 也包含）；storm 只跑諸葛亮的呼風喚雨（skills 也包含）；berserk 只跑呂布的戰神（skills 也包含）；supply 只跑魯肅的補給（skills 也包含）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -202,6 +202,7 @@ func _run() -> void:
 			await _chain_cases()
 			await _storm_cases()
 			await _berserk_cases()
+			await _supply_cases()
 		elif only == "blocker":
 			await _blocker_cases()
 		elif only == "dodge":
@@ -258,8 +259,10 @@ func _run() -> void:
 			await _storm_cases()
 		elif only == "berserk":
 			await _berserk_cases()
+		elif only == "supply":
+			await _supply_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、chain、storm、berserk）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、chain、storm、berserk、supply）", false)
 		_finish()
 		return
 
@@ -506,6 +509,9 @@ func _run() -> void:
 	# ── 呂布的戰神（自己的普通攻擊打倒敵人後，下一擊起攻擊力 ＋5%（加法），最多 10 層；這一場內保留）──
 	await _berserk_cases()
 
+	# ── 魯肅的補給（在場上、還活著時，全隊每次有效擊殺的戰鬥金幣 × 1.2，5 → 6；多個來源取最強）──
+	await _supply_cases()
+
 	_finish()
 
 # ── 輸出 ──
@@ -705,6 +711,8 @@ func _r12_payload(stage_id: String, waves: Array, battle_id: String, team: Array
 		{"hero_id": "zhu_ge_liang", "name": "諸葛亮", "job": "mage", "attack_range": 3.0, "attack_speed": 0.5},
 		# 呂布（騎兵，射程與攻擊間隔和其他測試武將相同；正式設定是射程 2、攻擊間隔 1.3）
 		{"hero_id": "lv_bu", "name": "呂布", "job": "cavalry", "attack_range": 3.0, "attack_speed": 0.5},
+		# 魯肅（法師，射程與攻擊間隔和其他測試武將相同；正式設定是射程 5、攻擊間隔 0.9）
+		{"hero_id": "lu_su", "name": "魯肅", "job": "mage", "attack_range": 3.0, "attack_speed": 0.5},
 	]
 	return p
 
@@ -12917,6 +12925,449 @@ func _berserk_cases() -> void:
 	_check("戰神-24 手動暫停 0.6 秒：「ATK+」提示、攻擊冷卻、敵人血量、遊戲時間與層數都不變；繼續後提示照剩下的時間消失，之後照常加到 2 層；新的一場時上一場的提示清除、0 層",
 		d24.get("texts", 0) >= 1 and d24.get("paused_reply") == true and d24.get("frozen") == true and float(d24.get("gone_after", 99.0)) <= float(d24.get("left", 0.0)) + 0.1
 			and d24.get("resumed") == 2 and d24.get("before_restart", 0) >= 1 and d24.get("after_restart") == [0, 0, 0], d24)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 魯肅的補給（supply）──
+# 魯肅在場上（場景樹裡）、沒有正要被移除、生命大於 0 時，這一場每次有效擊殺的戰鬥金幣＝5 × 1.2 向下取整＝6：任何來源的有效擊殺都算，擊殺數只加一次。
+# 擊殺結算的當下才確認來源：陣亡、正要被移除、移出隊伍、換成其他技能、新的一場時立刻回到 5；多個來源取最高的倍率（不相乘、不相加）。
+# 只改有效擊殺的戰鬥金幣：建造的花費、拆除的返還、漏到城池、結算之後的擊殺都不變
+const SP_SKILL: Dictionary = {"id": "supply", "supply_gold_multiplier": 1.2}
+const SP_HERO: String = "lu_su"
+
+## 單獨的補給武將（真正的 Hero 腳本，不經過 Main、不攻擊）：登記在 bm（測試自己建立、不在場景樹的 BattleManager）；
+## holder 是 null 時不加進場景樹（還沒部署）；skill 是 null 時帶補給的參數
+func _sp_hero(holder: Node, bm: Node, skill: Variant = null, hid: String = SP_HERO) -> Node:
+	var h: Node = load("res://entities/hero/Hero.gd").new()
+	if holder != null:
+		holder.add_child(h)
+	h.set_process(false)
+	h.hero_id = hid
+	h.max_hp = 1000.0
+	h.current_hp = 1000.0
+	h._battle_mgr = bm
+	h._read_skill({"skill": SP_SKILL.duplicate() if skill == null else skill})
+	return h
+
+## bm 結算一次有效擊殺：戰鬥金幣與擊殺數的變化、最後一筆金幣紀錄的倍率與來源
+func _sp_kill(bm: Node, enemy: Node = null) -> Dictionary:
+	var g0: int = bm.battle_gold
+	var k0: int = bm.kills
+	bm.on_enemy_killed(enemy)
+	var log: Array = bm.supply_debug().get("log", [])
+	var last: Dictionary = log.back() if not log.is_empty() else {}
+	return {"gold": bm.battle_gold - g0, "kills": bm.kills - k0, "mult": last.get("mult"), "source": last.get("source")}
+
+func _sp_gold(bm: Node) -> int:
+	return int(_sp_kill(bm).gold)
+
+## 實際引擎用的魯肅（法師、射程 3 格、攻擊間隔 0.5 秒，和 _r12_payload 的設定相同；正式設定是射程 5、攻擊間隔 0.9）
+func _sp_member(level: int = 1, skill: Variant = null) -> Dictionary:
+	var h: Dictionary = _r12_hero(SP_HERO, SP_SKILL.duplicate() if skill == null else skill)
+	h["level"] = level
+	return h
+
+func _sp_main_hero() -> Node:
+	return main._placed_heroes.get(SP_HERO)
+
+## 載入一場關卡（waves 經過 JSON），place 時把魯肅放在 (3,4)（停掉它自己的 _process），開戰並等第一波的 n 個敵人都出現
+func _sp_start(rec: Node, battle_id: String, n: int, team: Variant = null, place: bool = true, waves: Variant = null) -> Array:
+	var t: Array = team if team != null else [_sp_member()]
+	var ws: Array = waves if waves != null else [[_grp("post", n, 0.02)]]
+	_r19_js(rec, _r12_payload("supply_a", ws, battle_id, t))
+	if place:
+		_r12_place(SP_HERO, Vector2i(3, 4))
+		if _sp_main_hero() != null:
+			_sp_main_hero().set_process(false)
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == n, 5.0)
+	return _sw_enemies()
+
+## 實際引擎的一次擊殺：fn 打倒敵人（走敵人一般的死亡流程）。回傳戰鬥金幣與擊殺數的變化、這次新增的金幣紀錄、
+## Web 收到的最後一筆 update_stats 的金幣與目前的戰鬥金幣
+func _sp_engine(rec: Node, fn: Callable) -> Dictionary:
+	var g0: int = _bm().battle_gold
+	var k0: int = _bm().kills
+	var n0: int = _bm().supply_debug().log.size()
+	fn.call()
+	var log: Array = _bm().supply_debug().log
+	return {"gold": _bm().battle_gold - g0, "kills": _bm().kills - k0, "entries": log.slice(n0),
+		"web_gold": rec.sent_stats.back().get("gold") if not rec.sent_stats.is_empty() else null, "bm_gold": _bm().battle_gold}
+
+## 把敵人 e 放在單位 u 右邊 1 格（射程內），其他敵人移到很遠的地方（任何武將與防禦塔都打不到）
+func _sp_only(es: Array, e: Node, u: Node) -> void:
+	for x in es:
+		if is_instance_valid(x) and not x.is_queued_for_deletion():
+			x.global_position = Vector2(-4000.0, -4000.0)
+	e.global_position = u.global_position + Vector2(48.0, 0.0)
+
+func _supply_cases() -> void:
+	# 補給-0：技能參數的判讀：supply_gold_multiplier 是大於 1、不超過 2 的有限數字才啟用；字串、布林、null、陣列、字典、NaN、無限大、0、負數、
+	# 1 以下、超過 2、缺欄位、欄位名稱寫錯、不認得或大小寫不同的 id、其他技能帶這個欄位都不啟用（倍率 1）；補給不帶其他技能；換成反擊或沒有技能後清除
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var good0: Array = [
+		[{"id": "supply", "supply_gold_multiplier": 1.2}, 1.2],
+		[{"id": "supply", "supply_gold_multiplier": 1.0001}, 1.0001],
+		[{"id": "supply", "supply_gold_multiplier": 1.5}, 1.5],
+		[{"id": "supply", "supply_gold_multiplier": 2}, 2.0],
+		[{"id": "supply", "supply_gold_multiplier": 2.0}, 2.0],
+	]
+	var bad0: Array = []
+	for v in ["1.2", true, false, null, [1.2], {"v": 1.2}, NAN, INF, -INF, 0, 0.0, -1.2, 0.5, 1, 1.0, 2.0001, 2.5, 3]:
+		bad0.append({"id": "supply", "supply_gold_multiplier": v})
+	bad0.append_array([{"id": "supply"}, {"id": "supply", "gold_multiplier": 1.2}, {"id": "supply", "multiplier": 1.2},
+		{"id": "Supply", "supply_gold_multiplier": 1.2}, {"id": "supply_x", "supply_gold_multiplier": 1.2},
+		{"id": "berserk", "berserk_ratio": 0.05, "berserk_max_stacks": 10, "supply_gold_multiplier": 1.2},
+		{"id": "storm", "storm_radius": 2, "storm_ratio": 0.5, "storm_max_targets": 4, "supply_gold_multiplier": 1.2}])
+	var wrong0: Array = []
+	for c in good0:
+		h0._read_skill({"skill": c[0]})
+		if not _ls_near(h0.supply_gold_multiplier, float(c[1])):
+			wrong0.append({"skill": str(c[0]), "got": h0.supply_gold_multiplier})
+	for c in bad0:
+		h0._read_skill({"skill": c})
+		if h0.supply_gold_multiplier != 1.0:
+			wrong0.append({"skill": str(c), "got": h0.supply_gold_multiplier})
+	h0._read_skill({"skill": JSON.parse_string("{\"id\": \"supply\", \"supply_gold_multiplier\": 1.2}")})
+	var json0: float = h0.supply_gold_multiplier
+	var other0: Array = [h0.first_strike_multiplier, h0.range_multiplier, h0.burn_ratio, h0.sweep_ratio, h0.dodge_chance, h0.slow_aura_mult, h0.def_aura_mult,
+		h0.stun_duration, h0.lifesteal_ratio, h0.atk_speed_aura_mult, h0.counter_ratio, h0.tenacity_hp_ratio, h0.atk_down_aura_mult, h0.double_shot_chance, h0.chain_ratio,
+		h0.storm_ratio, h0.berserk_ratio]
+	h0._read_skill({"skill": BK_SKILL.duplicate()})
+	var berserk0: Array = [h0.berserk_ratio, h0.supply_gold_multiplier]
+	h0._read_skill({"skill": SP_SKILL.duplicate()})
+	h0._read_skill({"skill": {"id": "counter", "counter_ratio": 0.2}})
+	var switched0: Array = [h0.supply_gold_multiplier, h0.counter_ratio]
+	h0._read_skill({"skill": SP_SKILL.duplicate()})
+	h0._read_skill({})
+	var cleared0: float = h0.supply_gold_multiplier
+	h0.free()
+	var gold0: Array = [BattleManager.kill_gold(1.0), BattleManager.kill_gold(1.2), BattleManager.kill_gold(1.3), BattleManager.kill_gold(1.5), BattleManager.kill_gold(2.0),
+		BattleManager.kill_gold(NAN), BattleManager.kill_gold(INF), BattleManager.kill_gold(0.5)]
+	_check("補給-0 技能參數：倍率是大於 1、不超過 2 的有限數字（經過 JSON 的 1.2、整數 2 也算）才啟用；字串、布林、null、陣列、字典、NaN、無限大、0、負數、1 以下、超過 2、缺欄位、欄位名稱寫錯、不認得或大小寫不同的 id、其他技能帶這個欄位都不啟用（倍率 1）；補給不帶其他技能（戰神也不帶補給），換成反擊或沒有技能後清除；每次擊殺的金幣：1→5、1.2→6、1.3→6、1.5→7、2→10，NaN、無限大、0.5 都是 5",
+		wrong0.is_empty() and _ls_near(json0, 1.2) and other0 == [1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+			and berserk0 == [0.05, 1.0] and switched0 == [1.0, 0.2] and cleared0 == 1.0 and gold0 == [5, 6, 6, 7, 10, 5, 5, 5],
+		{"wrong": wrong0, "json": json0, "other": other0, "berserk": berserk0, "switched": switched0, "cleared": cleared0, "gold": gold0, "cases": good0.size() + bad0.size()})
+
+	# 補給-1：單獨的 BattleManager：沒有補給時每次擊殺 +5；魯肅登記了但不在場景樹（還沒部署）時仍是 5；放上場後 +6、擊殺各 +1；
+	# 紀錄寫出生成序號、結算後的擊殺數、基礎 5、實得 6、倍率 1.2、來源 lu_su
+	var holder1 := _dodge_holder()
+	var wave1 := R20Wave.new()
+	holder1.add_child(wave1)
+	var bm1: Node = _bk_bm()
+	var k1a: Dictionary = _sp_kill(bm1)
+	var off1: Node = _sp_hero(null, bm1)
+	var k1b: Dictionary = _sp_kill(bm1)
+	holder1.add_child(off1)
+	var e1: Node = _st_enemy(holder1, wave1, 1.0, Vector2(1, 0), 7)
+	var k1c: Dictionary = _sp_kill(bm1, e1)
+	var dbg1: Dictionary = bm1.supply_debug()
+	var last1: Dictionary = dbg1.log.back() if not dbg1.log.is_empty() else {}
+	holder1.queue_free()
+	bm1.free()
+	_check("補給-1 沒有補給時每次擊殺 +5；魯肅登記了但不在場上（還沒部署）時仍是 5；放上場後 +6（5 × 1.2）、擊殺各 +1；最後一筆紀錄是 {生成序號 7、擊殺 3、基礎 5、實得 6、倍率 1.2、來源 lu_su}；快照的有效來源只有 lu_su、每次擊殺 6、紀錄 3 筆",
+		k1a.gold == 5 and k1a.kills == 1 and k1a.source == "" and k1b.gold == 5 and k1b.kills == 1 and k1b.source == "" and k1c.gold == 6 and k1c.kills == 1
+			and _ls_near(k1c.mult, 1.2) and k1c.source == SP_HERO and last1.get("seq") == 7 and last1.get("kills") == 3 and last1.get("base") == 5 and last1.get("gold") == 6
+			and dbg1.kill_gold == 6 and dbg1.base_gold == 5 and dbg1.hero_id == SP_HERO and dbg1.sources.size() == 1 and dbg1.log.size() == 3,
+		{"a": k1a, "b": k1b, "c": k1c, "dbg": dbg1})
+
+	# 補給-2：擊殺結算的當下確認來源（不靠下一幀）：生命 0（陣亡的那一刻）、移出場景樹、換成其他技能、沒有技能、正要被移除（queue_free）、
+	# 已經釋放時立刻是 5；恢復生命、放回場上、換回補給時立刻是 6
+	var holder2 := _dodge_holder()
+	var bm2: Node = _bk_bm()
+	var h2: Node = _sp_hero(holder2, bm2)
+	var g2: Array = [_sp_gold(bm2)]
+	h2.current_hp = 0.0
+	g2.append(_sp_gold(bm2))
+	h2.current_hp = 1000.0
+	g2.append(_sp_gold(bm2))
+	holder2.remove_child(h2)
+	g2.append(_sp_gold(bm2))
+	holder2.add_child(h2)
+	g2.append(_sp_gold(bm2))
+	h2._read_skill({"skill": {"id": "counter", "counter_ratio": 0.2}})
+	g2.append(_sp_gold(bm2))
+	h2._read_skill({"skill": SP_SKILL.duplicate()})
+	g2.append(_sp_gold(bm2))
+	h2._read_skill({})
+	g2.append(_sp_gold(bm2))
+	h2._read_skill({"skill": SP_SKILL.duplicate()})
+	g2.append(_sp_gold(bm2))
+	h2.queue_free()
+	g2.append(_sp_gold(bm2))
+	var h2b: Node = _sp_hero(holder2, bm2, null, "lu_su_b")
+	g2.append(_sp_gold(bm2))
+	h2b.free()
+	g2.append(_sp_gold(bm2))
+	await process_frame
+	g2.append(_sp_gold(bm2))
+	var srcs2: Array = bm2.supply_active_sources()
+	holder2.queue_free()
+	bm2.free()
+	_check("補給-2 結算當下確認來源：在場上 6 → 生命 0 時 5 → 恢復 6 → 移出場景樹 5 → 放回 6 → 換成反擊 5 → 換回補給 6 → 沒有技能 5 → 換回 6 → queue_free 的同一幀 5 → 另一位補給武將 6 → 它被釋放後 5（不會出錯）→ 下一幀仍是 5、沒有有效來源",
+		g2 == [6, 5, 6, 5, 6, 5, 6, 5, 6, 5, 6, 5, 5] and srcs2.is_empty(), {"gold": g2, "sources": srcs2})
+
+	# 補給-3：多個來源只取最強的倍率（不相乘、不相加）、向下取整：兩位 1.2 → 6（不是 7）、來源是先登記的；再加 1.5 → 7（7.5 向下取整）、來源是 1.5 的那位；
+	# 1.5 的那位生命 0 → 回到 6；只剩 1.3 → 6（6.5 向下取整）；改成 2 → 10；每次都只算一次擊殺
+	var holder3 := _dodge_holder()
+	var bm3: Node = _bk_bm()
+	var a3: Node = _sp_hero(holder3, bm3)
+	var b3: Node = _sp_hero(holder3, bm3, null, "lu_su_b")
+	var r3a: Dictionary = _sp_kill(bm3)
+	var c3: Node = _sp_hero(holder3, bm3, {"id": "supply", "supply_gold_multiplier": 1.5}, "supply_15")
+	var r3b: Dictionary = _sp_kill(bm3)
+	c3.current_hp = 0.0
+	var r3c: Dictionary = _sp_kill(bm3)
+	a3._read_skill({})
+	b3._read_skill({"skill": {"id": "supply", "supply_gold_multiplier": 1.3}})
+	var r3d: Dictionary = _sp_kill(bm3)
+	b3._read_skill({"skill": {"id": "supply", "supply_gold_multiplier": 2}})
+	var r3e: Dictionary = _sp_kill(bm3)
+	holder3.queue_free()
+	bm3.free()
+	_check("補給-3 多個來源取最強、不相乘不相加、向下取整：兩位 1.2 → 6（來源是先登記的 lu_su）；加上 1.5 → 7（7.5 向下取整，來源 supply_15）；1.5 的那位生命 0 → 6；只剩 1.3 → 6（6.5 向下取整）；改成 2 → 10；每次擊殺 +1",
+		r3a.gold == 6 and r3a.source == SP_HERO and _ls_near(r3a.mult, 1.2) and r3b.gold == 7 and r3b.source == "supply_15" and _ls_near(r3b.mult, 1.5)
+			and r3c.gold == 6 and r3c.source == SP_HERO and r3d.gold == 6 and r3d.source == "lu_su_b" and _ls_near(r3d.mult, 1.3) and r3e.gold == 10 and _ls_near(r3e.mult, 2.0)
+			and [r3a.kills, r3b.kills, r3c.kills, r3d.kills, r3e.kills] == [1, 1, 1, 1, 1],
+		{"a": r3a, "b": r3b, "c": r3c, "d": r3d, "e": r3e})
+
+	# 補給-4：只改有效擊殺的入口：有補給時 earn_gold(5) 仍 +5、拆除的返還 refund_gold(25) 仍 +25、花費 spend_gold(50) 仍 −50；
+	# 漏到城池不加金幣、不算擊殺（城防 −1）；有效擊殺 +6；結算（RESULT）之後的擊殺不加金幣、不算擊殺、沒有紀錄
+	var holder4 := _dodge_holder()
+	var bm4: Node = _bk_bm()
+	_sp_hero(holder4, bm4)
+	var g4: int = bm4.battle_gold
+	bm4.earn_gold(5)
+	var earn4: int = bm4.battle_gold - g4
+	g4 = bm4.battle_gold
+	bm4.refund_gold(25)
+	var refund4: int = bm4.battle_gold - g4
+	g4 = bm4.battle_gold
+	bm4.spend_gold(50)
+	var spend4: int = bm4.battle_gold - g4
+	g4 = bm4.battle_gold
+	var hp4: int = bm4.base_hp
+	bm4.on_enemy_reached_base()
+	var leak4: Array = [bm4.battle_gold - g4, bm4.kills, hp4 - bm4.base_hp]
+	var kill4: int = _sp_gold(bm4)
+	bm4.game_state = BattleManager.GameState.RESULT
+	g4 = bm4.battle_gold
+	var k4: int = bm4.kills
+	var n4: int = bm4.supply_debug().log.size()
+	bm4.on_enemy_killed()
+	var late4: Array = [bm4.battle_gold - g4, bm4.kills - k4, bm4.supply_debug().log.size() - n4]
+	holder4.queue_free()
+	bm4.free()
+	_check("補給-4 只改有效擊殺：有補給時 earn_gold(5) +5、拆除返還 +25、花費 −50 都照原數；漏到城池金幣不變、擊殺 0、城防 −1；有效擊殺 +6；結算之後的擊殺不加金幣、不算擊殺、沒有紀錄",
+		earn4 == 5 and refund4 == 25 and spend4 == -50 and leak4 == [0, 0, 1] and kill4 == 6 and late4 == [0, 0, 0],
+		{"earn": earn4, "refund": refund4, "spend": spend4, "leak": leak4, "kill": kill4, "late": late4})
+
+	# 補給-5：新的一場（initialize）清掉登記：上一場的魯肅節點仍在場景樹、還活著，新的一場的擊殺也只有 5，紀錄只剩新的一場；
+	# 這一場重新讀到補給（重新部署）後才是 6
+	var holder5 := _dodge_holder()
+	var bm5: Node = _bk_bm()
+	var h5: Node = _sp_hero(holder5, bm5)
+	var before5: int = _sp_gold(bm5)
+	bm5.initialize(1, "supply_unit", null, null, "supply-5")
+	var after5: Dictionary = _sp_kill(bm5)
+	var log5: int = bm5.supply_debug().log.size()
+	h5._read_skill({"skill": SP_SKILL.duplicate()})
+	var again5: int = _sp_gold(bm5)
+	holder5.queue_free()
+	bm5.free()
+	_check("補給-5 新的一場清掉上一場的來源：上一場 6；新的一場（上一場的節點仍在場上、活著）5、沒有來源、紀錄只有 1 筆；重新讀到補給後 6",
+		before5 == 6 and after5.gold == 5 and after5.source == "" and log5 == 1 and again5 == 6,
+		{"before": before5, "after": after5, "log": log5, "again": again5})
+
+	# ── 實際引擎（Main、經過 JSON 的出征資料）──
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 補給-20：只在隊伍裡、沒有部署時每次擊殺 +5；部署後打倒一名 → 擊殺 +1、金幣 +6，Web 收到的 update_stats 金幣和戰鬥金幣相同；
+	# 選取面板帶 supply；快照的 hero_supply 與 BattleManager 的 supply（來源、每次 6、紀錄的生成序號）
+	var es: Array = await _sp_start(rec, "supply-20a", 1, null, false)
+	var d20: Dictionary = {}
+	if es.size() == 1:
+		d20["undeployed"] = _sp_engine(rec, func(): es[0].take_damage(999999.0))
+	es = await _sp_start(rec, "supply-20b", 2)
+	if es.size() == 2 and _sp_main_hero() != null:
+		var g: Node = _sp_main_hero()
+		d20["read"] = g.supply_gold_multiplier
+		var n_panel: int = rec.sent_panels.size()
+		main._on_hero_clicked(g)
+		d20["panel"] = rec.sent_panels.back().get("supply") if rec.sent_panels.size() > n_panel else null
+		d20["seq"] = int(es[0].spawn_seq)
+		d20["kill"] = _sp_engine(rec, func(): es[0].take_damage(999999.0))
+		var n_snap: int = rec.sent_snapshots.size()
+		main._on_debug_snapshot_requested("supply-20")
+		var snap: Dictionary = rec.sent_snapshots.back() if rec.sent_snapshots.size() > n_snap else {}
+		d20["hero"] = snap.get("hero_supply", {}).get(SP_HERO, {})
+		d20["bm"] = snap.get("supply", {})
+	var u20: Dictionary = d20.get("undeployed", {})
+	var k20: Dictionary = d20.get("kill", {})
+	var p20: Dictionary = d20.get("panel") if d20.get("panel") is Dictionary else {}
+	var hs20: Dictionary = d20.get("hero", {})
+	var b20: Dictionary = d20.get("bm", {})
+	var ok20: bool = u20.get("gold") == 5 and u20.get("kills") == 1 and u20.get("entries", []).size() == 1 and u20.entries[0].get("source") == ""
+	ok20 = ok20 and _ls_near(d20.get("read", 0.0), 1.2) and k20.get("gold") == 6 and k20.get("kills") == 1 and k20.get("entries", []).size() == 1
+	ok20 = ok20 and k20.entries[0].get("seq") == d20.get("seq") and k20.entries[0].get("gold") == 6 and k20.entries[0].get("source") == SP_HERO and k20.get("web_gold") == k20.get("bm_gold")
+	ok20 = ok20 and _ls_near(p20.get("multiplier", 0.0), 1.2) and p20.get("active") == true and p20.get("base_gold") == 5 and p20.get("hero_kill_gold") == 6
+	ok20 = ok20 and p20.get("kill_gold") == 6 and p20.get("source") == SP_HERO
+	ok20 = ok20 and _ls_near(hs20.get("mult", 0.0), 1.2) and hs20.get("active") == true and hs20.get("kill_gold") == 6
+	ok20 = ok20 and b20.get("hero_id") == SP_HERO and b20.get("kill_gold") == 6 and b20.get("base_gold") == 5 and b20.get("sources", []).size() == 1
+	_check("補給-20 實際引擎：只在隊伍裡、沒有部署時擊殺 +1、金幣 +5（紀錄沒有來源）；部署後讀到 1.2，打倒一名：擊殺 +1、金幣 +6（紀錄一筆：該敵人的生成序號、6、來源 lu_su），Web 收到的 update_stats 金幣＝戰鬥金幣；選取面板 {1.2, 生效中, 基礎 5, 這位 6, 這一場 6, 來源 lu_su}；快照的 hero_supply {1.2, 生效中, 6}、BattleManager 的 supply {lu_su, 基礎 5, 每次 6, 有效來源 1 個}",
+		ok20, d20)
+
+	# 補給-21：實際引擎的各種來源都算、各只結算一次：關羽（沒有技能）的普通攻擊、防禦塔（弓兵）、灼燒、魯肅自己的普通攻擊打倒的，
+	# 每次擊殺 +1、金幣 +6，紀錄每次一筆、生成序號各不相同
+	es = await _sp_start(rec, "supply-21", 4, [_sp_member(), _r12_hero("guan_yu", null)])
+	var d21: Dictionary = {}
+	if es.size() == 4 and _sp_main_hero() != null:
+		_r12_place("guan_yu", Vector2i(2, 4))
+		var gy: Node = main._placed_heroes.get("guan_yu")
+		var lu: Node = _sp_main_hero()
+		var tw: Node = _r18_build("archer", Vector2i(5, 4))
+		d21["built"] = [gy != null, tw != null]
+		if gy != null and tw != null:
+			gy.set_process(false)
+			tw.set_process(false)
+			for e in es:
+				e.current_hp = 50.0
+			es[1].current_hp = 1.0
+			_sp_only(es, es[0], gy)
+			d21["hero"] = _sp_engine(rec, func():
+				gy._atk_timer = 0.0
+				gy._process(0.0))
+			_sp_only(es, es[1], tw)
+			d21["tower"] = _sp_engine(rec, func():
+				tw._atk_timer = 0.0
+				tw._process(0.0))
+			d21["burn"] = _sp_engine(rec, func(): es[2].take_damage(999999.0, true))
+			_sp_only(es, es[3], lu)
+			d21["self"] = _sp_engine(rec, func():
+				lu._atk_timer = 0.0
+				lu._process(0.0))
+			d21["dead"] = es.map(func(e): return not is_instance_valid(e) or e.is_dead())
+			d21["seqs"] = _bm().supply_debug().log.map(func(x): return x.seq)
+	var ok21: bool = d21.get("built") == [true, true] and d21.get("dead") == [true, true, true, true]
+	var seen21: Dictionary = {}
+	for x in d21.get("seqs", []):
+		seen21[x] = true
+	ok21 = ok21 and d21.get("seqs", []).size() == 4 and seen21.size() == 4
+	for k in ["hero", "tower", "burn", "self"]:
+		var r: Dictionary = d21.get(k, {})
+		ok21 = ok21 and r.get("gold") == 6 and r.get("kills") == 1 and r.get("entries", []).size() == 1 and r.entries[0].get("source") == SP_HERO
+	_check("補給-21 實際引擎：關羽的普通攻擊、弓兵塔、灼燒、魯肅自己的普通攻擊打倒的都算：每次擊殺 +1、金幣 +6、紀錄一筆（來源 lu_su），四筆的生成序號各不相同",
+		ok21, d21)
+
+	# 補給-22：實際引擎的來源失效在當下生效：移出隊伍的同一幀 5、下一幀仍 5；放回隊伍並重新部署（新節點）6；
+	# 更新隊伍換成反擊 5、換回補給 6；魯肅被打到陣亡的同一幀 5
+	es = await _sp_start(rec, "supply-22", 7)
+	var d22: Array = []
+	if es.size() == 7 and _sp_main_hero() != null:
+		var kill := func(i: int) -> int:
+			var gk: int = _bm().battle_gold
+			es[i].take_damage(999999.0)
+			return _bm().battle_gold - gk
+		d22.append(kill.call(0))
+		main._on_payload_received({"type": "update_team", "team_list": []})
+		d22.append(kill.call(1))
+		await process_frame
+		d22.append(kill.call(2))
+		main._on_payload_received({"type": "update_team", "team_list": [_sp_member()]})
+		_r12_place(SP_HERO, Vector2i(3, 4))
+		if _sp_main_hero() != null:
+			_sp_main_hero().set_process(false)
+		d22.append(kill.call(3))
+		main._on_payload_received({"type": "update_team", "team_list": [_sp_member(1, {"id": "counter", "counter_ratio": 0.2})]})
+		d22.append(kill.call(4))
+		main._on_payload_received({"type": "update_team", "team_list": [_sp_member()]})
+		d22.append(kill.call(5))
+		var lu22: Node = _sp_main_hero()
+		if lu22 != null:
+			lu22.take_damage(9999999.0)
+		d22.append(kill.call(6))
+	_check("補給-22 實際引擎：6 → 移出隊伍的同一幀 5 → 下一幀 5 → 放回並重新部署 6 → 更新隊伍換成反擊 5 → 換回補給 6 → 魯肅陣亡的同一幀 5",
+		d22 == [6, 5, 5, 6, 5, 6, 5], d22)
+
+	# 補給-23：同一場跨波、移位、升級都維持 6：第 1 波打倒一名 6、清波；第 2 波 6、移位後 6、升級（2 級，帶補給）後 6；
+	# 新的一場（新的 battle_id、魯肅只在隊伍裡）5，上一場的紀錄清除、沒有有效來源
+	var waves23: Array = [[_grp("post", 1, 0.02)], [_grp("post", 3, 0.02)]]
+	es = await _sp_start(rec, "supply-23", 1, null, true, waves23)
+	var d23: Dictionary = {}
+	if es.size() == 1 and _sp_main_hero() != null:
+		var g23: int = _bm().battle_gold
+		es[0].take_damage(999999.0)
+		d23["w1"] = _bm().battle_gold - g23
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.PREP, 3.0)
+		d23["prep"] = _bm().game_state == BattleManager.GameState.PREP
+		_bm().player_start_battle()
+		await _wait_until(func(): return _sw_enemies().size() == 3, 5.0)
+		var es2: Array = _sw_enemies()
+		if es2.size() == 3:
+			g23 = _bm().battle_gold
+			es2[0].take_damage(999999.0)
+			d23["w2"] = _bm().battle_gold - g23
+			_blk_move(_sp_main_hero(), Vector2i(5, 4))
+			g23 = _bm().battle_gold
+			es2[1].take_damage(999999.0)
+			d23["moved"] = _bm().battle_gold - g23
+			main._on_payload_received({"type": "update_team", "team_list": [_sp_member(2)]})
+			d23["level"] = _sp_main_hero().hero_level if _sp_main_hero() != null else -1
+			g23 = _bm().battle_gold
+			es2[2].take_damage(999999.0)
+			d23["upgraded"] = _bm().battle_gold - g23
+	es = await _sp_start(rec, "supply-23b", 1, null, false)
+	if es.size() == 1:
+		var g23b: int = _bm().battle_gold
+		es[0].take_damage(999999.0)
+		d23["new_battle"] = [_bm().battle_gold - g23b, _bm().supply_debug().log.size(), _bm().supply_debug().sources.size()]
+	_check("補給-23 實際引擎：第 1 波 6、清波後第 2 波 6、移位後 6、升級（2 級）後 6；新的一場（魯肅只在隊伍裡）5、紀錄只有這一場的 1 筆、沒有有效來源",
+		d23.get("w1") == 6 and d23.get("prep") == true and d23.get("w2") == 6 and d23.get("moved") == 6 and d23.get("level") == 2 and d23.get("upgraded") == 6
+			and d23.get("new_battle") == [5, 1, 0], d23)
+
+	# 補給-24：只改有效擊殺：備戰中魯肅在場上時建造弓兵塔扣 50、拆除返還 25（和沒有補給時相同）；開戰後漏到城池的不加金幣、不算擊殺；
+	# 打倒最後一名 +6 後結算（勝利），結算的擊殺數是 1；結算之後再送來的擊殺不加金幣、不算擊殺、沒有紀錄
+	_r19_js(rec, _r12_payload("supply_a", [[_grp("post", 2, 0.02)]], "supply-24", [_sp_member()]))
+	_r12_place(SP_HERO, Vector2i(3, 4))
+	var d24: Dictionary = {}
+	if _sp_main_hero() != null:
+		_sp_main_hero().set_process(false)
+		var g24: int = _bm().battle_gold
+		var tw24: Node = _r18_build("archer", Vector2i(5, 4))
+		d24["build"] = _bm().battle_gold - g24
+		if tw24 != null:
+			var panel24: Dictionary = _r18_panel(rec, tw24)
+			g24 = _bm().battle_gold
+			var reply24: Dictionary = _r18_sell(rec, tw24.tower_uid, float(panel24.get("sell_refund", -1)))
+			d24["sell"] = [reply24.get("ok"), _bm().battle_gold - g24]
+		_bm().player_start_battle()
+		await _wait_until(func(): return _sw_enemies().size() == 2, 5.0)
+		var es24: Array = _sw_enemies()
+		if es24.size() == 2:
+			var ended0: int = battle_ended_count
+			g24 = _bm().battle_gold
+			var k24: int = _bm().kills
+			es24[0]._on_reached_base()
+			d24["leak"] = [_bm().battle_gold - g24, _bm().kills - k24]
+			g24 = _bm().battle_gold
+			es24[1].take_damage(999999.0)
+			d24["kill"] = _bm().battle_gold - g24
+			await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 3.0)
+			d24["result"] = [_bm().game_state == BattleManager.GameState.RESULT, battle_ended_count - ended0, last_result.get("kills"), last_result.get("result")]
+			g24 = _bm().battle_gold
+			k24 = _bm().kills
+			var n24: int = _bm().supply_debug().log.size()
+			_bm().on_enemy_killed(null)
+			d24["late"] = [_bm().battle_gold - g24, _bm().kills - k24, _bm().supply_debug().log.size() - n24]
+	_check("補給-24 實際引擎：備戰中魯肅在場上時建造弓兵塔 −50、拆除返還 +25（和沒有補給時相同）；漏到城池金幣不變、擊殺不變；打倒最後一名 +6 後勝利結算、結算的擊殺數 1；結算之後的擊殺不加金幣、不算擊殺、沒有紀錄",
+		d24.get("build") == -50 and d24.get("sell") == [true, 25] and d24.get("leak") == [0, 0] and d24.get("kill") == 6 and d24.get("result") == [true, 1, 1, "WIN"]
+			and d24.get("late") == [0, 0, 0], d24)
 
 	rec.payload_received.disconnect(main._on_payload_received)
 	main.web_bridge = original

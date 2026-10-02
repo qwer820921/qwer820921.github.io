@@ -3647,12 +3647,103 @@ await test("戰神-S1", async () => {
   );
 });
 
+await test("補給-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    berserkPercents,
+    stormPercent,
+    supplyKillGold,
+    supplyPercent,
+    BASE_KILL_GOLD,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const ls = heroSkillOf("lu_su");
+  const payload = heroSkillPayload("lu_su");
+  const text = describeHeroSkill(ls, 5, 73);
+  const strong = describeHeroSkill(
+    { id: "supply", name: "補給", goldMultiplier: 1.5 },
+    5,
+    73
+  );
+  // 每次擊殺的金幣：基礎 5 × 倍率，向下取整（和 Godot 的 BattleManager.kill_gold 相同）
+  const golds = [1.2, 1.3, 1.5, 2].map((m) =>
+    supplyKillGold({ id: "supply", name: "補給", goldMultiplier: m })
+  );
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "cao_cao",
+    "gan_ning",
+    "xia_hou_dun",
+    "liao_hua",
+    "yan_liang",
+    "sun_shang_xiang",
+    "pang_tong",
+    "zhu_ge_liang",
+    "lv_bu",
+    "lusu",
+    "lu_shu",
+    "Lu_Su",
+  ].filter((id) => heroSkillOf(id)?.id === "supply");
+  check(
+    "補給-S1 魯肅（lu_su）的補給：送進 Godot 的參數（supply、supply_gold_multiplier 1.2，只有這兩個欄位）與說明文字出自同一份定義；增加 20%、每次擊殺 5 → 6（向下取整：1.3 → 6、1.5 → 7、2 → 10；沒有補給是 5）；說明寫出部署在戰場上、還活著時全隊擊殺戰鬥金幣增加 20%、從 5 變成 6，任何方式打倒的都算、擊殺數只算一次、漏到城池沒有金幣，只在隊伍裡還沒部署時不生效、陣亡或移出隊伍立刻恢復、換波移位升級維持，只增加這一場的戰鬥金幣（花費、返還、戰場點數、玩家的金幣經驗存檔不變），多個補給取最高不疊加，面板是選取當時的數值；1.5 的定義照樣寫出 50%、5 → 7；其他技能的計算不受影響；其他武將（含寫錯的 id）沒有補給",
+    ls?.id === "supply" &&
+      ls.name === "補給" &&
+      ls.goldMultiplier === 1.2 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: { id: "supply", supply_gold_multiplier: 1.2 },
+        }) &&
+      BASE_KILL_GOLD === 5 &&
+      supplyPercent(ls) === 20 &&
+      supplyPercent(null) === 0 &&
+      supplyPercent(heroSkillOf("lv_bu")) === 0 &&
+      supplyKillGold(ls) === 6 &&
+      supplyKillGold(null) === 5 &&
+      supplyKillGold(heroSkillOf("lv_bu")) === 5 &&
+      JSON.stringify(golds) === "[6,6,7,10]" &&
+      JSON.stringify(berserkPercents(ls)) ===
+        JSON.stringify({ perStack: 0, max: 0 }) &&
+      stormPercent(ls) === 0 &&
+      effectiveRange(ls, 5) === 5 &&
+      burnTickDamage(ls, 73) === 0 &&
+      text.includes(
+        "部署在戰場上、還活著時，全隊每次擊殺敵人得到的戰鬥金幣增加 20%：每次從 5 變成 6（向下取整）。"
+      ) &&
+      text.includes(
+        "其他武將、防禦塔、灼燒等任何方式打倒的敵人都算，擊殺數照常只算一次"
+      ) &&
+      text.includes("敵人漏到城池不算擊殺，也沒有金幣") &&
+      text.includes("只放在隊伍裡、還沒部署時不生效") &&
+      text.includes("陣亡或被移出隊伍時立刻恢復成每次 5，重新部署後再生效") &&
+      text.includes("換波次、移動位置、升級都維持") &&
+      text.includes(
+        "建造與升級的花費、拆除的返還、結算的戰場點數，以及玩家的金幣、經驗與存檔都不變"
+      ) &&
+      text.includes("同時有幾個補給在場時取最高的倍率，不會疊加") &&
+      text.includes("選取當時是否生效與每次擊殺的金幣") &&
+      text.includes("只在戰場生效，不影響存檔") &&
+      strong.includes("增加 50%：每次從 5 變成 7") &&
+      others.length === 0,
+    { ls, payload, text, strong, golds, others }
+  );
+});
+
 // 技能綁定和正式設定表 heroes_config 的被動描述（passive）對照：趙雲是閃避、馬超是衝鋒（首擊加倍）；
 // 關羽是減速光環（「周圍敵人減速10%」）；劉備是防禦光環（「光環：提升友軍防禦」）；張飛是暈眩（「攻擊使敵人暈眩」）；
 // 魏延是吸血（「吸血：恢復生命」）；曹操是攻速光環（「指揮：提升友軍攻速」）；夏侯惇是反擊（「反擊：受傷時反彈傷害」）；
 // 廖化是堅韌（「堅韌：低血量減傷」）；顏良是威壓（「威壓：降低敵軍攻擊」）；孫尚香是連射（「連射：有機率二次攻擊」）；
 // 龐統是連環計（「連環計：傳遞傷害」，鏈式傳遞，不是橫掃）；諸葛亮是呼風喚雨（「呼風喚雨：大範圍傷害」，以被打中的敵人為中心的範圍，不是橫掃原型）；
-// 呂布是戰神（「戰神：攻擊力隨殺敵增加」，自己普通攻擊的擊殺疊層）；
+// 呂布是戰神（「戰神：攻擊力隨殺敵增加」，自己普通攻擊的擊殺疊層）；魯肅是補給（「補給：增加資源獲取」，在場時全隊擊殺的戰鬥金幣增加）；
 // 甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
 await test("技能對照-S1", async () => {
   const { heroSkillOf, heroSkillPayload } = require(
@@ -3676,6 +3767,7 @@ await test("技能對照-S1", async () => {
     "pang_tong",
     "zhu_ge_liang",
     "lv_bu",
+    "lu_su",
   ];
   const got = Object.fromEntries(
     ids.map((id) => [id, heroSkillOf(id)?.id ?? null])
@@ -3684,7 +3776,7 @@ await test("技能對照-S1", async () => {
     (id) => heroSkillPayload(id).skill?.id === "first_strike"
   );
   check(
-    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）、顏良 atk_down_aura（威壓）、孫尚香 double_shot（連射）、龐統 chain（連環計）、諸葛亮 storm（呼風喚雨）、呂布 berserk（戰神）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
+    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）、顏良 atk_down_aura（威壓）、孫尚香 double_shot（連射）、龐統 chain（連環計）、諸葛亮 storm（呼風喚雨）、呂布 berserk（戰神）、魯肅 supply（補給）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
     JSON.stringify(got) ===
       JSON.stringify({
         ma_chao: "first_strike",
@@ -3704,6 +3796,7 @@ await test("技能對照-S1", async () => {
         pang_tong: "chain",
         zhu_ge_liang: "storm",
         lv_bu: "berserk",
+        lu_su: "supply",
       }) &&
       JSON.stringify(firstStrike) === '["ma_chao"]' &&
       !Object.values(got).includes("sweep") &&

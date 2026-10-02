@@ -73,6 +73,18 @@ interface UpgradePanelProps {
       base_atk: number;
       effective_atk: number;
     };
+    /**
+     * 武將的補給（魯肅）：Godot 實際讀到的倍率、選取當下這位武將能不能提供（在場上、還活著）、基礎與這位武將提供時每次擊殺的金幣、
+     * 這一場此刻每次擊殺的金幣與最強的來源（全場取最高的倍率）；沒有這個技能（或舊版遊戲）時沒有
+     */
+    supply?: {
+      multiplier: number;
+      active: boolean;
+      base_gold: number;
+      hero_kill_gold: number;
+      kill_gold: number;
+      source: string;
+    };
     screen_pos: { x: number; y: number };
   };
   onUpgrade: () => void;
@@ -193,6 +205,18 @@ export default function UpgradePanel({
     Number.isFinite(bsk.effective_atk);
   const atkNum = (n: number) => String(Number(n.toFixed(2)));
   const bskPct = bskOk ? Number((bsk.ratio * bsk.stacks * 100).toFixed(1)) : 0;
+  // 武將的補給：選取當下是否生效與這一場每次擊殺的金幣（Godot 在選取時計算，不是固定的說明）
+  const sup = data.unit_type === "hero" ? data.supply : undefined;
+  const supOk =
+    !!sup &&
+    Number.isFinite(sup.multiplier) &&
+    sup.multiplier > 1 &&
+    sup.multiplier <= 2 &&
+    typeof sup.active === "boolean" &&
+    Number.isInteger(sup.base_gold) &&
+    Number.isInteger(sup.hero_kill_gold) &&
+    Number.isInteger(sup.kill_gold);
+  const supPct = supOk ? Number(((sup.multiplier - 1) * 100).toFixed(1)) : 0;
   const s = sell && isSameTower(data, sell) ? sell : null;
   const confirming = s?.phase === "confirm" || s?.phase === "pending";
   const pending = s?.phase === "pending";
@@ -371,6 +395,22 @@ export default function UpgradePanel({
             {atkNum(bsk.base_atk)}、目前 {atkNum(bsk.effective_atk)}
             ；自己打倒敵人後下一擊起每層 +{Number((bsk.ratio * 100).toFixed(1))}
             %，最多 {bsk.max_stacks} 層，新的一場從 0 層開始
+          </div>
+        )}
+
+        {supOk && (
+          <div
+            className={styles.supplyNote}
+            data-testid="unit-panel-supply"
+            data-active={sup.active ? "1" : "0"}
+            data-kill-gold={sup.kill_gold}
+          >
+            補給：選取時
+            {sup.active
+              ? `生效中，這一場每次擊殺戰鬥金幣 ${sup.kill_gold}（基礎 ${sup.base_gold}）`
+              : `沒有生效（不在場上或已陣亡），這一場每次擊殺戰鬥金幣 ${sup.kill_gold}`}
+            ；在場上、還活著時全隊擊殺 +{supPct}%（{sup.base_gold} →{" "}
+            {sup.hero_kill_gold}），不影響玩家的獎勵
           </div>
         )}
 
