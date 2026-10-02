@@ -1351,6 +1351,229 @@ async (page) => {
     page.off("request", onReq);
   });
 
+  // ── 17b. 新地圖視窗的鍵盤操作：dialog 與欄位標籤、開啟時焦點在 map_id、Tab／Shift+Tab 只在視窗內循環（停用的跳過）、
+  //        Esc／取消／點遮罩／確定後焦點回到「＋ 新增地圖」，關閉後不留下焦點陷阱與 document 上的監聽 ──
+  await section("new-map-keyboard", async () => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openEditor();
+    await loadList();
+    const WRITES = ["update_map_config", "save_waves_config", "create_map_config"];
+    const writes = async () => (await reqLog()).filter((e) => WRITES.includes(e.action)).length;
+    const writes0 = await writes();
+    const dialog = () => page.getByRole("dialog", { name: "新增地圖", exact: true });
+    const isOpen = async () => (await page.locator('[data-testid="new-map-modal"]').count()) > 0;
+    // 目前的焦點：欄位用連到它的標籤（label for），勾選框是 checkbox，按鈕用文字；inDialog 是否在視窗裡
+    const active = () => page.evaluate(() => {
+      const a = document.activeElement;
+      const dlg = document.querySelector('[data-testid="new-map-modal"]');
+      if (!a || a === document.body) return { name: "(body)", inDialog: false };
+      const lab = a.id ? document.querySelector(`label[for="${CSS.escape(a.id)}"]`) : null;
+      const name = a.type === "checkbox" ? "checkbox" : a.tagName === "INPUT" ? (lab ? lab.textContent.trim() : "(沒有標籤)") : (a.textContent || "").trim();
+      return { name, inDialog: !!dlg && dlg.contains(a) };
+    });
+    const press = async (key, n = 1) => {
+      const seq = [];
+      for (let i = 0; i < n; i++) { await page.keyboard.press(key); seq.push(await active()); }
+      return seq;
+    };
+    const names = (seq) => seq.map((a) => a.name);
+    const allIn = (seq) => seq.every((a) => a.inDialog);
+    const openByKey = async () => {
+      await btn("＋ 新增地圖").focus();
+      await page.keyboard.press("Enter");
+      await page.locator('[data-testid="new-map-modal"]').waitFor({ timeout: 5000 });
+    };
+    // document 上 focusin／keydown 監聽的數量（只算這之後加上的）：開關多次後不能累積
+    await page.evaluate(() => {
+      const live = { focusin: new Set(), keydown: new Set() };
+      const add = document.addEventListener, rm = document.removeEventListener;
+      document.addEventListener = function (type, fn, opts) { if (live[type]) live[type].add(fn); return add.call(this, type, fn, opts); };
+      document.removeEventListener = function (type, fn, opts) { if (live[type]) live[type].delete(fn); return rm.call(this, type, fn, opts); };
+      window.__dialogListeners = () => ({ focusin: live.focusin.size, keydown: live.keydown.size });
+    });
+    const listeners = () => page.evaluate(() => window.__dialogListeners());
+    const editorState = async () => ({ id: await val("map_id"), name: await val("name"), waves: await screenWaves(), status: await status(), dirty: await dirtyText() });
+    const LABELS = ["map_id", "名稱", "章節", "解鎖條件", "寬 (Cols)", "高 (Rows)"];
+
+    // (1) 開啟：dialog 語意、焦點在 map_id、每個欄位都有連到它的標籤
+    const before1 = await editorState();
+    const l0 = await listeners();
+    await openByKey();
+    const a1 = await active();
+    const dlg1 = await page.locator('[data-testid="new-map-modal"]').evaluate((el) => ({
+      role: el.getAttribute("role"), modal: el.getAttribute("aria-modal"),
+      title: document.getElementById(el.getAttribute("aria-labelledby") || "")?.textContent?.trim() || "",
+    }));
+    const dialogs1 = await dialog().count();
+    const labeled = [];
+    for (const l of LABELS) labeled.push(await dialog().getByRole("textbox", { name: l, exact: true }).count());
+    await dialog().locator("label", { hasText: "解鎖條件" }).click();
+    const aLabel = await active();
+    const keep1 = await dialog().getByRole("checkbox", { name: /沿用目前波次（0 波）/ }).evaluate((el) => ({
+      disabled: el.disabled,
+      desc: (el.getAttribute("aria-describedby") || "").split(" ").map((id) => document.getElementById(id)?.textContent || "").join(""),
+    }));
+    const l1 = await listeners();
+    run.check("新圖鍵盤-1 用 Enter 開啟新地圖視窗：role=dialog、aria-modal=true，名稱是標題「新增地圖」；焦點在 map_id 欄；6 個欄位都能用標籤找到（label 連到 input），點「解鎖條件」標籤焦點移到該欄；「沿用目前波次（0 波）」停用、說明文字連到勾選框；開著時 document 多 1 個 focusin 與 1 個 keydown 監聽",
+      dlg1.role === "dialog" && dlg1.modal === "true" && dlg1.title === "新增地圖" && dialogs1 === 1 && a1.name === "map_id" && a1.inDialog &&
+        labeled.every((n) => n === 1) && aLabel.name === "解鎖條件" && keep1.disabled === true && /不勾選時新地圖沒有波次/.test(keep1.desc) &&
+        l1.focusin - l0.focusin === 1 && l1.keydown - l0.keydown === 1,
+      { dlg1, dialogs1, a1, labeled, aLabel, keep1: { ...keep1, desc: keep1.desc.slice(0, 30) }, l0, l1 });
+
+    // (2) 沒有波次、欄位空白：勾選框與「確定」停用，Tab 只在 6 個欄位與「取消」之間循環
+    const back2 = await press("Shift+Tab", 3);
+    const fwd2 = await press("Tab", 8);
+    const rev2 = await press("Shift+Tab", 2);
+    run.check("新圖鍵盤-2 沒有波次、欄位空白（勾選框與「確定」停用）：Shift+Tab 從解鎖條件退回 map_id；Tab 依序名稱→章節→解鎖條件→寬→高→取消→回到 map_id→名稱；從 map_id 按 Shift+Tab 到「取消」，焦點都沒有離開視窗",
+      names(back2).join("|") === "章節|名稱|map_id" &&
+        names(fwd2).join("|") === "名稱|章節|解鎖條件|寬 (Cols)|高 (Rows)|取消|map_id|名稱" &&
+        names(rev2).join("|") === "map_id|取消" && allIn([...back2, ...fwd2, ...rev2]),
+      { back2: names(back2), fwd2: names(fwd2), rev2: names(rev2) });
+
+    // (3) 程式把焦點移到背後的「匯入」時拉回視窗；欄位裡按 Enter 不會確定、不會新增
+    await page.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "匯入")?.focus());
+    const a3 = await active();
+    await page.keyboard.type("kb_enter_probe");
+    await page.keyboard.press("Tab");
+    await page.keyboard.type("鍵盤新地圖");
+    await page.keyboard.press("Enter");
+    const open3 = await isOpen();
+    const a3b = await active();
+    const okEnabled3 = await dialog().getByRole("button", { name: "確定", exact: true }).isEnabled();
+    const after3 = await editorState();
+    run.check("新圖鍵盤-3 開著時把焦點移到背後的「匯入」：拉回視窗的 map_id 欄；填好 map_id 與名稱後在名稱欄按 Enter：視窗仍開著、焦點仍在名稱欄，畫面上的地圖沒有換（Enter 不等於確定）",
+      a3.name === "map_id" && a3.inDialog && open3 && a3b.name === "名稱" && okEnabled3 && same(after3, before1),
+      { a3, open3, a3b, okEnabled3, id: after3.id });
+
+    // (4) Esc 等同取消：關閉、焦點回到「＋ 新增地圖」，畫面不變、沒有寫入；監聽移除，Tab 照常走到頁面上的下一個控制項
+    await page.keyboard.press("Escape");
+    const open4 = await isOpen();
+    const a4 = await active();
+    const after4 = await editorState();
+    const l4 = await listeners();
+    const a4b = (await press("Tab"))[0];
+    run.check("新圖鍵盤-4 填了欄位後按 Esc：視窗關閉、焦點回到「＋ 新增地圖」；地圖、波次、狀態列與尚未保存的提示都不變，沒有任何寫入；document 的 focusin／keydown 監聽回到開啟前，Tab 走到頁面上的下一個控制項（沒有被拉回）",
+      !open4 && a4.name === "＋ 新增地圖" && same(after4, before1) && (await writes()) === writes0 &&
+        l4.focusin === l0.focusin && l4.keydown === l0.keydown && a4b.name !== "＋ 新增地圖" && a4b.name !== "(body)" && !a4b.inDialog,
+      { open4, a4, l4, a4b, id: after4.id });
+
+    // (5) 再開：欄位重設；填好後「確定」加入循環；Shift+Tab 到「取消」按 Enter 關閉
+    await openByKey();
+    const a5 = await active();
+    const empty5 = await dialog().getByRole("textbox", { name: "map_id", exact: true }).inputValue();
+    await page.keyboard.type("kb_cancel_probe");
+    await page.keyboard.press("Tab");
+    await page.keyboard.type("取消用");
+    const fwd5 = await press("Tab", 7);
+    const rev5 = await press("Shift+Tab", 2);
+    await page.keyboard.press("Enter");
+    const open5 = await isOpen();
+    const a5b = await active();
+    const after5 = await editorState();
+    run.check("新圖鍵盤-5 再開：焦點在 map_id、欄位已重設；填好 map_id 與名稱後「確定」可用並加入循環（…高→取消→確定→回到 map_id），Shift+Tab 從 map_id 到「確定」再到「取消」；在「取消」按 Enter：視窗關閉、焦點回到「＋ 新增地圖」，畫面不變、沒有寫入",
+      a5.name === "map_id" && empty5 === "" &&
+        names(fwd5).join("|") === "章節|解鎖條件|寬 (Cols)|高 (Rows)|取消|確定|map_id" && names(rev5).join("|") === "確定|取消" &&
+        allIn([...fwd5, ...rev5]) && !open5 && a5b.name === "＋ 新增地圖" && same(after5, before1) && (await writes()) === writes0,
+      { a5, empty5, fwd5: names(fwd5), rev5: names(rev5), open5, a5b, id: after5.id });
+
+    // (6) 點遮罩關閉，焦點回到「＋ 新增地圖」
+    await openByKey();
+    await page.mouse.click(6, 400);
+    await page.waitForFunction(() => !document.querySelector('[data-testid="new-map-modal"]'), null, { timeout: 5000 }).catch(() => {});
+    const open6 = await isOpen();
+    const a6 = await active();
+    const after6 = await editorState();
+    run.check("新圖鍵盤-6 點視窗外的遮罩：視窗關閉、焦點回到「＋ 新增地圖」，畫面不變、沒有寫入",
+      !open6 && a6.name === "＋ 新增地圖" && same(after6, before1) && (await writes()) === writes0, { open6, a6, id: after6.id });
+
+    // (7) 有尚未保存的波次：Esc 不動；勾選框加入循環，空白鍵勾選、在「確定」按空白鍵 → 沿用 4 波（照既有規則）
+    await loadMap("chapter1_1");
+    await addWave();
+    const before7 = await editorState();
+    await openByKey();
+    await page.keyboard.press("Escape");
+    const esc7 = { open: await isOpen(), a: await active(), state: await editorState() };
+    await openByKey();
+    await page.keyboard.type("kb_keep_waves");
+    await page.keyboard.press("Tab");
+    await page.keyboard.type("鍵盤沿用波次");
+    const fwd7 = await press("Tab", 5);
+    await page.keyboard.press(" ");
+    const keep7 = await dialog().getByRole("checkbox").isChecked();
+    const fwd7b = await press("Tab", 3);
+    const rev7 = await press("Shift+Tab", 1);
+    const desc7 = await page.evaluate(() => {
+      const ok = document.activeElement;
+      return (ok?.getAttribute("aria-describedby") || "").split(" ").map((id) => document.getElementById(id)?.textContent || "").join("");
+    });
+    await page.keyboard.press(" ");
+    const open7 = await isOpen();
+    const a7 = await active();
+    const after7 = await editorState();
+    run.check("新圖鍵盤-7 chapter1_1 加了一波（4 波未保存）：開啟後按 Esc，視窗關閉、焦點回到「＋ 新增地圖」，4 波與尚未保存的提示都不變",
+      !esc7.open && esc7.a.name === "＋ 新增地圖" && same(esc7.state, before7) && before7.waves.length === 4 && /波次有尚未保存的修改/.test(before7.dirty),
+      { esc7: { open: esc7.open, a: esc7.a, waves: esc7.state.waves.length }, dirty: before7.dirty });
+    run.check("新圖鍵盤-8 有波次時勾選框加入循環（…高→沿用目前波次→取消→確定→回到 map_id）：空白鍵勾選；「確定」的說明連到「尚未保存的波次會被取代」；在「確定」按空白鍵：建立 kb_keep_waves、沿用同樣的 4 波並標示尚未保存，焦點回到「＋ 新增地圖」，沒有寫入",
+      names(fwd7).join("|") === "章節|解鎖條件|寬 (Cols)|高 (Rows)|checkbox" && keep7 && names(fwd7b).join("|") === "取消|確定|map_id" &&
+        names(rev7).join("|") === "確定" && allIn([...fwd7, ...fwd7b, ...rev7]) && /尚未保存的波次，確定後會被取代/.test(desc7) &&
+        !open7 && a7.name === "＋ 新增地圖" && after7.id === "kb_keep_waves" && same(after7.waves, before7.waves) &&
+        /沿用原本畫面的 4 波波次（還沒保存）/.test(after7.status) && /波次有尚未保存的修改/.test(after7.dirty) && (await writes()) === writes0,
+      { fwd7: names(fwd7), keep7, fwd7b: names(fwd7b), rev7: names(rev7), desc7, open7, a7, id: after7.id, waves: after7.waves.length, status: after7.status });
+
+    // (8) 不勾選、在「確定」按 Enter：波次清空（照既有規則）
+    await openByKey();
+    await page.keyboard.type("kb_no_waves");
+    await page.keyboard.press("Tab");
+    await page.keyboard.type("鍵盤不沿用");
+    const rev8 = await press("Shift+Tab", 2);
+    await page.keyboard.press("Enter");
+    const a8 = await active();
+    const after8 = await editorState();
+    const l8 = await listeners();
+    run.check("新圖鍵盤-9 不勾選、Shift+Tab 經 map_id 到「確定」按 Enter：建立 kb_no_waves、沒有波次（原本 4 波沒有沿用），焦點回到「＋ 新增地圖」；開關 6 次後 document 的 focusin／keydown 監聽回到開啟前；全程沒有任何寫入",
+      names(rev8).join("|") === "map_id|確定" && a8.name === "＋ 新增地圖" && after8.id === "kb_no_waves" && after8.waves.length === 0 &&
+        /已建立新地圖「kb_no_waves」的草稿（還沒保存到設定）；沒有波次/.test(after8.status) &&
+        l8.focusin === l0.focusin && l8.keydown === l0.keydown && (await writes()) === writes0,
+      { rev8: names(rev8), a8, id: after8.id, waves: after8.waves.length, status: after8.status, l8 });
+
+    // (9) 390×600 與 320×600：從第一欄 Tab 到最後一個按鈕，每一項捲到可見、沒有被導覽列或浮動按鈕蓋住、焦點外框看得到
+    await addWave();
+    const focusInfo = () => page.evaluate(() => {
+      const a = document.activeElement;
+      const r = a.getBoundingClientRect();
+      const cs = getComputedStyle(a);
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return {
+        inView: r.top >= 0 && r.bottom <= window.innerHeight + 1 && r.left >= 0 && r.right <= window.innerWidth + 1,
+        onTop: !!hit && (hit === a || a.contains(hit) || hit.contains(a)),
+        ring: (cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0) || cs.boxShadow !== "none",
+      };
+    });
+    for (const w of [390, 320]) {
+      await page.setViewportSize({ width: w, height: 600 });
+      await openByKey();
+      await page.keyboard.type(`kb_narrow_${w}`);
+      const seq = [{ ...(await active()), ...(await focusInfo()) }];
+      await page.keyboard.press("Tab");
+      await page.keyboard.type("窄畫面");
+      seq.push({ ...(await active()), ...(await focusInfo()) });
+      for (let i = 0; i < 7; i++) {
+        await page.keyboard.press("Tab");
+        seq.push({ ...(await active()), ...(await focusInfo()) });
+        if (i === 4) await H.shot(page, `map-editor-save-new-modal-keyboard-${w}x600`);
+      }
+      const wrap = (await press("Tab"))[0];
+      await page.keyboard.press("Escape");
+      const closed = { open: await isOpen(), a: await active() };
+      const bad = seq.filter((s) => !s.inDialog || !s.inView || !s.onTop || !s.ring);
+      run.check(`新圖鍵盤-${w === 390 ? 10 : 11} ${w}×600：從 map_id 用 Tab 依序走到名稱、章節、解鎖條件、寬、高、沿用目前波次、取消、確定，每一項都在視窗裡、捲到畫面內、中心點沒有被導覽列或浮動按鈕蓋住、看得到焦點外框；再 Tab 回到 map_id，Esc 關閉後焦點回到「＋ 新增地圖」`,
+        names(seq).join("|") === "map_id|名稱|章節|解鎖條件|寬 (Cols)|高 (Rows)|checkbox|取消|確定" && bad.length === 0 &&
+          wrap.name === "map_id" && !closed.open && closed.a.name === "＋ 新增地圖",
+        { seq: names(seq), bad, wrap, closed });
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+  });
+
   // ── 18. 390 寬、矮畫面與鍵盤 ──
   await section("narrow", async () => {
     await page.setViewportSize({ width: 390, height: 600 });

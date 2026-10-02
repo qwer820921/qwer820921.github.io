@@ -821,6 +821,14 @@
 .modalInput:focus {
   outline: none;
   border-color: #1e40af;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.45);
+}
+
+/* 新增地圖視窗用鍵盤操作時，按鈕與勾選框的焦點要看得出來 */
+.modal button:focus-visible,
+.modal input[type="checkbox"]:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
 }
 
 .modalFooter {

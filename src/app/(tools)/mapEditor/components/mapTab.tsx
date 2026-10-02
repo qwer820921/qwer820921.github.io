@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, useId } from "react";
 import Image from "next/image";
 import styles from "../styles/mapEditor.module.css";
 import {
@@ -11,6 +11,7 @@ import {
   WaveRow,
 } from "../types";
 import { SHENMA_SANGUO_GAS_URL } from "@/app/(games)/shenmaSanguo/api/gameApi";
+import { useDialogFocus } from "@/app/(games)/shenmaSanguo/components/useDialogFocus";
 import type { EnemyConfig, MapConfig } from "@/app/(games)/shenmaSanguo/types";
 import {
   ADMIN_TOKEN_MISSING,
@@ -444,6 +445,54 @@ interface ConvertedAsset {
   blob: Blob;
 }
 
+/**
+ * 新增地圖視窗的外框（開著時才掛上）：鍵盤沿用遊戲視窗的 useDialogFocus。
+ * 開啟時焦點在 initialRef（map_id 欄），Tab／Shift+Tab 只在視窗內可以操作的欄位與按鈕循環（停用的跳過），
+ * Esc 等同取消；取消、點遮罩、確定後焦點回到開啟前的元素（「＋ 新增地圖」，不在畫面上時改用 triggerRef）
+ */
+function NewMapDialog({
+  titleId,
+  initialRef,
+  triggerRef,
+  onClose,
+  children,
+}: {
+  titleId: string;
+  initialRef: React.RefObject<HTMLInputElement | null>;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const onKeyDown = useDialogFocus(panelRef, initialRef, onClose, {
+    fallbackFocus: () => triggerRef.current,
+  });
+  return (
+    // 點遮罩關閉：擋下按下滑鼠的預設動作，否則瀏覽器會在關閉、還回焦點之後把焦點移到頁面本身
+    <div
+      className={styles.modalOverlay}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+    >
+      <div
+        ref={panelRef}
+        className={styles.modal}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        onMouseDown={(e) => e.stopPropagation()}
+        onKeyDown={onKeyDown}
+        data-testid="new-map-modal"
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ── 主元件 ───────────────────────────────────────────────────
 
 export default function MapTab({
@@ -525,6 +574,10 @@ export default function MapTab({
   const [savingMap, setSavingMap] = useState(false);
   const [readingBack, setReadingBack] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
+  // 新增地圖視窗：開啟的按鈕（關閉後焦點回到這裡）、第一個欄位（開啟時的焦點）、欄位與說明的 id
+  const newTriggerRef = useRef<HTMLButtonElement>(null);
+  const newMapIdInputRef = useRef<HTMLInputElement>(null);
+  const newDialogId = useId();
   const [newMapId, setNewMapId] = useState("");
   const [newMapName, setNewMapName] = useState("");
   const [newChapter, setNewChapter] = useState("1");
@@ -1911,7 +1964,12 @@ export default function MapTab({
           🧹 清理路徑
         </button>
         <div className={styles.toolbarRight}>
-          <button className={styles.toolBtn} onClick={openNewModal}>
+          <button
+            ref={newTriggerRef}
+            className={styles.toolBtn}
+            onClick={openNewModal}
+            aria-haspopup="dialog"
+          >
             ＋ 新增地圖
           </button>
         </div>
@@ -2687,81 +2745,119 @@ export default function MapTab({
 
       {/* ── 新增地圖 Modal ── */}
       {showNewModal && (
-        <div
-          className={styles.modalOverlay}
-          onMouseDown={() => setShowNewModal(false)}
+        <NewMapDialog
+          titleId={`${newDialogId}-title`}
+          initialRef={newMapIdInputRef}
+          triggerRef={newTriggerRef}
+          onClose={() => setShowNewModal(false)}
         >
-          <div
-            className={styles.modal}
-            onMouseDown={(e) => e.stopPropagation()}
-            data-testid="new-map-modal"
-          >
-            <div className={styles.modalTitle}>新增地圖</div>
-
-            {(
-              [
-                { label: "map_id", val: newMapId, set: setNewMapId },
-                { label: "名稱", val: newMapName, set: setNewMapName },
-                { label: "章節", val: newChapter, set: setNewChapter },
-                {
-                  label: "解鎖條件",
-                  val: newUnlockStage,
-                  set: setNewUnlockStage,
-                },
-                { label: "寬 (Cols)", val: newCols, set: setNewCols },
-                { label: "高 (Rows)", val: newRows, set: setNewRows },
-              ] as { label: string; val: string; set: (v: string) => void }[]
-            ).map(({ label, val, set }) => (
-              <div key={label} className={styles.modalField}>
-                <label className={styles.modalLabel}>{label}</label>
-                <input
-                  className={styles.modalInput}
-                  value={val}
-                  onChange={(e) => set(e.target.value)}
-                  placeholder={label}
-                />
-              </div>
-            ))}
-
-            <label className={styles.keepWavesCheck}>
-              <input
-                type="checkbox"
-                checked={newKeepWaves && waves.length > 0}
-                disabled={waves.length === 0}
-                onChange={(e) => setNewKeepWaves(e.target.checked)}
-                data-testid="new-keep-waves"
-              />
-              沿用目前波次（{waves.length} 波）
-            </label>
-            <div className={styles.metaHint}>
-              不勾選時新地圖沒有波次；勾選時複製畫面上的波次（沒有選敵人的組也照樣複製）。都還沒保存到設定，原本地圖在設定裡的波次不會被刪除。
-            </div>
-            {replaceWarning("確定") && (
-              <div
-                className={styles.replaceWarn}
-                data-testid="new-replace-warn"
-              >
-                {replaceWarning("確定")}
-              </div>
-            )}
-
-            <div className={styles.modalFooter}>
-              <button
-                className={styles.toolBtn}
-                onClick={() => setShowNewModal(false)}
-              >
-                取消
-              </button>
-              <button
-                className={`${styles.toolBtn} ${styles.toolBtnActive}`}
-                onClick={handleNewMapConfirm}
-                disabled={!newMapId.trim() || !newMapName.trim()}
-              >
-                確定
-              </button>
-            </div>
+          <div id={`${newDialogId}-title`} className={styles.modalTitle}>
+            新增地圖
           </div>
-        </div>
+
+          {(
+            [
+              { key: "id", label: "map_id", val: newMapId, set: setNewMapId },
+              {
+                key: "name",
+                label: "名稱",
+                val: newMapName,
+                set: setNewMapName,
+              },
+              {
+                key: "chapter",
+                label: "章節",
+                val: newChapter,
+                set: setNewChapter,
+              },
+              {
+                key: "unlock",
+                label: "解鎖條件",
+                val: newUnlockStage,
+                set: setNewUnlockStage,
+              },
+              {
+                key: "cols",
+                label: "寬 (Cols)",
+                val: newCols,
+                set: setNewCols,
+              },
+              {
+                key: "rows",
+                label: "高 (Rows)",
+                val: newRows,
+                set: setNewRows,
+              },
+            ] as {
+              key: string;
+              label: string;
+              val: string;
+              set: (v: string) => void;
+            }[]
+          ).map(({ key, label, val, set }) => (
+            <div key={key} className={styles.modalField}>
+              <label
+                className={styles.modalLabel}
+                htmlFor={`${newDialogId}-${key}`}
+              >
+                {label}
+              </label>
+              <input
+                id={`${newDialogId}-${key}`}
+                ref={key === "id" ? newMapIdInputRef : undefined}
+                className={styles.modalInput}
+                value={val}
+                onChange={(e) => set(e.target.value)}
+                placeholder={label}
+              />
+            </div>
+          ))}
+
+          <label className={styles.keepWavesCheck}>
+            <input
+              type="checkbox"
+              checked={newKeepWaves && waves.length > 0}
+              disabled={waves.length === 0}
+              onChange={(e) => setNewKeepWaves(e.target.checked)}
+              aria-describedby={`${newDialogId}-keep-hint`}
+              data-testid="new-keep-waves"
+            />
+            沿用目前波次（{waves.length} 波）
+          </label>
+          <div id={`${newDialogId}-keep-hint`} className={styles.metaHint}>
+            不勾選時新地圖沒有波次；勾選時複製畫面上的波次（沒有選敵人的組也照樣複製）。都還沒保存到設定，原本地圖在設定裡的波次不會被刪除。
+          </div>
+          {replaceWarning("確定") && (
+            <div
+              id={`${newDialogId}-replace-warn`}
+              className={styles.replaceWarn}
+              data-testid="new-replace-warn"
+            >
+              {replaceWarning("確定")}
+            </div>
+          )}
+
+          <div className={styles.modalFooter}>
+            <button
+              className={styles.toolBtn}
+              onClick={() => setShowNewModal(false)}
+            >
+              取消
+            </button>
+            <button
+              className={`${styles.toolBtn} ${styles.toolBtnActive}`}
+              onClick={handleNewMapConfirm}
+              disabled={!newMapId.trim() || !newMapName.trim()}
+              aria-describedby={
+                replaceWarning("確定")
+                  ? `${newDialogId}-replace-warn`
+                  : undefined
+              }
+            >
+              確定
+            </button>
+          </div>
+        </NewMapDialog>
       )}
 
       {/* ── 格子材質選擇器 popup（fixed，不受 overflow 裁切）── */}
