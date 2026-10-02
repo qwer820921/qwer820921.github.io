@@ -2681,6 +2681,18 @@
   overflow-wrap: anywhere;
 }
 
+/* 戰神（呂布）：橘紅色，和 Godot 裡加層提示的顏色相同 */
+.berserkNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 115, 51, 0.12);
+  border: 1px solid rgba(255, 115, 51, 0.45);
+  color: #ffd2bd;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
 .lockNotice {
   margin-bottom: 8px;
   padding: 4px 8px;

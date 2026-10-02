@@ -13,6 +13,7 @@
 ## 威壓（顏良）：範圍內敵人對阻路武將的直接攻擊力乘上倍率（見 atk_down_aura_mult；倍率記在敵人身上，Enemy.atk_mult），不改敵人設定的攻擊力
 ## 連環計（龐統）：普通攻擊實際扣到主目標的生命後，依序傳給前一個被打中的敵人附近的下一個敵人（見 chain_ratio、_chain），傷害逐跳遞減
 ## 呼風喚雨（諸葛亮）：普通攻擊實際扣到主目標的生命後，以主目標被打中的位置為中心，範圍內最多幾名其他敵人各受一定比例的傷害（見 storm_ratio、_storm），不遞減、不傳遞
+## 戰神（呂布）：自己的普通攻擊打倒敵人後，下一擊起攻擊力加一層（見 berserk_ratio、berserk_atk；層數記在 BattleManager，這一場內保留）
 
 class_name Hero
 extends Node2D
@@ -273,6 +274,20 @@ const STORM_LOG_MAX: int = 40
 const STORM_FX_TIME: float = 0.45
 ## 範圍邊界的容許誤差（像素）：距離正好是半徑的敵人算在範圍內
 const STORM_EDGE_EPS: float = 0.001
+## 戰神（berserk，呂布）：這位武將自己的普通攻擊打倒一名敵人後加一層，最多 berserk_max_stacks 層；
+## 普通攻擊的傷害＝目前等級的攻擊力 ×（1 ＋ berserk_ratio × 層數）（加法疊加，不是連乘；打倒敵人的那一擊用加層前的層數）。
+## 只算自己普通攻擊的最後一擊：攻擊前是存活的敵人、這一擊實際扣到正的有限生命、而且這一擊讓它倒下。其他武將、防禦塔、灼燒、反擊、
+## 範圍或傳遞的傷害、敵人漏到城池造成的死亡都不算；不是訂閱全場的擊殺，也不改擊殺數與金幣（照常只算一次）。
+## 層數記在 BattleManager（依 hero_id）：跨波次、移位、升級、同場移出再放回都保留，新的一場（initialize）從 0 開始，不寫存檔。
+## 攻擊力 atk 本身不變（升級後照新的攻擊力重新相乘，不疊乘）；攻擊間隔、射程、防禦、生命都不變。
+## berserk_ratio 0 代表沒有這個技能；比例要是 0～1 之間（不含兩端）的有限數字、上限是 1～10 的整數（JSON 的 10.0 也算），
+## 任何一個缺少或不合理就當作普通攻擊；沒有這個技能（或換成其他技能）時這一場累積的層數一併清除
+var berserk_ratio: float = 0.0
+var berserk_max_stacks: int = 0
+## 加層提示的顏色（橘紅色，和金色的技能倍率、綠色的恢復區分）；提示的次數（測試用唯讀統計）
+const BERSERK_COLOR: Color = Color(1.0, 0.45, 0.2)
+var berserk_shown: int = 0
+var berserk_last_text: String = ""
 ## 測試用唯讀統計（debug_snapshot）：這位武將的遊戲時間（_process 的 delta 累加，受時間倍率影響、手動暫停時不前進）、
 ## 普通攻擊的次數，以及最近 ATTACK_LOG_MAX 次攻擊的時間、這次冷卻用的攻擊間隔與當時的攻速加成
 var _age: float = 0.0
@@ -395,8 +410,11 @@ func _read_skill(state: Dictionary) -> void:
 	storm_ratio = 0.0
 	storm_radius = 0.0
 	storm_max_targets = 0
+	berserk_ratio = 0.0
+	berserk_max_stacks = 0
 	var skill = state.get("skill", null)
 	if not (skill is Dictionary):
+		_drop_berserk_stacks()
 		return
 	match str(skill.get("id", "")):
 		"first_strike":
@@ -494,6 +512,16 @@ func _read_skill(state: Dictionary) -> void:
 				storm_radius = float(sr)
 				storm_ratio = float(sk)
 				storm_max_targets = int(st)
+		"berserk":
+			# 每層比例要是 0～1 之間（不含兩端）、上限是 1～10 的整數；兩個都合理才啟用，任何一個缺少或不合理就當作普通攻擊（不補預設值）。
+			# 字串、布林、null、NaN、無限大、0 以下、比例 1 以上、小數或 11 以上的上限都不合理
+			var bk: Variant = skill.get("berserk_ratio")
+			var bx: Variant = skill.get("berserk_max_stacks")
+			if _open_unit(bk) and _positive_whole(bx) and float(bx) <= 10.0:
+				berserk_ratio = float(bk)
+				berserk_max_stacks = int(bx)
+	if not (berserk_ratio > 0.0):
+		_drop_berserk_stacks()
 
 ## 技能參數是正的有限數字（JSON 的數字在 Godot 是 float；字串、布林、null、NaN、無限大、0 以下都不是）
 static func _positive_finite(v: Variant) -> bool:
@@ -556,6 +584,9 @@ func _process(delta: float) -> void:
 
 	# 攻擊。首擊加倍（衝鋒）：這一場第一次真的攻擊到有效目標時傷害加倍（沒有目標時不會走到這裡，也就不會用掉）
 	var damage: float = atk
+	# 戰神：用這一場目前的層數（這一擊打倒敵人時，加的層從下一擊才算）
+	if berserk_ratio > 0.0:
+		damage = berserk_atk()
 	if first_strike_multiplier > 1.0 and _battle_mgr != null:
 		var boosted: float = atk * first_strike_multiplier
 		if _battle_mgr.consume_first_strike(hero_id, boosted):
@@ -566,8 +597,12 @@ func _process(delta: float) -> void:
 	# 橫掃以主目標被打中時的位置為中心、連環計從這個位置開始傳遞：先記下位置與主目標，主目標被這一擊打倒也照樣生效
 	var hit_pos: Vector2 = target.global_position
 	var primary_id: int = target.get_instance_id()
+	# 戰神：攻擊前就已經倒下、正要被移除的敵人不可能是這一擊打倒的
+	var target_was_alive: bool = berserk_ratio > 0.0 and _enemy_alive(target)
 	# 實際扣掉敵人的生命（不含溢出的部分，打倒目標的這一擊也照算；無效的傷害回傳 0、不改變敵人）
 	var dealt: Variant = target.take_damage(damage)
+	if target_was_alive:
+		_berserk_on_hit(target, damage, dealt)
 	# 吸血：用這一擊實際扣掉的生命計算，不讀之後可能已經無效的目標；回傳的不是數字時（沒有回傳值的目標）當作沒有扣血，攻擊照常完成
 	if lifesteal_ratio > 0.0:
 		_lifesteal(float(dealt) if (dealt is float or dealt is int) else 0.0)
@@ -875,6 +910,61 @@ func storm_state() -> Dictionary:
 		entries.append({"base": x.base, "first": x.first, "center": [x.center.x, x.center.y], "hits": x.hits.duplicate(true)})
 	return {"radius": storm_radius, "ratio": storm_ratio, "max_targets": storm_max_targets, "count": storm_count, "hits": storm_hits,
 		"dealt": storm_dealt, "attacks": attack_count, "fx": fx_n, "log": entries}
+
+## 戰神：這一場目前的層數（不超過上限）；沒有這個技能、沒有 BattleManager（單獨建立的武將）時是 0
+func berserk_stacks() -> int:
+	if not (berserk_ratio > 0.0) or _battle_mgr == null:
+		return 0
+	return mini(_battle_mgr.berserk_stacks(hero_id), berserk_max_stacks)
+
+## 戰神：目前的有效攻擊力＝目前等級的攻擊力 ×（1 ＋ 每層比例 × 層數）；沒有這個技能時就是攻擊力（atk 本身不改）
+func berserk_atk() -> float:
+	if not (berserk_ratio > 0.0):
+		return atk
+	return atk * (1.0 + berserk_ratio * float(berserk_stacks()))
+
+## 戰神：這一擊之後判斷是不是自己打倒的（呼叫前已確認攻擊前目標還活著）：實際扣到正的有限生命、而且目標現在已經倒下才加一層。
+## 已經是上限時照樣記下這次擊殺，但層數不變、不顯示提示
+func _berserk_on_hit(target: Node, damage: float, dealt: Variant) -> void:
+	var got: float = float(dealt) if (dealt is float or dealt is int) else 0.0
+	if not (got > 0.0 and is_finite(got)) or _battle_mgr == null:
+		return
+	if not (is_instance_valid(target) and target.is_dead()):
+		return
+	var r: Dictionary = _battle_mgr.add_berserk_kill(hero_id, berserk_max_stacks, int(target.spawn_seq), damage, got)
+	if int(r.after) > int(r.before):
+		_show_berserk(int(r.after))
+
+## 沒有這個技能（或換成其他技能、參數不合理）時，清掉這一場替這位武將累積的層數，之後換回戰神也從 0 開始
+func _drop_berserk_stacks() -> void:
+	if _battle_mgr != null and hero_id != "":
+		_battle_mgr.clear_berserk(hero_id)
+
+## 加層提示：武將上方出現橘紅色的「ATK+目前加成%」，到達上限時加上「MAX」（Godot 專案沒有中文字型，技能說明裡寫明這個標記）。
+## FloatingText 照遊戲時間移動、淡出：受時間倍率影響，手動暫停時跟著停住，切換關卡時跟著清除
+func _show_berserk(stacks: int) -> void:
+	var parent: Node = get_parent()
+	if parent == null:
+		return
+	var pct: float = berserk_ratio * float(stacks) * 100.0
+	var shown: String = str(roundi(pct)) if is_equal_approx(pct, roundf(pct)) else String.num(pct, 1)
+	var text: String = "ATK+%s%%" % shown
+	if stacks >= berserk_max_stacks:
+		text += " MAX"
+	berserk_shown += 1
+	berserk_last_text = text
+	var ft = load("res://ui/FloatingText.gd").new()
+	parent.add_child(ft)
+	ft.setup(text, BERSERK_COLOR, global_position + Vector2(0, -hero_half - 20))
+
+## 測試用唯讀資訊（debug_snapshot）：Godot 實際讀到的每層比例與上限（沒有啟用時比例是 0）、這一場的層數與倍率、基礎與有效攻擊力、
+## 加層提示的次數與最後的文字、普通攻擊的次數、這一場的擊殺次數與最近幾次自己的擊殺（生成序號、這一擊的傷害、實扣、加層前後）
+func berserk_state() -> Dictionary:
+	var stacks: int = berserk_stacks()
+	var rec: Dictionary = _battle_mgr.berserk_record(hero_id) if _battle_mgr != null else {}
+	return {"ratio": berserk_ratio, "max_stacks": berserk_max_stacks, "stacks": stacks, "mult": 1.0 + berserk_ratio * float(stacks),
+		"base_atk": atk, "effective_atk": berserk_atk(), "shown": berserk_shown, "last_text": berserk_last_text, "attacks": attack_count,
+		"kills": int(rec.get("kills", 0)), "log": rec.get("log", [])}
 
 ## 技能觸發時在武將上方顯示的文字（金色、放大，和一般的傷害數字區分）
 const SKILL_TEXT_COLOR: Color = Color(1.0, 0.85, 0.2)

@@ -62,6 +62,17 @@ interface UpgradePanelProps {
       ratio: number;
       max_targets: number;
     };
+    /**
+     * 武將的戰神（呂布）：Godot 實際讀到的每層比例與上限、選取當下這一場的層數、基礎攻擊力與目前的有效攻擊力；
+     * 沒有這個技能（或舊版遊戲）時沒有
+     */
+    berserk?: {
+      ratio: number;
+      max_stacks: number;
+      stacks: number;
+      base_atk: number;
+      effective_atk: number;
+    };
     screen_pos: { x: number; y: number };
   };
   onUpgrade: () => void;
@@ -167,6 +178,21 @@ export default function UpgradePanel({
     storm.ratio < 1 &&
     Number.isInteger(storm.max_targets) &&
     storm.max_targets >= 1;
+  // 武將的戰神：選取當下這一場的層數與有效攻擊力（Godot 計算；基礎攻擊力是目前等級的屬性，不含戰場加成）
+  const bsk = data.unit_type === "hero" ? data.berserk : undefined;
+  const bskOk =
+    !!bsk &&
+    Number.isFinite(bsk.ratio) &&
+    bsk.ratio > 0 &&
+    bsk.ratio < 1 &&
+    Number.isInteger(bsk.max_stacks) &&
+    bsk.max_stacks >= 1 &&
+    Number.isInteger(bsk.stacks) &&
+    bsk.stacks >= 0 &&
+    Number.isFinite(bsk.base_atk) &&
+    Number.isFinite(bsk.effective_atk);
+  const atkNum = (n: number) => String(Number(n.toFixed(2)));
+  const bskPct = bskOk ? Number((bsk.ratio * bsk.stacks * 100).toFixed(1)) : 0;
   const s = sell && isSameTower(data, sell) ? sell : null;
   const confirming = s?.phase === "confirm" || s?.phase === "pending";
   const pending = s?.phase === "pending";
@@ -192,7 +218,17 @@ export default function UpgradePanel({
         <div className={styles.statsGrid}>
           <div className={styles.upgStatItem}>
             <span className={styles.upgStatLabel}>攻擊力</span>
-            <span className={styles.upgStatValue}>{data.atk.toFixed(0)}</span>
+            <span
+              className={styles.upgStatValue}
+              data-testid="unit-panel-atk"
+              data-atk={data.atk}
+            >
+              {bskOk && bsk.stacks > 0
+                ? `${atkNum(bsk.base_atk)} → ${atkNum(bsk.effective_atk)}`
+                : bskOk
+                  ? atkNum(bsk.base_atk)
+                  : data.atk.toFixed(0)}
+            </span>
           </div>
           <div className={styles.upgStatItem}>
             {/* Godot 送來的是每秒攻擊次數（1 ÷ 攻擊間隔）；顯示成攻擊間隔，和武將列表、升級預覽一致 */}
@@ -320,6 +356,21 @@ export default function UpgradePanel({
             {Number(storm.radius.toFixed(3))} 格內最多 {storm.max_targets}{" "}
             名其他敵人各受 {Number((storm.ratio * 100).toFixed(1))}
             %（主要目標除外，不遞減）
+          </div>
+        )}
+
+        {bskOk && (
+          <div
+            className={styles.berserkNote}
+            data-testid="unit-panel-berserk"
+            data-stacks={bsk.stacks}
+            data-base-atk={bsk.base_atk}
+            data-effective-atk={bsk.effective_atk}
+          >
+            戰神：選取時本場 {bsk.stacks} 層（+{bskPct}%），基礎攻擊力{" "}
+            {atkNum(bsk.base_atk)}、目前 {atkNum(bsk.effective_atk)}
+            ；自己打倒敵人後下一擊起每層 +{Number((bsk.ratio * 100).toFixed(1))}
+            %，最多 {bsk.max_stacks} 層，新的一場從 0 層開始
           </div>
         )}
 

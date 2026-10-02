@@ -16,6 +16,14 @@ export function cleanWavesForSave(waves: WaveRow[]): WaveRow[] {
     .filter((w) => w.enemies.length > 0);
 }
 
+/** 新地圖或匯入時沿用畫面上的波次：照原樣複製（沒有選敵人的組也保留，不補、不重新編號），和原本的畫面不共用物件 */
+export function copyWaves(waves: WaveRow[]): WaveRow[] {
+  return waves.map((w) => ({
+    ...w,
+    enemies: w.enemies.map((e) => ({ ...e })),
+  }));
+}
+
 /** 被濾掉（沒有保存）的組的說明，例如「波次 1（整波）、波次 3 的 1 組」；沒有濾掉時是空字串 */
 export function droppedGroupsText(waves: WaveRow[]): string {
   const parts: string[] = [];

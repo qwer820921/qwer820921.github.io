@@ -172,14 +172,14 @@ func _run() -> void:
 		battle_ended_count += 1
 		last_result = r)
 
-	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、廖化的堅韌、顏良的威壓、孫尚香的連射、龐統的連環計、諸葛亮的呼風喚雨）、橫掃原型與攻速成長；
+	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、廖化的堅韌、顏良的威壓、孫尚香的連射、龐統的連環計、諸葛亮的呼風喚雨、呂布的戰神）、橫掃原型與攻速成長；
 	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行；
 	# route 跑飛行與地面的路線無效（出兵前擋下）；blocker 只跑敵人攻擊阻路武將的冷卻；
 	# dodge 只跑趙雲「閃避」；firststrike 只跑首擊加倍（馬超「衝鋒」）；
 	# stagedata 跑關卡資料未完成（沒有波次、波次或路線的格式不對）；enemyatk 跑敵人設定的對武將攻擊力；immune 跑免疫減速；
 	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）；stun 只跑張飛的暈眩（skills 也包含）；lifesteal 只跑魏延的吸血（skills 也包含）；
 	# atkspeed 只跑曹操的攻速光環（skills 也包含）；damage 只跑敵人受傷的入口（拒絕無效的傷害）；
-	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；chain 只跑龐統的連環計（skills 也包含）；storm 只跑諸葛亮的呼風喚雨（skills 也包含）
+	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；chain 只跑龐統的連環計（skills 也包含）；storm 只跑諸葛亮的呼風喚雨（skills 也包含）；berserk 只跑呂布的戰神（skills 也包含）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -201,6 +201,7 @@ func _run() -> void:
 			await _double_shot_cases()
 			await _chain_cases()
 			await _storm_cases()
+			await _berserk_cases()
 		elif only == "blocker":
 			await _blocker_cases()
 		elif only == "dodge":
@@ -255,8 +256,10 @@ func _run() -> void:
 			await _chain_cases()
 		elif only == "storm":
 			await _storm_cases()
+		elif only == "berserk":
+			await _berserk_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、chain、storm）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、chain、storm、berserk）", false)
 		_finish()
 		return
 
@@ -500,6 +503,9 @@ func _run() -> void:
 	# ── 諸葛亮的呼風喚雨（普通攻擊實際打到主目標後，以它為中心 2 格內最多 4 名其他敵人各受 50%）──
 	await _storm_cases()
 
+	# ── 呂布的戰神（自己的普通攻擊打倒敵人後，下一擊起攻擊力 ＋5%（加法），最多 10 層；這一場內保留）──
+	await _berserk_cases()
+
 	_finish()
 
 # ── 輸出 ──
@@ -697,6 +703,8 @@ func _r12_payload(stage_id: String, waves: Array, battle_id: String, team: Array
 		{"hero_id": "pang_tong", "name": "龐統", "job": "mage", "attack_range": 3.0, "attack_speed": 0.5},
 		# 諸葛亮（法師，射程與攻擊間隔和其他測試武將相同；正式設定是射程 5、攻擊間隔 0.9）
 		{"hero_id": "zhu_ge_liang", "name": "諸葛亮", "job": "mage", "attack_range": 3.0, "attack_speed": 0.5},
+		# 呂布（騎兵，射程與攻擊間隔和其他測試武將相同；正式設定是射程 2、攻擊間隔 1.3）
+		{"hero_id": "lv_bu", "name": "呂布", "job": "cavalry", "attack_range": 3.0, "attack_speed": 0.5},
 	]
 	return p
 
@@ -12344,6 +12352,571 @@ func _storm_cases() -> void:
 	_check("呼風喚雨-27 換成其他技能（反擊）：比例 0、只有主目標 100（範圍傷害次數不增加）；移出隊伍時風雨圈清除、之後 1.2 秒沒有傷害；新的一場統計從 0 開始、沒有殘留的效果",
 		d27.get("fx_before") == 1 and d27.get("plain_ratio") == 0.0 and d27.get("plain_hit", {}).get("dmg") == [100.0, 0.0, 0.0] and d27.plain_hit.count == 0
 			and d27.get("fx_after_remove") == 0 and d27.get("fx_node_freed") == true and d27.get("no_damage_after_remove") == true and d27.get("new_battle") == [0, 0, 0], d27)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 呂布的戰神（berserk）──
+# 自己的普通攻擊打倒一名敵人後，下一擊起攻擊力 ＋ 目前等級攻擊力 × 5%（加法疊加，不是連乘），最多 10 層（+50%）；打倒敵人的那一擊不提前加成。
+# 只算自己普通攻擊的最後一擊（攻擊前活著、這一擊實扣是正的有限數字、這一擊讓它倒下）；其他武將、灼燒、反擊、直接扣血、漏到城池都不算。
+# 層數記在 BattleManager（依 hero_id）：跨波次、移位、升級、同場移出再放回都保留；換成其他技能時清除；新的一場從 0 開始
+const BK_SKILL: Dictionary = {"id": "berserk", "berserk_ratio": 0.05, "berserk_max_stacks": 10}
+const BK_HERO: String = "lv_bu"
+
+## 單獨的呂布（真正的 Hero 腳本，不經過 Main、測試自己呼叫 _process）：在原點、攻擊力 atk_v、射程 3 格、攻擊間隔 1 秒、騎兵；
+## 層數記在 bm（測試自己建立、不在場景樹的 BattleManager）；skill 是 null 時帶戰神的參數
+func _bk_hero(holder: Node, wave: Node, bm: Node, atk_v: float = 125.0, skill: Variant = null, hid: String = BK_HERO) -> Node:
+	var h: Node = load("res://entities/hero/Hero.gd").new()
+	holder.add_child(h)
+	h.set_process(false)
+	h.hero_id = hid
+	h.job = "cavalry"
+	h.attack_range = 3.0
+	h.attack_speed = 1.0
+	h.atk = atk_v
+	h.max_hp = 1000.0
+	h.current_hp = 1000.0
+	h._battle_mgr = bm
+	h._read_skill({"skill": BK_SKILL.duplicate() if skill == null else skill})
+	h._wave_mgr = wave
+	return h
+
+func _bk_bm() -> Node:
+	return load("res://systems/BattleManager.gd").new()
+
+## 武將打一個攻擊回合（冷卻歸零後處理一步）：每個敵人這一回合被打掉的生命（倒下的記成倒下前的生命）、攻擊前的有效攻擊力、
+## 打完後的層數、加層提示增加的次數與最後的文字
+func _bk_round(h: Node, es: Array) -> Dictionary:
+	var before: Array = []
+	for e in es:
+		before.append(e.current_hp if is_instance_valid(e) and not e.is_dead() else 0.0)
+	var shown0: int = h.berserk_shown
+	var eff: float = h.berserk_atk()
+	h._atk_timer = 0.0
+	h._process(1.0 / 60.0)
+	var dmg: Array = []
+	for i in range(es.size()):
+		var now: float = es[i].current_hp if is_instance_valid(es[i]) and not es[i].is_dead() else 0.0
+		dmg.append(snappedf(float(before[i]) - now, 0.0001))
+	return {"dmg": dmg, "eff": snappedf(eff, 0.0001), "stacks": h.berserk_stacks(), "shown": h.berserk_shown - shown0, "text": h.berserk_last_text}
+
+## 兩個數字陣列逐一相近
+func _bk_near(a: Variant, b: Array, eps: float = 1e-6) -> bool:
+	if not (a is Array) or a.size() != b.size():
+		return false
+	for i in range(b.size()):
+		if not _ls_near(a[i], float(b[i]), eps):
+			return false
+	return true
+
+## 擊殺紀錄的每一筆 [生成序號, 這一擊的傷害, 實扣, 加層前, 加層後] 和 want 逐一相符
+func _bk_log_ok(log: Variant, want: Array) -> bool:
+	if not (log is Array) or log.size() != want.size():
+		return false
+	for i in range(want.size()):
+		var j: Dictionary = log[i]
+		var w: Array = want[i]
+		if not (int(j.seq) == int(w[0]) and _ls_near(j.damage, float(w[1]), 1e-6) and _ls_near(j.dealt, float(w[2]), 1e-6) and int(j.before) == int(w[3]) and int(j.after) == int(w[4])):
+			return false
+	return true
+
+## 掛在 holder 底下、文字是「ATK+」開頭的浮動文字（文字在加入後的下一幀才設定）
+func _bk_texts(holder: Node) -> Array:
+	var out: Array = []
+	for c in holder.get_children():
+		if c is FloatingText and not c.is_queued_for_deletion() and c._label != null and c._label.text.begins_with("ATK+"):
+			out.append(c)
+	return out
+
+## 實際引擎用的呂布（騎兵、射程 3 格、攻擊間隔 0.5 秒，和 _r12_payload 的設定相同；正式設定是射程 2、攻擊間隔 1.3）
+func _bk_member(level: int = 1, atk_v: float = 125.0, skill: Variant = null) -> Dictionary:
+	var h: Dictionary = _r12_hero(BK_HERO, BK_SKILL.duplicate() if skill == null else skill)
+	h["level"] = level
+	h["atk"] = atk_v
+	return h
+
+func _bk_main_hero() -> Node:
+	return main._placed_heroes.get(BK_HERO)
+
+## 載入一場關卡（waves 經過 JSON）、把呂布放在 (3,4)、開戰並等第一波的 n 個敵人都出現。manual 為 true 時停掉呂布自己的 _process
+func _bk_start(rec: Node, battle_id: String, n: int, team: Variant = null, manual: bool = true, waves: Variant = null) -> Array:
+	var t: Array = team if team != null else [_bk_member()]
+	var ws: Array = waves if waves != null else [[_grp("post", n, 0.02)]]
+	_r19_js(rec, _r12_payload("berserk_a", ws, battle_id, t))
+	_r12_place(BK_HERO, Vector2i(3, 4))
+	if manual and _bk_main_hero() != null:
+		_bk_main_hero().set_process(false)
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == n, 5.0)
+	return _sw_enemies()
+
+## 敵人依序放在呂布右邊 1、1.5、2…格（都在射程內；第一個是第一個目標）
+func _bk_place(es: Array) -> void:
+	var g: Node = _bk_main_hero()
+	var t: float = float(g.tile_size)
+	for i in range(es.size()):
+		es[i].global_position = g.global_position + Vector2((1.0 + 0.5 * i) * t, 0.0)
+
+## 場上的呂布打一次（呼叫一次 _process）：每個敵人受到的傷害、擊殺數與戰鬥金幣的變化、打完後的層數與提示次數的變化
+func _bk_hit(es: Array, delta: float = 0.0) -> Dictionary:
+	var g: Node = _bk_main_hero()
+	var before: Array = []
+	for e in es:
+		before.append(e.current_hp if is_instance_valid(e) and not e.is_dead() else 0.0)
+	var k0: int = _bm().kills
+	var gold0: int = _bm().battle_gold
+	var s0: int = g.berserk_shown
+	g._process(delta)
+	var dmg: Array = []
+	for i in range(es.size()):
+		var now: float = es[i].current_hp if is_instance_valid(es[i]) and not es[i].is_dead() else 0.0
+		dmg.append(snappedf(float(before[i]) - now, 0.0001))
+	return {"dmg": dmg, "kills": _bm().kills - k0, "gold": _bm().battle_gold - gold0, "stacks": g.berserk_stacks(), "shown": g.berserk_shown - s0}
+
+func _bk_stacks_dbg() -> Dictionary:
+	return _bm().get_debug_state().get("berserk_stacks", {})
+
+func _berserk_cases() -> void:
+	# 戰神-0：技能參數的判讀：berserk_ratio 是 0～1 之間（不含兩端）的有限數字、berserk_max_stacks 是 1～10 的整數（JSON 的 10.0 也算），
+	# 兩個都合理才啟用；字串、布林、null、陣列、字典、NaN、無限大、0、負數、比例 1 以上、上限小數或 11 以上、缺欄位、欄位名稱寫錯、
+	# 不認得或大小寫不同的 id、其他技能帶這些欄位都不啟用（兩個值都是 0）；戰神不帶其他技能；換成反擊或沒有技能後清除
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var good0: Array = [
+		[{"id": "berserk", "berserk_ratio": 0.05, "berserk_max_stacks": 10}, [0.05, 10]],
+		[{"id": "berserk", "berserk_ratio": 0.5, "berserk_max_stacks": 1}, [0.5, 1]],
+		[{"id": "berserk", "berserk_ratio": 0.0001, "berserk_max_stacks": 10.0}, [0.0001, 10]],
+		[{"id": "berserk", "berserk_ratio": 0.9999, "berserk_max_stacks": 3.0}, [0.9999, 3]],
+	]
+	var bad0: Array = []
+	for v in ["0.05", true, false, null, [0.05], {"v": 0.05}, NAN, INF, -INF, 0, 0.0, -0.05, 1, 1.0, 1.5]:
+		bad0.append({"id": "berserk", "berserk_ratio": v, "berserk_max_stacks": 10})
+	for v in ["10", true, false, null, [10], NAN, INF, 0, 0.0, -1, -10.0, 1.5, 9.5, 11, 11.0, 100]:
+		bad0.append({"id": "berserk", "berserk_ratio": 0.05, "berserk_max_stacks": v})
+	bad0.append_array([{"id": "berserk"}, {"id": "berserk", "berserk_ratio": 0.05}, {"id": "berserk", "berserk_max_stacks": 10},
+		{"id": "berserk", "ratio": 0.05, "max_stacks": 10},
+		{"id": "Berserk", "berserk_ratio": 0.05, "berserk_max_stacks": 10}, {"id": "berserk_x", "berserk_ratio": 0.05, "berserk_max_stacks": 10},
+		{"id": "first_strike", "first_attack_multiplier": 2, "berserk_ratio": 0.05, "berserk_max_stacks": 10},
+		{"id": "storm", "storm_radius": 2, "storm_ratio": 0.5, "storm_max_targets": 4, "berserk_ratio": 0.05, "berserk_max_stacks": 10}])
+	var wrong0: Array = []
+	for c in good0:
+		h0._read_skill({"skill": c[0]})
+		if [h0.berserk_ratio, h0.berserk_max_stacks] != c[1]:
+			wrong0.append({"skill": str(c[0]), "got": [h0.berserk_ratio, h0.berserk_max_stacks]})
+	for c in bad0:
+		h0._read_skill({"skill": c})
+		if [h0.berserk_ratio, h0.berserk_max_stacks] != [0.0, 0]:
+			wrong0.append({"skill": str(c), "got": [h0.berserk_ratio, h0.berserk_max_stacks]})
+	h0._read_skill({"skill": JSON.parse_string("{\"id\": \"berserk\", \"berserk_ratio\": 0.05, \"berserk_max_stacks\": 10}")})
+	var json0: Array = [h0.berserk_ratio, h0.berserk_max_stacks]
+	var other0: Array = [h0.first_strike_multiplier, h0.range_multiplier, h0.burn_ratio, h0.sweep_ratio, h0.dodge_chance, h0.slow_aura_mult, h0.def_aura_mult,
+		h0.stun_duration, h0.lifesteal_ratio, h0.atk_speed_aura_mult, h0.counter_ratio, h0.tenacity_hp_ratio, h0.atk_down_aura_mult, h0.double_shot_chance, h0.chain_ratio, h0.storm_ratio]
+	h0._read_skill({"skill": ST_SKILL.duplicate()})
+	var storm0: Array = [h0.storm_ratio, h0.berserk_ratio]
+	h0._read_skill({"skill": BK_SKILL.duplicate()})
+	h0._read_skill({"skill": {"id": "counter", "counter_ratio": 0.2}})
+	var switched0: Array = [h0.berserk_ratio, h0.berserk_max_stacks, h0.counter_ratio]
+	h0._read_skill({"skill": BK_SKILL.duplicate()})
+	h0._read_skill({})
+	var cleared0: Array = [h0.berserk_ratio, h0.berserk_max_stacks]
+	h0.free()
+	_check("戰神-0 技能參數：每層比例是 0～1 之間（不含兩端）、上限是 1～10 的整數（經過 JSON 的 10.0 也算）兩個都合理才啟用；字串、布林、null、陣列、字典、NaN、無限大、0、負數、比例 1 以上、上限小數或 11 以上、缺欄位、欄位名稱寫錯、不認得或大小寫不同的 id、其他技能帶這些欄位都不啟用；戰神不帶其他技能（呼風喚雨也不帶戰神），換成反擊或沒有技能後清除",
+		wrong0.is_empty() and json0 == [0.05, 10] and other0 == [1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+			and storm0 == [0.5, 0.0] and switched0 == [0.0, 0, 0.2] and cleared0 == [0.0, 0],
+		{"wrong": wrong0, "json": json0, "other": other0, "storm": storm0, "switched": switched0, "cleared": cleared0, "cases": good0.size() + bad0.size()})
+
+	# 戰神-1：0 → 1 → 2 層：攻擊力 125；第一擊打倒血量 100 的敵人（這一擊是 125，不提前加成）→ 1 層、出現「ATK+5%」；
+	# 下一擊 131.25 打倒血量 130 的敵人 → 2 層、「ATK+10%」；再下一擊 137.5（加法：125 × 1.10，不是 125 × 1.05²）打到不會倒下的敵人 → 仍是 2 層、沒有提示。
+	# 攻擊力 atk 本身仍是 125；擊殺紀錄是 [序號, 這一擊的傷害, 實扣, 加層前, 加層後]
+	var holder1 := _dodge_holder()
+	var wave1 := R20Wave.new()
+	holder1.add_child(wave1)
+	var bm1: Node = _bk_bm()
+	var g1: Node = _bk_hero(holder1, wave1, bm1)
+	var es1: Array = [_st_enemy(holder1, wave1, 100.0, Vector2(1, 0), 0), _st_enemy(holder1, wave1, 130.0, Vector2(1, 0), 1), _st_enemy(holder1, wave1, 99999.0, Vector2(1, 0), 2)]
+	var rounds1: Array = []
+	for i in range(3):
+		rounds1.append(_bk_round(g1, es1))
+	await process_frame
+	var d1: Dictionary = {"rounds": rounds1, "log": bm1.berserk_record(BK_HERO).get("log", []), "state": g1.berserk_state(), "atk": g1.atk, "texts": _bk_texts(holder1).size()}
+	holder1.queue_free()
+	bm1.free()
+	_check("戰神-1 0→1→2 層：第一擊 125 打倒血量 100 的敵人（不提前加成）→ 1 層「ATK+5%」；下一擊 131.25 打倒血量 130 的 → 2 層「ATK+10%」；再下一擊 137.5（加法疊加，不是 137.8125）→ 仍是 2 層、沒有提示；攻擊力 atk 仍是 125、倍率 1.1、有效 137.5；擊殺紀錄兩筆；畫面上有兩個「ATK+」提示",
+		_bk_near(rounds1[0].dmg, [100.0, 0.0, 0.0]) and _ls_near(rounds1[0].eff, 125.0) and rounds1[0].stacks == 1 and rounds1[0].shown == 1 and rounds1[0].text == "ATK+5%"
+			and _bk_near(rounds1[1].dmg, [0.0, 130.0, 0.0]) and _ls_near(rounds1[1].eff, 131.25) and rounds1[1].stacks == 2 and rounds1[1].shown == 1 and rounds1[1].text == "ATK+10%"
+			and _bk_near(rounds1[2].dmg, [0.0, 0.0, 137.5]) and _ls_near(rounds1[2].eff, 137.5) and rounds1[2].stacks == 2 and rounds1[2].shown == 0
+			and _bk_log_ok(d1.log, [[0, 125.0, 100.0, 0, 1], [1, 131.25, 130.0, 1, 2]]) and d1.atk == 125.0
+			and _ls_near(d1.state.mult, 1.1) and _ls_near(d1.state.effective_atk, 137.5) and _ls_near(d1.state.base_atk, 125.0) and d1.state.stacks == 2 and d1.state.kills == 2
+			and d1.state.attacks == 3 and d1.texts == 2, d1)
+
+	# 戰神-2：到上限：12 名血量 1 的敵人依序被打倒 → 層數 1～10 後停在 10；提示 10 次（第 10 次是「ATK+50% MAX」），第 11、12 次擊殺沒有提示；
+	# 擊殺紀錄 12 筆（最後兩筆加層前後都是 10）；之後打不會倒下的敵人是 187.5（125 × 1.5，不是 125 × 1.05¹⁰）
+	var holder2 := _dodge_holder()
+	var wave2 := R20Wave.new()
+	holder2.add_child(wave2)
+	var bm2: Node = _bk_bm()
+	var g2: Node = _bk_hero(holder2, wave2, bm2)
+	var es2: Array = []
+	for i in range(12):
+		es2.append(_st_enemy(holder2, wave2, 1.0, Vector2(1, 0), i))
+	var big2: Node = _st_enemy(holder2, wave2, 99999.0, Vector2(1, 0), 12)
+	var stacks2: Array = []
+	var shown2: Array = []
+	var texts2: Array = []
+	for i in range(12):
+		var r: Dictionary = _bk_round(g2, es2)
+		stacks2.append(r.stacks)
+		shown2.append(r.shown)
+		texts2.append(r.text)
+	var r2: Dictionary = _bk_round(g2, [big2])
+	var log2: Array = bm2.berserk_record(BK_HERO).get("log", [])
+	await process_frame
+	var d2: Dictionary = {"stacks": stacks2, "shown": shown2, "texts": texts2, "big": r2, "log_n": log2.size(),
+		"last2": log2.slice(10).map(func(x): return [x.before, x.after]), "kills": bm2.berserk_record(BK_HERO).get("kills"), "on_screen": _bk_texts(holder2).size()}
+	holder2.queue_free()
+	bm2.free()
+	_check("戰神-2 上限 10 層：12 次擊殺後層數 1～10 再停在 10；提示 10 次（第 1 次「ATK+5%」、第 9 次「ATK+45%」、第 10 次「ATK+50% MAX」），第 11、12 次沒有提示；紀錄 12 筆，最後兩筆加層前後都是 10；之後一擊 187.5（加法）；畫面上 10 個提示",
+		d2.stacks == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10] and d2.shown == [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0]
+			and texts2[0] == "ATK+5%" and texts2[8] == "ATK+45%" and texts2[9] == "ATK+50% MAX" and texts2[11] == "ATK+50% MAX"
+			and _bk_near(r2.dmg, [187.5]) and _ls_near(r2.eff, 187.5) and r2.shown == 0 and d2.log_n == 12 and d2.last2 == [[10, 10], [10, 10]] and d2.kills == 12 and d2.on_screen == 10, d2)
+
+	# 戰神-3：其他來源的擊殺都不算：另一位沒有戰神的武將打倒的、灼燒、反擊、直接扣血（防禦塔、範圍或傳遞的傷害走同一個入口）打倒的、漏到城池的；
+	# 呂布先打了一下（沒有倒下）、之後被其他來源打倒的也不算（不是「目標後來死了」就加層）。之後呂布的一擊仍是 125，沒有紀錄、沒有提示
+	var holder3 := _dodge_holder()
+	var wave3 := R20Wave.new()
+	holder3.add_child(wave3)
+	var bm3: Node = _bk_bm()
+	var g3: Node = _bk_hero(holder3, wave3, bm3)
+	var p3: Node = _bk_hero(holder3, wave3, bm3, 100.0, {}, "guan_yu")
+	var other3: Node = _st_enemy(holder3, wave3, 50.0, Vector2(1, 0), 0)
+	var late3: Node = _st_enemy(holder3, wave3, 200.0, Vector2(1, 0), 1)
+	var main3: Node = _st_enemy(holder3, wave3, 99999.0, Vector2(1, 0), 2)
+	var burn3: Node = _st_enemy(holder3, wave3, 30.0, Vector2(4, 0), 3)
+	var ctr3: Node = _st_enemy(holder3, wave3, 20.0, Vector2(4, 0), 4)
+	var tw3: Node = _st_enemy(holder3, wave3, 40.0, Vector2(4, 0), 5)
+	var leak3: Node = _st_enemy(holder3, wave3, 99999.0, Vector2(4, 0), 6)
+	var rp: Dictionary = _bk_round(p3, [other3])
+	burn3.take_damage(30.0, true)
+	ctr3.take_damage(20.0, false, true)
+	tw3.take_damage(40.0)
+	leak3._on_reached_base()
+	var rl: Dictionary = _bk_round(g3, [late3])
+	late3.take_damage(75.0)
+	var rm: Dictionary = _bk_round(g3, [main3])
+	var d3: Dictionary = {"plain": rp.dmg, "dead": [other3.is_dead(), burn3.is_dead(), ctr3.is_dead(), tw3.is_dead(), leak3.is_dead(), late3.is_dead()],
+		"late": rl.dmg, "main": rm.dmg, "stacks": g3.berserk_stacks(), "shown": g3.berserk_shown, "record": bm3.berserk_record(BK_HERO), "p_ratio": p3.berserk_ratio}
+	holder3.queue_free()
+	bm3.free()
+	_check("戰神-3 其他來源的擊殺都不算：沒有戰神的武將、灼燒、反擊、直接扣血打倒的，漏到城池的，以及呂布打了 125（剩 75）後被其他來源打倒的；呂布之後一擊仍是 125，層數 0、沒有紀錄、沒有提示",
+		_bk_near(d3.plain, [50.0]) and d3.dead == [true, true, true, true, true, true] and _bk_near(d3.late, [125.0]) and _bk_near(d3.main, [125.0])
+			and d3.stacks == 0 and d3.shown == 0 and d3.record.is_empty() and d3.p_ratio == 0.0, d3)
+
+	# 戰神-4：無效的傷害與無效的目標不加層：攻擊力 0、NaN 時敵人不受傷、不加層；已倒下（還在清單）的敵人不會被選為目標；
+	# 正要被移除（queue_free）的敵人被選到也打不到（實扣 0）；同一個敵人被打倒後不會再被打、再算一次
+	var holder4 := _dodge_holder()
+	var wave4 := R20Wave.new()
+	holder4.add_child(wave4)
+	var bm4: Node = _bk_bm()
+	var z4: Node = _bk_hero(holder4, wave4, bm4, 0.0)
+	var n4: Node = _bk_hero(holder4, wave4, bm4, NAN, null, "lv_bu_nan")
+	var e4a: Node = _st_enemy(holder4, wave4, 1.0, Vector2(1, 0), 0)
+	var r4z: Dictionary = _bk_round(z4, [e4a])
+	var r4n: Dictionary = _bk_round(n4, [e4a])
+	var hp4a: float = e4a.current_hp
+	var holder4b := _dodge_holder()
+	var wave4b := R20Wave.new()
+	holder4b.add_child(wave4b)
+	var g4: Node = _bk_hero(holder4b, wave4b, bm4)
+	var dead4: Node = _st_enemy(holder4b, wave4b, 1.0, Vector2(1, 0), 0)
+	dead4._is_dead = true
+	var q4: Node = _st_enemy(holder4b, wave4b, 1.0, Vector2(1, 0), 1)
+	q4.queue_free()
+	var rq: Dictionary = _bk_round(g4, [dead4, q4])
+	var stacks_q: int = g4.berserk_stacks()
+	wave4b.enemies.erase(q4)
+	var once4: Node = _st_enemy(holder4b, wave4b, 1.0, Vector2(1, 0), 2)
+	var big4: Node = _st_enemy(holder4b, wave4b, 99999.0, Vector2(1, 0), 3)
+	var r4k: Dictionary = _bk_round(g4, [once4, big4])
+	var r4again: Dictionary = _bk_round(g4, [once4, big4])
+	var again_dealt: float = once4.take_damage(10.0)
+	var d4: Dictionary = {"zero": [r4z.dmg, r4z.stacks], "nan": [r4n.dmg, r4n.stacks], "hp": hp4a, "q": [rq.dmg, stacks_q, q4.current_hp if is_instance_valid(q4) else -1.0],
+		"kill": [r4k.dmg, r4k.stacks], "again": [r4again.dmg, r4again.stacks], "again_dealt": again_dealt, "log": bm4.berserk_record(BK_HERO).get("log", [])}
+	holder4.queue_free()
+	holder4b.queue_free()
+	bm4.free()
+	_check("戰神-4 攻擊力 0 與 NaN：敵人不受傷、不加層；已倒下（還在清單）的不是目標，正要被移除的被選到也打不到（實扣 0、不加層）；打倒的敵人不會再被打（下一擊打別的、層數仍是 1），再扣血實扣 0；紀錄只有一筆",
+		_bk_near(d4.zero[0], [0.0]) and d4.zero[1] == 0 and _bk_near(d4.nan[0], [0.0]) and d4.nan[1] == 0 and d4.hp == 1.0
+			and _bk_near(d4.q[0], [0.0, 0.0]) and d4.q[1] == 0 and d4.q[2] == 1.0
+			and _bk_near(d4.kill[0], [1.0, 0.0]) and d4.kill[1] == 1 and _bk_near(d4.again[0], [0.0, 131.25]) and d4.again[1] == 1 and d4.again_dealt == 0.0
+			and _bk_log_ok(d4.log, [[2, 125.0, 1.0, 0, 1]]), d4)
+
+	# 戰神-5：升級保留層數、用新的攻擊力重新計算、不重複加成：2 層時更新成 2 級（攻擊力 137.5，帶技能）→ 一擊 151.25；
+	# 再更新一次同樣的資料仍是 151.25；不帶技能欄位的更新也保留層數；atk 是 137.5（沒有被改成加成後的數值）
+	var holder5 := _dodge_holder()
+	var wave5 := R20Wave.new()
+	holder5.add_child(wave5)
+	var bm5: Node = _bk_bm()
+	var g5: Node = _bk_hero(holder5, wave5, bm5)
+	var es5: Array = [_st_enemy(holder5, wave5, 1.0, Vector2(1, 0), 0), _st_enemy(holder5, wave5, 1.0, Vector2(1, 0), 1)]
+	var big5: Node = _st_enemy(holder5, wave5, 99999.0, Vector2(1, 0), 2)
+	_bk_round(g5, es5)
+	_bk_round(g5, es5)
+	var up: Dictionary = {"level": 2, "atk": 137.5, "hp": 1111.3, "def": 110.0, "skill": BK_SKILL.duplicate()}
+	g5.apply_stat_update(up, [])
+	var h5a: Dictionary = _bk_round(g5, [big5])
+	g5.apply_stat_update(up.duplicate(), [])
+	var h5b: Dictionary = _bk_round(g5, [big5])
+	g5.apply_stat_update({"level": 2, "atk": 137.5}, [])
+	var h5c: Dictionary = _bk_round(g5, [big5])
+	var d5: Dictionary = {"a": [h5a.dmg, h5a.stacks], "b": [h5b.dmg, h5b.stacks], "c": [h5c.dmg, h5c.stacks], "atk": g5.atk, "level": g5.hero_level}
+	holder5.queue_free()
+	bm5.free()
+	_check("戰神-5 升級：2 層時更新成 2 級（攻擊力 137.5）→ 151.25、仍是 2 層；同樣的更新再一次仍是 151.25（不重複加成）；不帶技能欄位的更新也保留；atk 是 137.5",
+		_bk_near(d5.a[0], [151.25]) and d5.a[1] == 2 and _bk_near(d5.b[0], [151.25]) and d5.b[1] == 2 and _bk_near(d5.c[0], [151.25]) and d5.c[1] == 2
+			and d5.atk == 137.5 and d5.level == 2, d5)
+
+	# 戰神-6：換成其他技能（反擊）時清除這一場的層數、不再生效也不再加層；換回戰神從 0 開始；沒有技能（{}）同樣清除
+	var holder6 := _dodge_holder()
+	var wave6 := R20Wave.new()
+	holder6.add_child(wave6)
+	var bm6: Node = _bk_bm()
+	var g6: Node = _bk_hero(holder6, wave6, bm6)
+	# 每一回合只把要打的敵人放進清單（目標是清單裡第一個在射程內的敵人）
+	var ks6: Array = []
+	for i in range(5):
+		ks6.append(_st_enemy(holder6, wave6, 1.0, Vector2(1, 0), i))
+	var big6: Node = _st_enemy(holder6, wave6, 99999.0, Vector2(1, 0), 9)
+	for i in range(3):
+		wave6.enemies = [ks6[i]]
+		_bk_round(g6, [ks6[i]])
+	var before6: int = g6.berserk_stacks()
+	g6._read_skill({"skill": {"id": "counter", "counter_ratio": 0.2}})
+	wave6.enemies = [big6]
+	var plain6: Dictionary = _bk_round(g6, [big6])
+	wave6.enemies = [ks6[3]]
+	var kill6: Dictionary = _bk_round(g6, [ks6[3]])
+	var rec6: Dictionary = bm6.berserk_record(BK_HERO)
+	g6._read_skill({"skill": BK_SKILL.duplicate()})
+	wave6.enemies = [big6]
+	var back6: Dictionary = _bk_round(g6, [big6])
+	wave6.enemies = [ks6[4]]
+	var kill6b: Dictionary = _bk_round(g6, [ks6[4]])
+	g6._read_skill({})
+	var cleared6: Array = [g6.berserk_ratio, g6.berserk_stacks(), bm6.berserk_record(BK_HERO).is_empty()]
+	var d6: Dictionary = {"before": before6, "plain": [plain6.dmg, plain6.stacks], "kill": [kill6.dmg, kill6.stacks, kill6.shown], "rec": rec6,
+		"back": [back6.dmg, back6.stacks], "kill_back": [kill6b.stacks, kill6b.text], "cleared": cleared6}
+	holder6.queue_free()
+	bm6.free()
+	_check("戰神-6 3 層時換成反擊：層數清除，普通攻擊 125、打倒敵人不加層、沒有紀錄；換回戰神從 0 開始（125，打倒後 1 層「ATK+5%」）；沒有技能時同樣清除",
+		d6.before == 3 and _bk_near(d6.plain[0], [125.0]) and d6.plain[1] == 0 and d6.kill[1] == 0 and d6.kill[2] == 0 and d6.rec.is_empty()
+			and _bk_near(d6.back[0], [125.0]) and d6.back[1] == 0 and d6.kill_back == [1, "ATK+5%"] and d6.cleared == [0.0, 0, true], d6)
+
+	# 戰神-7：層數依 hero_id 分開：同一個 BattleManager 下兩位帶戰神的武將各自累積（2 層與 1 層），有效攻擊力各自計算
+	var holder7 := _dodge_holder()
+	var wave7 := R20Wave.new()
+	holder7.add_child(wave7)
+	var bm7: Node = _bk_bm()
+	var g7a: Node = _bk_hero(holder7, wave7, bm7)
+	var g7b: Node = _bk_hero(holder7, wave7, bm7, 100.0, null, "lv_bu_b")
+	var es7: Array = []
+	for i in range(3):
+		es7.append(_st_enemy(holder7, wave7, 1.0, Vector2(1, 0), i))
+	_bk_round(g7a, es7)
+	_bk_round(g7a, es7)
+	_bk_round(g7b, es7)
+	var d7: Dictionary = {"a": [g7a.berserk_stacks(), g7a.berserk_atk()], "b": [g7b.berserk_stacks(), g7b.berserk_atk()]}
+	holder7.queue_free()
+	bm7.free()
+	_check("戰神-7 層數依 hero_id 分開：同一場兩位帶戰神的武將各自 2 層（125 → 137.5）與 1 層（100 → 105）",
+		d7.a[0] == 2 and _ls_near(d7.a[1], 137.5) and d7.b[0] == 1 and _ls_near(d7.b[1], 105.0), d7)
+
+	# ── 實際引擎（Main、經過 JSON 的出征資料）──
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 戰神-20：Godot 讀到出征資料的參數；選取面板帶 berserk（比例、上限、層數、基礎與有效攻擊力）；打倒一名敵人後擊殺 +1、金幣 +5（只算一次）、1 層；
+	# 重新選取時面板是 1 層、131.25；快照的 hero_berserk 有層數、倍率、紀錄；BattleManager 的快照有這一場的層數
+	var es: Array = await _bk_start(rec, "berserk-20", 3)
+	var d20: Dictionary = {}
+	if es.size() == 3 and _bk_main_hero() != null:
+		var g: Node = _bk_main_hero()
+		d20["read"] = [g.berserk_ratio, g.berserk_max_stacks, g.atk]
+		var n_panel: int = rec.sent_panels.size()
+		main._on_hero_clicked(g)
+		d20["panel0"] = rec.sent_panels.back().get("berserk") if rec.sent_panels.size() > n_panel else null
+		_bk_place(es)
+		es[0].current_hp = 100.0
+		d20["seq0"] = int(es[0].spawn_seq)
+		d20["hit"] = _bk_hit(es)
+		n_panel = rec.sent_panels.size()
+		main._on_hero_clicked(g)
+		d20["panel1"] = rec.sent_panels.back().get("berserk") if rec.sent_panels.size() > n_panel else null
+		var n_snap: int = rec.sent_snapshots.size()
+		main._on_debug_snapshot_requested("berserk-20")
+		var snap: Dictionary = rec.sent_snapshots.back() if rec.sent_snapshots.size() > n_snap else {}
+		d20["snap"] = snap.get("hero_berserk", {}).get(BK_HERO, {})
+		d20["dbg"] = snap.get("berserk_stacks", {})
+	var p0: Dictionary = d20.get("panel0") if d20.get("panel0") is Dictionary else {}
+	var p1: Dictionary = d20.get("panel1") if d20.get("panel1") is Dictionary else {}
+	var sn: Dictionary = d20.get("snap", {})
+	_check("戰神-20 實際引擎：讀到出征資料的參數（0.05、10，攻擊力 125）；選取面板 {0.05, 10, 0 層, 125, 125}；打倒血量 100 的敵人：傷害 100、擊殺 +1、金幣 +5、1 層、提示 1 次；重新選取時 {1 層, 125, 131.25}；快照的 hero_berserk 是 1 層、倍率 1.05、有效 131.25、擊殺紀錄一筆（這一擊 125、實扣 100、0→1）；BattleManager 的快照 {lv_bu: 1 層、1 次}",
+		d20.get("read") == [0.05, 10, 125.0] and _ls_near(p0.get("ratio"), 0.05) and p0.get("max_stacks") == 10 and p0.get("stacks") == 0 and _ls_near(p0.get("base_atk"), 125.0) and _ls_near(p0.get("effective_atk"), 125.0)
+			and d20.has("hit") and _bk_near(d20.hit.dmg, [100.0, 0.0, 0.0]) and d20.hit.kills == 1 and d20.hit.gold == BattleManager.GOLD_PER_KILL and d20.hit.stacks == 1 and d20.hit.shown == 1
+			and p1.get("stacks") == 1 and _ls_near(p1.get("base_atk"), 125.0) and _ls_near(p1.get("effective_atk"), 131.25)
+			and sn.get("stacks") == 1 and _ls_near(sn.get("mult"), 1.05) and _ls_near(sn.get("effective_atk"), 131.25) and _ls_near(sn.get("base_atk"), 125.0) and sn.get("kills") == 1
+			and _bk_log_ok(sn.get("log"), [[int(d20.get("seq0", -1)), 125.0, 100.0, 0, 1]])
+			and d20.get("dbg", {}).get(BK_HERO, {}).get("stacks") == 1 and d20.dbg[BK_HERO].get("kills") == 1, d20)
+
+	# 戰神-21：實際引擎的其他來源：另一位武將（關羽，沒有技能）打倒的、直接扣血打倒的、漏到城池的都不加層；
+	# 擊殺照常 +2（漏到城池不算擊殺），呂布 0 層、BattleManager 沒有呂布的紀錄
+	es = await _bk_start(rec, "berserk-21", 3, [_bk_member(), _r12_hero("guan_yu", null)])
+	var d21: Dictionary = {}
+	if es.size() == 3 and _bk_main_hero() != null:
+		_r12_place("guan_yu", Vector2i(2, 4))
+		var gy: Node = main._placed_heroes.get("guan_yu")
+		if gy != null:
+			gy.set_process(false)
+		_bk_place(es)
+		var k0: int = _bm().kills
+		es[0].current_hp = 50.0
+		if gy != null:
+			gy._atk_timer = 0.0
+			gy._process(0.0)
+		es[1].take_damage(999999.0)
+		es[2]._on_reached_base()
+		await process_frame
+		d21 = {"dead0": not is_instance_valid(es[0]) or es[0].is_dead(), "kills": _bm().kills - k0, "stacks": _bk_main_hero().berserk_stacks(), "dbg": _bk_stacks_dbg(), "shown": _bk_main_hero().berserk_shown}
+	_check("戰神-21 實際引擎：關羽打倒的、直接扣血打倒的、漏到城池的都不加層：擊殺 +2，呂布 0 層、沒有提示、BattleManager 沒有呂布的紀錄",
+		d21.get("dead0") == true and d21.get("kills") == 2 and d21.get("stacks") == 0 and d21.get("shown") == 0 and not d21.get("dbg", {"x": 1}).has(BK_HERO), d21)
+
+	# 戰神-22：同一場保留、新的一場清除：第 1 波打倒兩名 → 2 層、清波；第 2 波一擊 137.5（跨波保留）；移位後 137.5；升級（2 級、攻擊力 137.5）後 151.25；
+	# 移出隊伍時 BattleManager 仍記著 2 層，再放回後 2 層、151.25；新的一場（新 battle_id）0 層、125
+	var waves22: Array = [[_grp("post", 2, 0.02)], [_grp("post", 2, 0.02)]]
+	es = await _bk_start(rec, "berserk-22", 2, null, true, waves22)
+	var d22: Dictionary = {}
+	if es.size() == 2 and _bk_main_hero() != null:
+		_bk_place(es)
+		es[0].current_hp = 1.0
+		es[1].current_hp = 1.0
+		var g22: Node = _bk_main_hero()
+		_bk_hit(es)
+		_bk_hit(es, g22.attack_speed)
+		d22["w1"] = [g22.berserk_stacks(), _bm().kills]
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.PREP, 3.0)
+		d22["prep"] = _bm().game_state == BattleManager.GameState.PREP
+		_bm().player_start_battle()
+		await _wait_until(func(): return _sw_enemies().size() == 2, 5.0)
+		var es2b: Array = _sw_enemies()
+		if es2b.size() == 2:
+			_bk_place(es2b)
+			d22["w2"] = _bk_hit(es2b, g22.attack_speed).dmg
+			_blk_move(g22, Vector2i(5, 4))
+			_bk_place(es2b)
+			d22["moved"] = _bk_hit(es2b, g22.attack_speed).dmg
+			main._on_payload_received({"type": "update_team", "team_list": [_bk_member(2, 137.5)]})
+			g22 = _bk_main_hero()
+			g22.set_process(false)
+			_bk_place(es2b)
+			d22["upgraded"] = [_bk_hit(es2b, g22.attack_speed).dmg, g22.atk, g22.berserk_stacks()]
+			var old_id: int = g22.get_instance_id()
+			main._on_payload_received({"type": "update_team", "team_list": []})
+			await process_frame
+			d22["removed"] = [main._placed_heroes.has(BK_HERO), _bk_stacks_dbg().get(BK_HERO, {}).get("stacks")]
+			main._on_payload_received({"type": "update_team", "team_list": [_bk_member(2, 137.5)]})
+			_r12_place(BK_HERO, Vector2i(3, 4))
+			var g22b: Node = _bk_main_hero()
+			if g22b != null:
+				g22b.set_process(false)
+				_bk_place(es2b)
+				d22["replaced"] = [g22b.get_instance_id() != old_id, g22b.berserk_stacks(), _bk_hit(es2b).dmg]
+		es = await _bk_start(rec, "berserk-22b", 1)
+		if es.size() == 1 and _bk_main_hero() != null:
+			_bk_place(es)
+			d22["new_battle"] = [_bk_main_hero().berserk_stacks(), _bk_hit(es).dmg, _bk_stacks_dbg()]
+	_check("戰神-22 同一場保留：第 1 波兩次擊殺 → 2 層；第 2 波 137.5、移位後 137.5、升級（137.5）後 151.25（仍 2 層）；移出隊伍時 BattleManager 仍是 2 層，放回後（新節點）2 層、151.25；新的一場 0 層、125、沒有紀錄",
+		d22.get("w1", [])[0] == 2 and d22.get("prep") == true and _bk_near(d22.get("w2"), [137.5, 0.0]) and _bk_near(d22.get("moved"), [137.5, 0.0])
+			and _bk_near(d22.get("upgraded", [[]])[0], [151.25, 0.0]) and d22.upgraded[1] == 137.5 and d22.upgraded[2] == 2
+			and d22.get("removed") == [false, 2] and d22.get("replaced", [])[0] == true and d22.replaced[1] == 2 and _bk_near(d22.replaced[2], [151.25, 0.0])
+			and d22.get("new_battle", [])[0] == 0 and _bk_near(d22.new_battle[1], [125.0]) and d22.new_battle[2].is_empty(), d22)
+
+	# 戰神-23：加層提示的時間是遊戲時間：1× 與 2× 都在 0.8 秒遊戲時間（＋一幀）後消失；自動攻擊時每次擊殺加一層
+	var life: Dictionary = {}
+	for sp in [1.0, 2.0]:
+		es = await _bk_start(rec, "berserk-23-x%d" % int(sp), 3, null, false)
+		if es.size() != 3:
+			continue
+		_r19_speed(rec, sp)
+		for e in es:
+			e.current_hp = 1.0
+		_bk_place(es)
+		await _wait_until(func(): return _bk_main_hero().berserk_stacks() >= 1, 3.0)
+		await process_frame
+		var fts: Array = _bk_texts(main.units_layer)
+		if fts.is_empty():
+			continue
+		var f: Node = fts[0]
+		var ts: float = Engine.time_scale
+		var t0: float = _gt() - float(f._timer)
+		var prev: float = _gt()
+		var dmax: float = 0.0
+		var wr: WeakRef = weakref(f)
+		var wall_end: int = Time.get_ticks_msec() + 5000
+		while wr.get_ref() != null and not wr.get_ref().is_queued_for_deletion() and Time.get_ticks_msec() < wall_end:
+			await process_frame
+			dmax = maxf(dmax, _gt() - prev)
+			prev = _gt()
+		var lived: float = _gt() - t0
+		await _wait_until(func(): return _bk_main_hero().berserk_stacks() == 3, 3.0)
+		life[sp] = {"life": snappedf(lived, 0.0001), "dmax": snappedf(dmax, 0.0001), "time_scale": ts, "stacks": _bk_main_hero().berserk_stacks(), "kills": _bm().kills}
+	var ok23: bool = life.size() == 2
+	for sp in life:
+		ok23 = ok23 and float(life[sp].life) >= 0.8 - 0.0005 and float(life[sp].life) <= 0.8 + 2.0 * float(life[sp].dmax) + 0.0005 and life[sp].stacks == 3 and life[sp].kills == 3 and float(life[sp].time_scale) == sp
+	_check("戰神-23 加層提示 0.8 秒遊戲時間後消失：1× 與 2×（量測時的倍率）都在 0.8 秒到＋一兩幀之間；自動攻擊打倒三名後 3 層、擊殺 3", ok23, life)
+
+	# 戰神-24：手動暫停：提示、攻擊冷卻、敵人血量、遊戲時間與層數都不前進；繼續後提示照剩下的時間消失、之後照常加層；
+	# 新的一場：上一場的提示跟著清除、層數 0
+	es = await _bk_start(rec, "berserk-24", 3, null, false)
+	var d24: Dictionary = {}
+	if es.size() == 3:
+		for e in es:
+			e.current_hp = 1.0
+		es[2].current_hp = 99999.0
+		_bk_place(es)
+		await _wait_until(func(): return _bk_main_hero().berserk_stacks() >= 1, 3.0)
+		await process_frame
+		var fts: Array = _bk_texts(main.units_layer)
+		d24["texts"] = fts.size()
+		if not fts.is_empty():
+			var f: Node = fts[0]
+			var p: Dictionary = _r20_pause(rec, true)
+			d24["paused_reply"] = p.get("paused")
+			var b: Array = [f._timer, _bk_main_hero()._atk_timer, es.map(func(e): return e.current_hp if is_instance_valid(e) else -1.0), _gt(), _bk_main_hero().berserk_stacks()]
+			await _wait_real(0.6)
+			var a: Array = [f._timer if is_instance_valid(f) else -1.0, _bk_main_hero()._atk_timer, es.map(func(e): return e.current_hp if is_instance_valid(e) else -1.0), _gt(), _bk_main_hero().berserk_stacks()]
+			d24["frozen"] = is_instance_valid(f) and b == a
+			d24["before"] = b
+			_r20_pause(rec, false)
+			var left: float = 0.8 - float(b[0])
+			var tr: float = _gt()
+			var wr: WeakRef = weakref(f)
+			await _wait_until_real(func(): return wr.get_ref() == null or wr.get_ref().is_queued_for_deletion(), 3.0)
+			d24["left"] = snappedf(left, 0.0001)
+			d24["gone_after"] = snappedf(_gt() - tr, 0.0001)
+			await _wait_until(func(): return _bk_main_hero().berserk_stacks() >= 2, 3.0)
+			d24["resumed"] = _bk_main_hero().berserk_stacks()
+			await process_frame
+			var fts2: Array = _bk_texts(main.units_layer)
+			d24["before_restart"] = fts2.size()
+			var w2: Array = fts2.map(func(x): return weakref(x))
+			es = await _bk_start(rec, "berserk-24b", 1)
+			await process_frame
+			d24["after_restart"] = [_bk_texts(main.units_layer).size(), w2.filter(func(x): return x.get_ref() != null).size(), _bk_main_hero().berserk_stacks() if _bk_main_hero() != null else -1]
+	_check("戰神-24 手動暫停 0.6 秒：「ATK+」提示、攻擊冷卻、敵人血量、遊戲時間與層數都不變；繼續後提示照剩下的時間消失，之後照常加到 2 層；新的一場時上一場的提示清除、0 層",
+		d24.get("texts", 0) >= 1 and d24.get("paused_reply") == true and d24.get("frozen") == true and float(d24.get("gone_after", 99.0)) <= float(d24.get("left", 0.0)) + 0.1
+			and d24.get("resumed") == 2 and d24.get("before_restart", 0) >= 1 and d24.get("after_restart") == [0, 0, 0], d24)
 
 	rec.payload_received.disconnect(main._on_payload_received)
 	main.web_bridge = original

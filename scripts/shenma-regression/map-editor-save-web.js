@@ -221,11 +221,13 @@ async (page) => {
   const waitAside = (re, timeout = 15000) =>
     page.waitForFunction((src) => new RegExp(src).test(document.querySelector('[data-testid="sheet-status-aside"]')?.innerText || ""), re.source, { timeout });
   const dirtyText = async () => ((await page.locator('[data-testid="integrity-dirty"]').count()) ? text("integrity-dirty") : "");
-  const newMap = async (id, name) => {
+  // keep：勾選「沿用目前波次」（預設不勾選）
+  const newMap = async (id, name, keep = false) => {
     await btn("＋ 新增地圖").click();
     const inputs = page.locator('[class*="modal"] input');
     await inputs.nth(0).fill(id);
     await inputs.nth(1).fill(name);
+    if (keep) await page.locator('[data-testid="new-keep-waves"]').check();
     await btn("確定").click();
   };
   // 波次：畫面上每一波的標題與每一組（敵人、數量），試算表裡這張地圖的列（波次、敵人、數量）
@@ -818,7 +820,180 @@ async (page) => {
       /沒有保存/.test(w8.msg) && w8.server.length === 0 && w8.gets === 0 && w8.retry === 0 && w8.screen === 1 && /波次有尚未保存的修改/.test(w8.dirty), w8);
   });
 
-  // ── 15. 素材轉換：有效圖片、無效檔案、取消；不加入素材選單 ──
+  // ── 15. 新地圖、匯入的波次歸屬：預設不沿用、明確勾選才沿用；不借用原本地圖的保存基準、本身不送任何寫入 ──
+  await section("new-import-waves", async () => {
+    await openEditor();
+    await loadList();
+    const WRITES = ["update_map_config", "save_waves_config", "create_map_config"];
+    const writes = async () => {
+      const log = (await reqLog()).filter((e) => WRITES.includes(e.action));
+      return Object.fromEntries(WRITES.map((a) => [a, log.filter((e) => e.action === a).length]));
+    };
+    const writes0 = await writes();
+    const src = { c11: await serverWaves("chapter1_1"), c12: await serverWaves("chapter1_2"), c13: await serverWaves("chapter1_3") };
+    const modal = () => page.locator('[data-testid="new-map-modal"]');
+    const keepBox = () => page.locator('[data-testid="new-keep-waves"]');
+    const importBox = page.getByPlaceholder("貼上 JSON 進行匯入...");
+    const importKeep = () => page.locator('[data-testid="import-keep-waves"]');
+    const geometry = (id, name) => JSON.stringify({ map_id: id, name, chapter: 1, cols: 6, rows: 4, paths: { path_a: [[0, 0], [5, 0]] } });
+    const draftState = async () => ({ id: await val("map_id"), name: await val("name"), waves: await screenWaves(), status: await status(), dirty: await dirtyText(), draft: await text("integrity-draft") });
+
+    // (1) 從有波次的地圖新建：預設不沿用
+    await loadMap("chapter1_1");
+    await btn("＋ 新增地圖").click();
+    const m1 = { text: await modal().innerText(), checked: await keepBox().isChecked(), warn: await page.locator('[data-testid="new-replace-warn"]').count() };
+    await page.locator('[class*="modal"] input').nth(0).fill("chapter_new_empty");
+    await page.locator('[class*="modal"] input').nth(1).fill("空波次的新地圖");
+    await btn("確定").click();
+    const n1 = await draftState();
+    await H.shot(page, "map-editor-save-new-empty");
+    run.check("新圖波次-1 chapter1_1（3 波）建立新地圖：視窗的「沿用目前波次（3 波）」預設不勾選、沒有取代提醒；確定後新地圖沒有波次，狀態寫明還沒保存、沒有波次；沒有尚未保存的提示，草稿標示不是從設定載入",
+      /沿用目前波次（3 波）/.test(m1.text) && m1.checked === false && m1.warn === 0 && n1.id === "chapter_new_empty" && n1.waves.length === 0 &&
+        /已建立新地圖「chapter_new_empty」的草稿（還沒保存到設定）；沒有波次/.test(n1.status) && n1.dirty === "" && /不是從設定載入的地圖/.test(n1.draft),
+      { modal: { ...m1, text: m1.text.slice(-160) }, ...n1, waves: n1.waves.length, draft: n1.draft.slice(0, 60) });
+
+    // (2) 明確勾選沿用：照原樣複製（沒有選敵人的組也在），標示波次尚未保存
+    await loadMap("chapter1_1");
+    await addWave();
+    const before2 = await screenWaves();
+    await btn("＋ 新增地圖").click();
+    const warn2 = await text("new-replace-warn");
+    await modal().getByRole("button", { name: "取消", exact: true }).click();
+    await newMap("chapter_new_keep", "沿用波次的新地圖", true);
+    const n2 = await draftState();
+    await H.shot(page, "map-editor-save-new-keep");
+    run.check("新圖波次-2 chapter1_1 加了一波（沒有選敵人）後建立新地圖：視窗提醒尚未保存的波次會被取代；勾選沿用後新地圖是同樣的 4 波（空白的組照樣複製、不補不重新編號），狀態寫明沿用 4 波、還沒保存，標示波次尚未保存",
+      /畫面上有尚未保存的波次，確定後會被取代/.test(warn2) && before2.length === 4 && same(n2.waves, before2) && /沿用原本畫面的 4 波波次（還沒保存）/.test(n2.status) &&
+        /波次有尚未保存的修改/.test(n2.dirty) && /不是從設定載入的地圖/.test(n2.draft),
+      { warn2, before: before2.length, ...n2, waves: n2.waves.length, draft: n2.draft.slice(0, 60) });
+
+    // (3) 同 map_id 的新地圖：預設沒有波次；沿用時不借用設定裡的保存基準；保存後以讀回為準，空白的組不會假裝已保存
+    await loadMap("chapter1_2");
+    await newMap("chapter1_2", "同 id 的空白新圖");
+    const n3a = await draftState();
+    await loadMap("chapter1_2");
+    const loaded3 = await screenWaves();
+    await newMap("chapter1_2", "同 id 沿用波次", true);
+    const n3b = await draftState();
+    await addWave();
+    await saveWaves();
+    await enterToken(TOKEN);
+    await waitWave(/波次儲存成功/);
+    const n3c = { msg: await waveText(), waves: await screenWaves(), dirty: await dirtyText(), server: await serverWaves("chapter1_2"), sent: (await lastOf("save_waves_config")).top };
+    run.check("新圖波次-3 載入 chapter1_2 後建立同 map_id 的新地圖：預設沒有波次、沒有尚未保存的提示，設定裡 chapter1_2 的 3 波不變（沒有寫入）",
+      n3a.id === "chapter1_2" && n3a.name === "同 id 的空白新圖" && n3a.waves.length === 0 && n3a.dirty === "" && same(await serverWaves("chapter1_2"), src.c12),
+      { ...n3a, waves: n3a.waves.length, draft: n3a.draft.slice(0, 60) });
+    run.check("新圖波次-4 同 map_id 勾選沿用：3 波和設定裡相同，仍標示波次尚未保存（沒有借用 chapter1_2 的保存基準）；再加一波空白後保存：送出 3 波、讀回後畫面是 3 波、說明波次 4 沒有保存（已從畫面移除），沒有尚未保存的提示",
+      same(n3b.waves, loaded3) && n3b.waves.length === 3 && /波次有尚未保存的修改/.test(n3b.dirty) &&
+        n3c.sent.map_id === "chapter1_2" && n3c.sent.waves.length === 3 && same(n3c.waves, loaded3) && n3c.dirty === "" &&
+        /波次 4（整波）沒有選敵人，沒有保存（已從畫面移除）/.test(n3c.msg) && same(n3c.server, src.c12),
+      { dirtyB: n3b.dirty, msg: n3c.msg, waves: n3c.waves.length, dirty: n3c.dirty, sent: n3c.sent.waves.length });
+
+    // (4) 匯入：預設清空波次；明確勾選才保留，並標示尚未保存（不沿用原本地圖的保存基準）
+    await loadMap("chapter1_3");
+    const opt4 = { text: await text("map-import-options"), checked: await importKeep().isChecked() };
+    await importBox.fill(geometry("chapter_import_a", "匯入（清空波次）"));
+    await btn("匯入").click();
+    const n4 = await draftState();
+    await loadMap("chapter1_3");
+    const loaded5 = await screenWaves();
+    await importKeep().check();
+    await importBox.fill(geometry("chapter_import_b", "匯入（保留波次）"));
+    await btn("匯入").click();
+    const n5 = { ...(await draftState()), keepAfter: await importKeep().isChecked() };
+    await H.shot(page, "map-editor-save-import-keep");
+    run.check("新圖波次-5 載入 chapter1_3（3 波）後匯入：匯入區寫明只換地圖、不勾選會清空波次，「保留目前的波次（3 波）」預設不勾選；匯入後沒有波次，狀態寫明原本的 3 波已清空、還沒保存；沒有尚未保存的提示",
+      /匯入時保留目前的波次（3 波）/.test(opt4.text) && /不勾選時波次清空/.test(opt4.text) && opt4.checked === false &&
+        n4.id === "chapter_import_a" && n4.waves.length === 0 && /匯入成功：「chapter_import_a」（還沒保存到設定）；原本畫面上的 3 波波次已清空/.test(n4.status) && n4.dirty === "",
+      { opt: opt4, ...n4, waves: n4.waves.length, draft: n4.draft.slice(0, 60) });
+    run.check("新圖波次-6 勾選保留後匯入：波次和原本相同（3 波），狀態寫明保留 3 波、還沒保存；標示波次尚未保存（不沿用 chapter1_3 的保存基準）；勾選在匯入後回到不勾選",
+      n5.id === "chapter_import_b" && same(n5.waves, loaded5) && n5.waves.length === 3 && /保留原本畫面的 3 波波次（還沒保存）/.test(n5.status) &&
+        /波次有尚未保存的修改/.test(n5.dirty) && n5.keepAfter === false,
+      { ...n5, waves: n5.waves.length, draft: n5.draft.slice(0, 60) });
+
+    // (5) 壞的 JSON：畫面、波次、狀態都不變，沒有彈出視窗
+    await fill("name", "壞 JSON 前的修改");
+    const before6 = await draftState();
+    const warn6 = await text("import-replace-warn");
+    let dialogs = 0;
+    const onDialog = (d) => { dialogs++; d.dismiss().catch(() => {}); };
+    page.on("dialog", onDialog);
+    const errs = [];
+    for (const bad of ["{壞掉", "[1,2]", JSON.stringify("文字"), "null"]) {
+      await importBox.fill(bad);
+      await btn("匯入").click();
+      await page.waitForSelector('[data-testid="import-error"]', { timeout: 5000 });
+      errs.push(await text("import-error"));
+    }
+    page.off("dialog", onDialog);
+    const after6 = await draftState();
+    await H.shot(page, "map-editor-save-import-bad");
+    run.check("新圖波次-7 匯入壞的 JSON（語法錯誤、陣列、字串、null）：每次都在匯入區說明格式錯誤、畫面與波次沒有改變（role=alert，沒有彈出視窗）；map_id、名稱、3 波與狀態列都和之前相同；匯入區提醒尚未保存的地圖草稿與波次會被取代",
+      errs.length === 4 && errs.every((e) => /JSON 格式錯誤/.test(e) && /畫面與波次都沒有改變/.test(e)) && dialogs === 0 && same(after6, before6) &&
+        /尚未保存的地圖草稿與波次，匯入後會被取代/.test(warn6),
+      { errs, dialogs, before: { ...before6, waves: before6.waves.length, draft: "" }, after: { ...after6, waves: after6.waves.length, draft: "" }, warn6 });
+
+    // (6) 波次保存中建立新地圖：讀回不改新地圖，結果標示原本的地圖
+    await loadMap("chapter1_6");
+    await setCount(0, 0, 7);
+    await setCtrl({ holdSave: true });
+    await saveWaves();
+    await waitHeld("__mapmetaHeldSave");
+    await newMap("chapter_new_pending", "波次保存中建立的新地圖");
+    await setCtrl({ holdSave: false });
+    await releaseSaves();
+    await waitWave(/「chapter1_6」波次儲存成功並重新讀回/);
+    const n7 = { ...(await draftState()), msg: await waveText(), server: (await serverWaves("chapter1_6"))[0] };
+    run.check("新圖波次-8 chapter1_6 的波次保存中建立新地圖（不沿用）：保存回來後新地圖仍沒有波次、沒有尚未保存的提示；波次結果標示 chapter1_6、說明目前畫面不是這張地圖；設定裡 chapter1_6 第 1 波第一組是 7",
+      n7.id === "chapter_new_pending" && n7.waves.length === 0 && n7.dirty === "" && /目前畫面已經不是這張地圖/.test(n7.msg) && same(n7.server, [1, n7.server[1], 7]),
+      { id: n7.id, waves: n7.waves.length, dirty: n7.dirty, msg: n7.msg, server: n7.server });
+
+    // (7) 波次保存結果不明時建立新地圖（沿用）：唯讀重試仍標示原本的地圖，確認後不改新地圖
+    await loadMap("chapter1_6");
+    await setCount(0, 0, 8);
+    await setCtrl({ wavesMode: "applied-network" });
+    await saveWaves();
+    await waitWave(/「chapter1_6」無法確定波次是否已保存/);
+    const kept8 = await screenWaves();
+    await newMap("chapter_new_unknown", "結果不明時建立的新地圖", true);
+    const retry8 = await text("waves-readback-retry");
+    await page.locator('[data-testid="waves-readback-retry"]').click();
+    await waitWave(/讀回確認/);
+    const n8 = { ...(await draftState()), msg: await waveText() };
+    run.check("新圖波次-9 chapter1_6 的波次保存結果不明時建立新地圖（沿用 9 波）：重新讀回按鈕仍標示 chapter1_6；讀回確認 chapter1_6 已保存並說明目前畫面不是這張地圖；新地圖的 9 波不變、仍標示尚未保存",
+      /重新讀回「chapter1_6」的波次/.test(retry8) && /「chapter1_6」的波次和這次送出的相同，這次波次已保存/.test(n8.msg) && /目前畫面已經不是這張地圖/.test(n8.msg) &&
+        n8.id === "chapter_new_unknown" && same(n8.waves, kept8) && kept8.length === 9 && /波次有尚未保存的修改/.test(n8.dirty),
+      { retry8, msg: n8.msg, id: n8.id, waves: n8.waves.length, dirty: n8.dirty });
+
+    // (8) 載入等待中開啟新地圖視窗：提醒載入會取消與會被取代的草稿；舊回應回來後不套用
+    await setCtrl({ holdGet: true });
+    await page.locator('[data-testid="sheet-map-select"]').selectOption("chapter1_2");
+    await btn("載入").click();
+    await waitHeld("__mapmetaHeld");
+    await btn("＋ 新增地圖").click();
+    const warn9 = await text("new-replace-warn");
+    await page.locator('[class*="modal"] input').nth(0).fill("chapter_new_while_loading");
+    await page.locator('[class*="modal"] input').nth(1).fill("載入中建立的新地圖");
+    await btn("確定").click();
+    await setCtrl({ holdGet: false });
+    await releaseGets();
+    await H.sleep(600);
+    const n9 = await draftState();
+    run.check("新圖波次-10 載入 chapter1_2 等待中開新地圖視窗：提醒尚未保存的地圖草稿與波次會被取代、「chapter1_2」的載入會取消；確定後舊回應不套用，新地圖沒有波次",
+      /尚未保存的地圖草稿與波次，確定後會被取代/.test(warn9) && /「chapter1_2」的載入會取消/.test(warn9) &&
+        n9.id === "chapter_new_while_loading" && n9.waves.length === 0 && !/載入成功/.test(n9.status) && n9.dirty === "",
+      { warn9, id: n9.id, waves: n9.waves.length, status: n9.status, dirty: n9.dirty });
+
+    // 新地圖、匯入本身不送寫入；來源地圖在設定裡的波次不變
+    const w = await writes();
+    const delta = Object.fromEntries(WRITES.map((a) => [a, w[a] - writes0[a]]));
+    const srcAfter = { c11: await serverWaves("chapter1_1"), c12: await serverWaves("chapter1_2"), c13: await serverWaves("chapter1_3") };
+    run.check("新圖波次-11 整段只有 3 次主動的波次保存（同 id 保存、保存中、結果不明），新地圖與匯入沒有送出任何寫入；chapter1_1／1_2／1_3 在設定裡的波次和開始時相同",
+      same(delta, { update_map_config: 0, save_waves_config: 3, create_map_config: 0 }) && same(srcAfter, src),
+      { delta, same11: same(srcAfter.c11, src.c11), same12: same(srcAfter.c12, src.c12), same13: same(srcAfter.c13, src.c13) });
+  });
+
+  // ── 16. 素材轉換：有效圖片、無效檔案、取消；不加入素材選單 ──
   await section("asset", async () => {
     const uploads = [];
     const onReq = (r) => { if (/\/mapEditor\/api\/upload/.test(r.url())) uploads.push(r.method()); };
@@ -884,7 +1059,7 @@ async (page) => {
     page.off("request", onReq);
   });
 
-  // ── 13. 390 寬、矮畫面與鍵盤 ──
+  // ── 17. 390 寬、矮畫面與鍵盤 ──
   await section("narrow", async () => {
     await page.setViewportSize({ width: 390, height: 600 });
     await openEditor();
@@ -912,6 +1087,48 @@ async (page) => {
     run.check("窄版-1 390×600：資料檢查面板在畫面寬度內；篩選按鈕用 Enter 切換（aria-pressed），Tab 進到清單項目，空白鍵選取後顯示詳細",
       box.left >= 0 && box.right <= box.vw + 1 && pressed === "true" && focused.inList && /待補資料|缺/.test(sel) && visible,
       { box, pressed, focused, sel: sel.slice(0, 80), visible });
+
+    // 新地圖視窗與匯入區：沿用波次的選項、取代提醒在畫面內，可以用鍵盤勾選
+    await loadMap("chapter1_1");
+    await addWave();
+    const opts = page.locator('[data-testid="map-import-options"]');
+    await opts.scrollIntoViewIfNeeded();
+    const optBox = await opts.evaluate((el) => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, vw: window.innerWidth }; });
+    await H.shot(page, "map-editor-save-import-390x600");
+    await btn("＋ 新增地圖").click();
+    const keep = page.locator('[data-testid="new-keep-waves"]');
+    await keep.focus();
+    await page.keyboard.press(" ");
+    const keepChecked = await keep.isChecked();
+    const warn = page.locator('[data-testid="new-replace-warn"]');
+    await warn.scrollIntoViewIfNeeded();
+    const modalBox = await page.locator('[data-testid="new-map-modal"]').evaluate((el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, vw: window.innerWidth, vh: window.innerHeight, scroll: el.scrollHeight > el.clientHeight }; });
+    const warnVisible = await warn.evaluate((el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= window.innerHeight + 1 && r.right <= window.innerWidth + 1; });
+    // 捲到每一個元素後，它的中心點最上層的元素要在它裡面（沒有被全站導覽列、說明或聊天按鈕蓋住）
+    const onTop = async (loc) => {
+      await loc.scrollIntoViewIfNeeded();
+      return loc.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !!hit && (hit === el || el.contains(hit) || hit.contains(el)) ? true : (hit ? (hit.outerHTML || "").slice(0, 80) : null);
+      });
+    };
+    const modalLoc = page.locator('[data-testid="new-map-modal"]');
+    const covered = {
+      title: await onTop(modalLoc.locator('[class*="modalTitle"]')),
+      firstInput: await onTop(modalLoc.locator("input").first()),
+      keep: await onTop(keep),
+      ok: await onTop(modalLoc.getByRole("button", { name: "確定", exact: true })),
+      cancel: await onTop(modalLoc.getByRole("button", { name: "取消", exact: true })),
+    };
+    const floatingShown = await page.evaluate(() => [...document.querySelectorAll("[data-floating-entry]")].filter((e) => getComputedStyle(e).visibility !== "hidden").length);
+    await H.shot(page, "map-editor-save-new-modal-390x600");
+    await modalLoc.getByRole("button", { name: "取消", exact: true }).click();
+    const floatingBack = await page.evaluate(() => [...document.querySelectorAll("[data-floating-entry]")].filter((e) => getComputedStyle(e).visibility !== "hidden").length);
+    run.check("窄版-2 390×600：匯入區在畫面寬度內；新地圖視窗不超出畫面（內容多時在視窗內捲動），「沿用目前波次」可以用空白鍵勾選，取代提醒捲到後完整可見；視窗的標題、第一個欄位、勾選、確定與取消都沒有被全站導覽列或浮動按鈕蓋住（視窗開啟時說明與聊天按鈕暫時隱藏，關閉後恢復）",
+      optBox.left >= 0 && optBox.right <= optBox.vw + 1 && keepChecked && modalBox.top >= 0 && modalBox.bottom <= modalBox.vh + 1 && modalBox.left >= 0 && modalBox.right <= modalBox.vw + 1 && warnVisible &&
+        Object.values(covered).every((v) => v === true) && floatingShown === 0 && floatingBack > 0,
+      { optBox, keepChecked, modalBox, warnVisible, covered, floatingShown, floatingBack });
   });
 
   await page.setViewportSize({ width: 1280, height: 800 }).catch(() => {});

@@ -388,6 +388,16 @@ export type HeroSkillPayload =
       storm_ratio: number;
       /** 最多幾名其他敵人（只接受 1～4 的整數）；其他值時 Godot 當作沒有這個技能 */
       storm_max_targets: number;
+    }
+  | {
+      id: "berserk";
+      /**
+       * 每層的攻擊力加成（0.05＝目前等級攻擊力的 5%，加法疊加）；
+       * 不是 0～1 之間（不含兩端）的有限數字時 Godot 當作沒有這個技能
+       */
+      berserk_ratio: number;
+      /** 最多幾層（只接受 1～10 的整數）；其他值時 Godot 當作沒有這個技能 */
+      berserk_max_stacks: number;
     };
 
 export interface ExpeditionPayload {

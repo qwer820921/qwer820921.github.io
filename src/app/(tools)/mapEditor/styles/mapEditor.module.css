@@ -770,7 +770,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  /* 高於全站導覽列（1050），矮畫面時視窗頂端不被蓋住 */
+  z-index: 1055;
+}
+
+/* 新增地圖視窗開啟時，暫時隱藏全站浮動入口（說明、聊天；標記 data-floating-entry）：
+   它們的層級更高，會蓋住視窗的欄位與「確定」按鈕。關閉視窗後自動恢復 */
+:global(body):has(.modalOverlay) :global([data-floating-entry]) {
+  visibility: hidden;
 }
 
 .modal {
@@ -779,6 +786,8 @@
   padding: 1.5rem;
   width: 360px;
   max-width: calc(100vw - 2rem);
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
 }
 
@@ -1131,4 +1140,30 @@
   border-top: 1px dashed #d1d5db;
   padding-top: 0.5rem;
   margin-top: 0.25rem;
+}
+
+/* ── 新地圖、匯入：波次要不要沿用、會被取代的尚未保存內容 ── */
+.importOptions {
+  margin-top: 0.5rem;
+}
+
+.keepWavesCheck {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: #374151;
+  margin-bottom: 0.25rem;
+  cursor: pointer;
+}
+
+.replaceWarn {
+  font-size: 0.75rem;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  margin-top: 0.4rem;
+  line-height: 1.5;
 }

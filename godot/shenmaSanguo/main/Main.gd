@@ -539,6 +539,10 @@ func _on_hero_clicked(hero: Node) -> void:
 	# 呼風喚雨（諸葛亮）：Godot 實際讀到的範圍半徑（格）、傷害比例與最多人數；沒有啟用這個技能的武將不帶這個欄位
 	if hero.storm_ratio > 0.0:
 		info["storm"] = {"radius": hero.storm_radius, "ratio": hero.storm_ratio, "max_targets": hero.storm_max_targets}
+	# 戰神（呂布）：Godot 實際讀到的每層比例與上限、選取當下這一場的層數、基礎攻擊力（atk）與目前的有效攻擊力；沒有啟用這個技能的武將不帶這個欄位
+	if hero.berserk_ratio > 0.0:
+		info["berserk"] = {"ratio": hero.berserk_ratio, "max_stacks": hero.berserk_max_stacks, "stacks": hero.berserk_stacks(),
+			"base_atk": hero.atk, "effective_atk": hero.berserk_atk()}
 	web_bridge.send_show_upgrade_panel(info)
 
 func _on_tower_clicked(tower: Node) -> void:
@@ -989,6 +993,9 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 呼風喚雨（諸葛亮）：Godot 實際讀到的半徑、比例與人數（沒有啟用時不列出）、有範圍傷害的攻擊次數、範圍命中的次數與實際扣掉的生命總量、
 	# 普通攻擊的次數、還在顯示的風雨圈數與最近幾次的中心與每一名
 	var hero_storm: Dictionary = {}
+	# 戰神（呂布）：Godot 實際讀到的每層比例與上限（沒有啟用時不列出）、這一場的層數與倍率、基礎與有效攻擊力、加層提示的次數、
+	# 普通攻擊的次數與最近幾次自己的擊殺（生成序號、這一擊的傷害、實扣、加層前後）
+	var hero_berserk: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
@@ -1013,6 +1020,8 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			hero_chain[hid] = hero.chain_state()
 		if hero.storm_ratio > 0.0:
 			hero_storm[hid] = hero.storm_state()
+		if hero.berserk_ratio > 0.0:
+			hero_berserk[hid] = hero.berserk_state()
 		hero_ranges[hid] = hero.attack_range
 		hero_hp[hid] = hero.current_hp
 		hero_slow[hid] = hero.slow_state()
@@ -1108,6 +1117,7 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"hero_chain":        hero_chain,
 		# 呼風喚雨（諸葛亮）
 		"hero_storm":        hero_storm,
+		"hero_berserk":      hero_berserk,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)

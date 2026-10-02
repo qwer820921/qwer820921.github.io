@@ -1,7 +1,7 @@
 import { HeroSkillPayload } from "../types";
 
 /**
- * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」、廖化「堅韌」、顏良「威壓」、孫尚香「連射」、龐統「連環計」、諸葛亮「呼風喚雨」）
+ * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」、廖化「堅韌」、顏良「威壓」、孫尚香「連射」、龐統「連環計」、諸葛亮「呼風喚雨」、呂布「戰神」）
  * 這裡是技能規則的唯一來源：武將列表／詳情的說明，與隨出征資料送進 Godot 的參數都由這裡產生。
  * 技能是戰場效果：不寫進玩家存檔，也不需要後端（GAS）支援。
  * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊。
@@ -161,6 +161,18 @@ export type HeroSkill =
       stormRatio: number;
       /** 最多幾名其他敵人（1～4） */
       stormMaxTargets: number;
+    }
+  | {
+      /**
+       * 戰神：這位武將自己的普通攻擊打倒一名敵人後，從下一擊起攻擊力增加一層（每層＝目前等級攻擊力 × berserkRatio，加法疊加），
+       * 最多 berserkMaxStacks 層。只算自己普通攻擊的最後一擊；層數只在這一場保留（跨波、移位、升級、移出再放回都保留），新的一場從 0 開始；只在戰場
+       */
+      id: "berserk";
+      name: string;
+      /** 每層的攻擊力加成（0.05＝目前等級攻擊力的 5%；0～1 之間、不含兩端） */
+      berserkRatio: number;
+      /** 最多幾層（1～10 的整數） */
+      berserkMaxStacks: number;
     };
 
 const HERO_SKILLS: Record<string, HeroSkill> = {
@@ -234,6 +246,15 @@ const HERO_SKILLS: Record<string, HeroSkill> = {
     stormRadius: 2,
     stormRatio: 0.5,
     stormMaxTargets: 4,
+  },
+  // 正式設定表的被動描述「戰神：攻擊力隨殺敵增加」沒有寫倍率、上限、擊殺歸屬與保留時間。第一版的設計值，尚未做過平衡：
+  // 呂布自己的普通攻擊打倒一名敵人後，下一擊起攻擊力增加目前等級攻擊力的 5%（加法疊加），最多 10 層（+50%）；打倒敵人的那一擊不提前加成；
+  // 其他武將、防禦塔、灼燒、反擊、範圍與傳遞造成的擊殺、敵人漏到城池都不算；層數只在這一場保留，新的一場從 0 開始；只在戰鬥中、不改屬性與存檔
+  lv_bu: {
+    id: "berserk",
+    name: "戰神",
+    berserkRatio: 0.05,
+    berserkMaxStacks: 10,
   },
 };
 
@@ -329,6 +350,28 @@ export function stormPercent(skill: HeroSkill | null): number {
   return skill?.id === "storm" ? round3(skill.stormRatio * 100) : 0;
 }
 
+/** 戰神每層與上限的攻擊力加成百分比（0.05、10 層 → 5、50；沒有戰神時都是 0） */
+export function berserkPercents(skill: HeroSkill | null): {
+  perStack: number;
+  max: number;
+} {
+  return skill?.id === "berserk"
+    ? {
+        perStack: round3(skill.berserkRatio * 100),
+        max: round3(skill.berserkRatio * skill.berserkMaxStacks * 100),
+      }
+    : { perStack: 0, max: 0 };
+}
+
+/** 戰神的有效攻擊力（和 Godot 相同）：目前等級的攻擊力 ×（1 ＋ 每層比例 × 層數），加法疊加、不是連乘 */
+export function berserkAttack(
+  atk: number,
+  ratio: number,
+  stacks: number
+): number {
+  return atk * (1 + ratio * stacks);
+}
+
 /**
  * 攻速光環加成後的攻擊間隔（秒）：攻擊間隔 ÷ 倍率（和 Godot 相同）。
  * 是除以倍率、不是減少同樣的百分比：1.15 倍時 1 秒變成約 0.8696 秒，不是 0.85 秒
@@ -351,7 +394,8 @@ export function damageAfterDefense(atk: number, def: number): number {
 /**
  * 技能的完整規則（顯示在武將詳情）
  * - rawRange：這位武將目前等級屬性表上的射程；有提供時，射程技能會寫出戰場上的實際射程，減速光環、防禦光環、攻速光環與威壓會寫出目前的範圍半徑
- * - atk：這位武將目前的攻擊力；有提供時，火攻會寫出每次灼燒的傷害，連射會寫出追加一擊的傷害，連環計會寫出每次傳遞的傷害，呼風喚雨會寫出範圍內每一名受到的傷害
+ * - atk：這位武將目前的攻擊力；有提供時，火攻會寫出每次灼燒的傷害，連射會寫出追加一擊的傷害，連環計會寫出每次傳遞的傷害，呼風喚雨會寫出範圍內每一名受到的傷害，
+ *   戰神會寫出各層數的攻擊力（例子，不是目前戰場上的層數）
  */
 export function describeHeroSkill(
   skill: HeroSkill,
@@ -550,6 +594,24 @@ export function describeHeroSkill(
       "觸發時以被打中的敵人為中心出現淡藍色的風雨圈，大小就是範圍。只在戰場生效，不影響存檔。"
     );
   }
+  if (skill.id === "berserk") {
+    const { perStack, max } = berserkPercents(skill);
+    const n = skill.berserkMaxStacks;
+    const current =
+      atk === undefined
+        ? ""
+        : `以目前攻擊力 ${round3(atk)} 為例：每層 +${round3(atk * skill.berserkRatio)}，1 層 ${round3(berserkAttack(atk, skill.berserkRatio, 1))}、2 層 ${round3(berserkAttack(atk, skill.berserkRatio, 2))}、最多 ${n} 層 ${round3(berserkAttack(atk, skill.berserkRatio, n))}；每場戰鬥都從 0 層（${round3(atk)}）開始。`;
+    return (
+      `這位武將自己的普通攻擊打倒一名敵人後，從下一擊起攻擊力增加目前等級攻擊力的 ${perStack}%，可以疊加，最多 ${n} 層（+${max}%）；打倒敵人的那一擊照原本的層數計算。` +
+      `每層加的都是同樣的 ${perStack}%（加法疊加，不是連乘）。` +
+      current +
+      "只算自己普通攻擊的最後一擊：其他武將、防禦塔、灼燒、反擊或範圍傷害打倒的敵人、敵人漏到城池都不算；同一個敵人只算一次，沒有打倒敵人的攻擊不加層。" +
+      "層數只在這一場戰鬥保留：換波次、移動位置、升級、移出隊伍再放回都保留（升級後照新的攻擊力重新計算，不會重複加成）；切換關卡或重新開始從 0 層開始，不寫進存檔。" +
+      "攻擊間隔、射程、防禦與生命不變，擊殺與金幣照常只算一次。" +
+      `增加一層時武將上方出現橘紅色的「ATK+目前加成%」（例如「ATK+${perStack}%」），到達上限時是「ATK+${max}% MAX」，之後不再出現；` +
+      "在戰場選取這位武將時，單位面板列出基礎與目前的攻擊力、層數與加成（選取當時的數值，重新點選可以更新）。只在戰場生效，不影響存檔。"
+    );
+  }
   if (skill.id === "dodge") {
     const pct = round3(skill.dodgeChance * 100);
     return (
@@ -657,6 +719,15 @@ export function heroSkillPayload(heroId: string): { skill?: HeroSkillPayload } {
         storm_radius: skill.stormRadius,
         storm_ratio: skill.stormRatio,
         storm_max_targets: skill.stormMaxTargets,
+      },
+    };
+  }
+  if (skill.id === "berserk") {
+    return {
+      skill: {
+        id: skill.id,
+        berserk_ratio: skill.berserkRatio,
+        berserk_max_stacks: skill.berserkMaxStacks,
       },
     };
   }

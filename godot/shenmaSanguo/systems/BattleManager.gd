@@ -50,6 +50,12 @@ var _auto_wave_pending: bool = false
 ## 跨波次、移位、更新隊伍、同場移除再放回都不會重新取得；initialize（新的一場、新的 battle_id）才清空
 var _first_strike_used: Dictionary = {}
 
+# ── 武將技能：戰神（berserk，呂布）──────────────────────────
+## 這一場每位武將自己普通攻擊打倒敵人累積的層數：hero_id → {"stacks": 層數, "kills": 擊殺次數, "log": 最近 BERSERK_LOG_MAX 次擊殺}。
+## 和首擊加倍一樣記在這裡：跨波次、移位、升級、同場移除再放回都保留；initialize（新的一場、新的 battle_id）才清空，不寫存檔
+var _berserk: Dictionary = {}
+const BERSERK_LOG_MAX: int = 40
+
 # ── 戰鬥速度 ──────────────────────────────────────────────
 # Engine.time_scale 只由 _apply_time_scale 寫入：實際倍率＝部署選單開著時固定 DEPLOY_TIME_SCALE，否則是玩家選的速度。
 # 敵人移動、攻擊冷卻、灼燒、減速、出兵間隔、自動下一波都照這個倍率推進；傷害、費用、獎勵不受影響
@@ -79,6 +85,7 @@ func initialize(p_total_waves: int, p_stage_id: String, wave_mgr: Node, bridge: 
 	stage_id       = p_stage_id
 	battle_id      = p_battle_id
 	_first_strike_used.clear()
+	_berserk.clear()
 	# 新的一場：清掉上一場的部署慢速與手動暫停，速度回到 1 倍
 	_reset_speed()
 	_reset_pause()
@@ -413,10 +420,46 @@ func consume_first_strike(hero_id: String, damage: float) -> bool:
 	_first_strike_used[hero_id] = damage
 	return true
 
+## 戰神：這位武將在這一場目前的層數（沒有紀錄時是 0）
+func berserk_stacks(hero_id: String) -> int:
+	return int(_berserk.get(hero_id, {}).get("stacks", 0))
+
+## 戰神：記下這位武將自己打倒的一名敵人（seq 是敵人的生成序號、damage 是這一擊的傷害、dealt 是實扣），層數加一但不超過 max_stacks。
+## 回傳加層前後的層數（已經是上限時相同）
+func add_berserk_kill(hero_id: String, max_stacks: int, seq: int, damage: float, dealt: float) -> Dictionary:
+	if hero_id == "":
+		return {"before": 0, "after": 0}
+	var rec: Dictionary = _berserk.get(hero_id, {"stacks": 0, "kills": 0, "log": []})
+	var before: int = int(rec.stacks)
+	var after: int = before + 1 if before < max_stacks else before
+	rec.stacks = after
+	rec.kills = int(rec.kills) + 1
+	rec.log.append({"seq": seq, "damage": damage, "dealt": dealt, "before": before, "after": after})
+	if rec.log.size() > BERSERK_LOG_MAX:
+		rec.log.pop_front()
+	_berserk[hero_id] = rec
+	return {"before": before, "after": after}
+
+## 戰神：清掉這位武將在這一場的層數與紀錄（換成其他技能時）
+func clear_berserk(hero_id: String) -> void:
+	_berserk.erase(hero_id)
+
+## 戰神：這位武將在這一場的紀錄（唯讀的複本；沒有時是空字典）
+func berserk_record(hero_id: String) -> Dictionary:
+	return _berserk.get(hero_id, {}).duplicate(true)
+
+func _berserk_summary() -> Dictionary:
+	var out: Dictionary = {}
+	for hid in _berserk:
+		out[hid] = {"stacks": int(_berserk[hid].stacks), "kills": int(_berserk[hid].kills)}
+	return out
+
 ## 測試用唯讀狀態（debug_snapshot）
 func get_debug_state() -> Dictionary:
 	return {
 		"first_strike_used": _first_strike_used.duplicate(),
+		# 戰神：這一場每位武將的層數與擊殺次數（不含紀錄；武將移出隊伍時也看得到保留的層數）
+		"berserk_stacks": _berserk_summary(),
 		"lifecycle": _lifecycle,
 		"auto_wave_token": _auto_wave_token,
 		"auto_next_wave_pending": _auto_wave_pending,

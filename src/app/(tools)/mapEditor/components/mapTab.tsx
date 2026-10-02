@@ -30,6 +30,7 @@ import {
 } from "../utils/mapMeta";
 import {
   cleanWavesForSave,
+  copyWaves,
   droppedGroupsText,
   expectedSavedWaves,
   normalizeWaves,
@@ -506,6 +507,10 @@ export default function MapTab({
   const [newUnlockStage, setNewUnlockStage] = useState("");
   const [newCols, setNewCols] = useState(String(DEFAULT_COLS));
   const [newRows, setNewRows] = useState(String(DEFAULT_ROWS));
+  // 新地圖、匯入要不要沿用畫面上的波次：每次都預設不沿用（新地圖沒有波次），要明確勾選
+  const [newKeepWaves, setNewKeepWaves] = useState(false);
+  const [importKeepWaves, setImportKeepWaves] = useState(false);
+  const [importError, setImportError] = useState("");
   const [sheetStatus, setSheetStatus] = useState<SheetStatus>("idle");
   const [sheetMsg, setSheetMsg] = useState("");
   const [sheetAside, setSheetAside] = useState("");
@@ -814,8 +819,10 @@ export default function MapTab({
   };
 
   // ── JSON → Grid（從 Sheet 載入、匯入 JSON 時使用）──
-  const loadFromJson = (json: MapJson): EditorMap => {
-    const m = editorMapFromJson(json);
+  const loadFromJson = (json: MapJson): EditorMap =>
+    applyEditorMap(editorMapFromJson(json));
+
+  const applyEditorMap = (m: EditorMap): EditorMap => {
     setMapId(m.mapId);
     setMapName(m.name);
     setChapter(m.chapter);
@@ -1054,7 +1061,23 @@ export default function MapTab({
     mapIdRef.current = mapId;
   }, [draftSig, draftWavesSig, mapId]);
   const mapDirty = savedMapSig !== null && savedMapSig !== draftSig;
-  const wavesDirty = savedWavesSig !== null && savedWavesSig !== draftWavesSig;
+  // 沒有波次的保存基準（預設畫面、新地圖、匯入）時，畫面上有波次就是尚未保存（不沿用其他地圖的基準）
+  const wavesDirty =
+    savedWavesSig === null ? waves.length > 0 : savedWavesSig !== draftWavesSig;
+  // 新地圖、匯入前提醒會被取代的尚未保存內容
+  const unsavedParts = [
+    unsavedDraft ? "地圖草稿" : mapDirty ? "地圖的修改" : "",
+    wavesDirty ? "波次" : "",
+  ].filter(Boolean);
+  const replaceWarning = (action: string) =>
+    [
+      unsavedParts.length > 0
+        ? `畫面上有尚未保存的${unsavedParts.join("與")}，${action}後會被取代`
+        : "",
+      loadingMapId ? `「${loadingMapId}」的載入會取消` : "",
+    ]
+      .filter(Boolean)
+      .join("；");
 
   // ── 狀態列 ──
   // 操作開始時取得狀態列（清掉上一次其他操作的結果）；結束時若已有較新的操作開始，結果改顯示在「其他操作的結果」
@@ -1108,7 +1131,11 @@ export default function MapTab({
     setGrid(makeGrid(nc, nr));
     setPaths({ path_a: [] });
     setActivePathId("path_a");
-    // 新地圖不是從設定載入的：沒有原值（保存時三欄都送出），也沒有「已保存」的內容。
+    // 波次預設清空；明確勾選沿用時複製畫面上的波次（沒有選敵人的組也照樣複製），都是尚未保存的草稿。
+    // 原本地圖在設定裡的波次不刪除（新地圖不送任何寫入）
+    const kept = newKeepWaves ? copyWaves(waves) : [];
+    setWaves(kept);
+    // 新地圖不是從設定載入的：沒有原值（保存時三欄都送出），也沒有「已保存」的地圖與波次（不沿用原本地圖的基準）。
     // 之前保存的重新讀回按鈕標示的是那張地圖，保留（只讀，不改這個畫面）
     setMetaOriginal(null);
     setChapterError("");
@@ -1118,7 +1145,10 @@ export default function MapTab({
     setShowNewModal(false);
     beginStatus(
       "ok",
-      `✓ 已建立新地圖「${newMapId.trim()}」的草稿（還沒保存到設定）` +
+      `✓ 已建立新地圖「${newMapId.trim()}」的草稿（還沒保存到設定）；` +
+        (kept.length > 0
+          ? `沿用原本畫面的 ${kept.length} 波波次（還沒保存）`
+          : "沒有波次") +
         (cancelled ? `；先前「${cancelled}」的載入已取消，不會套用` : "")
     );
   };
@@ -1130,6 +1160,7 @@ export default function MapTab({
     setNewUnlockStage("");
     setNewCols(String(DEFAULT_COLS));
     setNewRows(String(DEFAULT_ROWS));
+    setNewKeepWaves(false);
     setShowNewModal(true);
   };
 
@@ -1428,29 +1459,49 @@ export default function MapTab({
     });
   };
 
+  // 匯入只換地圖與地圖資訊（不含波次）。波次預設清空，明確勾選才保留畫面上的波次；
+  // JSON 讀不出地圖時畫面與波次都不變
   const handleImport = () => {
+    let m: EditorMap;
     try {
-      const json = JSON.parse(importJson) as MapJson;
+      const json = JSON.parse(importJson);
       // 硬核相容：有些匯出的 JSON 欄位在頂層，有些在 path_json
-      const targetJson = (json as any).path_json
-        ? (json as any).path_json
-        : json;
-      const cancelled = loadingMapId;
-      const m = loadFromJson(targetJson);
-      replaceContext();
-      // 匯入的 JSON 不是從設定載入的：沒有原值（保存時三欄都送出），也沒有「已保存」的內容
-      setMetaOriginal(null);
-      setSavedMapSig(null);
-      setUnsavedDraft(true);
-      beginStatus(
-        "ok",
-        `✓ 匯入成功：「${m.mapId}」（還沒保存到設定）` +
-          (cancelled ? `；先前「${cancelled}」的載入已取消，不會套用` : "")
-      );
-      setImportJson("");
+      const targetJson = json?.path_json ? json.path_json : json;
+      if (
+        !targetJson ||
+        typeof targetJson !== "object" ||
+        Array.isArray(targetJson)
+      ) {
+        throw new Error("不是地圖的 JSON 物件");
+      }
+      m = editorMapFromJson(targetJson as MapJson);
     } catch (e) {
-      alert("JSON 格式錯誤：" + e);
+      setImportError(`JSON 格式錯誤（${errText(e)}），畫面與波次都沒有改變`);
+      return;
     }
+    const cancelled = loadingMapId;
+    replaceContext();
+    applyEditorMap(m);
+    const keep = importKeepWaves && waves.length > 0;
+    if (!keep) setWaves([]);
+    // 匯入的 JSON 不是從設定載入的：沒有原值（保存時三欄都送出），也沒有「已保存」的地圖與波次
+    setMetaOriginal(null);
+    setSavedMapSig(null);
+    setSavedWavesSig(null);
+    setUnsavedDraft(true);
+    beginStatus(
+      "ok",
+      `✓ 匯入成功：「${m.mapId}」（還沒保存到設定）；` +
+        (keep
+          ? `保留原本畫面的 ${waves.length} 波波次（還沒保存）`
+          : waves.length > 0
+            ? `原本畫面上的 ${waves.length} 波波次已清空`
+            : "沒有波次") +
+        (cancelled ? `；先前「${cancelled}」的載入已取消，不會套用` : "")
+    );
+    setImportJson("");
+    setImportKeepWaves(false);
+    setImportError("");
   };
 
   const cleanPaths = () => {
@@ -2332,8 +2383,13 @@ export default function MapTab({
               className={styles.modalInput}
               style={{ margin: 0, height: "36px", fontSize: "12px" }}
               placeholder="貼上 JSON 進行匯入..."
+              aria-label="要匯入的地圖 JSON"
+              aria-describedby="map-import-hint"
               value={importJson}
-              onChange={(e) => setImportJson(e.target.value)}
+              onChange={(e) => {
+                setImportJson(e.target.value);
+                setImportError("");
+              }}
             />
             <button
               className={styles.toolBtn}
@@ -2343,6 +2399,38 @@ export default function MapTab({
               匯入
             </button>
           </div>
+        </div>
+        <div className={styles.importOptions} data-testid="map-import-options">
+          <label className={styles.keepWavesCheck}>
+            <input
+              type="checkbox"
+              checked={importKeepWaves && waves.length > 0}
+              disabled={waves.length === 0}
+              onChange={(e) => setImportKeepWaves(e.target.checked)}
+              data-testid="import-keep-waves"
+            />
+            匯入時保留目前的波次（{waves.length} 波）
+          </label>
+          <div id="map-import-hint" className={styles.metaHint}>
+            匯入只換地圖與地圖資訊，不含波次；不勾選時波次清空。匯入的地圖與波次都還沒保存到設定。
+          </div>
+          {replaceWarning("匯入") && (
+            <div
+              className={styles.replaceWarn}
+              data-testid="import-replace-warn"
+            >
+              {replaceWarning("匯入")}
+            </div>
+          )}
+          {importError && (
+            <div
+              className={styles.metaError}
+              role="alert"
+              data-testid="import-error"
+            >
+              {importError}
+            </div>
+          )}
         </div>
       </div>
 
@@ -2355,6 +2443,7 @@ export default function MapTab({
           <div
             className={styles.modal}
             onMouseDown={(e) => e.stopPropagation()}
+            data-testid="new-map-modal"
           >
             <div className={styles.modalTitle}>新增地圖</div>
 
@@ -2382,6 +2471,28 @@ export default function MapTab({
                 />
               </div>
             ))}
+
+            <label className={styles.keepWavesCheck}>
+              <input
+                type="checkbox"
+                checked={newKeepWaves && waves.length > 0}
+                disabled={waves.length === 0}
+                onChange={(e) => setNewKeepWaves(e.target.checked)}
+                data-testid="new-keep-waves"
+              />
+              沿用目前波次（{waves.length} 波）
+            </label>
+            <div className={styles.metaHint}>
+              不勾選時新地圖沒有波次；勾選時複製畫面上的波次（沒有選敵人的組也照樣複製）。都還沒保存到設定，原本地圖在設定裡的波次不會被刪除。
+            </div>
+            {replaceWarning("確定") && (
+              <div
+                className={styles.replaceWarn}
+                data-testid="new-replace-warn"
+              >
+                {replaceWarning("確定")}
+              </div>
+            )}
 
             <div className={styles.modalFooter}>
               <button

@@ -1,4 +1,4 @@
-// Godot 技能（包括閃避、首擊加倍、防禦光環、暈眩、吸血、攻速光環、反擊、堅韌、威壓、連射、連環計與呼風喚雨）、敵人受傷與灼燒的入口、飛行敵人、敵人阻路冷卻、關卡沒有波次的拒絕、敵人的攻擊力與免疫減速測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
+// Godot 技能（包括閃避、首擊加倍、防禦光環、暈眩、吸血、攻速光環、反擊、堅韌、威壓、連射、連環計、呼風喚雨與戰神）、敵人受傷與灼燒的入口、飛行敵人、敵人阻路冷卻、關卡沒有波次的拒絕、敵人的攻擊力與免疫減速測試的反向驗證：把 godot/shenmaSanguo 的版本控制檔案（取工作區內容）複製到暫存目錄，
 // 對遊戲程式套用一個刻意的錯誤，只跑指定的測試組（SHENMA_TEST_ONLY），確認測試「該失敗時一定失敗」。
 // 用法：GODOT=<Godot 4.6.2 console 執行檔> node scripts/shenma-regression/tools/godot-mutation.mjs <變異名稱|none|list>
 // - none：不改程式，同一組測試必須全部通過、log 也要通過 check-log.mjs 的檢查（確認基準）
@@ -1552,8 +1552,8 @@ const MUTATIONS = {
   "storm-not-cleared": {
     why: "讀取技能時沒有清掉前一次的呼風喚雨（換成其他技能後殘留）",
     file: HERO,
-    from: '\tstorm_ratio = 0.0\n\tstorm_radius = 0.0\n\tstorm_max_targets = 0\n\tvar skill = state.get("skill", null)\n',
-    to: '\tvar skill = state.get("skill", null)\n',
+    from: "\tstorm_ratio = 0.0\n\tstorm_radius = 0.0\n\tstorm_max_targets = 0\n\tberserk_ratio = 0.0\n",
+    to: "\tberserk_ratio = 0.0\n",
     only: "storm",
     expect: ["呼風喚雨-0 ", "呼風喚雨-27 "],
   },
@@ -1580,6 +1580,94 @@ const MUTATIONS = {
     to: "\t\tpass\n",
     only: "storm",
     expect: ["呼風喚雨-20 "],
+  },
+  "berserk-every-kill": {
+    why: "全場的擊殺都替呂布加層（不是只算自己普通攻擊的最後一擊）",
+    file: BATTLE,
+    from: "\tkills += 1\n\tearn_gold(GOLD_PER_KILL)\n",
+    to: '\tkills += 1\n\tearn_gold(GOLD_PER_KILL)\n\tadd_berserk_kill("lv_bu", 10, -1, 0.0, 0.0)\n',
+    only: "berserk",
+    expect: ["戰神-21 "],
+  },
+  "berserk-hit-not-kill": {
+    why: "沒有確認這一擊讓目標倒下（打到就加層）",
+    file: HERO,
+    from: "\tif not (is_instance_valid(target) and target.is_dead()):\n\t\treturn\n\tvar r: Dictionary = _battle_mgr.add_berserk_kill(",
+    to: "\tvar r: Dictionary = _battle_mgr.add_berserk_kill(",
+    only: "berserk",
+    expect: ["戰神-1 ", "戰神-3 "],
+  },
+  "berserk-boost-kill-hit": {
+    why: "打倒敵人的那一擊提前用加層後的攻擊力",
+    file: HERO,
+    from: "\tif berserk_ratio > 0.0:\n\t\tdamage = berserk_atk()\n",
+    to: "\tif berserk_ratio > 0.0:\n\t\tdamage = atk * (1.0 + berserk_ratio * float(mini(berserk_stacks() + 1, berserk_max_stacks)))\n",
+    only: "berserk",
+    expect: ["戰神-1 ", "戰神-20 "],
+  },
+  "berserk-multiplicative": {
+    why: "層數連乘（125 × 1.05 的 n 次方，不是加法）",
+    file: HERO,
+    from: "\treturn atk * (1.0 + berserk_ratio * float(berserk_stacks()))\n",
+    to: "\treturn atk * pow(1.0 + berserk_ratio, float(berserk_stacks()))\n",
+    only: "berserk",
+    expect: ["戰神-1 ", "戰神-2 "],
+  },
+  "berserk-no-cap": {
+    why: "層數沒有上限（到 10 層後照樣加層、照樣提示）",
+    file: BATTLE,
+    from: "\tvar after: int = before + 1 if before < max_stacks else before\n",
+    to: "\tvar after: int = before + 1\n",
+    only: "berserk",
+    expect: ["戰神-2 "],
+  },
+  "berserk-cap-nine": {
+    why: "上限 10 不被接受（只接受 9 以下）",
+    file: HERO,
+    from: " and _positive_whole(bx) and float(bx) <= 10.0:\n",
+    to: " and _positive_whole(bx) and float(bx) < 10.0:\n",
+    only: "berserk",
+    expect: ["戰神-0 "],
+  },
+  "berserk-upgrade-compounds": {
+    why: "升級時把加成乘進攻擊力（之後再乘一次，重複加成）",
+    file: HERO,
+    from: '\tatk        = float(new_state.get("atk", atk))\n',
+    to: '\tatk        = float(new_state.get("atk", atk)) * (1.0 + berserk_ratio * float(berserk_stacks()))\n',
+    only: "berserk",
+    expect: ["戰神-5 "],
+  },
+  "berserk-kept-next-battle": {
+    why: "新的一場沒有清掉上一場的層數",
+    file: BATTLE,
+    from: "\t_berserk.clear()\n",
+    to: "\tpass\n",
+    only: "berserk",
+    expect: ["戰神-22 "],
+  },
+  "berserk-switch-keeps-stacks": {
+    why: "換成其他技能時沒有清掉這一場的層數（換回戰神時沿用舊層數）",
+    file: HERO,
+    from: "\tif not (berserk_ratio > 0.0):\n\t\t_drop_berserk_stacks()\n",
+    to: "\tpass\n",
+    only: "berserk",
+    expect: ["戰神-6 "],
+  },
+  "berserk-not-cleared": {
+    why: "讀取技能時沒有清掉前一次的戰神（換成其他技能後殘留）",
+    file: HERO,
+    from: '\tberserk_ratio = 0.0\n\tberserk_max_stacks = 0\n\tvar skill = state.get("skill", null)\n',
+    to: '\tvar skill = state.get("skill", null)\n',
+    only: "berserk",
+    expect: ["戰神-0 "],
+  },
+  "berserk-panel-missing": {
+    why: "選取武將時沒有把戰神的層數與攻擊力送給網頁",
+    file: MAIN,
+    from: '\tif hero.berserk_ratio > 0.0:\n\t\tinfo["berserk"] = {',
+    to: '\tif false:\n\t\tinfo["berserk"] = {',
+    only: "berserk",
+    expect: ["戰神-20 "],
   },
 };
 

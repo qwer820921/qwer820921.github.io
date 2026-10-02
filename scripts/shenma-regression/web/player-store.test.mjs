@@ -3516,27 +3516,134 @@ await test("呼風喚雨-S1", async () => {
       text.includes(
         "以這個敵人被打中的位置為中心，2 格內（含邊界）最多 4 名其他敵人各受到這次普通攻擊傷害的 50%"
       ) &&
-      text.includes("被打中的主要目標照常受到普通攻擊的傷害，不會再被範圍打一次") &&
+      text.includes(
+        "被打中的主要目標照常受到普通攻擊的傷害，不會再被範圍打一次"
+      ) &&
       text.includes("中心是被打中的敵人，不是諸葛亮自己") &&
-      text.includes("離中心近的先算，距離相同時先出現的敵人優先，超過 4 名時較遠的不受影響") &&
+      text.includes(
+        "離中心近的先算，距離相同時先出現的敵人優先，超過 4 名時較遠的不受影響"
+      ) &&
       text.includes(
         "目前攻擊力 118：主要目標受到 118，範圍內其他敵人每一名受到 59。"
       ) &&
       !noAtk.includes("目前攻擊力") &&
-      text.includes("不會遞減，也不會從被打中的敵人再往外傳（和龐統的連環計不同）") &&
+      text.includes(
+        "不會遞減，也不會從被打中的敵人再往外傳（和龐統的連環計不同）"
+      ) &&
       text.includes("主要目標被這一擊打倒時，照樣以它倒下的位置生效") &&
       text.includes("打不到的敵人不會受到範圍傷害") &&
       text.includes("免疫減速的敵人照樣受傷") &&
       text.includes("擊殺與金幣只算一次") &&
       text.includes("範圍內沒有其他敵人時就是一般的攻擊") &&
       text.includes("自動觸發，沒有手動施放或冷卻") &&
-      text.includes("範圍傷害不算一次攻擊、不會引發其他技能，攻擊間隔與射程不變") &&
+      text.includes(
+        "範圍傷害不算一次攻擊、不會引發其他技能，攻擊間隔與射程不變"
+      ) &&
       text.includes("淡藍色的風雨圈") &&
       text.includes("只在戰場生效，不影響存檔") &&
-      small.includes("1.5 格內（含邊界）最多 2 名其他敵人各受到這次普通攻擊傷害的 30%") &&
+      small.includes(
+        "1.5 格內（含邊界）最多 2 名其他敵人各受到這次普通攻擊傷害的 30%"
+      ) &&
       small.includes("範圍內其他敵人每一名受到 30。") &&
       others.length === 0,
     { zg, payload, text, noAtk, small, others }
+  );
+});
+
+await test("戰神-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    doubleShotPercent,
+    chainPercents,
+    stormPercent,
+    berserkPercents,
+    berserkAttack,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const lb = heroSkillOf("lv_bu");
+  const payload = heroSkillPayload("lv_bu");
+  const text = describeHeroSkill(lb, 2, 125);
+  const noAtk = describeHeroSkill(lb);
+  const small = describeHeroSkill(
+    { id: "berserk", name: "戰神", berserkRatio: 0.1, berserkMaxStacks: 3 },
+    2,
+    100
+  );
+  // 有效攻擊力：加法疊加（125 × (1 + 0.05 × n)），不是連乘（125 × 1.05^n）
+  const atks = [0, 1, 2, 10].map((n) => berserkAttack(125, 0.05, n));
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "cao_cao",
+    "gan_ning",
+    "xia_hou_dun",
+    "liao_hua",
+    "yan_liang",
+    "sun_shang_xiang",
+    "pang_tong",
+    "zhu_ge_liang",
+    "lvbu",
+    "lu_bu",
+    "Lv_Bu",
+  ].filter((id) => heroSkillOf(id)?.id === "berserk");
+  check(
+    "戰神-S1 呂布（lv_bu）的戰神：送進 Godot 的參數（berserk、berserk_ratio 0.05、berserk_max_stacks 10，只有這三個欄位）與說明文字出自同一份定義；每層 5%、最多 50%；有效攻擊力是加法疊加（Lv1 125 → 1 層 131.25、2 層 137.5、10 層 187.5）；說明寫出自己的普通攻擊打倒敵人後下一擊起加層、打倒的那一擊照原本的層數、加法不是連乘、只算自己普通攻擊的最後一擊（其他來源與漏到城池不算）、同一個敵人只算一次、這一場內保留（跨波、移位、升級、移出再放回）、新的一場從 0 層、不寫存檔、攻擊間隔射程防禦生命不變、提示「ATK+5%」與「ATK+50% MAX」、面板是選取時的數值；有攻擊力時寫出各層數的例子並說明每場從 0 層開始（不把最大值當目前），沒有攻擊力時不寫；10%、3 層的定義照樣寫出；其他技能的計算不受影響；其他武將（含寫錯的 id）沒有戰神",
+    lb?.id === "berserk" &&
+      lb.name === "戰神" &&
+      lb.berserkRatio === 0.05 &&
+      lb.berserkMaxStacks === 10 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: { id: "berserk", berserk_ratio: 0.05, berserk_max_stacks: 10 },
+        }) &&
+      JSON.stringify(berserkPercents(lb)) ===
+        JSON.stringify({ perStack: 5, max: 50 }) &&
+      JSON.stringify(berserkPercents(null)) ===
+        JSON.stringify({ perStack: 0, max: 0 }) &&
+      JSON.stringify(berserkPercents(heroSkillOf("zhu_ge_liang"))) ===
+        JSON.stringify({ perStack: 0, max: 0 }) &&
+      atks[0] === 125 &&
+      Math.abs(atks[1] - 131.25) < 1e-9 &&
+      Math.abs(atks[2] - 137.5) < 1e-9 &&
+      Math.abs(atks[3] - 187.5) < 1e-9 &&
+      stormPercent(lb) === 0 &&
+      JSON.stringify(chainPercents(lb)) === "[]" &&
+      doubleShotPercent(lb) === 0 &&
+      effectiveRange(lb, 2) === 2 &&
+      burnTickDamage(lb, 125) === 0 &&
+      text.includes(
+        "這位武將自己的普通攻擊打倒一名敵人後，從下一擊起攻擊力增加目前等級攻擊力的 5%，可以疊加，最多 10 層（+50%）；打倒敵人的那一擊照原本的層數計算"
+      ) &&
+      text.includes("加法疊加，不是連乘") &&
+      text.includes(
+        "以目前攻擊力 125 為例：每層 +6.25，1 層 131.25、2 層 137.5、最多 10 層 187.5；每場戰鬥都從 0 層（125）開始。"
+      ) &&
+      !noAtk.includes("以目前攻擊力") &&
+      text.includes("只算自己普通攻擊的最後一擊") &&
+      text.includes(
+        "其他武將、防禦塔、灼燒、反擊或範圍傷害打倒的敵人、敵人漏到城池都不算"
+      ) &&
+      text.includes("同一個敵人只算一次") &&
+      text.includes("換波次、移動位置、升級、移出隊伍再放回都保留") &&
+      text.includes("切換關卡或重新開始從 0 層開始，不寫進存檔") &&
+      text.includes("攻擊間隔、射程、防禦與生命不變，擊殺與金幣照常只算一次") &&
+      text.includes("「ATK+5%」") &&
+      text.includes("「ATK+50% MAX」") &&
+      text.includes("選取當時的數值，重新點選可以更新") &&
+      text.includes("只在戰場生效，不影響存檔") &&
+      small.includes("最多 3 層（+30%）") &&
+      small.includes("每層 +10，1 層 110、2 層 120、最多 3 層 130") &&
+      others.length === 0,
+    { lb, payload, text, noAtk, small, atks, others }
   );
 });
 
@@ -3545,6 +3652,7 @@ await test("呼風喚雨-S1", async () => {
 // 魏延是吸血（「吸血：恢復生命」）；曹操是攻速光環（「指揮：提升友軍攻速」）；夏侯惇是反擊（「反擊：受傷時反彈傷害」）；
 // 廖化是堅韌（「堅韌：低血量減傷」）；顏良是威壓（「威壓：降低敵軍攻擊」）；孫尚香是連射（「連射：有機率二次攻擊」）；
 // 龐統是連環計（「連環計：傳遞傷害」，鏈式傳遞，不是橫掃）；諸葛亮是呼風喚雨（「呼風喚雨：大範圍傷害」，以被打中的敵人為中心的範圍，不是橫掃原型）；
+// 呂布是戰神（「戰神：攻擊力隨殺敵增加」，自己普通攻擊的擊殺疊層）；
 // 甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
 await test("技能對照-S1", async () => {
   const { heroSkillOf, heroSkillPayload } = require(
@@ -3567,6 +3675,7 @@ await test("技能對照-S1", async () => {
     "sun_shang_xiang",
     "pang_tong",
     "zhu_ge_liang",
+    "lv_bu",
   ];
   const got = Object.fromEntries(
     ids.map((id) => [id, heroSkillOf(id)?.id ?? null])
@@ -3575,7 +3684,7 @@ await test("技能對照-S1", async () => {
     (id) => heroSkillPayload(id).skill?.id === "first_strike"
   );
   check(
-    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）、顏良 atk_down_aura（威壓）、孫尚香 double_shot（連射）、龐統 chain（連環計）、諸葛亮 storm（呼風喚雨）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
+    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）、顏良 atk_down_aura（威壓）、孫尚香 double_shot（連射）、龐統 chain（連環計）、諸葛亮 storm（呼風喚雨）、呂布 berserk（戰神）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
     JSON.stringify(got) ===
       JSON.stringify({
         ma_chao: "first_strike",
@@ -3594,6 +3703,7 @@ await test("技能對照-S1", async () => {
         sun_shang_xiang: "double_shot",
         pang_tong: "chain",
         zhu_ge_liang: "storm",
+        lv_bu: "berserk",
       }) &&
       JSON.stringify(firstStrike) === '["ma_chao"]' &&
       !Object.values(got).includes("sweep") &&
