@@ -1,6 +1,6 @@
 :HL["https://qwer820921.github.io/_next/static/chunks/0o2a6c-qdf3qn.css","style"]
 :HL["https://qwer820921.github.io/_next/static/chunks/04x.4aw9cjgob.css","style"]
 :HL["https://qwer820921.github.io/_next/static/chunks/16mfisom4_k2d.css","style"]
-:HL["https://qwer820921.github.io/_next/static/chunks/15_jubxut4r47.css","style"]
+:HL["https://qwer820921.github.io/_next/static/chunks/04v747cf.xsw3.css","style"]
 :HL["/logo192.png","image"]
-0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"(games)","param":null,"prefetchHints":0,"slots":{"children":{"name":"shenmaSanguo","param":null,"prefetchHints":0,"slots":{"children":{"name":"heroes","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}}}},"staleTime":300,"buildId":"FU4ulMB4edg3BOrRcZo-m"}
+0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"(games)","param":null,"prefetchHints":0,"slots":{"children":{"name":"shenmaSanguo","param":null,"prefetchHints":0,"slots":{"children":{"name":"heroes","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}}}},"staleTime":300,"buildId":"uFjVfB_q7f2CxN_SuFR3o"}
