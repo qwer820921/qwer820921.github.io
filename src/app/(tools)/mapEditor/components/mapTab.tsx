@@ -15,7 +15,12 @@ import { useDialogFocus } from "@/app/(games)/shenmaSanguo/components/useDialogF
 import type { EnemyConfig, MapConfig } from "@/app/(games)/shenmaSanguo/types";
 import {
   ADMIN_TOKEN_MISSING,
+  AdminWriteInfo,
+  NO_WRITE_INFO,
   adminErrorText,
+  adminFailureText,
+  adminWriteInfoOf,
+  adminWriteState,
   forgetAdminToken,
   requireAdminToken,
 } from "../utils/adminToken";
@@ -340,15 +345,22 @@ async function gasCall(action: string, payload: object) {
 
 /**
  * 設定寫入失敗：unknown 是結果不明（請求送出後連線失敗或回應看不懂，後端可能已經寫入），
- * 其他是確定沒有完成（沒有送出，或後端回了錯誤狀態）；code 是後端的錯誤代碼（例如 MAP_ID_EXISTS）
+ * 其他是後端回了錯誤狀態（或沒有送出）；code 是後端的錯誤代碼（例如 MAP_ID_EXISTS）。
+ * 後端回了錯誤也不代表沒有寫入：info 保留回應的 written／stage／紀錄／備份，用 writeState() 判斷
  */
 class AdminCallError extends Error {
   constructor(
     message: string,
     readonly unknown: boolean,
-    readonly code: string | null = null
+    readonly code: string | null = null,
+    readonly info: AdminWriteInfo = NO_WRITE_INFO
   ) {
     super(message);
+  }
+
+  /** 後端回了錯誤時設定表有沒有被改：written 已寫入、not_written 沒有、unknown 不能確定 */
+  writeState() {
+    return adminWriteState(this.code ?? "", this.info);
   }
 }
 
@@ -359,7 +371,11 @@ class AdminCallError extends Error {
 async function gasAdminCall(action: string, payload: object) {
   const token = await requireAdminToken();
   if (!token) {
-    throw new AdminCallError(adminErrorText(ADMIN_TOKEN_MISSING), false);
+    throw new AdminCallError(
+      adminErrorText(ADMIN_TOKEN_MISSING),
+      false,
+      ADMIN_TOKEN_MISSING
+    );
   }
   let data;
   try {
@@ -370,14 +386,20 @@ async function gasAdminCall(action: string, payload: object) {
   if (data?.error === "ADMIN_REQUIRED") forgetAdminToken();
   if (data?.status !== 200) {
     const code = String(data?.error || "儲存失敗");
+    const info = adminWriteInfoOf(data);
     throw new AdminCallError(
-      adminErrorText(code),
+      adminFailureText(code, info),
       typeof data?.status !== "number",
-      code
+      code,
+      info
     );
   }
   return data;
 }
+
+/** 後端回了錯誤、但不是「確定沒有寫入」（已寫入或不能確定）：不能說成沒有保存 */
+const mayHaveWritten = (e: unknown) =>
+  e instanceof AdminCallError && !e.unknown && e.writeState() !== "not_written";
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -1005,10 +1027,14 @@ export default function MapTab({
 
   /**
    * 儲存波次：沒有選敵人的組（與濾完沒有組的波次）不送出；成功後只讀地重新讀回，以讀回的波次為「已保存」的基準。
-   * 送出前先只讀地確認設定裡有這張地圖（get_map_config）：後端的 save_waves_config 不檢查地圖是否存在，
+   * 送出前先只讀地確認設定裡有這張地圖（get_map_config）：目前正式後端的 save_waves_config 不檢查地圖是否存在，
    * 對不存在的 map_id 也會寫入，留下沒有地圖的波次列。確認只看存在與否，不改畫面、不建立已保存的基準；
    * 確認期間換了地圖（載入、新地圖、匯入、改 map_id）或改了波次時這次不送出，要重按（不會改送沒確認過的內容）。
-   * 這只是編輯器的保護：其他入口直接呼叫、或確認後地圖才被刪除時，後端仍可能留下這種列
+   * 這只是編輯器的保護：其他入口直接呼叫、或確認後地圖才被刪除時，正式後端仍可能留下這種列。
+   * 新版後端保存時會再確認（MAP_NOT_FOUND 等拒絕，說明見 adminErrorText）；寫入後才發現地圖不見
+   * （MAP_CHANGED_DURING_SAVE）或寫入後的檢查發生錯誤（POSTWRITE_CHECK_ERROR）時回 written: true：
+   * 波次其實已寫入，不當成保存成功、也不說沒有保存，不讀回、不重送。後端回了錯誤但不能確定有沒有寫入時
+   * （寫到一半、讀回不同、看不懂的錯誤）同樣不說沒有保存
    */
   const handleSaveWaves = async () => {
     const id = mapId;
@@ -1077,6 +1103,15 @@ export default function MapTab({
           `✗ 「${ctx.mapId}」無法確定波次是否已保存（${e.message}）：可能已寫入，也可能沒有；不會自動重送，可以按「重新讀回波次」確認設定裡的波次`
         );
         setWavesReadbackPending({ ...ctx, saved: false });
+      } else if (e instanceof AdminCallError && e.writeState() === "written") {
+        // 已寫入但後端不算成功（寫入後地圖不見、寫入後的檢查發生錯誤）：說明以「已寫入」開頭
+        setWaveMsg(
+          `⚠ 「${ctx.mapId}」的波次${e.message}。畫面保留你的波次並標示尚未保存，沒有重送`
+        );
+      } else if (mayHaveWritten(e)) {
+        setWaveMsg(
+          `⚠ 「${ctx.mapId}」無法確定波次是否已寫入：${errText(e)}。不會自動重送；畫面保留你的波次並標示尚未保存，請先唯讀核對設定裡的波次`
+        );
       } else {
         setWaveMsg(`✗ 「${ctx.mapId}」的波次沒有保存：${errText(e)}`);
       }
@@ -1660,6 +1695,12 @@ export default function MapTab({
           `✗ 「${ctx.mapId}」無法確定是否已保存（${e.message}）：可能已寫入，也可能沒有；不會自動重送，可以按「重新讀回」確認設定裡的內容`
         );
         setReadbackPending({ ...ctx, saved: false });
+      } else if (mayHaveWritten(e)) {
+        endStatus(
+          op,
+          "error",
+          `⚠ 「${ctx.mapId}」無法確定是否已保存：${errText(e)}。不會自動重送`
+        );
       } else {
         endStatus(op, "error", `✗ 「${ctx.mapId}」沒有保存：${errText(e)}`);
       }
@@ -1720,6 +1761,12 @@ export default function MapTab({
           op,
           "error",
           `✗ 設定裡已經有「${id}」，這次沒有新增，也沒有覆寫設定裡的地圖；畫面保留草稿。要編輯設定裡的版本請用「載入」（會取代畫面上尚未保存的內容），或把 map_id 改成新的再新增`
+        );
+      } else if (mayHaveWritten(e)) {
+        endStatus(
+          op,
+          "error",
+          `⚠ 無法確定「${id}」是否已新增：${errText(e)}。不會自動重送`
         );
       } else {
         endStatus(op, "error", `✗ 「${id}」沒有新增：${errText(e)}`);

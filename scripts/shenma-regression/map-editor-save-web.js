@@ -12,6 +12,8 @@ async (page) => {
   //   保存期間切換地圖、管理密碼錯誤）、
   //   儲存波次前確認地圖存在（設定裡沒有→不問密碼不寫入、讀取失敗→只讀重新確認、確認期間換圖或改波次→不送出）、
   //   新增地圖後讀回（建立已保存的基準、讀回失敗、結果不明已套用／沒有送到、同 map_id 已存在、讀回期間修改或換圖）、
+//   新版後端保存時再確認地圖（確認後、送出前地圖被刪除→MAP_NOT_FOUND 的中文說明、不留孤兒列；寫入後才不見→已寫入但不算成功、
+//   不讀回不重送；重複的 map_id；寫入後確認地圖時發生錯誤→已寫入但不算成功、不說沒有保存），內建模擬後端用 mapCheck 模擬新版契約，GAS_BACKEND 的後端要設 GAS_MAP_CHECK=1 才跑這段、
   //   素材轉換（有效圖片、無效檔案、取消）不加入素材選單、下載的檔案是 WebP；390 寬與矮畫面、鍵盤
   // - 預設用腳本內建的模擬後端；tools/run-browser.mjs 設定 GAS_BACKEND 為提供 setMapTables 等介面的模組時，
   //   改由那個模組處理（例如在模擬試算表上執行真正的後端程式）
@@ -113,10 +115,33 @@ async (page) => {
         return { status: 200, success: true, message: "MAP_UPDATED" };
       }
       if (body.action === "save_waves_config") {
-        // 和後端相同：不檢查地圖是否存在（對不存在的 map_id 也照樣寫入）
+        // 和目前正式後端相同：不檢查地圖是否存在（對不存在的 map_id 也照樣寫入）。
+        // 控制旗標 mapCheck 時模擬新版後端：保存時再確認地圖（空白 400、沒有 404、重複 409，零寫入）；
+        // mapGoneAfterWrite 是 map_id 時，寫入後把那張地圖從設定刪掉，回 409 MAP_CHANGED_DURING_SAVE（波次已寫入）；
+        // mapThrowAfterWrite 是 map_id 時，寫入後確認地圖發生錯誤，回 500 POSTWRITE_CHECK_ERROR（波次已寫入、地圖不變）
+        const c = read(CTRL, {});
         const id = String(p.map_id).trim();
+        const hits = () => t.maps.rows.filter((r) => String(r[0]).trim() === id).length;
+        if (c.mapCheck) {
+          if (typeof p.map_id !== "string" || !id) return { status: 400, error: "MISSING_MAP_ID" };
+          if (hits() === 0) return { status: 404, error: "MAP_NOT_FOUND", map_id: id, stage: "precheck" };
+          if (hits() > 1) return { status: 409, error: "MAP_ID_DUPLICATE", map_id: id, stage: "precheck" };
+        }
         t.waves.rows = t.waves.rows.filter((r) => String(r[0]).trim() !== id);
         (p.waves || []).forEach((w) => (w.enemies || []).forEach((e) => t.waves.rows.push([id, w.wave, e.enemy_id, Number(e.count), Number(e.interval), e.path || "path_a"])));
+        if (c.mapCheck && c.mapGoneAfterWrite === id) {
+          delete c.mapGoneAfterWrite;
+          write(CTRL, c);
+          t.maps.rows = t.maps.rows.filter((r) => String(r[0]).trim() !== id);
+          write(TABLES, t);
+          return { status: 409, error: "MAP_CHANGED_DURING_SAVE", reason: "MAP_NOT_FOUND", written: true, map_id: id, stage: "postwrite" };
+        }
+        if (c.mapCheck && c.mapThrowAfterWrite === id) {
+          delete c.mapThrowAfterWrite;
+          write(CTRL, c);
+          write(TABLES, t);
+          return { status: 500, error: "POSTWRITE_CHECK_ERROR", stage: "postwrite", written: true, op_id: "mock-op-postwrite", backup: "_bk_waves_config_mock_postwrite", journal_status: "check_failed", journal_ok: true };
+        }
         write(TABLES, t);
         return { status: 200, success: true, message: "WAVES_SAVED" };
       }
@@ -216,11 +241,19 @@ async (page) => {
     await page.locator('[data-testid="admin-token-submit"]').click();
   };
   const update = () => btn("更新至 Sheet").click();
+  // MAP_EDITOR_ONLY=<段落名稱,...>：只跑這些段落（定位單一段落用；其他段落記在 out.skippedSections，不算通過）
+  const ONLY = String(proc.env.MAP_EDITOR_ONLY || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (ONLY.length) out.onlySections = ONLY;
   const section = async (name, fn) => {
+    if (ONLY.length && !ONLY.includes(name)) {
+      (out.skippedSections = out.skippedSections || []).push(name);
+      return;
+    }
     try {
       await fn();
     } catch (e) {
-      run.check(`${name}：執行時發生例外`, false, String(e && e.stack ? e.stack.split("\n").slice(0, 3).join(" | ") : e).slice(0, 400));
+      // Playwright 的 call log 前三行只有「等待 locator」，真正的原因（找不到選項、元素不可用等）在後面幾行
+      run.check(`${name}：執行時發生例外`, false, String(e && e.stack ? e.stack.split("\n").slice(0, 10).join(" | ") : e).slice(0, 1200));
       try { out[name + "_shot"] = await H.shot(page, `map-editor-save-${name}-exception`); } catch { /* 截圖失敗不影響判定 */ }
     }
   };
@@ -271,13 +304,15 @@ async (page) => {
   })));
   const serverWaves = async (id) => (await serverTables()).waves.rows.filter((r) => String(r[0]) === id).map((r) => [Number(r[1]), r[2], Number(r[3])]);
   const waveItem = (wi) => page.locator('[data-testid="wave-item"]').nth(wi);
+  // 一組的敵人欄（第一格）：敵人設定讀完之前是文字輸入框，讀完才換成下拉；同一列的「路徑」也是下拉，不能用「這列第一個 select」
+  const enemyCell = (wi, ei) => waveItem(wi).locator("tbody tr").nth(ei).locator("td").first();
   const addWave = async () => {
     const n = await page.locator('[data-testid="wave-item"]').count();
     await btn("＋ 新增波次").click();
-    await page.locator('[data-testid="wave-item"]').nth(n).locator("tbody tr select").first().waitFor({ timeout: 10000 });
+    await enemyCell(n, 0).locator("select").waitFor({ timeout: 10000 });
   };
   const addEnemyTo = (wi) => waveItem(wi).getByRole("button", { name: "＋ 新增敵人" }).click();
-  const setEnemy = (wi, ei, id) => waveItem(wi).locator("tbody tr").nth(ei).locator("select").first().selectOption(id);
+  const setEnemy = (wi, ei, id) => enemyCell(wi, ei).locator("select").selectOption(id);
   const setCount = (wi, ei, n) => waveItem(wi).locator("tbody tr").nth(ei).locator('input[type="number"]').first().fill(String(n));
   const saveWaves = () => btn("儲存波次至 Sheet").click();
 
@@ -1283,6 +1318,127 @@ async (page) => {
     const r14 = { msg: await status(), waves: (await screenWaves()).length, server: await serverWaves(ORPHAN) };
     run.check("地圖存在-15 新增的 map_id 在波次表原本就有 2 波（沒有地圖的列）：讀回說明設定裡原本就有 2 波、儲存波次會整批取代；畫面上的 0 波沒有被舊波次取代",
       /原本就有 2 波波次/.test(r14.msg) && r14.waves === 0 && r14.server.length === 2, r14);
+  });
+
+  // ── 16b. 新版後端保存時再確認地圖（候選契約）──
+  // 內建模擬用 mapCheck 模擬新版契約；GAS_BACKEND 的後端要另外設 GAS_MAP_CHECK=1（表示這個後端版本會檢查），
+  // 而且模組要提供 removeMapRow／duplicateMapRow／removeMapDuringNextWavesWrite（模擬管理者在試算表上手動改 maps_config）、
+  // throwMapReadDuringNextWavesWrite（寫入後確認地圖時讀取失敗）與 configJournal／sheetNames（核對紀錄與備份）
+  const MAP_CHECK = node ? proc.env.GAS_MAP_CHECK === "1" && typeof node.removeMapRow === "function" && typeof node.throwMapReadDuringNextWavesWrite === "function" : true;
+  out.mapBackendCheck = MAP_CHECK ? (node ? "gas-backend" : "built-in mapCheck") : "skipped（GAS_BACKEND 沒有設 GAS_MAP_CHECK=1，或模組沒有模擬方法）";
+  if (MAP_CHECK) await section("map-backend-check", async () => {
+    const editMaps = async (fn) => {
+      const tb = await page.evaluate(() => JSON.parse(localStorage.getItem("__shenma_mapmeta_tables")));
+      fn(tb.maps.rows);
+      await page.evaluate((tb) => localStorage.setItem("__shenma_mapmeta_tables", JSON.stringify(tb)), tb);
+    };
+    const removeServerMap = (id) => (node ? node.removeMapRow(id) : editMaps((rows) => rows.splice(0, rows.length, ...rows.filter((r) => String(r[0]).trim() !== id))));
+    const duplicateServerMap = (id) => (node ? node.duplicateMapRow(id) : editMaps((rows) => { const r = rows.find((x) => String(x[0]).trim() === id); rows.push([" " + id, ...r.slice(1)]); }));
+    const goneAfterWrite = (id) => (node ? node.removeMapDuringNextWavesWrite(id) : setCtrl({ mapGoneAfterWrite: id }));
+    if (!node) await setCtrl({ mapCheck: 1 });
+    await openEditor();
+    let tokenEntered = false;
+    const createNew = async (id, name) => {
+      await newMap(id, name);
+      await btn("新增至 Sheet").click();
+      if (!tokenEntered) await enterToken(TOKEN); // 新開的編輯器頁面第一次寫入時詢問管理密碼
+      tokenEntered = true;
+      await waitStatus(new RegExp(`「${id}」已新增並重新讀回`));
+      await addWave();
+      await setEnemy(0, 0, "grunt_lv1");
+    };
+    const after = async (t0) => (await reqLog()).filter((e) => e.t > t0);
+    const othersOf = async (id) => JSON.stringify((await serverTables()).waves.rows.filter((r) => String(r[0]).trim() !== id));
+
+    // (1) 只讀確認存在（200）之後、保存送到後端之前地圖被刪除：後端拒絕，中文說明、不留孤兒列、不讀回不重送
+    const A = "chapter_mapcheck_gone";
+    await createNew(A, "保存前被刪除的地圖");
+    await setCtrl({ holdSave: 1 });
+    await saveWaves();
+    await waitHeld("__mapmetaHeldSave");
+    const pre = await lastOf("get_map_config");
+    await removeServerMap(A);
+    const othersA = await othersOf(A);
+    const t1 = Date.now();
+    await setCtrl({ holdSave: 0 });
+    await releaseSaves();
+    await waitWave(new RegExp(`「${A}」的波次沒有保存`));
+    await H.sleep(400);
+    const l1 = await after(t1);
+    const r1 = {
+      msg: await waveText(), pre: [pre.map_id, pre.status], save: l1.filter((e) => e.action === "save_waves_config").map((e) => [e.status, e.error]),
+      gets: l1.filter((e) => e.action === "get_map_config").length, server: await serverWaves(A), othersSame: (await othersOf(A)) === othersA,
+      retry: await page.locator('[data-testid="waves-readback-retry"]').count(), screen: (await screenWaves()).length, dirty: await dirtyText(),
+    };
+    await H.shot(page, "map-editor-save-backend-check-gone");
+    run.check("後端確認-1 確認設定裡有這張地圖之後、保存送到後端之前地圖被刪除：後端回 404 MAP_NOT_FOUND，說明設定裡沒有這張地圖、可能剛被刪除、這次沒有寫入（不顯示英文代碼）；波次表沒有留下這個 map_id 的列、其他地圖不變；沒有讀回、沒有重送；畫面保留 1 波並標示尚未保存",
+      r1.pre[0] === A && r1.pre[1] === 200 && same(r1.save, [[404, "MAP_NOT_FOUND"]]) && /沒有這張地圖/.test(r1.msg) && /剛被刪除/.test(r1.msg) && /沒有寫入/.test(r1.msg) && !/MAP_NOT_FOUND/.test(r1.msg) &&
+        r1.server.length === 0 && r1.othersSame && r1.gets === 0 && r1.retry === 0 && r1.screen === 1 && /波次有尚未保存的修改/.test(r1.dirty),
+      r1);
+
+    // (2) 寫入後才發現地圖不見：波次已寫入，但不說成功也不說沒有保存；不讀回、不重送
+    const B = "chapter_mapcheck_late";
+    await createNew(B, "寫入後被刪除的地圖");
+    await goneAfterWrite(B);
+    const t2 = Date.now();
+    await saveWaves();
+    await waitWave(new RegExp(`「${B}」的波次已寫入`));
+    await H.sleep(400);
+    const l2 = await after(t2);
+    const r2 = {
+      msg: await waveText(), save: l2.filter((e) => e.action === "save_waves_config").map((e) => [e.status, e.error]),
+      // 保存之後的讀取（保存前的「確認存在」不算）
+      gets: l2.filter((e) => e.action === "get_map_config" && e.map_id === B && e.t > (l2.find((x) => x.action === "save_waves_config") || { t: 0 }).t).length,
+      server: await serverWaves(B), mapRow: await row(B),
+      retry: await page.locator('[data-testid="waves-readback-retry"]').count(), dirty: await dirtyText(),
+    };
+    await H.shot(page, "map-editor-save-backend-check-late");
+    run.check("後端確認-2 寫入後才發現地圖被刪除：後端回 409 MAP_CHANGED_DURING_SAVE；說明波次已寫入、不算保存成功、沒有自動還原、要管理者依 check_failed 處理，沒有說成功或沒有保存；試算表有這 1 列、地圖沒有被重建；只送出 1 次、沒有讀回；畫面仍標示尚未保存",
+      same(r2.save, [[409, "MAP_CHANGED_DURING_SAVE"]]) && /已寫入/.test(r2.msg) && /不算保存成功/.test(r2.msg) && /沒有自動還原/.test(r2.msg) && /check_failed/.test(r2.msg) &&
+        !/沒有保存/.test(r2.msg) && !/儲存成功/.test(r2.msg) && same(r2.server, [[1, "grunt_lv1", 5]]) && r2.mapRow === null && r2.gets === 0 && r2.retry === 0 && /波次有尚未保存的修改/.test(r2.dirty),
+      r2);
+
+    // (3) 設定裡有兩列同一個 map_id（一列有前後空白）：後端拒絕，說明重複、這次沒有寫入
+    const C = "chapter_mapcheck_dup";
+    await createNew(C, "重複 ID 的地圖");
+    await duplicateServerMap(C);
+    const t3 = Date.now();
+    await saveWaves();
+    await waitWave(new RegExp(`「${C}」的波次沒有保存`));
+    const l3 = await after(t3);
+    const r3 = { msg: await waveText(), save: l3.filter((e) => e.action === "save_waves_config").map((e) => [e.status, e.error]), server: await serverWaves(C) };
+    run.check("後端確認-3 設定裡有兩列同一個 map_id：後端回 409 MAP_ID_DUPLICATE，說明有兩列以上、要刪除重複的列、這次沒有寫入；波次表沒有這個 map_id 的列",
+      same(r3.save, [[409, "MAP_ID_DUPLICATE"]]) && /兩列以上/.test(r3.msg) && /沒有寫入/.test(r3.msg) && r3.server.length === 0, r3);
+
+    // (4) 寫入並讀回核對之後，確認地圖時讀取發生錯誤：波次已寫入，不說沒有保存或沒有改變；不讀回、不重送；備份與紀錄保留
+    const D = "chapter_mapcheck_throw";
+    await createNew(D, "寫入後確認失敗的地圖");
+    if (node) node.throwMapReadDuringNextWavesWrite();
+    else await setCtrl({ mapThrowAfterWrite: D });
+    const mapBefore = JSON.stringify(await row(D));
+    const t4 = Date.now();
+    await saveWaves();
+    await waitWave(new RegExp(`「${D}」(的波次|無法確定)`));
+    await H.sleep(400);
+    const l4 = await after(t4);
+    const saveAt = (l4.find((x) => x.action === "save_waves_config") || { t: 0 }).t;
+    const j4 = node ? node.configJournal().filter((e) => e.table === "waves_config").pop() : null;
+    const r4 = {
+      msg: await waveText(), save: l4.filter((e) => e.action === "save_waves_config").map((e) => [e.status, e.error]),
+      gets: l4.filter((e) => e.action === "get_map_config" && e.t > saveAt).length,
+      server: await serverWaves(D), mapSame: JSON.stringify(await row(D)) === mapBefore,
+      retry: await page.locator('[data-testid="waves-readback-retry"]').count(), dirty: await dirtyText(),
+      journal: j4 ? { status: j4.status, backup: j4.backup_sheet, kept: node.sheetNames().includes(j4.backup_sheet) } : "built-in（沒有 _config_backups）",
+    };
+    const backupName = node ? r4.journal.backup : "_bk_waves_config_mock_postwrite";
+    await H.shot(page, "map-editor-save-backend-check-postwrite-error");
+    run.check("後端確認-4 寫入並讀回核對之後確認地圖時發生錯誤：後端回 500 POSTWRITE_CHECK_ERROR；說明波次已寫入、不算保存成功、沒有自動還原、不要直接重送、check_failed 與寫入前內容的備份，不說沒有保存或沒有改變；試算表有這 1 列、地圖不變；只送出 1 次、沒有讀回；畫面仍標示尚未保存；後端紀錄 check_failed、備份保留",
+      same(r4.save, [[500, "POSTWRITE_CHECK_ERROR"]]) && /已寫入/.test(r4.msg) && /不算保存成功/.test(r4.msg) && /沒有自動還原/.test(r4.msg) && /不要直接重送/.test(r4.msg) &&
+        /check_failed/.test(r4.msg) && r4.msg.includes(backupName) && !/沒有保存|沒有改變|沒有寫入/.test(r4.msg) &&
+        same(r4.server, [[1, "grunt_lv1", 5]]) && r4.mapSame && r4.gets === 0 && r4.retry === 0 && /波次有尚未保存的修改/.test(r4.dirty) &&
+        (!node || (r4.journal.status === "check_failed" && r4.journal.kept)),
+      r4);
+    if (!node) await setCtrl({ mapCheck: 0 });
   });
 
   // ── 17. 素材轉換：有效圖片、無效檔案、取消；不加入素材選單 ──
