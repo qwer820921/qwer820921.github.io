@@ -191,7 +191,8 @@ async (page) => {
         noOverflow: panel ? panel.scrollWidth <= panel.clientWidth + 1 && document.documentElement.scrollWidth <= window.innerWidth : false,
       };
     });
-  const SNAP_TEXT = "生命值與防禦是選取時的數值，重新點選武將可更新";
+  // 生命值與防禦是選取時的快照；有戰況觀測（新版遊戲）時生命值改為即時，說明寫明防禦與攻擊間隔仍是選取時的數值
+  const SNAP_TEXTS = ["生命值與防禦是選取時的數值，重新點選武將可更新", "生命值與技能狀態是目前的戰況（遊戲每 0.25 秒更新）；防禦與攻擊間隔是選取時的數值，重新點選武將可更新"];
   // 在戰場點護衛：面板的防禦欄與說明
   const panelDef = async (sel) => {
     await clickCell(sel, ALLY_CELL[0], ALLY_CELL[1]);
@@ -341,7 +342,7 @@ async (page) => {
     out.B_panel = { p1, p390, panelShot, panelShot390 };
     run.check("B-3 在戰場點護衛：面板的防禦是「120 → 144」（原本與加成後分開列出），說明寫明防禦光環、只在範圍內、不改存檔，並看得到「生命值與防禦是選取時的數值，重新點選武將可更新」；390×844 面板與說明在畫面內、沒有橫向溢出",
       p1.name && /護衛/.test(p1.name) && p1.text === "120 → 144" && p1.def === DEF && near(p1.eff, 144) && /防禦光環/.test(p1.note || "") && /不改存檔/.test(p1.note || "") &&
-        p1.snap === SNAP_TEXT && p1.snapVisible && p390.text === "120 → 144" && p390.inView && p390.snap === SNAP_TEXT && p390.snapVisible && p390.noOverflow,
+        SNAP_TEXTS.includes(p1.snap) && p1.snapVisible && p390.text === "120 → 144" && p390.inView && SNAP_TEXTS.includes(p390.snap) && p390.snapVisible && p390.noOverflow,
       out.B_panel);
 
     // 先點護衛打開面板（有加成），面板開著時把劉備移出隊伍（隊伍視窗保存後送出的同一個 update_team），護衛的加成撤除
@@ -357,9 +358,9 @@ async (page) => {
     await closePanel();
     out.B_removed = { ...h2, want: HIT_PLAIN, panelOpen: pOpen, panelStillOpen: pStale, panelReselected: p2, staleShot, reShot };
     run.check(`B-4 面板開著時把劉備移出隊伍：開著的面板不會即時改變（仍是選取時的「120 → 144」與「選取時的數值」說明）；重新點選護衛後防禦只剩 120、沒有加成說明、仍有選取時的說明；護衛回到 1 倍（沒有來源、有效防禦 120），每擊扣 ${HIT_PLAIN.toFixed(4)}`,
-      pOpen.text === "120 → 144" && pStale.open && pStale.text === "120 → 144" && pStale.snap === SNAP_TEXT && pStale.snapVisible &&
+      pOpen.text === "120 → 144" && pStale.open && pStale.text === "120 → 144" && SNAP_TEXTS.includes(pStale.snap) && pStale.snapVisible &&
         h2.attacks >= 2 && near(h2.per, HIT_PLAIN) && !!h2.ally && h2.ally.bonus === 1 && h2.ally.sources === 0 && near(h2.ally.effective, DEF) && h2.liu === null &&
-        p2.text === "120" && p2.note === null && p2.snap === SNAP_TEXT && p2.snapVisible,
+        p2.text === "120" && p2.note === null && SNAP_TEXTS.includes(p2.snap) && p2.snapVisible,
       out.B_removed);
 
     // 舊版遊戲：武將面板沒有送防禦資料（def／def_effective），照原本的面板顯示，不出現防禦欄與選取時的說明

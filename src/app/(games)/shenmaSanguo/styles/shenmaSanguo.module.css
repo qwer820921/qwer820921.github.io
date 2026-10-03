@@ -2060,7 +2060,7 @@
 
 /* ── 神馬三國的視窗開啟時，暫時隱藏全站浮動入口（說明、聊天；標記 data-floating-entry） ──
    浮動入口的層級高於遊戲視窗，會蓋住視窗文字、搶走點擊。只要頁面上有神馬三國的視窗
-   （modalBackdrop、結算、金鑰設定、戰場上的選取面板與部署選單，或神馬頁面裡的 react-bootstrap Modal）
+   （modalBackdrop、結算、金鑰設定、戰場上的選取面板與部署選單、接在戰場下方的戰況，或神馬頁面裡的 react-bootstrap Modal）
    就隱藏，關閉後自動恢復；其他網站頁面沒有這些元素，不受影響。新的視窗沿用 modalBackdrop 就會一起套用，
    不需要再調 z-index */
 :global(body):has(
@@ -2068,7 +2068,8 @@
     .resultOverlay,
     .keySetupOverlay,
     .upgradePanel,
-    .placementOverlay
+    .placementOverlay,
+    .battleLiveBelow:not([hidden])
   )
   :global([data-floating-entry]),
 :global(body.modal-open):has(.gameBody) :global([data-floating-entry]) {
@@ -3219,4 +3220,121 @@
 .battleTipsNote {
   margin: 4px 0 0;
   color: rgba(255, 255, 255, 0.72);
+}
+
+/* ── 戰況（BattleLivePanel）：武將技能與敵軍，只是查看；不疊在遊戲畫面上 ─────────── */
+/* 遊戲畫面右邊的空間夠寬（桌面）時固定在視窗右側（下方留給全站的聊天按鈕）；否則接在戰場區域下方，遊戲畫面依剩下的空間縮放。
+   接在下方時排在戰場與玩法提示後面（order），字級不小於 12px，內容超過時只有清單捲動 */
+.battleLive {
+  z-index: 8;
+  background: rgba(10, 15, 35, 0.9);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 6px 10px 8px;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+.battleLiveBelow {
+  position: relative;
+  order: 2;
+  flex: none;
+  align-self: stretch;
+  margin: 4px 8px calc(8px + var(--sg-bottom-notices-h, 0px));
+  max-height: 42dvh;
+  display: flex;
+  flex-direction: column;
+}
+/* 主頁的 HUD 疊在戰場區域上方：戰況接在下方時遊戲畫面往下讓出 HUD 的高度（同玩法提示），格子不會被 HUD 蓋住 */
+.singlePage:has(.battleLiveBelow:not([hidden])) .gamePortraitWrap {
+  padding-top: 82px;
+}
+.battleLiveSide {
+  position: fixed;
+  right: 12px;
+  top: 96px;
+  bottom: calc(84px + var(--sg-bottom-notices-h, 0px));
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+}
+.battleLiveTab {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.battleLiveTab:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.battleLiveTabOn {
+  background: rgba(99, 102, 241, 0.55);
+  border-color: rgba(165, 180, 252, 0.8);
+  font-weight: 700;
+}
+.battleLiveStatus {
+  margin: 4px 0;
+  color: #fcd34d;
+}
+.battleLiveBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.battleLiveEmpty,
+.battleLiveSummary,
+.battleLiveMuted {
+  color: rgba(255, 255, 255, 0.72);
+}
+.battleLiveList {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+.battleLiveItem {
+  padding: 4px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.battleLiveName {
+  font-weight: 700;
+}
+.battleLiveHp {
+  font-weight: 400;
+  margin-left: 0.5em;
+  color: rgba(255, 255, 255, 0.85);
+}
+.battleLiveSkill {
+  color: rgba(255, 255, 255, 0.9);
+}
+.battleLiveRow {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-top-color: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  padding: 3px 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.battleLiveRow:focus-visible {
+  outline: 2px solid #fcd34d;
+  outline-offset: -2px;
+}
+.battleLiveRowOn {
+  background: rgba(99, 102, 241, 0.35);
+  border-color: rgba(165, 180, 252, 0.7);
+}
+.battleLiveCell {
+  overflow-wrap: anywhere;
+}
+.battleLiveDetail {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.07);
 }

@@ -409,8 +409,8 @@ async (page) => {
     return { panel, box, shot };
   };
   const inside = (b) => !!b && b.left >= 0 && b.right <= b.vw && b.docScroll <= b.vw && b.font >= 12 && b.top >= b.panelTop && b.bottom <= b.panelBottom + 1 && b.bottom <= b.vh;
-  const UNUSED = /奇襲：選取時這一場還沒用過，下一次有效的普通攻擊必殺主要目標；每場一次，換波次、移位、升級、重新部署都不恢復（重新點選可以更新）/;
-  const USED = /奇襲：選取時這一場已經用過，切換關卡或重新開始才恢復；每場一次，換波次、移位、升級、重新部署都不恢復（重新點選可以更新）/;
+  const UNUSED = /奇襲：(?:選取時|目前)這一場還沒用過，下一次有效的普通攻擊必殺主要目標；每場一次，換波次、移位、升級、重新部署都不恢復（(?:重新點選可以更新|即時更新)）/;
+  const USED = /奇襲：(?:選取時|目前)這一場已經用過，切換關卡或重新開始才恢復；每場一次，換波次、移位、升級、重新部署都不恢復（(?:重新點選可以更新|即時更新)）/;
   // 第 1 波必殺的紀錄：普通攻擊 122、攻擊前 99999、補扣 99877、最後 0、打倒；攻擊 1 次
   const firstOk = (w1) =>
     !!w1 && !!w1.record && near(w1.record.normal, ATK) && near(w1.record.hp_before, POST_HP) && near(w1.record.hp_mid, POST_HP - ATK) &&

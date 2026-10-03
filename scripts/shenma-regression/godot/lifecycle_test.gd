@@ -179,7 +179,7 @@ func _run() -> void:
 	# stagedata 跑關卡資料未完成（沒有波次、波次或路線的格式不對）；enemyatk 跑敵人設定的對武將攻擊力；immune 跑免疫減速；
 	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）；stun 只跑張飛的暈眩（skills 也包含）；lifesteal 只跑魏延的吸血（skills 也包含）；
 	# atkspeed 只跑曹操的攻速光環（skills 也包含）；damage 只跑敵人受傷的入口（拒絕無效的傷害）；
-	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；chain 只跑龐統的連環計（skills 也包含）；storm 只跑諸葛亮的呼風喚雨（skills 也包含）；berserk 只跑呂布的戰神（skills 也包含）；supply 只跑魯肅的補給（skills 也包含）；knockback 只跑許褚的怪力（skills 也包含）；guard 只跑典韋的護衛（skills 也包含）；baseguard 只跑孫權的守護（skills 也包含）；assassinate 只跑甘寧的奇襲（skills 也包含）；charm 只跑貂蟬的魅惑與敵對可選的目標整合（skills 也包含）
+	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；chain 只跑龐統的連環計（skills 也包含）；storm 只跑諸葛亮的呼風喚雨（skills 也包含）；berserk 只跑呂布的戰神（skills 也包含）；supply 只跑魯肅的補給（skills 也包含）；knockback 只跑許褚的怪力（skills 也包含）；guard 只跑典韋的護衛（skills 也包含）；baseguard 只跑孫權的守護（skills 也包含）；assassinate 只跑甘寧的奇襲（skills 也包含）；charm 只跑貂蟬的魅惑與敵對可選的目標整合（skills 也包含）；observation 只跑戰況觀測（battle_observation）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -276,8 +276,10 @@ func _run() -> void:
 			await _assassinate_cases()
 		elif only == "charm":
 			await _charm_cases()
+		elif only == "observation":
+			await _observation_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、chain、storm、berserk、supply、knockback、guard、baseguard、assassinate、charm）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、chain、storm、berserk、supply、knockback、guard、baseguard、assassinate、charm、observation）", false)
 		_finish()
 		return
 
@@ -541,6 +543,9 @@ func _run() -> void:
 
 	# ── 貂蟬的魅惑（主目標受控 2 秒：停下來改打 1 格內其他敵人；受控的敵人仍計入波次，但武將與防禦塔都不選它）──
 	await _charm_cases()
+
+	# ── 戰況觀測（Web 的即時武將技能狀態與敵軍查看；最多每 0.25 秒一次，剩下時間照戰鬥時間）──
+	await _observation_cases()
 
 	_finish()
 
@@ -15965,6 +15970,316 @@ func _charm_cases() -> void:
 		d23.get("w1") == [0] and d23.get("prep") == [true, true] and d23.get("rows") == [["wave2", []], ["level2", [], 2], ["replaced", [], true]]
 			and d23.get("new_battle") == [true, [0], false, false, "source"],
 		d23)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 戰況觀測（battle_observation）：Web 的即時武將技能狀態與敵軍查看 ──
+# 觀測由 Main 主動送出（不需要 Web 的命令）：備戰與戰鬥中最多每 0.25 秒（牆鐘）一次，新的一場、狀態改變、部署、選取等立刻送。
+# 剩下的時間都是 BattleManager 的戰鬥時間：用「剩下時間＋送出後的戰鬥時間」是否固定來判斷，不用牆鐘
+
+## 觀測測試用的隊伍：甘寧（奇襲）、貂蟬（魅惑）、許褚（怪力）；敵人設定加上會走路的 ctr_walk 等
+func _ob_payload(battle_id: String, waves: Array) -> Dictionary:
+	var team: Array = [_r12_hero(AS_HERO, AS_SKILL.duplicate()), _r12_hero(CM_HERO, CM_SKILL.duplicate()), _r12_hero(KB_HERO, KB_SKILL.duplicate())]
+	var p: Dictionary = _r12_payload("observe_a", waves, battle_id, team)
+	p["heroes_config"].append({"hero_id": CM_HERO, "name": "貂蟬", "job": "mage", "attack_range": 3.0, "attack_speed": 0.5})
+	for c in CTR_ENEMIES:
+		p["enemies_config"].append(c.duplicate())
+	p["enemies_config"].append({"enemy_id": "ob_fly", "name": "F", "hp": 99999.0, "speed": 0.0, "movement_type": "flying"})
+	return p
+
+func _ob_last(rec: Node) -> Dictionary:
+	return rec.sent_observations.back() if not rec.sent_observations.is_empty() else {}
+
+func _ob_hero(o: Dictionary, hid: String) -> Dictionary:
+	for h in o.get("heroes", []):
+		if h.get("hero_id") == hid:
+			return h
+	return {}
+
+## 一份觀測的敵人和遊戲裡實際的敵人逐一對照：數量、順序（生成序號）、uid、生命、移動方式、受控與來源、攻擊力、移速、免疫減速
+func _ob_enemies_match(o: Dictionary) -> Dictionary:
+	var real: Array = _sw_enemies()
+	var list: Array = o.get("enemies", [])
+	var bad: Array = []
+	if list.size() != real.size() or int(o.get("enemy_total", -1)) != _wm().get_active_enemy_count():
+		bad.append({"size": list.size(), "real": real.size(), "total": o.get("enemy_total"), "active": _wm().get_active_enemy_count()})
+	for i in range(mini(list.size(), real.size())):
+		var e: Node = real[i]
+		var x: Dictionary = list[i]
+		var ok: bool = x.get("uid") == "%d-%d" % [_wm().get_generation(), e.spawn_seq] and int(x.get("seq")) == e.spawn_seq and x.get("enemy_id") == e.enemy_id \
+			and is_equal_approx(float(x.get("max_hp")), e.max_hp) and x.get("flying") == e.is_flying() and x.get("charmed") == e.is_charmed() \
+			and x.get("charm_source") == (e._charm_hero_id if e.is_charmed() else "") and is_equal_approx(float(x.get("atk")), e.blocker_atk) \
+			and is_equal_approx(float(x.get("speed")), e.base_speed) and x.get("immune_slow") == e.immune_slow
+		if not ok:
+			bad.append({"i": i, "obs": x, "real": [e.spawn_seq, e.enemy_id, e.is_charmed(), e.blocker_atk, e.base_speed]})
+	return {"ok": bad.is_empty(), "bad": bad.slice(0, 3)}
+
+## 收集 sec 秒（牆鐘）內每一份新的觀測：送出那一幀之後（下一幀開始時）的戰鬥時間、某位武將技能的剩下時間與 seq
+func _ob_track(rec: Node, hid: String, sec: float) -> Array:
+	var out: Array = []
+	var seen: int = rec.sent_observations.size()
+	var t0: int = Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < int(sec * 1000.0):
+		await process_frame
+		while seen < rec.sent_observations.size():
+			var o: Dictionary = rec.sent_observations[seen]
+			seen += 1
+			var h: Dictionary = _ob_hero(o, hid)
+			var sk: Dictionary = h.get("skill", {})
+			out.append({"seq": int(o.seq), "bt": _bm().battle_time, "rem": float(sk.get("remaining", -1.0)), "paused": o.get("paused"), "state": o.get("state")})
+	return out
+
+## 剩下的時間跟著戰鬥時間：同一段冷卻內「剩下時間＋戰鬥時間」固定（容差一幀），冷卻結束後是 0
+func _ob_follows_battle_time(rows: Array, tol: float) -> Dictionary:
+	var drift: float = 0.0
+	var pairs: int = 0
+	for i in range(1, rows.size()):
+		var a: Dictionary = rows[i - 1]
+		var b: Dictionary = rows[i]
+		if a.rem > 0.0 and b.rem > 0.0 and b.rem <= a.rem + 1e-6:
+			drift = maxf(drift, absf((a.rem + a.bt) - (b.rem + b.bt)))
+			pairs += 1
+	return {"ok": pairs >= 2 and drift <= tol, "pairs": pairs, "drift": drift}
+
+func _observation_cases() -> void:
+	# 觀測-0：game_ready 宣告可選的功能 battle_observation（協定版本仍是 7，沒有新的命令）
+	var ready0: Dictionary = main.web_bridge.ready_message()
+	_check("觀測-0 game_ready 帶 capabilities [battle_observation]，協定版本仍是 7",
+		ready0.get("protocol") == 7 and ready0.get("capabilities") == ["battle_observation"], ready0)
+
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 觀測-1：新的一場（ob-1）：第一份 seq 1、備戰、沒有武將與敵人、lifecycle 與出兵世代和遊戲相同；備戰中照 0.25 秒（牆鐘）的間隔送、seq 每次加 1
+	_r19_js(rec, _ob_payload("ob-1", [[_grp("ctr_walk", 4, 0.3)]]))
+	await _wait_until_real(func(): return rec.sent_observations.size() >= 1, 2.0)
+	var o1: Dictionary = rec.sent_observations[0] if not rec.sent_observations.is_empty() else {}
+	var n1: int = rec.sent_observations.size()
+	await _wait_real(2.0)
+	var span1: Array = rec.sent_observations.slice(n1)
+	var gaps1: Array = []
+	for i in range(1, span1.size()):
+		gaps1.append(int(span1[i].__ms) - int(span1[i - 1].__ms))
+	var seq1: Array = rec.sent_observations.map(func(o): return int(o.seq))
+	var seq_ok1: bool = true
+	for i in range(seq1.size()):
+		if seq1[i] != i + 1:
+			seq_ok1 = false
+	_check("觀測-1 新的一場：第一份 seq 1、battle_id ob-1、備戰、沒有武將與敵人、lifecycle 與出兵世代和遊戲相同；備戰中 2 秒（牆鐘）送 6～9 份、相鄰至少 249 毫秒、seq 從 1 起每次加 1",
+		o1.get("seq") == 1 and o1.get("battle_id") == "ob-1" and o1.get("state") == 1 and o1.get("heroes") == [] and o1.get("enemies") == [] and o1.get("enemy_total") == 0 \
+			and o1.get("lifecycle") == _bm().lifecycle() and o1.get("generation") == _wm().get_generation() and o1.get("paused") == false \
+			and span1.size() >= 6 and span1.size() <= 9 and not gaps1.is_empty() and gaps1.min() >= 249 and seq_ok1,
+		{"first": o1, "span": span1.size(), "gaps": gaps1, "seq": seq1.slice(0, 12)})
+
+	# 觀測-2：部署甘寧後下一幀立刻送（不等 0.25 秒）：uid hero-N、格子、生命＝最大生命、技能 {assassinate、沒用過、剩 1}；
+	# 選取時的武將面板帶同一個 hero_uid 與這一場的 battle_id；選取改變也立刻送一份
+	var n2: int = rec.sent_observations.size()
+	var t2: int = Time.get_ticks_msec()
+	_r12_place(AS_HERO, Vector2i(2, 4))
+	await process_frame
+	await process_frame
+	var o2: Dictionary = _ob_last(rec)
+	var g2: Dictionary = _ob_hero(o2, AS_HERO)
+	var dt2: int = int(o2.get("__ms", 0)) - t2
+	var gnode: Node = main._placed_heroes.get(AS_HERO)
+	var np2: int = rec.sent_panels.size()
+	var no2: int = rec.sent_observations.size()
+	if gnode != null:
+		main._on_hero_clicked(gnode)
+	await process_frame
+	await process_frame
+	var panel2: Dictionary = rec.sent_panels.back() if rec.sent_panels.size() > np2 else {}
+	_check("觀測-2 部署甘寧後 2 幀內送出（不等 0.25 秒）：uid hero-N、格子 (2,4)、生命＝最大生命、技能 {assassinate, 沒用過, 剩 1}；武將面板帶同一個 hero_uid 與 battle_id ob-1；選取後也立刻送一份",
+		rec.sent_observations.size() > n2 and dt2 >= 0 and dt2 < 100 and str(g2.get("uid", "")).begins_with("hero-") and g2.get("cell") == [2, 4] \
+			and gnode != null and is_equal_approx(float(g2.get("hp", -1)), gnode.max_hp) and is_equal_approx(float(g2.get("max_hp", -1)), gnode.max_hp) \
+			and g2.get("skill") == {"id": "assassinate", "used": false, "remaining": 1} and panel2.get("hero_uid") == g2.get("uid") \
+			and panel2.get("battle_id") == "ob-1" and rec.sent_observations.size() > no2,
+		{"dt": dt2, "hero": g2, "panel": {"uid": panel2.get("hero_uid"), "battle": panel2.get("battle_id")}})
+
+	# 觀測-3：部署貂蟬與許褚、開戰：甘寧第一次有效的普通攻擊後，觀測的奇襲從「剩 1」變成「用過、剩 0」（面板不用重新點選）
+	_r12_place(CM_HERO, Vector2i(3, 4))
+	_r12_place(KB_HERO, Vector2i(2, 6))
+	var uids3: Array = []
+	await process_frame
+	await process_frame
+	for h in _ob_last(rec).get("heroes", []):
+		uids3.append(h.uid)
+	_bm().player_start_battle()
+	var used3: bool = await _wait_until_real(func(): return _ob_hero(_ob_last(rec), AS_HERO).get("skill", {}).get("used") == true, 15.0)
+	var s3: Dictionary = _ob_hero(_ob_last(rec), AS_HERO).get("skill", {})
+	_check("觀測-3 三位武將的 uid 都不同；開戰後甘寧用掉奇襲：觀測變成 {used: true, remaining: 0}，和 BattleManager 一致",
+		uids3.size() == 3 and uids3[0] != uids3[1] and uids3[1] != uids3[2] and uids3[0] != uids3[2] and used3 and s3.get("remaining") == 0 \
+			and not _bm().assassinate_ready(AS_HERO),
+		{"uids": uids3, "skill": s3})
+
+	# 觀測-4：魅惑的冷卻：成功控制後觀測的剩下時間從約 6 開始，照戰鬥時間遞減（剩下時間＋戰鬥時間固定，容差一幀），沒有用牆鐘
+	var cm_hit: bool = await _wait_until_real(func(): return float(_ob_hero(_ob_last(rec), CM_HERO).get("skill", {}).get("remaining", 0.0)) > 5.0, 10.0)
+	var rows4: Array = await _ob_track(rec, CM_HERO, 1.5)
+	var f4: Dictionary = _ob_follows_battle_time(rows4, 0.05)
+	var dec4: bool = rows4.size() >= 3 and float(rows4.front().rem) > float(rows4.back().rem)
+	_check("觀測-4 貂蟬成功控制後，觀測的冷卻剩下時間大於 5 秒並照戰鬥時間遞減：1.5 秒內每一份「剩下時間＋戰鬥時間」相同（誤差不超過一幀）",
+		cm_hit and dec4 and f4.ok, {"follow": f4, "rows": rows4.slice(0, 6)})
+
+	# 觀測-5：受控的敵人仍列在敵人裡（charmed、來源 diao_chan、剩下時間 0～2），總數＝遊戲計入波次的數量；每一隻和遊戲的敵人逐一相同
+	var charmed5: bool = await _wait_until_real(func(): return _ob_last(rec).get("enemies", []).any(func(x): return x.get("charmed") == true), 6.0)
+	await process_frame
+	await process_frame
+	var o5: Dictionary = _ob_last(rec)
+	var m5: Dictionary = _ob_enemies_match(o5)
+	var c5: Array = o5.get("enemies", []).filter(func(x): return x.get("charmed") == true)
+	_check("觀測-5 受控的敵人仍在列（charmed、來源 diao_chan、剩 0～2 秒）；列出的數量＝enemy_total＝遊戲計入波次的數量，依生成序號排序，uid 是「出兵世代-生成序號」，生命、移動方式、受控、攻擊力、移速、免疫減速都和遊戲相同",
+		charmed5 and m5.ok and c5.size() >= 1 and c5[0].get("charm_source") == CM_HERO and float(c5[0].get("charm_left", -1)) > 0.0 and float(c5[0].get("charm_left", 9)) <= 2.0,
+		{"match": m5, "charmed": c5.slice(0, 1)})
+
+	# 觀測-6：手動暫停：觀測照常送（seq 增加）、paused true、技能的剩下時間與戰鬥時間都不變；1×→2×：剩下時間仍跟著戰鬥時間（2 倍速時一樣固定）
+	var rows6a: Array = []
+	var bid: String = _bm().battle_id
+	_bm().set_paused(bid, true)
+	rows6a = await _ob_track(rec, KB_HERO, 1.2)
+	_bm().set_paused(bid, false)
+	var frozen6: bool = rows6a.size() >= 3
+	for r in rows6a:
+		if r.paused != true or not is_equal_approx(float(r.rem), float(rows6a[0].rem)) or not is_equal_approx(float(r.bt), float(rows6a[0].bt)):
+			frozen6 = false
+	_bm().set_speed(bid, 2)
+	var kb_hit6: bool = await _wait_until_real(func(): return float(_ob_hero(_ob_last(rec), KB_HERO).get("skill", {}).get("remaining", 0.0)) > 2.0, 10.0)
+	var rows6b: Array = await _ob_track(rec, KB_HERO, 0.8)
+	var f6: Dictionary = _ob_follows_battle_time(rows6b, 0.1)
+	_bm().set_speed(bid, 1)
+	_check("觀測-6 手動暫停 1.2 秒：觀測照常送、paused true，許褚的冷卻剩下時間與戰鬥時間都不變；2 倍速時許褚成功推動後的冷卻剩下時間（大於 2 秒）仍照戰鬥時間遞減（剩下時間＋戰鬥時間固定）",
+		frozen6 and kb_hit6 and f6.ok, {"paused": rows6a.slice(0, 4), "follow2x": f6, "rows2x": rows6b.slice(0, 4)})
+
+	# 觀測-7：只剩受控的敵人：其他敵人打倒後仍在戰鬥中，列出 1 隻受控的；打倒的敵人從列表移除（uid 不再出現）
+	var gone7: Array = []
+	var keep7: Node = null
+	for e in _sw_enemies():
+		if e.is_charmed() and keep7 == null:
+			keep7 = e
+	if keep7 == null:
+		var cm_node: Node = main._placed_heroes.get(CM_HERO)
+		for e in _sw_enemies():
+			if keep7 == null and cm_node != null and e.apply_charm(cm_node, _bm(), 2.0, 51.0):
+				keep7 = e
+	for h in main._placed_heroes.values():
+		h.set_process(false)
+	for e in _sw_enemies():
+		if e != keep7:
+			gone7.append("%d-%d" % [_wm().get_generation(), e.spawn_seq])
+			e.take_damage(999999.0)
+	await process_frame
+	await _wait_real(0.35)
+	var o7: Dictionary = _ob_last(rec)
+	var uids7: Array = o7.get("enemies", []).map(func(x): return x.uid)
+	var still7: bool = gone7.any(func(u): return uids7.has(u))
+	_check("觀測-7 只剩受控的敵人：仍在戰鬥中（state 2）、列出 1 隻且 charmed、enemy_total 1；打倒的敵人 uid 不再出現",
+		keep7 != null and o7.get("state") == 2 and o7.get("enemy_total") == 1 and uids7.size() == 1 and o7.enemies[0].get("charmed") == true and not still7 and not gone7.is_empty(),
+		{"state": o7.get("state"), "uids": uids7, "gone": gone7})
+	for h in main._placed_heroes.values():
+		h.set_process(true)
+
+	# 觀測-8：換一場（ob-2，39 個不會移動的 post 與 1 個飛行）：seq 從 1 重新開始、lifecycle 加 1、出兵世代不同、沒有上一場的武將；
+	# 40 隻全部列出（總數 40，不只 20），uid 都帶新的出兵世代；打倒 1 隻後剩 39、uid 移除
+	var life8: int = _bm().lifecycle()
+	var gen8: int = _wm().get_generation()
+	var n8: int = rec.sent_observations.size()
+	_r19_js(rec, _ob_payload("ob-2", [[_grp("post", 39, 0.02), _grp("ob_fly", 1, 0.02)]]))
+	await _wait_until_real(func(): return rec.sent_observations.size() > n8, 2.0)
+	var o8a: Dictionary = rec.sent_observations[n8] if rec.sent_observations.size() > n8 else {}
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == 40, 8.0)
+	await _wait_real(0.35)
+	var o8b: Dictionary = _ob_last(rec)
+	var m8: Dictionary = _ob_enemies_match(o8b)
+	var genok8: bool = o8b.get("enemies", []).all(func(x): return str(x.uid).begins_with(str(_wm().get_generation()) + "-"))
+	var fly8: int = o8b.get("enemies", []).filter(func(x): return x.get("flying") == true).size()
+	var victim8: Node = _sw_enemies()[5] if _sw_enemies().size() > 5 else null
+	var vuid8: String = "%d-%d" % [_wm().get_generation(), victim8.spawn_seq] if victim8 != null else ""
+	if victim8 != null:
+		victim8.take_damage(999999.0)
+	await process_frame
+	await _wait_real(0.35)
+	var o8c: Dictionary = _ob_last(rec)
+	_check("觀測-8 換一場：第一份 seq 1、battle_id ob-2、lifecycle 加 1、出兵世代不同、沒有武將；開戰後 40 隻全部列出（總數 40、1 隻飛行）、uid 都是新的世代且和遊戲一致；打倒 1 隻後剩 39、它的 uid 不再出現",
+		o8a.get("seq") == 1 and o8a.get("battle_id") == "ob-2" and int(o8a.get("lifecycle", -1)) == life8 + 1 and int(o8a.get("generation", -1)) != gen8 and o8a.get("heroes") == [] \
+			and o8b.get("enemy_total") == 40 and o8b.get("enemies", []).size() == 40 and m8.ok and genok8 and fly8 == 1 \
+			and o8c.get("enemy_total") == 39 and not o8c.get("enemies", []).any(func(x): return x.uid == vuid8),
+		{"first": {"seq": o8a.get("seq"), "life": [life8, o8a.get("lifecycle")], "gen": [gen8, o8a.get("generation")]}, "match": m8, "fly": fly8, "after": o8c.get("enemy_total")})
+
+	# 觀測-9：漏城移除與結算：只有 1 隻極快敵人的一場（ob-3）漏到城池後列表變空；結算時送出最後一份（state 3），之後 1 秒（牆鐘）不再送
+	_r19_js(rec, _ob_payload("ob-3", [[_grp("c_fast", 1, 0.02)]]))
+	await _wait_until_real(func(): return _ob_last(rec).get("battle_id") == "ob-3", 2.0)
+	_bm().player_start_battle()
+	var seen9: bool = await _wait_until_real(func(): return _ob_last(rec).get("enemy_total") == 1, 5.0)
+	var ended9: bool = await _wait_until_real(func(): return _bm().game_state == 3, 10.0)
+	await process_frame
+	await process_frame
+	var n9: int = rec.sent_observations.size()
+	var o9: Dictionary = _ob_last(rec)
+	await _wait_real(1.0)
+	_check("觀測-9 一場只有 1 隻極快的敵人：出現時列 1 隻；漏城後結算，最後一份是 state 3、敵人 0；之後 1 秒（牆鐘）不再送",
+		seen9 and ended9 and o9.get("battle_id") == "ob-3" and o9.get("state") == 3 and o9.get("enemy_total") == 0 and rec.sent_observations.size() == n9,
+		{"last": {"state": o9.get("state"), "total": o9.get("enemy_total")}, "after": rec.sent_observations.size() - n9})
+
+	# 觀測-10：移位、升級、撤除、陣亡：移位後 uid 不變、格子更新（2 幀內）；升級（update_team）後最大生命跟著遊戲；
+	# 移出隊伍與陣亡後 2 幀內不再列出
+	_r19_js(rec, _ob_payload("ob-4", [[_grp("ctr_walk", 2, 0.3), _grp("ctr_walk_imm", 1, 0.3)]]))
+	await _wait_until_real(func(): return _ob_last(rec).get("battle_id") == "ob-4", 2.0)
+	_r12_place(AS_HERO, Vector2i(2, 4))
+	_r12_place(CM_HERO, Vector2i(5, 4))
+	await process_frame
+	await process_frame
+	var uid10: String = str(_ob_hero(_ob_last(rec), AS_HERO).get("uid", ""))
+	var g10: Node = main._placed_heroes.get(AS_HERO)
+	main._moving_unit = g10
+	main._drag_type = 1  # DragType.HERO
+	main._place_unit(Vector2i(4, 4))
+	await process_frame
+	await process_frame
+	var moved10: Dictionary = _ob_hero(_ob_last(rec), AS_HERO)
+	var up: Dictionary = _r12_hero(AS_HERO, AS_SKILL.duplicate())
+	up["level"] = 5
+	up["hp"] = 3000.0
+	_r19_js(rec, {"type": "update_team", "team_list": [up, _r12_hero(CM_HERO, CM_SKILL.duplicate()), _r12_hero(KB_HERO, KB_SKILL.duplicate())]})
+	await _wait_real(0.35)
+	var upgraded10: Dictionary = _ob_hero(_ob_last(rec), AS_HERO)
+	var max10: float = g10.max_hp if is_instance_valid(g10) else -1.0
+	_r19_js(rec, {"type": "update_team", "team_list": [_r12_hero(CM_HERO, CM_SKILL.duplicate()), _r12_hero(KB_HERO, KB_SKILL.duplicate())]})
+	await process_frame
+	await process_frame
+	var removed10: bool = _ob_hero(_ob_last(rec), AS_HERO).is_empty()
+	var dc10: Node = main._placed_heroes.get(CM_HERO)
+	if dc10 != null:
+		dc10.take_damage(9999999.0)
+	await process_frame
+	await process_frame
+	var dead10: bool = _ob_hero(_ob_last(rec), CM_HERO).is_empty() and _ob_last(rec).get("heroes", []).is_empty()
+	_check("觀測-10 移位後 uid 不變、格子變成 (4,4)（2 幀內）；升級（update_team）後最大生命和遊戲相同；移出隊伍、陣亡後 2 幀內不再列出",
+		uid10.begins_with("hero-") and moved10.get("uid") == uid10 and moved10.get("cell") == [4, 4] and max10 > 1000.0 \
+			and is_equal_approx(float(upgraded10.get("max_hp", -1)), max10) and removed10 and dead10,
+		{"uid": uid10, "moved": moved10.get("cell"), "max": [upgraded10.get("max_hp"), max10], "removed": removed10, "dead": dead10})
+
+	# 觀測-11：道路阻擋的減速（有效期 0.5 秒、每一幀刷新）：被減速的敵人移速是設定的 0.3 倍、減速剩下時間在 0～0.5 秒之間，
+	# 和遊戲的有效移速相同；免疫減速的敵人 immune_slow、沒有減速
+	_r12_place(KB_HERO, Vector2i(3, 5))
+	_bm().player_start_battle()
+	var slowed11: bool = await _wait_until_real(func(): return _ob_last(rec).get("enemies", []).any(func(x): return x.get("enemy_id") == "ctr_walk" and float(x.get("slow_left", 0.0)) > 0.0), 6.0)
+	await process_frame
+	await process_frame
+	var o11: Dictionary = _ob_last(rec)
+	var walk11: Array = o11.get("enemies", []).filter(func(x): return x.get("enemy_id") == "ctr_walk" and float(x.get("slow_left", 0.0)) > 0.0)
+	var imm11: Array = o11.get("enemies", []).filter(func(x): return x.get("enemy_id") == "ctr_walk_imm")
+	var ok11: bool = slowed11 and not walk11.is_empty() and not imm11.is_empty()
+	if ok11:
+		var w: Dictionary = walk11[0]
+		ok11 = float(w.slow_left) <= Enemy.SLOW_REFRESH_TTL + 1e-6 and absf(float(w.speed_eff) / float(w.speed) - Hero.SLOW_RATIO) < 1e-6 \
+			and imm11[0].get("immune_slow") == true and float(imm11[0].get("slow_left", -1)) == 0.0 and is_equal_approx(float(imm11[0].speed_eff), float(imm11[0].speed))
+	_check("觀測-11 道路阻擋的減速：被減速的敵人移速是設定的 0.3 倍、減速剩下時間大於 0 且不超過有效期 0.5 秒；免疫減速的敵人 immune_slow、沒有減速",
+		ok11, {"walk": walk11.slice(0, 1), "imm": imm11.slice(0, 1)})
 
 	rec.payload_received.disconnect(main._on_payload_received)
 	main.web_bridge = original

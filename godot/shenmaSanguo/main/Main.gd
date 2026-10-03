@@ -43,6 +43,8 @@ var _selected_unit: Node       = null  # 選中的塔/武將
 var _tower_seq: int             = 0
 var _moving_unit: Node         = null  # 正在重新佈置的單位
 var _game_time: float          = 0.0   # 累計遊戲時間（受 time_scale 影響、手動暫停時不前進），供測試快照比對計時器
+## 武將識別碼的流水號（只增不減、不重用）：戰況觀測與武將面板用它對應同一位已部署的武將（移位不換；撤除或陣亡後重新部署是新的）
+var _hero_seq: int             = 0
 
 # ═══════════════════════════════════════════
 #  _ready
@@ -178,6 +180,7 @@ func _do_initial_setup(payload: Dictionary) -> void:
 	# 初始化 BattleManager
 	var total_waves: int = _count_waves(_waves)
 	battle_manager.initialize(total_waves, stage_id, wave_manager, web_bridge, battle_id)
+	_reset_observation()
 
 	# 音效設定（從 payload 的 sound_settings 欄位讀取）
 	var snd: Dictionary = payload.get("sound_settings", {})
@@ -217,6 +220,7 @@ func _count_waves(waves: Array) -> int:
 # ═══════════════════════════════════════════
 func _on_state_changed(state: int) -> void:
 	battle_hud.set_game_state(state)
+	_mark_observation()
 
 func _on_base_hp_changed(hp: int, max_hp: int) -> void:
 	battle_hud.update_base_hp(hp, max_hp)
@@ -447,6 +451,7 @@ func _place_unit(cell: Vector2i) -> void:
 			
 		game_map.set_occupied(cell, _moving_unit) # 佔用新格子
 		_moving_unit = null
+		_mark_observation()
 		return
 
 	match _drag_type:
@@ -468,6 +473,9 @@ func _place_hero(cell: Vector2i, world_pos: Vector2) -> void:
 
 	game_map.set_occupied(cell, hero)
 	_placed_heroes[str(_drag_hero_data.get("hero_id", ""))] = hero
+	_hero_seq += 1
+	hero.set_meta(OBS_UID_META, "hero-%d" % _hero_seq)
+	_mark_observation()
 	_sfx("hero_place")
 
 func _place_tower(cell: Vector2i, world_pos: Vector2) -> void:
@@ -509,7 +517,8 @@ func _on_hero_died(hero: Node) -> void:
 	
 	var cell: Vector2i = hero.get_cell()
 	game_map.clear_occupied(cell)
-	
+	_mark_observation()
+
 	if _selected_unit == hero:
 		_deselect_unit()
 
@@ -523,6 +532,9 @@ func _on_hero_clicked(hero: Node) -> void:
 	var info: Dictionary = {
 		"unit_type": "hero",
 		"hero_id": hero.hero_id,
+		# 這一場的 battle_id 與這位武將的識別碼：Web 只採用目前這一場的面板，戰況觀測（battle_observation）用識別碼對應同一位武將
+		"battle_id": battle_manager.battle_id,
+		"hero_uid": str(hero.get_meta(OBS_UID_META, "")),
 		"name": hero.hero_name,
 		"level": hero.hero_level,
 		"atk": hero.atk,
@@ -580,6 +592,7 @@ func _on_hero_clicked(hero: Node) -> void:
 		info["charm"] = {"duration": hero.charm_duration, "cooldown": hero.charm_cooldown, "radius": hero.charm_attack_radius,
 			"remaining": battle_manager.charm_remaining(hero.hero_id)}
 	web_bridge.send_show_upgrade_panel(info)
+	_mark_observation()
 
 func _on_tower_clicked(tower: Node) -> void:
 	_deselect_unit()
@@ -631,6 +644,7 @@ func _deselect_unit() -> void:
 		_selected_unit.set_selected(false)
 	_selected_unit = null
 	web_bridge.send_hide_upgrade_panel()
+	_mark_observation()
 
 # ═══════════════════════════════════════════
 #  部署選單的暫時慢速與戰鬥速度
@@ -681,6 +695,7 @@ func _on_pause_changed(paused: bool) -> void:
 	var mode: int = Node.PROCESS_MODE_DISABLED if paused else Node.PROCESS_MODE_INHERIT
 	for n in [units_layer, wave_manager, battle_manager]:
 		n.process_mode = mode
+	_mark_observation()
 	if paused and (_is_dragging or _pressed_unit != null):
 		# 進行中的拖曳（放置、移位）一律取消：暫停時不能部署或移位
 		_end_drag()
@@ -918,6 +933,7 @@ func _process(delta: float) -> void:
 	# 手動暫停時遊戲時間不前進（Main 本身不停：它要處理輸入與命令）
 	if not battle_manager.manual_paused:
 		_game_time += delta
+	_tick_observation()
 
 func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 依 enemy_id 統計仍在場上的敵人節點；另外列出每個敵人目前的血量（測試用來算每一擊的實際傷害）
@@ -1224,6 +1240,166 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	web_bridge.send_debug_snapshot(snapshot)
 
 # ═══════════════════════════════════════════
+#  戰況觀測（battle_observation）：Web 的即時武將技能狀態與敵軍查看用的精簡唯讀資料
+# ═══════════════════════════════════════════
+## 武將節點上記識別碼的 meta 名稱（_place_hero 設定；面板的 hero_uid 與觀測的 uid 相同）
+const OBS_UID_META: String = "obs_uid"
+## 戰況觀測最短的送出間隔（毫秒，牆鐘）：備戰與戰鬥中照這個間隔送；新的一場、狀態改變、暫停／繼續、部署、移位、陣亡、
+## 撤除、選取改變時下一幀立刻送（同一幀合併成一次）。剩下的時間都是 BattleManager 的戰鬥時間，暫停與備戰時不前進
+const OBS_INTERVAL_MS: int = 250
+## 這一場已送出的觀測數（seq）：每一場從 1 開始嚴格遞增
+var _obs_seq: int = 0
+var _obs_last_ms: int = -1000000
+var _obs_force: bool = false
+
+## 新的一場：seq 從頭算，下一幀送出這一場的第一份觀測（還沒有武將與敵人）
+func _reset_observation() -> void:
+	_obs_seq = 0
+	_obs_last_ms = -1000000
+	_obs_force = true
+
+## 戰況有變化：下一幀立刻送一份（不等間隔）
+func _mark_observation() -> void:
+	_obs_force = true
+
+## 每一幀檢查要不要送：還沒有關卡（或沒有 battle_id）不送；結算後只送狀態改變時的那一份（終態），之後不再定時送
+func _tick_observation() -> void:
+	var st: int = battle_manager.game_state
+	if st == BattleManager.GameState.WAITING_PAYLOAD or battle_manager.battle_id == "":
+		return
+	var now: int = Time.get_ticks_msec()
+	var live: bool = st == BattleManager.GameState.PREP or st == BattleManager.GameState.BATTLE
+	if not _obs_force and not (live and now - _obs_last_ms >= OBS_INTERVAL_MS):
+		return
+	_obs_force = false
+	_obs_last_ms = now
+	_obs_seq += 1
+	web_bridge.send_battle_observation(battle_observation())
+
+## 這一刻的戰況（唯讀，不改任何狀態）：武將的生命與技能狀態、場上活著的敵人（含受控的）。
+## 不帶歷史紀錄、路線陣列、玩家資料。enemy_total 是 WaveManager 目前計入波次的敵人數，enemies 依生成序號排序
+func battle_observation() -> Dictionary:
+	var heroes: Array = []
+	for hid in _placed_heroes:
+		var hero: Node = _placed_heroes[hid]
+		if not is_instance_valid(hero) or hero.is_queued_for_deletion():
+			continue
+		var cell: Vector2i = hero.get_cell()
+		heroes.append({"uid": str(hero.get_meta(OBS_UID_META, "")), "hero_id": str(hid), "cell": [cell.x, cell.y],
+			"hp": hero.current_hp, "max_hp": hero.max_hp, "skill": _hero_skill_observation(hero)})
+	var enemies: Array = []
+	var gen: int = wave_manager.get_generation()
+	for e in wave_manager.get_active_enemies():
+		if not is_instance_valid(e) or e.is_queued_for_deletion() or e.is_dead():
+			continue
+		enemies.append(_enemy_observation(e, gen))
+	enemies.sort_custom(func(a, b): return int(a.seq) < int(b.seq))
+	return {
+		"battle_id": battle_manager.battle_id,
+		"lifecycle": battle_manager.lifecycle(),
+		"generation": gen,
+		"seq": _obs_seq,
+		"state": battle_manager.game_state,
+		"paused": battle_manager.manual_paused,
+		"wave": battle_manager.current_wave,
+		"heroes": heroes,
+		"enemies": enemies,
+		"enemy_total": wave_manager.get_active_enemy_count(),
+	}
+
+## 一位武將的技能此刻的實際狀態（技能 id 由 Godot 實際讀到的參數判斷；沒有啟用任何技能時是空字典）。
+## 有冷卻或次數的技能帶剩下的戰鬥時間或次數，光環、補給、護衛、守護帶此刻是不是生效與來源；其他技能只帶 id（常駐或命中時觸發，沒有冷卻）
+func _hero_skill_observation(hero: Node) -> Dictionary:
+	var hid: String = hero.hero_id
+	if hero.first_strike_multiplier > 1.0:
+		return {"id": "first_strike", "used": battle_manager.first_strike_used(hid)}
+	if hero.range_multiplier > 1.0:
+		return {"id": "long_range"}
+	if hero.burn_ratio > 0.0:
+		return {"id": "burn"}
+	if hero.slow_aura_mult < 1.0:
+		var ss: Dictionary = hero.slow_state()
+		return {"id": "slow_aura", "active": bool(ss.aura_active), "affected": ss.aura.size()}
+	if hero.dodge_chance > 0.0:
+		return {"id": "dodge"}
+	if hero.def_aura_mult > 1.0:
+		var ds: Dictionary = hero.def_state()
+		return {"id": "def_aura", "active": bool(ds.aura_active), "affected": ds.buffed.size()}
+	if hero.stun_duration > 0.0:
+		return {"id": "stun"}
+	if hero.lifesteal_ratio > 0.0:
+		return {"id": "lifesteal"}
+	if hero.atk_speed_aura_mult > 1.0:
+		return {"id": "atk_speed_aura", "active": bool(hero._atk_speed_aura_shown), "affected": hero._atk_speed_buffed.size()}
+	if hero.counter_ratio > 0.0:
+		return {"id": "counter"}
+	if hero.tenacity_hp_ratio > 0.0:
+		return {"id": "tenacity", "active": hero.tenacity_on()}
+	if hero.atk_down_aura_mult < 1.0:
+		var ads: Dictionary = hero.atk_down_state()
+		return {"id": "atk_down_aura", "active": bool(ads.aura_active), "affected": ads.affected.size()}
+	if hero.double_shot_chance > 0.0:
+		return {"id": "double_shot"}
+	if hero.chain_ratio > 0.0:
+		return {"id": "chain"}
+	if hero.storm_ratio > 0.0:
+		return {"id": "storm"}
+	if hero.berserk_ratio > 0.0:
+		return {"id": "berserk", "stacks": hero.berserk_stacks(), "max_stacks": hero.berserk_max_stacks, "atk": hero.berserk_atk()}
+	if hero.supply_gold_multiplier > 1.0:
+		var sup: Dictionary = battle_manager.supply_source()
+		return {"id": "supply", "active": hero.supply_active(), "source": str(sup.hero_id) == hid,
+			"kill_gold": BattleManager.kill_gold(float(sup.mult))}
+	if hero.knockback_distance > 0.0:
+		return {"id": "knockback", "remaining": battle_manager.knockback_remaining(hid), "cooldown": hero.knockback_cooldown}
+	if hero.guard_share_ratio > 0.0:
+		return {"id": "guard_share", "active": hero.guard_available(), "allies": hero.guard_allies().size()}
+	if hero.base_guard_mult < 1.0:
+		var bg: Dictionary = battle_manager.base_guard_source()
+		return {"id": "base_guard", "active": hero.base_guard_active(), "source": str(bg.hero_id) == hid, "effective_mult": float(bg.mult)}
+	if hero.assassinate_on:
+		var spent: bool = not battle_manager.assassinate_ready(hid)
+		return {"id": "assassinate", "used": spent, "remaining": 0 if spent else 1}
+	if hero.charm_duration > 0.0:
+		return {"id": "charm", "remaining": battle_manager.charm_remaining(hid), "cooldown": hero.charm_cooldown}
+	return {}
+
+## 一個敵人此刻的狀態。uid 是「WaveManager 世代-生成序號」（同一個 iframe 裡不會重複）；atk 是設定的對阻路武將攻擊力
+## （沒有設定時 20），atk_eff 含威壓（不是漏城傷害）；speed 是設定的移速（像素／秒），speed_eff 含減速；
+## 灼燒、暈眩、威壓、減速、受控的剩下時間都是戰鬥時間（秒），沒有時是 0
+func _enemy_observation(e: Node, gen: int) -> Dictionary:
+	var burn_left: float = 0.0
+	if e._burn_ticks_left > 0:
+		burn_left = e._burn_timer + float(e._burn_ticks_left - 1) * e._burn_interval
+	var atk_down_left: float = 0.0
+	for s in e._atk_down_sources:
+		atk_down_left = maxf(atk_down_left, float(e._atk_down_sources[s].left))
+	var slow_left: float = e._stack_slow_timer if e._stack_slow_amount > 0.0 else 0.0
+	for s in e._slow_sources:
+		slow_left = maxf(slow_left, float(e._slow_sources[s].left))
+	var charmed: bool = e.is_charmed()
+	return {
+		"uid": "%d-%d" % [gen, e.spawn_seq],
+		"seq": e.spawn_seq,
+		"enemy_id": e.enemy_id,
+		"hp": e.current_hp,
+		"max_hp": e.max_hp,
+		"flying": e.is_flying(),
+		"charmed": charmed,
+		"charm_left": e.charm_remaining() if charmed else 0.0,
+		"charm_source": e._charm_hero_id if charmed else "",
+		"atk": e.blocker_atk,
+		"atk_eff": e.effective_blocker_atk(),
+		"atk_down_left": atk_down_left if e.atk_mult < 1.0 else 0.0,
+		"speed": e.base_speed,
+		"speed_eff": e.get_effective_speed(),
+		"slow_left": slow_left if e.get_effective_speed() < e.base_speed else 0.0,
+		"immune_slow": e.immune_slow,
+		"stun_left": e._stun_left if e.is_stunned() else 0.0,
+		"burn_left": burn_left,
+	}
+
+# ═══════════════════════════════════════════
 #  Helpers
 # ═══════════════════════════════════════════
 func _sync_placed_heroes_stats(new_team: Array) -> void:
@@ -1256,6 +1432,7 @@ func _remove_heroes_not_in_team(new_team: Array) -> void:
 		_placed_heroes.erase(hero_id)
 	if not to_remove.is_empty():
 		print("[Main] 移除不在隊伍中的武將：", to_remove)
+		_mark_observation()
 
 func _on_splash_dismissed() -> void:
 	# 用戶點擊 splash → AudioContext 已解鎖，BGM 此時可正常播放

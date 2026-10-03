@@ -762,3 +762,7 @@ func _sfx(key: String) -> void:
 func _sfx_stop_bgm() -> void:
 	if get_tree() and get_tree().root.has_node("SFXManager"):
 		get_tree().root.get_node("SFXManager").stop_bgm()
+
+## 首擊加倍：這位武將在這一場用過了沒有（戰況觀測用，唯讀）
+func first_strike_used(hero_id: String) -> bool:
+	return hero_id != "" and _first_strike_used.has(hero_id)

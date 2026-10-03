@@ -345,7 +345,7 @@ async (page) => {
     out.B_panel = { panel, box, panelShot };
     const inside = (b) => !!b && b.left >= 0 && b.right <= b.vw && b.docScroll <= b.vw && b.font >= 12 && b.top >= b.panelTop && b.bottom <= b.panelBottom + 1 && b.bottom <= b.vh;
     run.check("B-3 選取面板「護衛：選取時可以提供，2 格內有 1 名友軍；戰鬥中範圍內其他友軍受到敵人直接攻擊時，防禦與堅韌算完後承擔 20%（直接扣自己的生命、不超過剩下的生命）（重新點選可以更新）」；390×600 時說明整段在面板與畫面裡（截圖另存）",
-      /護衛：選取時可以提供，2 格內有 1 名友軍；戰鬥中範圍內其他友軍受到敵人直接攻擊時，防禦與堅韌算完後承擔 20%（直接扣自己的生命、不超過剩下的生命）（重新點選可以更新）/.test(panel.note) &&
+      /護衛：(?:選取時|目前)可以提供，2 格內有 1 名友軍；戰鬥中範圍內其他友軍受到敵人直接攻擊時，防禦與堅韌算完後承擔 20%（直接扣自己的生命、不超過剩下的生命）（(?:重新點選可以更新|即時更新)）/.test(panel.note) &&
         panel.active === "1" && panel.allies === 1 && inside(box),
       out.B_panel);
 

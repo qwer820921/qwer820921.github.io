@@ -5,7 +5,7 @@
 //   node scripts/shenma-regression/tools/run-tier.mjs full
 //   node scripts/shenma-regression/tools/run-tier.mjs list              列出功能與對應的瀏覽器腳本
 // - quick：型別檢查、神馬三國與地圖編輯器的 ESLint、Node 測試（store、後端讀取的自動重試、戰鬥結算獎勵規則、飛行敵人與對空規則、出征前的對空準備、
-//   飛行路線無效與優先飛行選項、地面路線沒有路程與戰場內的下一波、關卡能不能出征與敵人攻擊力／免疫減速、備份檔、武將列表篩選、
+//   飛行路線無效與優先飛行選項、地面路線沒有路程與戰場內的下一波、戰況觀測、關卡能不能出征與敵人攻擊力／免疫減速、備份檔、武將列表篩選、
 //   地圖編輯器的錯誤說明、敵人表的移動方式欄判斷、地圖資訊保存判斷、地圖資料檢查與波次保存判斷、
 //   跨來源隔離開機腳本）、harness 雜訊規則、
 //   工具自我測試、素材引用檢查、Godot 反向驗證的變異原文檢查（只讀原始碼）。不需要 dev server 與 Godot
@@ -67,6 +67,11 @@ const QUICK = [
     "地面路線沒有路程與戰場內下一波的規則測試",
     "node",
     ["scripts/shenma-regression/web/next-wave.test.mjs"],
+  ],
+  [
+    "戰況觀測的驗證、採用規則與敵軍分頁測試",
+    "node",
+    ["scripts/shenma-regression/web/battle-observation.test.mjs"],
   ],
   [
     "關卡能不能出征與敵人攻擊力、免疫減速的規則測試",
@@ -281,6 +286,10 @@ const AREAS = {
     what: "瀏覽器實際取得的遊戲產物與網路統計",
     scripts: ["artifacts-and-network.js"],
   },
+  "battle-live": {
+    what: "戰況觀測：武將面板不重新點選就看到目前的生命與技能狀態、「戰況」的武將技能與敵軍查看（分頁、離場、受控、鍵盤、390×600）、舊的與上一場的觀測不採用、舊版遊戲退回選取時的快照；單位面板只屬於目前這一場（需要 Godot 產物）",
+    scripts: ["battle-live-web.js", "panel-scope-web.js"],
+  },
 };
 // 完整回歸的順序（和 README 的清單相同，新的腳本接在最後）
 const FULL = [
@@ -349,6 +358,8 @@ const FULL = [
   "skill-base-guard-web.js",
   "skill-assassinate-web.js",
   "skill-charm-web.js",
+  "battle-live-web.js",
+  "panel-scope-web.js",
 ];
 
 const [mode, ...rest] = process.argv.slice(2);

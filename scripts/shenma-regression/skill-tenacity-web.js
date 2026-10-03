@@ -340,10 +340,10 @@ async (page) => {
     out.B_panel = { paused1, p1, paused2, p2, seen: w2.last && { active: w2.last.active, hp: w2.last.hp, count: w2.last.count }, panelShot390 };
     run.check("B-2 暫停後點廖化：門檻前（生命高於 30%）面板的堅韌是「未生效」、門檻後（受傷後不高於 30%）是「生效中」，兩次的生命值都＝同一時間的快照、看得到選取時數值的說明；390×844 面板與說明在畫面內、沒有橫向溢出、字級至少 12px",
       paused1 && paused2 && p1.frozen && p2.frozen && /廖化/.test(p1.panel.name || "") &&
-        p1.panel.hp === p1.hp && p1.hp / MAX_HP > 0.3 && p1.active === false && p1.panel.active === "false" && /選取時未生效/.test(p1.panel.note || "") &&
+        p1.panel.hp === p1.hp && p1.hp / MAX_HP > 0.3 && p1.active === false && p1.panel.active === "false" && /(?:選取時|目前)未生效/.test(p1.panel.note || "") &&
         /選取時的數值/.test(p1.panel.snap || "") &&
         p2.panel.hp === p2.hp && p2.hp / MAX_HP <= 0.3 && p2.active === true && p2.panel.active === "true" &&
-        /堅韌生效中：選取時生命不高於 30%，受到的傷害（防禦計算後）降低 20%/.test(p2.panel.note || "") &&
+        /堅韌生效中：(?:選取時|目前)生命不高於 30%，受到的傷害（防禦計算後）降低 20%/.test(p2.panel.note || "") &&
         p2.panel.inView && p2.panel.noOverflow && p2.panel.noteInView && p2.panel.noteFont >= 12 && /選取時的數值/.test(p2.panel.snap || ""),
       out.B_panel);
 

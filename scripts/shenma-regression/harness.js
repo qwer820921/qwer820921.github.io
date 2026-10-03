@@ -186,12 +186,20 @@ async (page) => {
     window.__SHENMA_MOCK_GAS__ = true;
 
     window.__bridgeLog = [];
+    // 戰況觀測（battle_observation，遊戲每 0.25 秒一份）另外存在 __obsLog（只留最近 400 份），不放進 __bridgeLog：
+    // 既有腳本掃描 __bridgeLog 的時間與記憶體不受影響
+    window.__obsLog = [];
     // 測試用：__bridgeWithhold 設成陣列時，Godot 的結算訊息改存進這個陣列，不交給頁面
     // （這個監聽比頁面早註冊，stopImmediatePropagation 讓頁面收不到）。之後把這筆由 Godot 實際產生的結算
     // 原封不動重送，用來模擬「舊場次的結算晚到」，不需要自己組出一筆假的結算
     window.__bridgeWithhold = null;
     window.addEventListener("message", (e) => {
       const d = e.data;
+      if (d && typeof d === "object" && d.__godot_bridge === true && d.type === "battle_observation") {
+        window.__obsLog.push({ ...d, __t: performance.now() });
+        if (window.__obsLog.length > 400) window.__obsLog.splice(0, window.__obsLog.length - 400);
+        return;
+      }
       if (d && typeof d === "object" && d.__godot_bridge === true) {
         window.__bridgeLog.push({ ...d, __t: performance.now() });
         if (Array.isArray(window.__bridgeWithhold) && d.type === undefined && typeof d.result === "string") {

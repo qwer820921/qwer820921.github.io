@@ -41,6 +41,11 @@ signal debug_snapshot_requested(request_id: String)
 ##    倍率減速改成依來源保存與到期。舊產物收到 slow_aura 只是當作普通攻擊（沒有光環），網頁與遊戲產物同批發布，所以沒有另外提升版本
 const BRIDGE_PROTOCOL: int = 7
 
+## 可選的功能（game_ready 的 capabilities）：協定版本不變，Web 只在列出時才使用；沒有列出的舊遊戲照舊運作。
+## battle_observation：戰況觀測（武將的生命與技能狀態、場上的敵人），Godot 主動送出、不需要 Web 的命令，
+##   武將面板（show_upgrade_panel）同時帶這一場的 battle_id 與武將的識別碼 hero_uid。見 Main.battle_observation
+const BRIDGE_CAPABILITIES: Array = ["battle_observation"]
+
 
 var _msg_callback: JavaScriptObject
 
@@ -123,9 +128,9 @@ func send_result(result: Dictionary) -> void:
 	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
 	print("[WebBridge] 結算結果已傳回 Web")
 
-## 告知 Web 端的就緒訊息（帶協定版本）
+## 告知 Web 端的就緒訊息（帶協定版本與可選的功能）
 func ready_message() -> Dictionary:
-	return {"__godot_bridge": true, "type": "game_ready", "protocol": BRIDGE_PROTOCOL}
+	return {"__godot_bridge": true, "type": "game_ready", "protocol": BRIDGE_PROTOCOL, "capabilities": BRIDGE_CAPABILITIES.duplicate()}
 
 ## 告知 Web 端：Godot 已啟動並準備就緒
 func send_ready() -> void:
@@ -213,6 +218,15 @@ func send_game_pause_result(data: Dictionary) -> void:
 func send_wave_rejected(data: Dictionary) -> void:
 	data["__godot_bridge"] = true
 	data["type"] = "wave_rejected"
+	if OS.get_name() != "Web":
+		return
+	var json = JSON.stringify(data)
+	JavaScriptBridge.eval("window.parent.postMessage(%s, '*');" % json)
+
+## 戰況觀測（唯讀，見 Main.battle_observation）：備戰與戰鬥中最多每 0.25 秒（牆鐘）一次，狀態改變時立刻送；不印 log
+func send_battle_observation(data: Dictionary) -> void:
+	data["__godot_bridge"] = true
+	data["type"] = "battle_observation"
 	if OS.get_name() != "Web":
 		return
 	var json = JSON.stringify(data)

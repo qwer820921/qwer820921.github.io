@@ -2157,6 +2157,30 @@ const MUTATIONS = {
     only: "charm",
     expect: ["魅惑-23 "],
   },
+  "observation-skips-charmed": {
+    why: "戰況觀測漏掉受控的敵人（仍活著、計入波次，卻沒有列出）",
+    file: MAIN,
+    from: "\t\tif not is_instance_valid(e) or e.is_queued_for_deletion() or e.is_dead():\n\t\t\tcontinue\n\t\tenemies.append(_enemy_observation(e, gen))\n",
+    to: "\t\tif not is_instance_valid(e) or e.is_queued_for_deletion() or e.is_dead() or e.is_charmed():\n\t\t\tcontinue\n\t\tenemies.append(_enemy_observation(e, gen))\n",
+    only: "observation",
+    expect: ["觀測-5 ", "觀測-7 "],
+  },
+  "observation-seq-not-reset": {
+    why: "新的一場沒有把戰況觀測的 seq 從頭算（沿用上一場的編號）",
+    file: MAIN,
+    from: "func _reset_observation() -> void:\n\t_obs_seq = 0\n",
+    to: "func _reset_observation() -> void:\n\tpass\n",
+    only: "observation",
+    expect: ["觀測-8 "],
+  },
+  "observation-no-immediate": {
+    why: "狀態改變時不立刻送戰況觀測（只照間隔送；結算後的最後一份送不出去）",
+    file: MAIN,
+    from: "func _mark_observation() -> void:\n\t_obs_force = true\n",
+    to: "func _mark_observation() -> void:\n\tpass\n",
+    only: "observation",
+    expect: ["觀測-9 "],
+  },
 };
 
 // 變異原文檢查（check）：逐一核對每個變異定義仍然有效（目標檔案存在、原文非空、而且在目前的原始碼裡剛好出現一次，CRLF 當作 LF）。

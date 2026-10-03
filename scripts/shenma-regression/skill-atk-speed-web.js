@@ -28,7 +28,8 @@ async (page) => {
   const CELLS = { ally: [1, 4], far: [5, 6], cao: [2, 4] };
   const SKILL = { id: "atk_speed_aura", atk_speed_mult: 1.15 };
   const BUFFED = 1 / 1.15;
-  const SNAP_TEXT = "生命值與防禦是選取時的數值，重新點選武將可更新";
+  // 生命值與防禦是選取時的快照；有戰況觀測（新版遊戲）時生命值改為即時，說明寫明防禦與攻擊間隔仍是選取時的數值
+  const SNAP_TEXTS = ["生命值與防禦是選取時的數值，重新點選武將可更新", "生命值與技能狀態是目前的戰況（遊戲每 0.25 秒更新）；防禦與攻擊間隔是選取時的數值，重新點選武將可更新"];
 
   const ROW = 5;
   const zones = [];
@@ -363,7 +364,7 @@ async (page) => {
     out.B_panel = { paused, pAlly, pFar, p390, panelShot, panelShot390 };
     run.check("B-3 暫停後在戰場點弓手：攻擊間隔是「1 → 0.87秒」（原本與加成後分開列出），有「指揮」的說明（選取時、只在範圍內、不改存檔）與選取時數值的說明；點遠弓是「1秒」、沒有指揮的說明；390×844 面板與說明在畫面內、沒有橫向溢出",
       paused && /弓手/.test(pAlly.name || "") && pAlly.text === "1 → 0.87秒" && pAlly.spd === 1 && near(pAlly.eff, 1.15, 1e-9) && /指揮/.test(pAlly.note || "") &&
-        /0\.87秒/.test(pAlly.note || "") && /原本 1秒/.test(pAlly.note || "") && /不改存檔/.test(pAlly.note || "") && pAlly.noteVisible && pAlly.snap === SNAP_TEXT &&
+        /0\.87秒/.test(pAlly.note || "") && /原本 1秒/.test(pAlly.note || "") && /不改存檔/.test(pAlly.note || "") && pAlly.noteVisible && SNAP_TEXTS.includes(pAlly.snap) &&
         /遠弓/.test(pFar.name || "") && pFar.text === "1秒" && pFar.note === null && p390.text === "1 → 0.87秒" && p390.inView && p390.noOverflow && p390.noteVisible,
       out.B_panel);
 

@@ -330,7 +330,7 @@ async (page) => {
     await closePanel();
     out.B_panel0 = panel0;
     run.check("B-2 開戰前的選取面板：戰神 0 層（+0%），基礎攻擊力 125、目前 125；攻擊力欄只寫 125（沒有把最大值 187.5 當成目前）",
-      /戰神：選取時本場 0 層（\+0%），基礎攻擊力 125、目前 125；自己打倒敵人後下一擊起每層 \+5%，最多 10 層，新的一場從 0 層開始/.test(panel0.note) &&
+      /戰神：(?:選取時|目前)本場 0 層（\+0%），基礎攻擊力 125、目前 125；自己打倒敵人後下一擊起每層 \+5%，最多 10 層，新的一場從 0 層開始/.test(panel0.note) &&
         panel0.stacks === 0 && panel0.base === ATK && panel0.eff === ATK && panel0.atk === "125" && !/187\.5/.test(panel0.note + panel0.atk), panel0);
 
     await H.clickButton(page, "迎戰");
@@ -374,7 +374,7 @@ async (page) => {
     out.B_panel1 = { panel1, box, panelShot };
     const inside = (b) => !!b && b.left >= 0 && b.right <= b.vw && b.docScroll <= b.vw && b.font >= 12 && b.top >= b.panelTop && b.bottom <= b.panelBottom + 1 && b.bottom <= b.vh;
     run.check("B-4 清波後重新選取呂布：面板「戰神：選取時本場 3 層（+15%），基礎攻擊力 125、目前 143.75」，攻擊力欄「125 → 143.75」；390×600 時說明整段在面板與畫面裡（截圖另存）",
-      /戰神：選取時本場 3 層（\+15%），基礎攻擊力 125、目前 143\.75/.test(panel1.note) && panel1.stacks === 3 && panel1.base === ATK && near(panel1.eff, 143.75) &&
+      /戰神：(?:選取時|目前)本場 3 層（\+15%），基礎攻擊力 125、目前 143\.75/.test(panel1.note) && panel1.stacks === 3 && panel1.base === ATK && near(panel1.eff, 143.75) &&
         panel1.atk === "125 → 143.75" && inside(box),
       out.B_panel1);
 

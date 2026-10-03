@@ -366,7 +366,7 @@ async (page) => {
     run.check("B-3 清波後部署魯肅 (7,6)：快照的有效來源是 lu_su（1.2）、每次擊殺 6，hero_supply {1.2, 生效中, 6}；選取面板「補給：選取時生效中，這一場每次擊殺戰鬥金幣 6（基礎 5）；在場上、還活著時全隊擊殺 +20%（5 → 6），不影響玩家的獎勵」；390×600 時說明整段在面板與畫面裡（截圖另存）",
       !!sup(s1) && sup(s1).hero_id === "lu_su" && near(sup(s1).mult, 1.2) && sup(s1).kill_gold === 6 && sup(s1).sources.length === 1 &&
         !!hs && near(hs.mult, 1.2) && hs.active === true && hs.kill_gold === 6 &&
-        /補給：選取時生效中，這一場每次擊殺戰鬥金幣 6（基礎 5）；在場上、還活著時全隊擊殺 \+20%（5 → 6），不影響玩家的獎勵/.test(panel.note) &&
+        /補給：(?:選取時|目前)生效中，這一場每次擊殺戰鬥金幣 6（基礎 5）；在場上、還活著時全隊擊殺 \+20%（5 → 6），不影響玩家的獎勵/.test(panel.note) &&
         panel.active === "1" && panel.killGold === 6 && inside(box),
       out.B_deployed);
 

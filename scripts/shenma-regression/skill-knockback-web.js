@@ -348,8 +348,8 @@ async (page) => {
     await closePanel();
     out.B_panel = { panel, box, panelShot };
     const inside = (b) => !!b && b.left >= 0 && b.right <= b.vw && b.docScroll <= b.vw && b.font >= 12 && b.top >= b.panelTop && b.bottom <= b.panelBottom + 1 && b.bottom <= b.vh;
-    const cooling = /怪力：選取時冷卻中，還剩 [0-9.]+ 秒；打中仍活著的地面目標時沿原路往回推 0\.5 格，成功後冷卻 3 秒（重新點選可以更新）/.test(panel.note);
-    const ready = /怪力：選取時可以推動；打中仍活著的地面目標時沿原路往回推 0\.5 格，成功後冷卻 3 秒（重新點選可以更新）/.test(panel.note);
+    const cooling = /怪力：(?:選取時|目前)冷卻中，還剩 [0-9.]+ 秒；打中仍活著的地面目標時沿原路往回推 0\.5 格，成功後冷卻 3 秒（(?:重新點選可以更新|即時更新)）/.test(panel.note);
+    const ready = /怪力：(?:選取時|目前)可以推動；打中仍活著的地面目標時沿原路往回推 0\.5 格，成功後冷卻 3 秒（(?:重新點選可以更新|即時更新)）/.test(panel.note);
     run.check("B-3 選取面板「怪力：選取時冷卻中，還剩 x 秒（或可以推動）；打中仍活著的地面目標時沿原路往回推 0.5 格，成功後冷卻 3 秒（重新點選可以更新）」，剩下的秒數在 0～3 之間、和文字一致；390×600 時說明整段在面板與畫面裡（截圖另存）",
       (cooling || ready) && panel.remaining >= 0 && panel.remaining <= 3 && (panel.remaining > 0) === cooling && inside(box),
       out.B_panel);

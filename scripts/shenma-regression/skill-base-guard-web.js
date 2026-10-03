@@ -482,7 +482,7 @@ async (page) => {
     const inside = (b) => !!b && b.left >= 0 && b.right <= b.vw && b.docScroll <= b.vw && b.font >= 12 && b.top >= b.panelTop && b.bottom <= b.panelBottom + 1 && b.bottom <= b.vh;
     const badgeIn = (b) => !!b && b.left >= 0 && b.right <= b.vw && b.top >= 0 && b.bottom <= b.vh && b.docScroll <= b.vw && b.font >= 10;
     run.check("B-2 選取面板「守護：選取時生效中，這一場漏城傷害每隻 ×0.8；在場上、還活著時漏城傷害減少 20%，累計後無條件進位才扣城防，不回復城防（重新點選可以更新）」；390×600 時說明在面板與畫面裡、城防旁的「守護 −20%」也在畫面裡（截圖另存）",
-      /守護：選取時生效中，這一場漏城傷害每隻 ×0\.8；在場上、還活著時漏城傷害減少 20%，累計後無條件進位才扣城防，不回復城防（重新點選可以更新）/.test(panel.note) &&
+      /守護：(?:選取時|目前)生效中，這一場漏城傷害每隻 ×0\.8；在場上、還活著時漏城傷害減少 20%，累計後無條件進位才扣城防，不回復城防（(?:重新點選可以更新|即時更新)）/.test(panel.note) &&
         panel.active === "1" && near(panel.mult, 0.8) && inside(box) && badgeIn(narrowBadge),
       out.B_panel);
 

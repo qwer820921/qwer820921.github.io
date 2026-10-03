@@ -1,5 +1,5 @@
 ## bridge_recorder.gd
-## 測試用（不進正式產物）：記錄 BattleManager 交給 WebBridge 的 update_stats 與結算，以及防禦塔面板與目標優先的回覆、拆除的回覆與隱藏面板、部署選單的 click_cell 與戰鬥速度的回覆、手動暫停的回覆。
+## 測試用（不進正式產物）：記錄 BattleManager 交給 WebBridge 的 update_stats 與結算，以及防禦塔面板與目標優先的回覆、拆除的回覆與隱藏面板、部署選單的 click_cell 與戰鬥速度的回覆、手動暫停的回覆、戰況觀測。
 ## 非 Web 平台上 WebBridge 不會真的送出訊息，所以繼承正式的 WebBridge，
 ## 只在呼叫原本的方法之前多記一份副本，其他行為完全不變。
 ## 由 lifecycle_test.gd 暫時換掉 Main.web_bridge 使用（Main 每次載入關卡都會把它交給 BattleManager）。
@@ -23,6 +23,8 @@ var sent_pauses: Array = []
 var sent_snapshots: Array = []
 ## 拒絕開戰的原因（wave_rejected）
 var sent_wave_rejects: Array = []
+## 戰況觀測（battle_observation）
+var sent_observations: Array = []
 
 func send_ready() -> void:
 	sent_ready += 1
@@ -71,3 +73,10 @@ func send_debug_snapshot(data: Dictionary) -> void:
 func send_wave_rejected(data: Dictionary) -> void:
 	sent_wave_rejects.append(data.duplicate(true))
 	super.send_wave_rejected(data)
+
+## 觀測多記一個送出時的牆鐘毫秒（__ms），測試用來檢查送出的間隔
+func send_battle_observation(data: Dictionary) -> void:
+	var copy: Dictionary = data.duplicate(true)
+	copy["__ms"] = Time.get_ticks_msec()
+	sent_observations.append(copy)
+	super.send_battle_observation(data)

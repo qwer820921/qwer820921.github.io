@@ -335,8 +335,8 @@ async (page) => {
     return { panel, box, shot };
   };
   const inside = (b) => !!b && b.left >= 0 && b.right <= b.vw && b.docScroll <= b.vw && b.font >= 12 && b.top >= b.panelTop && b.bottom <= b.panelBottom + 1 && b.bottom <= b.vh;
-  const READY = /魅惑：選取時可以控制；打中仍活著的地面目標時讓它受控 2 秒（停下來改打 1 格內的其他敵人），成功後冷卻 6 秒（重新點選可以更新）/;
-  const COOLING = /魅惑：選取時冷卻中，還剩 [0-9.]+ 秒；打中仍活著的地面目標時讓它受控 2 秒（停下來改打 1 格內的其他敵人），成功後冷卻 6 秒（重新點選可以更新）/;
+  const READY = /魅惑：(?:選取時|目前)可以控制；打中仍活著的地面目標時讓它受控 2 秒（停下來改打 1 格內的其他敵人），成功後冷卻 6 秒（(?:重新點選可以更新|即時更新)）/;
+  const COOLING = /魅惑：(?:選取時|目前)冷卻中，還剩 [0-9.]+ 秒；打中仍活著的地面目標時讓它受控 2 秒（停下來改打 1 格內的其他敵人），成功後冷卻 6 秒（(?:重新點選可以更新|即時更新)）/;
   // 迎戰到結算：等猛兵受控；pause 時受控中手動暫停 1.5 秒；記錄草人倒下時的擊殺／金幣／狀態／場上敵人數；受控期間猛兵的生命；
   // panelWhileCharmed 時在草人倒下後、控制結束前打開選取面板；最後等到結算
   const fight = async (sel, opts) => {
@@ -384,9 +384,10 @@ async (page) => {
     const brute = afterKill.f[0];
     out1.afterKill = { kills: afterKill.s.kills, state: afterKill.s.game_state, active: afterKill.s.active_enemies, charmed: brute.charm && brute.charm.charmed,
       bruteHp: brute.hp, hits: ((brute.charm && brute.charm.log) || []).filter((x) => x.ev === "hit").map((x) => [x.target, x.killed]), gold: afterKill.stats && afterKill.stats.gold };
+    // 受控期間猛兵的生命：最後一次看到受控時的生命。草人倒下當下的那次取樣（仍受控）也算：
+    // 面板的 390×600 量測要 1.5 秒以上，2 秒的控制可能在量完前就結束，之後的取樣就一筆也拿不到
+    let lastCharmedHp = brute.charm && brute.charm.charmed ? brute.hp : null;
     if (opts.panelWhileCharmed) out1.panel = await panelAt(sel, opts.panelWhileCharmed);
-    // 受控期間猛兵的生命：最後一次看到受控時的生命
-    let lastCharmedHp = null;
     const end3 = Date.now() + 15000;
     for (;;) {
       const s = await snapshot(sel);
