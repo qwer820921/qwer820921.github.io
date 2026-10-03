@@ -21,7 +21,7 @@ async (page) => {
     expectedConsole: [
       /拒絕開始第 \d+ 波/,
       /^WARNING: \[WaveManager\] 飛行敵人組 'mock_flyer' 的路線 path_(loop|single) 無效（flight_(same_endpoints|single_point)），跳過此組$/,
-      /^\s*at: push_(warning|error) \(core\/variant\/variant_utility\.cpp:\d+\)$/,
+      /^\s*at: push_(warning|error) \(core[\\/]variant[\\/]variant_utility\.cpp:\d+\)$/,
       /^\s*GDScript backtrace/,
       /^\s*\[\d+\] \w+ \(res:\/\/[\w/]+\.gd:\d+\)$/,
     ],

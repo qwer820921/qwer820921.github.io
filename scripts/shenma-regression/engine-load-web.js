@@ -3,13 +3,16 @@ async (page) => {
   // - 載入動畫下面寫出「存檔與設定」與「遊戲引擎」各自的階段，引擎下載中寫出已下載／總共的大小（讀遊戲 iframe 外殼頁自己的進度）
   // - 引擎沒有下載完，存檔與設定讀完也不會停在看似完成的畫面：整體進度依引擎的位元組前進，game_ready 後才進戰場
   // - 30 秒沒有收到資料：說明可能網路很慢或中斷，提供重新載入；引擎無法啟動（外殼頁的錯誤）、瀏覽器缺少 WebGL2：改顯示原因與重新載入
-  // - EL-1～EL-5（見各段的 check 名稱）；限速用 CDP 的網路模擬，卡住與失敗用 page.route 攔遊戲的 index.pck，WebGL2 用初始化腳本關掉
+  // - EL-1～EL-5（見各段的 check 名稱）；限速用 CDP 的網路模擬（只作用在頁面：EL-1 讓頁面略過 Service Worker、直接下載，
+  //   Service Worker 下載時的進度由載入量測 tools/load-measure.mjs 的伺服器端限速驗證），卡住與失敗用 context.route
+  //   攔遊戲的 index.pck（遊戲的 Service Worker 發出的請求也攔得到：卡住、404 都經過 Service Worker 的核對與拒絕），
+  //   WebGL2 用初始化腳本關掉
   // 全部虛構金鑰 test_el_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
   const { H } = S;
   const ctx = page.context();
-  const run = H.begin({ expectedConsole: [/Failed to load resource: the server responded with a status of 404/, /Failed loading file 'index\.pck'/, /Error while registering service worker/, /Service worker already exists/] });
+  const run = H.begin({ expectedConsole: [/Failed to load resource: the server responded with a status of (404|503)/, /Failed loading file 'index\.pck'/, /Error while registering service worker/, /Service worker already exists/] });
   const out = {};
   const MAIN = H.BASE + "/shenmaSanguo";
   const PCK = "**/games/shenmaSanguo/index.pck";
@@ -87,6 +90,8 @@ async (page) => {
     cdp = await ctx.newCDPSession(page);
     await cdp.send("Network.enable");
     await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
+    // CDP 的限速只作用在頁面：頁面略過 Service Worker、直接下載（頁面仍由同一版的 Service Worker 控制）
+    await cdp.send("Network.setBypassServiceWorker", { bypass: true });
     await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 40, downloadThroughput: 2 * 1024 * 1024, uploadThroughput: 1024 * 1024 });
     await page.reload();
     const seen = [];
@@ -102,6 +107,7 @@ async (page) => {
     }
     await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
     await cdp.send("Network.setCacheDisabled", { cacheDisabled: false });
+    await cdp.send("Network.setBypassServiceWorker", { bypass: false });
     const dl = seen.filter((s) => DL.test(s.engine)).map((s) => DL.exec(s.engine).slice(1).map(Number));
     const loadedVals = [...new Set(dl.map((d) => d[0]))];
     const totals = [...new Set(dl.map((d) => d[1]))];
@@ -111,9 +117,17 @@ async (page) => {
     const dataDoneEarly = seen.some((s) => DL.test(s.engine) && /存檔與設定：完成/.test(s.stage));
     const maxWidthWhileDl = Math.max(...seen.filter((s) => DL.test(s.engine) && s.width !== null).map((s) => s.width));
     const last = seen[seen.length - 1];
-    out.el1 = { samples: seen.length, loadedVals: loadedVals.slice(0, 12), totals, widths: widths.filter((w, i) => i % 8 === 0), maxWidthWhileDl, last };
-    run.check("EL-1 限速每秒約 2 MB（停用快取）：引擎那一行寫出「遊戲引擎：下載中 a / b MB」，總共大小固定、已下載的大小至少出現 3 個且一路增加；下載中有「第一次開啟要下載遊戲引擎」的提醒；存檔與設定先讀完時進度條停在引擎的比例之下（下載中不超過 93%）；整體進度一路不減，引擎就緒後載入畫面消失、進入戰場；全程沒有停住或無法啟動的提示",
-      loadedVals.length >= 3 && loadedVals.every((v, i) => i === 0 || v >= loadedVals[i - 1]) && totals.length === 1 && totals[0] > 30 &&
+    // 外殼頁 GODOT_CONFIG.fileSizes 的引擎與資料包大小（MB，取到小數一位）：顯示的總共大小要和它相同（不寫死數字，換引擎時照實際檔案）
+    const shellMb = await page.evaluate(async () => {
+      const html = await (await fetch("/games/shenmaSanguo/index.html", { cache: "no-store" })).text();
+      const m = html.match(/"fileSizes":(\{[^}]*\})/);
+      if (!m) return null;
+      const sizes = JSON.parse(m[1]);
+      return Object.values(sizes).reduce((t, v) => t + v, 0) / 1048576;
+    });
+    out.el1 = { samples: seen.length, loadedVals: loadedVals.slice(0, 12), totals, shellMb, widths: widths.filter((w, i) => i % 8 === 0), maxWidthWhileDl, last };
+    run.check("EL-1 限速每秒約 2 MB（停用快取）：引擎那一行寫出「遊戲引擎：下載中 a / b MB」，總共大小固定而且等於外殼頁記錄的引擎＋資料包大小、已下載的大小至少出現 3 個且一路增加；下載中有「第一次開啟要下載遊戲引擎」的提醒；存檔與設定先讀完時進度條停在引擎的比例之下（下載中不超過 93%）；整體進度一路不減，引擎就緒後載入畫面消失、進入戰場；全程沒有停住或無法啟動的提示",
+      loadedVals.length >= 3 && loadedVals.every((v, i) => i === 0 || v >= loadedVals[i - 1]) && totals.length === 1 && shellMb !== null && Math.abs(totals[0] - shellMb) <= 0.1 &&
         hintWhileDl && dataDoneEarly && maxWidthWhileDl <= 93 && nonDecreasing && last.hud && !last.loader &&
         !seen.some((s) => s.stalled || s.failed),
       { ...out.el1, shot });
@@ -131,7 +145,7 @@ async (page) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await prime();
     await seed("test_el_2");
-    await page.route(PCK, (route) => (holding ? held.push(route) : route.continue()));
+    await ctx.route(PCK, (route) => (holding ? held.push(route) : route.continue()));
     const t0 = Date.now();
     await page.reload();
     await page.locator('[data-testid="loading-stalled"]').waitFor({ timeout: 90000 });
@@ -156,7 +170,7 @@ async (page) => {
   } catch (e) {
     run.check("EL-2 執行時發生例外", false, String(e && e.stack ? e.stack : e).replace(/\u001b\[[0-9]+m/g, "").slice(0, 900));
   } finally {
-    await page.unroute(PCK).catch(() => {});
+    await ctx.unroute(PCK).catch(() => {});
     for (const r of held.splice(0)) await r.abort().catch(() => {});
   }
 
@@ -165,7 +179,7 @@ async (page) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await prime();
     await seed("test_el_3");
-    await page.route(PCK, (route) => route.fulfill({ status: 404, contentType: "text/plain", body: "not found" }));
+    await ctx.route(PCK, (route) => route.fulfill({ status: 404, contentType: "text/plain", body: "not found" }));
     await page.reload();
     const box = page.locator('[data-testid="engine-load-failed"]');
     await box.waitFor({ timeout: 60000 });
@@ -175,7 +189,7 @@ async (page) => {
     run.check("EL-3 index.pck 回 404：顯示「遊戲引擎無法啟動，請重新載入」（role=alert）與外殼頁的原始訊息（含 index.pck）、「重新載入」按鈕；載入動畫不再顯示、沒有進入戰場",
       /遊戲引擎無法啟動，請重新載入/.test(s.failed) && /index\.pck/.test(s.failed) && /重新載入/.test(s.failed) && role === "alert" && !s.loader && !s.hud,
       { ...s, role, shot });
-    await page.unroute(PCK);
+    await ctx.unroute(PCK);
     await box.getByRole("button", { name: "重新載入" }).click();
     await H.waitHud(page);
     const after = await loaderState();
@@ -183,7 +197,7 @@ async (page) => {
   } catch (e) {
     run.check("EL-3 執行時發生例外", false, String(e && e.stack ? e.stack : e).slice(0, 400));
   } finally {
-    await page.unroute(PCK).catch(() => {});
+    await ctx.unroute(PCK).catch(() => {});
   }
 
   // ── EL-4 瀏覽器沒有 WebGL2：外殼頁不會啟動引擎也不顯示訊息；主頁約 5 秒後說明缺少 WebGL2，不會一直轉圈 ──

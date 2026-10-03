@@ -8,7 +8,8 @@
 //   飛行路線無效與優先飛行選項、地面路線沒有路程與戰場內的下一波、關卡能不能出征與敵人攻擊力／免疫減速、備份檔、武將列表篩選、
 //   地圖編輯器的錯誤說明與敵人表的移動方式欄判斷、
 //   跨來源隔離開機腳本）、harness 雜訊規則、
-//   工具自我測試、素材引用檢查、Godot 反向驗證的變異原文檢查（只讀原始碼）。不需要 dev server 與 Godot
+//   工具自我測試、素材引用檢查、Godot 反向驗證的變異原文檢查（只讀原始碼）、匯出後處理的 Service Worker 與外殼頁測試。
+//   不需要 dev server 與 Godot
 // - related：quick 之後，只跑指定功能的瀏覽器腳本；full：quick 之後跑全部瀏覽器腳本（約 35 分鐘）
 //   瀏覽器腳本需要 npm run dev 與 PLAYWRIGHT_DIR（見 README）；Godot 端另外用 godot-check.sh
 // - EVIDENCE_DIR：瀏覽器腳本的證據目錄，耗時摘要寫在 <EVIDENCE_DIR>/tier-<層>.json（沒有設定時只印出）
@@ -121,6 +122,11 @@ const QUICK = [
     "node",
     ["scripts/shenma-regression/tools/godot-mutation.mjs", "check"],
   ],
+  [
+    "匯出後處理的 Service Worker 與外殼頁測試（版本完整性、核對後交付、重新驗證、引擎快取）",
+    "node",
+    ["scripts/shenma-regression/tools/postexport.test.mjs"],
+  ],
 ];
 
 // 功能 → 瀏覽器腳本（改到哪些功能就跑哪幾組；README 有「改了什麼 → 跑哪幾組」的對照）
@@ -148,6 +154,10 @@ const AREAS = {
   "engine-load": {
     what: "主頁載入畫面的遊戲引擎進度：下載大小、停住時的重新載入、引擎無法啟動與缺少 WebGL2 的說明（需要 Godot 產物）",
     scripts: ["engine-load-web.js"],
+  },
+  bgm: {
+    what: "背景音樂不在啟動時下載：第一次要播放時才下載一次、不重複、遊戲照常（需要 Godot 產物）",
+    scripts: ["bgm-load-web.js"],
   },
   "battle-tips": {
     what: "戰場的玩法提示：兩個戰鬥入口的位置（不疊在遊戲畫面上）、開關與收起、記住收起、不暫停戰鬥（需要 Godot 產物）",
@@ -325,6 +335,7 @@ const FULL = [
   "save-dialog-keyboard-web.js",
   "battle-tips-web.js",
   "engine-load-web.js",
+  "bgm-load-web.js",
 ];
 
 const [mode, ...rest] = process.argv.slice(2);

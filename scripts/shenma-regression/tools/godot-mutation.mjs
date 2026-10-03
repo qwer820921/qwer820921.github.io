@@ -25,6 +25,7 @@ const ENEMY = "entities/enemy/Enemy.gd";
 const WAVE = "systems/WaveManager.gd";
 const MAIN = "main/Main.gd";
 const BATTLE = "systems/BattleManager.gd";
+const SFX = "systems/SFXManager.gd";
 
 // 每個變異：要改的檔案、原文（必須剛好出現一次）、改成的內容、要跑的測試組與預期會 FAIL 的項目（名稱開頭）
 const MUTATIONS = {
@@ -1250,6 +1251,30 @@ const MUTATIONS = {
     to: '\tvar skill = state.get("skill", null)\n',
     only: "doubleshot",
     expect: ["連射-0 ", "連射-8 "],
+  },
+  "bgm-duplicate-download": {
+    why: "背景音樂下載中再要播放時又送出一次下載（重複下載）",
+    file: SFX,
+    from: "\tif _bgm_pending or _bgm_tries >= BGM_MAX_TRIES:\n\t\treturn\n",
+    to: "\tif _bgm_tries >= BGM_MAX_TRIES:\n\t\treturn\n",
+    only: "bgm",
+    expect: ["BGM-2 "],
+  },
+  "bgm-plays-after-stop": {
+    why: "停止（結算、換場）之後背景音樂下載完成仍然開始播放",
+    file: SFX,
+    from: "\tif _bgm_wanted and sfx_enabled and not _bgm_player.playing:\n",
+    to: "\tif sfx_enabled and not _bgm_player.playing:\n",
+    only: "bgm",
+    expect: ["BGM-3 "],
+  },
+  "bgm-unlimited-retry": {
+    why: "背景音樂下載失敗後沒有次數上限（每次要播放都重新下載）",
+    file: SFX,
+    from: "\tif _bgm_pending or _bgm_tries >= BGM_MAX_TRIES:\n\t\treturn\n",
+    to: "\tif _bgm_pending:\n\t\treturn\n",
+    only: "bgm",
+    expect: ["BGM-6 "],
   },
 };
 

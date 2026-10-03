@@ -1,0 +1,100 @@
+{
+  "name": "神馬三國：裁減後的 Godot 4.6.2 網頁模板（web nothreads, template_debug）",
+  "template": {
+    "file": "shenma-4.6.2-trim-web_nothreads_debug-63482ed9b6b2.zip",
+    "sha256": "63482ed9b6b2e6b0e390c30fd19085c90a27163aa8bd63e158f095329f2f7cb7",
+    "wasm": {
+      "bytes": 24230597,
+      "sha256": "bbf69b9161c71064983c5582b8995143e989ca7aad9be8acc270a227cb170a2c"
+    },
+    "jsBytes": 102198,
+    "builtAt": "2026-10-03T10:54:08Z"
+  },
+  "source": {
+    "tag": "4.6.2-stable",
+    "url": "https://codeload.github.com/godotengine/godot/tar.gz/refs/tags/4.6.2-stable",
+    "tarSha256": "908b759e7517fec65d687b3d468cd639fd8967d25da1522ef8a2087af638b3fe",
+    "dir": "godot-4.6.2-stable"
+  },
+  "tools": {
+    "emsdk": {
+      "version": "4.0.11",
+      "commit": "96c657fc60920d2a6a82318aa50e0abf82749604",
+      "note": "官方 Godot 4.6.2 CI 的 EM_VERSION"
+    },
+    "scons": "4.11.1",
+    "python": "emsdk 內附的 3.13.3（SCons 以 pip 安裝）"
+  },
+  "scons": [
+    "platform=web",
+    "target=template_debug",
+    "threads=no",
+    "production=yes",
+    "use_closure_compiler=yes",
+    "disable_3d=yes",
+    "disable_physics_3d=yes",
+    "disable_navigation_3d=yes",
+    "disable_navigation_2d=yes",
+    "disable_xr=yes",
+    "disable_advanced_gui=yes",
+    "module_astcenc_enabled=no",
+    "module_basis_universal_enabled=no",
+    "module_bcdec_enabled=no",
+    "module_betsy_enabled=no",
+    "module_bmp_enabled=no",
+    "module_camera_enabled=no",
+    "module_csg_enabled=no",
+    "module_cvtt_enabled=no",
+    "module_dds_enabled=no",
+    "module_enet_enabled=no",
+    "module_etcpak_enabled=no",
+    "module_fbx_enabled=no",
+    "module_gltf_enabled=no",
+    "module_godot_physics_3d_enabled=no",
+    "module_gridmap_enabled=no",
+    "module_hdr_enabled=no",
+    "module_interactive_music_enabled=no",
+    "module_jolt_physics_enabled=no",
+    "module_jpg_enabled=no",
+    "module_jsonrpc_enabled=no",
+    "module_ktx_enabled=no",
+    "module_lightmapper_rd_enabled=no",
+    "module_meshoptimizer_enabled=no",
+    "module_mobile_vr_enabled=no",
+    "module_mp3_enabled=no",
+    "module_msdfgen_enabled=no",
+    "module_multiplayer_enabled=no",
+    "module_navigation_2d_enabled=no",
+    "module_navigation_3d_enabled=no",
+    "module_noise_enabled=no",
+    "module_objectdb_profiler_enabled=no",
+    "module_openxr_enabled=no",
+    "module_raycast_enabled=no",
+    "module_regex_enabled=no",
+    "module_tga_enabled=no",
+    "module_theora_enabled=no",
+    "module_tinyexr_enabled=no",
+    "module_upnp_enabled=no",
+    "module_vhacd_enabled=no",
+    "module_webrtc_enabled=no",
+    "module_websocket_enabled=no",
+    "module_webxr_enabled=no",
+    "module_xatlas_unwrap_enabled=no",
+    "module_zip_enabled=no"
+  ],
+  "kept": "中文字型與文字（text_server_adv）、GUI（disable_advanced_gui 只拿掉編輯器用的進階元件）、2D 物理、Ogg Vorbis、WebGL2、GDScript",
+  "windowsPatches": [
+    {
+      "file": "platform/web/SCsub",
+      "why": "EMCC_CLOSURE_ARGS 的 --externs 路徑是反斜線，Windows 上 closure compiler 讀不到；改成正斜線（只影響建置參數）",
+      "find": "    sys_env[\"ENV\"][\"EMCC_CLOSURE_ARGS\"] += \" --externs \" + ext.abspath\n",
+      "replace": "    sys_env[\"ENV\"][\"EMCC_CLOSURE_ARGS\"] += \" --externs \" + ext.abspath.replace(\"\\\\\", \"/\")\n"
+    },
+    {
+      "file": "<emsdk>/upstream/emscripten/node_modules/.bin/google-closure-compiler",
+      "why": "原本是 shell 腳本，Windows 的 node 無法執行（Godot 的 emscripten_helpers.py 用 node 執行這個檔案）；換成 require(cli.js) 的入口，原檔備份為 .sh-orig",
+      "content": "#!/usr/bin/env node\n// Windows：Godot 的 emscripten_helpers.py 用 node 執行這個檔案（原本是 shell 腳本，備份在 .sh-orig）\nrequire(\"../google-closure-compiler/cli.js\");\n"
+    }
+  ],
+  "output": "bin/godot.web.template_debug.wasm32.nothreads.zip"
+}

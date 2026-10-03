@@ -179,7 +179,7 @@ func _run() -> void:
 	# stagedata 跑關卡資料未完成（沒有波次、波次或路線的格式不對）；enemyatk 跑敵人設定的對武將攻擊力；immune 跑免疫減速；
 	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）；stun 只跑張飛的暈眩（skills 也包含）；lifesteal 只跑魏延的吸血（skills 也包含）；
 	# atkspeed 只跑曹操的攻速光環（skills 也包含）；damage 只跑敵人受傷的入口（拒絕無效的傷害）；
-	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）
+	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；bgm 只跑網頁版背景音樂的下載（SFXManager）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -249,8 +249,10 @@ func _run() -> void:
 			await _atk_down_cases()
 		elif only == "doubleshot":
 			await _double_shot_cases()
+		elif only == "bgm":
+			await _bgm_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、bgm）", false)
 		_finish()
 		return
 
@@ -487,6 +489,9 @@ func _run() -> void:
 
 	# ── 孫尚香的連射（普通攻擊命中後目標還活著時 20% 機率對同一個目標再打一擊）──
 	await _double_shot_cases()
+
+	# ── 網頁版的背景音樂（不在資料包裡，第一次要播放時才下載一次）──
+	await _bgm_cases()
 
 	_finish()
 
@@ -11114,3 +11119,93 @@ func _double_shot_cases() -> void:
 	main.web_bridge = original
 	rec.free()
 	_load(_stage_b())
+
+# ── 網頁版的背景音樂（SFXManager）：資料包裡沒有時，第一次要播放才下載；下載中不重複送出、停止後下載完成不播放、
+#    失敗不自動重試、最多試 BGM_MAX_TRIES 次。headless 不是網頁，用 bgm_fetcher 換成假的下載（內容是專案裡的原始檔）──
+func _bgm_cases() -> void:
+	var sfx: Node = root.get_node("SFXManager")
+	var original: AudioStream = sfx._streams.get("bgm_battle")
+	var saved: Dictionary = {"enabled": sfx.sfx_enabled, "polyphony": sfx.sfx_polyphony}
+	var calls: Array = []  # 每次下載的完成 Callable(ok, body)
+	var reset := func() -> void:
+		sfx.stop_bgm()
+		sfx._streams.erase("bgm_battle")
+		sfx._bgm_remote = true
+		sfx._bgm_pending = false
+		sfx._bgm_tries = 0
+		sfx._bgm_player.stream = null
+		calls.clear()
+	sfx.bgm_fetcher = func(done: Callable) -> void: calls.append(done)
+	var bytes: PackedByteArray = FileAccess.get_file_as_bytes("res://audio/bgm/bgm_battle.ogg")
+
+	_check("BGM-0 不是網頁時照舊從資料包載入背景音樂（測試的前提）；下載用的原始檔可以讀到",
+		original != null and not OS.has_feature("web") and bytes.size() > 100000, {"stream": str(original), "bytes": bytes.size()})
+
+	# BGM-1：音效關閉時不下載
+	reset.call()
+	sfx.configure(false, "single")
+	sfx.play_bgm()
+	_check("BGM-1 音效關閉時要播放也不下載", calls.size() == 0 and sfx._bgm_tries == 0, calls.size())
+
+	# BGM-2：開啟音效（會要播放）才下載；下載中再要播放不重複送出
+	sfx.configure(true, "single")
+	var after_cfg: int = calls.size()
+	sfx.play_bgm()
+	sfx.play_bgm()
+	_check("BGM-2 開啟音效後要播放才下載；下載中再要播放不重複送出（只有 1 次）",
+		after_cfg == 1 and calls.size() == 1 and sfx._bgm_pending, {"after_cfg": after_cfg, "calls": calls.size()})
+
+	# BGM-3：下載完成前停止（結算、換場）：完成後記住，但不播放
+	sfx.stop_bgm()
+	calls[0].call(true, bytes)
+	await process_frame
+	var cached3: AudioStream = sfx._streams.get("bgm_battle")
+	_check("BGM-3 下載完成前已停止（結算、換場）：下載的音樂記住，但不自己開始播放",
+		cached3 is AudioStreamOggVorbis and not sfx._bgm_player.playing and sfx._bgm_player.stream != cached3,
+		{"cached": str(cached3), "playing": sfx._bgm_player.playing})
+
+	# BGM-4：之後要播放直接用記住的，不再下載
+	sfx.play_bgm()
+	await process_frame
+	_check("BGM-4 之後要播放直接用下載過的，不再下載",
+		calls.size() == 1 and sfx._bgm_player.stream == cached3 and sfx._bgm_player.playing,
+		{"calls": calls.size(), "playing": sfx._bgm_player.playing})
+
+	# BGM-5：下載完成時仍然需要播放 → 開始播放
+	reset.call()
+	sfx.play_bgm()
+	calls[0].call(true, bytes)
+	await process_frame
+	var s5: AudioStream = sfx._streams.get("bgm_battle")
+	_check("BGM-5 下載完成時仍然需要播放：開始播放下載的音樂",
+		s5 != null and sfx._bgm_player.stream == s5 and sfx._bgm_player.playing, {"playing": sfx._bgm_player.playing})
+
+	# BGM-6：失敗（連線失敗、404、沒有內容）不影響遊戲、不自動重試；下一次要播放才再試，最多 2 次
+	reset.call()
+	sfx.play_bgm()
+	calls[0].call(false, PackedByteArray())
+	await process_frame
+	await process_frame
+	var after_fail: int = calls.size()
+	sfx.play_bgm()
+	calls[1].call(true, PackedByteArray())  # 回應成功但沒有內容也算失敗
+	await process_frame
+	sfx.play_bgm()
+	await process_frame
+	_check("BGM-6 下載失敗：沒有播放、不自動重試；下一次要播放才再試，最多 2 次（第 3 次要播放不再下載）",
+		after_fail == 1 and calls.size() == 2 and sfx._streams.get("bgm_battle") == null and not sfx._bgm_player.playing and not sfx._bgm_pending,
+		{"after_fail": after_fail, "calls": calls.size()})
+
+	# 還原（不呼叫 configure，避免開始播放）；停止後等音訊伺服器釋放播放中的實例（否則結束時算成沒有釋放的資源）
+	sfx.stop_bgm()
+	sfx._bgm_player.stream = null
+	await create_timer(0.3, true, false, true).timeout
+	await process_frame
+	sfx.bgm_fetcher = Callable()
+	sfx._bgm_remote = false
+	sfx._bgm_tries = 0
+	sfx._bgm_pending = false
+	sfx._bgm_player.stream = null
+	sfx._streams["bgm_battle"] = original
+	sfx.sfx_enabled = saved.enabled
+	sfx.sfx_polyphony = saved.polyphony

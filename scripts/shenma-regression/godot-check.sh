@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 神馬三國 Godot 端檢查：暫存目錄匯入 → debug 匯出 → 與交付產物核對 → headless 生命週期測試
+# 神馬三國 Godot 端檢查：暫存目錄匯入 → debug 匯出 → 匯出後處理（postexport.mjs）→ 與交付產物核對 → headless 生命週期測試
 # 任一步失敗都以非零結束：Godot log 有 ERROR／SCRIPT ERROR／Parse Error、產物有不允許的差異、
 # 測試失敗或沒有輸出結果、Godot 逾時。全程不寫入倉庫，也不刪除任何檔案或目錄。
 #
@@ -14,6 +14,10 @@
 #   TEST_SCRIPT   要執行的測試（預設：res://__regression__/lifecycle_test.gd；失敗 fixture 見 README）
 #   COMPARE_HEAD  設為 1 時另外列出與 HEAD 版 public/ 的差異（僅供診斷，不影響結果）
 #   TEST_TIMEOUT  headless 測試的逾時秒數（預設 1500；完整回歸約 16 分鐘，技能測試增加時可以調高）
+# 必要環境變數：
+#   WEB_TEMPLATE_DEBUG  網頁模板 zip：必須是 web-template/manifest.json 記錄的裁減模板（sha256 相同）。
+#                       沒有設定或內容不同時拒絕（結束碼 2），不會靜默改用官方模板產生交付產物。
+#                       只改暫存專案的匯出設定（custom_template/debug），不改倉庫；重建模板見 web-template/README.md
 set -uo pipefail
 
 die() { echo "拒絕：$*" >&2; exit 2; }
@@ -75,14 +79,33 @@ run_godot() { # $1=log 名稱 $2=逾時秒數，其餘為 Godot 參數
   return $code
 }
 
+# 網頁模板：WEB_TEMPLATE_DEBUG=<模板 zip>，sha256 必須和 web-template/manifest.json 釘選的相同。
+# 只改暫存專案的匯出設定（custom_template/debug），不改倉庫
+PIN=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).template.sha256)" "$(win "$REPO/scripts/shenma-regression/web-template/manifest.json")") \
+  || die "讀不到 web-template/manifest.json 的模板 sha256"
+[ -n "${WEB_TEMPLATE_DEBUG:-}" ] || die "請設定 WEB_TEMPLATE_DEBUG 為裁減模板 zip（sha256 $PIN，見 web-template/README.md）；不會改用官方模板"
+if [ -n "${WEB_TEMPLATE_DEBUG:-}" ]; then
+  [ -f "$WEB_TEMPLATE_DEBUG" ] || die "找不到網頁模板：$WEB_TEMPLATE_DEBUG"
+  got=$(sha256sum "$WEB_TEMPLATE_DEBUG" | cut -d' ' -f1)
+  [ "$got" = "$PIN" ] || die "網頁模板的 sha256 是 $got，和 manifest 釘選的 $PIN 不同（重建的模板要重新驗證並更新 manifest）"
+  tpl=$(canon "$WEB_TEMPLATE_DEBUG")
+  sed -i "s|^custom_template/debug=\"\"\r\?$|custom_template/debug=\"$tpl\"|" "$WORK/project/export_presets.cfg"
+  grep -q "^custom_template/debug=\"$tpl\"" "$WORK/project/export_presets.cfg" || fail "自訂網頁模板沒有套用到匯出設定"
+  echo "== 網頁模板：$tpl（sha256 $got，和 manifest 釘選的相同）"
+fi
+
 echo "== 匯入"
 run_godot import 600 --path "$(win "$WORK/project")" --import || fail "匯入結束碼非 0"
 node "$(win "$TOOLS/check-log.mjs")" import "$(win "$WORK/import.log")" || fail "匯入 log 有錯誤"
 
-echo "== debug 匯出（與目前正式產物相同的 web_nothreads_debug 模板）"
+echo "== debug 匯出（裁減後的 web_nothreads_debug 模板）"
 run_godot export 600 --path "$(win "$WORK/project")" --export-debug "Web" "$(win "$WORK/export/index.html")" \
   || fail "匯出結束碼非 0"
 node "$(win "$TOOLS/check-log.mjs")" export "$(win "$WORK/export.log")" || fail "匯出 log 有錯誤"
+
+echo "== 匯出後處理（背景音樂、版本守門與 Service Worker 的版本完整性、引擎快取：tools/postexport.mjs）"
+node "$(win "$TOOLS/postexport.mjs")" "$(win "$WORK/export")" "$(win "$WORK/project")" > "$WORK/postexport.json" \
+  || fail "匯出後處理失敗"
 
 echo "== 產物核對（本次匯出 vs 交付產物）"
 node "$(win "$TOOLS/verify-export.mjs")" "$(win "$WORK/export")" "$(win "$PUBLIC_DIR")" || fail "產物與交付產物不一致"

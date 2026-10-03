@@ -85,6 +85,31 @@
 
 後端草稿（GAS）的模擬測試與反向驗證不在版控內，由後端的交付紀錄另外說明。
 
+## 首次載入與回訪的量測（`tools/load-measure.mjs`）
+
+```bash
+PLAYWRIGHT_DIR=<含 playwright 的 node_modules> EVIDENCE_DIR=<證據目錄> \
+  node scripts/shenma-regression/tools/load-measure.mjs --dir <舊版遊戲目錄> --update-dir <新版遊戲目錄> --profile desktop|mobile [--max-age 600]
+```
+
+- 自己用 GitHub Pages 的方式提供遊戲目錄（gzip、ETag、`Cache-Control: max-age`、304，不送 COOP／COEP），伺服器記錄每個請求實際送出的位元組；直接開遊戲外殼頁到 game_ready，不經網站、不呼叫後端。
+- 每一輪用新的使用者資料夾（有磁碟上的 HTTP 快取），依序量 cold、warm1、warm2、update（伺服器換成新版：舊的 Service Worker 先開舊版，新的裝好後照主頁的做法送 "update" 接管，量到新版就緒），並記錄 Cache Storage 裡每個檔案的大小與 sha256（核對是不是同一版）。
+- `--profile mobile` 是 390×844、伺服器端限速 1250 KB/s、往返 150 ms、CPU 4 倍慢（模擬，不是實體手機）；`--max-age 0` 相當於超過快取時間後回訪。結果是 `<EVIDENCE_DIR>/load-measure-<label>.json`。
+- 另外記錄外殼頁進度條的取樣（不同值的個數、是否一路不減；Service Worker 下載時由版本守門顯示）與版本守門確認版本花的時間（`__shenmaGuard.stats`）。伺服器端限速對 Service Worker 發出的請求也有效（瀏覽器端的 CDP 限速只作用在頁面）。
+
+## 匯出後處理（`tools/postexport.mjs`）
+
+交付的 `public/games/shenmaSanguo` 是「Godot 匯出＋匯出後處理」的結果，`godot-check.sh` 照同樣的步驟核對：
+
+- 背景音樂不放進資料包（`export_presets.cfg` 的 `exclude_filter`），原始檔複製成 `bgm_battle.ogg`。
+- **版本完整性**：一個頁面只會拿到同一版的外殼頁、`index.js`、`index.wasm`、`index.pck`，拿不到就明確失敗。版本（`VERSION`，由外殼頁與其他檔案的內容決定）同時寫進外殼頁與 Service Worker。
+  - 外殼頁的版本守門：網址加上 `shenma_ver=<版本>`，確認控制這個頁面的 Service Worker 是同一版（不是就讓同一版接手；伺服器上沒有這一版時重新載入一次，仍不行就說明）之後，才載入 `index.js`、開始下載引擎與資料包。Service Worker 下載與核對時送來的進度顯示在進度條，拒絕交付時以中文說明原因（網站的載入畫面會讀到）。
+  - Service Worker：`index.js`／`index.wasm`／`index.pck` 只給同一版的頁面（不是就 503 拒絕）；快取裡的（放進快取前都核對過）直接用，沒有才下載，完整讀完、大小與 sha256 相符才交付並放進快取。舊版、新版、沒下載完、404、網路錯誤都不交給頁面、不放進快取，告訴頁面原因；安裝時先載入的檔案不符就不安裝。下載與外殼頁的導覽都向伺服器重新驗證（`cache: 'no-cache'`，關掉導覽預載）。啟用時接手範圍內的頁面（第一次開啟也經過核對）。
+- 引擎快取：`index.js`＋`index.wasm` 相同時跨版本沿用，不重新下載。
+- `verify-export.mjs` 允許的差異：Service Worker 記錄的 `index.pck`／`index.html` sha256 與兩個檔案裡的版本（跟著 node_ids 不同）；兩邊各自要和自己的檔案相符、外殼頁與 Service Worker 的版本相同，而且等於由自己的檔案重新計算的版本。
+
+`godot-check.sh` 一律用 `web-template/manifest.json` 釘選的裁減模板：`WEB_TEMPLATE_DEBUG=<模板 zip>` 必填、sha256 必須相同，否則拒絕（不會靜默改用官方模板產生交付產物）；重建模板見 `web-template/README.md`。
+
 ## 需要的工具
 
 | 工具           | 版本／位置                                                                                                        |
@@ -117,14 +142,15 @@ GODOT="<編輯器目錄>/Godot_v4.6.2-stable_win64_console.exe" \
 | 版本     | `--version`                                                                                                              | 不是 `4.6.2.stable.*`                                                                                                                                         |
 | 複製     | 只複製 `godot/shenmaSanguo/` 中**版本控制內**的檔案（取工作區內容）；有未追蹤檔會提示                                    | 複製失敗                                                                                                                                                      |
 | 匯入     | `--import`                                                                                                               | 結束碼非 0、逾時，或 log 有任何 `ERROR`／`SCRIPT ERROR`／`Parse Error`                                                                                        |
-| 匯出     | `--export-debug "Web"`（與目前正式產物相同的 `web_nothreads_debug` 模板）                                                | 同上                                                                                                                                                          |
+| 匯出     | `--export-debug "Web"`（釘選的裁減 `web_nothreads_debug` 模板），之後跑匯出後處理                                                | 同上                                                                                                                                                          |
 | 產物核對 | `tools/verify-export.mjs`：本次匯出 vs 交付產物（預設工作區 `public/games/shenmaSanguo`）                                | 有任何不允許的差異（見下方）                                                                                                                                  |
 | 測試     | 把 `godot/` 整個複製到另一份暫存專案的 `res://__regression__/`，執行 `TEST_SCRIPT`，再用 `tools/check-log.mjs test` 檢查 | 結束碼非 0、逾時、`SCRIPT ERROR`／`Parse Error`、不在允許清單的 `ERROR`、沒有剛好一行 `RESULT_JSON`、`failed≠0`、`total=0`、`PASS` 行數≠`total`、有 `FAIL` 行 |
 
-**產物核對只允許兩種已知的隨機差異**，其他內容（包含所有 `.gdc`、`uid_cache.bin`、引擎檔、`index.html`）都必須逐位元組相同：
+**產物核對只允許三種已知的隨機差異**，其他內容（包含所有 `.gdc`、`uid_cache.bin`、引擎檔、`index.html` 版本以外的內容、`bgm_battle.ogg`）都必須逐位元組相同：
 
 1. `index.pck` 內 `*.scn` 的 `node_ids` 陣列內容：專案的 `.tscn` 沒有 `unique_id`，每次匯出隨機產生。工具會在二進位資源中找到 `node_ids` 這個 PackedInt32Array，只把它的元素清零後再比對，其餘位元組必須相同。
 2. `index.service.worker.js` 的 `const CACHE_VERSION = '…';` 那一行（匯出時間戳）。
+3. 這一版的版本（跟著 1 不同）：`index.html` 與 `index.service.worker.js` 的 `VERSION`，以及 `const EXPECTED = …;` 裡 `index.pck`、`index.html` 的 sha256。兩邊各自：EXPECTED 和自己的檔案相符、外殼頁與 Service Worker 的版本相同、等於由自己的檔案重新計算的版本；其他欄位必須相同。
 
 文字檔（前 8000 bytes 沒有 NUL，與 git 的判定相同）比較時把 CRLF 視為 LF：本機 `core.autocrlf=true` 會讓未修改的檔案在工作區是 CRLF，提交時再轉回 LF。
 
@@ -200,6 +226,8 @@ GODOT="<編輯器目錄>/Godot_v4.6.2-stable_win64_console.exe" \
 - 免疫減速（`SHENMA_TEST_ONLY=immune`，也包含在完整回歸）：測試刻意讓 id 和 trait 不一致（免疫的敵人 id 沒有 cavalry，`cavalry_plain` 沒有 trait）。免疫-0：`Enemy.is_immune_slow_cfg` 的判讀（immune_slow 與前後有空白的是免疫；大小寫不同、合在一起寫的、其他值、空白、null、數字、布林、陣列、沒有欄位都不是）；免疫-1～3 是固定步進：兩個減速 API 都不套用、不顯示「緩」，普通的敵人照舊，免疫的敵人照常受傷與灼燒；作用的先後（疊加→光環、光環→疊加、光環 0.3→0.55）；60 步的移動距離（1 倍：免疫 60 px、普通 17.1 px；2 倍：免疫 120 px；倍率減速照有效期到期，這裡的有效期涵蓋整段移動）。免疫-4～6 是實際引擎：道路上的關羽不讓免疫的敵人減速，但免疫的敵人照樣被擋住並攻擊（每擊 20）、快照的 `enemy_immune`；新的一場普通的敵人被打中後 0.3、比較晚才被擋住；步兵塔光環與文士塔：只有免疫的敵人時一直倍率 1、疊加 0、沒有「緩」，普通的 0.55、疊加、出現「緩」，同一波普通的先出免疫的後出時各自照規則；時間倍率（1×、2×、部署選單 0.1×）與手動暫停照常作用在免疫的敵人。反向驗證的變異（跑 `immune`，約 60 秒一種）：`immune-missing-slow`、`immune-missing-stack`（漏掉其中一個減速 API）、`immune-as-flying`（當成飛行、不被擋住）、`immune-by-id`（用 id 判斷）、`immune-shared`（所有敵人共用一份）。
 - 大部分案例只用公開行為判定，可以拿同一支測試對照修正前後；R3-E 的「拒絕信號」檢查需要新版的 `wave_start_rejected` 信號，R9 需要新版的 `battle_id`（修正前會 FAIL，並在讀取 `BattleManager.battle_id` 時出現 SCRIPT ERROR）。
 
+- 網頁版的背景音樂（`SHENMA_TEST_ONLY=bgm`；也包含在完整回歸）：headless 不是網頁，用 `SFXManager.bgm_fetcher` 換成假的下載（內容是專案裡的原始檔）。BGM-0：不是網頁時照舊從資料包載入；BGM-1：音效關閉時要播放也不下載；BGM-2：開啟音效後要播放才下載，下載中再要播放不重複送出；BGM-3：下載完成前停止（結算、換場）時記住但不播放；BGM-4：之後直接用下載過的；BGM-5：下載完成時仍然需要播放就開始播放；BGM-6：失敗不自動重試，下一次要播放才再試、最多 2 次。反向驗證：`bgm-duplicate-download`、`bgm-plays-after-stop`、`bgm-unlimited-retry`
+
 ### 失敗 fixture
 
 `godot/fixtures/` 內的腳本用來確認 runner 不會誤報通過，每一支都必須讓 `godot-check.sh` 以結束碼 1 結束：
@@ -224,7 +252,7 @@ TEST_SCRIPT=res://__regression__/fixtures/exit0_with_fail.gd GODOT=… bash scri
 node scripts/shenma-regression/tools/selftest.mjs public/games/shenmaSanguo
 ```
 
-複製交付產物到系統暫存目錄後逐一製造差異，確認 `verify-export.mjs` 只放行「node_ids、CACHE_VERSION、換行」三種差異，`.gdc`、`.scn` 其他位元組、`uid_cache.bin`、SW 其他內容、`index.html`、多出檔案都會失敗；並用合成 log 確認 `check-log.mjs` 對 ERROR／SCRIPT ERROR／Parse Error／FAIL／缺 RESULT_JSON／total=0 都會失敗。每個 fixture 也會檢查「確實改到了檔案」，避免允許差異的案例空過。不會修改傳入的目錄。
+複製交付產物到系統暫存目錄後逐一製造差異，確認 `verify-export.mjs` 只放行「node_ids、CACHE_VERSION、跟著資料包重算的 sha256 與版本、換行」這幾種差異，`.gdc`、`.scn` 其他位元組、`uid_cache.bin`、SW 其他內容、`index.html` 版本以外的內容、多出檔案、記錄的 sha256 沒有跟著資料包更新、版本沒有跟著重算、外殼頁的版本和 Service Worker 不同、背景音樂改一個 byte 都會失敗；並用合成 log 確認 `check-log.mjs` 對 ERROR／SCRIPT ERROR／Parse Error／FAIL／缺 RESULT_JSON／total=0 都會失敗。每個 fixture 也會檢查「確實改到了檔案」，避免允許差異的案例空過。不會修改傳入的目錄。
 
 素材引用檢查：
 
@@ -420,6 +448,14 @@ node scripts/shenma-regression/web/read-retry.test.mjs
 - 涵蓋：每個唯讀 action 失敗一次後重試成功且內容相同；上限與間隔；逾時的時間點、逾時後才到的回應不採用、三次都沒有回應時 93 秒內結束；平台錯誤頁用完是 `BAD_RESPONSE` 不是 `PROFILE_NOT_FOUND`；7 種後端明確的錯誤只送一次；6 種寫入遇到連線失敗、錯誤頁、`BUSY`、`SERVER_ERROR`、沒有回應都只送一次（寫入不設逾時）；過期（失敗當下、等待重試期間）不再送出；前景讀取登記「較慢」（8 秒）與「重試中」、結束時清除，背景讀取不登記；過期的讀取之後計時才到不標為較慢、已顯示的說明在 `dropStaleReadWaits` 時拿掉（仍有效的讀取不受影響）；遊戲設定一支重試成功、一支用完時其他不再重試、連續呼叫共用、手動同步作廢舊讀取、後端明確的錯誤不重試。
 - 反向驗證：`GAME_API_SRC=<改壞的 gameApi.ts>` 時改用那個檔案（相對匯入仍以原本的位置解析）。
 
+### 3n. 匯出後處理的 Service Worker 與外殼頁測試（不需要瀏覽器）
+
+```bash
+node scripts/shenma-regression/tools/postexport.test.mjs
+```
+
+- `postexport.test.mjs`：把 Godot 4.6.2 產生的 Service Worker 與外殼頁（`fixtures/godot-4.6.2-service-worker.js`、`fixtures/godot-4.6.2-index.html`）經 `tools/postexport.mjs` 處理後放進 Node 的 vm 沙盒（假的 Cache Storage、網路與頁面），核對：外殼頁的守門（`index.js` 確認版本後才載入、版本與 Service Worker 相同、遮掉版本後重算相同）；只交付同一版（沒有版本或別的版本的頁面拒絕）；錯的內容不交付（伺服器換成新版時 A 的頁面拿不到 B 的資料包，也不放進快取，告訴頁面原因並檢查新版）、半包／中途斷線／404／連不上都拒絕、已有正確快取時不碰網路、新版啟用後伺服器回舊檔時拒絕、剛拒絕過不再重新下載；導覽在檔案齊全時用快取、不齊全時重新驗證、連不上給離線頁；安裝成套、啟用時關導覽預載並接手、引擎跨版本沿用、從原本的模板 Service Worker 升級；模板改版時直接失敗。
+
 ## 4. 瀏覽器回歸
 
 前置：`npm run dev`（`http://localhost:3000`）。**同一時間不要跑 `npm run build` 或 `tsc`**，避免 `.next` 被同時寫入。
@@ -484,6 +520,7 @@ node scripts/shenma-regression/web/read-retry.test.mjs
 | 7zv  | `save-dialog-keyboard-web.js` | 存檔比較與備份檔預覽的鍵盤（不需要 Godot；存檔比較用腳本自己的小型版本契約後端做出衝突）。桌面與 390：Tab 到「比較並選擇」按 Enter，對話框名稱與說明、焦點在關閉鈕、嚴格循環、Esc 回到入口；確認步驟的焦點在說明、返回比較回到原本的選項；處理中焦點留在視窗本身、Esc 不關、只送一次，完成後焦點交給底部的備份提示；確認期間雲端又更新時焦點移到說明；開啟時沒有焦點的退路。備份檔預覽：Tab 到「預覽備份檔」按 Enter、嚴格循環、用 Enter 開檔案選擇器，選到正確與壞掉的檔案時焦點移到結果或原因，Esc 回到入口、沒有寫入                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | 7zw  | `battle-tips-web.js`          | 戰場的玩法提示（真 Godot）。還沒選過時：主頁桌面固定在視窗左下角、390×844 接在戰場下方（遊戲畫面讓出 HUD 的高度、寬度不變），都不和遊戲畫面重疊、不擋 HUD；矮的畫面（主頁 375×667、740×360，獨立戰鬥頁 375×740）預設收起，手動展開後接在下方；內容（部署武將、戰場金幣建造與升級防禦塔、迎戰與城防、和戰場點數分開）；開關（圖示，名稱「玩法提示」）的 aria-expanded、Enter 收起展開、提示裡的「收起」把焦點交給開關；記住收起（重新整理、換到獨立戰鬥頁）；獨立戰鬥頁的位置與 Tab 順序；戰鬥中切換不暫停、不送請求；結算時不顯示                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 7zx  | `engine-load-web.js`          | 主頁載入畫面的遊戲引擎進度（真 Godot、mock 後端）。載入動畫下面寫出存檔與設定、遊戲引擎各自的階段，引擎下載中寫出已下載／總共的大小（讀遊戲 iframe 外殼頁自己的進度）並提醒第一次要下載；限速每秒約 2 MB 時大小一路增加、整體進度不減、下載中不超過 93%；index.pck 一直沒有回應時 30 秒後說明停住了並提供重新載入；index.pck 回 404 時改顯示引擎無法啟動與原始訊息；沒有 WebGL2 時說明瀏覽器缺少的功能；一般載入沒有任何提示                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 7zy  | `bgm-load-web.js`             | 背景音樂不在啟動必載的資料包裡（真 Godot，主頁）：game_ready 之前沒有請求；收到關卡資料、套用音效設定（音效開著）後下載一次（1 609 183 bytes），按掉進場畫面後播放；換關沿用不再下載；音效關閉不下載；404 時遊戲照常、不自動重試，再要播放才試第 2 次，之後不再下載。計次用遊戲自己的紀錄（[SFXManager]）與遊戲頁面送出的請求                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 7j   | `r14-web.js`                  | R14：黃忠「百步穿楊」。技能說明（主頁武將視窗、武將頁，詳情寫出目前等級在戰場上的實際射程）；主頁用部署選單實際放置在 (12,4)，用快照的 `hero_ranges`／`hero_enemy_dist` 量第一次扣血時敵人的距離（原射程 5 格外、7.5 格內），更遠時沒有扣血、每一擊就是攻擊力；選取時既有的武將資訊面板顯示實際射程；戰鬥中升級兩次，射程依序 7.545、7.59（不疊乘）；獨立戰鬥頁（`place_hero` 訊息）同樣有效；存檔、session 沒有技能或射程欄位。mock 名單多了黃忠（射程 5、成長 0.03、花費 6），預設隊伍不變                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 8    | `fixtures/deliberate-fail.js` | 刻意失敗的 fixture（見下方）；會汙染錯誤紀錄，所以放在最後或另開 context                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
