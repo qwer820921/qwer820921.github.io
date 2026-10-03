@@ -3271,6 +3271,19 @@
   opacity: 0.45;
   cursor: default;
 }
+/* 敵軍的搜尋框（字級至少 12px） */
+.battleLiveSearch {
+  width: 100%;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  color: #fff;
+  padding: 3px 8px;
+  font-size: 0.8rem;
+}
+.battleLiveSearch::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
 .battleLiveTabOn {
   background: rgba(99, 102, 241, 0.55);
   border-color: rgba(165, 180, 252, 0.8);

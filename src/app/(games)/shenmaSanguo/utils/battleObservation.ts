@@ -87,6 +87,24 @@ export interface BattleObservation {
   enemies: ObsEnemy[];
   /** 遊戲此刻計入波次的敵人數（和 enemies 的數量相同才採用） */
   enemy_total: number;
+  /** 本波出兵進度（可選：舊版遊戲沒有這個欄位時是 null，畫面不顯示進度） */
+  spawn: ObsSpawn | null;
+}
+
+/**
+ * 本波出兵進度（遊戲 WaveManager 的實際計數，網頁不用牆鐘推算）。wave 0 代表這一場還沒開始出兵；
+ * planned 只算有效的組（無效路線、找不到的敵人不算）；alive 是這一波還在場上的（含受控的）；
+ * killed／leaked 只算這一波的敵人、每隻一次
+ */
+export interface ObsSpawn {
+  wave: number;
+  planned: number;
+  spawned: number;
+  pending: number;
+  alive: number;
+  killed: number;
+  leaked: number;
+  spawning: boolean;
 }
 
 const MAX_HEROES = 64;
@@ -224,6 +242,39 @@ function parseEnemy(raw: unknown, generation: number): ObsEnemy | null {
   };
 }
 
+/**
+ * 本波出兵進度：沒有這個欄位時是 null（舊版遊戲）；有但不合理時回傳 undefined（整份不採用）。
+ * 已出＋待出＝計畫；倒下＋漏城＋存活不超過已出；存活不超過場上總數
+ */
+function parseSpawn(
+  raw: unknown,
+  enemyTotal: number
+): ObsSpawn | null | undefined {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const s = raw as Record<string, unknown>;
+  const keys = [
+    "wave",
+    "planned",
+    "spawned",
+    "pending",
+    "alive",
+    "killed",
+    "leaked",
+  ] as const;
+  if (!keys.every((k) => isInt(s[k]))) return undefined;
+  if (typeof s.spawning !== "boolean") return undefined;
+  const v = Object.fromEntries(keys.map((k) => [k, s[k] as number])) as Omit<
+    ObsSpawn,
+    "spawning"
+  >;
+  if (v.spawned + v.pending !== v.planned) return undefined;
+  if (v.killed + v.leaked + v.alive > v.spawned) return undefined;
+  if (v.alive > enemyTotal) return undefined;
+  if (v.wave === 0 && v.planned !== 0) return undefined;
+  return { ...v, spawning: s.spawning };
+}
+
 /** 驗證一份觀測（遊戲送來的原始訊息）；任何一項不合理就整份不採用（回傳 null） */
 export function parseBattleObservation(raw: unknown): BattleObservation | null {
   if (!raw || typeof raw !== "object") return null;
@@ -257,6 +308,8 @@ export function parseBattleObservation(raw: unknown): BattleObservation | null {
     lastSeq = e.seq;
     enemies.push(e);
   }
+  const spawn = parseSpawn(d.spawn, d.enemy_total);
+  if (spawn === undefined) return null;
   return {
     battle_id: d.battle_id,
     lifecycle: d.lifecycle,
@@ -268,6 +321,7 @@ export function parseBattleObservation(raw: unknown): BattleObservation | null {
     heroes,
     enemies,
     enemy_total: d.enemy_total,
+    spawn,
   };
 }
 
@@ -509,3 +563,172 @@ export function heroNameOf(
 
 /** 百分比（四捨五入到整數） */
 export const pct = (ratio: number) => Math.round(ratio * 100);
+
+// ── 敵軍的搜尋與狀態篩選（網頁的提案；只篩選畫面上的清單，不改目標、不送命令）──
+
+export type EnemyStatus = "charmed" | "slowed" | "stunned" | "burning";
+
+/** 狀態篩選：同時選多個時要全部符合（AND） */
+export const ENEMY_STATUS_FILTERS: {
+  id: EnemyStatus;
+  label: string;
+  test: (e: ObsEnemy) => boolean;
+}[] = [
+  { id: "charmed", label: "受控", test: (e) => e.charmed },
+  { id: "slowed", label: "減速", test: (e) => e.slow_left > 0 },
+  { id: "stunned", label: "暈眩", test: (e) => e.stun_left > 0 },
+  { id: "burning", label: "灼燒", test: (e) => e.burn_left > 0 },
+];
+
+export interface EnemyQuery {
+  /** 中文名稱或 enemy_id 的一部分（不分大小寫、去掉前後空白；空白是全部） */
+  text: string;
+  /** 選中的狀態（空的是全部；多個時 AND） */
+  statuses: EnemyStatus[];
+}
+
+export const EMPTY_ENEMY_QUERY: EnemyQuery = { text: "", statuses: [] };
+
+export const isEnemyQueryActive = (q: EnemyQuery) =>
+  q.text.trim() !== "" || q.statuses.length > 0;
+
+/** 依搜尋與狀態篩選這一份觀測的敵人（順序不變，仍依出場順序）；回傳符合的敵人 */
+export function filterEnemies(
+  list: ObsEnemy[],
+  query: EnemyQuery,
+  config: EnemyConfig[] | null | undefined
+): ObsEnemy[] {
+  const text = query.text.trim().toLowerCase();
+  const tests = ENEMY_STATUS_FILTERS.filter((f) =>
+    query.statuses.includes(f.id)
+  ).map((f) => f.test);
+  return list.filter(
+    (e) =>
+      (!text ||
+        e.enemy_id.toLowerCase().includes(text) ||
+        enemyName(e.enemy_id, config).toLowerCase().includes(text)) &&
+      tests.every((t) => t(e))
+  );
+}
+
+// ── 敵軍的排序（網頁的提案；過濾之後、分頁之前；只排畫面上的清單，不改目標）──
+
+export type EnemySort = "spawn" | "hp" | "atk";
+
+export const ENEMY_SORTS: { id: EnemySort; label: string; note: string }[] = [
+  { id: "spawn", label: "出場順序", note: "依出場順序排列" },
+  {
+    id: "hp",
+    label: "生命比例",
+    note: "依生命比例由低到高排列（同比例依出場順序）",
+  },
+  {
+    id: "atk",
+    label: "有效攻擊力",
+    note: "依此刻的有效攻擊力由高到低排列（同數值依出場順序）",
+  },
+];
+
+/** 生命比例（目前生命÷最大生命；觀測已確定最大生命是正數） */
+export const hpRatio = (u: { hp: number; max_hp: number }) => u.hp / u.max_hp;
+
+/**
+ * 排序（回傳新的陣列，不改原本的）：出場順序依 seq；生命比例由低到高；有效攻擊力（atk_eff，含威壓）由高到低。
+ * 數值相同時依 seq（穩定）；生命比例只看生命，不把設定的護甲當成減傷
+ */
+export function sortEnemies(list: ObsEnemy[], sort: EnemySort): ObsEnemy[] {
+  const bySeq = (a: ObsEnemy, b: ObsEnemy) => a.seq - b.seq;
+  const cmp =
+    sort === "hp"
+      ? (a: ObsEnemy, b: ObsEnemy) => hpRatio(a) - hpRatio(b) || bySeq(a, b)
+      : sort === "atk"
+        ? (a: ObsEnemy, b: ObsEnemy) => b.atk_eff - a.atk_eff || bySeq(a, b)
+        : bySeq;
+  return [...list].sort(cmp);
+}
+
+// ── 已部署武將的搜尋、受傷篩選與排序（網頁的提案；只篩選畫面上的清單，不改選取、不送命令）──
+
+/** 低生命的門檻（生命比例小於或等於這個值）：畫面的提案，不是正式設定 */
+export const LOW_HP_RATIO = 0.3;
+
+export type HeroHealth = "all" | "injured" | "low";
+
+export const HERO_HEALTH_FILTERS: { id: HeroHealth; label: string }[] = [
+  { id: "all", label: "全部" },
+  { id: "injured", label: "受傷" },
+  { id: "low", label: `低生命（≤${Math.round(LOW_HP_RATIO * 100)}%）` },
+];
+
+export type HeroSort = "deploy" | "hp";
+
+export const HERO_SORTS: { id: HeroSort; label: string }[] = [
+  { id: "deploy", label: "部署順序" },
+  { id: "hp", label: "生命比例" },
+];
+
+export interface HeroQuery {
+  /** 中文名稱或 hero_id 的一部分（不分大小寫、去掉前後空白；空白是全部） */
+  text: string;
+  health: HeroHealth;
+  sort: HeroSort;
+}
+
+export const EMPTY_HERO_QUERY: HeroQuery = {
+  text: "",
+  health: "all",
+  sort: "deploy",
+};
+
+/** 有沒有在篩選（排序不算）：有時畫面寫出符合 N／在場 M 位 */
+export const isHeroQueryActive = (q: HeroQuery) =>
+  q.text.trim() !== "" || q.health !== "all";
+
+/** 部署的流水號（hero-N 的 N）：數值相同時的次序 */
+const deployNo = (h: ObsHero) => Number(h.uid.slice("hero-".length));
+
+/**
+ * 依搜尋、生命狀態篩選並排序已部署的武將（每位以 uid 區分；目前一場裡同一位武將只能部署一位，觀測也不接受重複的 hero_id）。
+ * 受傷：生命少於最大生命；低生命：生命比例 ≤ LOW_HP_RATIO。部署順序依 uid 的流水號；生命比例由低到高，相同時依流水號
+ */
+export function filterHeroes(
+  list: ObsHero[],
+  query: HeroQuery,
+  config: HeroConfig[] | null | undefined
+): ObsHero[] {
+  const text = query.text.trim().toLowerCase();
+  const matched = list.filter(
+    (h) =>
+      (!text ||
+        h.hero_id.toLowerCase().includes(text) ||
+        heroNameOf(h.hero_id, config).toLowerCase().includes(text)) &&
+      (query.health === "all" ||
+        (query.health === "injured" && h.hp < h.max_hp) ||
+        (query.health === "low" && hpRatio(h) <= LOW_HP_RATIO))
+  );
+  const byDeploy = (a: ObsHero, b: ObsHero) => deployNo(a) - deployNo(b);
+  return matched.sort(
+    query.sort === "hp"
+      ? (a, b) => hpRatio(a) - hpRatio(b) || byDeploy(a, b)
+      : byDeploy
+  );
+}
+
+// ── 本波出兵進度（遊戲的實際計數）──
+
+/** 本波出兵進度的說明；沒有這個欄位（舊版遊戲）時是 null，畫面不顯示 */
+export function spawnProgressText(obs: BattleObservation): string | null {
+  const s = obs.spawn;
+  if (!s) return null;
+  if (obs.state === 3)
+    return s.wave > 0
+      ? `已結算：第 ${s.wave} 波已出 ${s.spawned}／${s.planned}（擊殺 ${s.killed}、漏城 ${s.leaked}）`
+      : "已結算";
+  if (s.wave === 0)
+    return obs.state === 1 ? "備戰中，還沒開始出兵" : "還沒開始出兵";
+  if (s.pending > 0)
+    return `第 ${s.wave} 波出兵中：已出 ${s.spawned}／${s.planned}、待出 ${s.pending}、場上 ${obs.enemy_total}`;
+  if (s.alive > 0 || obs.enemy_total > 0)
+    return `第 ${s.wave} 波已全部出完（${s.planned} 隻）：清場中，場上 ${obs.enemy_total}（這一波還有 ${s.alive}）`;
+  return `第 ${s.wave} 波已全部出完並清場（擊殺 ${s.killed}、漏城 ${s.leaked}）`;
+}

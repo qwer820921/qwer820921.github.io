@@ -24,7 +24,7 @@ async (page) => {
       /^WARNING: \[WaveManager\] (飛行|地面)敵人組 'mock_[\w]+' 的路線 path_\w+ 無效（(flight|ground)_\w+），跳過此組$/,
       /^WARNING: \[WaveManager\] 敵人組 'mock_c_fast' 數量為 0，跳過此組$/,
       /^WARNING: \[WaveManager\] 找不到波次 2 資料$/,
-      /^\s*at: push_(warning|error) \(core\/variant\/variant_utility\.cpp:\d+\)$/,
+      /^\s*at: push_(warning|error) \(core[\\/]variant[\\/]variant_utility\.cpp:\d+\)$/,
       /^\s*GDScript backtrace/,
       // 自動模式開下一波時的呼叫來源是計時器的匿名函式
       /^\s*\[\d+\] (\w+|<anonymous lambda>) \(res:\/\/[\w/]+\.gd:\d+\)$/,

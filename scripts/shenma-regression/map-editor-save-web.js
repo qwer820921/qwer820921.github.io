@@ -244,7 +244,9 @@ async (page) => {
   // MAP_EDITOR_ONLY=<段落名稱,...>：只跑這些段落（定位單一段落用；其他段落記在 out.skippedSections，不算通過）
   const ONLY = String(proc.env.MAP_EDITOR_ONLY || "").split(",").map((s) => s.trim()).filter(Boolean);
   if (ONLY.length) out.onlySections = ONLY;
+  const sectionNames = [];
   const section = async (name, fn) => {
+    sectionNames.push(name);
     if (ONLY.length && !ONLY.includes(name)) {
       (out.skippedSections = out.skippedSections || []).push(name);
       return;
@@ -1805,5 +1807,10 @@ async (page) => {
   await page.setViewportSize({ width: 1280, height: 800 }).catch(() => {});
   out.requests = (await reqLog().catch(() => [])).length;
   if (node) out.backendLog = node.log.length;
+  // 選段名稱打錯時整支都會被跳過：直接判定失敗，不讓「什麼都沒跑」看起來像通過
+  if (ONLY.length) {
+    const unknown = ONLY.filter((n) => !sectionNames.includes(n));
+    run.check("MAP_EDITOR_ONLY 的段落名稱都認得（只跑一部分，結果是局部的）", unknown.length === 0, { unknown, known: sectionNames });
+  }
   return run.finish(out);
 }

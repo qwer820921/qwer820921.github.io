@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Col, Row } from "react-bootstrap";
 import { formatSec } from "../../utils/heroStats";
 import { towerAirAbility } from "../../utils/antiAir";
@@ -373,6 +373,11 @@ export default function UpgradePanel({
   const s = sell && isSameTower(data, sell) ? sell : null;
   const confirming = s?.phase === "confirm" || s?.phase === "pending";
   const pending = s?.phase === "pending";
+  // 出現拆除確認時捲到確認列（矮的畫面上面板內容需要捲動，確認列可能在下方看不到的地方）
+  const confirmRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (confirming) confirmRef.current?.scrollIntoView({ block: "nearest" });
+  }, [confirming]);
 
   return (
     <div
@@ -380,12 +385,27 @@ export default function UpgradePanel({
       className={styles.upgradePanel}
       data-testid="unit-panel"
       onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        // Esc 關閉面板，焦點交還遊戲畫面（面板是從遊戲畫面點選打開的）
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        e.stopPropagation();
+        const frame = panelRef.current
+          ?.closest("[data-game-stage]")
+          ?.querySelector("iframe");
+        onClose();
+        frame?.focus();
+      }}
     >
       <div className={styles.upgradeHeader}>
         <span className={styles.unitName}>
           {data.name} <small>Lv.{data.level}</small>
         </span>
-        <button className={styles.closeBtn} onClick={onClose}>
+        <button
+          className={styles.closeBtn}
+          onClick={onClose}
+          aria-label="關閉單位面板"
+        >
           ×
         </button>
       </div>
@@ -734,6 +754,7 @@ export default function UpgradePanel({
               </button>
             ) : (
               <div
+                ref={confirmRef}
                 className={styles.sellConfirm}
                 data-testid="tower-sell-confirm"
                 role="group"

@@ -1305,6 +1305,8 @@ func battle_observation() -> Dictionary:
 		"heroes": heroes,
 		"enemies": enemies,
 		"enemy_total": wave_manager.get_active_enemy_count(),
+		# 本波出兵進度（可選欄位：舊版網頁不認得時忽略；協定不變）
+		"spawn": wave_manager.get_spawn_progress(),
 	}
 
 ## 一位武將的技能此刻的實際狀態（技能 id 由 Godot 實際讀到的參數判斷；沒有啟用任何技能時是空字典）。

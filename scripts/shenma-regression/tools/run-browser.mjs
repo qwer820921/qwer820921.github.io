@@ -10,7 +10,11 @@
 // - GAS_BACKEND：多分頁情境（save-conflict-web.js）的共用後端模組（export createBackend），沒有設定時用腳本內建的契約 mock
 // - LOCAL_ASSETS=1：驗證正式靜態匯出時使用（前置改成 tools/serve-out.mjs）。正式版的 _next 資源指向
 //   https://qwer820921.github.io/（assetPrefix），這些請求一律由本機 out/ 回應，不會連到正式站
-// 任何一支腳本 allPass 不是 true（或執行時拋出例外）時結束碼為 1
+// 任何一支腳本 allPass 不是 true（或執行時拋出例外）、或沒有任何斷言時結束碼為 1
+// 每支腳本另外印一行 RESULT_JSON：通過與否、斷言數、範圍（腳本回傳 onlySections／skippedSections 時是 partial）、
+//   原始結果的路徑與 sha256（run-tier.mjs 依此記錄快取）
+// run-browser.mjs --probe：只啟動瀏覽器，印出 BROWSER_PROBE（channel、實際版本、有沒有顯示視窗）後結束
+import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
@@ -23,6 +27,23 @@ const pwDir = process.env.PLAYWRIGHT_DIR;
 const { chromium } = require(pwDir ? join(pwDir, "playwright") : "playwright");
 
 const files = process.argv.slice(2);
+const launchOptions = {
+  channel: process.env.BROWSER_CHANNEL || "chrome",
+  headless: process.env.HEADED !== "1",
+};
+if (files[0] === "--probe") {
+  const b = await chromium.launch(launchOptions);
+  console.log(
+    "BROWSER_PROBE " +
+      JSON.stringify({
+        channel: launchOptions.channel,
+        version: b.version(),
+        headless: launchOptions.headless,
+      })
+  );
+  await b.close();
+  process.exit(0);
+}
 if (files[0] !== "harness.js") {
   console.error(
     "用法：run-browser.mjs harness.js <情境腳本...>（第一支必須是 harness.js）"
@@ -31,10 +52,7 @@ if (files[0] !== "harness.js") {
 }
 process.chdir(ROOT); // 腳本內的截圖路徑是倉庫相對路徑
 
-const browser = await chromium.launch({
-  channel: process.env.BROWSER_CHANNEL || "chrome",
-  headless: process.env.HEADED !== "1",
-});
+const browser = await chromium.launch(launchOptions);
 const context = await browser.newContext({ acceptDownloads: true });
 if (process.env.EVIDENCE_DIR) {
   // harness 讀取這個目錄當作證據目錄（截圖與 *.raw.json 都寫在這裡）
@@ -84,18 +102,45 @@ try {
     const evidence = context.__shenma?.H?.EVIDENCE;
     if (!evidence) throw new Error("harness 沒有安裝成功，找不到證據目錄");
     const out = join(evidence, file.replace(/\.js$/, "") + ".raw.json");
-    writeFileSync(out, JSON.stringify(result, null, 2) + "\n");
+    const rawText = JSON.stringify(result, null, 2) + "\n";
+    writeFileSync(out, rawText);
     const isHarness = file === "harness.js";
-    const pass = isHarness ? !result?.error : result?.allPass === true;
-    if (!pass) failed += 1;
     const asserts = result?.assertions || [];
+    // 沒有任何斷言的「通過」不算通過（例如選段名稱打錯、整支都跳過）
+    const noAssertions = !isHarness && asserts.length === 0;
+    const pass = isHarness
+      ? !result?.error
+      : result?.allPass === true && !noAssertions;
+    if (!pass) failed += 1;
     const count = isHarness
       ? ""
       : `${asserts.filter((a) => a.pass).length}/${asserts.length}`;
     const seconds = Math.round((Date.now() - started) / 1000);
-    const why = (result?.failures || []).join("；") || result?.error || "";
+    const why =
+      (result?.failures || []).join("；") ||
+      result?.error ||
+      (noAssertions ? "沒有任何斷言" : "");
     console.log(
       `${pass ? "PASS" : "FAIL"}  ${file}  ${count}  ${seconds}s  ${out}  ${why}`.trim()
+    );
+    const only = result?.onlySections || [];
+    const skipped = result?.skippedSections || [];
+    console.log(
+      "RESULT_JSON " +
+        JSON.stringify({
+          script: file,
+          pass,
+          seconds,
+          assertions: {
+            passed: asserts.filter((a) => a.pass).length,
+            total: asserts.length,
+          },
+          scope: only.length || skipped.length ? "partial" : "full",
+          only,
+          skipped,
+          raw: out,
+          rawSha256: createHash("sha256").update(rawText).digest("hex"),
+        })
     );
   }
 } finally {

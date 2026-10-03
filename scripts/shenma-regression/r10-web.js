@@ -101,7 +101,10 @@ async (page) => {
     }));
   const currentCacheVersion = async () => {
     const text = await (await page.request.get(H.BASE + "/games/shenmaSanguo/index.service.worker.js")).text();
-    return (text.match(/^const CACHE_VERSION = '([^']*)';$/m) || [])[1] || null;
+    const version = (text.match(/^const CACHE_VERSION = '([^']*)';$/m) || [])[1] || null;
+    // 匯出後處理加上的引擎快取（同一個引擎跨版本共用）；沒有這一行就是 null
+    const engine = (text.match(/^const ENGINE_CACHE = CACHE_PREFIX \+ '([^']*)';$/m) || [])[1] || null;
+    return { version, engine };
   };
   const openPlayerInfo = async () => {
     await page.locator('button[class*="hudAvatar"]').click();
@@ -245,8 +248,10 @@ async (page) => {
         before.pageId === after.pageId && JSON.stringify(before.session) === JSON.stringify(after.session) &&
           after.session.nickname === "未同步暱稱" && after.session.pendingUpgrade === "r10-op/unknown" && saves.length === 0,
         out.B_retry);
-      run.check("B-3 遊戲的 Service Worker 換成新版本：快取只剩目前的版本（舊版本的快取已刪除）",
-        !!version && sw.caches.length > 0 && sw.caches.every((k) => k === "shenmaSanguo-sw-cache-" + version), out.B_retry);
+      const keep = [version.version, version.engine].filter(Boolean).map((v) => "shenmaSanguo-sw-cache-" + v);
+      run.check("B-3 遊戲的 Service Worker 換成新版本：快取只剩目前的版本與目前這個引擎（舊版本的快取已刪除）",
+        !!version.version && sw.caches.includes("shenmaSanguo-sw-cache-" + version.version) && sw.caches.every((k) => keep.includes(k)),
+        out.B_retry);
       out.B_shot = await H.shot(page, "r10-b-after-retry");
       // 放行載入時暫停的請求（待確認升級照既有規則重新確認：伺服器看不到升級，仍待確認）
       await releaseAll("get_profile");

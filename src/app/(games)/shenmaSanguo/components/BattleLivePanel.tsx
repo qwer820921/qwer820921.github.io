@@ -5,16 +5,33 @@ import { Col, Row } from "react-bootstrap";
 import { ListUl } from "react-bootstrap-icons";
 import { EnemyConfig, HeroConfig } from "../types";
 import {
+  EMPTY_ENEMY_QUERY,
+  EMPTY_HERO_QUERY,
   ENEMY_PAGE_SIZE,
+  ENEMY_SORTS,
+  ENEMY_STATUS_FILTERS,
+  EnemyQuery,
+  EnemySort,
+  EnemyStatus,
+  HERO_HEALTH_FILTERS,
+  HERO_SORTS,
+  HeroQuery,
   ObsEnemy,
   configArmor,
   enemyName,
   enemyPage,
+  filterEnemies,
+  filterHeroes,
   heroNameOf,
+  hpRatio,
+  isEnemyQueryActive,
+  isHeroQueryActive,
   pct,
   secText,
   skillName,
   skillStateText,
+  sortEnemies,
+  spawnProgressText,
 } from "../utils/battleObservation";
 import { useBattleObservationStore } from "../store/battleObservationStore";
 import styles from "../styles/shenmaSanguo.module.css";
@@ -104,6 +121,52 @@ export function BattleLivePanel({
   const [picked, setPicked] = useState<{ battle: string; uid: string } | null>(
     null
   );
+  // 敵軍的搜尋、狀態篩選與排序（只篩選、排列畫面上的清單）
+  const [query, setQuery] = useState<EnemyQuery>(EMPTY_ENEMY_QUERY);
+  const [enemySort, setEnemySort] = useState<EnemySort>("spawn");
+  // 已部署武將的搜尋、生命狀態篩選與排序
+  const [heroQuery, setHeroQuery] = useState<HeroQuery>(EMPTY_HERO_QUERY);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const heroSearchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  // 換一場：清掉搜尋、篩選、排序、頁數與選中的敵人。焦點原本在敵人清單或換頁鈕（之後會消失）時交給搜尋框，
+  // 其他情況不移動焦點
+  const [shownBattle, setShownBattle] = useState(battleId);
+  if (battleId !== shownBattle) {
+    setShownBattle(battleId);
+    setQuery(EMPTY_ENEMY_QUERY);
+    setEnemySort("spawn");
+    setHeroQuery(EMPTY_HERO_QUERY);
+    setPage(0);
+    setPicked(null);
+  }
+  useEffect(() => {
+    if (listRef.current?.contains(document.activeElement))
+      searchRef.current?.focus();
+  }, [shownBattle]);
+  const changeQuery = (q: EnemyQuery) => {
+    setQuery(q);
+    setPage(0);
+  };
+  const toggleStatus = (id: EnemyStatus) =>
+    changeQuery({
+      ...query,
+      statuses: query.statuses.includes(id)
+        ? query.statuses.filter((s) => s !== id)
+        : [...query.statuses, id],
+    });
+  const clearQuery = () => {
+    changeQuery(EMPTY_ENEMY_QUERY);
+    searchRef.current?.focus();
+  };
+  const changeSort = (s: EnemySort) => {
+    setEnemySort(s);
+    setPage(0);
+  };
+  const clearHeroQuery = () => {
+    setHeroQuery({ ...EMPTY_HERO_QUERY, sort: heroQuery.sort });
+    heroSearchRef.current?.focus();
+  };
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -152,7 +215,24 @@ export function BattleLivePanel({
   const pickedEnemy = pickedUid
     ? (current?.enemies.find((e) => e.uid === pickedUid) ?? null)
     : null;
-  const pg = enemyPage(current?.enemies ?? [], page);
+  const filtering = isEnemyQueryActive(query);
+  // 過濾之後排序、再分頁（同數值依出場順序，選中的敵人照 uid 保留）
+  const matched = current
+    ? sortEnemies(
+        filterEnemies(current.enemies, query, enemiesConfig),
+        enemySort
+      )
+    : [];
+  const pg = enemyPage(matched, page);
+  const pickedHidden =
+    !!pickedEnemy && filtering && !matched.some((e) => e.uid === pickedUid);
+  const progress = current ? spawnProgressText(current) : null;
+  const sortNote =
+    ENEMY_SORTS.find((s) => s.id === enemySort)?.note ?? "依出場順序排列";
+  const heroFiltering = isHeroQueryActive(heroQuery);
+  const heroRows = current
+    ? filterHeroes(current.heroes, heroQuery, heroesConfig)
+    : [];
 
   return (
     <section
@@ -213,6 +293,19 @@ export function BattleLivePanel({
           ? `目前戰況：第 ${current.wave} 波・${STATE_TEXT[current.state] ?? ""}${current.paused ? "・已暫停（時間不走）" : ""}`
           : "等待遊戲送來這一場的戰況…"}
       </div>
+      {progress && (
+        <div
+          className={styles.battleLiveStatus}
+          data-testid="battle-live-spawn"
+          data-wave={current?.spawn?.wave}
+          data-planned={current?.spawn?.planned}
+          data-spawned={current?.spawn?.spawned}
+          data-pending={current?.spawn?.pending}
+          data-alive={current?.spawn?.alive}
+        >
+          {progress}
+        </div>
+      )}
 
       {tab === "heroes" && (
         <div className={styles.battleLiveBody} data-testid="battle-live-heroes">
@@ -220,8 +313,107 @@ export function BattleLivePanel({
             <div className={styles.battleLiveEmpty}>還沒有部署武將。</div>
           )}
           {current && current.heroes.length > 0 && (
+            <div data-testid="battle-live-hero-filters">
+              <Row className="g-1 align-items-center">
+                <Col xs={12}>
+                  <input
+                    ref={heroSearchRef}
+                    type="search"
+                    className={styles.battleLiveSearch}
+                    value={heroQuery.text}
+                    onChange={(e) =>
+                      setHeroQuery({ ...heroQuery, text: e.target.value })
+                    }
+                    placeholder="搜尋武將名稱或 ID"
+                    aria-label="搜尋已部署的武將（中文名稱或 ID）"
+                    data-testid="battle-live-hero-search"
+                  />
+                </Col>
+                <Col xs={12}>
+                  <div
+                    role="group"
+                    aria-label="生命狀態"
+                    className="d-flex flex-wrap gap-1"
+                  >
+                    {HERO_HEALTH_FILTERS.map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        className={`${styles.battleLiveTab} ${heroQuery.health === f.id ? styles.battleLiveTabOn : ""}`}
+                        aria-pressed={heroQuery.health === f.id}
+                        onClick={() =>
+                          setHeroQuery({ ...heroQuery, health: f.id })
+                        }
+                        data-testid={`battle-live-hero-health-${f.id}`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </Col>
+                <Col xs={12}>
+                  <div
+                    role="group"
+                    aria-label="武將排序"
+                    className="d-flex flex-wrap gap-1 align-items-center"
+                  >
+                    <span className={styles.battleLiveMuted}>排序</span>
+                    {HERO_SORTS.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className={`${styles.battleLiveTab} ${heroQuery.sort === s.id ? styles.battleLiveTabOn : ""}`}
+                        aria-pressed={heroQuery.sort === s.id}
+                        onClick={() =>
+                          setHeroQuery({ ...heroQuery, sort: s.id })
+                        }
+                        data-testid={`battle-live-hero-sort-${s.id}`}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </Col>
+              </Row>
+              <div
+                className={styles.battleLiveMuted}
+                data-testid="battle-live-hero-note"
+              >
+                {heroQuery.sort === "hp"
+                  ? "依生命比例由低到高（同比例依部署順序）；生命即時更新，順序可能跟著改變"
+                  : "依部署順序"}
+              </div>
+              {heroFiltering && (
+                <div
+                  className={styles.battleLiveSummary}
+                  data-testid="battle-live-hero-matched"
+                  data-matched={heroRows.length}
+                  data-total={current.heroes.length}
+                >
+                  符合 {heroRows.length}／在場 {current.heroes.length} 位
+                </div>
+              )}
+              {heroFiltering && heroRows.length === 0 && (
+                <div
+                  className={styles.battleLiveEmpty}
+                  data-testid="battle-live-hero-no-match"
+                >
+                  沒有符合的武將。{" "}
+                  <button
+                    type="button"
+                    className={styles.battleLiveTab}
+                    onClick={clearHeroQuery}
+                    data-testid="battle-live-hero-clear"
+                  >
+                    清除搜尋與篩選
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {current && heroRows.length > 0 && (
             <ul className={styles.battleLiveList}>
-              {current.heroes.map((h) => (
+              {heroRows.map((h) => (
                 <li
                   key={h.uid}
                   className={styles.battleLiveItem}
@@ -229,6 +421,7 @@ export function BattleLivePanel({
                   data-uid={h.uid}
                   data-hero-id={h.hero_id}
                   data-hp={h.hp}
+                  data-hp-ratio={hpRatio(h)}
                   data-skill={h.skill?.id ?? ""}
                   data-remaining={h.skill?.remaining ?? ""}
                   data-used={
@@ -243,7 +436,8 @@ export function BattleLivePanel({
                   <div className={styles.battleLiveName}>
                     {heroNameOf(h.hero_id, heroesConfig)}
                     <span className={styles.battleLiveHp}>
-                      生命 {Math.ceil(h.hp)}／{Math.round(h.max_hp)}
+                      生命 {Math.ceil(h.hp)}／{Math.round(h.max_hp)}（
+                      {pct(hpRatio(h))}%）
                     </span>
                   </div>
                   <div className={styles.battleLiveSkill}>
@@ -271,15 +465,116 @@ export function BattleLivePanel({
               data-charmed={charmedCount}
             >
               場上 {current.enemy_total} 隻
-              {charmedCount > 0 ? `（其中 ${charmedCount} 隻受控）` : ""}
-              ；依出場順序排列，只是查看，選取不會改變武將或防禦塔的目標
+              {charmedCount > 0 ? `（其中 ${charmedCount} 隻受控）` : ""}；
+              {sortNote}
+              {enemySort !== "spawn"
+                ? "；即時更新，順序可能跟著戰況改變（選中的敵人照樣是同一隻）"
+                : ""}
+              ；只是查看，選取不會改變武將或防禦塔的目標
             </div>
           )}
           {current && current.enemy_total === 0 && (
             <div className={styles.battleLiveEmpty}>目前場上沒有敵人。</div>
           )}
+          {current && current.enemy_total > 0 && (
+            <div data-testid="battle-live-filters">
+              <Row className="g-1 align-items-center">
+                <Col xs={12}>
+                  <input
+                    ref={searchRef}
+                    type="search"
+                    className={styles.battleLiveSearch}
+                    value={query.text}
+                    onChange={(e) =>
+                      changeQuery({ ...query, text: e.target.value })
+                    }
+                    placeholder="搜尋敵軍名稱或 ID"
+                    aria-label="搜尋敵軍（中文名稱或 ID）"
+                    data-testid="battle-live-search"
+                  />
+                </Col>
+                <Col xs={12}>
+                  <div
+                    role="group"
+                    aria-label="狀態篩選（同時選多個時要全部符合）"
+                    className="d-flex flex-wrap gap-1"
+                  >
+                    <button
+                      type="button"
+                      className={`${styles.battleLiveTab} ${query.statuses.length === 0 ? styles.battleLiveTabOn : ""}`}
+                      aria-pressed={query.statuses.length === 0}
+                      onClick={() => changeQuery({ ...query, statuses: [] })}
+                      data-testid="battle-live-filter-all"
+                    >
+                      全部
+                    </button>
+                    {ENEMY_STATUS_FILTERS.map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        className={`${styles.battleLiveTab} ${query.statuses.includes(f.id) ? styles.battleLiveTabOn : ""}`}
+                        aria-pressed={query.statuses.includes(f.id)}
+                        onClick={() => toggleStatus(f.id)}
+                        data-testid={`battle-live-filter-${f.id}`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </Col>
+              </Row>
+              <div className={styles.battleLiveMuted}>
+                狀態可以多選，同時選多個時要全部符合
+              </div>
+              <div
+                role="group"
+                aria-label="敵軍排序"
+                className="d-flex flex-wrap gap-1 align-items-center mt-1"
+              >
+                <span className={styles.battleLiveMuted}>排序</span>
+                {ENEMY_SORTS.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className={`${styles.battleLiveTab} ${enemySort === s.id ? styles.battleLiveTabOn : ""}`}
+                    aria-pressed={enemySort === s.id}
+                    onClick={() => changeSort(s.id)}
+                    data-testid={`battle-live-sort-${s.id}`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+              {filtering && (
+                <div
+                  className={styles.battleLiveSummary}
+                  data-testid="battle-live-matched"
+                  data-matched={matched.length}
+                  data-total={current.enemy_total}
+                >
+                  符合 {matched.length}／{current.enemy_total} 隻
+                </div>
+              )}
+              {filtering && matched.length === 0 && (
+                <div
+                  className={styles.battleLiveEmpty}
+                  data-testid="battle-live-no-match"
+                >
+                  沒有符合的敵軍。{" "}
+                  <button
+                    type="button"
+                    className={styles.battleLiveTab}
+                    onClick={clearQuery}
+                    data-testid="battle-live-clear"
+                  >
+                    清除搜尋與篩選
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           {current && pg.rows.length > 0 && (
-            <>
+            <div ref={listRef}>
               <ul
                 className={styles.battleLiveList}
                 data-testid="battle-live-enemy-list"
@@ -299,6 +594,9 @@ export function BattleLivePanel({
                       data-hp={e.hp}
                       data-charmed={e.charmed ? "1" : "0"}
                       data-flying={e.flying ? "1" : "0"}
+                      data-seq={e.seq}
+                      data-hp-ratio={hpRatio(e)}
+                      data-atk-eff={e.atk_eff}
                     >
                       <Row className="g-1">
                         <Col xs={5} className={styles.battleLiveCell}>
@@ -306,10 +604,12 @@ export function BattleLivePanel({
                         </Col>
                         <Col xs={4} className={styles.battleLiveCell}>
                           {Math.ceil(e.hp)}／{Math.round(e.max_hp)}
+                          {enemySort === "hp" ? `（${pct(hpRatio(e))}%）` : ""}
                         </Col>
                         <Col xs={3} className={styles.battleLiveCell}>
-                          {e.flying ? "飛行" : "地面"}
-                          {e.charmed ? "・受控" : ""}
+                          {enemySort === "atk"
+                            ? `攻 ${String(Number(e.atk_eff.toFixed(1)))}${e.charmed ? "・受控" : ""}`
+                            : `${e.flying ? "飛行" : "地面"}${e.charmed ? "・受控" : ""}`}
                         </Col>
                       </Row>
                     </button>
@@ -336,7 +636,11 @@ export function BattleLivePanel({
                   </Col>
                   <Col className="text-center">
                     第 {pg.page + 1}／{pg.pages} 頁（第 {pg.from}～{pg.to}{" "}
-                    隻，共 {current.enemy_total} 隻，每頁 {ENEMY_PAGE_SIZE} 隻）
+                    隻，共{" "}
+                    {filtering
+                      ? `${matched.length} 隻符合`
+                      : `${current.enemy_total} 隻`}
+                    ，每頁 {ENEMY_PAGE_SIZE} 隻）
                   </Col>
                   <Col xs="auto">
                     <button
@@ -351,7 +655,15 @@ export function BattleLivePanel({
                   </Col>
                 </Row>
               )}
-            </>
+            </div>
+          )}
+          {pickedUid && pickedHidden && (
+            <div
+              className={styles.battleLiveMuted}
+              data-testid="live-enemy-filtered-out"
+            >
+              選中的敵軍目前不在搜尋與篩選的結果裡（仍在場上）。
+            </div>
           )}
           {pickedUid && (
             <EnemyDetail

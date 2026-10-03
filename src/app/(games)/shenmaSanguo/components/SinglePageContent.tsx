@@ -1441,7 +1441,7 @@ export default function SinglePageContent() {
         !battleResult && (
           <>
             {/* 頂欄 */}
-            <div className={styles.hudTopBar}>
+            <div className={styles.hudTopBar} data-stage-reserve="top">
               <button
                 ref={playerBtnRef}
                 className={styles.hudAvatar}
@@ -1536,7 +1536,7 @@ export default function SinglePageContent() {
             </div>
 
             {/* 操作按鈕列（top bar 下方，左右分組） */}
-            <div className={styles.hudActionBar}>
+            <div className={styles.hudActionBar} data-stage-reserve="top">
               <div className={styles.hudActionBarLeft}>
                 {battleStats && battleStats.game_state !== GameState.RESULT && (
                   <>

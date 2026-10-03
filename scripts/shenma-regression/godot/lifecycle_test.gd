@@ -179,7 +179,7 @@ func _run() -> void:
 	# stagedata 跑關卡資料未完成（沒有波次、波次或路線的格式不對）；enemyatk 跑敵人設定的對武將攻擊力；immune 跑免疫減速；
 	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）；stun 只跑張飛的暈眩（skills 也包含）；lifesteal 只跑魏延的吸血（skills 也包含）；
 	# atkspeed 只跑曹操的攻速光環（skills 也包含）；damage 只跑敵人受傷的入口（拒絕無效的傷害）；
-	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；chain 只跑龐統的連環計（skills 也包含）；storm 只跑諸葛亮的呼風喚雨（skills 也包含）；berserk 只跑呂布的戰神（skills 也包含）；supply 只跑魯肅的補給（skills 也包含）；knockback 只跑許褚的怪力（skills 也包含）；guard 只跑典韋的護衛（skills 也包含）；baseguard 只跑孫權的守護（skills 也包含）；assassinate 只跑甘寧的奇襲（skills 也包含）；charm 只跑貂蟬的魅惑與敵對可選的目標整合（skills 也包含）；observation 只跑戰況觀測（battle_observation）
+	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；chain 只跑龐統的連環計（skills 也包含）；storm 只跑諸葛亮的呼風喚雨（skills 也包含）；berserk 只跑呂布的戰神（skills 也包含）；supply 只跑魯肅的補給（skills 也包含）；knockback 只跑許褚的怪力（skills 也包含）；guard 只跑典韋的護衛（skills 也包含）；baseguard 只跑孫權的守護（skills 也包含）；assassinate 只跑甘寧的奇襲（skills 也包含）；charm 只跑貂蟬的魅惑與敵對可選的目標整合（skills 也包含）；observation 只跑戰況觀測（battle_observation）；bgm 只跑網頁版背景音樂的下載（SFXManager）；spawn 只跑本波出兵進度（WaveManager.get_spawn_progress）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -278,8 +278,12 @@ func _run() -> void:
 			await _charm_cases()
 		elif only == "observation":
 			await _observation_cases()
+		elif only == "bgm":
+			await _bgm_cases()
+		elif only == "spawn":
+			await _spawn_progress_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、chain、storm、berserk、supply、knockback、guard、baseguard、assassinate、charm、observation）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、chain、storm、berserk、supply、knockback、guard、baseguard、assassinate、charm、observation、bgm、spawn）", false)
 		_finish()
 		return
 
@@ -546,6 +550,12 @@ func _run() -> void:
 
 	# ── 戰況觀測（Web 的即時武將技能狀態與敵軍查看；最多每 0.25 秒一次，剩下時間照戰鬥時間）──
 	await _observation_cases()
+
+	# ── 網頁版的背景音樂（不在資料包裡，第一次要播放時才下載一次）──
+	await _bgm_cases()
+
+	# ── 本波出兵進度（戰況觀測的可選欄位 spawn）──
+	await _spawn_progress_cases()
 
 	_finish()
 
@@ -16179,6 +16189,10 @@ func _observation_cases() -> void:
 	_check("觀測-7 只剩受控的敵人：仍在戰鬥中（state 2）、列出 1 隻且 charmed、enemy_total 1；打倒的敵人 uid 不再出現",
 		keep7 != null and o7.get("state") == 2 and o7.get("enemy_total") == 1 and uids7.size() == 1 and o7.enemies[0].get("charmed") == true and not still7 and not gone7.is_empty(),
 		{"state": o7.get("state"), "uids": uids7, "gone": gone7})
+	var sp7: Dictionary = o7.get("spawn", {})
+	_check("出兵進度-受控 只剩受控的敵人：本波存活仍算它（alive 1）；這一波已出的每一隻都有歸屬（擊殺＋漏城＋存活＝已出）",
+		sp7.get("wave") == 1 and sp7.get("alive") == 1 and int(sp7.get("killed", -1)) + int(sp7.get("leaked", -1)) + int(sp7.get("alive", -1)) == int(sp7.get("spawned", -2)),
+		sp7)
 	for h in main._placed_heroes.values():
 		h.set_process(true)
 
@@ -16284,4 +16298,184 @@ func _observation_cases() -> void:
 	rec.payload_received.disconnect(main._on_payload_received)
 	main.web_bridge = original
 	rec.free()
+	_load(_stage_b())
+
+# ── 網頁版的背景音樂（SFXManager）：資料包裡沒有時，第一次要播放才下載；下載中不重複送出、停止後下載完成不播放、
+#    失敗不自動重試、最多試 BGM_MAX_TRIES 次。headless 不是網頁，用 bgm_fetcher 換成假的下載（內容是專案裡的原始檔）──
+func _bgm_cases() -> void:
+	var sfx: Node = root.get_node("SFXManager")
+	var original: AudioStream = sfx._streams.get("bgm_battle")
+	var saved: Dictionary = {"enabled": sfx.sfx_enabled, "polyphony": sfx.sfx_polyphony}
+	var calls: Array = []  # 每次下載的完成 Callable(ok, body)
+	var reset := func() -> void:
+		sfx.stop_bgm()
+		sfx._streams.erase("bgm_battle")
+		sfx._bgm_remote = true
+		sfx._bgm_pending = false
+		sfx._bgm_tries = 0
+		sfx._bgm_player.stream = null
+		calls.clear()
+	sfx.bgm_fetcher = func(done: Callable) -> void: calls.append(done)
+	var bytes: PackedByteArray = FileAccess.get_file_as_bytes("res://audio/bgm/bgm_battle.ogg")
+
+	_check("BGM-0 不是網頁時照舊從資料包載入背景音樂（測試的前提）；下載用的原始檔可以讀到",
+		original != null and not OS.has_feature("web") and bytes.size() > 100000, {"stream": str(original), "bytes": bytes.size()})
+
+	# BGM-1：音效關閉時不下載
+	reset.call()
+	sfx.configure(false, "single")
+	sfx.play_bgm()
+	_check("BGM-1 音效關閉時要播放也不下載", calls.size() == 0 and sfx._bgm_tries == 0, calls.size())
+
+	# BGM-2：開啟音效（會要播放）才下載；下載中再要播放不重複送出
+	sfx.configure(true, "single")
+	var after_cfg: int = calls.size()
+	sfx.play_bgm()
+	sfx.play_bgm()
+	_check("BGM-2 開啟音效後要播放才下載；下載中再要播放不重複送出（只有 1 次）",
+		after_cfg == 1 and calls.size() == 1 and sfx._bgm_pending, {"after_cfg": after_cfg, "calls": calls.size()})
+
+	# BGM-3：下載完成前停止（結算、換場）：完成後記住，但不播放
+	sfx.stop_bgm()
+	calls[0].call(true, bytes)
+	await process_frame
+	var cached3: AudioStream = sfx._streams.get("bgm_battle")
+	_check("BGM-3 下載完成前已停止（結算、換場）：下載的音樂記住，但不自己開始播放",
+		cached3 is AudioStreamOggVorbis and not sfx._bgm_player.playing and sfx._bgm_player.stream != cached3,
+		{"cached": str(cached3), "playing": sfx._bgm_player.playing})
+
+	# BGM-4：之後要播放直接用記住的，不再下載
+	sfx.play_bgm()
+	await process_frame
+	_check("BGM-4 之後要播放直接用下載過的，不再下載",
+		calls.size() == 1 and sfx._bgm_player.stream == cached3 and sfx._bgm_player.playing,
+		{"calls": calls.size(), "playing": sfx._bgm_player.playing})
+
+	# BGM-5：下載完成時仍然需要播放 → 開始播放
+	reset.call()
+	sfx.play_bgm()
+	calls[0].call(true, bytes)
+	await process_frame
+	var s5: AudioStream = sfx._streams.get("bgm_battle")
+	_check("BGM-5 下載完成時仍然需要播放：開始播放下載的音樂",
+		s5 != null and sfx._bgm_player.stream == s5 and sfx._bgm_player.playing, {"playing": sfx._bgm_player.playing})
+
+	# BGM-6：失敗（連線失敗、404、沒有內容）不影響遊戲、不自動重試；下一次要播放才再試，最多 2 次
+	reset.call()
+	sfx.play_bgm()
+	calls[0].call(false, PackedByteArray())
+	await process_frame
+	await process_frame
+	var after_fail: int = calls.size()
+	sfx.play_bgm()
+	calls[1].call(true, PackedByteArray())  # 回應成功但沒有內容也算失敗
+	await process_frame
+	sfx.play_bgm()
+	await process_frame
+	_check("BGM-6 下載失敗：沒有播放、不自動重試；下一次要播放才再試，最多 2 次（第 3 次要播放不再下載）",
+		after_fail == 1 and calls.size() == 2 and sfx._streams.get("bgm_battle") == null and not sfx._bgm_player.playing and not sfx._bgm_pending,
+		{"after_fail": after_fail, "calls": calls.size()})
+
+	# 還原（不呼叫 configure，避免開始播放）；停止後等音訊伺服器釋放播放中的實例（否則結束時算成沒有釋放的資源）
+	sfx.stop_bgm()
+	sfx._bgm_player.stream = null
+	await create_timer(0.3, true, false, true).timeout
+	await process_frame
+	sfx.bgm_fetcher = Callable()
+	sfx._bgm_remote = false
+	sfx._bgm_tries = 0
+	sfx._bgm_pending = false
+	sfx._bgm_player.stream = null
+	sfx._streams["bgm_battle"] = original
+	sfx.sfx_enabled = saved.enabled
+	sfx.sfx_polyphony = saved.polyphony
+
+# ── 本波出兵進度（WaveManager.get_spawn_progress，戰況觀測的可選欄位 spawn）──
+# 有效計畫只算 plan_wave 通過的組；已出＋待出＝計畫；擊殺與漏城只算這一波的敵人、每隻一次；換波重新計算、換場清空；
+# 全部組無效（拒絕開戰）時維持 wave 0；結算後仍是最後一波的數字
+func _sp() -> Dictionary:
+	return _wm().get_spawn_progress()
+
+func _spawn_progress_cases() -> void:
+	var no_path: Dictionary = {"enemy_id": "c_fast", "count": 1, "interval": 0.1, "path": "path_missing"}
+	_load(_payload("sp_a", [[_grp("c_fast", 2, 0.05), _grp("missing_config", 1, 1.0), no_path, _grp("a_slow", 3, 0.4)], [_grp("a_slow", 2, 0.3)]]))
+	await process_frame
+	var s0: Dictionary = _sp()
+	var o0: Dictionary = main.battle_observation()
+	_check("出兵進度-0 新的一場備戰中：wave 0、計畫／已出／待出／存活／擊殺／漏城都是 0、沒有在出兵；觀測帶同一份 spawn（可選欄位）",
+		s0 == {"wave": 0, "planned": 0, "spawned": 0, "pending": 0, "alive": 0, "killed": 0, "leaked": 0, "spawning": false} and o0.get("spawn") == s0,
+		{"spawn": s0, "obs": o0.get("spawn")})
+
+	_bm().player_start_battle()
+	await process_frame
+	var s1: Dictionary = _sp()
+	_check("出兵進度-1 開戰：有效計畫 5（快兵 2＋慢兵 3；找不到的敵人、沒有路線的組不算），已出＋待出＝5、還在出兵",
+		s1.wave == 1 and s1.planned == 5 and s1.spawned + s1.pending == 5 and s1.spawned >= 1 and s1.pending >= 1 and s1.spawning, s1)
+
+	var done1: bool = await _wait_until(func(): return _sp().pending == 0 and not _sp().spawning, 6.0)
+	await _wait(0.4)
+	var s2: Dictionary = _sp()
+	_check("出兵進度-2 全部出完：已出 5、待出 0、不再出兵；快兵 2 隻抵達城池算漏城 2，慢兵 3 隻還在場上（存活 3、擊殺 0）",
+		done1 and s2.spawned == 5 and s2.pending == 0 and not s2.spawning and s2.leaked == 2 and s2.alive == 3 and s2.killed == 0, s2)
+
+	# 打倒一隻慢兵：擊殺只算一次（同一隻再打一次不會多算）
+	var slows: Array = _wm().get_active_enemies().filter(func(e): return is_instance_valid(e) and e.enemy_id == "a_slow")
+	var target: Node = slows[0] if not slows.is_empty() else null
+	var had_target: bool = target != null
+	if had_target:
+		target.take_damage(999999.0)
+		target.take_damage(999999.0)
+	await process_frame
+	await process_frame
+	var s3: Dictionary = _sp()
+	_check("出兵進度-3 打倒一隻慢兵（打兩次）：擊殺 1、存活 2；擊殺＋漏城＋存活＝已出",
+		had_target and s3.killed == 1 and s3.alive == 2 and s3.killed + s3.leaked + s3.alive == s3.spawned, s3)
+
+	# 第 1 波還有 2 隻慢兵在場上時開始第 2 波（直接叫 WaveManager）：本波重新計算，上一波的敵人倒下不算進第 2 波
+	var plans2: Array = _wm().plan_wave(2)
+	_wm().start_wave(2, plans2)
+	await process_frame
+	var s4: Dictionary = _sp()
+	var old_alive: Array = _wm().get_active_enemies().filter(func(e): return is_instance_valid(e) and int(e.get_meta("spawn_wave", -1)) == 1)
+	if not old_alive.is_empty():
+		old_alive[0].take_damage(999999.0)
+	await process_frame
+	await process_frame
+	var s5: Dictionary = _sp()
+	_check("出兵進度-4 換到第 2 波：wave 2、計畫 2、擊殺／漏城從 0 開始；上一波的敵人倒下不算進第 2 波（擊殺仍是 0），存活只算第 2 波的",
+		s4.wave == 2 and s4.planned == 2 and s4.killed == 0 and s4.leaked == 0 and not old_alive.is_empty() and s5.killed == 0 and s5.alive <= s5.spawned \
+			and _wm().get_active_enemy_count() > s5.alive,
+		{"start": s4, "after_old_kill": s5, "active": _wm().get_active_enemy_count()})
+
+	# 換場（新的一場）：清空；上一場的敵人之後倒下也不算
+	var leftovers: Array = _wm().get_active_enemies().duplicate()
+	_load(_payload("sp_b", [[_grp("b_grunt", 1, 1.0)]]))
+	await process_frame
+	for e in leftovers:
+		if is_instance_valid(e):
+			e.take_damage(999999.0)
+	await process_frame
+	var s6: Dictionary = _sp()
+	_check("出兵進度-5 換場：wave 0、全部歸零；上一場的敵人之後倒下不算進新的一場",
+		s6 == {"wave": 0, "planned": 0, "spawned": 0, "pending": 0, "alive": 0, "killed": 0, "leaked": 0, "spawning": false}, s6)
+
+	# 全部組無效：拒絕開戰，維持 wave 0
+	_load(_payload("sp_bad", [[_grp("missing_config", 2, 0.1), no_path]]))
+	await process_frame
+	_bm().player_start_battle()
+	await process_frame
+	var s7: Dictionary = _sp()
+	_check("出兵進度-6 這一波全部組無效（拒絕開戰）：維持 wave 0、計畫 0", s7.wave == 0 and s7.planned == 0 and s7.spawned == 0, s7)
+
+	# 結算：最後一波出完、全部漏城後結算，仍是最後一波的數字（已出＝計畫、存活 0、漏城＝計畫）
+	_load(_payload("sp_end", [[_grp("c_fast", 3, 0.05)]]))
+	await process_frame
+	_bm().player_start_battle()
+	var ended: bool = await _wait_until(func(): return _bm().game_state == 3, 10.0)
+	await process_frame
+	var s8: Dictionary = _sp()
+	var o8: Dictionary = main.battle_observation()
+	_check("出兵進度-7 結算後：仍是第 1 波的數字（計畫 3、已出 3、待出 0、存活 0、漏城 3），觀測的狀態是結算（3）",
+		ended and s8.wave == 1 and s8.planned == 3 and s8.spawned == 3 and s8.pending == 0 and s8.alive == 0 and s8.leaked == 3 and o8.get("state") == 3 and o8.get("spawn") == s8,
+		{"spawn": s8, "state": o8.get("state")})
 	_load(_stage_b())

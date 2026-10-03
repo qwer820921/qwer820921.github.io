@@ -10,7 +10,12 @@ async (page) => {
   //      game_ready 沒有宣告戰況觀測（舊版遊戲）時隱藏「戰況」、面板退回選取時的快照與重新點選說明
   // - B：主頁 39 隻：每頁 20 隻（20＋19），總數＝遊戲的數量；選中的快兵抵達城池後詳情說明已離場、總數變 38；
   //      選取敵人不送任何命令給遊戲；鍵盤（Enter、Tab、Esc 焦點回到開關）；390×600 在畫面內、字級至少 12px、不擋暫停
-  // - C：獨立戰鬥頁：同樣不重新點選就看到奇襲 1→0；敵軍數量＝遊戲的數量
+  // - E：敵軍的搜尋（中文名稱或 ID）與狀態篩選（受控／減速／暈眩／灼燒，多選 AND）：符合 N／總 M、控制結束後自動退出（不改指到別的敵人）、
+  //      沒有符合時清除、鍵盤、390×600、換場清空；F：本波出兵進度（照遊戲的計數；沒有欄位時不顯示；新的一場備戰中還沒開始出兵）
+  // - G：已部署武將的搜尋（中文名稱或 ID）、受傷／低生命（≤30%）篩選與生命比例排序：符合 N／在場 M、觀測更新時照新的一份排列且不搶焦點、
+  //      沒有符合時清除、鍵盤、390×600、換場清空；H：敵軍依出場順序／生命比例／有效攻擊力排序（過濾之後、分頁之前），
+  //      選中的敵人排到別頁時詳情仍是同一隻（照 uid）、換場回到出場順序
+  // - C：獨立戰鬥頁：同樣不重新點選就看到奇襲 1→0；敵軍數量＝遊戲的數量；武將低生命＋排序、敵軍依攻擊力排序
   // 全部虛構金鑰 test_lv_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -300,7 +305,7 @@ async (page) => {
     await page.waitForSelector('[data-testid="pause-badge"]', { timeout: 15000 });
     await H.sleep(400);
     const paused3 = await sample("unit-panel-charm", 1500);
-    // 面板可能蓋住 HUD 的暫停鈕：用戰場下方的「繼續」
+    // 用戰場下方的「繼續」（選取面板不會蓋住它，見 panel-safe-web.js）
     await page.locator('[data-testid="pause-resume"]').click();
     await page.waitForFunction(() => !document.querySelector('[data-testid="pause-badge"]'), null, { timeout: 15000 });
     let low3 = null;
@@ -525,6 +530,361 @@ async (page) => {
       m.placement === "below" && m.left >= 0 && m.right <= m.vw && m.bottom <= m.vh + 1 && m.docScroll <= m.vw && m.minFont >= 12 && !m.overlap && m.floatingHidden, out.B4);
   });
 
+  // ── E. 敵軍的搜尋與狀態篩選；F. 本波出兵進度（主頁，接在 B 的大軍之後）──
+  await section("E", async () => {
+    await openLive();
+    await page.locator('[data-testid="battle-live-tab-enemies"]').click();
+    await H.sleep(600);
+    const spawnEl = () => page.evaluate(() => {
+      const el = document.querySelector('[data-testid="battle-live-spawn"]');
+      return el ? { planned: el.dataset.planned, spawned: el.dataset.spawned, pending: el.dataset.pending, alive: el.dataset.alive, text: el.innerText } : null;
+    });
+    const sp1 = await spawnEl();
+    const o1 = await obsTail();
+    out.F1 = { sp1, spawn: o1 && o1.spawn };
+    run.check("F-1 實際出兵（大軍）：本波進度照遊戲送來的數字（計畫 39＝木樁 38＋快兵 1、已出 39、待出 0），寫明已全部出完、清場中、場上 38；快兵抵達城池算漏城 1",
+      !!sp1 && sp1.planned === "39" && sp1.spawned === "39" && sp1.pending === "0" && /已全部出完（39 隻）：清場中，場上 38/.test(sp1.text) &&
+        o1 && o1.spawn && o1.spawn.planned === 39 && o1.spawn.leaked === 1 && o1.spawn.alive === 38,
+      out.F1);
+
+    // 送一份 seq 很大的觀測（同一場、同一個出兵世代）：之後遊戲正常送來的 seq 較小、不採用，畫面停在這一份
+    // 39 隻：每 3 隻輪一種（步卒、木樁、快兵）；第 0～9 隻受控、偶數隻灼燒、5 的倍數減速、7 的倍數暈眩；沒有 spawn 欄位（像舊版遊戲）
+    const base = await obsTail();
+    const kinds = ["mock_lv_walk", "mock_lv_post", "mock_lv_runner"];
+    const craft = (seqAdd, endCharmOf = -1) => {
+      const gen = base.generation;
+      const enemies = Array.from({ length: 39 }, (_, i) => {
+        const charmed = i < 10 && i !== endCharmOf;
+        return {
+          uid: `${gen}-${1000 + i}`, seq: 1000 + i, enemy_id: kinds[i % 3], hp: 500, max_hp: 500, flying: false,
+          charmed, charm_left: charmed ? 1.5 : 0, charm_source: charmed ? "diao_chan" : "",
+          atk: 10, atk_eff: 10, atk_down_left: 0, speed: 8, speed_eff: i % 5 === 0 ? 2.4 : 8, slow_left: i % 5 === 0 ? 0.4 : 0,
+          immune_slow: false, stun_left: i % 7 === 0 ? 0.3 : 0, burn_left: i % 2 === 0 ? 1.5 : 0,
+        };
+      });
+      const { spawn: _drop, __t: _t, ...rest } = base;
+      return { ...rest, seq: base.seq + seqAdd, enemies, enemy_total: 39 };
+    };
+    await post(IFRAME, craft(100000));
+    await H.sleep(800);
+    const shown = await liveEnemies();
+    const spHidden = (await spawnEl()) === null;
+    const filters = () => page.evaluate(() => ({
+      search: document.querySelector('[data-testid="battle-live-search"]')?.value ?? null,
+      pressed: [...document.querySelectorAll('[data-testid^="battle-live-filter-"]')].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.testid.replace("battle-live-filter-", "")),
+      matched: (() => { const m = document.querySelector('[data-testid="battle-live-matched"]'); return m ? { matched: Number(m.dataset.matched), total: Number(m.dataset.total), text: m.innerText } : null; })(),
+      noMatch: !!document.querySelector('[data-testid="battle-live-no-match"]'),
+      filtered: !!document.querySelector('[data-testid="live-enemy-filtered-out"]'),
+      focus: document.activeElement?.dataset?.testid ?? null,
+    }));
+    run.check("F-2 沒有 spawn 欄位的一份（像舊版遊戲）：不顯示本波進度，其他照常（場上 39 隻）", spHidden && shown.total === 39, { spHidden, total: shown.total });
+
+    // E-1：搜尋中文名稱
+    await page.locator('[data-testid="battle-live-search"]').fill("步卒");
+    await H.sleep(400);
+    const e1 = { f: await filters(), l: await liveEnemies() };
+    run.check("E-1 搜尋「步卒」：符合 13／39 隻（總數仍是 39），清單只列步卒、依出場順序",
+      e1.f.matched && e1.f.matched.matched === 13 && e1.f.matched.total === 39 && /符合 13／39 隻/.test(e1.f.matched.text) && e1.l.total === 39 &&
+        e1.l.rows.length === 13 && e1.l.rows.every((r) => r.id === "mock_lv_walk"),
+      { f: e1.f, rows: e1.l.rows.length });
+
+    // E-2：狀態多選 AND（受控＋灼燒；再加上搜尋步卒）
+    await page.locator('[data-testid="battle-live-filter-charmed"]').click();
+    await page.locator('[data-testid="battle-live-filter-burning"]').click();
+    await H.sleep(300);
+    const e2a = await filters();
+    await page.locator('[data-testid="battle-live-search"]').fill("");
+    await H.sleep(300);
+    const e2b = await filters();
+    run.check("E-2 狀態多選是 AND：步卒＋受控＋灼燒 2 隻；只看受控＋灼燒 5 隻；選中的狀態 aria-pressed、「全部」不按下；寫明同時選多個要全部符合",
+      e2a.matched?.matched === 2 && e2b.matched?.matched === 5 && JSON.stringify(e2b.pressed.sort()) === JSON.stringify(["burning", "charmed"]) &&
+        (await page.locator('[data-testid="battle-live-filters"]').innerText()).includes("同時選多個時要全部符合"),
+      { e2a: e2a.matched, e2b: e2b.matched, pressed: e2b.pressed });
+
+    // E-3：只看受控、選第 3 隻；下一份觀測裡第 3 隻控制結束 → 自動不符合，詳情仍是同一隻並說明不在篩選結果裡
+    await page.locator('[data-testid="battle-live-filter-burning"]').click();
+    await H.sleep(300);
+    const e3a = await filters();
+    const pickUid = `${base.generation}-1003`;
+    await page.locator(`[data-testid="live-enemy"][data-uid="${pickUid}"]`).click();
+    await H.sleep(300);
+    await post(IFRAME, craft(100001, 3));
+    await H.sleep(800);
+    const e3b = { f: await filters(), l: await liveEnemies() };
+    run.check("E-3 只看受控 10 隻；選第 3 隻後下一份觀測裡它的控制結束：符合變成 9（自動退出、不改指到別的敵人），詳情仍是第 3 隻並說明目前不在篩選結果裡（仍在場上）",
+      e3a.matched?.matched === 10 && e3b.f.matched?.matched === 9 && !e3b.l.rows.some((r) => r.uid === pickUid) && e3b.l.detail?.uid === pickUid && e3b.f.filtered,
+      { before: e3a.matched, after: e3b.f.matched, detail: e3b.l.detail && e3b.l.detail.uid, filtered: e3b.f.filtered });
+
+    // E-4：沒有符合 → 清除；焦點到搜尋框
+    await page.locator('[data-testid="battle-live-search"]').fill("不存在的敵人");
+    await H.sleep(300);
+    const e4a = await filters();
+    await page.locator('[data-testid="battle-live-clear"]').click();
+    await H.sleep(300);
+    const e4b = { f: await filters(), l: await liveEnemies() };
+    run.check("E-4 沒有符合時說明並提供「清除搜尋與篩選」；按下後搜尋與狀態都清掉、列出全部（第 1 頁 20 隻、共 39）、焦點在搜尋框",
+      e4a.noMatch && e4a.matched?.matched === 0 && e4b.f.search === "" && e4b.f.pressed.length === 1 && e4b.f.pressed[0] === "all" && !e4b.f.matched &&
+        e4b.l.rows.length === 20 && /共 39 隻/.test(e4b.l.pager?.text || "") && e4b.f.focus === "battle-live-search",
+      { e4a: { noMatch: e4a.noMatch, matched: e4a.matched }, after: e4b.f, rows: e4b.l.rows.length });
+
+    // E-5：鍵盤：從搜尋框 Tab 到狀態按鈕，空白鍵切換
+    await page.locator('[data-testid="battle-live-search"]').focus();
+    let reachedFilter = null;
+    for (let i = 0; i < 8 && reachedFilter !== "battle-live-filter-charmed"; i++) {
+      await page.keyboard.press("Tab");
+      reachedFilter = await page.evaluate(() => document.activeElement?.dataset?.testid ?? null);
+    }
+    await page.keyboard.press(" ");
+    await H.sleep(300);
+    const e5a = await filters();
+    await page.keyboard.press(" ");
+    await H.sleep(300);
+    const e5b = await filters();
+    run.check("E-5 鍵盤：從搜尋框按 Tab 到「受控」，空白鍵按下（符合 9）、再按一次放開（回到全部）",
+      reachedFilter === "battle-live-filter-charmed" && e5a.pressed.includes("charmed") && e5a.matched?.matched === 9 && !e5b.pressed.includes("charmed") && !e5b.matched,
+      { reachedFilter, e5a: e5a.pressed, e5b: e5b.pressed });
+
+    // E-6：390×600：搜尋框與狀態按鈕在畫面內、字級至少 12px、沒有橫向捲動
+    await page.setViewportSize({ width: 390, height: 600 });
+    await H.sleep(800);
+    await page.locator('[data-testid="battle-live-filters"]').scrollIntoViewIfNeeded();
+    const m6 = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="battle-live-filters"]');
+      const b = el.getBoundingClientRect();
+      const fonts = [...el.querySelectorAll("button, input, div")].map((x) => parseFloat(getComputedStyle(x).fontSize));
+      return { left: Math.round(b.left), right: Math.round(b.right), vw: innerWidth, minFont: Math.min(...fonts), docScroll: document.documentElement.scrollWidth };
+    });
+    await H.shot(page, "battle-live-e-390x600");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await H.sleep(500);
+    run.check("E-6 390×600：搜尋框與狀態按鈕在畫面寬度內、字級至少 12px、沒有橫向捲動（截圖另存）",
+      m6.left >= 0 && m6.right <= m6.vw && m6.minFont >= 12 && m6.docScroll <= m6.vw, m6);
+
+    // E-7／F-3：換場：搜尋、狀態、頁數、選中的敵人都清掉；新的一場備戰中，本波進度寫還沒開始出兵
+    await page.locator('[data-testid="battle-live-search"]').fill("木樁");
+    await page.locator('[data-testid="battle-live-filter-burning"]').click();
+    await H.sleep(300);
+    await closeLive();
+    await H.selectStage(page, MAP.name);
+    await H.sleep(1500);
+    await dismissSplash(IFRAME).catch(() => {});
+    await openLive();
+    await page.locator('[data-testid="battle-live-tab-enemies"]').click();
+    await H.sleep(800);
+    const prep = { sp: await spawnEl(), l: await liveEnemies() };
+    await H.clickButton(page, "迎戰");
+    await waitUntil(async () => (await liveEnemies()).total >= 1 && (await filters()).search !== null, 30000, "新的一場出兵");
+    const e7 = { f: await filters(), l: await liveEnemies(), sp: await spawnEl() };
+    run.check("E-7 換關（新的一場）：開戰後敵人出現時搜尋是空的、狀態回到全部、沒有符合數與選中的敵人；F-3 新的一場備戰中寫「備戰中，還沒開始出兵」，開戰後寫第 1 波出兵中（已出 x／6）",
+      !!prep.sp && /備戰中，還沒開始出兵/.test(prep.sp.text) && !prep.l.detail &&
+        e7.f.search === "" && e7.f.pressed.join() === "all" && !e7.f.matched && !e7.l.detail && !!e7.sp && e7.sp.planned === "6" && /第 1 波/.test(e7.sp.text),
+      { prep, e7 });
+    await closeLive();
+  });
+
+  // ── G. 已部署武將的搜尋、受傷／低生命篩選與排序（D143）；H. 敵軍排序（D144）──
+  // 送一份 seq 很大的觀測（目前這一場）：5 位武將（生命比例 100%、24%、77%、30%、100%）、39 隻敵人（生命比例與有效攻擊力各不同）
+  const liveHeroRows = () => page.evaluate(() => ({
+    uids: [...document.querySelectorAll('[data-testid="live-hero"]')].map((e) => e.dataset.uid),
+    texts: [...document.querySelectorAll('[data-testid="live-hero"]')].map((e) => e.innerText.replace(/\s+/g, " ")),
+    matched: (() => { const m = document.querySelector('[data-testid="battle-live-hero-matched"]'); return m ? { matched: Number(m.dataset.matched), total: Number(m.dataset.total), text: m.innerText } : null; })(),
+    noMatch: !!document.querySelector('[data-testid="battle-live-hero-no-match"]'),
+    search: document.querySelector('[data-testid="battle-live-hero-search"]')?.value ?? null,
+    pressed: [...document.querySelectorAll('[data-testid^="battle-live-hero-health-"], [data-testid^="battle-live-hero-sort-"]')].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.testid.replace("battle-live-hero-", "")),
+    note: document.querySelector('[data-testid="battle-live-hero-note"]')?.innerText ?? null,
+    focus: document.activeElement?.dataset?.testid ?? null,
+  }));
+  const heroRowsFor = (heroes) => heroes.map(([n, id, hp, max]) => ({ uid: `hero-${n}`, hero_id: id, cell: [n, 2], hp, max_hp: max, skill: null }));
+  const HEROES_G = [[1, "guan_yu", 1000, 1000], [2, "gan_ning", 300, 1235], [3, "diao_chan", 1000, 1294], [4, "xu_chu", 390, 1300], [5, "zhao_yun", 1100, 1100]];
+  const craftG = (base, seqAdd, heroes, enemyOver = () => ({})) => {
+    const gen = base.generation;
+    const enemies = Array.from({ length: 39 }, (_, i) => ({
+      uid: `${gen}-${2000 + i}`, seq: 2000 + i, enemy_id: ["mock_lv_walk", "mock_lv_post", "mock_lv_runner"][i % 3],
+      hp: 1000 - ((i * 37) % 1000), max_hp: 1000, flying: false, charmed: false, charm_left: 0, charm_source: "",
+      atk: 10 + (i % 4) * 5, atk_eff: 10 + (i % 4) * 5, atk_down_left: 0, speed: 8, speed_eff: 8, slow_left: 0,
+      immune_slow: false, stun_left: 0, burn_left: i % 2 === 0 ? 1.5 : 0, ...enemyOver(i),
+    }));
+    const { spawn: _drop, __t: _t, ...rest } = base;
+    return { ...rest, seq: base.seq + seqAdd, heroes: heroRowsFor(heroes), enemies, enemy_total: 39 };
+  };
+  const sortState = () => page.evaluate(() => ({
+    pressed: [...document.querySelectorAll('[data-testid^="battle-live-sort-"]')].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.testid.replace("battle-live-sort-", "")),
+    rows: [...document.querySelectorAll('[data-testid="live-enemy"]')].map((b) => ({ uid: b.dataset.uid, seq: Number(b.dataset.seq), ratio: Number(b.dataset.hpRatio), atk: Number(b.dataset.atkEff), text: b.innerText.replace(/\s+/g, " ") })),
+    summary: document.querySelector('[data-testid="battle-live-enemy-total"]')?.innerText.replace(/\s+/g, " ") ?? "",
+    pager: (() => { const p = document.querySelector('[data-testid="battle-live-pager"]'); return p ? { page: Number(p.dataset.page), pages: Number(p.dataset.pages) } : null; })(),
+    detail: document.querySelector('[data-testid="live-enemy-detail"]')?.dataset.uid ?? null,
+    matched: Number(document.querySelector('[data-testid="battle-live-matched"]')?.dataset.matched ?? -1),
+  }));
+  const nonDecreasing = (a) => a.every((v, i) => i === 0 || v >= a[i - 1]);
+  const nonIncreasing = (a) => a.every((v, i) => i === 0 || v <= a[i - 1]);
+
+  await section("G", async () => {
+    await openLive();
+    const base = await obsTail();
+    await post(IFRAME, craftG(base, 200000, HEROES_G));
+    await H.sleep(800);
+    await page.locator('[data-testid="battle-live-tab-heroes"]').click();
+    await H.sleep(300);
+    const g1 = await liveHeroRows();
+    run.check("G-1 武將分頁（目前這一場送來的 5 位）：預設依部署順序 1～5，每位寫出生命比例（甘寧 24%、許褚 30%）；沒有篩選時不顯示符合數",
+      g1.uids.join() === "hero-1,hero-2,hero-3,hero-4,hero-5" && /甘寧.*（24%）/.test(g1.texts[1]) && /（30%）/.test(g1.texts[3]) && !g1.matched &&
+        g1.pressed.sort().join() === "health-all,sort-deploy" && /依部署順序/.test(g1.note || ""),
+      g1);
+
+    await page.locator('[data-testid="battle-live-hero-search"]').fill("甘");
+    await H.sleep(300);
+    const g2a = await liveHeroRows();
+    await page.locator('[data-testid="battle-live-hero-search"]').fill(" XU_CHU ");
+    await H.sleep(300);
+    const g2b = await liveHeroRows();
+    await page.locator('[data-testid="battle-live-hero-search"]').fill("");
+    run.check("G-2 搜尋中文名稱「甘」只剩甘寧（符合 1／在場 5 位）；搜尋 ID「 XU_CHU 」（不分大小寫、去空白）只剩許褚",
+      g2a.uids.join() === "hero-2" && g2a.matched?.matched === 1 && g2a.matched?.total === 5 && /符合 1／在場 5 位/.test(g2a.matched.text) &&
+        g2b.uids.join() === "hero-4",
+      { g2a: { uids: g2a.uids, matched: g2a.matched }, g2b: g2b.uids });
+
+    await page.locator('[data-testid="battle-live-hero-health-injured"]').click();
+    await H.sleep(300);
+    const g3a = await liveHeroRows();
+    await page.locator('[data-testid="battle-live-hero-health-low"]').click();
+    await H.sleep(300);
+    const g3b = await liveHeroRows();
+    run.check("G-3 受傷（生命少於最大生命）3 位：甘寧、貂蟬、許褚；低生命（≤30%）2 位：甘寧 24%、許褚剛好 30%；按鈕 aria-pressed 只有選中的那一個",
+      g3a.uids.join() === "hero-2,hero-3,hero-4" && g3a.matched?.matched === 3 && g3b.uids.join() === "hero-2,hero-4" && g3b.matched?.matched === 2 &&
+        g3b.pressed.sort().join() === "health-low,sort-deploy",
+      { g3a: g3a.uids, g3b: g3b.uids, pressed: g3b.pressed });
+
+    await page.locator('[data-testid="battle-live-hero-health-all"]').click();
+    await page.locator('[data-testid="battle-live-hero-sort-hp"]').click();
+    await H.sleep(300);
+    const g4a = await liveHeroRows();
+    await page.locator('[data-testid="battle-live-hero-health-injured"]').click();
+    await H.sleep(300);
+    const g4b = await liveHeroRows();
+    run.check("G-4 依生命比例由低到高：甘寧 24%、許褚 30%、貂蟬 77%、關羽與趙雲都是 100%（依部署順序 1 在 5 前）；和「受傷」一起用時 3 位依比例排列；說明寫順序會跟著即時更新改變",
+      g4a.uids.join() === "hero-2,hero-4,hero-3,hero-1,hero-5" && !g4a.matched && g4b.uids.join() === "hero-2,hero-4,hero-3" &&
+        /生命即時更新，順序可能跟著改變/.test(g4a.note || ""),
+      { g4a: g4a.uids, g4b: g4b.uids, note: g4a.note });
+
+    // 下一份觀測：貂蟬掉到 10%、甘寧補到 100%（不再受傷）。焦點留在「生命比例」排序鈕，順序照新的一份
+    await page.locator('[data-testid="battle-live-hero-sort-hp"]').focus();
+    await post(IFRAME, craftG(base, 200001, [[1, "guan_yu", 1000, 1000], [2, "gan_ning", 1235, 1235], [3, "diao_chan", 130, 1294], [4, "xu_chu", 390, 1300], [5, "zhao_yun", 1100, 1100]]));
+    await H.sleep(800);
+    const g5 = await liveHeroRows();
+    run.check("G-5 觀測更新：受傷＋生命比例的清單照新的一份變成貂蟬 10%、許褚 30%（甘寧補滿後不再列出）；焦點仍在排序鈕、條件不變（不搶焦點、不改選取）",
+      g5.uids.join() === "hero-3,hero-4" && g5.matched?.matched === 2 && g5.focus === "battle-live-hero-sort-hp" &&
+        g5.pressed.sort().join() === "health-injured,sort-hp",
+      g5);
+
+    await page.locator('[data-testid="battle-live-hero-search"]').fill("不存在的武將");
+    await H.sleep(300);
+    const g6a = await liveHeroRows();
+    await page.locator('[data-testid="battle-live-hero-clear"]').click();
+    await H.sleep(300);
+    const g6b = await liveHeroRows();
+    run.check("G-6 沒有符合時說明並提供「清除搜尋與篩選」；按下後搜尋與生命狀態清掉（排序保留生命比例）、列出 5 位、焦點在搜尋框",
+      g6a.noMatch && g6a.matched?.matched === 0 && g6b.search === "" && g6b.pressed.sort().join() === "health-all,sort-hp" && g6b.uids.length === 5 &&
+        !g6b.matched && g6b.focus === "battle-live-hero-search",
+      { g6a: { noMatch: g6a.noMatch, matched: g6a.matched }, g6b });
+
+    // 鍵盤：從搜尋框 Tab 到「低生命」，空白鍵切換
+    await page.locator('[data-testid="battle-live-hero-search"]').focus();
+    let reached = null;
+    for (let i = 0; i < 6 && reached !== "battle-live-hero-health-low"; i++) {
+      await page.keyboard.press("Tab");
+      reached = await page.evaluate(() => document.activeElement?.dataset?.testid ?? null);
+    }
+    await page.keyboard.press(" ");
+    await H.sleep(300);
+    const g7 = await liveHeroRows();
+    run.check("G-7 鍵盤：從搜尋框按 Tab 到「低生命」、空白鍵選取（貂蟬 10%、許褚 30%）",
+      reached === "battle-live-hero-health-low" && g7.uids.join() === "hero-3,hero-4" && g7.pressed.includes("health-low"),
+      { reached, uids: g7.uids });
+
+    await page.setViewportSize({ width: 390, height: 600 });
+    await H.sleep(800);
+    await page.locator('[data-testid="battle-live-hero-filters"]').scrollIntoViewIfNeeded();
+    const m8 = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="battle-live-hero-filters"]');
+      const b = el.getBoundingClientRect();
+      const fonts = [...el.querySelectorAll("button, input, div, span")].map((x) => parseFloat(getComputedStyle(x).fontSize));
+      return { left: Math.round(b.left), right: Math.round(b.right), vw: innerWidth, minFont: Math.min(...fonts), docScroll: document.documentElement.scrollWidth };
+    });
+    await H.shot(page, "battle-live-g-390x600");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await H.sleep(500);
+    run.check("G-8 390×600：武將的搜尋、生命狀態與排序在畫面寬度內、字級至少 12px、沒有橫向捲動（截圖另存）",
+      m8.left >= 0 && m8.right <= m8.vw && m8.minFont >= 12 && m8.docScroll <= m8.vw, m8);
+
+    // ── H. 敵軍排序 ──
+    await page.locator('[data-testid="battle-live-tab-enemies"]').click();
+    await H.sleep(300);
+    const h0 = await sortState();
+    await page.locator('[data-testid="battle-live-next"]').click();
+    await H.sleep(200);
+    await page.locator('[data-testid="battle-live-sort-hp"]').click();
+    await H.sleep(300);
+    const h1 = await sortState();
+    run.check("H-1 敵軍預設依出場順序（seq 2000 起一路增加）；改成生命比例後回到第 1 頁、由低到高排列，每列寫出比例；說明寫依生命比例由低到高、即時更新順序可能改變",
+      h0.pressed.join() === "spawn" && nonDecreasing(h0.rows.map((r) => r.seq)) && h0.rows[0].seq === 2000 && /依出場順序排列/.test(h0.summary) &&
+        h1.pressed.join() === "hp" && h1.pager?.page === 1 && nonDecreasing(h1.rows.map((r) => r.ratio)) && /（\d+%）/.test(h1.rows[0].text) &&
+        /依生命比例由低到高排列/.test(h1.summary) && /即時更新，順序可能跟著戰況改變/.test(h1.summary),
+      { h0: { pressed: h0.pressed, first: h0.rows[0], summary: h0.summary }, h1: { pressed: h1.pressed, pager: h1.pager, ratios: h1.rows.map((r) => r.ratio).slice(0, 6), summary: h1.summary } });
+
+    await page.locator('[data-testid="battle-live-sort-atk"]').click();
+    await H.sleep(300);
+    const h2 = await sortState();
+    const atkPairs = h2.rows.map((r) => [r.atk, r.seq]);
+    run.check("H-2 有效攻擊力由高到低（同數值依出場順序），每列寫出攻擊力",
+      h2.pressed.join() === "atk" && nonIncreasing(h2.rows.map((r) => r.atk)) &&
+        atkPairs.every((p, i) => i === 0 || p[0] < atkPairs[i - 1][0] || p[1] > atkPairs[i - 1][1]) && /攻 \d+/.test(h2.rows[0].text),
+      { first: h2.rows.slice(0, 4) });
+
+    // 依生命比例排序時選第 1 頁的第 1 隻；下一份觀測裡牠補滿生命（排到最後一頁）：詳情仍是同一隻，不改指到同位置的另一隻
+    await page.locator('[data-testid="battle-live-sort-hp"]').click();
+    await H.sleep(300);
+    const h3a = await sortState();
+    const pick = h3a.rows[0].uid;
+    await page.locator(`[data-testid="live-enemy"][data-uid="${pick}"]`).click();
+    await H.sleep(300);
+    const pickSeq = Number(pick.split("-")[1]);
+    await post(IFRAME, craftG(base, 200002, HEROES_G, (i) => (2000 + i === pickSeq ? { hp: 1000 } : {})));
+    await H.sleep(800);
+    const h3b = await sortState();
+    run.check("H-3 選中的敵人在更新後排到別頁：詳情仍是同一隻（uid 相同），第 1 頁第 1 列換成另一隻，頁數合法",
+      h3b.detail === pick && h3b.rows[0].uid !== pick && !h3b.rows.some((r) => r.uid === pick) && h3b.pager && h3b.pager.page >= 1 && h3b.pager.page <= h3b.pager.pages,
+      { pick, detail: h3b.detail, first: h3b.rows[0].uid, pager: h3b.pager });
+
+    await page.locator('[data-testid="battle-live-filter-burning"]').click();
+    await H.sleep(300);
+    const h4 = await sortState();
+    run.check("H-4 先篩選再排序：灼燒 20 隻（符合數不因排序改變），清單依生命比例排列、都是偶數 seq（灼燒）",
+      h4.matched === 20 && nonDecreasing(h4.rows.map((r) => r.ratio)) && h4.rows.every((r) => r.seq % 2 === 0),
+      { matched: h4.matched, seqs: h4.rows.map((r) => r.seq).slice(0, 6) });
+
+    // 換場：武將與敵軍的條件、排序都回到預設
+    await closeLive();
+    await H.selectStage(page, MAP.name);
+    await H.sleep(1500);
+    await dismissSplash(IFRAME).catch(() => {});
+    await openLive();
+    await page.locator('[data-testid="battle-live-tab-enemies"]').click();
+    await H.clickButton(page, "迎戰");
+    await waitUntil(async () => (await liveEnemies()).total >= 1, 30000, "新的一場出兵");
+    const h5 = await sortState();
+    // 新的一場送一份有 5 位武將的觀測，看武將的條件也回到預設
+    await post(IFRAME, craftG(await obsTail(), 300000, HEROES_G));
+    await H.sleep(800);
+    await page.locator('[data-testid="battle-live-tab-heroes"]').click();
+    await H.sleep(300);
+    const g9 = await liveHeroRows();
+    run.check("G-9／H-5 換關（新的一場）：敵軍排序回到出場順序；武將搜尋空白、生命狀態全部、排序部署順序，5 位依部署順序",
+      g9.search === "" && g9.pressed.sort().join() === "health-all,sort-deploy" && g9.uids.join() === "hero-1,hero-2,hero-3,hero-4,hero-5" &&
+        h5.pressed.join() === "spawn" && /依出場順序排列/.test(h5.summary),
+      { g9: { search: g9.search, pressed: g9.pressed, uids: g9.uids }, h5: { pressed: h5.pressed, summary: h5.summary } });
+    await closeLive();
+  });
+
   // ── C. 獨立戰鬥頁 ──
   await section("C", async () => {
     await page.goto(H.BASE + "/shenmaSanguo/battle?map=" + MAP.id);
@@ -549,6 +909,23 @@ async (page) => {
     out.C = { before, after, pair, shot: await H.shot(page, "battle-live-c-battle-page") };
     run.check("C-1 獨立戰鬥頁：選取甘寧後不重新點選，開戰後面板從「目前這一場還沒用過」變成「已經用過」；敵軍分頁的數量＝遊戲計入波次的數量",
       before?.used === "0" && before?.live === "1" && after?.used === "1" && /目前這一場已經用過/.test(after.text) && !!pair, out.C);
+    // 獨立戰鬥頁的武將搜尋、低生命篩選與敵軍排序（同一個面板元件）
+    await post(BIFRAME, craftG(await obsTail(), 200000, HEROES_G));
+    await H.sleep(800);
+    await page.locator('[data-testid="battle-live-tab-heroes"]').click();
+    await page.locator('[data-testid="battle-live-hero-health-low"]').click();
+    await page.locator('[data-testid="battle-live-hero-sort-hp"]').click();
+    await H.sleep(300);
+    const gc = await liveHeroRows();
+    await page.locator('[data-testid="battle-live-tab-enemies"]').click();
+    await page.locator('[data-testid="battle-live-sort-atk"]').click();
+    await H.sleep(300);
+    const hc = await sortState();
+    out.C2 = { heroes: gc.uids, matched: gc.matched, enemyPressed: hc.pressed, atk: hc.rows.map((r) => r.atk).slice(0, 5) };
+    run.check("C-2 獨立戰鬥頁：武將低生命＋生命比例排序是甘寧 24%、許褚 30%（符合 2／在場 5 位）；敵軍依有效攻擊力由高到低",
+      gc.uids.join() === "hero-2,hero-4" && gc.matched?.matched === 2 && gc.matched?.total === 5 &&
+        hc.pressed.join() === "atk" && nonIncreasing(hc.rows.map((r) => r.atk)) && hc.rows.length > 0,
+      out.C2);
   });
 
   await page.evaluate(() => localStorage.removeItem("__shenma_lv_fixture")).catch(() => {});

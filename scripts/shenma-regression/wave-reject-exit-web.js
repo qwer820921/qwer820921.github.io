@@ -14,7 +14,7 @@ async (page) => {
     expectedConsole: [
       /拒絕開始第 \d+ 波/,
       /^WARNING: \[WaveManager\] (找不到敵人設定 ID: 'mock_missing_config'|敵人組 'mock_b_grunt' 數量為 0)，跳過此組$/,
-      /^\s*at: push_(warning|error) \(core\/variant\/variant_utility\.cpp:\d+\)$/,
+      /^\s*at: push_(warning|error) \(core[\\/]variant[\\/]variant_utility\.cpp:\d+\)$/,
       /^\s*GDScript backtrace/,
       /^\s*\[\d+\] \w+ \(res:\/\/[\w/]+\.gd:\d+\)$/,
     ],

@@ -33,6 +33,17 @@ var _generation: int = 0
 ## 這一場已生成的敵人數：新敵人的生成序號（Enemy.spawn_seq），每次 setup／stop_all 從 0 重新計算
 var _spawn_count: int = 0
 
+# ── 本波的出兵進度（唯讀，給戰況觀測；不影響出兵與清波判定）──────────
+# planned 是這一波有效出兵計畫的總數（plan_wave 通過的組的 count 加總；無效路線、找不到的敵人不算）。
+# 每隻敵人記住自己是第幾波（meta）：擊殺與漏城只算這一波的敵人，而且每隻只算一次。換波時重新計算，換場（新世代）時清空
+const WAVE_META: String = "spawn_wave"
+var _prog_wave: int = 0
+var _prog_planned: int = 0
+var _prog_spawned: int = 0
+var _prog_left: int = 0   # 還沒輪到的出兵（成功或失敗都會減少）
+var _prog_killed: int = 0
+var _prog_leaked: int = 0
+
 # ── 初始化 ────────────────────────────────────────────────────
 func setup(waves: Array, enemies_config: Array, game_map: Node, units_layer: Node, enemy_scene: PackedScene, tile_size: int = 48) -> void:
 	_begin_new_generation()
@@ -47,6 +58,7 @@ func stop_all() -> void:
 	_begin_new_generation()
 
 func _begin_new_generation() -> void:
+	_reset_progress(0, 0)
 	_generation += 1
 	_spawn_count = 0
 	_active_enemies.clear()
@@ -199,6 +211,10 @@ func start_wave(wave_num: int, plans: Array) -> void:
 	var gen: int = _generation
 	_current_wave_num = wave_num
 	_active_spawning_groups = plans.size()
+	var planned: int = 0
+	for p in plans:
+		planned += int(p.count)
+	_reset_progress(wave_num, planned)
 	for plan in plans:
 		# 同步信號回呼可能已經切關（世代改變）：剩下的組屬於舊關卡，不得再生成或改動新世代的計數
 		if gen != _generation:
@@ -219,7 +235,10 @@ func _spawn_group(plan: Dictionary, gen: int) -> void:
 		if gen != _generation:
 			return
 		var enemy: Node = _create_enemy(plan.cfg, plan.waypoints, gen)
+		_prog_left = maxi(0, _prog_left - 1)
 		if enemy:
+			enemy.set_meta(WAVE_META, _current_wave_num)
+			_prog_spawned += 1
 			_active_enemies.append(enemy)
 			enemy_spawned.emit(enemy)
 		if i < count - 1:
@@ -268,14 +287,47 @@ func _create_enemy(cfg: Dictionary, waypoints: Array, gen: int) -> Node:
 func _on_enemy_died(enemy: Node) -> void:
 	if not owns_enemy(enemy):
 		return
+	_count_gone(enemy, true)
 	enemy_killed.emit(enemy)
 	_remove_enemy(enemy)
 
 func _on_enemy_reached_base(enemy: Node) -> void:
 	if not owns_enemy(enemy):
 		return
+	_count_gone(enemy, false)
 	enemy_leaked.emit(enemy)
 	_remove_enemy(enemy)
+
+## 本波進度：這一波的敵人倒下或漏城（每隻只算一次；上一波還在場上的敵人不算進這一波）
+func _count_gone(enemy: Node, killed: bool) -> void:
+	if int(enemy.get_meta(WAVE_META, -1)) != _prog_wave or enemy.has_meta("spawn_counted"):
+		return
+	enemy.set_meta("spawn_counted", true)
+	if killed:
+		_prog_killed += 1
+	else:
+		_prog_leaked += 1
+
+func _reset_progress(wave_num: int, planned: int) -> void:
+	_prog_wave = wave_num
+	_prog_planned = planned
+	_prog_spawned = 0
+	_prog_left = planned
+	_prog_killed = 0
+	_prog_leaked = 0
+
+## 本波的出兵進度（戰況觀測用，唯讀）：wave 0 代表這一場還沒開始出兵
+## planned 有效計畫總數、spawned 已出、pending 待出、alive 這一波還在場上的（含受控的）、killed／leaked 這一波倒下／漏城、
+## spawning 是否還在出兵（還有組沒出完）
+func get_spawn_progress() -> Dictionary:
+	var alive: int = 0
+	for e in _active_enemies:
+		if is_instance_valid(e) and not e.is_queued_for_deletion() and not e.is_dead() and int(e.get_meta(WAVE_META, -1)) == _prog_wave:
+			alive += 1
+	return {
+		"wave": _prog_wave, "planned": _prog_planned, "spawned": _prog_spawned, "pending": _prog_left,
+		"alive": alive, "killed": _prog_killed, "leaked": _prog_leaked, "spawning": _active_spawning_groups > 0,
+	}
 
 func _remove_enemy(enemy: Node) -> void:
 	_active_enemies.erase(enemy)

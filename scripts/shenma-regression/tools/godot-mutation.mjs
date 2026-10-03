@@ -25,6 +25,7 @@ const ENEMY = "entities/enemy/Enemy.gd";
 const WAVE = "systems/WaveManager.gd";
 const MAIN = "main/Main.gd";
 const BATTLE = "systems/BattleManager.gd";
+const SFX = "systems/SFXManager.gd";
 
 // 許褚怪力（Enemy.knockback）從推之前的路線進度檢查到退完的檢查（含中間的倒退迴圈）：「完全不檢查」的變異一次拿掉兩道檢查
 const KB_CHECKED = [
@@ -2180,6 +2181,54 @@ const MUTATIONS = {
     to: "func _mark_observation() -> void:\n\tpass\n",
     only: "observation",
     expect: ["觀測-9 "],
+  },
+  "bgm-duplicate-download": {
+    why: "背景音樂下載中再要播放時又送出一次下載（重複下載）",
+    file: SFX,
+    from: "\tif _bgm_pending or _bgm_tries >= BGM_MAX_TRIES:\n\t\treturn\n",
+    to: "\tif _bgm_tries >= BGM_MAX_TRIES:\n\t\treturn\n",
+    only: "bgm",
+    expect: ["BGM-2 "],
+  },
+  "bgm-plays-after-stop": {
+    why: "停止（結算、換場）之後背景音樂下載完成仍然開始播放",
+    file: SFX,
+    from: "\tif _bgm_wanted and sfx_enabled and not _bgm_player.playing:\n",
+    to: "\tif sfx_enabled and not _bgm_player.playing:\n",
+    only: "bgm",
+    expect: ["BGM-3 "],
+  },
+  "spawn-planned-wrong": {
+    why: "本波出兵進度的計畫總數算錯（不是有效計畫的 count 加總）",
+    file: WAVE,
+    from: "\tfor p in plans:\n\t\tplanned += int(p.count)\n",
+    to: "\tfor p in plans:\n\t\tplanned += int(p.count) + 1\n",
+    only: "spawn",
+    expect: ["出兵進度-1 "],
+  },
+  "spawn-kills-not-per-wave": {
+    why: "上一波的敵人倒下也算進這一波的擊殺",
+    file: WAVE,
+    from: "\tif int(enemy.get_meta(WAVE_META, -1)) != _prog_wave or enemy.has_meta(\"spawn_counted\"):\n",
+    to: "\tif enemy.has_meta(\"spawn_counted\"):\n",
+    only: "spawn",
+    expect: ["出兵進度-4 "],
+  },
+  "spawn-not-reset-on-new-battle": {
+    why: "換場（新的一場）沒有清空本波出兵進度",
+    file: WAVE,
+    from: "func _begin_new_generation() -> void:\n\t_reset_progress(0, 0)\n",
+    to: "func _begin_new_generation() -> void:\n",
+    only: "spawn",
+    expect: ["出兵進度-5 "],
+  },
+  "bgm-unlimited-retry": {
+    why: "背景音樂下載失敗後沒有次數上限（每次要播放都重新下載）",
+    file: SFX,
+    from: "\tif _bgm_pending or _bgm_tries >= BGM_MAX_TRIES:\n\t\treturn\n",
+    to: "\tif _bgm_pending:\n\t\treturn\n",
+    only: "bgm",
+    expect: ["BGM-6 "],
   },
 };
 

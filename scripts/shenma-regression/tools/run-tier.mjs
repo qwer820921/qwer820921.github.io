@@ -9,14 +9,39 @@
 //   地圖編輯器的錯誤說明、敵人表的移動方式欄判斷、地圖資訊保存判斷、地圖資料檢查與波次保存判斷、
 //   跨來源隔離開機腳本）、harness 雜訊規則、
 //   工具自我測試、素材引用檢查、Godot 反向驗證的變異原文檢查（只讀原始碼）。不需要 dev server 與 Godot
-// - related：quick 之後，只跑指定功能的瀏覽器腳本；full：quick 之後跑全部瀏覽器腳本（約 35 分鐘）
+// - related：quick 之後，只跑指定功能的瀏覽器腳本；full：quick 之後跑全部瀏覽器腳本（開發模式約 60～90 分鐘）
 //   瀏覽器腳本需要 npm run dev 與 PLAYWRIGHT_DIR（見 README）；Godot 端另外用 godot-check.sh
+// - plan：只列出計畫，不執行。相對基準（--base，預設 HEAD；含未提交與未追蹤的檔案）的每個改動檔案 → 對應的測試、
+//   要不要完整一次與理由、預估耗時；沒有規則的「未分類」檔案明確列出（結束碼 3），規則在 change-plan.mjs
+// - changed：照 plan 執行（快速一層＋選出的瀏覽器腳本）；有未分類的檔案時不執行，除非 --areas 補上或 --allow-unclassified。
+//   Godot、匯出與建置只列出、不在這裡執行
+// - 所有模式都會引用「相同內容已通過」的結果（快速一層用全部來源，瀏覽器腳本用產品來源＋它自己＋harness，
+//   再加上開發／靜態匯出與 out/、ENGINE_DIR 的內容、後端模組連同它匯入的檔案與後端程式、Playwright 版本、
+//   實際的瀏覽器版本與有沒有顯示視窗、只跑一部分的選段），並記錄新的通過；失敗、中斷、沒有斷言的都不記錄。
+//   完整的執行只引用完整的紀錄，只跑一部分（MAP_EDITOR_ONLY 等）的結果只給同樣的選段引用；
+//   有設定卻算不出內容的環境輸入時整次不引用也不記錄（印出原因）。--no-cache 關閉
+// - --browser-only：不跑快速一層，只跑瀏覽器腳本（開發中補跑用；最終驗收仍要跑快速一層）
+// - SHENMA_TIER_RUNNER：瀏覽器執行器（預設 tools/run-browser.mjs；自我測試換成不開瀏覽器的替身）
 // - EVIDENCE_DIR：瀏覽器腳本的證據目錄，耗時摘要寫在 <EVIDENCE_DIR>/tier-<層>.json（沒有設定時只印出）
 // - 跑瀏覽器腳本時不要同時改 src、跑 build 或另一批瀏覽器回歸
 import { mkdirSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  PREREQ,
+  QUICK_SECONDS,
+  browserEnv,
+  browserFingerprint,
+  cacheKey,
+  digestOf,
+  gitChanges,
+  makePlan,
+  openCache,
+  quickEnv,
+  reusable,
+  sourceBlobs,
+} from "./change-plan.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const npx = process.platform === "win32" ? "npx.cmd" : "npx";
@@ -130,6 +155,16 @@ const QUICK = [
     "Godot 反向驗證的變異原文檢查（不啟動 Godot）",
     "node",
     ["scripts/shenma-regression/tools/godot-mutation.mjs", "check"],
+  ],
+  [
+    "匯出後處理的 Service Worker 與外殼頁測試（版本完整性、核對後交付、重新驗證、引擎快取）",
+    "node",
+    ["scripts/shenma-regression/tools/postexport.test.mjs"],
+  ],
+  [
+    "回歸選測與結果快取的自我測試",
+    "node",
+    ["scripts/shenma-regression/tools/change-plan.test.mjs"],
   ],
 ];
 
@@ -275,8 +310,8 @@ const AREAS = {
     scripts: ["r17-web.js"],
   },
   "battle-layout": {
-    what: "戰場適應視窗、備戰拆除防禦塔",
-    scripts: ["r18-web.js"],
+    what: "戰場適應視窗、備戰拆除防禦塔；手機的矮畫面上選取面板不擋暫停與繼續、拆除確認點得到、Esc 關閉面板（兩個入口 390×600、320×568、740×360；需要 Godot 產物）",
+    scripts: ["r18-web.js", "panel-safe-web.js"],
   },
   "speed-pause": {
     what: "戰鬥速度 1×／2×、部署慢速、手動暫停",
@@ -285,6 +320,10 @@ const AREAS = {
   artifacts: {
     what: "瀏覽器實際取得的遊戲產物與網路統計",
     scripts: ["artifacts-and-network.js"],
+  },
+  bgm: {
+    what: "背景音樂不在啟動必載的資料包裡：game_ready 之前沒有請求、收到關卡資料（音效開著）後下載一次、換關沿用、音效關閉不下載、404 不影響遊戲而且最多試 2 次（需要 Godot 產物）",
+    scripts: ["bgm-load-web.js"],
   },
   "battle-live": {
     what: "戰況觀測：武將面板不重新點選就看到目前的生命與技能狀態、「戰況」的武將技能與敵軍查看（分頁、離場、受控、鍵盤、390×600）、舊的與上一場的觀測不採用、舊版遊戲退回選取時的快照；單位面板只屬於目前這一場（需要 Godot 產物）",
@@ -360,12 +399,43 @@ const FULL = [
   "skill-charm-web.js",
   "battle-live-web.js",
   "panel-scope-web.js",
+  "bgm-load-web.js",
+  "panel-safe-web.js",
 ];
 
-const [mode, ...rest] = process.argv.slice(2);
-if (mode === "list" || !["quick", "related", "full"].includes(mode)) {
+const argv = process.argv.slice(2);
+const flag = (name) => {
+  const i = argv.indexOf(name);
+  if (i === -1) return null;
+  argv.splice(i, 1);
+  return true;
+};
+const option = (name) => {
+  const i = argv.indexOf(name);
+  if (i === -1) return null;
+  const v = argv[i + 1];
+  argv.splice(i, 2);
+  return v;
+};
+const noCache = flag("--no-cache");
+const browserOnly = flag("--browser-only");
+const RUNNER =
+  process.env.SHENMA_TIER_RUNNER ||
+  "scripts/shenma-regression/tools/run-browser.mjs";
+const forceFull = flag("--full");
+const allowUnclassified = flag("--allow-unclassified");
+const base = option("--base") || "HEAD";
+const extraAreas = (option("--areas") || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const [mode, ...rest] = argv;
+const MODES = ["quick", "related", "full", "plan", "changed"];
+if (mode === "list" || !MODES.includes(mode)) {
   console.log(
-    "用法：run-tier.mjs quick | related <功能...> | full | list\n\n功能（related 的參數）："
+    "用法：run-tier.mjs quick | related <功能...> | full | plan | changed | list\n" +
+      "  plan／changed 的選項：--base <ref>（預設 HEAD）、--areas a,b（另外加功能）、--full、--allow-unclassified；\n" +
+      "  所有模式：--no-cache（不引用、也不記錄通過的結果）\n\n功能（related 與 --areas 的參數）："
   );
   for (const [k, v] of Object.entries(AREAS))
     console.log(
@@ -373,13 +443,90 @@ if (mode === "list" || !["quick", "related", "full"].includes(mode)) {
     );
   process.exit(mode === "list" ? 0 : 2);
 }
+const unknownAreas = [...rest, ...extraAreas].filter((a) => !AREAS[a]);
+if (unknownAreas.length) {
+  console.error(
+    `不認得的功能：${unknownAreas.join("、")}（run-tier.mjs list 列出全部）`
+  );
+  process.exit(2);
+}
+
+// ── 選測計畫（plan／changed）──
+let plan = null;
+if (mode === "plan" || mode === "changed") {
+  let changes;
+  try {
+    changes = gitChanges(ROOT, base);
+  } catch {
+    console.error(`讀不到相對 ${base} 的改動（基準不存在或不是 git 工作樹）`);
+    process.exit(2);
+  }
+  plan = makePlan(changes, {
+    areas: AREAS,
+    full: FULL,
+    suite: join(ROOT, "scripts/shenma-regression"),
+    extraAreas,
+    forceFull: !!forceFull,
+  });
+  const min = (s) => `${Math.round(s / 6) / 10} 分鐘`;
+  console.log(
+    `改動（相對 ${base}，含未提交與未追蹤）：${plan.files.length} 個`
+  );
+  for (const f of plan.files)
+    console.log(
+      `  ${f.status} ${f.path}\n      → ${f.why}${f.tests && f.tests.length ? `：${f.tests.join(" ")}` : ""}${f.note ? `（${f.note}）` : ""}`
+    );
+  console.log(`\n快速一層：一次（約 ${QUICK_SECONDS} 秒）`);
+  console.log(
+    plan.browser.full
+      ? `瀏覽器：完整 ${plan.browser.scripts.length} 支（約 ${min(plan.browser.seconds)}）；理由：\n    ${plan.browser.reasons.join("\n    ")}`
+      : `瀏覽器：${plan.browser.scripts.length} 支（約 ${min(plan.browser.seconds)}，完整約 ${min(plan.browser.fullSeconds)}）${plan.browser.scripts.length ? "：" + plan.browser.scripts.join(" ") : ""}`
+  );
+  console.log(
+    plan.godot.full
+      ? `Godot：完整檢查（godot-check.sh，約 ${min(plan.godot.seconds)}）；理由：\n    ${plan.godot.reasons.join("\n    ")}`
+      : "Godot：不需要"
+  );
+  if (plan.export.needed)
+    console.log(
+      `遊戲產物：${plan.export.reasons.join("；")}（verify-export.mjs）`
+    );
+  if (plan.build.needed)
+    console.log(
+      `建置：npm run build 後用 serve-out 跑一次；${plan.build.reasons.join("；")}`
+    );
+  console.log(
+    `預估合計：約 ${min(plan.estimateSeconds)}（瀏覽器的秒數是 2026-10-03 完整回歸的實測，只供比較）`
+  );
+  if (plan.review.length)
+    console.log(`\n要人判斷：\n  ${plan.review.join("\n  ")}`);
+  if (plan.unknown.length) {
+    console.log(
+      `\n未分類（沒有對應的測試規則，需要選擇：加 --areas、改用 --full，或確認不影響後加 --allow-unclassified）：\n  ${plan.unknown.join("\n  ")}`
+    );
+  }
+  if (process.env.EVIDENCE_DIR) {
+    mkdirSync(process.env.EVIDENCE_DIR, { recursive: true });
+    writeFileSync(
+      join(process.env.EVIDENCE_DIR, `plan.json`),
+      JSON.stringify({ base, ...plan }, null, 2) + "\n"
+    );
+  }
+  if (mode === "plan") process.exit(plan.unknown.length ? 3 : 0);
+  if (plan.unknown.length && !allowUnclassified) {
+    console.error("\n有未分類的改動，這次不執行（見上方）");
+    process.exit(3);
+  }
+  if (plan.godot.full || plan.build.needed || plan.export.needed)
+    console.log(
+      "\n注意：Godot、匯出與建置不在 run-tier 裡執行，要另外跑（見上方）"
+    );
+}
+
 let browserScripts = [];
 if (mode === "related") {
-  const unknown = rest.filter((a) => !AREAS[a]);
-  if (rest.length === 0 || unknown.length) {
-    console.error(
-      `related 需要功能名稱${unknown.length ? "；不認得：" + unknown.join("、") : ""}（run-tier.mjs list 列出全部）`
-    );
+  if (rest.length === 0) {
+    console.error("related 需要功能名稱（run-tier.mjs list 列出全部）");
     process.exit(2);
   }
   browserScripts = [...new Set(rest.flatMap((a) => AREAS[a].scripts))].sort(
@@ -387,10 +534,37 @@ if (mode === "related") {
   );
 } else if (mode === "full") {
   browserScripts = FULL;
+} else if (mode === "changed") {
+  browserScripts = plan.browser.scripts;
 }
 
+// ── 通過結果的快取：相同的來源內容、參數與環境已經通過時引用，不重跑 ──
+const cache = noCache ? null : openCache(ROOT);
+if (cache && cache.dropped)
+  console.log(`快取：移除 ${cache.dropped} 筆舊格式的紀錄（不再引用）`);
+const blobs = sourceBlobs(ROOT);
+const quickPrint = digestOf(blobs);
+// 快速一層的環境：Node 規則測試的來源替換（*_SRC）連內容算進鍵；算不出內容時不引用也不記錄
+const qEnv = quickEnv(ROOT);
+if (qEnv.problems.length)
+  console.log(`快速一層不使用快取：${qEnv.problems.join("；")}`);
+const quickCache = qEnv.problems.length ? null : cache;
 const steps = [];
 const runStep = (name, cmd, args) => {
+  const key = cacheKey(
+    { name, cmd: cmd.replace(/\.cmd$/, ""), args },
+    quickPrint,
+    qEnv.env
+  );
+  const hit = quickCache && quickCache.hit(key);
+  if (hit) {
+    const step = { name, seconds: 0, ok: true, reused: hit.at };
+    steps.push(step);
+    console.log(
+      `REUSED  ${name}（相同內容在 ${hit.at} 通過，${hit.seconds}s）`
+    );
+    return true;
+  }
   const t0 = Date.now();
   const r = spawnSync(cmd, args, {
     cwd: ROOT,
@@ -403,33 +577,178 @@ const runStep = (name, cmd, args) => {
     ok: r.status === 0,
   };
   steps.push(step);
+  if (quickCache)
+    quickCache.record(key, { pass: step.ok, seconds: step.seconds });
   console.log(`${step.ok ? "PASS" : "FAIL"}  ${name}  ${step.seconds}s`);
   return step.ok;
 };
 
 const t0 = Date.now();
-for (const [name, cmd, args] of QUICK) runStep(name, cmd, args);
+if (!browserOnly)
+  for (const [name, cmd, args] of QUICK) runStep(name, cmd, args);
+else console.log("--browser-only：不跑快速一層");
+if (cache) cache.save();
+const browser = {
+  planned: browserScripts,
+  scope: null,
+  reused: [],
+  ran: [],
+  passed: [],
+  failed: [],
+  missing: [],
+  results: {},
+};
 if (browserScripts.length) {
-  // 一次啟動瀏覽器、依序跑（同一個 browser context，第一支必須是 harness.js）；每支的耗時在執行器的輸出裡
-  runStep(
-    `瀏覽器腳本 ${browserScripts.length} 支：${browserScripts.join(" ")}`,
-    "node",
-    [
-      "scripts/shenma-regression/tools/run-browser.mjs",
-      "harness.js",
-      ...browserScripts,
-    ]
+  // 實際的瀏覽器（版本、有沒有顯示視窗）：執行器 --probe 啟動一次瀏覽器讀出來；讀不到時不使用快取
+  let probe = null;
+  const pr = spawnSync("node", [RUNNER, "--probe"], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+  const pline = (pr.stdout || "")
+    .split(/\r?\n/)
+    .find((l) => l.startsWith("BROWSER_PROBE "));
+  try {
+    probe = pline ? JSON.parse(pline.slice("BROWSER_PROBE ".length)) : null;
+  } catch {
+    probe = null;
+  }
+  const { env, problems } = browserEnv(ROOT, process.env, probe);
+  // 這次要的範圍：設定了 *_ONLY 是局部（只引用同樣選段的局部紀錄），否則是完整（只引用完整、有斷言的紀錄）
+  const want = {
+    scope: env.selection ? "partial" : "full",
+    selection: env.selection,
+    needAssertions: true,
+  };
+  browser.scope = env.selection
+    ? `局部（${Object.entries(env.selection)
+        .map(([k, v]) => `${k}=${v}`)
+        .join("、")}）`
+    : "完整";
+  browser.browser = env.browser;
+  const browserCache = cache && problems.length === 0 ? cache : null;
+  if (cache && problems.length)
+    console.log(`瀏覽器腳本不使用快取：${problems.join("；")}`);
+  const keyOf = (s) =>
+    cacheKey(
+      { browser: s, scope: want.scope, selection: want.selection },
+      browserFingerprint(blobs, s),
+      env
+    );
+  const prior = new Map(
+    browserScripts.map((s) => {
+      const r = browserCache ? browserCache.hit(keyOf(s)) : null;
+      return [s, reusable(r, want) ? r : null];
+    })
   );
+  let toRun = browserScripts.filter((s) => !prior.get(s));
+  // 要跑的腳本需要的前置照跑（即使前置本身已經通過）
+  for (const s of [...toRun]) toRun.push(...(PREREQ[s] || []));
+  toRun = [...new Set(toRun)].sort((a, b) => FULL.indexOf(a) - FULL.indexOf(b));
+  for (const s of browserScripts)
+    if (!toRun.includes(s)) {
+      const p = prior.get(s);
+      browser.reused.push({
+        script: s,
+        at: p.at,
+        scope: p.scope,
+        assertions: p.assertions,
+        seconds: p.seconds,
+        raw: p.raw,
+        rawSha256: p.rawSha256,
+      });
+      console.log(
+        `REUSED  ${s}（相同內容與環境在 ${p.at} 通過，${p.scope === "full" ? "完整" : "局部"} ${p.assertions.passed}/${p.assertions.total}，原始結果 ${p.raw}）`
+      );
+    }
+  if (toRun.length) {
+    // 一次啟動瀏覽器、依序跑（同一個 browser context，第一支必須是 harness.js）；輸出照常顯示，逐支記錄通過與否
+    const tb = Date.now();
+    const r = await new Promise((done) => {
+      const child = spawn("node", [RUNNER, "harness.js", ...toRun], {
+        cwd: ROOT,
+        stdio: ["ignore", "pipe", "inherit"],
+      });
+      let stdout = "";
+      child.stdout.on("data", (d) => {
+        process.stdout.write(d);
+        stdout += d;
+      });
+      child.on("close", (status) => done({ status, stdout }));
+    });
+    // 每支的結果：執行器的 RESULT_JSON（通過、斷言數、範圍、原始結果與 sha256）
+    const seen = new Map();
+    for (const line of (r.stdout || "").split(/\r?\n/)) {
+      if (!line.startsWith("RESULT_JSON ")) continue;
+      try {
+        const j = JSON.parse(line.slice("RESULT_JSON ".length));
+        if (j && j.script) seen.set(j.script, j);
+      } catch {
+        // 看不懂的行：當成沒有結果
+      }
+    }
+    for (const s of toRun) {
+      const got = seen.get(s);
+      browser.ran.push(s);
+      browser.results[s] = got || null;
+      // 通過：執行器說通過、而且有斷言（沒有斷言的「通過」不算）
+      const pass = !!got && got.pass === true && got.assertions?.total > 0;
+      if (!got) browser.missing.push(s);
+      else if (pass) browser.passed.push(s);
+      else browser.failed.push(s);
+      // 沒有結果（中斷）或失敗都不記錄成通過；範圍照實際的結果記（選段之外跳過的段落算局部）
+      if (browserCache)
+        browserCache.record(
+          keyOf(s),
+          pass
+            ? {
+                pass: true,
+                scope: got.scope === "full" ? "full" : "partial",
+                selection: got.scope === "full" ? null : want.selection,
+                only: got.only,
+                skipped: got.skipped,
+                assertions: got.assertions,
+                seconds: got.seconds,
+                raw: got.raw,
+                rawSha256: got.rawSha256,
+                browser: env.browser,
+              }
+            : null
+        );
+    }
+    const harnessOk = seen.get("harness.js")?.pass === true;
+    steps.push({
+      name: `瀏覽器腳本 ${toRun.length} 支：${toRun.join(" ")}`,
+      seconds: Math.round((Date.now() - tb) / 100) / 10,
+      ok:
+        r.status === 0 &&
+        harnessOk &&
+        browser.failed.length === 0 &&
+        browser.missing.length === 0,
+    });
+    if (cache) cache.save();
+  }
 }
 const summary = {
   mode,
   areas: mode === "related" ? rest : undefined,
+  base: plan ? base : undefined,
+  plan: plan || undefined,
+  quickSkipped: browserOnly ? true : undefined,
   steps,
+  browser: browserScripts.length ? browser : undefined,
+  cache: cache ? cache.file : "不使用（--no-cache）",
   totalSeconds: Math.round((Date.now() - t0) / 1000),
   allPass: steps.every((s) => s.ok),
 };
 console.log(
-  `\n${summary.allPass ? "全部通過" : "有失敗"}：${mode}，共 ${summary.totalSeconds} 秒`
+  `\n${summary.allPass ? "全部通過" : "有失敗"}：${mode}，共 ${summary.totalSeconds} 秒` +
+    (browserScripts.length
+      ? `；瀏覽器（${browser.scope}）實跑 ${browser.ran.length} 支、引用 ${browser.reused.length} 支${browser.failed.length ? `、失敗 ${browser.failed.join(" ")}` : ""}${browser.missing.length ? `、沒有結果 ${browser.missing.join(" ")}` : ""}`
+      : "") +
+    (browserOnly
+      ? "；快速一層沒有跑（--browser-only）"
+      : `；快速一層引用 ${steps.filter((s) => s.reused).length} 步`)
 );
 if (process.env.EVIDENCE_DIR) {
   mkdirSync(process.env.EVIDENCE_DIR, { recursive: true });

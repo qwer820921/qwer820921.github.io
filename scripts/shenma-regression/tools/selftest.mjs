@@ -10,10 +10,17 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { maskNodeIds, parsePck } from "./pck.mjs";
+import {
+  VERSION_PLACEHOLDER,
+  htmlVersionOf,
+  maskHtmlVersion,
+  versionOf,
+} from "./postexport.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const publicDir = process.argv[2];
@@ -42,6 +49,48 @@ function patchPck(dir, entryTest, offsetOf) {
   return name;
 }
 const nodeIdsStart = (data) => maskNodeIds(data).hits[0].start;
+// 經過匯出後處理的 Service Worker 記錄了 index.pck 的 sha256，版本（外殼頁與 Service Worker）也由它決定：
+// 照 postexport.mjs 的方式跟著更新（真正重新匯出時也是這樣）。withVersion=false 時只更新 EXPECTED、版本不動
+function syncExpectedPck(dir, withVersion = true) {
+  const sw = join(dir, "index.service.worker.js");
+  const text = readFileSync(sw, "utf8");
+  const m = text.match(/^const EXPECTED = (\{.*\});$/m);
+  if (!m) return;
+  const exp = JSON.parse(m[1]);
+  exp["index.pck"].sha256 = createHash("sha256")
+    .update(readFileSync(join(dir, "index.pck")))
+    .digest("hex");
+  let out = text.replace(
+    m[0],
+    () => "const EXPECTED = " + JSON.stringify(exp) + ";"
+  );
+  const htmlPath = join(dir, "index.html");
+  const html = readFileSync(htmlPath, "utf8");
+  if (withVersion && htmlVersionOf(html)) {
+    const version = versionOf(maskHtmlVersion(html), exp);
+    const newHtml = maskHtmlVersion(html).replace(
+      `'${VERSION_PLACEHOLDER}'`,
+      `'${version}'`
+    );
+    writeFileSync(htmlPath, newHtml);
+    const data = Buffer.from(newHtml, "utf8");
+    exp["index.html"] = {
+      ...exp["index.html"],
+      bytes: data.length,
+      sha256: createHash("sha256").update(data).digest("hex"),
+    };
+    out = out
+      .replace(
+        /^const EXPECTED = \{.*\};$/m,
+        () => "const EXPECTED = " + JSON.stringify(exp) + ";"
+      )
+      .replace(
+        /^const VERSION = '[0-9a-f]{16}';$/m,
+        () => `const VERSION = '${version}';`
+      );
+  }
+  writeFileSync(sw, out);
+}
 
 let n = 0;
 function variant(label, mutate) {
@@ -68,10 +117,53 @@ const exportCases = [
     0,
   ],
   [
-    variant("只改 .scn 的 node_ids", (d) =>
-      patchPck(d, (x) => x.endsWith("Main.scn"), nodeIdsStart)
+    variant(
+      "只改 .scn 的 node_ids（Service Worker 記錄的 index.pck sha256 與版本都照匯出後處理跟著更新）",
+      (d) => {
+        const name = patchPck(d, (x) => x.endsWith("Main.scn"), nodeIdsStart);
+        syncExpectedPck(d);
+        return name;
+      }
     ),
     0,
+  ],
+  [
+    variant(
+      "只改 .scn 的 node_ids，但 Service Worker 記錄的 index.pck sha256 沒有更新",
+      (d) => patchPck(d, (x) => x.endsWith("Main.scn"), nodeIdsStart)
+    ),
+    1,
+  ],
+  [
+    variant(
+      "只改 .scn 的 node_ids，EXPECTED 跟著更新但版本（外殼頁與 Service Worker）沒有重算",
+      (d) => {
+        const name = patchPck(d, (x) => x.endsWith("Main.scn"), nodeIdsStart);
+        syncExpectedPck(d, false);
+        return name;
+      }
+    ),
+    1,
+  ],
+  [
+    variant("外殼頁的版本和 Service Worker 不同", (d) =>
+      editText(d, "index.html", (h) =>
+        h.replace(
+          /^(\tconst VERSION = ')[0-9a-f]{16}(';)$/m,
+          "$10123456789abcdef$2"
+        )
+      )
+    ),
+    1,
+  ],
+  [
+    variant("背景音樂改一個 byte", (d) => {
+      const p = join(d, "bgm_battle.ogg");
+      const b = readFileSync(p);
+      b[100] ^= 0xff;
+      writeFileSync(p, b);
+    }),
+    1,
   ],
   [
     variant("index.js 只有換行不同（CRLF 與 LF 互換）", (d) =>
