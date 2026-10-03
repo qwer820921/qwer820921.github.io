@@ -172,14 +172,14 @@ func _run() -> void:
 		battle_ended_count += 1
 		last_result = r)
 
-	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、廖化的堅韌、顏良的威壓、孫尚香的連射、龐統的連環計、諸葛亮的呼風喚雨、呂布的戰神、魯肅的補給、許褚的怪力、典韋的護衛、孫權的守護）、橫掃原型與攻速成長；
+	# 只跑一部分（診斷與反向驗證用；完整回歸不設定）：SHENMA_TEST_ONLY=sweep 只跑橫掃（技能原型）；skills 跑武將的技能（馬超的首擊加倍、黃忠、周瑜（包括灼燒的入口）、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、廖化的堅韌、顏良的威壓、孫尚香的連射、龐統的連環計、諸葛亮的呼風喚雨、呂布的戰神、魯肅的補給、許褚的怪力、典韋的護衛、孫權的守護、甘寧的奇襲、貂蟬的魅惑與敵對可選的目標整合）、橫掃原型與攻速成長；
 	# flying 跑飛行敵人與對空（加上防禦塔目標優先，它也用剩餘路程）、飛行路線無效與優先飛行；airfirst 只跑飛行路線無效與優先飛行；
 	# route 跑飛行與地面的路線無效（出兵前擋下）；blocker 只跑敵人攻擊阻路武將的冷卻；
 	# dodge 只跑趙雲「閃避」；firststrike 只跑首擊加倍（馬超「衝鋒」）；
 	# stagedata 跑關卡資料未完成（沒有波次、波次或路線的格式不對）；enemyatk 跑敵人設定的對武將攻擊力；immune 跑免疫減速；
 	# slow 跑倍率減速的來源與有效期、關羽的減速光環；aura 只跑減速光環（skills 也包含減速光環）；defaura 只跑劉備的防禦光環（skills 也包含）；stun 只跑張飛的暈眩（skills 也包含）；lifesteal 只跑魏延的吸血（skills 也包含）；
 	# atkspeed 只跑曹操的攻速光環（skills 也包含）；damage 只跑敵人受傷的入口（拒絕無效的傷害）；
-	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；chain 只跑龐統的連環計（skills 也包含）；storm 只跑諸葛亮的呼風喚雨（skills 也包含）；berserk 只跑呂布的戰神（skills 也包含）；supply 只跑魯肅的補給（skills 也包含）；knockback 只跑許褚的怪力（skills 也包含）；guard 只跑典韋的護衛（skills 也包含）；baseguard 只跑孫權的守護（skills 也包含）
+	# burninput 只跑灼燒的入口（拒絕無效的灼燒參數，skills 也包含）；counter 只跑夏侯惇的反擊（skills 也包含）；tenacity 只跑廖化的堅韌（skills 也包含）；atkdown 只跑顏良的威壓（skills 也包含）；doubleshot 只跑孫尚香的連射（skills 也包含）；chain 只跑龐統的連環計（skills 也包含）；storm 只跑諸葛亮的呼風喚雨（skills 也包含）；berserk 只跑呂布的戰神（skills 也包含）；supply 只跑魯肅的補給（skills 也包含）；knockback 只跑許褚的怪力（skills 也包含）；guard 只跑典韋的護衛（skills 也包含）；baseguard 只跑孫權的守護（skills 也包含）；assassinate 只跑甘寧的奇襲（skills 也包含）；charm 只跑貂蟬的魅惑與敵對可選的目標整合（skills 也包含）
 	var only: String = OS.get_environment("SHENMA_TEST_ONLY")
 	if only != "":
 		if only == "skills":
@@ -206,6 +206,8 @@ func _run() -> void:
 			await _knockback_cases()
 			await _guard_cases()
 			await _base_guard_cases()
+			await _assassinate_cases()
+			await _charm_cases()
 		elif only == "blocker":
 			await _blocker_cases()
 		elif only == "dodge":
@@ -270,8 +272,12 @@ func _run() -> void:
 			await _guard_cases()
 		elif only == "baseguard":
 			await _base_guard_cases()
+		elif only == "assassinate":
+			await _assassinate_cases()
+		elif only == "charm":
+			await _charm_cases()
 		else:
-			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、chain、storm、berserk、supply、knockback、guard、baseguard）", false)
+			_check("SHENMA_TEST_ONLY 的值不認得：" + only + "（可用 sweep、skills、flying、airfirst、route、blocker、dodge、firststrike、stagedata、enemyatk、immune、slow、aura、defaura、stun、lifesteal、atkspeed、damage、burninput、counter、tenacity、atkdown、doubleshot、chain、storm、berserk、supply、knockback、guard、baseguard、assassinate、charm）", false)
 		_finish()
 		return
 
@@ -529,6 +535,12 @@ func _run() -> void:
 
 	# ── 孫權的守護（在場上、還活著時漏城傷害 × 0.8，累計後無條件進位才扣城防；5 次扣 4）──
 	await _base_guard_cases()
+
+	# ── 甘寧的奇襲（每場第一次有效的普通攻擊必殺主目標；普通攻擊實扣後補扣剩下的生命，這一場內只有一次）──
+	await _assassinate_cases()
+
+	# ── 貂蟬的魅惑（主目標受控 2 秒：停下來改打 1 格內其他敵人；受控的敵人仍計入波次，但武將與防禦塔都不選它）──
+	await _charm_cases()
 
 	_finish()
 
@@ -14852,3 +14864,1109 @@ func _base_guard_cases() -> void:
 ## 實際引擎用的孫權（步兵、射程 3 格、攻擊間隔 0.5 秒，和其他測試武將相同；正式設定是射程 1、攻擊間隔 1）
 func _bg_member(skill: Variant = null) -> Dictionary:
 	return _r12_hero(BG_HERO, BG_SKILL.duplicate() if skill == null else skill)
+
+# ── 甘寧的奇襲（assassinate）──
+# 這一場第一次有效的普通攻擊必殺主目標（每場一次，依 hero_id 記在 BattleManager）：先照普通攻擊扣血，實際扣到正的有限生命才用掉；
+# 沒有打倒時用 Enemy.take_damage 的一般入口補扣剩下的生命（死亡、擊殺、金幣、補給、波次清理各一次）。不是兩倍傷害，只對主目標；
+# 跨波次、移位、升級、移出再放回、重新讀技能都不恢復，新的一場才恢復；備戰、結算、暫停、無效的目標或傷害都不用掉
+const AS_SKILL: Dictionary = {"id": "assassinate"}
+const AS_HERO: String = "gan_ning"
+
+## WaveManager 的替身：可以指定「不屬於這一場」的敵人（其他和 R20Wave 相同）
+class AsWave extends Node:
+	var enemies: Array = []
+	var foreign: Array = []
+	func get_active_enemies() -> Array:
+		return enemies
+	func owns_enemy(e: Node) -> bool:
+		return not foreign.has(e)
+
+## 單獨的甘寧（真正的 Hero 腳本，不經過 Main、測試自己呼叫 _process）：job 預設弓兵（打得到飛行）、射程 3 格、攻擊間隔 1 秒、攻擊力 atk_v，
+## 位置 pos；用過與否記在 bm（測試自己建立、戰鬥中的 BattleManager）；skill 是 null 時帶奇襲
+func _as_hero(holder: Node, wave: Node, bm: Node, atk_v: float = 100.0, skill: Variant = null, hid: String = AS_HERO, job: String = "archer") -> Node:
+	var h: Node = load("res://entities/hero/Hero.gd").new()
+	holder.add_child(h)
+	h.set_process(false)
+	h.hero_id = hid
+	h.job = job
+	h.can_hit_air = Hero.AIR_JOBS.has(job)
+	h.attack_range = 3.0
+	h.attack_speed = 1.0
+	h.atk = atk_v
+	h.max_hp = 1000.0
+	h.current_hp = 1000.0
+	h.position = Vector2(240, 48)
+	h._battle_mgr = bm
+	h._read_skill({"skill": AS_SKILL.duplicate() if skill == null else skill})
+	h._wave_mgr = wave
+	return h
+
+## 一組：holder、AsWave、戰鬥中的 BattleManager（掛在 holder 底下）、直線路線上的敵人（血量 hps，x 從 240 起每個 +10，都在射程內），
+## 每個敵人的 died 信號記進 deaths（記生成序號）
+func _as_set(hps: Array, extra: Dictionary = {}) -> Dictionary:
+	var holder := _dodge_holder()
+	var wave := AsWave.new()
+	holder.add_child(wave)
+	var bm: Node = _gd_bm()
+	holder.add_child(bm)
+	var deaths: Array = []
+	var es: Array = []
+	for i in range(hps.size()):
+		var e: Node = _kb_enemy(holder, [Vector2(0, 0), Vector2(960, 0)], 1, Vector2(240 + 10 * i, 0), extra, float(hps[i]), 0.0)
+		e.spawn_seq = i
+		e.died.connect(func(x): deaths.append(int(x.spawn_seq)))
+		es.append(e)
+	wave.enemies = es.duplicate()
+	return {"holder": holder, "wave": wave, "bm": bm, "es": es, "deaths": deaths}
+
+## 甘寧打一個攻擊回合（冷卻歸零後處理一步）：每個敵人被打掉的生命（倒下的算到 0）、是否倒下、這一回合 died 信號的次數、
+## 攻擊次數的增加、攻擊冷卻、用過了沒有
+func _as_round(h: Node, es: Array, deaths: Array) -> Dictionary:
+	var hp0: Array = []
+	for e in es:
+		hp0.append(e.current_hp if is_instance_valid(e) and not e.is_dead() else 0.0)
+	var d0: int = deaths.size()
+	var a0: int = h.attack_count
+	h._atk_timer = 0.0
+	h._process(1.0 / 60.0)
+	var dmg: Array = []
+	var dead: Array = []
+	for i in range(es.size()):
+		var e: Variant = es[i]
+		var gone: bool = not is_instance_valid(e) or e.is_dead()
+		dead.append(gone)
+		dmg.append(snappedf(float(hp0[i]) - (0.0 if gone else float(e.current_hp)), 0.0001))
+	return {"dmg": dmg, "dead": dead, "deaths": deaths.size() - d0, "attacks": h.attack_count - a0, "timer": snappedf(h._atk_timer, 0.0001),
+		"used": not h._battle_mgr.assassinate_ready(h.hero_id)}
+
+## 掛在 holder 底下、文字是 KILL 的浮動文字（文字在加入後的下一幀才設定）
+func _as_texts(holder: Node) -> int:
+	var n: int = 0
+	for c in holder.get_children():
+		if c is FloatingText and not c.is_queued_for_deletion() and c._label != null and c._label.text == Hero.ASSASSINATE_TEXT:
+			n += 1
+	return n
+
+## 紀錄裡的數字（取到 0.0001）：[生成序號, 這一擊的傷害, 攻擊前的生命, 普通攻擊實扣, 普通攻擊後的生命, 補扣實扣, 最後的生命, 是否打倒]
+func _as_rec(r: Dictionary) -> Array:
+	if r.is_empty():
+		return []
+	return [int(r.seq), snappedf(float(r.damage), 0.0001), snappedf(float(r.hp_before), 0.0001), snappedf(float(r.normal), 0.0001),
+		snappedf(float(r.hp_mid), 0.0001), snappedf(float(r.finish), 0.0001), snappedf(float(r.hp_after), 0.0001), r.killed]
+
+## 實際引擎用的甘寧（弓兵、射程 3 格、攻擊間隔 0.5 秒，和其他測試武將相同；正式設定是射程 5、攻擊間隔 1.8）
+func _as_member(level: int = 1, skill: Variant = null) -> Dictionary:
+	var h: Dictionary = _r12_hero(AS_HERO, AS_SKILL.duplicate() if skill == null else skill)
+	h["level"] = level
+	return h
+
+func _as_main_hero() -> Node:
+	return main._placed_heroes.get(AS_HERO)
+
+## 載入一場關卡（經過 JSON；甘寧改成正式設定的弓兵）、依序放置 cells（hero_id → 格子；manual 時停掉武將自己的 _process），開戰並等第一波的 n 個敵人
+func _as_start(rec: Node, battle_id: String, n: int, team: Variant = null, waves: Variant = null, cells: Variant = null, manual: bool = true) -> Array:
+	var p: Dictionary = _r12_payload("assassinate_a", waves if waves != null else [[_grp("post", n, 0.02)]], battle_id, team if team != null else [_as_member()])
+	for c in p["heroes_config"]:
+		if c.get("hero_id") == AS_HERO:
+			c["job"] = "archer"
+	_r19_js(rec, p)
+	var cs: Dictionary = cells if cells != null else {AS_HERO: Vector2i(3, 4)}
+	for hid in cs:
+		_r12_place(hid, cs[hid])
+		if manual and main._placed_heroes.get(hid) != null:
+			main._placed_heroes[hid].set_process(false)
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == n, 5.0)
+	return _sw_enemies()
+
+## 場上的甘寧打一次（呼叫一次 _process）：每個敵人受到的傷害（倒下的算到 0）、擊殺數、戰鬥金幣與場上敵人數的變化、用過了沒有
+func _as_hit(es: Array, delta: float = 0.0) -> Dictionary:
+	var g: Node = _as_main_hero()
+	var hp0: Array = []
+	for e in es:
+		hp0.append(e.current_hp if is_instance_valid(e) and not e.is_dead() else 0.0)
+	var k0: int = _bm().kills
+	var g0: int = _bm().battle_gold
+	var n0: int = _wm().get_active_enemy_count()
+	g._atk_timer = 0.0
+	g._process(delta)
+	var dmg: Array = []
+	for i in range(es.size()):
+		var gone: bool = not is_instance_valid(es[i]) or es[i].is_dead()
+		dmg.append(snappedf(float(hp0[i]) - (0.0 if gone else float(es[i].current_hp)), 0.0001))
+	return {"dmg": dmg, "kills": _bm().kills - k0, "gold": _bm().battle_gold - g0, "active": _wm().get_active_enemy_count() - n0,
+		"used": not _bm().assassinate_ready(AS_HERO)}
+
+func _assassinate_cases() -> void:
+	# 奇襲-0：技能參數：skill 是 {id: "assassinate"} 才啟用（多帶欄位、經過 JSON 也算）；沒有 skill、不是字典、null、空字典、id 是空字串、null、數字、
+	# 大小寫不同、前後有空白、名稱相近、其他技能都不啟用；啟用時其他技能的參數都是預設值；換成怪力或沒有技能後關閉
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var wrong0: Array = []
+	for s in [{"id": "assassinate"}, {"id": "assassinate", "first_attack_multiplier": 2}, JSON.parse_string("{\"id\": \"assassinate\"}")]:
+		h0._read_skill({"skill": s})
+		if h0.assassinate_on != true:
+			wrong0.append({"skill": str(s), "got": h0.assassinate_on})
+	for s in [null, "assassinate", {}, {"id": ""}, {"id": null}, {"id": 1}, {"id": "Assassinate"}, {"id": "assassinate "}, {"id": "assassinate_x"},
+			{"assassinate": true}, KB_SKILL.duplicate(), {"id": "first_strike", "first_attack_multiplier": 2}]:
+		h0._read_skill({"skill": s})
+		if h0.assassinate_on != false:
+			wrong0.append({"skill": str(s), "got": h0.assassinate_on})
+	h0._read_skill({})
+	var none0: bool = h0.assassinate_on
+	h0._read_skill({"skill": AS_SKILL.duplicate()})
+	var other0: Array = [h0.first_strike_multiplier, h0.knockback_distance, h0.lifesteal_ratio, h0.storm_ratio, h0.chain_ratio, h0.berserk_ratio, h0.supply_gold_multiplier,
+		h0.guard_share_ratio, h0.base_guard_mult, h0.stun_duration]
+	h0._read_skill({"skill": KB_SKILL.duplicate()})
+	var switched0: Array = [h0.assassinate_on, h0.knockback_distance]
+	h0.free()
+	_check("奇襲-0 技能參數：{id: assassinate}（多帶欄位、經過 JSON 也算）才啟用；沒有 skill、字串、null、空字典、id 空字串／null／數字、大小寫不同、前後空白、名稱相近、其他技能都不啟用；啟用時其他技能都是預設值；換成怪力後關閉（怪力 0.5）",
+		wrong0.is_empty() and none0 == false and other0 == [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0] and switched0 == [false, 0.5],
+		{"wrong": wrong0, "none": none0, "other": other0, "switched": switched0})
+
+	# 奇襲-1：高血量的主目標：生命 1000，第一擊普通攻擊 100（攻擊後 900）再補扣 900 倒下，died 只有一次；只打主目標（旁邊的敵人 0）；
+	# 攻擊 1 次、攻擊冷卻照攻擊間隔 1 秒；紀錄 [0, 100, 1000, 100, 900, 900, 0, 倒下]、KILL 1 個、甘寧的描邊；
+	# 第二擊（另一個生命 1000 的敵人）只受 100、沒有倒下（不是每擊必殺、也不是兩倍），紀錄不變
+	var s1: Dictionary = _as_set([1000.0, 1000.0])
+	var g1: Node = _as_hero(s1.holder, s1.wave, s1.bm)
+	var r1a: Dictionary = _as_round(g1, s1.es, s1.deaths)
+	await process_frame
+	var kill1: int = _as_texts(s1.holder)
+	var flash1: bool = g1.assassinate_state().flash
+	var rec1: Array = _as_rec(s1.bm.assassinate_record(AS_HERO))
+	var r1b: Dictionary = _as_round(g1, s1.es, s1.deaths)
+	var st1: Dictionary = g1.assassinate_state()
+	_check("奇襲-1 生命 1000 的主目標：普通攻擊 100、補扣 900 倒下（died 1 次）、旁邊的敵人 0；攻擊 1 次、攻擊冷卻 1 秒；紀錄 [序號 0、傷害 100、攻擊前 1000、普通 100、之後 900、補扣 900、最後 0、倒下]、KILL 1 個、描邊；第二擊只受 100、沒有倒下、紀錄不變（剩 0 次）",
+		r1a.dmg == [1000.0, 0.0] and r1a.dead == [true, false] and r1a.deaths == 1 and r1a.attacks == 1 and _ls_near(r1a.timer, 1.0, 1e-3) and r1a.used == true
+			and rec1 == [0, 100.0, 1000.0, 100.0, 900.0, 900.0, 0.0, true] and kill1 == 1 and flash1 == true
+			and r1b.dmg == [0.0, 100.0] and r1b.dead == [true, false] and r1b.deaths == 0 and r1b.attacks == 1 and s1.deaths == [0]
+			and _as_rec(st1.record) == rec1 and st1.remaining == 0 and st1.used == true and st1.on == true,
+		{"first": r1a, "kill_texts": kill1, "flash": flash1, "record": rec1, "second": r1b, "state": st1, "deaths": s1.deaths})
+	s1.holder.queue_free()
+	await process_frame
+
+	# 奇襲-2：普通攻擊本來就打倒：生命 60 → 普通 60、補扣 0、倒下一次，用掉；之後生命 1000 的第二名只受 100（不處決）；
+	# 生命剛好 100 → 普通 100 打倒、補扣 0；攻擊力 1 打生命 1e9 → 普通 1、補扣 999999999、倒下；攻擊力 0.5 打生命 7 → 普通 0.5、補扣 6.5
+	var s2: Dictionary = _as_set([60.0, 1000.0])
+	var g2: Node = _as_hero(s2.holder, s2.wave, s2.bm)
+	var r2a: Dictionary = _as_round(g2, s2.es, s2.deaths)
+	var rec2: Array = _as_rec(s2.bm.assassinate_record(AS_HERO))
+	var r2b: Dictionary = _as_round(g2, s2.es, s2.deaths)
+	var cases2: Dictionary = {}
+	for c in [[100.0, 100.0], [1e9, 1.0], [7.0, 0.5]]:
+		var sx: Dictionary = _as_set([c[0]])
+		var gx: Node = _as_hero(sx.holder, sx.wave, sx.bm, c[1])
+		var rx: Dictionary = _as_round(gx, sx.es, sx.deaths)
+		cases2[str(c)] = [rx.dead, rx.deaths, _as_rec(sx.bm.assassinate_record(AS_HERO))]
+		sx.holder.queue_free()
+	await process_frame
+	_check("奇襲-2 普通攻擊本來就打倒：生命 60 → 普通 60、補扣 0、倒下 1 次並用掉；第二名生命 1000 只受 100；生命 100 → 普通 100、補扣 0；攻擊力 1 打 1e9 → 普通 1、補扣 999999999；攻擊力 0.5 打 7 → 普通 0.5、補扣 6.5（都倒下一次）",
+		r2a.dmg == [60.0, 0.0] and r2a.deaths == 1 and rec2 == [0, 100.0, 60.0, 60.0, 0.0, 0.0, 0.0, true] and r2b.dmg == [0.0, 100.0] and r2b.dead == [true, false]
+			and cases2.get(str([100.0, 100.0])) == [[true], 1, [0, 100.0, 100.0, 100.0, 0.0, 0.0, 0.0, true]]
+			and cases2.get(str([1e9, 1.0])) == [[true], 1, [0, 1.0, 1e9, 1.0, 999999999.0, 999999999.0, 0.0, true]]
+			and cases2.get(str([7.0, 0.5])) == [[true], 1, [0, 0.5, 7.0, 0.5, 6.5, 6.5, 0.0, true]],
+		{"kill": r2a, "record": rec2, "second": r2b, "cases": cases2})
+	s2.holder.queue_free()
+	await process_frame
+
+	# 奇襲-3：不用掉的情況（每一種都照普通攻擊、這一場還能用）：備戰、結算、手動暫停中 → 普通 100、沒有倒下，之後回到戰鬥中立刻必殺；
+	# 攻擊力 0、NaN、無限大 → 沒有扣血；主目標生命無限大 → 普通 100（生命仍是無限大、不補扣）；生命 NaN → 不補扣；不屬於這一場的敵人 → 普通 100；
+	# 正要被移除的敵人 → 0；沒有敵人 → 不攻擊；步兵的甘寧打不到飛行 → 0、不攻擊（弓兵的甘寧照樣必殺飛行）
+	var r3: Dictionary = {}
+	for st in [BattleManager.GameState.PREP, BattleManager.GameState.RESULT, -1]:
+		var sx: Dictionary = _as_set([1000.0])
+		var gx: Node = _as_hero(sx.holder, sx.wave, sx.bm)
+		if st == -1:
+			sx.bm.manual_paused = true
+		else:
+			sx.bm.game_state = st
+		var ra: Dictionary = _as_round(gx, sx.es, sx.deaths)
+		sx.bm.manual_paused = false
+		sx.bm.game_state = BattleManager.GameState.BATTLE
+		var rb: Dictionary = _as_round(gx, sx.es, sx.deaths)
+		r3["state" + str(st)] = [ra.dmg, ra.used, rb.dead, rb.deaths]
+		sx.holder.queue_free()
+	for atk_v in [0.0, NAN, INF]:
+		var sx: Dictionary = _as_set([1000.0])
+		var gx: Node = _as_hero(sx.holder, sx.wave, sx.bm, atk_v)
+		var ra: Dictionary = _as_round(gx, sx.es, sx.deaths)
+		r3["atk" + str(atk_v)] = [ra.dmg, ra.used, ra.deaths]
+		sx.holder.queue_free()
+	for hp in [INF, NAN]:
+		var sx: Dictionary = _as_set([1000.0])
+		sx.es[0].current_hp = hp
+		var gx: Node = _as_hero(sx.holder, sx.wave, sx.bm)
+		_as_round(gx, sx.es, sx.deaths)
+		r3["hp" + str(hp)] = [str(sx.es[0].current_hp), sx.es[0].is_dead(), not sx.bm.assassinate_ready(AS_HERO), sx.deaths.size()]
+		sx.holder.queue_free()
+	var sf: Dictionary = _as_set([1000.0])
+	sf.wave.foreign = [sf.es[0]]
+	var gf: Node = _as_hero(sf.holder, sf.wave, sf.bm)
+	var rf: Dictionary = _as_round(gf, sf.es, sf.deaths)
+	r3["foreign"] = [rf.dmg, rf.used, rf.deaths]
+	sf.holder.queue_free()
+	var sq: Dictionary = _as_set([1000.0])
+	var gq: Node = _as_hero(sq.holder, sq.wave, sq.bm)
+	sq.es[0].queue_free()
+	var hpq: float = sq.es[0].current_hp
+	gq._atk_timer = 0.0
+	gq._process(1.0 / 60.0)
+	r3["queued"] = [snappedf(hpq - sq.es[0].current_hp, 0.0001), not sq.bm.assassinate_ready(AS_HERO), sq.deaths.size()]
+	sq.holder.queue_free()
+	var sn: Dictionary = _as_set([])
+	var gn: Node = _as_hero(sn.holder, sn.wave, sn.bm)
+	var rn: Dictionary = _as_round(gn, [], sn.deaths)
+	r3["none"] = [rn.attacks, rn.used]
+	sn.holder.queue_free()
+	var sa: Dictionary = _as_set([1000.0], {"movement_type": "flying"})
+	var gi: Node = _as_hero(sa.holder, sa.wave, sa.bm, 100.0, null, "gan_ning_inf", "infantry")
+	var ri: Dictionary = _as_round(gi, sa.es, sa.deaths)
+	var ga: Node = _as_hero(sa.holder, sa.wave, sa.bm)
+	var ra3: Dictionary = _as_round(ga, sa.es, sa.deaths)
+	r3["air"] = [ri.dmg, ri.attacks, ri.used, ra3.dead, ra3.deaths, ra3.used]
+	sa.holder.queue_free()
+	await process_frame
+	_check("奇襲-3 不用掉：備戰、結算、手動暫停中普通 100、沒有倒下，回到戰鬥中立刻必殺；攻擊力 0／NaN／無限大沒有扣血；主目標生命無限大 → 仍是無限大、沒有倒下；NaN → 沒有倒下；不屬於這一場 → 100；正要被移除 → 0；沒有敵人不攻擊；步兵打不到飛行（不攻擊）、弓兵的甘寧必殺飛行；以上都沒有用掉（弓兵打飛行除外）",
+		r3.get("state" + str(BattleManager.GameState.PREP)) == [[100.0], false, [true], 1] and r3.get("state" + str(BattleManager.GameState.RESULT)) == [[100.0], false, [true], 1]
+			and r3.get("state-1") == [[100.0], false, [true], 1] and r3.get("atk0.0") == [[0.0], false, 0] and r3.get("atknan") == [[0.0], false, 0]
+			and r3.get("atkinf") == [[0.0], false, 0] and r3.get("hpinf") == ["inf", false, false, 0] and r3.get("hpnan", [""])[1] == false
+			and r3.get("hpnan", [0, 0, true])[2] == false and r3.get("foreign") == [[100.0], false, 0] and r3.get("queued") == [0.0, false, 0]
+			and r3.get("none") == [0, false] and r3.get("air") == [[0.0], 0, false, [true], 1, true],
+		r3)
+
+	# 奇襲-4：用過之後這一場不恢復：重新讀同一個技能、換成怪力再換回、同一個 hero_id 的新節點（移出再放回）都只受普通 100；
+	# 沒有技能（或不認得的技能）的甘寧不會用掉，換回奇襲後照常必殺；另一位不同 hero_id 的奇襲各自一次；紀錄只有第一次
+	var s4: Dictionary = _as_set([1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0])
+	var g4: Node = _as_hero(s4.holder, s4.wave, s4.bm, 100.0, {"id": "unknown_skill"})
+	var r4: Array = []
+	var rr: Dictionary = _as_round(g4, s4.es, s4.deaths)
+	r4.append(["plain", rr.dmg[0], rr.used])
+	g4._read_skill({"skill": AS_SKILL.duplicate()})
+	rr = _as_round(g4, s4.es, s4.deaths)
+	r4.append(["first", rr.dead[0], rr.used])
+	g4._read_skill({"skill": AS_SKILL.duplicate()})
+	rr = _as_round(g4, s4.es, s4.deaths)
+	r4.append(["reread", rr.dmg[1], rr.dead[1]])
+	g4._read_skill({"skill": KB_SKILL.duplicate()})
+	g4._read_skill({"skill": AS_SKILL.duplicate()})
+	rr = _as_round(g4, s4.es, s4.deaths)
+	r4.append(["switched", rr.dmg[1], rr.dead[1]])
+	g4.queue_free()
+	var g4b: Node = _as_hero(s4.holder, s4.wave, s4.bm)
+	rr = _as_round(g4b, s4.es, s4.deaths)
+	r4.append(["new_node", rr.dmg[1], rr.dead[1]])
+	var g4c: Node = _as_hero(s4.holder, s4.wave, s4.bm, 100.0, null, "gan_ning_b")
+	rr = _as_round(g4c, s4.es, s4.deaths)
+	r4.append(["other_id", rr.dead[1], rr.deaths])
+	rr = _as_round(g4c, s4.es, s4.deaths)
+	r4.append(["other_again", rr.dmg[2], rr.dead[2]])
+	var dbg4: Dictionary = s4.bm.assassinate_debug()
+	_check("奇襲-4 用過之後這一場不恢復：不認得的技能時普通 100、沒有用掉；換成奇襲後必殺；重新讀技能、換成怪力再換回、新節點（移出再放回）都只受 100、沒有倒下；另一位 gan_ning_b 各自必殺一次、之後也只受 100；紀錄 2 筆（gan_ning、gan_ning_b）",
+		r4 == [["plain", 100.0, false], ["first", true, true], ["reread", 100.0, false], ["switched", 100.0, false], ["new_node", 100.0, false],
+			["other_id", true, 1], ["other_again", 100.0, false]] and dbg4.used == ["gan_ning", "gan_ning_b"] and dbg4.log.size() == 2,
+		{"rows": r4, "debug": dbg4})
+	s4.holder.queue_free()
+	await process_frame
+
+	# 奇襲-5：補扣不算普通攻擊的傷害（測試直接把呼風喚雨與吸血的參數加在同一位甘寧身上）：主目標必殺（普通 100、補扣 900），
+	# 2 格內另一名敵人只受普通攻擊 100 × 0.5＝50（不是補扣後的 500）；吸血只算普通攻擊實扣 100 × 0.5＝50（生命 500 → 550）；攻擊仍是 1 次
+	var s5: Dictionary = _as_set([1000.0, 1000.0])
+	var g5: Node = _as_hero(s5.holder, s5.wave, s5.bm)
+	g5.storm_ratio = 0.5
+	g5.storm_radius = 2.0
+	g5.storm_max_targets = 4
+	g5.lifesteal_ratio = 0.5
+	g5.current_hp = 500.0
+	var r5: Dictionary = _as_round(g5, s5.es, s5.deaths)
+	var rec5: Array = _as_rec(s5.bm.assassinate_record(AS_HERO))
+	_check("奇襲-5 補扣不借給其他技能：主目標普通 100、補扣 900 倒下；呼風喚雨打另一名 50（普通攻擊 100 × 0.5）；吸血 50（生命 500 → 550）；攻擊 1 次、died 1 次",
+		r5.dmg == [1000.0, 50.0] and r5.dead == [true, false] and r5.attacks == 1 and r5.deaths == 1 and rec5 == [0, 100.0, 1000.0, 100.0, 900.0, 900.0, 0.0, true]
+			and _ls_near(g5.current_hp, 550.0, 1e-6),
+		{"round": r5, "record": rec5, "hp": g5.current_hp})
+	s5.holder.queue_free()
+	await process_frame
+
+	# ── 實際引擎 ──
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 奇襲-20：甘寧在 (3,4)，第一波 2 個 post（生命 99999）都在射程內：Godot 讀到奇襲（弓兵、能對空）；選取面板 {沒用過、剩 1}；
+	# 第一擊必殺第一個（99999、旁邊 0）、擊殺 +1、戰鬥金幣 +5、場上敵人 −1；面板變成 {用過、剩 0}；快照 hero_assassinate 紀錄 [0, 100, 99999, 100, 99899, 99899, 0, 倒下]、
+	# KILL 1 個、BattleManager 的 assassinate 用過 [gan_ning]；第二擊只受 100、沒有擊殺；打倒第二個後勝利只結算一次、擊殺 2
+	var es: Array = await _as_start(rec, "assassinate-20", 2)
+	var d20: Dictionary = {}
+	if es.size() == 2 and _as_main_hero() != null:
+		var g: Node = _as_main_hero()
+		d20["read"] = [g.assassinate_on, g.job, g.can_hit_air]
+		var n_panel: int = rec.sent_panels.size()
+		main._on_hero_clicked(g)
+		d20["panel0"] = rec.sent_panels.back().get("assassinate") if rec.sent_panels.size() > n_panel else null
+		_kb_put(es[0], 153.0)
+		_kb_put(es[1], 160.0)
+		d20["hit"] = _as_hit(es)
+		n_panel = rec.sent_panels.size()
+		main._on_hero_clicked(g)
+		d20["panel1"] = rec.sent_panels.back().get("assassinate") if rec.sent_panels.size() > n_panel else null
+		await process_frame
+		var n_snap: int = rec.sent_snapshots.size()
+		main._on_debug_snapshot_requested("assassinate-20")
+		var snap: Dictionary = rec.sent_snapshots.back() if rec.sent_snapshots.size() > n_snap else {}
+		var ha: Dictionary = snap.get("hero_assassinate", {}).get(AS_HERO, {})
+		d20["snap"] = [ha.get("on"), ha.get("remaining"), ha.get("used"), _as_rec(ha.get("record", {})), snap.get("kill_texts"), snap.get("assassinate", {}).get("used")]
+		d20["hit2"] = _as_hit(es)
+		var n_res: int = rec.sent_results.size()
+		if is_instance_valid(es[1]) and not es[1].is_dead():
+			es[1].take_damage(999999.0)
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 3.0)
+		await process_frame
+		var res: Array = rec.sent_results.slice(n_res)
+		d20["result"] = [res.size(), res[0].get("result") if res.size() > 0 else null, res[0].get("kills") if res.size() > 0 else null]
+	var pa: Dictionary = d20.get("panel0") if d20.get("panel0") is Dictionary else {}
+	var pb: Dictionary = d20.get("panel1") if d20.get("panel1") is Dictionary else {}
+	_check("奇襲-20 實際引擎：讀到奇襲（弓兵、能對空）；面板 {沒用過、剩 1}；第一擊必殺第一個 post（99999、旁邊 0）、擊殺 +1、金幣 +5、場上敵人 −1；面板 {用過、剩 0}；快照紀錄 [0, 100, 99999, 100, 99899, 99899, 0, 倒下]、KILL 1 個、assassinate 用過 [gan_ning]；第二擊只受 100、沒有擊殺；打倒第二個後勝利只結算一次、擊殺 2",
+		d20.get("read") == [true, "archer", true] and pa.get("used") == false and pa.get("remaining") == 1 and d20.has("hit") and d20.hit.dmg == [99999.0, 0.0]
+			and d20.hit.kills == 1 and d20.hit.gold == 5 and d20.hit.active == -1 and d20.hit.used == true and pb.get("used") == true and pb.get("remaining") == 0
+			and d20.get("snap") == [true, 0, true, [0, 100.0, 99999.0, 100.0, 99899.0, 99899.0, 0.0, true], 1, ["gan_ning"]]
+			and d20.get("hit2", {}).get("dmg") == [0.0, 100.0] and d20.get("hit2", {}).get("kills") == 0 and d20.get("result") == [1, "WIN", 2],
+		d20)
+
+	# 奇襲-21：這一場保留、新的一場恢復：三波各 1 個 post。第 1 波必殺（波次結束、備戰）；第 2 波打中只受 100；移位、升級（2 級）、
+	# 移出隊伍（BattleManager 仍記得）再放回（新節點）、換成怪力再換回奇襲後打中都只受 100；新的一場第一擊又必殺
+	var waves21: Array = [[_grp("post", 1, 0.02)], [_grp("post", 1, 0.02)], [_grp("post", 1, 0.02)]]
+	es = await _as_start(rec, "assassinate-21", 1, null, waves21)
+	var d21: Dictionary = {}
+	if es.size() == 1 and _as_main_hero() != null:
+		_kb_put(es[0], 153.0)
+		d21["w1"] = [_as_hit(es).kills]
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.PREP, 3.0)
+		d21["prep"] = [_bm().game_state == BattleManager.GameState.PREP, _bm().current_wave, not _bm().assassinate_ready(AS_HERO)]
+		_bm().player_start_battle()
+		await _wait_until(func(): return _sw_enemies().size() == 1, 5.0)
+		var es2: Array = _sw_enemies()
+		if es2.size() == 1:
+			var rows: Array = []
+			_kb_put(es2[0], 153.0)
+			rows.append(["wave2", _as_hit(es2).dmg[0]])
+			_blk_move(_as_main_hero(), Vector2i(4, 4))
+			rows.append(["moved", _as_hit(es2).dmg[0]])
+			main._on_payload_received({"type": "update_team", "team_list": [_as_member(2)]})
+			_as_main_hero().set_process(false)
+			rows.append(["level2", _as_hit(es2).dmg[0], _as_main_hero().hero_level])
+			var old_id: int = _as_main_hero().get_instance_id()
+			main._on_payload_received({"type": "update_team", "team_list": []})
+			await process_frame
+			rows.append(["removed", main._placed_heroes.has(AS_HERO), not _bm().assassinate_ready(AS_HERO)])
+			main._on_payload_received({"type": "update_team", "team_list": [_as_member(2)]})
+			_r12_place(AS_HERO, Vector2i(3, 4))
+			if _as_main_hero() != null:
+				_as_main_hero().set_process(false)
+				rows.append(["replaced", _as_hit(es2).dmg[0], _as_main_hero().get_instance_id() != old_id])
+				main._on_payload_received({"type": "update_team", "team_list": [_as_member(2, KB_SKILL.duplicate())]})
+				main._on_payload_received({"type": "update_team", "team_list": [_as_member(2)]})
+				rows.append(["switched", _as_hit(es2).dmg[0], _as_main_hero().assassinate_on])
+			d21["rows"] = rows
+		es = await _as_start(rec, "assassinate-21b", 1)
+		if es.size() == 1 and _as_main_hero() != null:
+			var dbg0: Dictionary = _bm().get_debug_state().get("assassinate", {})
+			_kb_put(es[0], 153.0)
+			var h21: Dictionary = _as_hit(es)
+			d21["new_battle"] = [dbg0.get("used"), h21.dmg[0], h21.kills]
+	_check("奇襲-21 這一場保留：第 1 波必殺（擊殺 1、波次結束回到備戰、仍記得用過）；第 2 波、移位、升級 2 級、移出隊伍（仍記得）再放回（新節點）、換成怪力再換回奇襲後打中都只受 100；新的一場沒有紀錄、第一擊又必殺（99999、擊殺 1）",
+		d21.get("w1") == [1] and d21.get("prep") == [true, 1, true]
+			and d21.get("rows") == [["wave2", 100.0], ["moved", 100.0], ["level2", 100.0, 2], ["removed", false, true], ["replaced", 100.0, true], ["switched", 100.0, true]]
+			and d21.get("new_battle") == [[], 99999.0, 1],
+		d21)
+
+	# 奇襲-22：自動攻擊、1× 與 2×、手動暫停：甘寧自己攻擊（不停掉 _process）。開戰後先暫停，把 post 放進射程，0.6 秒（牆鐘）內沒有攻擊、沒有用掉；
+	# 繼續後第一擊必殺：擊殺 1、金幣 +5、攻擊 1 次就倒下；2× 相同
+	var d22: Dictionary = {}
+	for sp in [1, 2]:
+		es = await _as_start(rec, "assassinate-22-x%d" % sp, 1, null, null, null, false)
+		if es.size() != 1 or _as_main_hero() == null:
+			continue
+		_r19_speed(rec, sp)
+		var p: Dictionary = _r20_pause(rec, true)
+		var g22: Node = _as_main_hero()
+		var a0: int = g22.attack_count
+		var k0: int = _bm().kills
+		var gold0: int = _bm().battle_gold
+		_kb_put(es[0], 153.0)
+		await _wait_real(0.6)
+		var paused: Array = [p.get("paused"), g22.attack_count - a0, es[0].current_hp, not _bm().assassinate_ready(AS_HERO)]
+		var ts22: float = Engine.time_scale
+		_r20_pause(rec, false)
+		await _wait_until(func(): return not is_instance_valid(es[0]) or es[0].is_dead(), 3.0)
+		d22[sp] = {"paused": paused, "after": [g22.attack_count - a0, _bm().kills - k0, _bm().battle_gold - gold0, not _bm().assassinate_ready(AS_HERO)], "time_scale": ts22}
+	_check("奇襲-22 自動攻擊：暫停中把 post 放進射程 0.6 秒沒有攻擊、生命 99999、沒有用掉；繼續後第一擊（攻擊 1 次）必殺、擊殺 1、金幣 +5；1× 與 2× 相同",
+		d22.size() == 2 and d22.values().all(func(x): return x.paused == [true, 0, 99999.0, false] and x.after == [1, 1, 5, true]) and d22[2].time_scale == 2.0,
+		d22)
+
+	# 奇襲-23：弓兵對空與補給：同一波一個飛行 post、一個地面 post（留在射程外，戰鬥不會因為這一次擊殺結束）；甘寧（弓兵）必殺射程內的飛行 post；
+	# 魯肅在場上時這一次擊殺的戰鬥金幣 6（只算一次，不是兩次）、擊殺 +1
+	var team23: Array = [_as_member(), _r12_hero("lu_su", {"id": "supply", "supply_gold_multiplier": 1.2})]
+	es = await _as_start(rec, "assassinate-23", 2, team23, [[_grp("fly_post", 1, 0.02), _grp("post", 1, 0.02)]], {AS_HERO: Vector2i(3, 4), "lu_su": Vector2i(11, 4)})
+	var d23: Dictionary = {}
+	if es.size() == 2 and _as_main_hero() != null and es[0].is_flying():
+		_kb_put(es[0], 153.0)
+		d23 = _as_hit(es)
+		d23["flying"] = es[0].is_flying() if is_instance_valid(es[0]) else null
+		d23["log"] = _bm().supply_debug().log.size()
+		d23["state"] = _bm().game_state == BattleManager.GameState.BATTLE
+	_check("奇襲-23 弓兵對空與補給：飛行 post（99999）被必殺、射程外的地面 post 0、擊殺 +1、魯肅在場時金幣 +6（一次）、補給紀錄 1 筆、仍在戰鬥中",
+		d23.get("dmg") == [99999.0, 0.0] and d23.get("state") == true and d23.get("kills") == 1 and d23.get("gold") == 6 and d23.get("used") == true and d23.get("log") == 1,
+		d23)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())
+
+# ── 貂蟬的魅惑（charm）與敵對可選的目標整合 ──
+# 貂蟬自己的普通攻擊打中主目標、實扣是正的有限數字、目標打中前後都活著，戰鬥中而且冷卻好了時，讓這個地面敵人受控 2 秒戰鬥時間：
+# 停在原地、不前進、不抵達城池、不攻擊武將，改用自己的攻擊力打 1 格內最近的其他地面敵人（共用攻擊阻路武將的 1 秒冷卻）。成功才冷卻 6 秒（依 hero_id）。
+# 受控的敵人仍然活著（波次照樣計數），但武將與防禦塔的選目標、範圍與傳遞的傷害、新的減速與威壓都不選它；已經有的狀態照原本的時間結束
+const CM_SKILL: Dictionary = {"id": "charm", "charm_duration": 2, "charm_cooldown": 6, "charm_attack_radius": 1}
+const CM_HERO: String = "diao_chan"
+
+## 一組：holder、AsWave、戰鬥中的 BattleManager（掛在 holder 底下但不自己前進，測試設定 battle_time）、貂蟬（法師、射程 3 格、攻擊間隔 1 秒、攻擊力 100，
+## 在 (240, 48)）；直線路線 [(0,0),(960,0)] 上的敵人：specs 每一項是 {x, y, hp, speed, extra}（生成序號依序）
+func _cm_set(specs: Array, skill: Variant = null) -> Dictionary:
+	var holder := _dodge_holder()
+	var wave := AsWave.new()
+	holder.add_child(wave)
+	var bm: Node = _gd_bm()
+	holder.add_child(bm)
+	bm.set_process(false)
+	var es: Array = []
+	var deaths: Array = []
+	for i in range(specs.size()):
+		var s: Dictionary = specs[i]
+		var e: Node = _kb_enemy(holder, [Vector2(0, 0), Vector2(960, 0)], 1, Vector2(float(s.get("x", 240.0)), float(s.get("y", 0.0))), s.get("extra", {}),
+			float(s.get("hp", 1000.0)), float(s.get("speed", 0.0)))
+		e.spawn_seq = i
+		e.died.connect(func(x): deaths.append(int(x.spawn_seq)))
+		es.append(e)
+	wave.enemies = es.duplicate()
+	var g: Node = _as_hero(holder, wave, bm, 100.0, CM_SKILL.duplicate() if skill == null else skill, CM_HERO, "mage")
+	return {"holder": holder, "wave": wave, "bm": bm, "es": es, "g": g, "deaths": deaths}
+
+## 敵人自己走 n 步（每步 dt 秒）：每一步之後的位置 x（取到 0.001）
+func _cm_steps(e: Node, n: int, dt: float = 0.1) -> Array:
+	var xs: Array = []
+	for i in range(n):
+		if not is_instance_valid(e) or e.is_dead():
+			break
+		e._physics_process(dt)
+		if is_instance_valid(e) and not e.is_queued_for_deletion():
+			xs.append(snappedf(e.position.x, 0.001))
+	return xs
+
+## 掛在 holder 底下、文字是 CHARM 的浮動文字
+func _cm_texts(holder: Node) -> int:
+	var n: int = 0
+	for c in holder.get_children():
+		if c is FloatingText and not c.is_queued_for_deletion() and c._label != null and c._label.text == Hero.CHARM_TEXT:
+			n += 1
+	return n
+
+## 紀錄裡「攻擊」的那幾筆：[目標的生成序號, 攻擊力, 實扣]
+func _cm_hits(e: Node) -> Array:
+	return e.charm_log.filter(func(x): return x.ev == "hit").map(func(x): return [int(x.target), snappedf(float(x.atk), 0.0001), snappedf(float(x.dealt), 0.0001)])
+
+## 實際引擎用的貂蟬（法師、射程 3 格、攻擊間隔 0.5 秒，和其他測試武將相同；正式設定是射程 4、攻擊間隔 0.8）
+func _cm_member(level: int = 1, skill: Variant = null) -> Dictionary:
+	var h: Dictionary = _r12_hero(CM_HERO, CM_SKILL.duplicate() if skill == null else skill)
+	h["level"] = level
+	return h
+
+func _cm_main_hero() -> Node:
+	return main._placed_heroes.get(CM_HERO)
+
+## 載入一場關卡（經過 JSON；加上貂蟬的設定）、依序放置 cells（manual 時停掉武將自己的 _process），開戰並等第一波的 n 個敵人
+func _cm_start(rec: Node, battle_id: String, n: int, team: Variant = null, waves: Variant = null, cells: Variant = null, manual: bool = true) -> Array:
+	var p: Dictionary = _r12_payload("charm_a", waves if waves != null else [[_grp("post", n, 0.02)]], battle_id, team if team != null else [_cm_member()])
+	p["heroes_config"].append({"hero_id": CM_HERO, "name": "貂蟬", "job": "mage", "attack_range": 3.0, "attack_speed": 0.5})
+	for c in CTR_ENEMIES:
+		p["enemies_config"].append(c.duplicate())
+	_r19_js(rec, p)
+	var cs: Dictionary = cells if cells != null else {CM_HERO: Vector2i(3, 4)}
+	for hid in cs:
+		_r12_place(hid, cs[hid])
+		if manual and main._placed_heroes.get(hid) != null:
+			main._placed_heroes[hid].set_process(false)
+	_bm().player_start_battle()
+	await _wait_until(func(): return _sw_enemies().size() == n, 5.0)
+	return _sw_enemies()
+
+## 場上的貂蟬打一次（冷卻歸零後呼叫一次 _process）：每個敵人受到的傷害、受控的敵人（生成序號）、這一場成功控制的次數與剩下的冷卻
+func _cm_hit(es: Array) -> Dictionary:
+	var g: Node = _cm_main_hero()
+	var hp0: Array = []
+	for e in es:
+		hp0.append(e.current_hp if is_instance_valid(e) and not e.is_dead() else 0.0)
+	g._atk_timer = 0.0
+	g._process(0.0)
+	var dmg: Array = []
+	var charmed: Array = []
+	for i in range(es.size()):
+		var gone: bool = not is_instance_valid(es[i]) or es[i].is_dead()
+		dmg.append(snappedf(float(hp0[i]) - (0.0 if gone else float(es[i].current_hp)), 0.0001))
+		if not gone and es[i].is_charmed():
+			charmed.append(int(es[i].spawn_seq))
+	return {"dmg": dmg, "charmed": charmed, "count": int(_bm().charm_record(CM_HERO).get("count", 0)), "remaining": snappedf(_bm().charm_remaining(CM_HERO), 0.0001)}
+
+func _charm_cases() -> void:
+	# 魅惑-0：技能參數：時間、冷卻、範圍都是正的有限數字（時間 ≤ 5、冷卻 ≤ 10、範圍 ≤ 2；經過 JSON 的整數也算）才啟用；
+	# 任何一個是字串、布林、null、陣列、NaN、無限大、0、負數、超過上限、缺少，或 id 大小寫不同、其他技能帶這些欄位，就整組不啟用；換成其他技能或沒有技能時清除
+	var h0: Node = load("res://entities/hero/Hero.gd").new()
+	var wrong0: Array = []
+	for c in [[CM_SKILL.duplicate(), [2.0, 6.0, 1.0]], [{"id": "charm", "charm_duration": 5, "charm_cooldown": 10, "charm_attack_radius": 2}, [5.0, 10.0, 2.0]],
+			[{"id": "charm", "charm_duration": 0.01, "charm_cooldown": 0.01, "charm_attack_radius": 0.01}, [0.01, 0.01, 0.01]],
+			[JSON.parse_string("{\"id\": \"charm\", \"charm_duration\": 2, \"charm_cooldown\": 6, \"charm_attack_radius\": 1}"), [2.0, 6.0, 1.0]]]:
+		h0._read_skill({"skill": c[0]})
+		if not (_ls_near(h0.charm_duration, float(c[1][0])) and _ls_near(h0.charm_cooldown, float(c[1][1])) and _ls_near(h0.charm_attack_radius, float(c[1][2]))):
+			wrong0.append({"skill": str(c[0]), "got": [h0.charm_duration, h0.charm_cooldown, h0.charm_attack_radius]})
+	var bad0: Array = []
+	for k in ["charm_duration", "charm_cooldown", "charm_attack_radius"]:
+		for v in ["2", true, null, [1], NAN, INF, -INF, 0, -1]:
+			var s: Dictionary = CM_SKILL.duplicate()
+			s[k] = v
+			bad0.append(s)
+		var miss: Dictionary = CM_SKILL.duplicate()
+		miss.erase(k)
+		bad0.append(miss)
+	for over in [{"charm_duration": 5.0001}, {"charm_cooldown": 10.0001}, {"charm_attack_radius": 2.0001}]:
+		var s: Dictionary = CM_SKILL.duplicate()
+		s.merge(over, true)
+		bad0.append(s)
+	bad0.append_array([{"id": "Charm", "charm_duration": 2, "charm_cooldown": 6, "charm_attack_radius": 1}, {"id": "charm "},
+		{"id": "stun", "stun_sec": 0.5, "charm_duration": 2, "charm_cooldown": 6, "charm_attack_radius": 1}])
+	for s in bad0:
+		h0._read_skill({"skill": CM_SKILL.duplicate()})
+		h0._read_skill({"skill": s})
+		if h0.charm_duration != 0.0 or h0.charm_cooldown != 0.0 or h0.charm_attack_radius != 0.0:
+			wrong0.append({"skill": str(s), "got": [h0.charm_duration, h0.charm_cooldown, h0.charm_attack_radius]})
+	h0._read_skill({"skill": CM_SKILL.duplicate()})
+	var other0: Array = [h0.stun_duration, h0.knockback_distance, h0.assassinate_on, h0.first_strike_multiplier]
+	h0._read_skill({"skill": {"id": "stun", "stun_sec": 0.5}})
+	var switched0: Array = [h0.charm_duration, h0.stun_duration]
+	h0._read_skill({})
+	var cleared0: Array = [h0.charm_duration, h0.charm_cooldown, h0.charm_attack_radius]
+	h0.free()
+	_check("魅惑-0 技能參數：{charm, 2, 6, 1}、上限 {5, 10, 2}、很小的正數與經過 JSON 的整數啟用；任何一個欄位是字串、布林、null、陣列、NaN、無限大、0、負數、超過上限或缺少，id 大小寫不同、其他技能帶這些欄位都整組不啟用（先讀過合理的魅惑也清掉）；魅惑不帶其他技能；換成暈眩或沒有技能時清除",
+		wrong0.is_empty() and other0 == [0.0, 0.0, false, 1.0] and switched0 == [0.0, 0.5] and cleared0 == [0.0, 0.0, 0.0],
+		{"wrong": wrong0, "cases": bad0.size(), "other": other0, "switched": switched0, "cleared": cleared0})
+
+	# 魅惑-1：主目標（x 240、生命 1000、每秒 20 像素、攻擊力 30）被打 100 後受控：成功 1 次、冷卻 6、CHARM 1 個、剩 2 秒、原本擋路的武將解除（攻擊冷卻 0.35 不重設）；
+	# 受控的 2 秒（戰鬥時間）內不前進（位置、路點索引、剩餘路程都不變）、不攻擊武將；攻擊冷卻 0.35 過後才打 1 格內的另一名敵人（x 270、30），之後每 1 秒一擊；
+	# 戰鬥時間到 2 秒時結束（紀錄 expired），下一步從原本的位置往終點走
+	var s1: Dictionary = _cm_set([{"x": 240.0, "speed": 20.0, "extra": {"atk": 30}}, {"x": 270.0}])
+	var e1: Node = s1.es[0]
+	var blk1: Node = load("res://entities/hero/Hero.gd").new()
+	s1.holder.add_child(blk1)
+	blk1.set_process(false)
+	e1._blocker = blk1
+	e1._blocked_cell = Vector2i(5, 0)
+	e1._blocker_atk_timer = 0.35
+	var path1: Dictionary = e1.path_state()
+	var r1: Dictionary = _as_round(s1.g, s1.es, s1.deaths)
+	await process_frame
+	var d1: Dictionary = {"round": r1, "charmed": e1.is_charmed(), "texts": _cm_texts(s1.holder), "rec": s1.bm.charm_record(CM_HERO), "remaining": s1.bm.charm_remaining(CM_HERO),
+		"left": e1.charm_remaining(), "blocker": [e1._blocker == null, e1._blocked_cell], "timer": e1._blocker_atk_timer}
+	var hp_b: float = s1.es[1].current_hp
+	var xs: Array = []
+	var times: Array = []
+	for i in range(19):
+		s1.bm.battle_time = 0.1 * float(i + 1)
+		var n0: int = e1.charm_attacks
+		xs.append_array(_cm_steps(e1, 1))
+		if e1.charm_attacks > n0:
+			times.append(snappedf(s1.bm.battle_time, 0.001))
+	d1["xs_charmed"] = xs.duplicate()
+	d1["times"] = times
+	d1["path_same"] = e1.path_state().index == path1.index and _ls_near(float(e1.path_state().remaining), float(path1.remaining), 1e-6)
+	d1["b_lost"] = snappedf(hp_b - s1.es[1].current_hp, 0.0001)
+	d1["blk_attacks"] = e1.blocker_attacks
+	d1["hits"] = _cm_hits(e1)
+	s1.bm.battle_time = 2.0
+	var after1: Array = _cm_steps(e1, 2)
+	d1["after"] = [e1.is_charmed(), after1, e1.charm_log.back().get("reason") if not e1.charm_log.is_empty() else null, e1.path_state().index]
+	_check("魅惑-1 主目標被打 100 後受控：成功 1 次、冷卻 6、CHARM、剩 2 秒、解除原本的阻擋（攻擊冷卻 0.35 不重設）；2 秒內位置 240、路點與剩餘路程不變、沒有攻擊武將；第一擊在戰鬥時間 0.4（攻擊冷卻走完、零頭保留），之後 1.4（間隔 1 秒）各打另一名 30；戰鬥時間 2 秒時結束（expired），之後每步前進 2 像素",
+		r1.dmg == [100.0, 0.0] and d1.charmed == true and d1.texts == 1 and int(d1.rec.get("count", 0)) == 1 and _ls_near(d1.remaining, 6.0) and _ls_near(d1.left, 2.0)
+			and d1.blocker == [true, Vector2i(-1, -1)] and _ls_near(d1.timer, 0.35) and xs.all(func(x): return x == 240.0) and xs.size() == 19 and d1.path_same
+			and d1.times.size() == 2 and _ls_near(d1.times[0], 0.4, 1e-6) and _ls_near(d1.times[1], 1.4, 1e-6) and d1.b_lost == 60.0 and d1.blk_attacks == 0 and d1.hits == [[1, 30.0, 30.0], [1, 30.0, 30.0]]
+			and d1.after[0] == false and d1.after[1] == [242.0, 244.0] and d1.after[2] == "expired" and d1.after[3] == 1,
+		d1)
+	s1.holder.queue_free()
+	await process_frame
+
+	# 魅惑-2：受控的敵人不是敵對可選的目標：貂蟬下一擊改打第二名（第一名 0、冷卻中不控制第二名）；沒有技能的武將（關羽）也只打第二名；
+	# 控制結束（戰鬥時間 2）後第一名立刻又能被選（關羽打第一名）；冷卻 6 秒後貂蟬能再控制（第一名再受控）
+	var s2: Dictionary = _cm_set([{"x": 240.0}, {"x": 250.0}])
+	var r2a: Dictionary = _as_round(s2.g, s2.es, s2.deaths)
+	var r2b: Dictionary = _as_round(s2.g, s2.es, s2.deaths)
+	var b2: bool = s2.es[1].is_charmed()
+	var gy2: Node = _as_hero(s2.holder, s2.wave, s2.bm, 100.0, {}, "guan_yu", "infantry")
+	var r2c: Dictionary = _as_round(gy2, s2.es, s2.deaths)
+	s2.bm.battle_time = 2.0
+	var r2d: Dictionary = _as_round(gy2, s2.es, s2.deaths)
+	s2.bm.battle_time = 5.9
+	var r2e: Dictionary = _as_round(s2.g, s2.es, s2.deaths)
+	var e2: bool = s2.es[0].is_charmed()
+	s2.bm.battle_time = 6.0
+	var r2f: Dictionary = _as_round(s2.g, s2.es, s2.deaths)
+	_check("魅惑-2 受控的敵人不被選：第一擊控制第一名；貂蟬下一擊打第二名（第一名 0、第二名沒有受控）；關羽也只打第二名；控制結束後關羽立刻打第一名；冷卻 5.9 時打第一名不控制，6.0 時再控制（成功 2 次）",
+		r2a.dmg == [100.0, 0.0] and r2b.dmg == [0.0, 100.0] and b2 == false and r2c.dmg == [0.0, 100.0] and r2d.dmg == [100.0, 0.0] and r2e.dmg == [100.0, 0.0]
+			and e2 == false and r2f.dmg == [100.0, 0.0] and s2.es[0].is_charmed() and not s2.es[1].is_charmed() and int(s2.bm.charm_record(CM_HERO).get("count", 0)) == 2,
+		{"a": r2a, "b": r2b, "guan_yu": r2c, "released": r2d, "cooling": r2e, "again": r2f})
+	s2.holder.queue_free()
+	await process_frame
+
+	# 魅惑-3：不控制、不用掉冷卻：致死（生命 50）；攻擊力 0；飛行（法師打得到、受 100，但不控制）；備戰、結算、手動暫停中；不屬於這一場；
+	# 已經被另一位貂蟬控制的敵人再被控制（apply_charm 拒絕：來源、到期時間不變）；免疫減速的敵人照樣受控
+	var r3: Dictionary = {}
+	var s3a: Dictionary = _cm_set([{"x": 240.0, "hp": 50.0}])
+	var x3: Dictionary = _as_round(s3a.g, s3a.es, s3a.deaths)
+	r3["lethal"] = [x3.dead, s3a.bm.charm_ready(CM_HERO)]
+	s3a.holder.queue_free()
+	var s3b: Dictionary = _cm_set([{"x": 240.0}])
+	s3b.g.atk = 0.0
+	x3 = _as_round(s3b.g, s3b.es, s3b.deaths)
+	r3["zero"] = [x3.dmg, s3b.es[0].is_charmed(), s3b.bm.charm_ready(CM_HERO)]
+	s3b.holder.queue_free()
+	var s3c: Dictionary = _cm_set([{"x": 240.0, "extra": {"movement_type": "flying"}}])
+	x3 = _as_round(s3c.g, s3c.es, s3c.deaths)
+	r3["flying"] = [x3.dmg, s3c.es[0].is_charmed(), s3c.bm.charm_ready(CM_HERO)]
+	s3c.holder.queue_free()
+	for st in [BattleManager.GameState.PREP, BattleManager.GameState.RESULT, -1]:
+		var sx: Dictionary = _cm_set([{"x": 240.0}])
+		if st == -1:
+			sx.bm.manual_paused = true
+		else:
+			sx.bm.game_state = st
+		x3 = _as_round(sx.g, sx.es, sx.deaths)
+		r3["state" + str(st)] = [x3.dmg, sx.es[0].is_charmed(), sx.bm.charm_ready(CM_HERO)]
+		sx.holder.queue_free()
+	var s3f: Dictionary = _cm_set([{"x": 240.0}])
+	s3f.wave.foreign = [s3f.es[0]]
+	x3 = _as_round(s3f.g, s3f.es, s3f.deaths)
+	r3["foreign"] = [x3.dmg, s3f.es[0].is_charmed(), s3f.bm.charm_ready(CM_HERO)]
+	s3f.holder.queue_free()
+	var s3g: Dictionary = _cm_set([{"x": 240.0}, {"x": 250.0, "extra": {"trait": "immune_slow"}}])
+	var g3b: Node = _as_hero(s3g.holder, s3g.wave, s3g.bm, 100.0, CM_SKILL.duplicate(), "diao_chan_b", "mage")
+	_as_round(s3g.g, s3g.es, s3g.deaths)
+	var until0: float = s3g.es[0]._charm_until
+	var again: bool = s3g.es[0].apply_charm(g3b, s3g.bm, 5.0, 48.0)
+	r3["recharm"] = [again, s3g.es[0]._charm_hero_id, _ls_near(s3g.es[0]._charm_until, until0), s3g.es[0].charm_count, s3g.bm.charm_ready("diao_chan_b")]
+	x3 = _as_round(g3b, s3g.es, s3g.deaths)
+	r3["immune"] = [x3.dmg, s3g.es[1].is_charmed(), s3g.es[1].immune_slow]
+	s3g.holder.queue_free()
+	await process_frame
+	_check("魅惑-3 不控制、不用掉冷卻：生命 50 被打倒；攻擊力 0 沒有扣血；飛行受 100 但不控制；備戰、結算、手動暫停中受 100 不控制；不屬於這一場受 100 不控制；已受控的敵人另一位貂蟬 apply_charm 被拒絕（來源、到期不變，不疊加不刷新不轉移）、它的冷卻沒有用掉；免疫減速的敵人照樣被另一位貂蟬控制",
+		r3.get("lethal") == [[true], true] and r3.get("zero") == [[0.0], false, true] and r3.get("flying") == [[100.0], false, true]
+			and r3.get("state" + str(BattleManager.GameState.PREP)) == [[100.0], false, true] and r3.get("state" + str(BattleManager.GameState.RESULT)) == [[100.0], false, true]
+			and r3.get("state-1") == [[100.0], false, true] and r3.get("foreign") == [[100.0], false, true]
+			and r3.get("recharm") == [false, CM_HERO, true, 1, true] and r3.get("immune") == [[0.0, 100.0], true, true],
+		r3)
+
+	# 魅惑-4：受控時的攻擊：攻擊力 40 的受控者（x 240）在 1 格（48 像素）內選最近的其他地面敵人：距離同為 30 的兩名（x 270 序號 1、x 210 序號 2）選序號小的；
+	# 更近的飛行敵人（x 250）不打、另一個受控的（x 245）不打、x 288（48，邊界）在範圍內、x 289 不在；威壓 0.5 時用 20；暈眩 0.5 秒中不攻擊（控制時間照樣走）；
+	# 沒有對象時原地等待（攻擊冷卻停在 0），對象進入範圍的那一步就打；打倒對象時 died 只有一次
+	var s4: Dictionary = _cm_set([{"x": 240.0, "extra": {"atk": 40}}, {"x": 270.0, "hp": 70.0}, {"x": 210.0}, {"x": 250.0, "extra": {"movement_type": "flying"}},
+		{"x": 245.0}, {"x": 288.0}, {"x": 289.0}])
+	var c4: Node = s4.es[0]
+	var src4: Node = _as_hero(s4.holder, s4.wave, s4.bm, 100.0, CM_SKILL.duplicate(), "diao_chan_b", "mage")
+	var ok_c: bool = c4.apply_charm(s4.g, s4.bm, 10.0, 48.0)
+	var ok_o: bool = s4.es[4].apply_charm(src4, s4.bm, 10.0, 48.0)
+	var d4: Dictionary = {"applied": [ok_c, ok_o]}
+	s4.bm.battle_time = 0.1
+	_cm_steps(c4, 1)
+	d4["first"] = _cm_hits(c4)
+	for i in range(11):
+		s4.bm.battle_time += 0.1
+		_cm_steps(c4, 1)
+	d4["second"] = _cm_hits(c4)
+	d4["deaths"] = s4.deaths.duplicate()
+	c4.apply_atk_down_from("cm_test_down", 0.5, 30.0)
+	for i in range(12):
+		s4.bm.battle_time += 0.1
+		_cm_steps(c4, 1)
+	d4["third"] = _cm_hits(c4).back() if not _cm_hits(c4).is_empty() else []
+	c4.apply_stun(0.5)
+	var n4: int = c4.charm_attacks
+	var bt4: float = s4.bm.battle_time
+	for i in range(5):
+		s4.bm.battle_time += 0.1
+		_cm_steps(c4, 1)
+	d4["stunned"] = [c4.charm_attacks - n4, snappedf(c4.charm_remaining(), 0.0001), snappedf(10.0 - (s4.bm.battle_time), 0.0001)]
+	# 只剩範圍外的敵人：等待，攻擊冷卻停在 0；把 x 289 的移到 288 的那一步就打
+	for e in [s4.es[2], s4.es[5]]:
+		if is_instance_valid(e) and not e.is_dead():
+			e.take_damage(999999.0)
+	for i in range(15):
+		s4.bm.battle_time += 0.1
+		_cm_steps(c4, 1)
+	d4["idle"] = [c4._blocker_atk_timer, c4.charm_attacks - n4]
+	s4.es[6].position.x = 288.0
+	s4.bm.battle_time += 0.1
+	_cm_steps(c4, 1)
+	d4["edge"] = [_cm_hits(c4).back()[0] if not _cm_hits(c4).is_empty() else -1, c4.charm_attacks - n4]
+	_check("魅惑-4 受控時的攻擊：等距的兩名選序號 1（不是序號 2、不打更近的飛行與另一個受控的）、40；1 秒後再打序號 1（生命 70 → 倒下，died 一次）；威壓 0.5 時 20；暈眩 0.5 秒中 0 擊、控制時間照樣減少；範圍外沒有對象時等待（攻擊冷卻 0、不攻擊）；邊界 48 像素的對象在進入的那一步就被打",
+		d4.applied == [true, true] and d4.first == [[1, 40.0, 40.0]] and d4.second == [[1, 40.0, 40.0], [1, 40.0, 30.0]] and d4.deaths == [1]
+			and d4.third.size() == 3 and d4.third[1] == 20.0 and d4.stunned[0] == 0 and _ls_near(d4.stunned[1], d4.stunned[2], 1e-4)
+			and d4.idle[0] == 0.0 and d4.edge == [6, 1],
+		d4)
+	s4.holder.queue_free()
+	await process_frame
+
+	# 魅惑-5：來源失效就結束、冷卻依 hero_id 保留：貂蟬陣亡（生命 0）、被移出場上、技能換掉（沒有技能）、不同的一場（BattleManager 的生命週期改變）時，
+	# 受控的敵人下一步就結束（紀錄 source／battle）並照常前進；重新讀技能、同一個 hero_id 的新節點都還在冷卻中（打中不控制）
+	var r5: Dictionary = {}
+	for how in ["dead", "removed", "skill", "battle"]:
+		var sx: Dictionary = _cm_set([{"x": 240.0, "speed": 20.0}])
+		_as_round(sx.g, sx.es, sx.deaths)
+		var was: bool = sx.es[0].is_charmed()
+		match how:
+			"dead":
+				sx.g.current_hp = 0.0
+			"removed":
+				sx.holder.remove_child(sx.g)
+			"skill":
+				sx.g._read_skill({})
+			"battle":
+				sx.bm._lifecycle += 1
+		var now: bool = sx.es[0].is_charmed()
+		var xs5: Array = _cm_steps(sx.es[0], 1)
+		r5[how] = [was, now, xs5, sx.es[0].charm_log.back().get("reason")]
+		if how == "removed":
+			sx.g.free()
+		sx.holder.queue_free()
+	var s5: Dictionary = _cm_set([{"x": 240.0}, {"x": 250.0}])
+	_as_round(s5.g, s5.es, s5.deaths)
+	s5.g._read_skill({"skill": CM_SKILL.duplicate()})
+	s5.bm.battle_time = 1.5
+	var rr5: Dictionary = _as_round(s5.g, s5.es, s5.deaths)
+	var g5b: Node = _as_hero(s5.holder, s5.wave, s5.bm, 100.0, CM_SKILL.duplicate(), CM_HERO, "mage")
+	var rr5b: Dictionary = _as_round(g5b, s5.es, s5.deaths)
+	r5["cooldown"] = [rr5.dmg, s5.es[1].is_charmed(), rr5b.dmg, s5.es[1].is_charmed(), snappedf(s5.bm.charm_remaining(CM_HERO), 0.0001)]
+	s5.holder.queue_free()
+	await process_frame
+	_check("魅惑-5 來源失效就結束：貂蟬生命 0、移出場上、沒有技能、不同的一場時立刻不再受控，下一步前進 2 像素（紀錄 source、source、source、battle）；冷卻依 hero_id 保留：重新讀技能後、同一個 hero_id 的新節點在戰鬥時間 1.5 秒時打中第二名都不控制（冷卻剩 4.5 秒）",
+		r5.get("dead") == [true, false, [242.0], "source"] and r5.get("removed") == [true, false, [242.0], "source"] and r5.get("skill") == [true, false, [242.0], "source"]
+			and r5.get("battle") == [true, false, [242.0], "battle"] and r5.get("cooldown") == [[0.0, 100.0], false, [0.0, 100.0], false, 4.5],
+		r5)
+
+	# 魅惑-6：受控中不漏城：已經走到終點（路點索引＝路點數）的敵人受控期間不抵達（城池沒有扣），控制結束後的下一步抵達一次
+	var s6: Dictionary = _cm_set([{"x": 240.0}])
+	var e6: Node = s6.es[0]
+	e6._wp_index = 2
+	e6.position = Vector2(960, 0)
+	var arrived6: Array = []
+	e6.reached_base.connect(func(x): arrived6.append(x))
+	var ok6: bool = e6.apply_charm(s6.g, s6.bm, 2.0, 48.0)
+	var mid6: Array = []
+	for i in range(19):
+		s6.bm.battle_time = 0.1 * float(i + 1)
+		_cm_steps(e6, 1)
+		mid6.append(arrived6.size())
+	s6.bm.battle_time = 2.0
+	if is_instance_valid(e6) and not e6.is_dead():
+		e6._physics_process(0.1)
+	_check("魅惑-6 受控中不漏城：在終點受控的 2 秒內沒有抵達，控制結束的那一步抵達一次", ok6 and mid6.max() == 0 and arrived6.size() == 1, {"applied": ok6, "mid": mid6, "arrived": arrived6.size()})
+	s6.holder.queue_free()
+	await process_frame
+
+	# ── 敵對可選的目標整合（受控的敵人 C 在 x 300、另一名 H 在 x 280；C 排在清單前面、離終點比較近）──
+	# 整合-1：武將的普通攻擊與範圍、傳遞：沒有技能、橫掃、連環計、呼風喚雨、連射（抽中）、怪力、奇襲都只打 H，C 的生命不變、沒有被推；
+	# 受控的 C 不被奇襲用掉機會、不被怪力推動
+	var skills1: Dictionary = {
+		"plain": {}, "sweep": {"id": "sweep", "sweep_radius": 1.5, "sweep_max_targets": 3, "sweep_ratio": 0.5},
+		"chain": {"id": "chain", "chain_radius": 1.5, "chain_ratio": 0.5, "chain_max_jumps": 2},
+		"storm": {"id": "storm", "storm_radius": 2, "storm_ratio": 0.5, "storm_max_targets": 4},
+		"double_shot": {"id": "double_shot", "double_shot_chance": 0.2}, "knockback": KB_SKILL.duplicate(), "assassinate": AS_SKILL.duplicate(),
+	}
+	var r11: Dictionary = {}
+	for k in skills1:
+		var sx: Dictionary = _cm_set([{"x": 300.0}, {"x": 280.0}])
+		sx.es[0].apply_charm(sx.g, sx.bm, 5.0, 48.0)
+		var hx: Node = _as_hero(sx.holder, sx.wave, sx.bm, 100.0, skills1[k], "h_" + k, "mage")
+		if k == "double_shot":
+			hx.double_shot_roll_override = func(): return 0.0
+		var cx0: float = sx.es[0].position.x
+		var rx: Dictionary = _as_round(hx, sx.es, sx.deaths)
+		r11[k] = [rx.dmg[0], rx.dmg[1] > 0.0, snappedf(sx.es[0].position.x - cx0, 0.001), sx.es[0].is_charmed()]
+		sx.holder.queue_free()
+	await process_frame
+	var ok11: bool = r11.size() == skills1.size()
+	for k in r11:
+		ok11 = ok11 and r11[k] == [0.0, true, 0.0, true]
+	_check("整合-1 武將：沒有技能、橫掃、連環計、呼風喚雨、連射（抽中）、怪力、奇襲都只打 H；受控的 C 生命不變、沒有被推、仍受控", ok11, r11)
+
+	# 整合-2：防禦塔（優先前方會先選離終點近的 C）：弓兵、步兵、砲兵、騎兵、文士都改選 H；砲兵的範圍傷害不波及 C；文士塔的減速只在 H；
+	# 步兵塔的緩速光環不套用在 C（H 有）
+	var r12x: Dictionary = {}
+	for tk in ["archer", "infantry", "artillery", "cavalry", "scholar"]:
+		var sx: Dictionary = _cm_set([{"x": 300.0}, {"x": 280.0}])
+		sx.es[0].apply_charm(sx.g, sx.bm, 5.0, 48.0)
+		var tw: Node = load("res://entities/tower/Tower.gd").new()
+		sx.holder.add_child(tw)
+		tw.set_process(false)
+		tw.setup(tk, Vector2i(6, 1), sx.wave)
+		tw.position = Vector2(290, 40)
+		var hp0: Array = [sx.es[0].current_hp, sx.es[1].current_hp]
+		tw._atk_timer = 0.0
+		tw._process(1.0 / 60.0)
+		r12x[tk] = [snappedf(hp0[0] - sx.es[0].current_hp, 0.0001), snappedf(hp0[1] - sx.es[1].current_hp, 0.0001), sx.es[0]._stack_slow_amount, sx.es[1]._stack_slow_amount,
+			sx.es[0].has_slow_from(tw.slow_source), sx.es[1].has_slow_from(tw.slow_source)]
+		sx.holder.queue_free()
+	await process_frame
+	_check("整合-2 防禦塔：弓兵 30、步兵 20、砲兵 80（範圍不波及 C）、騎兵 50 都只打 H；文士塔的減速只在 H；步兵塔的緩速光環只在 H；C 的生命與狀態都不變",
+		r12x.get("archer") == [0.0, 30.0, 0.0, 0.0, false, false] and r12x.get("infantry") == [0.0, 20.0, 0.0, 0.0, false, true]
+			and r12x.get("artillery") == [0.0, 80.0, 0.0, 0.0, false, false] and r12x.get("cavalry") == [0.0, 50.0, 0.0, 0.0, false, false]
+			and r12x.get("scholar") == [0.0, 0.0, 0.0, 0.05, false, false],
+		r12x)
+
+	# 整合-3：光環與道路阻擋不再新加或刷新、也不撤除已經有的：關羽的減速光環、顏良的威壓、步兵塔的緩速光環、道路阻擋的減速在受控前已經作用在 C 上；
+	# 受控後下一次更新不撤除（C 仍有這些來源）、H 照常刷新；C 的這些來源照原本的有效期（0.5 秒）結束；控制結束後下一次更新又加回 C
+	var s13: Dictionary = _cm_set([{"x": 300.0}, {"x": 280.0}])
+	var c13: Node = s13.es[0]
+	var gy13: Node = _as_hero(s13.holder, s13.wave, s13.bm, 100.0, {"id": "slow_aura", "slow_mult": 0.9}, "guan_yu", "infantry")
+	gy13.position = Vector2(290, 48)
+	var yl13: Node = _as_hero(s13.holder, s13.wave, s13.bm, 100.0, {"id": "atk_down_aura", "atk_mult": 0.9}, "yan_liang", "infantry")
+	yl13.position = Vector2(290, 48)
+	yl13.is_on_road = true
+	var tw13: Node = load("res://entities/tower/Tower.gd").new()
+	s13.holder.add_child(tw13)
+	tw13.set_process(false)
+	tw13.setup("infantry", Vector2i(6, 1), s13.wave)
+	tw13.position = Vector2(290, 40)
+	var upd13 := func():
+		gy13._update_slows()
+		yl13._update_atk_down_aura()
+		yl13._update_slows()
+		tw13._apply_slow_aura()
+	upd13.call()
+	c13.apply_slow_from(yl13.slow_source, Hero.SLOW_RATIO, Enemy.SLOW_REFRESH_TTL)
+	yl13._road_slowed[c13.get_instance_id()] = c13
+	var srcs: Array = [gy13.aura_source, yl13.atk_down_aura_source, tw13.slow_source, yl13.slow_source]
+	var has13 := func(e: Node) -> Array:
+		return [e.has_slow_from(srcs[0]), e.has_atk_down_from(srcs[1]), e.has_slow_from(srcs[2]), e.has_slow_from(srcs[3])]
+	var before13: Array = has13.call(c13)
+	c13.apply_charm(s13.g, s13.bm, 2.0, 48.0)
+	upd13.call()
+	var kept13: Array = has13.call(c13)
+	var h13: Array = has13.call(s13.es[1])
+	for i in range(6):
+		s13.bm.battle_time += 0.1
+		c13._physics_process(0.1)
+		upd13.call()
+	var expired13: Array = has13.call(c13)
+	s13.bm.battle_time = 2.0
+	c13._physics_process(0.1)
+	upd13.call()
+	var back13: Array = has13.call(c13)
+	_check("整合-3 光環與道路阻擋：受控前 C 有減速光環、威壓、步兵塔緩速、道路阻擋減速；受控後下一次更新不撤除（4 個都還在）、也不刷新：0.6 秒後都照有效期結束；H 照常有減速光環、威壓與步兵塔緩速；控制結束後下一次更新加回減速光環、威壓與步兵塔緩速（道路阻擋要再被打中才加）",
+		before13 == [true, true, true, true] and kept13 == [true, true, true, true] and h13.slice(0, 3) == [true, true, true] and expired13 == [false, false, false, false]
+			and back13 == [true, true, true, false],
+		{"before": before13, "kept": kept13, "h": h13, "expired": expired13, "back": back13})
+	s13.holder.queue_free()
+	await process_frame
+
+	# 整合-4：受控前已有的灼燒、暈眩、威壓照原本的時間繼續：灼燒 3 跳（每 1 秒 10）在受控中照跳；暈眩 1 秒在受控中照樣倒數；控制不回血、不改最大生命
+	var s14: Dictionary = _cm_set([{"x": 240.0}])
+	var e14: Node = s14.es[0]
+	e14.apply_burn(10.0, 3, 1.0)
+	e14.apply_stun(1.0)
+	var hp14: float = e14.current_hp
+	e14.apply_charm(s14.g, s14.bm, 5.0, 48.0)
+	for i in range(25):
+		s14.bm.battle_time += 0.1
+		e14._physics_process(0.1)
+	_check("整合-4 受控前的狀態照原本的時間：2.5 秒內灼燒照跳 2 次（−20）、暈眩 1 秒照樣結束（剩 0）、最大生命不變；仍受控",
+		_ls_near(hp14 - e14.current_hp, 20.0, 1e-6) and e14._stun_left == 0.0 and e14.max_hp == 1000.0 and e14.is_charmed() and e14._burn_ticks_left == 1,
+		{"lost": hp14 - e14.current_hp, "stun": e14._stun_left, "burn_left": e14._burn_ticks_left, "charmed": e14.is_charmed()})
+	s14.holder.queue_free()
+	await process_frame
+
+	# ── 實際引擎 ──
+	var rec: Node = load("res://__regression__/bridge_recorder.gd").new()
+	var original: Node = main.web_bridge
+	main.web_bridge = rec
+	rec.payload_received.connect(main._on_payload_received)
+
+	# 魅惑-20：貂蟬在 (3,4)，第一波 2 個 post（生命 99999、攻擊力預設 20）靠在一起：Godot 讀到 {2, 6, 1}；選取面板 {2, 6, 1, 剩 0}；
+	# 第一擊控制第一個（受 100、CHARM 1 個）、面板剩約 6；快照 hero_charm 成功 1 次、enemy_charm 受控、來源 diao_chan、剩約 2；
+	# 受控的 2 秒（戰鬥時間）內位置不變、打第二個（每次 20）；控制結束後快照不再受控
+	var es: Array = await _cm_start(rec, "charm-20", 2)
+	var d20: Dictionary = {}
+	if es.size() == 2 and _cm_main_hero() != null:
+		var g: Node = _cm_main_hero()
+		d20["read"] = [g.charm_duration, g.charm_cooldown, g.charm_attack_radius, g.job, g.can_hit_air]
+		var n_panel: int = rec.sent_panels.size()
+		main._on_hero_clicked(g)
+		d20["panel0"] = rec.sent_panels.back().get("charm") if rec.sent_panels.size() > n_panel else null
+		_kb_put(es[0], 153.0)
+		_kb_put(es[1], 170.0)
+		var x0: float = es[0].position.x
+		d20["hit"] = _cm_hit(es)
+		var hp1: float = es[1].current_hp
+		n_panel = rec.sent_panels.size()
+		main._on_hero_clicked(g)
+		d20["panel1"] = rec.sent_panels.back().get("charm") if rec.sent_panels.size() > n_panel else null
+		await process_frame
+		var n_snap: int = rec.sent_snapshots.size()
+		main._on_debug_snapshot_requested("charm-20")
+		var snap: Dictionary = rec.sent_snapshots.back() if rec.sent_snapshots.size() > n_snap else {}
+		var hc: Dictionary = snap.get("hero_charm", {}).get(CM_HERO, {})
+		var ec: Dictionary = snap.get("enemy_charm", {}).get(str(es[0].get_instance_id()), {})
+		d20["snap"] = [hc.get("count"), ec.get("charmed"), ec.get("source"), float(ec.get("remaining", 0.0)) > 1.8, snap.get("charm_texts"), snap.get("charm", {}).get(CM_HERO, {}).get("count")]
+		var bt0: float = _bm().battle_time
+		await _wait_until(func(): return not es[0].is_charmed(), 5.0)
+		d20["during"] = [snappedf(es[0].position.x - x0, 0.001), snappedf(hp1 - es[1].current_hp, 0.0001), es[0].charm_attacks, snappedf(_bm().battle_time - bt0, 0.01)]
+		await process_frame
+		n_snap = rec.sent_snapshots.size()
+		main._on_debug_snapshot_requested("charm-20b")
+		snap = rec.sent_snapshots.back() if rec.sent_snapshots.size() > n_snap else {}
+		d20["ended"] = snap.get("enemy_charm", {}).get(str(es[0].get_instance_id()), {}).get("charmed")
+	var pa: Dictionary = d20.get("panel0") if d20.get("panel0") is Dictionary else {}
+	var pb: Dictionary = d20.get("panel1") if d20.get("panel1") is Dictionary else {}
+	var dur20: Array = d20.get("during", [1, 0, 0, 0])
+	_check("魅惑-20 實際引擎：讀到 {2, 6, 1}（法師、能對空）；面板 {2, 6, 1, 剩 0}；第一擊受 100、控制第一個；面板剩約 6；快照 hero_charm 1 次、enemy_charm 受控、來源 diao_chan、剩約 2、CHARM 1 個；受控的 2 秒（戰鬥時間）內位置不變、打第二個 2～3 次（每次 20）；控制結束後快照不再受控",
+		d20.get("read") == [2.0, 6.0, 1.0, "mage", true] and _ls_near(pa.get("duration"), 2.0) and _ls_near(pa.get("cooldown"), 6.0) and _ls_near(pa.get("radius"), 1.0)
+			and _ls_near(pa.get("remaining"), 0.0) and d20.get("hit", {}).get("dmg") == [100.0, 0.0] and d20.get("hit", {}).get("charmed") == [0]
+			and float(pb.get("remaining", 0.0)) > 5.8 and float(pb.get("remaining", 9.0)) <= 6.0 and d20.get("snap") == [1, true, CM_HERO, true, 1, 1]
+			and dur20[0] == 0.0 and dur20[2] >= 2 and dur20[2] <= 3 and _ls_near(dur20[1], 20.0 * float(dur20[2]), 1e-6) and float(dur20[3]) >= 2.0 - 0.05 and d20.get("ended") == false,
+		d20)
+
+	# 魅惑-21：控制時間是戰鬥時間：1× 與 2× 各控制一次，受控的戰鬥時間都約 2 秒、2× 的牆鐘時間較短；手動暫停 0.6 秒（牆鐘）時剩下的控制時間與敵人位置不變
+	var d21: Dictionary = {}
+	for sp in [1, 2]:
+		es = await _cm_start(rec, "charm-21-x%d" % sp, 1, null, [[_grp("gnd_walk", 1, 0.02)]])
+		if es.size() != 1 or _cm_main_hero() == null:
+			continue
+		_r19_speed(rec, sp)
+		_kb_put(es[0], 153.0)
+		_cm_hit(es)
+		var w0: int = Time.get_ticks_msec()
+		var b0: float = _bm().battle_time
+		var row: Dictionary = {"charmed": es[0].is_charmed()}
+		var x21: float = es[0].position.x
+		if sp == 1:
+			await _wait_real(0.3)
+			_r20_pause(rec, true)
+			var a: Array = [snappedf(es[0].charm_remaining(), 0.0001), es[0].position.x]
+			await _wait_real(0.6)
+			var b: Array = [snappedf(es[0].charm_remaining(), 0.0001), es[0].position.x]
+			_r20_pause(rec, false)
+			row["pause"] = [a == b, a[0] > 0.5]
+			w0 += 600
+		await _wait_until(func(): return _bm().battle_time - b0 >= 1.5, 6.0)
+		row["still"] = [es[0].is_charmed(), es[0].position.x == x21]
+		await _wait_until(func(): return not es[0].is_charmed(), 6.0)
+		row["battle"] = snappedf(_bm().battle_time - b0, 0.01)
+		row["wall"] = Time.get_ticks_msec() - w0
+		row["moved_after"] = false
+		var xa: float = es[0].position.x
+		await _wait(0.3)
+		row["moved_after"] = es[0].position.x > xa
+		d21[sp] = row
+	_check("魅惑-21 控制時間是戰鬥時間：1× 與 2× 都受控約 2 秒戰鬥時間（1.9～2.15）、2× 的牆鐘時間少於 1× 的 0.75 倍；受控期間（戰鬥時間 1.5 秒時）走路兵停在原地；暫停 0.6 秒時剩下的控制時間與位置都不變；控制結束後繼續往前走",
+		d21.size() == 2 and d21.values().all(func(x): return x.charmed == true and x.still == [true, true] and float(x.battle) >= 1.9 and float(x.battle) <= 2.15 and x.moved_after == true)
+			and d21[1].get("pause") == [true, true] and float(d21[2].wall) < float(d21[1].wall) * 0.75,
+		d21)
+
+	# 魅惑-22：不會提早勝利、受控擊殺只算一次、解除前不被選：一波 2 個不動的敵人（攻擊力 100 的 ctr_walk、生命 25 的 ctr_soft，1 格內）。
+	# 貂蟬控制 ctr_walk，它的第一擊就打倒 ctr_soft（擊殺 +1、金幣 +5，不是兩次）；此時只剩受控者：仍在戰鬥中、場上 1 個、波次沒有結束。
+	# 接著放弓兵塔、讓關羽自動攻擊：受控期間兩者都不打它（生命不變）；控制結束後立刻被打（生命減少）；最後打倒、勝利只結算一次、擊殺 2
+	var team22: Array = [_cm_member(), _r12_hero("guan_yu", null)]
+	var waves22: Array = [[_grp("ctr_walk", 1, 0.02), _grp("ctr_soft", 1, 0.02)]]
+	es = await _cm_start(rec, "charm-22", 2, team22, waves22, {CM_HERO: Vector2i(3, 4), "guan_yu": Vector2i(4, 6)}, true)
+	var d22: Dictionary = {}
+	if es.size() == 2 and _cm_main_hero() != null:
+		for e in es:
+			e.base_speed = 0.0
+		_kb_put(es[0], 153.0)
+		_kb_put(es[1], 180.0)
+		var n_res: int = rec.sent_results.size()
+		var k0: int = _bm().kills
+		var g0: int = _bm().battle_gold
+		var h22: Dictionary = _cm_hit(es)
+		d22["charmed"] = h22.charmed
+		await _wait_until(func(): return not is_instance_valid(es[1]) or es[1].is_dead(), 3.0)
+		await process_frame
+		d22["after_kill"] = [_bm().kills - k0, _bm().battle_gold - g0, _bm().game_state == BattleManager.GameState.BATTLE, _wm().get_active_enemy_count(), es[0].is_charmed(),
+			es[0].charm_log.filter(func(x): return x.ev == "hit").map(func(x): return [int(x.target), x.killed])]
+		main._on_web_place_tower({"tower_type": "archer", "cell_x": 4, "cell_y": 4})
+		main._placed_heroes["guan_yu"].set_process(true)
+		var hp_c: float = es[0].current_hp
+		var hp_last: float = hp_c
+		var frames22: int = 0
+		while is_instance_valid(es[0]) and es[0].is_charmed() and frames22 < 600:
+			hp_last = es[0].current_hp
+			await process_frame
+			frames22 += 1
+		d22["while_charmed"] = [snappedf(hp_c - hp_last, 0.0001), main.units_layer.get_children().filter(func(c): return c is Tower).size()]
+		var hp_r: float = es[0].current_hp
+		await _wait(1.0)
+		d22["released_hit"] = snappedf(hp_r - es[0].current_hp, 0.0001)
+		if is_instance_valid(es[0]) and not es[0].is_dead():
+			es[0].take_damage(999999.0)
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.RESULT, 3.0)
+		await process_frame
+		var res: Array = rec.sent_results.slice(n_res)
+		d22["result"] = [res.size(), res[0].get("result") if res.size() > 0 else null, res[0].get("kills") if res.size() > 0 else null]
+	_check("魅惑-22 不會提早勝利：受控者第一擊打倒 ctr_soft（擊殺 +1、金幣 +5）後只剩受控者，仍在戰鬥中、場上 1 個；之後放的弓兵塔與自動攻擊的關羽在受控期間都不打它（生命不變），控制結束後 1 秒內就被打；打倒後勝利只結算一次、擊殺 2",
+		d22.get("charmed") == [0] and d22.get("after_kill") == [1, 5, true, 1, true, [[1, true]]] and d22.get("while_charmed") == [0.0, 1]
+			and float(d22.get("released_hit", 0.0)) > 0.0 and d22.get("result") == [1, "WIN", 2],
+		d22)
+
+	# 魅惑-23：冷卻在同一場保留、新的一場清空；來源移出隊伍時控制立刻結束。兩波各 1 個 post：第 1 波控制（冷卻約 6）後打倒、清波回到備戰（冷卻不變）；
+	# 第 2 波打中、升級（2 級）後打中、移出再放回（新節點）後打中都不控制；新的一場沒有冷卻紀錄、第一擊就控制；這時把貂蟬移出隊伍，下一幀敵人就不再受控
+	var waves23: Array = [[_grp("post", 1, 0.02)], [_grp("post", 1, 0.02)]]
+	es = await _cm_start(rec, "charm-23", 1, null, waves23)
+	var d23: Dictionary = {}
+	if es.size() == 1 and _cm_main_hero() != null:
+		_kb_put(es[0], 153.0)
+		d23["w1"] = _cm_hit(es).charmed
+		es[0].take_damage(999999.0)
+		await _wait_until(func(): return _bm().game_state == BattleManager.GameState.PREP, 3.0)
+		var r_prep: float = _bm().charm_remaining(CM_HERO)
+		await _wait(0.3)
+		d23["prep"] = [r_prep > 5.0, _ls_near(_bm().charm_remaining(CM_HERO), r_prep, 1e-6)]
+		_bm().player_start_battle()
+		await _wait_until(func(): return _sw_enemies().size() == 1, 5.0)
+		var es2: Array = _sw_enemies()
+		var rows: Array = []
+		if es2.size() == 1:
+			_kb_put(es2[0], 153.0)
+			rows.append(["wave2", _cm_hit(es2).charmed])
+			main._on_payload_received({"type": "update_team", "team_list": [_cm_member(2)]})
+			_cm_main_hero().set_process(false)
+			rows.append(["level2", _cm_hit(es2).charmed, _cm_main_hero().hero_level])
+			main._on_payload_received({"type": "update_team", "team_list": []})
+			await process_frame
+			main._on_payload_received({"type": "update_team", "team_list": [_cm_member(2)]})
+			_r12_place(CM_HERO, Vector2i(3, 4))
+			if _cm_main_hero() != null:
+				_cm_main_hero().set_process(false)
+				rows.append(["replaced", _cm_hit(es2).charmed, _bm().charm_remaining(CM_HERO) > 0.0])
+		d23["rows"] = rows
+		es = await _cm_start(rec, "charm-23b", 1)
+		if es.size() == 1 and _cm_main_hero() != null:
+			var dbg0: Dictionary = _bm().get_debug_state().get("charm", {})
+			_kb_put(es[0], 153.0)
+			var h23: Dictionary = _cm_hit(es)
+			main._on_payload_received({"type": "update_team", "team_list": []})
+			var still23: bool = es[0].is_charmed()
+			await _wait(0.1)
+			d23["new_battle"] = [dbg0.is_empty(), h23.charmed, still23, es[0].is_charmed(), es[0].charm_log.back().get("reason") if not es[0].charm_log.is_empty() else null]
+	_check("魅惑-23 冷卻在同一場保留：第 1 波控制；清波後備戰中剩下的冷卻不變（0.3 秒後相同）；第 2 波、升級 2 級、移出再放回（新節點）後打中都不控制；新的一場沒有冷卻紀錄、第一擊就控制；把貂蟬移出隊伍的當下（節點正要被移除）敵人就不再受控，下一步記下結束（紀錄 source）",
+		d23.get("w1") == [0] and d23.get("prep") == [true, true] and d23.get("rows") == [["wave2", []], ["level2", [], 2], ["replaced", [], true]]
+			and d23.get("new_battle") == [true, [0], false, false, "source"],
+		d23)
+
+	rec.payload_received.disconnect(main._on_payload_received)
+	main.web_bridge = original
+	rec.free()
+	_load(_stage_b())

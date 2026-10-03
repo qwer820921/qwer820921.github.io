@@ -2773,6 +2773,30 @@
   overflow-wrap: anywhere;
 }
 
+/* 單位面板的奇襲（甘寧）：選取時這一場用過了沒有（緋紅色，和遊戲裡的 KILL 標記同色系） */
+.assassinateNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 90, 105, 0.12);
+  border: 1px solid rgba(255, 90, 105, 0.45);
+  color: #ffd9dd;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* 單位面板的魅惑（貂蟬）：選取時剩下的冷卻（粉紅色，和遊戲裡的 CHARM 標記同色系） */
+.charmNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 128, 216, 0.12);
+  border: 1px solid rgba(255, 128, 216, 0.45);
+  color: #ffe0f6;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
 /* 戰場上方城防旁的守護（孫權）：目前生效的漏城減傷（Godot 的 update_stats，隨部署、陣亡、移出隊伍更新） */
 .hudBaseGuard {
   margin-left: 4px;

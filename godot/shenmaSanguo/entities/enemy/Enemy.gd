@@ -131,6 +131,31 @@ var atk_log: Array = []
 ## 威壓的標記顏色（暗紅色的向下箭頭，和淺藍色的減速、橘色的灼燒、黃色的暈眩區分）
 const ATK_DOWN_COLOR: Color = Color(0.85, 0.22, 0.28)
 
+# ── 魅惑（貂蟬「魅惑」，Hero.gd 命中時呼叫 apply_charm）─────────────
+## 受控：來源（施加的武將，weakref）、它的 BattleManager（weakref）與那一場的生命週期編號、結束的戰鬥時間（battle_time）、
+## 攻擊其他敵人的範圍（像素）、找攻擊對象用的 WaveManager（來源的，weakref）。沒有受控時 _charm_src 是 null。
+## 受控中：仍然活著（波次照樣要等它倒下或抵達），但不前進、不抵達城池、不攻擊武將（受控開始時解除阻擋）；攻擊冷卻和攻擊阻路武將共用
+## _blocker_atk_timer（進出受控都不重設，一步最多一擊），冷卻好了就用 effective_blocker_atk（含威壓）打範圍內最近的其他敵人
+## （地面、活著、沒有受控、同一場；距離相同時生成序號小的優先），沒有對象時原地等待。暈眩照常抑制攻擊；減速、灼燒、威壓照原本的時間繼續。
+## 結束：戰鬥時間到期（手動暫停、備戰、結算時戰鬥時間不前進）、來源失效（陣亡、被移除、技能失效）、不同的一場；
+## 結束後從原本的位置與路點繼續走（下一步照常判斷阻擋與抵達）。已經受控時不疊加、不刷新、不轉移
+var _charm_src: WeakRef = null
+var _charm_bm: WeakRef = null
+var _charm_wave: WeakRef = null
+var _charm_life: int = -1
+var _charm_until: float = 0.0
+var _charm_radius_px: float = 0.0
+var _charm_hero_id: String = ""
+## 測試用唯讀統計（debug_snapshot）：受控的次數、受控時攻擊其他敵人的次數，以及最近 CHARM_LOG_MAX 筆（開始、攻擊、結束）
+var charm_count: int = 0
+var charm_attacks: int = 0
+var charm_log: Array = []
+const CHARM_LOG_MAX: int = 40
+## 範圍邊界的容許誤差（像素）：距離正好是半徑的敵人算在範圍內
+const CHARM_EDGE_EPS: float = 0.001
+## 受控中的外圈顏色（粉紅色，和遊戲裡的 CHARM 標記同色）
+const CHARM_COLOR: Color = Color(1.0, 0.5, 0.85)
+
 # ── 免疫減速（enemies_config 的 trait）────────────────────────────
 ## trait 是字串、去掉前後空白後完全等於 immune_slow 時，這個敵人不受任何減速：武將在道路上的阻擋減速、步兵塔的緩速光環（apply_slow）
 ## 與文士塔的疊加減速（apply_stackable_slow）都不套用，也不顯示減速提示。只看 trait，不看敵人的種類或 id；其他 trait 的值遊戲不使用。
@@ -230,6 +255,11 @@ func _physics_process(delta: float) -> void:
 				queue_redraw()
 		if _is_dead:
 			return
+
+	# 魅惑：受控中不前進、不抵達城池、不攻擊武將，改打附近的其他敵人（到期或來源失效時先整理，這一步照常處理）
+	if _charm_step():
+		_charm_physics(delta)
+		return
 
 	# 抵達終點
 	if _wp_index >= _waypoints.size():
@@ -509,6 +539,144 @@ func apply_stun(duration: float) -> bool:
 func is_stunned() -> bool:
 	return _stun_left > 0.0 and not _is_dead
 
+## 貂蟬「魅惑」：讓這個敵人受控 duration 秒（source 的 BattleManager 的戰鬥時間），攻擊其他敵人的範圍 radius_px（像素）。回傳是否生效。
+## 不生效（什麼都不改）：已經倒下或正要被移除、飛行、已經受控（不疊加、不刷新、不轉移）、時間或範圍不是正的有限數字、來源或 BattleManager 無效、
+## 來源此刻不能提供。生效時解除原本的阻擋（不再攻擊擋路的武將），攻擊冷卻、生命、路點、位置、減速、暈眩、灼燒、威壓都不動
+func apply_charm(source: Node, bm: Node, duration: float, radius_px: float) -> bool:
+	if _is_dead or is_queued_for_deletion() or is_flying() or is_charmed():
+		return false
+	if not (is_finite(duration) and duration > 0.0 and is_finite(radius_px) and radius_px > 0.0):
+		return false
+	if source == null or bm == null or not is_instance_valid(source) or not is_instance_valid(bm) or not source.charm_source_active():
+		return false
+	_charm_src = weakref(source)
+	_charm_bm = weakref(bm)
+	_charm_wave = weakref(source._wave_mgr) if source._wave_mgr != null else null
+	_charm_life = bm.lifecycle()
+	_charm_until = float(bm.battle_time) + duration
+	_charm_radius_px = radius_px
+	_charm_hero_id = str(source.hero_id)
+	charm_count += 1
+	_blocker = null
+	_blocked_cell = Vector2i(-1, -1)
+	_charm_note({"ev": "start", "t": float(bm.battle_time), "source": _charm_hero_id, "until": _charm_until})
+	queue_redraw()
+	return true
+
+## 受控中：有來源、還沒到期、來源此刻仍能提供、同一場（只判斷，不改任何狀態；結束的整理在 _physics_process）。
+## 受控的敵人仍然活著（is_dead 是 false），只是不是武將與防禦塔敵對可選的目標
+func is_charmed() -> bool:
+	return _charm_src != null and not _is_dead and _charm_end_reason() == ""
+
+## 受控剩下的戰鬥時間（秒）；沒有受控時是 0
+func charm_remaining() -> float:
+	if not is_charmed():
+		return 0.0
+	return maxf(0.0, _charm_until - float(_charm_bm.get_ref().battle_time))
+
+## 受控要結束的原因：source（來源陣亡、被移除、技能失效）、battle（不同的一場）、expired（戰鬥時間到期）；還在受控時是空字串
+func _charm_end_reason() -> String:
+	var h: Variant = _charm_src.get_ref() if _charm_src != null else null
+	var bm: Variant = _charm_bm.get_ref() if _charm_bm != null else null
+	if h == null or not is_instance_valid(h) or not h.has_method("charm_source_active") or not h.charm_source_active():
+		return "source"
+	if bm == null or not is_instance_valid(bm) or h._battle_mgr != bm or bm.lifecycle() != _charm_life:
+		return "battle"
+	if float(bm.battle_time) >= _charm_until:
+		return "expired"
+	return ""
+
+## 這一步還受控嗎？受控已經結束時整理（清掉來源、記下原因、重畫）並回傳 false
+func _charm_step() -> bool:
+	if _charm_src == null:
+		return false
+	var reason: String = _charm_end_reason()
+	if reason == "":
+		return true
+	var bm: Variant = _charm_bm.get_ref() if _charm_bm != null else null
+	_charm_note({"ev": "end", "t": float(bm.battle_time) if bm != null and is_instance_valid(bm) else -1.0, "reason": reason})
+	_charm_src = null
+	_charm_bm = null
+	_charm_wave = null
+	_charm_hero_id = ""
+	queue_redraw()
+	return false
+
+## 受控中的一步：暈眩時不攻擊（和平常相同，暈眩照遊戲時間結束）；備戰、結算時不攻擊；
+## 否則攻擊冷卻好了就打範圍內最近的其他敵人（一步最多一擊；沒有對象時冷卻停在 0，不囤積）
+func _charm_physics(delta: float) -> void:
+	if is_stunned():
+		_charm_stunned(delta)
+		return
+	var bm: Variant = _charm_bm.get_ref()
+	if not bm.combat_active():
+		_blocker_atk_timer = maxf(0.0, _blocker_atk_timer - delta)
+		return
+	var was_ready: bool = _blocker_atk_timer <= 0.0
+	_blocker_atk_timer -= delta
+	if _blocker_atk_timer > 0.0:
+		return
+	var victim: Node = _charm_pick()
+	if victim == null:
+		_blocker_atk_timer = 0.0
+		return
+	var hit_atk: float = effective_blocker_atk()
+	var dealt: float = victim.take_damage(hit_atk)
+	charm_attacks += 1
+	_charm_note({"ev": "hit", "t": float(bm.battle_time), "target": int(victim.spawn_seq), "atk": hit_atk, "dealt": dealt, "killed": victim.is_dead()})
+	var late: float = 0.0 if was_ready else -_blocker_atk_timer
+	_blocker_atk_timer = BLOCKER_ATK_SPD - (late if late < BLOCKER_ATK_SPD else 0.0)
+	queue_redraw()
+
+## 受控中的暈眩：和沒有受控時相同（暈眩照遊戲時間結束、攻擊冷卻倒數到 0 為止、這一步不攻擊）
+func _charm_stunned(delta: float) -> void:
+	_stun_left = _stun_left - delta
+	_blocker_atk_timer = maxf(0.0, _blocker_atk_timer - delta)
+	if _stun_left <= STUN_END_EPS:
+		_stun_left = 0.0
+		if not stun_log.is_empty():
+			stun_log.back()["to"] = _age
+	queue_redraw()
+
+## 受控時攻擊的對象：來源的 WaveManager 這一場的敵人中，範圍內（中心距離、含邊界）最近的其他地面敵人（活著、沒有正要被移除、沒有受控）；
+## 距離相同時生成序號小的優先；沒有時是 null。受控的敵人不打武將、防禦塔、城池、自己與其他受控的敵人，也不打飛行敵人
+func _charm_pick() -> Node:
+	var w: Variant = _charm_wave.get_ref() if _charm_wave != null else null
+	if w == null or not is_instance_valid(w):
+		return null
+	var best: Node = null
+	var best_d: float = 0.0
+	var best_seq: int = 0
+	for e in w.get_active_enemies():
+		if e == self or not is_instance_valid(e) or not (e is Enemy) or e.is_queued_for_deletion() or e.is_dead():
+			continue
+		if e.is_flying() or e.is_charmed():
+			continue
+		if w.has_method("owns_enemy") and not w.owns_enemy(e):
+			continue
+		var raw: float = global_position.distance_to(e.global_position)
+		if raw > _charm_radius_px + CHARM_EDGE_EPS:
+			continue
+		# 距離取到 0.001 像素再比較：浮點誤差造成的極小差距視為等距，交給生成序號決定
+		var d: float = snappedf(raw, 0.001)
+		var seq: int = int(e.spawn_seq)
+		if best == null or d < best_d or (d == best_d and seq < best_seq):
+			best = e
+			best_d = d
+			best_seq = seq
+	return best
+
+func _charm_note(entry: Dictionary) -> void:
+	charm_log.append(entry)
+	if charm_log.size() > CHARM_LOG_MAX:
+		charm_log.pop_front()
+
+## 測試用唯讀資訊（debug_snapshot）：是否受控、來源的 hero_id、剩下的戰鬥時間、生成序號、受控的次數、受控時的攻擊次數、最近幾筆紀錄
+func charm_state() -> Dictionary:
+	var on: bool = is_charmed()
+	return {"charmed": on, "source": _charm_hero_id if on else "", "remaining": charm_remaining(), "seq": spawn_seq,
+		"count": charm_count, "attacks": charm_attacks, "log": charm_log.duplicate(true)}
+
 ## 許褚「怪力」：沿這個敵人自己已經走過的路線往回退最多 distance 像素，回傳實際退了多少（不能退時是 0）。
 ## 依路點的索引倒退（彎道、重複的路點、繞回或交叉的路線都照走過的順序，不用距離重新投影到別段）：
 ## 從目前位置退向上一個路點，退到了還有剩就把 _wp_index 減一、接著退向更前面的路點，最多退到路線起點（不越過、不換路線）。
@@ -683,6 +851,9 @@ func _draw() -> void:
 	# 放在血條旁邊會蓋住武將的血條；水平方向在血條右端再往右 2 像素，碰不到暈眩的星星、灼燒與減速的外圈
 	if atk_mult < 1.0:
 		_draw_atk_down_arrow(Vector2(bar_x + HP_BAR_W + 2.0, bar_y - 17.0))
+	# 受控中（貂蟬的魅惑）：粉紅色的外圈
+	if is_charmed():
+		draw_arc(Vector2.ZERO, r + 9.0, 0, TAU, 32, Color(CHARM_COLOR, 0.95), 2.5)
 	# 暈眩中：血條上方三顆轉動的黃色星星（隨剩餘時間轉動：手動暫停時停住）
 	if is_stunned():
 		var cy: float = bar_y - 9.0

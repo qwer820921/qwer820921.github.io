@@ -434,6 +434,22 @@ export type HeroSkillPayload =
        * 不是 0.5 以上、小於 1 的有限數字時 Godot 當作沒有這個技能
        */
       base_damage_mult: number;
+    }
+  | {
+      /**
+       * 奇襲：這一場這位武將第一次有效的普通攻擊必殺主要目標（每場一次是固定的規則，沒有參數）；
+       * Godot 只認 id，用過與否記在這一場的戰鬥裡，不寫存檔
+       */
+      id: "assassinate";
+    }
+  | {
+      id: "charm";
+      /** 受控的時間（秒，戰鬥中的遊戲時間）；不是大於 0、不超過 5 的有限數字時 Godot 當作沒有這個技能（三個參數任何一個不合理就整組不啟用） */
+      charm_duration: number;
+      /** 成功控制後的冷卻（秒，戰鬥中的遊戲時間）；不是大於 0、不超過 10 的有限數字時不啟用 */
+      charm_cooldown: number;
+      /** 受控的敵人攻擊其他敵人的範圍（格，中心距離、含邊界）；不是大於 0、不超過 2 的有限數字時不啟用 */
+      charm_attack_radius: number;
     };
 
 export interface ExpeditionPayload {

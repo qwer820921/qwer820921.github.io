@@ -3,12 +3,12 @@ async (page) => {
   // 遊戲的第一版設計：典韋在場上、還活著時，戰鬥中 2 格內（兩人中心的距離、含邊界）其他友軍武將受到敵人的直接攻擊，
   // 友軍先照自己的閃避、防禦與堅韌算出要扣的生命 D，典韋直接承擔 min(D × 20%, 典韋剩下的生命)、友軍扣其餘的部分
   // - 測試資料（只在這支腳本加進 mock 名單，__shenma_gd_fixture）：典韋（dian_wei，步兵、攻擊力 149、防禦 110、生命 1300、射程 1、攻擊間隔 1.1，和正式設定相同）、
-  //   甘寧（gan_ning，沒有技能；弓兵、防禦 107，和正式設定相同）、關卡「Mock GD 護衛」：直線路線（第 5 列，從 (3,5) 走到 (13,5)），
-  //   甘寧站在路上 (8,5) 擋路、典韋在旁邊 (8,4)（1 格）；第 1 波一個生命 99999、每秒 30 像素、攻擊力 100 的走路兵（打不倒，戰鬥不會結束，不產生結算與存檔）
+  //   合成的盾衛（mock_gd_ally，沒有綁定技能；弓兵、防禦 107，數值和甘寧的正式設定相同。原本用甘寧，甘寧有了奇襲之後改用合成武將）、關卡「Mock GD 護衛」：直線路線（第 5 列，從 (3,5) 走到 (13,5)），
+  //   盾衛站在路上 (8,5) 擋路、典韋在旁邊 (8,4)（1 格）；第 1 波一個生命 99999、每秒 30 像素、攻擊力 100 的走路兵（打不倒，戰鬥不會結束，不產生結算與存檔）
   // - 出征資料一律是正式的參數（guard_share 0.2、2）；只用快照與 Godot 送給網頁的訊息觀察（不直接扣血）
   // - A：技能說明（主頁的武將視窗、獨立的武將頁，鍵盤也能打開）：技能名稱「護衛」、2 格內其他友軍承擔 20%、先友軍的防禦與堅韌、典韋直接扣、
   //      生命不夠時只承擔剩下的、不保護自己與塔／城池、只由一名承擔、GUARD 標記；390×844 與 390×600 在畫面寬度內、字級至少 12px
-  // - B：主頁：部署甘寧在路上、典韋在旁邊；走路兵擋在甘寧面前攻擊：每次紀錄 D＝100 × 100 ÷ 207（甘寧防禦 107）、典韋承擔 D × 0.2、甘寧扣其餘（守恆）；
+  // - B：主頁：部署盾衛在路上、典韋在旁邊；走路兵擋在盾衛面前攻擊：每次紀錄 D＝100 × 100 ÷ 207（盾衛防禦 107）、典韋承擔 D × 0.2、盾衛扣其餘（守恆）；
   //      看得到 GUARD；選取面板寫出選取時可以提供、範圍內 1 名友軍（390×600 也在面板與畫面裡）；手動暫停 2 秒沒有新的承擔，繼續後恢復；2× 照常承擔
   // - C：獨立戰鬥頁：同樣部署，承擔 3 次，數值相同
   // - D：存檔、session 都沒有技能或護衛欄位，隊伍只有 hero_id／slot，武將與資源不變、沒有戰鬥紀錄
@@ -26,7 +26,7 @@ async (page) => {
   const GN_CELL = [8, 5];
   const DW_CELL = [8, 4];
   const SKILL = { id: "guard_share", guard_share_ratio: 0.2, guard_radius: 2 };
-  // 走路兵（攻擊力 100）打甘寧（防禦 107）：100 × (1 − 107 ÷ 207)
+  // 走路兵（攻擊力 100）打盾衛（防禦 107）：100 × (1 − 107 ÷ 207)
   const D = 100 * (1 - 107 / 207);
 
   const ROW = 5;
@@ -41,7 +41,7 @@ async (page) => {
         atk_growth: 14.9, def_growth: 11, hp_growth: 130, range_growth: 0.05, speed_growth: 0.02, image: "hero_dian_wei.webp", attack_image: "hero_dian_wei_atk.webp",
       },
       {
-        hero_id: "gan_ning", name: "甘寧", rarity: "orange", cost: 7, job: "archer",
+        hero_id: "mock_gd_ally", name: "盾衛", rarity: "orange", cost: 7, job: "archer",
         base_atk: 122, base_def: 107, base_hp: 1235, attack_range: 5, attack_speed: 1.8, upgrade_cost_base: 100,
         atk_growth: 12.2, def_growth: 10.7, hp_growth: 123.5, range_growth: 0.05, speed_growth: 0.02, image: "hero_gan_ning.webp", attack_image: "hero_gan_ning_atk.webp",
       },
@@ -111,7 +111,7 @@ async (page) => {
       const last = got[got.length - 1];
       const of = (id) => (last ? last.team_list.find((t) => t.hero_id === id) : null);
       const dw = of("dian_wei");
-      const gn = of("gan_ning");
+      const gn = of("mock_gd_ally");
       return { payloads: got.length, stage: last ? last.stage_id : null, skill: dw ? dw.skill ?? null : undefined, gnSkill: gn ? gn.skill ?? null : undefined, def: gn ? gn.def : undefined };
     }, sel);
   const dismissSplash = async (sel) => {
@@ -148,10 +148,10 @@ async (page) => {
     return click;
   };
   const gd = (s) => (((s || {}).hero_guard) || {}).dian_wei || null;
-  // 承擔紀錄：每一筆的友軍是甘寧、D 是攻擊力 100 打防禦 107 的實扣、S＝D × 0.2、友軍與典韋的生命變化守恆
+  // 承擔紀錄：每一筆的友軍是盾衛、D 是攻擊力 100 打防禦 107 的實扣、S＝D × 0.2、友軍與典韋的生命變化守恆
   const logOk = (log) =>
     (log || []).length > 0 &&
-    log.every((x) => x.ally === "gan_ning" && near(x.d, D, 1e-3) && near(x.s, x.d * 0.2, 1e-6) &&
+    log.every((x) => x.ally === "mock_gd_ally" && near(x.d, D, 1e-3) && near(x.s, x.d * 0.2, 1e-6) &&
       near(x.ally_before - x.ally_after, x.d - x.s, 1e-3) && near(x.guard_before - x.guard_after, x.s, 1e-6));
   // 等到承擔次數 ≥ n（每 150 毫秒看一次快照；順便記下看得到的 GUARD 標記數）
   const watch = async (sel, n, ms) => {
@@ -222,7 +222,7 @@ async (page) => {
       localStorage.setItem("__shenma_gd_fixture", "1");
       localStorage.setItem("__shenma_mock_gas_db", JSON.stringify({
         profiles: { [k]: { nickname: "護衛", level: 1, exp: 0, gold: 1000, capacity: 30, max_stage: m, heroes: [],
-          team: [{ hero_id: "dian_wei", slot: 1 }, { hero_id: "gan_ning", slot: 2 }] } },
+          team: [{ hero_id: "dian_wei", slot: 1 }, { hero_id: "mock_gd_ally", slot: 2 }] } },
         battle_logs: [],
       }));
       localStorage.setItem("shenma_player_key", k);
@@ -293,29 +293,29 @@ async (page) => {
     await H.sleep(300);
   });
 
-  // ── B. 主頁：甘寧擋路、典韋在旁邊承擔；選取面板；暫停與 2× ──
+  // ── B. 主頁：盾衛擋路、典韋在旁邊承擔；選取面板；暫停與 2× ──
   await section("B", async () => {
     await page.goto(H.BASE + "/shenmaSanguo");
     await H.waitHud(page);
     await waitSync("idle");
     await H.selectStage(page, MAP.name);
     await dismissSplash(IFRAME);
-    const c1 = await deploy(IFRAME, GN_CELL[0], GN_CELL[1], "甘寧");
+    const c1 = await deploy(IFRAME, GN_CELL[0], GN_CELL[1], "盾衛");
     const c2 = await deploy(IFRAME, DW_CELL[0], DW_CELL[1], "典韋");
     const recv = await received(IFRAME);
     const s0 = await snapshot(IFRAME);
     out.B_payload = { c1, c2, recv, gd: gd(s0) };
-    run.check("B-1 規則 payload：用部署選單把甘寧放在路上 (8,5)、典韋放在 (8,4)；遊戲 iframe 收到的出征資料裡，典韋的 skill 正好是 {id: guard_share, guard_share_ratio: 0.2, guard_radius: 2}、甘寧沒有技能、防禦 107；開戰前快照 hero_guard {0.2, 2, 可以提供、範圍內 [gan_ning]、0 次}",
+    run.check("B-1 規則 payload：用部署選單把盾衛放在路上 (8,5)、典韋放在 (8,4)；遊戲 iframe 收到的出征資料裡，典韋的 skill 正好是 {id: guard_share, guard_share_ratio: 0.2, guard_radius: 2}、盾衛沒有技能、防禦 107；開戰前快照 hero_guard {0.2, 2, 可以提供、範圍內 [mock_gd_ally]、0 次}",
       !!c1 && c1.cell_x === GN_CELL[0] && c1.cell_y === GN_CELL[1] && !!c2 && c2.cell_x === DW_CELL[0] && c2.cell_y === DW_CELL[1] && recv.stage === MAP.id &&
         same(recv.skill, SKILL) && recv.gnSkill === null && recv.def === 107 && !!gd(s0) && near(gd(s0).ratio, 0.2) && near(gd(s0).radius, 2) &&
-        gd(s0).active === true && same(gd(s0).allies, ["gan_ning"]) && gd(s0).count === 0,
+        gd(s0).active === true && same(gd(s0).allies, ["mock_gd_ally"]) && gd(s0).count === 0,
       out.B_payload);
 
     await H.clickButton(page, "迎戰");
     const w = await watch(IFRAME, 3, 120000);
     const g = w.g || {};
     out.B_share = { count: g.count, log: (g.log || []).slice(0, 4), texts: w.texts, D, shot: await H.shot(page, "guard-b-shared") };
-    run.check(`B-2 主頁實際承擔 3 次：每次 D＝${D.toFixed(3)}（走路兵攻擊力 100 打甘寧防禦 107）、典韋承擔 D × 0.2、甘寧扣其餘（兩人的生命變化守恆）；看得到 GUARD 標記`,
+    run.check(`B-2 主頁實際承擔 3 次：每次 D＝${D.toFixed(3)}（走路兵攻擊力 100 打盾衛防禦 107）、典韋承擔 D × 0.2、盾衛扣其餘（兩人的生命變化守恆）；看得到 GUARD 標記`,
       g.count >= 3 && logOk(g.log) && w.texts >= 1, out.B_share);
 
     // 選取面板：點場上的典韋（390×600 也在面板與畫面裡）
@@ -369,14 +369,14 @@ async (page) => {
     await page.goto(H.BASE + "/shenmaSanguo/battle?map=" + MAP.id);
     await page.waitForFunction(() => (window.__bridgeLog || []).some((m) => m.type === "update_stats" && m.game_state === 1), null, { timeout: 120000 });
     await dismissSplash(BIFRAME);
-    const c1 = await deploy(BIFRAME, GN_CELL[0], GN_CELL[1], "甘寧");
+    const c1 = await deploy(BIFRAME, GN_CELL[0], GN_CELL[1], "盾衛");
     const c2 = await deploy(BIFRAME, DW_CELL[0], DW_CELL[1], "典韋");
     const recv = await received(BIFRAME);
     await page.getByRole("button", { name: "迎戰", exact: true }).click();
     const w = await watch(BIFRAME, 3, 120000);
     const g = w.g || {};
     out.C = { c1, c2, recv, count: g.count, log: (g.log || []).slice(0, 3), texts: w.texts, shot: await H.shot(page, "guard-c-battle-field") };
-    run.check("C-1 獨立戰鬥頁：用部署選單放甘寧 (8,5)、典韋 (8,4)；iframe 收到的 skill 和主頁相同；承擔 3 次，紀錄同樣是 D × 0.2、守恆，看得到 GUARD",
+    run.check("C-1 獨立戰鬥頁：用部署選單放盾衛 (8,5)、典韋 (8,4)；iframe 收到的 skill 和主頁相同；承擔 3 次，紀錄同樣是 D × 0.2、守恆，看得到 GUARD",
       !!c1 && !!c2 && recv.stage === MAP.id && same(recv.skill, SKILL) && g.count >= 3 && logOk(g.log) && w.texts >= 1, out.C);
   });
 

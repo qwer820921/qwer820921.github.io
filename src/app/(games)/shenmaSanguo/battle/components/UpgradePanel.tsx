@@ -113,6 +113,23 @@ interface UpgradePanelProps {
       active: boolean;
       effective_mult: number;
     };
+    /**
+     * 武將的奇襲（甘寧）：選取當下這一場用過了沒有、剩下的次數（0 或 1）；沒有這個技能（或舊版遊戲）時沒有
+     */
+    assassinate?: {
+      used: boolean;
+      remaining: number;
+    };
+    /**
+     * 武將的魅惑（貂蟬）：Godot 實際讀到的受控時間（秒）、冷卻（秒）、攻擊範圍（格）與選取當下剩下的冷卻（秒，戰鬥中的遊戲時間）；
+     * 沒有這個技能（或舊版遊戲）時沒有
+     */
+    charm?: {
+      duration: number;
+      cooldown: number;
+      radius: number;
+      remaining: number;
+    };
     screen_pos: { x: number; y: number };
   };
   onUpgrade: () => void;
@@ -280,6 +297,28 @@ export default function UpgradePanel({
     Number.isFinite(bg.effective_mult) &&
     bg.effective_mult > 0 &&
     bg.effective_mult <= 1;
+  // 武將的奇襲：選取當下這一場用過了沒有（Godot 的快照；剩下的次數只會是 0 或 1，和用過與否一致）
+  const asn = data.unit_type === "hero" ? data.assassinate : undefined;
+  const asOk =
+    !!asn &&
+    typeof asn.used === "boolean" &&
+    (asn.remaining === 0 || asn.remaining === 1) &&
+    asn.used === (asn.remaining === 0);
+  // 武將的魅惑：選取當下剩下的冷卻（Godot 計算的快照，不是倒數計時）
+  const cm = data.unit_type === "hero" ? data.charm : undefined;
+  const cmOk =
+    !!cm &&
+    Number.isFinite(cm.duration) &&
+    cm.duration > 0 &&
+    cm.duration <= 5 &&
+    Number.isFinite(cm.cooldown) &&
+    cm.cooldown > 0 &&
+    cm.cooldown <= 10 &&
+    Number.isFinite(cm.radius) &&
+    cm.radius > 0 &&
+    cm.radius <= 2 &&
+    Number.isFinite(cm.remaining) &&
+    cm.remaining >= 0;
   const s = sell && isSameTower(data, sell) ? sell : null;
   const confirming = s?.phase === "confirm" || s?.phase === "pending";
   const pending = s?.phase === "pending";
@@ -523,6 +562,38 @@ export default function UpgradePanel({
             ；在場上、還活著時漏城傷害減少{" "}
             {Number(((1 - bg.mult) * 100).toFixed(1))}
             %，累計後無條件進位才扣城防，不回復城防（重新點選可以更新）
+          </div>
+        )}
+
+        {asOk && (
+          <div
+            className={styles.assassinateNote}
+            data-testid="unit-panel-assassinate"
+            data-used={asn.used ? "1" : "0"}
+            data-remaining={asn.remaining}
+          >
+            奇襲：選取時
+            {asn.used
+              ? "這一場已經用過，切換關卡或重新開始才恢復"
+              : "這一場還沒用過，下一次有效的普通攻擊必殺主要目標"}
+            ；每場一次，換波次、移位、升級、重新部署都不恢復（重新點選可以更新）
+          </div>
+        )}
+
+        {cmOk && (
+          <div
+            className={styles.charmNote}
+            data-testid="unit-panel-charm"
+            data-remaining={cm.remaining}
+          >
+            魅惑：選取時
+            {cm.remaining > 0
+              ? `冷卻中，還剩 ${Number(cm.remaining.toFixed(1))} 秒`
+              : "可以控制"}
+            ；打中仍活著的地面目標時讓它受控 {Number(cm.duration.toFixed(1))}{" "}
+            秒（停下來改打 {Number(cm.radius.toFixed(2))}{" "}
+            格內的其他敵人），成功後冷卻 {Number(cm.cooldown.toFixed(1))}{" "}
+            秒（重新點選可以更新）
           </div>
         )}
 

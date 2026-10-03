@@ -2,12 +2,12 @@ async (page) => {
   // 魯肅「補給」（瀏覽器，真 Godot 產物、mock 後端）：設定表的被動描述「補給：增加資源獲取」沒有寫資源種類、倍率與生效條件。
   // 遊戲的第一版設計：魯肅部署在戰場上、還活著時，全隊每次有效擊殺的戰鬥金幣 × 1.2（5 → 6，向下取整）；只增加這一場的戰鬥金幣，不影響玩家的獎勵
   // - 測試資料（只在這支腳本加進 mock 名單，__shenma_sp_fixture）：魯肅（lu_su，法師、攻擊力 73、防禦 62、生命 615、射程 5 格、攻擊間隔 0.9 秒，和正式設定相同）、
-  //   甘寧（gan_ning，沒有技能；弓兵、攻擊力 122、射程 5 格、攻擊間隔 1.8 秒，和正式設定相同）、關卡「Mock SP 補給」：直線路線（第 5 列，從 (6,5) 出兵）。
+  //   合成的弓手（mock_sp_archer，沒有綁定技能；弓兵、攻擊力 122、射程 5 格、攻擊間隔 1.8 秒，數值和甘寧的正式設定相同。原本用甘寧，甘寧有了奇襲之後改用合成武將）、關卡「Mock SP 補給」：直線路線（第 5 列，從 (6,5) 出兵）。
   //   第 1、2 波各三個生命 50、不會移動的草人（一擊就倒），第 3 波一個生命 99999 的木樁（測試不開始第 3 波，戰鬥不會結束，不產生結算與存檔）
   // - 出征資料一律是正式的參數（supply 1.2）；只用快照與 Godot 送給網頁的 update_stats 觀察（不直接扣血、不改金幣）
   // - A：技能說明（主頁的武將視窗、獨立的武將頁，鍵盤也能打開）：技能名稱「補給」、部署在場上時全隊擊殺 +20%（5 → 6）、任何方式的擊殺都算、
   //      只在隊伍裡不生效、陣亡或移出隊伍立刻恢復、只增加戰鬥金幣（花費、返還與玩家的獎勵不變）、不疊加；390×844 與 390×600 在畫面寬度內、字級至少 12px
-  // - B：主頁只部署甘寧：第 1 波三次擊殺每次 +5（沒有來源）、戰鬥金幣 +15，畫面上的金幣和 update_stats 相同；清波後部署魯肅：
+  // - B：主頁只部署弓手：第 1 波三次擊殺每次 +5（沒有來源）、戰鬥金幣 +15，畫面上的金幣和 update_stats 相同；清波後部署魯肅：
   //      快照有效來源是 lu_su、每次 6；選取面板寫明選取時生效中、每次 6（390×600 也在面板與畫面裡）；第 2 波三次擊殺每次 +6、金幣 +18
   // - C：獨立戰鬥頁：只部署魯肅，2× 時三次擊殺每次 +6、金幣 +18，畫面上的金幣和 update_stats 相同
   // - D：存檔、session 都沒有技能或補給欄位，隊伍只有 hero_id／slot，武將與資源不變、沒有戰鬥紀錄
@@ -39,7 +39,7 @@ async (page) => {
         atk_growth: 7.3, def_growth: 6.2, hp_growth: 61.5, range_growth: 0.03, speed_growth: 0.01, image: "hero_lu_su.webp", attack_image: "hero_lu_su_atk.webp",
       },
       {
-        hero_id: "gan_ning", name: "甘寧", rarity: "orange", cost: 7, job: "archer",
+        hero_id: "mock_sp_archer", name: "弓手", rarity: "orange", cost: 7, job: "archer",
         base_atk: 122, base_def: 107, base_hp: 1235, attack_range: 5, attack_speed: 1.8, upgrade_cost_base: 100,
         atk_growth: 12.2, def_growth: 10.7, hp_growth: 123.5, range_growth: 0.05, speed_growth: 0.02, image: "hero_gan_ning.webp", attack_image: "hero_gan_ning_atk.webp",
       },
@@ -112,7 +112,7 @@ async (page) => {
       const last = got[got.length - 1];
       const of = (id) => (last ? last.team_list.find((t) => t.hero_id === id) : null);
       const ls = of("lu_su");
-      const gn = of("gan_ning");
+      const gn = of("mock_sp_archer");
       return { payloads: got.length, stage: last ? last.stage_id : null, skill: ls ? ls.skill ?? null : undefined, atk: ls ? ls.atk : undefined, ganSkill: gn ? ("skill" in gn ? gn.skill : "none") : undefined };
     }, sel);
   const dismissSplash = async (sel) => {
@@ -234,7 +234,7 @@ async (page) => {
       localStorage.setItem("__shenma_sp_fixture", "1");
       localStorage.setItem("__shenma_mock_gas_db", JSON.stringify({
         profiles: { [k]: { nickname: "補給", level: 1, exp: 0, gold: 1000, capacity: 30, max_stage: m, heroes: [],
-          team: [{ hero_id: "lu_su", slot: 1 }, { hero_id: "gan_ning", slot: 2 }] } },
+          team: [{ hero_id: "lu_su", slot: 1 }, { hero_id: "mock_sp_archer", slot: 2 }] } },
         battle_logs: [],
       }));
       localStorage.setItem("shenma_player_key", k);
@@ -251,11 +251,11 @@ async (page) => {
     await H.clickButton(page, "武將");
     await page.waitForSelector('[role="dialog"] button[data-hero-id="lu_su"]');
     const card = await page.locator('[role="dialog"] button[data-hero-id="lu_su"]').innerText();
-    const ganCard = await page.locator('[role="dialog"] button[data-hero-id="gan_ning"]').innerText().catch(() => "");
+    const ganCard = await page.locator('[role="dialog"] button[data-hero-id="mock_sp_archer"]').innerText().catch(() => "");
     await page.locator('[role="dialog"] button[data-hero-id="lu_su"]').click();
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { card, ganCard, detail, shot: await H.shot(page, "supply-a-skill-detail") };
-    run.check("A-1 主頁武將視窗：魯肅的卡片是「技能：補給」（甘寧沒有技能標籤）；詳情寫明部署在戰場上、還活著時全隊擊殺戰鬥金幣 +20%（5 → 6，向下取整）、任何方式打倒的都算且擊殺只算一次、漏到城池沒有金幣、只在隊伍裡不生效、陣亡或移出隊伍立刻恢復、只增加這一場的戰鬥金幣（花費、返還、戰場點數與玩家的金幣經驗存檔不變）、多個補給不疊加；出征前不寫「生效中」",
+    run.check("A-1 主頁武將視窗：魯肅的卡片是「技能：補給」（弓手沒有技能標籤）；詳情寫明部署在戰場上、還活著時全隊擊殺戰鬥金幣 +20%（5 → 6，向下取整）、任何方式打倒的都算且擊殺只算一次、漏到城池沒有金幣、只在隊伍裡不生效、陣亡或移出隊伍立刻恢復、只增加這一場的戰鬥金幣（花費、返還、戰場點數與玩家的金幣經驗存檔不變）、多個補給不疊加；出征前不寫「生效中」",
       /技能：補給/.test(card) && !/技能：/.test(ganCard) && RULES(detail), out.A_modal);
     await page.keyboard.press("Escape");
     await H.sleep(300);
@@ -306,18 +306,18 @@ async (page) => {
     await H.sleep(300);
   });
 
-  // ── B. 主頁：只部署甘寧 → 每次 5；清波後部署魯肅 → 每次 6 ──
+  // ── B. 主頁：只部署弓手 → 每次 5；清波後部署魯肅 → 每次 6 ──
   await section("B", async () => {
     await page.goto(H.BASE + "/shenmaSanguo");
     await H.waitHud(page);
     await waitSync("idle");
     await H.selectStage(page, MAP.name);
     await dismissSplash(IFRAME);
-    const c1 = await deploy(IFRAME, GN_CELL[0], GN_CELL[1], "甘寧");
+    const c1 = await deploy(IFRAME, GN_CELL[0], GN_CELL[1], "弓手");
     const recv = await received(IFRAME);
     const s0 = await snapshot(IFRAME);
     out.B_payload = { c1, recv, supply: sup(s0), heroSupply: s0.hero_supply };
-    run.check("B-1 規則 payload：用滑鼠點建築格 (6,4) 放甘寧（部署選單）；遊戲 iframe 收到的出征資料裡，魯肅的 skill 正好是 {id: supply, supply_gold_multiplier: 1.2}、甘寧沒有 skill；魯肅還沒部署：快照沒有有效來源、每次擊殺 5、沒有 hero_supply",
+    run.check("B-1 規則 payload：用滑鼠點建築格 (6,4) 放弓手（部署選單）；遊戲 iframe 收到的出征資料裡，魯肅的 skill 正好是 {id: supply, supply_gold_multiplier: 1.2}、弓手沒有 skill；魯肅還沒部署：快照沒有有效來源、每次擊殺 5、沒有 hero_supply",
       !!c1 && c1.cell_x === GN_CELL[0] && c1.cell_y === GN_CELL[1] && recv.stage === MAP.id && same(recv.skill, SKILL) && recv.atk === 73 && recv.ganSkill === "none" &&
         !!sup(s0) && sup(s0).hero_id === "" && sup(s0).kill_gold === 5 && sup(s0).base_gold === 5 && sup(s0).sources.length === 0 && same(s0.hero_supply, {}),
       out.B_payload);
@@ -329,7 +329,7 @@ async (page) => {
     const g1 = await lastStatsGold();
     const hud1 = await shownGold(false);
     out.B_wave1 = { log: w1.sup && w1.sup.log, state: w1.state, g0, g1, hud1 };
-    run.check("B-2 第 1 波（只有甘寧，魯肅只在隊伍裡）：三次擊殺每次 +5、沒有來源，擊殺數逐筆 +1、生成序號不重複；清波後戰鬥金幣比開戰前 +15，畫面上的金幣和 update_stats 相同",
+    run.check("B-2 第 1 波（只有弓手，魯肅只在隊伍裡）：三次擊殺每次 +5、沒有來源，擊殺數逐筆 +1、生成序號不重複；清波後戰鬥金幣比開戰前 +15，畫面上的金幣和 update_stats 相同",
       !!w1.sup && same(entries(w1.sup.log, 0), [[5, 5, ""], [5, 5, ""], [5, 5, ""]]) && countsOk(w1.sup.log) && w1.state === 1 &&
         typeof g0 === "number" && g1 - g0 === 15 && hud1 === g1,
       out.B_wave1);
@@ -378,7 +378,7 @@ async (page) => {
     const hud3 = await shownGold(false);
     const shot2 = await H.shot(page, "supply-b-wave2");
     out.B_wave2 = { log: w2.sup && w2.sup.log, state: w2.state, g2, g3, hud3, shot2 };
-    run.check("B-4 第 2 波（甘寧與魯肅都在場上）：三次擊殺每次 +6、來源 lu_su，擊殺數接著 4、5、6、生成序號不重複；清波後戰鬥金幣 +18，畫面上的金幣和 update_stats 相同",
+    run.check("B-4 第 2 波（弓手與魯肅都在場上）：三次擊殺每次 +6、來源 lu_su，擊殺數接著 4、5、6、生成序號不重複；清波後戰鬥金幣 +18，畫面上的金幣和 update_stats 相同",
       !!w2.sup && w2.sup.log.length === 2 * SOFTS && w2.state === 1 && same(entries(w2.sup.log, SOFTS), [[6, 5, "lu_su"], [6, 5, "lu_su"], [6, 5, "lu_su"]]) && countsOk(w2.sup.log) &&
         typeof g2 === "number" && g3 - g2 === 18 && hud3 === g3,
       out.B_wave2);

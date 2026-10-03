@@ -231,11 +231,14 @@ func _process(delta: float) -> void:
 func can_target(e: Node) -> bool:
 	return can_hit_air or not e.is_flying()
 
-## 每次準備攻擊時，依目前的目標優先與敵人當下的狀態重新挑選（射程內、有效、活著、打得到的敵人）
+## 每次準備攻擊時，依目前的目標優先與敵人當下的狀態重新挑選（射程內、有效、活著、打得到、沒有受控的敵人）
 func _find_target(enemies: Array, range_px: float) -> Node:
 	var best: Node = null
 	for e in enemies:
 		if not is_instance_valid(e) or e.is_dead() or not can_target(e):
+			continue
+		# 受控（貂蟬的魅惑）的敵人仍然活著，但不是敵對可選的目標
+		if _charmed(e):
 			continue
 		if global_position.distance_to(e.global_position) > range_px:
 			continue
@@ -277,12 +280,12 @@ func set_target_mode(mode: String) -> bool:
 	queue_redraw()
 	return true
 
-## 範圍傷害：主要目標周圍、這座塔打得到的敵人（砲兵塔不能對空：旁邊的飛行敵人不受波及）
+## 範圍傷害：主要目標周圍、這座塔打得到的敵人（砲兵塔不能對空：旁邊的飛行敵人不受波及；受控的敵人不受波及）
 func _attack_aoe(primary: Node, all_enemies: Array) -> void:
 	for e in all_enemies:
 		if not is_instance_valid(e) or e.is_dead() or not can_target(e):
 			continue
-		if primary.global_position.distance_to(e.global_position) <= aoe_radius:
+		if primary.global_position.distance_to(e.global_position) <= aoe_radius and not _charmed(e):
 			e.take_damage(atk)
 
 func _apply_slow_aura() -> void:
@@ -291,17 +294,22 @@ func _apply_slow_aura() -> void:
 		var range_px: float = range_tiles * tile_size
 		for e in _wave_mgr.get_active_enemies():
 			# 步兵塔不能對空：緩速光環只作用於地面敵人
-			if is_instance_valid(e) and not e.is_queued_for_deletion() and not e.is_dead() and can_target(e):
+			if is_instance_valid(e) and not e.is_queued_for_deletion() and not e.is_dead() and can_target(e) and not _charmed(e):
 				var dist: float = global_position.distance_to(e.global_position)
 				if dist <= range_px:
 					e.apply_slow_from(slow_source, slow_mult, Enemy.SLOW_REFRESH_TTL)
 					# 免疫減速的敵人不會套用，也就不列入
 					if e.has_slow_from(slow_source):
 						keep[e.get_instance_id()] = e
+	# 受控的敵人不刷新、也不撤除（已經有的減速照有效期結束）
 	for id in _aura_slowed:
-		if not keep.has(id) and is_instance_valid(_aura_slowed[id]):
+		if not keep.has(id) and is_instance_valid(_aura_slowed[id]) and not _charmed(_aura_slowed[id]):
 			_aura_slowed[id].remove_slow_from(slow_source)
 	_aura_slowed = keep
+
+## 受控（貂蟬的魅惑）中的敵人：仍然活著、照常計入波次，但不是這座塔敵對可選的目標
+static func _charmed(e: Variant) -> bool:
+	return e != null and is_instance_valid(e) and e.has_method("is_charmed") and e.is_charmed()
 
 ## 拆除、切換關卡（離開場景樹）時撤除這座塔的緩速；其他來源不受影響
 func _exit_tree() -> void:

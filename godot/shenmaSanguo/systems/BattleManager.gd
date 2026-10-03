@@ -90,6 +90,21 @@ const LEAK_LOG_MAX: int = 40
 const LEAK_EPS: float = 1e-6
 var _base_guard_sync_pending: bool = false
 
+# ── 武將技能：奇襲（assassinate，甘寧）────────────────────────
+## 這一場已用過奇襲的武將：hero_id → 那一次的紀錄（見 Hero._assassinate）。和首擊加倍一樣記在這裡：跨波次、移位、升級、
+## 同場移除再放回、重新讀技能或換成其他技能再換回都不恢復；initialize（新的一場、新的 battle_id）才清空，不寫存檔
+var _assassinate_used: Dictionary = {}
+## 這一場最近 ASSASSINATE_LOG_MAX 次奇襲（所有武將，測試用唯讀紀錄）
+var _assassinate_log: Array = []
+const ASSASSINATE_LOG_MAX: int = 40
+
+# ── 武將技能：魅惑（charm，貂蟬）────────────────────────────
+## 這一場每位武將的魅惑冷卻與紀錄：hero_id → {"ready_at": 下次可以控制的戰鬥時間（battle_time）, "count": 成功次數, "log": 最近 CHARM_LOG_MAX 次}。
+## 和怪力一樣用 battle_time（只在戰鬥中、照時間倍率前進，手動暫停與備戰不前進），跨波次、移位、升級、同場移除再放回、重新讀技能都保留；
+## initialize（新的一場）才清空。受控的時間也用 battle_time（見 Enemy.apply_charm），新的一場的敵人都是新的節點
+var _charm: Dictionary = {}
+const CHARM_LOG_MAX: int = 40
+
 # ── 戰鬥速度 ──────────────────────────────────────────────
 # Engine.time_scale 只由 _apply_time_scale 寫入：實際倍率＝部署選單開著時固定 DEPLOY_TIME_SCALE，否則是玩家選的速度。
 # 敵人移動、攻擊冷卻、灼燒、減速、出兵間隔、自動下一波都照這個倍率推進；傷害、費用、獎勵不受影響
@@ -127,6 +142,11 @@ func initialize(p_total_waves: int, p_stage_id: String, wave_mgr: Node, bridge: 
 	_leak_total = 0.0
 	_leak_lost = 0
 	_leak_log.clear()
+	# 奇襲：新的一場每位武將恢復一次
+	_assassinate_used.clear()
+	_assassinate_log.clear()
+	# 魅惑：新的一場冷卻清空
+	_charm.clear()
 	# 新的一場：清掉上一場的部署慢速與手動暫停，速度回到 1 倍
 	_reset_speed()
 	_reset_pause()
@@ -556,6 +576,72 @@ func supply_debug() -> Dictionary:
 	return {"hero_id": src.hero_id, "mult": src.mult, "base_gold": GOLD_PER_KILL, "kill_gold": kill_gold(float(src.mult)),
 		"sources": supply_active_sources(), "log": _kill_gold_log.duplicate(true)}
 
+## 戰鬥中而且沒有手動暫停（只在這時候生效的技能用它判斷；單獨建立的 BattleManager 由測試設定狀態）
+func combat_active() -> bool:
+	return game_state == GameState.BATTLE and not manual_paused
+
+## 奇襲：這位武將在這一場還沒用過
+func assassinate_ready(hero_id: String) -> bool:
+	return hero_id != "" and not _assassinate_used.has(hero_id)
+
+## 奇襲：記下這位武將在這一場用掉了（entry 是那一次的紀錄）；已經用過時不改
+func record_assassinate(hero_id: String, entry: Dictionary) -> void:
+	if hero_id == "" or _assassinate_used.has(hero_id):
+		return
+	var e: Dictionary = entry.duplicate(true)
+	e["hero_id"] = hero_id
+	e["t"] = battle_time
+	_assassinate_used[hero_id] = e
+	_assassinate_log.append(e.duplicate(true))
+	if _assassinate_log.size() > ASSASSINATE_LOG_MAX:
+		_assassinate_log.pop_front()
+
+## 奇襲：這位武將在這一場用掉的那一次（唯讀的複本；還沒用過時是空字典）
+func assassinate_record(hero_id: String) -> Dictionary:
+	return _assassinate_used.get(hero_id, {}).duplicate(true)
+
+## 奇襲（測試用唯讀資訊）：這一場用過的武將與最近幾次的紀錄
+func assassinate_debug() -> Dictionary:
+	var used: Array = _assassinate_used.keys()
+	used.sort()
+	return {"used": used, "log": _assassinate_log.duplicate(true)}
+
+## 這一場的生命週期編號（每次 initialize 加一）：受控的敵人用它確認來源仍屬於同一場
+func lifecycle() -> int:
+	return _lifecycle
+
+## 魅惑：這位武將此刻能不能控制（這一場還沒控制過，或冷卻已經結束）
+func charm_ready(hero_id: String) -> bool:
+	return hero_id != "" and battle_time >= float(_charm.get(hero_id, {}).get("ready_at", 0.0))
+
+## 魅惑：這位武將此刻剩下的冷卻（秒，戰鬥時間；沒有在冷卻時是 0）
+func charm_remaining(hero_id: String) -> float:
+	return maxf(0.0, float(_charm.get(hero_id, {}).get("ready_at", 0.0)) - battle_time)
+
+## 魅惑：記下這位武將成功控制一次（entry 是紀錄），冷卻 cooldown 秒（從此刻的戰鬥時間起算，不累積）
+func record_charm(hero_id: String, cooldown: float, entry: Dictionary) -> void:
+	if hero_id == "":
+		return
+	var rec: Dictionary = _charm.get(hero_id, {"ready_at": 0.0, "count": 0, "log": []})
+	rec["ready_at"] = battle_time + cooldown
+	rec["count"] = int(rec.count) + 1
+	var e: Dictionary = entry.duplicate(true)
+	e["t"] = battle_time
+	rec.log.append(e)
+	if rec.log.size() > CHARM_LOG_MAX:
+		rec.log.pop_front()
+	_charm[hero_id] = rec
+
+## 魅惑：這位武將在這一場的紀錄（唯讀的複本；沒有時是空字典）
+func charm_record(hero_id: String) -> Dictionary:
+	return _charm.get(hero_id, {}).duplicate(true)
+
+func _charm_summary() -> Dictionary:
+	var out: Dictionary = {}
+	for hid in _charm:
+		out[hid] = {"count": int(_charm[hid].count), "remaining": charm_remaining(hid)}
+	return out
+
 ## 怪力：這位武將此刻能不能推（這一場還沒推過，或冷卻已經結束）
 func knockback_ready(hero_id: String) -> bool:
 	return hero_id != "" and battle_time >= float(_knockback.get(hero_id, {}).get("ready_at", 0.0))
@@ -653,6 +739,10 @@ func get_debug_state() -> Dictionary:
 		"knockback": _knockback_summary(),
 		# 守護：此刻有效的來源、這一場累計的漏城傷害與已經扣掉的城防、最近幾次抵達
 		"base_guard": base_guard_debug(),
+		# 奇襲：這一場用過的武將與最近幾次的紀錄
+		"assassinate": assassinate_debug(),
+		# 魅惑：這一場每位武將成功控制的次數與此刻剩下的冷卻
+		"charm": _charm_summary(),
 		"battle_time": battle_time,
 		"lifecycle": _lifecycle,
 		"auto_wave_token": _auto_wave_token,

@@ -3997,6 +3997,142 @@ await test("守護-S1", async () => {
   );
 });
 
+await test("奇襲-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    supplyKillGold,
+    burnTickDamage,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const gn = heroSkillOf("gan_ning");
+  const payload = heroSkillPayload("gan_ning");
+  const text = describeHeroSkill(gn, 5, 122);
+  const others = [
+    "ma_chao",
+    "zhou_cang",
+    "xu_chu",
+    "sun_quan",
+    "ganning",
+    "gan_ning_",
+    "Gan_Ning",
+  ].filter((id) => heroSkillOf(id)?.id === "assassinate");
+  check(
+    "奇襲-S1 甘寧（gan_ning）的奇襲：送進 Godot 的參數只有 {id: assassinate}（每場一次是固定規則，沒有倍率或次數欄位）與說明文字出自同一份定義；說明寫出每場第一次有效的普通攻擊必定打倒主要目標、先照普通攻擊再補扣剩下的生命、不是兩倍傷害、有效的條件（戰鬥中、活著、打得到、真的扣到生命；弓兵打得到飛行）、沒有目標／備戰／結算／暫停不用掉、換波次／移位／升級／移出再放回都不恢復、切換關卡或重新開始才恢復、只對主要目標、攻擊次數與間隔不變、擊殺與金幣一次、KILL 與緋紅色描邊、面板是選取當時；其他技能的計算不受影響；其他武將（含周倉與寫錯的 id）沒有奇襲",
+    gn?.id === "assassinate" &&
+      gn.name === "奇襲" &&
+      Object.keys(gn).sort().join(",") === "id,name" &&
+      JSON.stringify(payload) ===
+        JSON.stringify({ skill: { id: "assassinate" } }) &&
+      effectiveRange(gn, 5) === 5 &&
+      supplyKillGold(gn) === 5 &&
+      burnTickDamage(gn, 122) === 0 &&
+      text.includes(
+        "每場戰鬥中，這位武將第一次有效的普通攻擊必定打倒主要目標：先照普通攻擊造成傷害，目標沒有倒下時再把它剩下的生命一次扣完"
+      ) &&
+      text.includes("不是兩倍傷害，目標的生命再多也一樣") &&
+      text.includes(
+        "有效是指戰鬥中、目標還活著、打得到（弓兵也打得到飛行敵人），而且這一擊真的扣到生命；沒有目標、備戰、結算或暫停時不會用掉"
+      ) &&
+      text.includes(
+        "每場只有一次：換波次、移動位置、升級、移出隊伍再放回都不會恢復，切換關卡或重新開始才恢復"
+      ) &&
+      text.includes(
+        "只對這一擊的主要目標，不會波及其他敵人，攻擊次數與攻擊間隔不變"
+      ) &&
+      text.includes("被打倒的敵人照常只算一次擊殺與金幣") &&
+      text.includes("緋紅色的「KILL」") &&
+      text.includes("緋紅色的描邊") &&
+      text.includes(
+        "單位面板顯示選取當時這一場用過了沒有（重新點選可以更新）"
+      ) &&
+      text.includes("只在戰場生效，不影響存檔") &&
+      others.length === 0,
+    { gn, payload, text, others }
+  );
+});
+
+await test("魅惑-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    supplyKillGold,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const dc = heroSkillOf("diao_chan");
+  const payload = heroSkillPayload("diao_chan");
+  const text = describeHeroSkill(dc, 4, 131);
+  const other = describeHeroSkill(
+    {
+      id: "charm",
+      name: "魅惑",
+      durationSec: 5,
+      cooldownSec: 10,
+      attackRadiusTiles: 2,
+    },
+    4,
+    131
+  );
+  const others = [
+    "ma_chao",
+    "zhang_fei",
+    "gan_ning",
+    "zhou_cang",
+    "diaochan",
+    "diao_chan_",
+    "Diao_Chan",
+  ].filter((id) => heroSkillOf(id)?.id === "charm");
+  check(
+    "魅惑-S1 貂蟬（diao_chan）的魅惑：送進 Godot 的參數（charm、charm_duration 2、charm_cooldown 6、charm_attack_radius 1，只有這四個欄位）與說明文字出自同一份定義；說明寫出自己的普通攻擊實際扣到生命、目標沒被打倒時受控 2 秒戰鬥中的遊戲時間（2 倍速加快、暫停與備戰不計）、停在原地不前進不抵達城池不攻擊武將、改打 1 格內最近的其他地面敵人（照原本的攻擊間隔）、附近沒有敵人就等待、成功後冷卻 6 秒、冷卻中照常傷害、打倒／飛行／已受控不控制也不用掉冷卻、仍算在這一波（不提早結束）、受控期間武將與防禦塔不攻擊它、範圍傳遞與新的減速不算它、已有的狀態照原本的時間、暈眩中不攻擊、不疊加不刷新、來源陣亡或移出時結束、冷卻同一場保留、CHARM 與粉紅色外圈、面板是選取當時剩下的冷卻；5 秒、10 秒、2 格的定義照樣寫出；其他技能的計算不受影響；其他武將（含張飛、甘寧與寫錯的 id）沒有魅惑",
+    dc?.id === "charm" &&
+      dc.name === "魅惑" &&
+      dc.durationSec === 2 &&
+      dc.cooldownSec === 6 &&
+      dc.attackRadiusTiles === 1 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: {
+            id: "charm",
+            charm_duration: 2,
+            charm_cooldown: 6,
+            charm_attack_radius: 1,
+          },
+        }) &&
+      effectiveRange(dc, 4) === 4 &&
+      supplyKillGold(dc) === 5 &&
+      text.includes(
+        "這位武將自己的普通攻擊打中目標、實際扣到生命，而且目標沒有被這一擊打倒時，讓這名地面敵人受控 2 秒（戰鬥中的遊戲時間：2 倍速時跟著加快，暫停與備戰時不計）"
+      ) &&
+      text.includes(
+        "受控的敵人停在原地，不前進、不抵達城池，也不攻擊武將，改用自己的攻擊力攻擊 1 格內最近的其他地面敵人（照它原本的攻擊間隔），附近沒有其他敵人時就原地等待"
+      ) &&
+      text.includes(
+        "成功控制後冷卻 6 秒，冷卻中的攻擊照常造成傷害、只是不控制；打倒目標、飛行敵人、已經受控的敵人都不控制，也不用掉冷卻"
+      ) &&
+      text.includes("受控的敵人仍算在這一波裡，不會讓波次提早結束") &&
+      text.includes(
+        "受控期間武將與防禦塔都不會攻擊它，範圍與傳遞的傷害、新的減速也不算它，控制結束後照常可以攻擊"
+      ) &&
+      text.includes(
+        "受控前已有的灼燒、暈眩、減速照原本的時間結束，暈眩中的受控敵人不攻擊"
+      ) &&
+      text.includes("同時只受一位武將控制，不疊加、不刷新") &&
+      text.includes("這位武將陣亡或被移出隊伍時，它造成的控制立刻結束") &&
+      text.includes("冷卻在同一場保留，切換關卡或重新開始後重新計算") &&
+      text.includes("粉紅色的「CHARM」") &&
+      text.includes("受控中的敵人有粉紅色的外圈") &&
+      text.includes("單位面板顯示選取當時剩下的冷卻（重新點選可以更新）") &&
+      text.includes("只在戰場生效，不影響存檔") &&
+      other.includes("受控 5 秒") &&
+      other.includes("攻擊 2 格內最近的其他地面敵人") &&
+      other.includes("成功控制後冷卻 10 秒") &&
+      others.length === 0,
+    { dc, payload, text, other, others }
+  );
+});
+
 // 技能綁定和正式設定表 heroes_config 的被動描述（passive）對照：趙雲是閃避、馬超是衝鋒（首擊加倍）；
 // 關羽是減速光環（「周圍敵人減速10%」）；劉備是防禦光環（「光環：提升友軍防禦」）；張飛是暈眩（「攻擊使敵人暈眩」）；
 // 魏延是吸血（「吸血：恢復生命」）；曹操是攻速光環（「指揮：提升友軍攻速」）；夏侯惇是反擊（「反擊：受傷時反彈傷害」）；
@@ -4005,7 +4141,8 @@ await test("守護-S1", async () => {
 // 呂布是戰神（「戰神：攻擊力隨殺敵增加」，自己普通攻擊的擊殺疊層）；魯肅是補給（「補給：增加資源獲取」，在場時全隊擊殺的戰鬥金幣增加）；
 // 許褚是怪力（「怪力：擊退效果」，普通攻擊沿原路推回主目標）；典韋是護衛（「護衛：替隊友分擔傷害」，範圍內友軍受到的直接攻擊分攤一部分）；
 // 孫權是守護（「守護：提升基地防禦」，城池沒有防禦屬性，改成在場時漏城傷害減少、累計後進位）；
-// 甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
+// 甘寧是奇襲（「奇襲：首擊必殺」，每場第一次有效的普通攻擊必殺主要目標，不是兩倍傷害）；
+// 貂蟬是魅惑（「魅惑：控制敵人」，打中的地面敵人受控：停下來改打附近的其他敵人）
 await test("技能對照-S1", async () => {
   const { heroSkillOf, heroSkillPayload } = require(
     join(GAME, "utils/heroSkills.ts")
@@ -4032,6 +4169,7 @@ await test("技能對照-S1", async () => {
     "xu_chu",
     "dian_wei",
     "sun_quan",
+    "diao_chan",
   ];
   const got = Object.fromEntries(
     ids.map((id) => [id, heroSkillOf(id)?.id ?? null])
@@ -4040,7 +4178,7 @@ await test("技能對照-S1", async () => {
     (id) => heroSkillPayload(id).skill?.id === "first_strike"
   );
   check(
-    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）、顏良 atk_down_aura（威壓）、孫尚香 double_shot（連射）、龐統 chain（連環計）、諸葛亮 storm（呼風喚雨）、呂布 berserk（戰神）、魯肅 supply（補給）、許褚 knockback（怪力）、典韋 guard_share（護衛）、孫權 base_guard（守護）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
+    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）、顏良 atk_down_aura（威壓）、孫尚香 double_shot（連射）、龐統 chain（連環計）、諸葛亮 storm（呼風喚雨）、呂布 berserk（戰神）、魯肅 supply（補給）、許褚 knockback（怪力）、典韋 guard_share（護衛）、孫權 base_guard（守護）、甘寧 assassinate（奇襲，只帶 id）、貂蟬 charm（魅惑）；沒有武將綁定橫掃；只有馬超帶首擊加倍",
     JSON.stringify(got) ===
       JSON.stringify({
         ma_chao: "first_strike",
@@ -4048,7 +4186,7 @@ await test("技能對照-S1", async () => {
         huang_zhong: "long_range",
         zhou_yu: "burn",
         guan_yu: "slow_aura",
-        gan_ning: null,
+        gan_ning: "assassinate",
         liu_bei: "def_aura",
         zhang_fei: "stun",
         wei_yan: "lifesteal",
@@ -4064,10 +4202,12 @@ await test("技能對照-S1", async () => {
         xu_chu: "knockback",
         dian_wei: "guard_share",
         sun_quan: "base_guard",
+        diao_chan: "charm",
       }) &&
       JSON.stringify(firstStrike) === '["ma_chao"]' &&
       !Object.values(got).includes("sweep") &&
-      !("skill" in heroSkillPayload("gan_ning")) &&
+      JSON.stringify(heroSkillPayload("gan_ning")) ===
+        '{"skill":{"id":"assassinate"}}' &&
       heroSkillPayload("liu_bei").skill?.id === "def_aura",
     { got, firstStrike }
   );

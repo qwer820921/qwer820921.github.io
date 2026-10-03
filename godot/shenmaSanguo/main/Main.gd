@@ -571,6 +571,14 @@ func _on_hero_clicked(hero: Node) -> void:
 	if hero.base_guard_mult < 1.0:
 		info["base_guard"] = {"mult": hero.base_guard_mult, "active": hero.base_guard_active(),
 			"effective_mult": float(battle_manager.base_guard_source().mult)}
+	# 奇襲（甘寧）：選取當下這一場用過了沒有、剩下的次數（0 或 1）；沒有啟用這個技能的武將不帶這個欄位
+	if hero.assassinate_on:
+		var used: bool = not battle_manager.assassinate_ready(hero.hero_id)
+		info["assassinate"] = {"used": used, "remaining": 0 if used else 1}
+	# 魅惑（貂蟬）：Godot 實際讀到的控制時間（秒）、冷卻（秒）、攻擊範圍（格）與選取當下剩下的冷卻（秒，戰鬥時間）；沒有啟用這個技能的武將不帶這個欄位
+	if hero.charm_duration > 0.0:
+		info["charm"] = {"duration": hero.charm_duration, "cooldown": hero.charm_cooldown, "radius": hero.charm_attack_radius,
+			"remaining": battle_manager.charm_remaining(hero.hero_id)}
 	web_bridge.send_show_upgrade_panel(info)
 
 func _on_tower_clicked(tower: Node) -> void:
@@ -937,6 +945,11 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 護衛：還在顯示的承擔標記（GUARD）數；守護：還在顯示的保住城防標記（SHIELD）數
 	var guard_texts: int = 0
 	var shield_texts: int = 0
+	# 奇襲：還在顯示的必殺標記（KILL）數；魅惑：還在顯示的控制標記（CHARM）數
+	var kill_texts: int = 0
+	var charm_texts: int = 0
+	# 魅惑：每個敵人是否受控、來源、剩下的戰鬥時間、生成序號、受控與攻擊的次數、最近幾筆紀錄
+	var enemy_charm: Dictionary = {}
 	# 場上還在顯示的吸血恢復提示（綠色的「+恢復量」）
 	var heal_texts: Array = []
 	# 場上還在顯示的連射提示（金色的「+1」，不算在吸血的恢復提示裡）
@@ -978,12 +991,17 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			enemy_path[str(child.get_instance_id())] = child.path_state()
 			enemy_slow[str(child.get_instance_id())] = child._stack_slow_amount
 			enemy_blocker_attacks[str(child.get_instance_id())] = child.blocker_attacks
+			enemy_charm[str(child.get_instance_id())] = child.charm_state()
 		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == Hero.KNOCKBACK_TEXT:
 			push_texts += 1
 		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == Hero.GUARD_TEXT:
 			guard_texts += 1
 		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == BASE_GUARD_TEXT:
 			shield_texts += 1
+		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == Hero.ASSASSINATE_TEXT:
+			kill_texts += 1
+		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == Hero.CHARM_TEXT:
+			charm_texts += 1
 		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == "MISS":
 			dodge_texts += 1
 		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == "+1" \
@@ -1046,6 +1064,10 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var hero_guard: Dictionary = {}
 	# 守護（孫權）：Godot 實際讀到的倍率（沒有啟用時不列出）與此刻能不能提供（全場生效的倍率與累計在 BattleManager 的 base_guard）
 	var hero_base_guard: Dictionary = {}
+	# 奇襲（甘寧）：Godot 實際讀到的開關（沒有啟用時不列出）、這一場剩下的次數、是否用過與那一次的紀錄
+	var hero_assassinate: Dictionary = {}
+	# 魅惑（貂蟬）：Godot 實際讀到的時間、冷卻與範圍（沒有啟用時不列出）、成功控制的次數、此刻剩下的冷卻、普通攻擊的次數與最近幾次
+	var hero_charm: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
@@ -1080,6 +1102,10 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			hero_guard[hid] = hero.guard_state()
 		if hero.base_guard_mult < 1.0:
 			hero_base_guard[hid] = {"mult": hero.base_guard_mult, "active": hero.base_guard_active()}
+		if hero.assassinate_on:
+			hero_assassinate[hid] = hero.assassinate_state()
+		if hero.charm_duration > 0.0:
+			hero_charm[hid] = hero.charm_state()
 		hero_ranges[hid] = hero.attack_range
 		hero_hp[hid] = hero.current_hp
 		hero_slow[hid] = hero.slow_state()
@@ -1186,6 +1212,13 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		"guard_texts":       guard_texts,
 		"hero_base_guard":   hero_base_guard,
 		"shield_texts":      shield_texts,
+		# 奇襲（甘寧）
+		"hero_assassinate":  hero_assassinate,
+		"kill_texts":        kill_texts,
+		# 魅惑（貂蟬）
+		"hero_charm":        hero_charm,
+		"enemy_charm":       enemy_charm,
+		"charm_texts":       charm_texts,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)
