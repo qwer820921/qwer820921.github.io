@@ -91,6 +91,8 @@ export const BROWSER_SECONDS = {
   "battle-live-web.js": 148,
   "panel-scope-web.js": 71,
   "bgm-load-web.js": 30,
+  "release-entry-web.js": 70,
+  "hero-compare-web.js": 60,
   "panel-safe-web.js": 70,
 };
 export const QUICK_SECONDS = 104;
@@ -146,6 +148,17 @@ export const RULES = [
     why: "本機供應靜態匯出",
     scripts: ["i1-init.js", "engine-load-web.js", "normal-flows.js"],
     build: "靜態匯出要用 serve-out 跑一次",
+  },
+  {
+    test: /^scripts\/shenma-regression\/release\//,
+    why: "舊正式版目錄的清單（快速一層核對舊正式版目錄）",
+    areas: ["release", "engine-version"],
+    build: "舊正式版目錄要用靜態匯出驗證",
+  },
+  {
+    test: /^scripts\/shenma-regression\/tools\/release-transition\.mjs$/,
+    why: "發布過渡的原生瀏覽器驗證（另外執行 tools/release-transition.mjs）",
+    quickOnly: true,
   },
   {
     test: /^scripts\/shenma-regression\/tools\/(postexport|verify-export)\.mjs$/,
@@ -258,7 +271,7 @@ export const RULES = [
   {
     test: re(
       SG +
-        "(utils/hero(Stats|Filter|Categories)\\.ts|components/(HeroFilterBar|HeroAntiAir)\\.tsx|components/modals/HeroListModal\\.tsx|heroes/)"
+        "(utils/hero(Stats|Filter|Categories|Compare)\\.ts|components/(HeroFilterBar|HeroAntiAir|HeroCompareBar|HeroCompareTable)\\.tsx|components/useHeroCompare\\.ts|components/modals/(HeroListModal|HeroCompareDialog)\\.tsx|heroes/)"
     ),
     why: "武將列表與數值",
     areas: ["heroes", "stage-preview", "hero-category"],
@@ -323,12 +336,24 @@ export const RULES = [
     areas: ["flying", "battle-layout"],
   },
   {
+    test: re(SG + "utils/gameRelease\\.json"),
+    why: "網站入口指標（兩個入口開哪一個遊戲目錄；發布與回退）",
+    areas: [
+      "release",
+      "engine-load",
+      "engine-version",
+      "artifacts",
+      "battle-flow",
+    ],
+    build: "入口網址要用靜態匯出驗證",
+  },
+  {
     test: re(
       SG +
         "(utils/(engineLoad|gameEngine)\\.ts|components/(useEngineLoad\\.ts|EngineUpdatePrompt\\.tsx))"
     ),
     why: "遊戲引擎的載入與版本",
-    areas: ["engine-load", "engine-version", "battle-flow"],
+    areas: ["engine-load", "engine-version", "battle-flow", "release"],
   },
   {
     test: re(SG + "(components/BattleTips\\.tsx|store/battleTipsStore\\.ts)"),
@@ -414,16 +439,23 @@ export const RULES = [
     browserFull: "核心戰鬥或命令協定（最終收斂後完整一次）",
   },
   {
-    test: /^public\/games\/shenmaSanguo\/index\.(html|offline\.html|service\.worker\.js|manifest\.json)$/,
-    why: "遊戲的匯出模板、Service Worker 或 PWA 設定",
-    browserFull: "匯出模板或 Service Worker（最終收斂後完整一次）",
-    build: "Service Worker／模板要用靜態匯出驗證",
+    test: /^public\/games\/shenmaSanguo\//,
+    why: "舊正式版目錄（發布後不改；快速一層核對和 release/legacy-root.json 相同）",
+    areas: ["release", "engine-version"],
+    build: "舊正式版目錄要用靜態匯出驗證",
   },
   {
-    test: /^public\/games\/shenmaSanguo\//,
-    why: "遊戲產物（引擎、資源包、背景音樂）",
-    export: "核對 public 與匯出結果",
-    areas: ["engine-load", "artifacts", "battle-flow", "bgm"],
+    test: /^public\/games\/shenmaSanguo-v\/[0-9a-f]{16}\/index\.(html|offline\.html|service\.worker\.js|manifest\.json)$/,
+    why: "版本目錄的匯出模板、Service Worker 或 PWA 設定",
+    browserFull: "匯出模板或 Service Worker（最終收斂後完整一次）",
+    build: "Service Worker／模板要用靜態匯出驗證",
+    areas: ["release"],
+  },
+  {
+    test: /^public\/games\/shenmaSanguo-v\//,
+    why: "版本目錄的遊戲產物（引擎、資源包、背景音樂）",
+    export: "核對版本目錄與匯出結果",
+    areas: ["engine-load", "artifacts", "battle-flow", "bgm", "release"],
     smoke: true,
   },
   {
@@ -614,6 +646,7 @@ export const FINGERPRINT_ROOTS = [
   "src",
   "scripts/shenma-regression",
   "public/games/shenmaSanguo",
+  "public/games/shenmaSanguo-v",
   "godot/shenmaSanguo",
   "package.json",
   "package-lock.json",

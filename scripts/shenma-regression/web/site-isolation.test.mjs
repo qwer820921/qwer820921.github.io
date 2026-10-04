@@ -80,11 +80,9 @@ const reg = (scope, scriptURL, opts = {}) => ({
   },
 });
 const legacy = (opts) => reg("/", COI, opts);
-const godot = () =>
-  reg(
-    "/games/shenmaSanguo/",
-    ORIGIN + "/games/shenmaSanguo/index.service.worker.js"
-  );
+// 遊戲的 Service Worker：舊正式版目錄，或版本目錄（/games/shenmaSanguo-v/<版本>/）
+const godot = (dir = "/games/shenmaSanguo/") =>
+  reg(dir, ORIGIN + dir + "index.service.worker.js");
 
 function env({
   path = "/shenmaSanguo",
@@ -220,12 +218,16 @@ const OLD_VALUE = player("test_k", ["guan_yu"], { rev: 1, syncedRev: 0 });
 await test("SI-1 舊根目錄 SW 的隔離頁：先備份 session，只移除舊的 coi 註冊（遊戲 SW 不動），再帶遷移編號重新載入", async () => {
   const L = legacy();
   const G = godot();
-  const e = env({ iso: true, session: { [K]: ISO_VALUE }, regs: [L, G] });
+  const GV = godot("/games/shenmaSanguo-v/0123456789abcdef/");
+  const e = env({ iso: true, session: { [K]: ISO_VALUE }, regs: [L, G, GV] });
   const api = e.boot();
   assert(api.phase === "leaving", "phase " + api.phase);
   assert(!api.usable("/shenmaSanguo"), "離開前不能使用 session");
   await settle();
-  assert(L.unregistered && !G.unregistered, "只移除舊的 coi 註冊");
+  assert(
+    L.unregistered && !G.unregistered && !GV.unregistered,
+    "只移除舊的 coi 註冊（舊正式版與版本目錄的遊戲 SW 都不動）"
+  );
   assert(
     e.replaced.length === 1 && /[?&]__iso_mig=/.test(e.replaced[0]),
     "帶遷移編號重新載入 " + e.replaced

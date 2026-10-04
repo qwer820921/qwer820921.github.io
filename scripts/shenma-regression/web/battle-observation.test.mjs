@@ -53,6 +53,8 @@ const {
   isHeroQueryActive,
   EMPTY_HERO_QUERY,
   LOW_HP_RATIO,
+  heroSkillState,
+  HERO_SKILL_FILTERS,
 } = require(join(UTILS, "battleObservation.ts"));
 
 const results = [];
@@ -695,6 +697,67 @@ check(
     !isHeroQueryActive({ ...EMPTY_HERO_QUERY, text: "  " }) &&
     uids(heroes) === "12,3,7,10,11",
   null
+);
+
+// ── 技能狀態篩選（只認明列的欄位）──
+const sk = (n, heroId, skill, hp = 1000, maxHp = 1000) => ({
+  ...hero(n, heroId, hp, maxHp),
+  skill,
+});
+const skillHeroes = [
+  sk(1, "xu_chu", { id: "knockback", remaining: 2.4, cooldown: 3 }),
+  sk(2, "diao_chan", { id: "charm", remaining: 0, cooldown: 6 }),
+  sk(3, "diao_chan", { id: "charm", cooldown: 6 }),
+  sk(4, "ma_chao", { id: "first_strike", used: true }, 200, 1000),
+  sk(5, "gan_ning", { id: "assassinate", used: false }),
+  sk(6, "gan_ning", { id: "assassinate" }),
+  sk(7, "zhou_cang", null, 250, 1000),
+  sk(8, "guan_yu", { id: "slow_aura", active: true }),
+  sk(9, "mystery", { id: "unknown_skill", remaining: 5, used: true }),
+  sk(10, "lv_bu", { id: "berserk", stacks: 0, max_stacks: 5, atk: 80 }),
+];
+const before = JSON.stringify(skillHeroes);
+const sq = (over) =>
+  uids(filterHeroes(skillHeroes, { ...EMPTY_HERO_QUERY, ...over }, hcfg));
+const SK = {
+  states: skillHeroes.map((h) => heroSkillState(h) ?? "-").join(","),
+  cooldown: sq({ skill: "cooldown" }),
+  used: sq({ skill: "used" }),
+  none: sq({ skill: "none" }),
+  all: sq({ skill: "all" }),
+};
+check(
+  "O-19 技能狀態：冷卻中只認怪力／魅惑而且 remaining > 0（2.4 秒算，0 秒與缺 remaining 不算）；本場已用過只認衝鋒／奇襲而且 used 是 true（false、缺欄位不算）；" +
+    "無特殊技能只認 skill: null（周倉）；不認得的技能（即使帶 remaining／used）、常駐（減速光環）、層數（戰神）都不屬於任何一種；全部照部署順序列出",
+  SK.states === "cooldown,-,-,used,-,-,none,-,-,-" &&
+    SK.cooldown === "1" &&
+    SK.used === "4" &&
+    SK.none === "7" &&
+    SK.all === "1,2,3,4,5,6,7,8,9,10" &&
+    HERO_SKILL_FILTERS.map((f) => f.id).join(",") === "all,cooldown,used,none",
+  SK
+);
+const AND = {
+  usedLow: sq({ skill: "used", health: "low" }),
+  usedLowText: sq({ skill: "used", health: "low", text: "不存在" }),
+  noneInjured: sq({ skill: "none", health: "injured" }),
+  noneLowSortHp: sq({ skill: "none", health: "low", sort: "hp" }),
+  cooldownText: sq({ skill: "cooldown", text: "XU" }),
+  cooldownDiaoChan: sq({ skill: "cooldown", text: "貂蟬" }),
+};
+check(
+  "O-20 技能狀態和搜尋、生命篩選一起（AND）：已用過＋低生命（馬超 20%）、加上搜不到的文字是 0；無特殊技能＋受傷（周倉）；冷卻中＋ID 搜尋（xu）；" +
+    "冷卻中＋貂蟬（0 秒與缺欄位的貂蟬都不算）是 0；技能狀態算篩選（顯示符合數）、只改排序不算；不改原本的陣列",
+  AND.usedLow === "4" &&
+    AND.usedLowText === "" &&
+    AND.noneInjured === "7" &&
+    AND.noneLowSortHp === "7" &&
+    AND.cooldownText === "1" &&
+    AND.cooldownDiaoChan === "" &&
+    isHeroQueryActive({ ...EMPTY_HERO_QUERY, skill: "used" }) &&
+    !isHeroQueryActive({ ...EMPTY_HERO_QUERY, sort: "hp" }) &&
+    JSON.stringify(skillHeroes) === before,
+  AND
 );
 
 const failed = results.filter((r) => !r.pass).length;

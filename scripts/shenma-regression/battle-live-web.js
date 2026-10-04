@@ -15,7 +15,9 @@ async (page) => {
   // - G：已部署武將的搜尋（中文名稱或 ID）、受傷／低生命（≤30%）篩選與生命比例排序：符合 N／在場 M、觀測更新時照新的一份排列且不搶焦點、
   //      沒有符合時清除、鍵盤、390×600、換場清空；H：敵軍依出場順序／生命比例／有效攻擊力排序（過濾之後、分頁之前），
   //      選中的敵人排到別頁時詳情仍是同一隻（照 uid）、換場回到出場順序
-  // - C：獨立戰鬥頁：同樣不重新點選就看到奇襲 1→0；敵軍數量＝遊戲的數量；武將低生命＋排序、敵軍依攻擊力排序
+  // - K：武將的技能狀態篩選（冷卻中＝怪力／魅惑而且還有剩下的秒數、本場已用過＝衝鋒／奇襲而且 used、無特殊技能＝skill: null）：
+  //      和生命、搜尋一起（AND）、沒有新的觀測時不自己倒數、冷卻結束後照新的一份、清除、鍵盤、390×600、換場回到全部、沒有後端請求
+  // - C：獨立戰鬥頁：同樣不重新點選就看到奇襲 1→0；敵軍數量＝遊戲的數量；武將低生命＋排序、敵軍依攻擊力排序、技能狀態篩選
   // 全部虛構金鑰 test_lv_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -885,6 +887,142 @@ async (page) => {
     await closeLive();
   });
 
+  // ── K. 武將的技能狀態篩選（D149）：冷卻中／本場已用過／無特殊技能，只認觀測明列的欄位 ──
+  // 送一份 seq 很大的觀測（目前這一場，之後遊戲送來的較舊、不採用，畫面資料固定）：許褚怪力冷卻 2.4 秒、貂蟬魅惑 0 秒、甘寧奇襲已用過、
+  // 馬超衝鋒還沒用、周倉沒有技能（skill: null）、關羽減速光環（常駐）
+  const HEROES_K = [
+    { uid: "hero-1", hero_id: "xu_chu", cell: [1, 2], hp: 1300, max_hp: 1300, skill: { id: "knockback", remaining: 2.4, cooldown: 3 } },
+    { uid: "hero-2", hero_id: "diao_chan", cell: [2, 2], hp: 400, max_hp: 1294, skill: { id: "charm", remaining: 0, cooldown: 6 } },
+    { uid: "hero-3", hero_id: "gan_ning", cell: [3, 2], hp: 300, max_hp: 1235, skill: { id: "assassinate", used: true } },
+    { uid: "hero-4", hero_id: "ma_chao", cell: [4, 2], hp: 1100, max_hp: 1100, skill: { id: "first_strike", used: false } },
+    { uid: "hero-5", hero_id: "zhou_cang", cell: [5, 2], hp: 200, max_hp: 1000, skill: null },
+    { uid: "hero-6", hero_id: "guan_yu", cell: [6, 2], hp: 1000, max_hp: 1000, skill: { id: "slow_aura", active: true, affected: 0 } },
+  ];
+  const craftK = (base, seqAdd, heroes) => {
+    const { spawn: _drop, __t: _t, ...rest } = base;
+    return { ...rest, seq: base.seq + seqAdd, heroes, enemies: [], enemy_total: 0 };
+  };
+  const skillState = () => page.evaluate(() => ({
+    uids: [...document.querySelectorAll('[data-testid="live-hero"]')].map((e) => e.dataset.uid),
+    texts: [...document.querySelectorAll('[data-testid="live-hero"]')].map((e) => e.innerText.replace(/\s+/g, " ")),
+    pressed: [...document.querySelectorAll('[data-testid^="battle-live-hero-skill-"]')].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.testid.replace("battle-live-hero-skill-", "")),
+    buttons: [...document.querySelectorAll('[data-testid^="battle-live-hero-skill-"]')].filter((b) => b.tagName === "BUTTON").map((b) => b.innerText.trim()),
+    matched: (() => { const m = document.querySelector('[data-testid="battle-live-hero-matched"]'); return m ? { matched: Number(m.dataset.matched), total: Number(m.dataset.total) } : null; })(),
+    noMatch: !!document.querySelector('[data-testid="battle-live-hero-no-match"]'),
+    note: document.querySelector('[data-testid="battle-live-hero-skill-note"]')?.innerText ?? null,
+    search: document.querySelector('[data-testid="battle-live-hero-search"]')?.value ?? null,
+    health: [...document.querySelectorAll('[data-testid^="battle-live-hero-health-"]')].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.testid.replace("battle-live-hero-health-", "")),
+    focus: document.activeElement?.dataset?.testid ?? null,
+  }));
+  const clickSkill = async (id) => {
+    await page.locator(`[data-testid="battle-live-hero-skill-${id}"]`).click();
+    await H.sleep(300);
+  };
+
+  await section("K", async () => {
+    await openLive();
+    const base = await obsTail();
+    await post(IFRAME, craftK(base, 400000, HEROES_K));
+    await H.sleep(800);
+    await page.locator('[data-testid="battle-live-tab-heroes"]').click();
+    await H.sleep(300);
+    const gas0 = (await H.gasLog(page)).length;
+    const k0 = await skillState();
+    await clickSkill("cooldown");
+    const k1 = await skillState();
+    run.check("K-1 技能狀態按鈕：全部（預設）、冷卻中、本場已用過、無特殊技能；冷卻中只有許褚（怪力還剩 2.4 秒），貂蟬的魅惑 0 秒不算；符合 1／在場 6 位，說明只算怪力、魅惑",
+      k0.buttons.join() === "全部,冷卻中,本場已用過,無特殊技能" && k0.pressed.join() === "all" && k0.uids.length === 6 && !k0.matched &&
+        k1.uids.join() === "hero-1" && /還剩 2\.4 秒/.test(k1.texts[0]) && k1.matched?.matched === 1 && k1.matched?.total === 6 &&
+        k1.pressed.join() === "cooldown" && /怪力、魅惑/.test(k1.note || ""),
+      { k0: { buttons: k0.buttons, pressed: k0.pressed, uids: k0.uids }, k1 });
+
+    await clickSkill("used");
+    const k2a = await skillState();
+    await clickSkill("none");
+    const k2b = await skillState();
+    run.check("K-2 本場已用過只有甘寧（奇襲 used＝true；馬超衝鋒還沒用不算）；無特殊技能只有周倉（skill: null，沒有造出技能）；關羽的常駐光環都不在這兩種裡",
+      k2a.uids.join() === "hero-3" && k2a.matched?.matched === 1 && k2b.uids.join() === "hero-5" && k2b.matched?.matched === 1 &&
+        !k2a.uids.includes("hero-6") && !k2b.uids.includes("hero-6"),
+      { used: k2a.uids, none: k2b.uids });
+
+    await page.locator('[data-testid="battle-live-hero-health-low"]').click();
+    await H.sleep(300);
+    const k3a = await skillState();
+    await clickSkill("used");
+    await page.locator('[data-testid="battle-live-hero-search"]').fill("不存在的武將");
+    await H.sleep(300);
+    const k3b = await skillState();
+    await page.locator('[data-testid="battle-live-hero-clear"]').click();
+    await H.sleep(300);
+    const k3c = await skillState();
+    run.check("K-3 和生命、搜尋一起（AND）：無特殊技能＋低生命是周倉（20%）；本場已用過＋低生命＋搜不到是 0、說明並提供清除；清除後技能狀態回到全部、生命狀態全部、搜尋空白、焦點在搜尋框",
+      k3a.uids.join() === "hero-5" && k3a.health.join() === "low" &&
+        k3b.uids.length === 0 && k3b.noMatch && k3b.matched?.matched === 0 &&
+        k3c.pressed.join() === "all" && k3c.health.join() === "all" && k3c.search === "" && k3c.uids.length === 6 && !k3c.matched && k3c.focus === "battle-live-hero-search",
+      { k3a: k3a.uids, k3b: { uids: k3b.uids, noMatch: k3b.noMatch }, k3c });
+
+    // 不用網頁的時鐘倒數：3 秒內沒有新的觀測，許褚仍是「還剩 2.4 秒」、仍在冷卻中
+    await clickSkill("cooldown");
+    await H.sleep(3000);
+    const k4 = await skillState();
+    // 新的一份觀測：許褚的冷卻結束（0 秒）。焦點留在「冷卻中」鈕，清單照新的一份（沒有符合）
+    await page.locator('[data-testid="battle-live-hero-skill-cooldown"]').focus();
+    await post(IFRAME, craftK(base, 400001, HEROES_K.map((h) => (h.uid === "hero-1" ? { ...h, skill: { ...h.skill, remaining: 0 } } : h))));
+    await H.sleep(800);
+    const k5 = await skillState();
+    run.check("K-4 沒有新的觀測時不自己倒數（3 秒後許褚仍是還剩 2.4 秒、仍在冷卻中）；新的一份冷卻結束後冷卻中沒有符合，焦點仍在「冷卻中」鈕、條件不變",
+      k4.uids.join() === "hero-1" && /還剩 2\.4 秒/.test(k4.texts[0]) &&
+        k5.uids.length === 0 && k5.noMatch && k5.focus === "battle-live-hero-skill-cooldown" && k5.pressed.join() === "cooldown",
+      { k4: k4.texts, k5: { uids: k5.uids, focus: k5.focus, pressed: k5.pressed } });
+
+    // 鍵盤：從搜尋框按 Tab 到「本場已用過」、空白鍵選取
+    await clickSkill("all");
+    await page.locator('[data-testid="battle-live-hero-search"]').focus();
+    let reached = null;
+    for (let i = 0; i < 12 && reached !== "battle-live-hero-skill-used"; i++) {
+      await page.keyboard.press("Tab");
+      reached = await page.evaluate(() => document.activeElement?.dataset?.testid ?? null);
+    }
+    await page.keyboard.press(" ");
+    await H.sleep(300);
+    const k6 = await skillState();
+    const gas1 = (await H.gasLog(page)).length;
+    run.check("K-5 鍵盤：從搜尋框按 Tab 到「本場已用過」、空白鍵選取（甘寧）；整段篩選沒有送出任何後端請求",
+      reached === "battle-live-hero-skill-used" && k6.uids.join() === "hero-3" && k6.pressed.join() === "used" && gas1 === gas0,
+      { reached, uids: k6.uids, gas0, gas1 });
+
+    await page.setViewportSize({ width: 390, height: 600 });
+    await H.sleep(800);
+    await page.locator('[data-testid="battle-live-hero-filters"]').scrollIntoViewIfNeeded();
+    const m7 = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="battle-live-hero-filters"]');
+      const b = el.getBoundingClientRect();
+      const btns = [...el.querySelectorAll('[data-testid^="battle-live-hero-skill-"]')].map((x) => x.getBoundingClientRect());
+      const fonts = [...el.querySelectorAll("button, input, div, span")].map((x) => parseFloat(getComputedStyle(x).fontSize));
+      return { left: Math.round(b.left), right: Math.round(b.right), btnRight: Math.round(Math.max(...btns.map((r) => r.right))), vw: innerWidth, minFont: Math.min(...fonts), docScroll: document.documentElement.scrollWidth };
+    });
+    await H.shot(page, "battle-live-k-390x600");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await H.sleep(500);
+    run.check("K-6 390×600：技能狀態按鈕在畫面寬度內、字級至少 12px、沒有橫向捲動（截圖另存）",
+      m7.left >= 0 && m7.right <= m7.vw && m7.btnRight <= m7.vw && m7.minFont >= 12 && m7.docScroll <= m7.vw, m7);
+
+    // 換場：技能狀態回到全部
+    await closeLive();
+    await H.selectStage(page, MAP.name);
+    await H.sleep(1500);
+    await dismissSplash(IFRAME).catch(() => {});
+    await openLive();
+    await post(IFRAME, craftK(await obsTail(), 500000, HEROES_K));
+    await H.sleep(800);
+    await page.locator('[data-testid="battle-live-tab-heroes"]').click();
+    await H.sleep(300);
+    const k8 = await skillState();
+    run.check("K-7 換關（新的一場）：技能狀態回到全部、6 位都列出、沒有符合數",
+      k8.pressed.join() === "all" && k8.uids.length === 6 && !k8.matched, { pressed: k8.pressed, uids: k8.uids });
+    await closeLive();
+  });
+
   // ── C. 獨立戰鬥頁 ──
   await section("C", async () => {
     await page.goto(H.BASE + "/shenmaSanguo/battle?map=" + MAP.id);
@@ -926,6 +1064,17 @@ async (page) => {
       gc.uids.join() === "hero-2,hero-4" && gc.matched?.matched === 2 && gc.matched?.total === 5 &&
         hc.pressed.join() === "atk" && nonIncreasing(hc.rows.map((r) => r.atk)) && hc.rows.length > 0,
       out.C2);
+    // 獨立戰鬥頁的技能狀態篩選（同一個面板元件）
+    await post(BIFRAME, craftK(await obsTail(), 400000, HEROES_K));
+    await H.sleep(800);
+    await page.locator('[data-testid="battle-live-tab-heroes"]').click();
+    await page.locator('[data-testid="battle-live-hero-clear"]').click().catch(() => {});
+    await page.locator('[data-testid="battle-live-hero-health-all"]').click();
+    await clickSkill("used");
+    const kc = await skillState();
+    out.C3 = { uids: kc.uids, matched: kc.matched, pressed: kc.pressed };
+    run.check("C-3 獨立戰鬥頁：技能狀態「本場已用過」只有甘寧（符合 1／在場 6 位）",
+      kc.uids.join() === "hero-3" && kc.matched?.matched === 1 && kc.matched?.total === 6 && kc.pressed.join() === "used", out.C3);
   });
 
   await page.evaluate(() => localStorage.removeItem("__shenma_lv_fixture")).catch(() => {});

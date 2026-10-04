@@ -660,6 +660,43 @@ export const HERO_HEALTH_FILTERS: { id: HeroHealth; label: string }[] = [
   { id: "low", label: `低生命（≤${Math.round(LOW_HP_RATIO * 100)}%）` },
 ];
 
+/**
+ * 技能狀態篩選（網頁的提案）：只認觀測明列的欄位，不猜
+ * - 冷卻中：有冷卻的主動技能（怪力 knockback、魅惑 charm）而且 remaining 是大於 0 的數字
+ * - 本場已用過：每場一次的技能（衝鋒 first_strike、奇襲 assassinate）而且 used 是 true
+ * - 無特殊技能：觀測明確是 skill: null（沒有啟用任何技能，例如周倉）
+ * 缺欄位、不認得的技能、常駐或命中時觸發的技能都不屬於上面三種（只在「全部」裡），不推成「可用」或「已用過」。
+ * 剩下的秒數只來自遊戲送來的最新觀測（暫停時觀測不變就不會變成時間到），不用網頁的時鐘倒數
+ */
+export type HeroSkillState = "all" | "cooldown" | "used" | "none";
+
+export const COOLDOWN_SKILL_IDS = ["knockback", "charm"];
+export const ONCE_SKILL_IDS = ["first_strike", "assassinate"];
+
+export const HERO_SKILL_FILTERS: { id: HeroSkillState; label: string }[] = [
+  { id: "all", label: "全部" },
+  { id: "cooldown", label: "冷卻中" },
+  { id: "used", label: "本場已用過" },
+  { id: "none", label: "無特殊技能" },
+];
+
+/** 這位武將此刻屬於哪一種技能狀態（冷卻中、本場已用過、無特殊技能）；都不是或資料不足時 null */
+export function heroSkillState(
+  h: ObsHero
+): Exclude<HeroSkillState, "all"> | null {
+  const s = h.skill;
+  if (s === null) return "none";
+  if (
+    COOLDOWN_SKILL_IDS.includes(s.id) &&
+    typeof s.remaining === "number" &&
+    Number.isFinite(s.remaining) &&
+    s.remaining > 0
+  )
+    return "cooldown";
+  if (ONCE_SKILL_IDS.includes(s.id) && s.used === true) return "used";
+  return null;
+}
+
 export type HeroSort = "deploy" | "hp";
 
 export const HERO_SORTS: { id: HeroSort; label: string }[] = [
@@ -671,25 +708,29 @@ export interface HeroQuery {
   /** 中文名稱或 hero_id 的一部分（不分大小寫、去掉前後空白；空白是全部） */
   text: string;
   health: HeroHealth;
+  /** 技能狀態（見 heroSkillState） */
+  skill: HeroSkillState;
   sort: HeroSort;
 }
 
 export const EMPTY_HERO_QUERY: HeroQuery = {
   text: "",
   health: "all",
+  skill: "all",
   sort: "deploy",
 };
 
 /** 有沒有在篩選（排序不算）：有時畫面寫出符合 N／在場 M 位 */
 export const isHeroQueryActive = (q: HeroQuery) =>
-  q.text.trim() !== "" || q.health !== "all";
+  q.text.trim() !== "" || q.health !== "all" || q.skill !== "all";
 
 /** 部署的流水號（hero-N 的 N）：數值相同時的次序 */
 const deployNo = (h: ObsHero) => Number(h.uid.slice("hero-".length));
 
 /**
- * 依搜尋、生命狀態篩選並排序已部署的武將（每位以 uid 區分；目前一場裡同一位武將只能部署一位，觀測也不接受重複的 hero_id）。
- * 受傷：生命少於最大生命；低生命：生命比例 ≤ LOW_HP_RATIO。部署順序依 uid 的流水號；生命比例由低到高，相同時依流水號
+ * 依搜尋、生命狀態、技能狀態篩選並排序已部署的武將（每位以 uid 區分；目前一場裡同一位武將只能部署一位，觀測也不接受重複的 hero_id）。
+ * 條件全部要符合（AND）。受傷：生命少於最大生命；低生命：生命比例 ≤ LOW_HP_RATIO；技能狀態見 heroSkillState。
+ * 部署順序依 uid 的流水號；生命比例由低到高，相同時依流水號。回傳新的陣列，不改傳入的清單
  */
 export function filterHeroes(
   list: ObsHero[],
@@ -704,7 +745,8 @@ export function filterHeroes(
         heroNameOf(h.hero_id, config).toLowerCase().includes(text)) &&
       (query.health === "all" ||
         (query.health === "injured" && h.hp < h.max_hp) ||
-        (query.health === "low" && hpRatio(h) <= LOW_HP_RATIO))
+        (query.health === "low" && hpRatio(h) <= LOW_HP_RATIO)) &&
+      ((query.skill ?? "all") === "all" || heroSkillState(h) === query.skill)
   );
   const byDeploy = (a: ObsHero, b: ObsHero) => deployNo(a) - deployNo(b);
   return matched.sort(

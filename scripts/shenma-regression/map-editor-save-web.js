@@ -320,7 +320,7 @@ async (page) => {
 
   // 每次開始用新的資料表與紀錄（同一個頁面來源）
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto(H.BASE + "/games/shenmaSanguo/index.offline.html");
+  await page.goto(H.BASE + H.GAME_DIR + "index.offline.html");
   await page.evaluate(({ tables, mode }) => {
     localStorage.setItem("__shenma_mapmeta_tables", JSON.stringify(tables));
     localStorage.setItem("__shenma_mapmeta_log", "[]");

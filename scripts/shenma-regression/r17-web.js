@@ -682,7 +682,8 @@ async (page) => {
 
   // ── V. 舊版遊戲（協定 2）：顯示更新提示，不送關卡資料 ──
   await section("V", async () => {
-    const GAME_FILE = /\/games\/shenmaSanguo\/(index\.(?:html|pck|service\.worker\.js))(?:\?[^#]*)?$/;
+    // 只攔網站入口的遊戲目錄（H.GAME_DIR，gameRelease.json）
+    const GAME_FILE = new RegExp(H.GAME_DIR.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&") + "(index\\.(?:html|pck|service\\.worker\\.js))(?:\\?[^#]*)?$");
     const hits = [];
     const route = async (rt) => {
       const name = (rt.request().url().match(GAME_FILE) || [])[1];

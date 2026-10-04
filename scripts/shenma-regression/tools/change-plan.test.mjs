@@ -50,6 +50,8 @@ const AREAS = {
   "enemy-column": { scripts: ["enemy-column-web.js"] },
   "hero-category": { scripts: ["hero-category-web.js"] },
   "battle-live": { scripts: ["battle-live-web.js", "panel-scope-web.js"] },
+  release: { scripts: ["release-entry-web.js"] },
+  "engine-version": { scripts: ["r10-web.js"] },
 };
 const FULL = [
   "i1-init.js",
@@ -64,6 +66,8 @@ const FULL = [
   "skill-charm-web.js",
   "battle-live-web.js",
   "panel-scope-web.js",
+  "r10-web.js",
+  "release-entry-web.js",
 ];
 const opts = (extra = {}) => ({
   areas: AREAS,
@@ -173,15 +177,30 @@ try {
     [
       {
         status: "M",
-        path: "public/games/shenmaSanguo/index.service.worker.js",
+        path: "public/games/shenmaSanguo-v/0123456789abcdef/index.service.worker.js",
       },
     ],
     opts()
   );
   check(
-    "Service Worker／匯出模板 → 瀏覽器完整＋建置後用靜態匯出跑",
+    "版本目錄的 Service Worker／匯出模板 → 瀏覽器完整＋建置後用靜態匯出跑",
     plan4.browser.full && plan4.build.needed,
     plan4
+  );
+  const plan4b = makePlan(
+    [
+      { status: "M", path: "public/games/shenmaSanguo/index.pck" },
+      { status: "M", path: SG + "utils/gameRelease.json" },
+    ],
+    opts()
+  );
+  check(
+    "舊正式版目錄或網站入口指標有改 → 跑發布入口與遊戲版本的瀏覽器腳本、建置後用靜態匯出跑（不是未分類）",
+    plan4b.browser.scripts.includes("release-entry-web.js") &&
+      plan4b.browser.scripts.includes("r10-web.js") &&
+      plan4b.build.needed &&
+      plan4b.unknown.length === 0,
+    plan4b
   );
   const plan5 = makePlan(
     [{ status: "?", path: "scripts/shenma-regression/new-thing-web.js" }],

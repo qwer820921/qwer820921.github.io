@@ -24,7 +24,7 @@
 // - SHENMA_TIER_RUNNER：瀏覽器執行器（預設 tools/run-browser.mjs；自我測試換成不開瀏覽器的替身）
 // - EVIDENCE_DIR：瀏覽器腳本的證據目錄，耗時摘要寫在 <EVIDENCE_DIR>/tier-<層>.json（沒有設定時只印出）
 // - 跑瀏覽器腳本時不要同時改 src、跑 build 或另一批瀏覽器回歸
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,6 +45,16 @@ import {
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const npx = process.platform === "win32" ? "npx.cmd" : "npx";
+// 工具自我測試用的交付產物：網站入口的版本目錄（入口指回舊正式版時用最後一個保留的版本目錄；見 tools/game-release.mjs）
+const RELEASE = JSON.parse(
+  readFileSync(
+    join(ROOT, "src/app/(games)/shenmaSanguo/utils/gameRelease.json"),
+    "utf8"
+  )
+);
+const PACKAGE_DIR = `public/games/shenmaSanguo-v/${
+  RELEASE.entry === "legacy" ? RELEASE.retained.at(-1) : RELEASE.entry
+}`;
 
 const QUICK = [
   ["型別檢查（tsc）", npx, ["tsc", "--noEmit", "-p", "tsconfig.json"]],
@@ -114,6 +124,11 @@ const QUICK = [
     ["scripts/shenma-regression/web/hero-filter.test.mjs"],
   ],
   [
+    "兩位武將比較的規則測試",
+    "node",
+    ["scripts/shenma-regression/web/hero-compare.test.mjs"],
+  ],
+  [
     "地圖編輯器設定寫入的錯誤說明測試",
     "node",
     ["scripts/shenma-regression/web/admin-error-text.test.mjs"],
@@ -136,10 +151,17 @@ const QUICK = [
   [
     "工具自我測試",
     "node",
-    [
-      "scripts/shenma-regression/tools/selftest.mjs",
-      "public/games/shenmaSanguo",
-    ],
+    ["scripts/shenma-regression/tools/selftest.mjs", PACKAGE_DIR],
+  ],
+  [
+    "發布目錄核對（舊正式版目錄沒有改、版本目錄自我一致、網站入口指向保留中的目錄）",
+    "node",
+    ["scripts/shenma-regression/tools/game-release.mjs", "check"],
+  ],
+  [
+    "發布工具測試（核對、發布、回退指標的正反案例）",
+    "node",
+    ["scripts/shenma-regression/tools/game-release.test.mjs"],
   ],
   [
     "素材引用檢查",
@@ -249,11 +271,12 @@ const AREAS = {
     ],
   },
   heroes: {
-    what: "武將列表的搜尋、職業篩選與排序（主頁武將視窗、武將頁），升級後重新排序與切換帳號後重算；法師與遊戲不認得的職業／稀有度的顯示；武將列表與詳情的鍵盤操作（主頁備戰與戰鬥中、獨立武將頁：對話框名稱、Tab 留在最上層、卡片 Enter／空白鍵、Esc 只關最上層與焦點歸還、搜尋無結果與卡片卸載的退路、升級處理中焦點掉到頁面本身、設定載入中的列表外殼與最後的退路、獨立武將頁每一步等焦點穩定後兩個方向連續循環與邊界、卡片按鈕裡沒有區塊與互動元素；需要 Godot 產物）",
+    what: "武將列表的搜尋、職業篩選與排序（主頁武將視窗、武將頁），升級後重新排序與切換帳號後重算；法師與遊戲不認得的職業／稀有度的顯示；武將列表與詳情的鍵盤操作（主頁備戰與戰鬥中、獨立武將頁：對話框名稱、Tab 留在最上層、卡片 Enter／空白鍵、Esc 只關最上層與焦點歸還、搜尋無結果與卡片卸載的退路、升級處理中焦點掉到頁面本身、設定載入中的列表外殼與最後的退路、獨立武將頁每一步等焦點穩定後兩個方向連續循環與邊界、卡片按鈕裡沒有區塊與互動元素；兩位武將的比較（比較模式、比較表、升級後照目前存檔、鍵盤與手機）；需要 Godot 產物）",
     scripts: [
       "hero-filter-web.js",
       "team-filter-web.js",
       "hero-keyboard-web.js",
+      "hero-compare-web.js",
     ],
   },
   team: {
@@ -325,8 +348,12 @@ const AREAS = {
     what: "背景音樂不在啟動必載的資料包裡：game_ready 之前沒有請求、收到關卡資料（音效開著）後下載一次、換關沿用、音效關閉不下載、404 不影響遊戲而且最多試 2 次（需要 Godot 產物）",
     scripts: ["bgm-load-web.js"],
   },
+  release: {
+    what: "發布入口：兩個入口都開網站入口指標的版本目錄、開戰到結算、背景音樂與手機尺寸，沒有碰舊正式版目錄（需要 Godot 產物）",
+    scripts: ["release-entry-web.js"],
+  },
   "battle-live": {
-    what: "戰況觀測：武將面板不重新點選就看到目前的生命與技能狀態、「戰況」的武將技能與敵軍查看（分頁、離場、受控、鍵盤、390×600）、舊的與上一場的觀測不採用、舊版遊戲退回選取時的快照；單位面板只屬於目前這一場（需要 Godot 產物）",
+    what: "戰況觀測：武將面板不重新點選就看到目前的生命與技能狀態、「戰況」的武將技能與敵軍查看（分頁、離場、受控、鍵盤、390×600）、舊的與上一場的觀測不採用、舊版遊戲退回選取時的快照；武將的技能狀態篩選（冷卻中、本場已用過、無特殊技能）；單位面板只屬於目前這一場（需要 Godot 產物）",
     scripts: ["battle-live-web.js", "panel-scope-web.js"],
   },
 };
@@ -401,6 +428,8 @@ const FULL = [
   "panel-scope-web.js",
   "bgm-load-web.js",
   "panel-safe-web.js",
+  "release-entry-web.js",
+  "hero-compare-web.js",
 ];
 
 const argv = process.argv.slice(2);

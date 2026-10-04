@@ -17,7 +17,11 @@ import { HeroState, HeroConfig, Rarity } from "../../types";
 import HeroSkillInfo from "../../components/HeroSkillInfo";
 import HeroAntiAir from "../../components/HeroAntiAir";
 import HeroFilterBar from "../../components/HeroFilterBar";
+import HeroCompareBar from "../../components/HeroCompareBar";
+import HeroCompareTable from "../../components/HeroCompareTable";
 import { FOCUSABLE } from "../../components/useDialogFocus";
+import { useHeroCompare } from "../../components/useHeroCompare";
+import { HeroCompareColumn, compareColumns } from "../../utils/heroCompare";
 import { attackIntervalSec, formatSec } from "../../utils/heroStats";
 import {
   DEFAULT_HERO_FILTER,
@@ -476,15 +480,43 @@ function UpgradeModal({
   );
 }
 
+// ── 兩位武將比較的視窗（共用的比較表；Esc／關閉後焦點還給「比較這兩位」）──
+function HeroCompareModal({
+  columns,
+  onClose,
+}: {
+  columns: HeroCompareColumn[];
+  onClose: () => void;
+}) {
+  const titleId = useId();
+  return (
+    <Modal show onHide={onClose} centered size="lg" aria-labelledby={titleId}>
+      <Modal.Header closeButton closeLabel="關閉武將比較">
+        <Modal.Title id={titleId} as="h3" className="h5 mb-0">
+          武將比較
+        </Modal.Title>
+      </Modal.Header>
+      <Modal.Body>
+        <HeroCompareTable columns={columns} />
+      </Modal.Body>
+    </Modal>
+  );
+}
+
 // ── 武將卡片 ──────────────────────────────────────────────
 function HeroCard({
   hero,
   config,
   onClick,
+  compareMode = false,
+  picked = false,
 }: {
   hero: HeroState;
   config: HeroConfig;
   onClick: () => void;
+  /** 比較模式：點卡片是選取或取消（不開升級） */
+  compareMode?: boolean;
+  picked?: boolean;
 }) {
   const rarity = rarityInfo(config.rarity);
   const job = jobInfo(config.job);
@@ -495,9 +527,14 @@ function HeroCard({
       type="button"
       className={`${styles.heroCard} ${styles.heroCardButton} ${rarityBgClass[rarity.value] ?? ""}`}
       data-hero-id={config.hero_id}
-      aria-haspopup="dialog"
+      data-compare-picked={compareMode ? String(picked) : undefined}
+      aria-haspopup={compareMode ? undefined : "dialog"}
+      aria-pressed={compareMode ? picked : undefined}
       onClick={onClick}
-      style={{ borderColor: `${color}30` }}
+      style={{
+        borderColor: `${color}30`,
+        outline: compareMode && picked ? "3px solid var(--sg-blue)" : undefined,
+      }}
     >
       <span className={styles.heroJobBar} style={{ background: job.color }} />
       <span className={styles.heroCardInner}>
@@ -562,7 +599,13 @@ function HeroCard({
           <span style={{ color: "var(--sg-green)" }}>HP {hero.hp}</span>
         </span>
         <HeroSkillInfo heroId={config.hero_id} variant="tag" />
-        <span className={styles.heroHint}>點擊升級</span>
+        <span className={styles.heroHint}>
+          {compareMode
+            ? picked
+              ? "已選比較（再點取消）"
+              : "點選加入比較"
+            : "點擊升級"}
+        </span>
       </span>
     </button>
   );
@@ -578,6 +621,11 @@ export default function HeroesPageContent() {
   // 搜尋／職業／排序只影響這一頁的顯示；離開頁面（元件卸載）就回到預設
   const [criteria, setCriteria] =
     useState<HeroFilterCriteria>(DEFAULT_HERO_FILTER);
+  // 兩位武將的比較（比較模式中點卡片是選取，不開升級）；切換存檔時清掉
+  const compare = useHeroCompare(
+    player?.key ?? null,
+    staticConfig?.heroesConfig ?? null
+  );
   // 詳情（react-bootstrap Modal）關閉時會把焦點還給開啟它的卡片；卡片已經不在畫面上、或開啟時沒有焦點（焦點留在頁面本身）時，
   // 改交給同一位武將的卡片，沒有時交給搜尋框
   const lastDetailRef = useRef<string | null>(null);
@@ -648,6 +696,17 @@ export default function HeroesPageContent() {
         matched={listed.matched}
         total={listed.total}
       />
+      <HeroCompareBar
+        active={compare.active}
+        names={compare.selected.map(
+          (id) =>
+            staticConfig.heroesConfig.find((c) => c.hero_id === id)?.name ?? id
+        )}
+        refused={compare.refused}
+        onToggle={compare.toggleMode}
+        onStart={compare.start}
+        onClear={compare.clear}
+      />
 
       <Row className="g-2 w-100">
         {listed.items.map(({ config, hero }) => {
@@ -656,7 +715,13 @@ export default function HeroesPageContent() {
               <HeroCard
                 hero={hero}
                 config={config}
-                onClick={() => setSelectedHeroId(config.hero_id)}
+                compareMode={compare.active}
+                picked={compare.selected.includes(config.hero_id)}
+                onClick={() =>
+                  compare.active
+                    ? compare.pick(config.hero_id)
+                    : setSelectedHeroId(config.hero_id)
+                }
               />
             </Col>
           );
@@ -678,6 +743,17 @@ export default function HeroesPageContent() {
           gold={player.gold}
           onClose={() => setSelectedHeroId(null)}
           onUpgrade={() => upgradeHero(selectedHero.hero_id, selectedConfig)}
+        />
+      )}
+
+      {compare.open && (
+        <HeroCompareModal
+          columns={compareColumns(
+            compare.selected,
+            staticConfig.heroesConfig,
+            player.heroes
+          )}
+          onClose={compare.close}
         />
       )}
     </Container>

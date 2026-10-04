@@ -15,7 +15,8 @@ async (page) => {
   const run = H.begin({ expectedConsole: [/Failed to load resource: the server responded with a status of (404|503)/, /Failed loading file 'index\.pck'/, /Error while registering service worker/, /Service worker already exists/] });
   const out = {};
   const MAIN = H.BASE + "/shenmaSanguo";
-  const PCK = "**/games/shenmaSanguo/index.pck";
+  // 網站入口的遊戲目錄（gameRelease.json）：攔截與讀取都用它，不用碰巧也符合舊目錄的路由字串
+  const PCK = "**" + H.GAME_DIR + "index.pck";
   const profile = (nickname) => ({
     nickname, level: 1, exp: 0, gold: 1000, capacity: 30, max_stage: "chapter1_7",
     heroes: [], team: [{ hero_id: "guan_yu", slot: 1 }, { hero_id: "zhao_yun", slot: 2 }],
@@ -50,7 +51,7 @@ async (page) => {
     await page.goto(MAIN);
     await page.getByPlaceholder("例：eric_sanguo_2026").waitFor({ timeout: 90000 });
     await page.waitForFunction(() => {
-      const d = document.querySelector('iframe[src*="games/shenmaSanguo"]')?.contentDocument;
+      const d = document.querySelector('iframe[title="Shenma Sanguo"]')?.contentDocument;
       return !!d && !!d.getElementById("canvas") && !d.getElementById("status");
     }, null, { timeout: 120000 });
     await H.sleep(1500);
@@ -118,13 +119,13 @@ async (page) => {
     const maxWidthWhileDl = Math.max(...seen.filter((s) => DL.test(s.engine) && s.width !== null).map((s) => s.width));
     const last = seen[seen.length - 1];
     // 外殼頁 GODOT_CONFIG.fileSizes 的引擎與資料包大小（MB，取到小數一位）：顯示的總共大小要和它相同（不寫死數字，換引擎時照實際檔案）
-    const shellMb = await page.evaluate(async () => {
-      const html = await (await fetch("/games/shenmaSanguo/index.html", { cache: "no-store" })).text();
+    const shellMb = await page.evaluate(async (gameDir) => {
+      const html = await (await fetch(gameDir + "index.html", { cache: "no-store" })).text();
       const m = html.match(/"fileSizes":(\{[^}]*\})/);
       if (!m) return null;
       const sizes = JSON.parse(m[1]);
       return Object.values(sizes).reduce((t, v) => t + v, 0) / 1048576;
-    });
+    }, H.GAME_DIR);
     out.el1 = { samples: seen.length, loadedVals: loadedVals.slice(0, 12), totals, shellMb, widths: widths.filter((w, i) => i % 8 === 0), maxWidthWhileDl, last };
     run.check("EL-1 限速每秒約 2 MB（停用快取）：引擎那一行寫出「遊戲引擎：下載中 a / b MB」，總共大小固定而且等於外殼頁記錄的引擎＋資料包大小、已下載的大小至少出現 3 個且一路增加；下載中有「第一次開啟要下載遊戲引擎」的提醒；存檔與設定先讀完時進度條停在引擎的比例之下（下載中不超過 93%）；整體進度一路不減，引擎就緒後載入畫面消失、進入戰場；全程沒有停住或無法啟動的提示",
       loadedVals.length >= 3 && loadedVals.every((v, i) => i === 0 || v >= loadedVals[i - 1]) && totals.length === 1 && shellMb !== null && Math.abs(totals[0] - shellMb) <= 0.1 &&

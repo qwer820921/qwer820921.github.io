@@ -6,7 +6,8 @@
 //    - 版本：這一版檔案內容決定的識別（VERSION），同時寫進外殼頁與 Service Worker
 //    - 外殼頁（index.html）的版本守門：網址加上 shenma_ver=<版本>（之後的請求帶著它），確認控制這個頁面的
 //      Service Worker 是同一版（不是就讓同一版接手；伺服器上沒有這一版時重新載入一次，仍不行就說明）之後，
-//      才載入 index.js、開始下載引擎與資料包。Service Worker 下載時送來的進度顯示在進度條，拒絕交付時說明原因
+//      才載入 index.js、開始下載引擎與資料包。Service Worker 下載時送來的進度顯示在進度條，拒絕交付時說明原因。
+//      引擎啟動後才把焦點交給遊戲畫面，而且嵌入的網頁正在用焦點（開著視窗、正在輸入）時不搶（Godot 的 focusCanvas 關掉）
 //    - Service Worker（Godot 模板產生的 index.service.worker.js）：
 //      - 只交付這一版：index.js／index.wasm／index.pck 只給同一版的頁面（頁面網址的 shenma_ver），不是就拒絕（503）
 //      - 先核對再交付：這一版檔案的大小與 sha256 寫進 Service Worker；快取裡的（放進快取前都核對過）直接用，
@@ -15,10 +16,16 @@
 //      - 向伺服器重新驗證：下載用 cache: 'no-cache'（相同時伺服器回 304、不重新下載），不用 HTTP 快取裡還沒過期的舊檔；
 //        外殼頁的導覽也一樣（關掉導覽預載）。這一版的檔案都在快取時，外殼頁用快取的（可以離線）
 //      - 引擎快取：index.wasm 放在以「index.js＋index.wasm 的 sha256」命名的快取，重新匯出但引擎相同時沿用；
-//        任一個不同就是新的名稱（不會拿舊引擎配新的載入程式），切換版本時刪除這個遊戲其他版本的快取（不動網站其他快取）
+//        任一個不同就是新的名稱（不會拿舊引擎配新的載入程式）
 //      - 啟用時接手範圍內的頁面（第一次開啟也由 Service Worker 核對）；不是這一版的頁面要的檔案照樣拒絕
-//    模板裡只改已知的片段與區塊（片段必須剛好出現一次、整段換掉的區塊內容要和 Godot 4.6.2 相同，模板改版時直接失敗），
-//    CACHE_VERSION 照模板產生的值
+// 3. 版本目錄（發布方式見 tools/game-release.mjs）：每一版放在自己的目錄 games/shenmaSanguo-v/<版本>/，
+//    發布後內容不再改變；舊正式版留在原本的 games/shenmaSanguo/（Godot 原本的 Service Worker，範圍不包含版本目錄）
+//    - 快取用自己的命名空間 CACHE_PREFIX（shenmaSanguo-pkg-）：舊正式版的 Service Worker 啟用時只刪它自己前綴
+//      （shenmaSanguo-sw-cache-）的快取，碰不到版本目錄的快取；這裡也不刪舊正式版的快取
+//    - CACHE_VERSION 換成這一版的版本：同一版的 Service Worker 內容固定，快取名稱就是 CACHE_PREFIX＋版本
+//    - 引擎快取的鍵用版本目錄上一層的固定網址（不是實際的檔案）：不同版本、同一個引擎時共用，不重新下載 index.wasm
+//    - 啟用時刪除這個命名空間裡其他版本的快取，但目前還有頁面（含 iframe）開著的版本保留，那時引擎快取也都保留
+//    模板裡只改已知的片段與區塊（片段必須剛好出現一次、整段換掉的區塊內容要和 Godot 4.6.2 相同，模板改版時直接失敗）
 // 用法：node scripts/shenma-regression/tools/postexport.mjs <匯出目錄> [Godot 專案目錄，預設 godot/shenmaSanguo]
 // 結束碼：0 完成；1 模板和預期不同或檔案缺少；2 參數錯誤
 import { createHash } from "node:crypto";
@@ -52,9 +59,13 @@ export const TEXT_FILES = [
   "index.audio.position.worklet.js",
 ];
 export const stripCR = (buf) => Buffer.from(buf.filter((b) => b !== 13));
-/** 外殼頁與 Service Worker 之間的約定（網址參數、訊息）；改了約定就換這個值，版本跟著不同 */
-export const GUARD_PROTOCOL = "shenma-guard-1";
+/** 外殼頁與 Service Worker 之間的約定（網址參數、訊息、快取命名空間與版本目錄）；改了約定就換這個值，版本跟著不同 */
+export const GUARD_PROTOCOL = "shenma-guard-2";
 export const VERSION_PARAM = "shenma_ver";
+/** Godot 模板產生的快取前綴（舊正式版用這個；它的 Service Worker 啟用時刪除這個前綴的其他快取） */
+export const TEMPLATE_CACHE_PREFIX = "shenmaSanguo-sw-cache-";
+/** 版本目錄的快取命名空間：不能以 TEMPLATE_CACHE_PREFIX 開頭（否則舊正式版的 Service Worker 啟用時會刪掉） */
+export const CACHE_NAMESPACE = "shenmaSanguo-pkg-";
 /** 外殼頁裡版本的位置（計算版本時遮掉） */
 export const VERSION_PLACEHOLDER = "__SHENMA_VERSION__";
 const VERSION_LINE =
@@ -76,10 +87,13 @@ const VERSION_PARAM = '${VERSION_PARAM}';
 const EXPECTED = __EXPECTED__;
 // 必須和頁面同一版才交付的檔案
 const STRICT_FILES = ['index.js', 'index.wasm', 'index.pck'];
-// 引擎（index.wasm）放在以 index.js 與 index.wasm 內容命名的快取：重新匯出但引擎相同時沿用，不重新下載
+// 引擎（index.wasm）放在以 index.js 與 index.wasm 內容命名的快取：重新匯出但引擎相同時沿用，不重新下載。
+// 每一版的目錄（網址）不同，引擎的快取鍵用版本目錄上一層的固定網址（只當快取鍵，伺服器上沒有這個檔案）：不同版本、同一個引擎時共用
 const ENGINE_CACHE = CACHE_PREFIX + 'engine-__ENGINE__';
 const ENGINE_FILES = ['index.wasm'];
+const ENGINE_KEY_BASE = new URL('../' + ENGINE_CACHE + '/', self.location.href).href;
 const cacheNameFor = (name) => (ENGINE_FILES.includes(name) ? ENGINE_CACHE : CACHE_NAME);
+const cacheKeyFor = (name) => (ENGINE_FILES.includes(name) ? ENGINE_KEY_BASE + name : name);
 const fileNameOf = (url) => new URL(url, self.location.href).pathname.split('/').pop();
 // 下載到的內容不是這一版而拒絕過的檔案（名稱 → 時間）：Godot 失敗後會重試，短時間內直接拒絕，不重複下載
 const REFUSE_MEMORY_MS = 10000;
@@ -239,11 +253,34 @@ const SW_INSTALL = tabs(`self.addEventListener('install', (event) => {
 
 `);
 
-const SW_ACTIVATE = tabs(`self.addEventListener('activate', (event) => {
-  event.waitUntil(caches.keys().then(
-    function (keys) {
-      // 刪掉這個遊戲其他版本的快取（目前的引擎快取保留；網站其他的快取不動）
-      return Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME && key !== ENGINE_CACHE).map((key) => caches.delete(key)));
+const SW_ACTIVATE = tabs(`/**
+ * 目前開著的頁面（含 iframe，不論由哪個 Service Worker 控制）正在使用的版本：版本目錄上一層之下的第一層目錄名稱
+ * @returns {Promise<Set<string>>}
+ */
+async function versionsInUse() {
+  const parent = new URL('../', self.location.href).pathname;
+  const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  const out = new Set();
+  for (const client of all) {
+    const path = new URL(client.url).pathname;
+    if (path.startsWith(parent)) {
+      out.add(path.slice(parent.length).split('/')[0]);
+    }
+  }
+  return out;
+}
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(Promise.all([caches.keys(), versionsInUse().catch(() => null)]).then(
+    function ([keys, inUse]) {
+      // 只刪這個命名空間（CACHE_PREFIX）裡其他版本的快取；舊正式版（Godot 原本的前綴）與網站其他的快取不動。
+      // 還有頁面開著的其他版本保留它的快取，那時也保留所有引擎快取（不知道那一版用哪個引擎）；查不到開著的頁面時都不刪
+      if (!inUse) {
+        return [];
+      }
+      inUse.delete(VERSION);
+      const keep = (key) => key === CACHE_NAME || key === ENGINE_CACHE || inUse.has(key.slice(CACHE_PREFIX.length)) || (inUse.size > 0 && key.startsWith(CACHE_PREFIX + 'engine-'));
+      return Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && !keep(key)).map((key) => caches.delete(key)));
     }
   ).then(function () {
     // 外殼頁的導覽自己向伺服器重新驗證：關掉導覽預載（預載會用 HTTP 快取裡還沒過期的舊頁面；舊版本開啟過）
@@ -264,7 +301,7 @@ const SW_FETCH = tabs(`/**
  * @returns {Promise<Response>}
  */
 async function serveShell(event) {
-  const files = await Promise.all(FULL_CACHE.map((name) => caches.open(cacheNameFor(name)).then((c) => c.match(name))));
+  const files = await Promise.all(FULL_CACHE.map((name) => caches.open(cacheNameFor(name)).then((c) => c.match(cacheKeyFor(name)))));
   if (files.every((v) => v !== undefined)) {
     return files[0];
   }
@@ -302,7 +339,7 @@ async function serveFile(event, name) {
     }
   }
   const cache = await caches.open(cacheNameFor(name));
-  const cached = await cache.match(name);
+  const cached = await cache.match(cacheKeyFor(name));
   if (cached) {
     return cached;
   }
@@ -322,7 +359,7 @@ async function serveFile(event, name) {
   }
   recentRefusals.delete(name);
   const response = responseOf(got);
-  event.waitUntil(cache.put(name, response.clone()).catch(() => {}));
+  event.waitUntil(cache.put(cacheKeyFor(name), response.clone()).catch(() => {}));
   return response;
 }
 
@@ -343,7 +380,7 @@ self.addEventListener(
         if (isNavigate && (name === CACHED_FILES[0] || name === '')) {
           response = await serveShell(event);
         } else if (isNavigate) {
-          const cached = isGameFile ? await caches.open(cacheNameFor(name)).then((c) => c.match(name)) : undefined;
+          const cached = isGameFile ? await caches.open(cacheNameFor(name)).then((c) => c.match(cacheKeyFor(name))) : undefined;
           response = cached || await self.fetch(event.request);
         } else {
           response = await serveFile(event, name);
@@ -401,6 +438,7 @@ const SW_REGIONS = [
 ];
 
 const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
+const CACHE_VERSION_LINE = /^const CACHE_VERSION = '[^'\n]*';$/gm;
 
 /** 把 text 裡剛好出現一次的片段換掉（出現次數不是 1 就失敗：模板可能改版） */
 function replaceOnce(text, a, b, what) {
@@ -431,6 +469,22 @@ export function patchServiceWorker(src, info) {
   const helpers = HELPERS.replace("__VERSION__", info.version)
     .replace("__EXPECTED__", JSON.stringify(info.expected))
     .replace("__ENGINE__", info.engine);
+  // 快取名稱＝自己的命名空間＋這一版的版本（模板的 CACHE_VERSION 是匯出時間，換成版本後同一版的內容固定）
+  const cacheLines = out.match(CACHE_VERSION_LINE) || [];
+  if (cacheLines.length !== 1)
+    throw new Error(
+      `Service Worker 模板的 CACHE_VERSION 出現 ${cacheLines.length} 次（模板可能改版）`
+    );
+  out = out.replace(
+    CACHE_VERSION_LINE,
+    () => `const CACHE_VERSION = '${info.version}';`
+  );
+  out = replaceOnce(
+    out,
+    `const CACHE_PREFIX = '${TEMPLATE_CACHE_PREFIX}';\n`,
+    `const CACHE_PREFIX = '${CACHE_NAMESPACE}';\n`,
+    "Service Worker "
+  );
   out = replaceOnce(
     out,
     "const FULL_CACHE = CACHED_FILES.concat(CACHEABLE_FILES);\n",
@@ -463,8 +517,9 @@ window.__shenmaGuard = (function () {
   let godot = { current: 0, total: 0 };
   let refused = null;
   let recovering = false;
-  // 診斷用：確認版本花的時間、是否由 Service Worker 控制、結果（載入量測會讀）
-  const stats = { ensureMs: null, controlled: null, ok: null };
+  // 診斷用：確認版本花的時間、是否由 Service Worker 控制、結果（載入量測會讀）；
+  // 引擎啟動時有沒有把焦點交給遊戲畫面（嵌入的網頁正在用焦點時是 false）
+  const stats = { ensureMs: null, controlled: null, ok: null, focusedAtStart: null };
   try {
     const url = new URL(location.href);
     if (url.searchParams.get(PARAM) !== VERSION) {
@@ -698,6 +753,47 @@ window.__shenmaGuard = (function () {
     return false;
   }
 
+  /** 引擎啟動（外殼頁的 #status 移除）後執行；沒有啟動（失敗、還在說明）時不執行 */
+  function whenStarted(callback) {
+    if (!document.getElementById('status')) {
+      callback();
+      return;
+    }
+    const observer = new MutationObserver(() => {
+      if (!document.getElementById('status')) {
+        observer.disconnect();
+        callback();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  /**
+   * 把焦點交給遊戲畫面，但嵌入的網頁正在用焦點時不搶（網頁開著視窗、正在輸入）：網頁的焦點在頁面本身、
+   * 或已經在這個 iframe 上時才交。Godot 預設在啟動時直接 focus 遊戲畫面（focusCanvas），會把網頁視窗裡的焦點搶走
+   */
+  function focusWhenFree() {
+    const canvas = document.getElementById('canvas');
+    if (!canvas) {
+      return;
+    }
+    let free = true;
+    try {
+      if (window.parent !== window) {
+        const doc = window.parent.document;
+        const active = doc.activeElement;
+        free = !active || active === doc.body || active === doc.documentElement || active === window.frameElement;
+      }
+    } catch (e) {
+      // 跨來源嵌入（看不到網頁的焦點）：照 Godot 原本的行為
+      free = true;
+    }
+    stats.focusedAtStart = free;
+    if (free) {
+      canvas.focus();
+    }
+  }
+
   function loadScript(src) {
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
@@ -740,6 +836,13 @@ window.__shenmaGuard = (function () {
       }
       return;
     }
+    // 啟動時不讓 Godot 直接 focus 遊戲畫面，改成啟動後由 focusWhenFree 判斷
+    try {
+      GODOT_CONFIG.focusCanvas = false;
+    } catch (e) {
+      // 沒有設定物件：照 Godot 原本的行為
+    }
+    whenStarted(focusWhenFree);
     start();
   }
 

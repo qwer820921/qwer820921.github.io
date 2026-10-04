@@ -14,6 +14,7 @@ import {
   EnemySort,
   EnemyStatus,
   HERO_HEALTH_FILTERS,
+  HERO_SKILL_FILTERS,
   HERO_SORTS,
   HeroQuery,
   ObsEnemy,
@@ -354,6 +355,28 @@ export function BattleLivePanel({
                 <Col xs={12}>
                   <div
                     role="group"
+                    aria-label="技能狀態"
+                    className="d-flex flex-wrap gap-1"
+                  >
+                    {HERO_SKILL_FILTERS.map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        className={`${styles.battleLiveTab} ${heroQuery.skill === f.id ? styles.battleLiveTabOn : ""}`}
+                        aria-pressed={heroQuery.skill === f.id}
+                        onClick={() =>
+                          setHeroQuery({ ...heroQuery, skill: f.id })
+                        }
+                        data-testid={`battle-live-hero-skill-${f.id}`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </Col>
+                <Col xs={12}>
+                  <div
+                    role="group"
                     aria-label="武將排序"
                     className="d-flex flex-wrap gap-1 align-items-center"
                   >
@@ -383,6 +406,14 @@ export function BattleLivePanel({
                   ? "依生命比例由低到高（同比例依部署順序）；生命即時更新，順序可能跟著改變"
                   : "依部署順序"}
               </div>
+              {heroQuery.skill !== "all" && (
+                <div
+                  className={styles.battleLiveMuted}
+                  data-testid="battle-live-hero-skill-note"
+                >
+                  冷卻中只算有冷卻的技能（怪力、魅惑），本場已用過只算每場一次的技能（衝鋒、奇襲），無特殊技能是沒有啟用技能的武將；常駐與命中時觸發的技能不列入。狀態照遊戲送來的最新戰況
+                </div>
+              )}
               {heroFiltering && (
                 <div
                   className={styles.battleLiveSummary}

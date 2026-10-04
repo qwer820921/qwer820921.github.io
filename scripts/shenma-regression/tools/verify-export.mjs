@@ -1,13 +1,13 @@
-// 驗收：本次從原始碼匯出的產物必須與交付產物（預設為工作區 public/games/shenmaSanguo）一致
+// 驗收：本次從原始碼匯出的產物必須與交付產物（預設為網站入口指向的版本目錄 public/games/shenmaSanguo-v/<版本>）一致
 // 用法：node verify-export.mjs <本次匯出目錄> <交付產物目錄>
 // 結束碼：0 = 一致（只剩允許的差異）；1 = 有不允許的差異；2 = 參數或讀檔錯誤
 //
 // 兩邊都要是「匯出＋匯出後處理（postexport.mjs）」的結果。只允許幾種已知、每次匯出都會隨機產生的差異：
 //   1. index.pck 內 *.scn 的 node_ids 陣列內容（.tscn 沒有 unique_id，匯出時隨機產生）
-//   2. index.service.worker.js 的 CACHE_VERSION 那一行（匯出時間戳）
-//   3. 這一版的版本（VERSION，由檔案內容決定、跟著 1 不同）：index.html 與 index.service.worker.js 裡的版本，
-//      以及 EXPECTED 裡 index.pck、index.html 的 sha256。兩邊各自：EXPECTED 必須和自己目錄的檔案相符、
-//      外殼頁與 Service Worker 的版本相同、而且等於由自己的檔案重新計算的版本
+//   2. 這一版的版本（VERSION，由檔案內容決定、跟著 1 不同）：index.html 與 index.service.worker.js 裡的版本、
+//      Service Worker 的 CACHE_VERSION（匯出後處理換成版本），以及 EXPECTED 裡 index.pck、index.html 的 sha256。
+//      兩邊各自：EXPECTED 必須和自己目錄的檔案相符、外殼頁與 Service Worker 的版本（含 CACHE_VERSION）相同、
+//      而且等於由自己的檔案重新計算的版本
 // 其他內容（包含所有 .gdc、uid_cache.bin、引擎檔、背景音樂）都必須逐位元組相同。
 // 文字檔（前 8000 bytes 沒有 NUL，與 git 的判定相同）比較前把 CRLF 視為 LF，
 // 因為本機 core.autocrlf=true 會讓未修改的檔案在工作區變成 CRLF，提交時再轉回 LF。
@@ -89,9 +89,15 @@ function compareServiceWorker(a, b, dirA, dirB) {
       const swVersion = (sw.match(SW_VERSION_LINE) || [])[1] || null;
       const html = readFileSync(join(dir, "index.html"), "utf8");
       const htmlVersion = htmlVersionOf(html);
+      const cacheVersion = (sw.match(/^const CACHE_VERSION = '([^'\n]*)';$/m) ||
+        [])[1];
       if (!swVersion || swVersion !== htmlVersion)
         self.push(
           `${side}：Service Worker 與外殼頁的版本不同（${swVersion}／${htmlVersion}）`
+        );
+      else if (cacheVersion !== swVersion)
+        self.push(
+          `${side}：Service Worker 的 CACHE_VERSION（${cacheVersion}）不是這一版的版本`
         );
       else if (versionOf(maskHtmlVersion(html), e) !== swVersion)
         self.push(`${side}：版本和檔案內容重新計算的不同`);

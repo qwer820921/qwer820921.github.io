@@ -1,0 +1,81 @@
+{
+  "source": "d4d0e36df6aea6e53c95f039d32e05801914ab35",
+  "dir": "public/games/shenmaSanguo",
+  "files": {
+    "index.144x144.png": {
+      "bytes": 8761,
+      "sha256": "ea812a279c4625731d305ea0962472c125e18b6b9341f9182528f0cebce6a5cb",
+      "blob": "cb86ad92fb87789b59846204a3ad294c101e557c"
+    },
+    "index.180x180.png": {
+      "bytes": 11929,
+      "sha256": "3b26f608cccdebe8006a7309a1da219cafa5e29304055bed7b8eb8a3b6825938",
+      "blob": "4299b3e3990f00b1eb02396f2e585f6c6b973cb6"
+    },
+    "index.512x512.png": {
+      "bytes": 49018,
+      "sha256": "ec9db2a01719271d26bb763975597ca01956bc9271b2d167125e6b406167290f",
+      "blob": "ec8786f7611df5ab415a10e28bd3300beb5703df"
+    },
+    "index.apple-touch-icon.png": {
+      "bytes": 11929,
+      "sha256": "3b26f608cccdebe8006a7309a1da219cafa5e29304055bed7b8eb8a3b6825938",
+      "blob": "4299b3e3990f00b1eb02396f2e585f6c6b973cb6"
+    },
+    "index.audio.position.worklet.js": {
+      "bytes": 2973,
+      "sha256": "be33985bc7160d6bf9646f259cd86b259cd67b02ccb297ee5c44f8ac84327bc8",
+      "blob": "4e512c1e3c99c63cc69b0345b7bb250679e0d313"
+    },
+    "index.audio.worklet.js": {
+      "bytes": 7298,
+      "sha256": "5b476a9c9ce642c0ee4256436d1bc31d9c38f868aca0f9a8e2a57c18d2dec2a3",
+      "blob": "3b94cab85cb937fa27056d17648cdbb73e44bdbd"
+    },
+    "index.html": {
+      "bytes": 5534,
+      "sha256": "e3cc34f5842ab7f93a7f05ea6f8159f9cbded43b095a7f8d707604cea7a0c47f",
+      "blob": "19138d4fafe40e1ecf2ad6627b7effedac1ec53d"
+    },
+    "index.icon.png": {
+      "bytes": 5769,
+      "sha256": "0f7988acc72fcb26c666c5cf10f3aebbfc0ac73ad2322c73ea832ea5f7f3cf8f",
+      "blob": "51cbc06440f7693866460121b2326149cc1c2d09"
+    },
+    "index.js": {
+      "bytes": 279925,
+      "sha256": "8ee40f1dfac8ea4d9828cbe4f17fbf4834ba3e7708c1fe5a96c3388977f5ef38",
+      "blob": "50ce2f48dbde12507612e235926b61e6a1652bf5"
+    },
+    "index.manifest.json": {
+      "bytes": 327,
+      "sha256": "bb92916e81833ce0fbed37e8fb92bb70f2e4202c49b2da99f0f92e5cbd13f272",
+      "blob": "8c4233c93bbed3f48ba101f20869b024be64110a"
+    },
+    "index.offline.html": {
+      "bytes": 971,
+      "sha256": "b0a5d443e78f58717adac780bac91c1431bfa3b801c41f4707d507fb5ad2e47f",
+      "blob": "ae5298ae46e7e6548abc2d54a1d314c8f8801a5e"
+    },
+    "index.pck": {
+      "bytes": 4757872,
+      "sha256": "4793785ed2e12761cfb4d5bbb93a0a88dff652c68abe49a49981bd5341d727d8",
+      "blob": "e90a7a3628f2d1d8047d8b6ecf3d27548b69366e"
+    },
+    "index.png": {
+      "bytes": 21443,
+      "sha256": "3cb4495c0b98dfbe4b663cbf2b6836473572339beb66d902367893162a70be0e",
+      "blob": "766b0b66efb1ac8cb53d9cd6b7fa2ef70c6ec559"
+    },
+    "index.service.worker.js": {
+      "bytes": 5824,
+      "sha256": "62b02419d7a37d28451834c7661151c38dda6273b3b821ce954a4048e26e1407",
+      "blob": "8edc25807a8013ec4e657effe417ce8f1fbc5fcf"
+    },
+    "index.wasm": {
+      "bytes": 35749181,
+      "sha256": "52e3c0045f333c05c85b03bc034b87225bc064d1d4eb673bf844ffaea6beadb4",
+      "blob": "1f92533fcd1ace75ac68d36c27ce5a9c9e39aa18"
+    }
+  }
+}
