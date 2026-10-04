@@ -13,7 +13,7 @@ import { attackIntervalSec } from "./heroStats";
  * - 數值是存檔的基礎值（目前等級），不含戰場上的技能、光環與加成。射程技能（百步穿楊）另外列「戰場有效射程」，
  *   照 effectiveRange 乘一次；基礎射程那一列不乘
  * - 設定或存檔的數值無效（缺欄位、不是有限的數字、等級不是正整數）時這一位「不能比較」，不猜 0 或其他預設值
- * - 不計算總戰力、排名或每秒傷害
+ * - 不計算總戰力、排名或每秒傷害；差額（compareDiffs）只是右欄減左欄的數字差，不判斷好壞
  */
 
 /** 最多比較幾位 */
@@ -133,6 +133,43 @@ export function compareColumn(
     canHitAir: heroCanHitAir(config.job),
     airText: heroAirText(config.job),
   };
+}
+
+/** 可以算差額的數值列（等級、職業、技能與對空不算） */
+export const COMPARE_DIFF_KEYS = [
+  "atk",
+  "def",
+  "hp",
+  "cost",
+  "range",
+  "battleRange",
+  "interval",
+] as const;
+export type CompareDiffKey = (typeof COMPARE_DIFF_KEYS)[number];
+
+/** 戰場有效射程：有射程技能的是 battleRange；沒有射程技能的照既有規則就是基礎射程；不能比較的是 null */
+export function battleRangeOf(c: HeroCompareColumn): number | null {
+  if (!c.ok) return null;
+  return c.battleRange ?? c.range;
+}
+
+/**
+ * 比較的差額：以左欄為基準，右欄的值−左欄的值。兩邊先照畫面顯示四捨五入到 3 位小數再相減（差額和看到的數字一致），0 就是相同。
+ * 任一欄不能比較或沒有有效的值時是 null（不能比較），不把 null 當 0；不算百分比、總戰力，也不判斷誰比較好
+ */
+export function compareDiffs(
+  left: HeroCompareColumn,
+  right: HeroCompareColumn
+): Record<CompareDiffKey, number | null> {
+  const value = (c: HeroCompareColumn, k: CompareDiffKey) =>
+    !c.ok ? null : k === "battleRange" ? battleRangeOf(c) : c[k];
+  const out = {} as Record<CompareDiffKey, number | null>;
+  for (const k of COMPARE_DIFF_KEYS) {
+    const a = value(left, k);
+    const b = value(right, k);
+    out[k] = finite(a) && finite(b) ? round3(round3(b) - round3(a)) || 0 : null;
+  }
+  return out;
 }
 
 /** 選取的兩位（照選取的順序）；不在設定裡的略過 */

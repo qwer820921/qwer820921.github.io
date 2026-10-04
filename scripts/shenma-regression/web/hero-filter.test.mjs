@@ -2,7 +2,8 @@
 // - 用專案內的 TypeScript 即時轉譯 heroFilter.ts（主頁武將視窗、武將頁與隊伍編排共用的純函式）與 heroCategories.ts
 // - 涵蓋：名稱／id 的部分文字、頭尾空白、英文字母大小寫；職業篩選（含法師與「其他」）與組合；空結果與符合數；
 //   等級／攻擊力（高→低）與升級費用、出陣費用（低→高）的排序、同值維持原清單順序、數值不是用格式化文字比較；
-//   沒有升級紀錄的武將是 Lv1 與基礎屬性；不改動傳入的資料；職業與稀有度的名稱、顏色與不認得的值
+//   沒有升級紀錄的武將是 Lv1 與基礎屬性；不改動傳入的資料；職業與稀有度的名稱、顏色與不認得的值；
+//   武將列表的對空（沿用 heroCanHitAir）與上陣（存檔隊伍的有效 hero_id、去重；沒有隊伍資料時不能判斷）篩選與組合
 // 用法：node scripts/shenma-regression/web/hero-filter.test.mjs
 // 反向驗證：HERO_FILTER_SRC 指向改壞的 heroFilter.ts 時應該要有測試失敗
 // 輸出 PASS／FAIL 各行與一行 RESULT_JSON；有任何失敗時結束碼為 1
@@ -41,12 +42,17 @@ const {
   resolveHeroState,
   heroUpgradeCost,
   isDefaultHeroFilter,
+  teamHeroIdSet,
+  matchesAir,
   DEFAULT_HERO_FILTER,
   HERO_JOB_OPTIONS,
   HERO_SORT_OPTIONS,
   TEAM_SORT_OPTIONS,
+  HERO_AIR_OPTIONS,
+  HERO_TEAM_OPTIONS,
   OTHER_JOB,
 } = require(REAL);
+const { heroCanHitAir } = require(join(UTILS, "antiAir.ts"));
 const {
   jobInfo,
   rarityInfo,
@@ -415,6 +421,130 @@ block("職業與稀有度的顯示", () => {
       ru[4].label === "UR" &&
       ru.every((r) => !r.known && r.color === UNKNOWN_CATEGORY_COLOR),
     { rk, ru }
+  );
+});
+
+// ── 對空與上陣（只有武將列表顯示；隊伍編排沿用「全部」）─────────────────
+block("對空與上陣", () => {
+  const air = run({ air: "air" });
+  const ground = run({ air: "ground" });
+  const mixedGround = filterAndSortHeroes(MIXED, [], {
+    ...DEFAULT_HERO_FILTER,
+    air: "ground",
+  });
+  check(
+    "武將篩選-26 對空沿用戰場規則（heroCanHitAir）：可以對空＝弓兵、法師（黃忠、周瑜），只打地面＝其他 4 位；兩者合起來是全部；遊戲不認得的職業（舊中文、healer、空白、沒有欄位）都算只打地面（和步兵關羽、騎兵趙雲一起）",
+    JSON.stringify(ids(air)) === '["huang_zhong","zhou_yu"]' &&
+      JSON.stringify(ids(ground)) ===
+        '["guan_yu","zhao_yun","zhang_fei","lu_bu"]' &&
+      air.matched + ground.matched === air.total &&
+      CONFIGS.every(
+        (c) =>
+          matchesAir(c.job, "air") === heroCanHitAir(c.job) &&
+          matchesAir(c.job, "ground") === !heroCanHitAir(c.job) &&
+          matchesAir(c.job, "all")
+      ) &&
+      JSON.stringify(ids(mixedGround)) ===
+        '["guan_yu","old_a","healer","blank","nojob","zhao_yun"]',
+    { air: ids(air), ground: ids(ground), mixed: ids(mixedGround) }
+  );
+  const team = [
+    { hero_id: "huang_zhong", slot: 1 },
+    { hero_id: "guan_yu", slot: 2 },
+    { hero_id: "guan_yu", slot: 3 },
+    { hero_id: "ghost_hero", slot: 4 },
+    { hero_id: 5, slot: 5 },
+    null,
+    { slot: 6 },
+  ];
+  const set = teamHeroIdSet(team, CONFIGS);
+  check(
+    "武將篩選-27 上陣的武將只算存檔隊伍裡有效的 hero_id：去掉重複、設定沒有的 id、不是文字的 id 與壞掉的格子；隊伍不是陣列時是 null（不能判斷），空陣列是空集合",
+    set instanceof Set &&
+      JSON.stringify([...set].sort()) === '["guan_yu","huang_zhong"]' &&
+      teamHeroIdSet(undefined, CONFIGS) === null &&
+      teamHeroIdSet(null, CONFIGS) === null &&
+      teamHeroIdSet({ 0: "guan_yu" }, CONFIGS) === null &&
+      teamHeroIdSet([], CONFIGS).size === 0,
+    { set: set && [...set] }
+  );
+  const runT = (over, teamIds) =>
+    filterAndSortHeroes(
+      CONFIGS,
+      HEROES,
+      { ...DEFAULT_HERO_FILTER, ...over },
+      teamIds
+    );
+  const inT = runT({ team: "in" }, set);
+  const outT = runT({ team: "out" }, set);
+  const unknownIn = runT({ team: "in" }, null);
+  const unknownOut = runT({ team: "out" }, undefined);
+  const unknownAll = runT({}, null);
+  const emptyIn = runT({ team: "in" }, new Set());
+  const emptyOut = runT({ team: "out" }, new Set());
+  check(
+    "武將篩選-28 上陣：已上陣＝關羽、黃忠（照原清單順序），未上陣＝其他 4 位；沒有隊伍資料時選已上陣或未上陣都沒有武將符合並標示 teamUnknown（不會把全部當成未上陣），選全部照常；空隊伍時全部未上陣",
+    JSON.stringify(ids(inT)) === '["guan_yu","huang_zhong"]' &&
+      JSON.stringify(ids(outT)) ===
+        '["zhao_yun","zhou_yu","zhang_fei","lu_bu"]' &&
+      !inT.teamUnknown &&
+      !outT.teamUnknown &&
+      unknownIn.matched === 0 &&
+      unknownIn.teamUnknown === true &&
+      unknownOut.matched === 0 &&
+      unknownOut.teamUnknown === true &&
+      unknownAll.matched === 6 &&
+      unknownAll.teamUnknown === false &&
+      emptyIn.matched === 0 &&
+      !emptyIn.teamUnknown &&
+      emptyOut.matched === 6,
+    {
+      in: ids(inT),
+      out: ids(outT),
+      unknownIn,
+      unknownOut: unknownOut.matched,
+      emptyOut: emptyOut.matched,
+    }
+  );
+  const andAir = runT({ team: "in", air: "air" }, set);
+  const andQuery = runT({ team: "out", air: "ground", query: "u" }, set);
+  const andJob = runT({ team: "out", job: "cavalry", air: "air" }, set);
+  const sorted = runT({ team: "in", sort: "atk" }, set);
+  const sortedOut = runT({ team: "out", sort: "level" }, set);
+  check(
+    "武將篩選-29 和搜尋、職業是「而且」：已上陣＋可以對空＝黃忠；未上陣＋只打地面＋「u」＝趙雲、Lu Bu；未上陣＋騎兵＋可以對空＝0；排序規則不變（已上陣依攻擊力：關羽 1000、黃忠 150；未上陣依等級：趙雲 Lv2 在前，其他同 Lv1 照原順序）",
+    JSON.stringify(ids(andAir)) === '["huang_zhong"]' &&
+      JSON.stringify(ids(andQuery)) === '["zhao_yun","lu_bu"]' &&
+      andJob.matched === 0 &&
+      andJob.total === 6 &&
+      JSON.stringify(ids(sorted)) === '["guan_yu","huang_zhong"]' &&
+      JSON.stringify(ids(sortedOut)) ===
+        '["zhao_yun","zhou_yu","zhang_fei","lu_bu"]',
+    {
+      andAir: ids(andAir),
+      andQuery: ids(andQuery),
+      andJob: andJob.matched,
+      sorted: ids(sorted),
+      sortedOut: ids(sortedOut),
+    }
+  );
+  const setBefore = JSON.stringify([...set]);
+  const teamBefore = JSON.stringify(team);
+  const cfgBefore = JSON.stringify(CONFIGS);
+  runT({ team: "out", air: "ground", sort: "cost" }, set);
+  check(
+    "武將篩選-30 預設條件是對空全部、上陣全部；任一個不是全部就不是預設；選項名稱（全部／可以對空／只打地面、全部／已上陣／未上陣）；篩選不改傳入的隊伍、集合與設定",
+    DEFAULT_HERO_FILTER.air === "all" &&
+      DEFAULT_HERO_FILTER.team === "all" &&
+      !isDefaultHeroFilter({ ...DEFAULT_HERO_FILTER, air: "air" }) &&
+      !isDefaultHeroFilter({ ...DEFAULT_HERO_FILTER, team: "out" }) &&
+      JSON.stringify(HERO_AIR_OPTIONS.map((o) => [o.value, o.label])) ===
+        '[["all","全部"],["air","可以對空"],["ground","只打地面"]]' &&
+      JSON.stringify(HERO_TEAM_OPTIONS.map((o) => [o.value, o.label])) ===
+        '[["all","全部"],["in","已上陣"],["out","未上陣"]]' &&
+      JSON.stringify([...set]) === setBefore &&
+      JSON.stringify(team) === teamBefore &&
+      JSON.stringify(CONFIGS) === cfgBefore
   );
 });
 

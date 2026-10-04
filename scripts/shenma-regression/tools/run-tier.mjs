@@ -154,6 +154,11 @@ const QUICK = [
     ["scripts/shenma-regression/tools/selftest.mjs", PACKAGE_DIR],
   ],
   [
+    "回歸工具暫存目錄清理的正反案例（只清自己建立且通過的目錄、路徑保護）",
+    "node",
+    ["scripts/shenma-regression/tools/temp-dir.test.mjs"],
+  ],
+  [
     "發布目錄核對（舊正式版目錄沒有改、版本目錄自我一致、網站入口指向保留中的目錄）",
     "node",
     ["scripts/shenma-regression/tools/game-release.mjs", "check"],

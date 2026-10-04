@@ -3351,3 +3351,18 @@
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.07);
 }
+
+/* ── 兩位武將比較表：項目欄固定寬度、標題不換行，兩位武將平分其餘寬度（窄手機也不會把項目欄擠成一個字寬） ── */
+.compareTable {
+  table-layout: fixed;
+  width: 100%;
+}
+.compareLabelCol {
+  width: 5.75em;
+}
+.compareTable th[scope="row"] {
+  white-space: nowrap;
+}
+.compareTable td {
+  overflow-wrap: anywhere;
+}

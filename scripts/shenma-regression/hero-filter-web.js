@@ -7,6 +7,8 @@ async (page) => {
   // - 升級後排序立即反映新數值，打開的詳情仍是同一位武將（不因排序跳到別人）
   // - 切換帳號後以新帳號的資料重算（等級不是舊帳號的）
   // - 有標籤、鍵盤可操作、清除後焦點回到搜尋框；390×844 窄畫面沒有橫向溢出
+  // - E 對空（弓兵、法師可以）與上陣（存檔隊伍裡有設定的武將）篩選：兩個入口、和搜尋／職業「而且」、排序不變、沒有請求；
+  //   比較模式的選取被藏起來時有說明且可清除；鍵盤；換隊伍後照新的隊伍；390×844／390×600；隊伍編排頁沒有這兩組按鈕
   // 全部 mock、虛構金鑰 test_herofilter_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -62,13 +64,16 @@ async (page) => {
   };
 
   // 測試自己的預期結果（不呼叫頁面的程式）：沒有升級紀錄＝Lv1、基礎攻擊；費用＝每級費用 × 等級；同值依設定順序
-  const expected = (profile, { query = "", job = null, sort = "default" } = {}) => {
+  // 對空：弓兵、法師可以攻擊飛行，其他職業只打地面；上陣：存檔隊伍裡的 hero_id
+  const expected = (profile, { query = "", job = null, sort = "default", air = "all", team = "all" } = {}) => {
     const q = query.trim().toLowerCase();
+    const inTeam = new Set((profile.team || []).map((s) => s.hero_id));
     const rows = config.heroes.map((c, index) => {
       const h = (profile.heroes || []).find((x) => x.hero_id === c.hero_id) || { level: 1, atk: c.base_atk };
       return { id: c.hero_id, level: h.level, atk: h.atk, cost: c.upgrade_cost_base * h.level, index, c };
     });
-    const hit = rows.filter((r) => (job === null || r.c.job === job) && (q === "" || r.c.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q)));
+    const hit = rows.filter((r) => (job === null || r.c.job === job) && (q === "" || r.c.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q)) &&
+      (air === "all" || (air === "air") === ["archer", "mage"].includes(r.c.job)) && (team === "all" || (team === "in") === inTeam.has(r.id)));
     const k = { level: (r) => -r.level, atk: (r) => -r.atk, cost: (r) => r.cost }[sort];
     if (k) hit.sort((a, b) => k(a) - k(b) || a.index - b.index);
     return hit.map((r) => r.id);
@@ -87,10 +92,16 @@ async (page) => {
       const q = b.querySelector('[data-testid="hero-filter-search"]');
       const s = b.querySelector('[data-testid="hero-filter-sort"]');
       const empty = b.querySelector('[data-testid="hero-filter-empty"]');
+      // 按鈕群組：職業（每個入口都有）、對空與上陣（只有武將列表）；沒有那個群組時是 null
+      const groups = [...b.querySelectorAll('[role="group"]')];
+      const groupBy = (name) => groups.find((g) => ((document.getElementById(g.getAttribute("aria-labelledby")) || {}).innerText || "").trim().startsWith(name));
+      const pressedIn = (g) => (g ? [...g.querySelectorAll('button[aria-pressed="true"]')].map((x) => x.innerText.trim()) : null);
       return {
         query: q.value,
         sort: s.value,
-        pressed: [...b.querySelectorAll('button[aria-pressed="true"]')].map((x) => x.innerText.trim()),
+        pressed: pressedIn(groupBy("職業")),
+        air: pressedIn(groupBy("對空")),
+        team: pressedIn(groupBy("上陣")),
         clearDisabled: b.querySelector('[data-testid="hero-filter-clear"]').disabled,
         count: (b.querySelector('[data-testid="hero-filter-count"]') || {}).innerText?.trim() ?? null,
         empty: empty ? empty.innerText.trim() : null,
@@ -99,6 +110,7 @@ async (page) => {
     });
   const isDefault = (st) =>
     !!st && st.query === "" && st.sort === "default" && JSON.stringify(st.pressed) === '["全部"]' &&
+    JSON.stringify(st.air) === '["全部"]' && JSON.stringify(st.team) === '["全部"]' &&
     st.clearDisabled === true && st.count === `符合 ${TOTAL} 位／共 ${TOTAL} 位` && st.empty === null;
   const search = (text) => page.getByTestId("hero-filter-search").fill(text);
   const job = (value) => page.getByTestId(`hero-filter-job-${value ?? "all"}`).click();
@@ -444,6 +456,209 @@ async (page) => {
     const ok = (m) => m.docScroll <= m.vw && m.bar.left >= 0 && m.bar.right <= m.vw && m.outside.length === 0 && (m.panelOverflow === null || m.panelOverflow <= 0) && m.labelPx >= 12 && m.countPx >= 12;
     run.check("D-1 390×844：武將頁與主頁武將視窗的控制列（含無結果提示）都在畫面寬度內、頁面與視窗沒有橫向溢出、標籤與符合數字級至少 12px（截圖另存）",
       [pageM, pageEmpty, modalM, modalEmpty].every(ok), out.D);
+  });
+
+  // ── E. 對空與上陣篩選（只有武將列表；隊伍編排沒有）──
+  // 丙：黃忠 Lv2；存檔隊伍是黃忠＋一個設定裡沒有的 id（不造卡片、不算上陣）
+  const C = "test_herofilter_c";
+  const PROF_C = {
+    nickname: "篩選玩家丙", level: 1, exp: 0, gold: 5000, capacity: 11, max_stage: "chapter1_7",
+    heroes: [hero("huang_zhong", 2, 160)],
+    team: [{ hero_id: "huang_zhong", slot: 1 }, { hero_id: "not_in_config", slot: 2 }],
+  };
+  const air = (v) => page.getByTestId(`hero-filter-air-${v}`).click();
+  const team = (v) => page.getByTestId(`hero-filter-team-${v}`).click();
+  const statusSteps = async (label, profile) => {
+    const steps = [];
+    const step = async (name, crit, act) => {
+      await act();
+      await H.sleep(120);
+      const got = await ids();
+      const st = await bar();
+      const want = expected(profile, crit);
+      steps.push({ name, ok: same(got, want) && st.count === `符合 ${want.length} 位／共 ${TOTAL} 位` && (want.length === 0) === (st.empty !== null), got, want, count: st.count, empty: st.empty, air: st.air, team: st.team });
+    };
+    await step("可以對空", { air: "air" }, () => air("air"));
+    await step("只打地面", { air: "ground" }, () => air("ground"));
+    await step("對空全部", {}, () => air("all"));
+    await step("已上陣", { team: "in" }, () => team("in"));
+    await step("未上陣", { team: "out" }, () => team("out"));
+    await step("未上陣＋可以對空", { team: "out", air: "air" }, () => air("air"));
+    await step("未上陣＋只打地面＋搜尋 guan", { team: "out", air: "ground", query: "guan" }, async () => { await air("ground"); await search("guan"); });
+    await step("已上陣＋只打地面＋搜尋 guan（空結果）", { team: "in", air: "ground", query: "guan" }, () => team("in"));
+    await step("清除條件", {}, () => clear());
+    await step("未上陣＋步兵", { team: "out", job: "infantry" }, async () => { await team("out"); await job("infantry"); });
+    await step("未上陣＋依等級", { team: "out", sort: "level" }, async () => { await job(null); await sortBy("level"); });
+    await step("清除條件（第二次）", {}, () => clear());
+    out[label + "_status_steps"] = steps;
+    return steps;
+  };
+  const groupsA11y = () => page.evaluate(() => {
+    const b = document.querySelector('[data-testid="hero-filter-bar"]');
+    return [...b.querySelectorAll('[role="group"]')].map((g) => ({
+      label: ((document.getElementById(g.getAttribute("aria-labelledby")) || {}).innerText || "").trim(),
+      buttons: [...g.querySelectorAll("button")].map((x) => [x.innerText.trim(), x.type, x.getAttribute("aria-pressed")]),
+    }));
+  });
+  const compareBar = () => page.evaluate(() => ({
+    picked: document.querySelector('[data-testid="hero-compare-picked"]')?.innerText.trim() ?? null,
+    hidden: document.querySelector('[data-testid="hero-compare-hidden"]')?.innerText.trim() ?? null,
+    start: document.querySelector('[data-testid="hero-compare-start"]')?.disabled ?? null,
+  }));
+
+  await section("E", async () => {
+    await H.resetOrigin(page);
+    await setMock("__shenma_mock_gas_db", { profiles: { [C]: JSON.parse(JSON.stringify(PROF_C)) }, battle_logs: [] });
+    await page.evaluate((k) => localStorage.setItem("shenma_player_key", k), C);
+    await page.goto(H.BASE + "/shenmaSanguo");
+    await H.waitHud(page);
+    await waitSync("idle");
+    await H.clickButton(page, "武將");
+    await page.waitForSelector('[data-testid="hero-filter-bar"]');
+    const st0 = await bar();
+    const c0 = await cards();
+    const g0 = await groupsA11y();
+    out.E1 = { st0, c0, g0 };
+    run.check("E-1 主頁武將視窗多了「對空」（全部／可以對空／只打地面）與「上陣（存檔的出陣隊伍）」（全部／已上陣／未上陣）兩個按鈕群組，預設都是全部；只有四張卡片（隊伍裡設定沒有的 id 不造卡），在隊中只有黃忠",
+      isDefault(st0) && same(c0.map((c) => c.id), DEFAULT_IDS) && c0.filter((c) => c.inTeam).map((c) => c.id).join() === "huang_zhong" &&
+        same(g0.map((g) => g.label), ["職業", "對空", "上陣（存檔的出陣隊伍）"]) &&
+        same(g0[1].buttons.map((x) => x[0]), ["全部", "可以對空", "只打地面"]) && same(g0[2].buttons.map((x) => x[0]), ["全部", "已上陣", "未上陣"]) &&
+        g0.slice(1).every((g) => g.buttons.every((x) => x[1] === "button" && /^(true|false)$/.test(x[2]))),
+      out.E1);
+
+    const before = await storageSnapshot();
+    const log0 = (await H.gasLog(page)).length;
+    const steps = await statusSteps("E", PROF_C);
+    await H.sleep(1500);
+    const after = await storageSnapshot();
+    const newLog = (await H.gasLog(page)).slice(log0);
+    run.check("E-2 對空（弓兵、法師可以；步兵、騎兵只打地面）與上陣（只算存檔隊伍裡有設定的武將）：單獨與和搜尋、職業組合都是「而且」，排序規則不變；每一步的卡片與符合數都和依後端資料算出的預期相同",
+      steps.length === 12 && steps.every((s) => s.ok), steps.filter((s) => !s.ok));
+    const emptyStep = steps.find((s) => s.name.includes("空結果"));
+    run.check("E-3 空結果：符合 0 位／共 4 位，提示說明可以調整篩選條件或清除條件",
+      !!emptyStep && emptyStep.ok && /篩選條件/.test(emptyStep.empty || "") && /清除條件/.test(emptyStep.empty || ""), emptyStep);
+    run.check("E-4 對空與上陣篩選期間沒有任何 GAS 請求（沒有部署、保存或隊伍修改），session、localStorage 的鍵與網址不變",
+      newLog.length === 0 && same(before, after), { newLog, sessionDiff: sessionDiff(before, after), url: after.url });
+
+    // 比較模式：選黃忠、關羽 → 篩選未上陣把黃忠藏起來，選取照 hero_id 保留並說明；可以清除
+    await page.getByTestId("hero-compare-toggle").click();
+    await page.locator(`${CARD}[data-hero-id="huang_zhong"]`).click();
+    await page.locator(`${CARD}[data-hero-id="guan_yu"]`).click();
+    await team("out");
+    await H.sleep(150);
+    const cb1 = await compareBar();
+    const cards1 = await ids();
+    await page.getByTestId("hero-compare-start").click();
+    await page.waitForSelector('[data-testid="hero-compare"]');
+    const heads = await page.evaluate(() => [...document.querySelectorAll('[data-testid="hero-compare-table"] thead th')].map((th) => th.innerText.trim()));
+    await page.keyboard.press("Escape");
+    await H.sleep(300);
+    await page.getByTestId("hero-compare-clear").click();
+    await H.sleep(150);
+    const cb2 = await compareBar();
+    await page.getByTestId("hero-compare-toggle").click();
+    await clear();
+    out.E5 = { cb1, cards1, heads, cb2 };
+    run.check("E-5 比較模式選黃忠、關羽後篩選未上陣：黃忠的卡片藏起來，但選取照 hero_id 保留（已選 2／2：黃忠、關羽），並說明黃忠被篩選藏起來、可以清除；仍可比較這兩位；按「清除選取」後已選 0、說明消失",
+      same(cards1, ["guan_yu", "zhao_yun", "zhou_yu"]) && /已選 2／2：黃忠、關羽/.test(cb1.picked || "") && /黃忠目前被篩選條件藏起來/.test(cb1.hidden || "") && cb1.start === false &&
+        same(heads, ["項目", "黃忠", "關羽"]) && /已選 0／2/.test(cb2.picked || "") && cb2.hidden === null,
+      out.E5);
+
+    // 鍵盤：職業「其他」→ Tab 到對空的按鈕，Enter 套用；再 Tab 到上陣的按鈕
+    await page.getByTestId("hero-filter-job-other").focus();
+    const kt = [];
+    await page.keyboard.press("Tab");
+    kt.push((await bar()).active);
+    await page.keyboard.press("Tab");
+    kt.push((await bar()).active);
+    await page.keyboard.press("Enter");
+    await H.sleep(150);
+    const kAir = { st: await bar(), ids: await ids() };
+    await page.keyboard.press("Tab");
+    kt.push((await bar()).active);
+    await page.keyboard.press("Tab");
+    kt.push((await bar()).active);
+    await page.keyboard.press("Tab");
+    kt.push((await bar()).active);
+    await page.keyboard.press(" ");
+    await H.sleep(150);
+    const kTeam = { st: await bar(), ids: await ids() };
+    await clear();
+    out.E6 = { kt, kAir, kTeam };
+    run.check("E-6 鍵盤：職業「其他」之後 Tab 依序到對空的全部、可以對空（Enter 套用：黃忠、周瑜）、只打地面，再到上陣的全部、已上陣（空白鍵套用：可以對空＋已上陣＝黃忠）；按鈕標示按下狀態",
+      same(kt, ["hero-filter-air-all", "hero-filter-air-air", "hero-filter-air-ground", "hero-filter-team-all", "hero-filter-team-in"]) &&
+        same(kAir.st.air, ["可以對空"]) && same(kAir.ids, ["huang_zhong", "zhou_yu"]) &&
+        same(kTeam.st.team, ["已上陣"]) && same(kTeam.ids, ["huang_zhong"]),
+      out.E6);
+
+    // 換隊伍（後端存檔改成周瑜，玩家資訊「強制從雲端同步」）：上陣篩選照新的隊伍
+    await page.locator('button[class*="modalClose"]').first().click();
+    const dbNow = await db();
+    dbNow.profiles[C].team = [{ hero_id: "zhou_yu", slot: 1 }];
+    await setMock("__shenma_mock_gas_db", dbNow);
+    await page.locator('button[class*="hudAvatar"]').click();
+    await page.getByRole("button", { name: /強制從雲端同步/ }).click();
+    await page.waitForFunction(() => {
+      try { const p = JSON.parse(sessionStorage.getItem("shenma_player_state") || "null"); return p && p.syncStatus === "idle" && JSON.stringify((p.team || []).map((s) => s.hero_id)) === '["zhou_yu"]'; } catch { return false; }
+    }, null, { timeout: 60000, polling: 100 });
+    await page.getByRole("button", { name: "關閉玩家資訊", exact: true }).click();
+    await H.sleep(300);
+    await H.clickButton(page, "武將");
+    await page.waitForSelector('[data-testid="hero-filter-bar"]');
+    await team("in");
+    await H.sleep(150);
+    const inAfter = await ids();
+    const badge = (await cards()).filter((c) => c.inTeam).map((c) => c.id);
+    await page.locator('button[class*="modalClose"]').first().click();
+    out.E7 = { inAfter, badge };
+    run.check("E-7 換隊伍（存檔隊伍改成周瑜並同步）後再打開：已上陣＝周瑜、在隊中標示也是周瑜（照目前的資料，不是舊的隊伍）",
+      same(inAfter, ["zhou_yu"]) && same(badge, ["zhou_yu"]), out.E7);
+
+    // 獨立武將頁：同樣的群組與規則；窄畫面
+    const profNow = { ...PROF_C, team: [{ hero_id: "zhou_yu", slot: 1 }] };
+    await page.goto(H.BASE + "/shenmaSanguo/heroes");
+    await page.waitForSelector(CARD);
+    await waitSessionIdle();
+    const p0 = await bar();
+    const log1 = (await H.gasLog(page)).length;
+    const pSteps = await statusSteps("E_page", profNow);
+    const pLog = (await H.gasLog(page)).slice(log1);
+    const vp = page.viewportSize();
+    const narrow = [];
+    for (const [w, h] of [[390, 844], [390, 600]]) {
+      await page.setViewportSize({ width: w, height: h });
+      await team("out");
+      await air("air");
+      await H.sleep(350);
+      narrow.push(await page.evaluate(() => {
+        const b = document.querySelector('[data-testid="hero-filter-bar"]');
+        const vw = innerWidth;
+        const outside = [...b.querySelectorAll("input,select,button")].filter((el) => {
+          const x = el.getBoundingClientRect();
+          return x.left < 0 || x.right > vw;
+        }).map((el) => el.getAttribute("data-testid"));
+        return { vw, docScroll: document.documentElement.scrollWidth, outside };
+      }));
+      out[`E_page_${w}x${h}_shot`] = await H.shot(page, `hero-filter-e-status-${w}x${h}`);
+      await clear();
+    }
+    await page.setViewportSize(vp || { width: 540, height: 900 });
+    out.E8 = { p0, pLog, narrow };
+    run.check("E-8 獨立武將頁：同樣的對空與上陣群組（預設全部）、每一步都和預期相同、沒有任何 GAS 請求；390×844 與 390×600 控制列在畫面寬度內、沒有橫向溢出",
+      isDefault(p0) && pSteps.length === 12 && pSteps.every((s) => s.ok) && pLog.length === 0 &&
+        narrow.every((m) => m.docScroll <= m.vw && m.outside.length === 0),
+      { failed: pSteps.filter((s) => !s.ok), pLog, narrow });
+
+    // 隊伍編排頁：共用的控制列不顯示對空與上陣（呼叫介面不變）
+    await page.goto(H.BASE + "/shenmaSanguo/team");
+    await page.waitForSelector('[data-testid="hero-filter-bar"]');
+    const teamPage = await page.evaluate(() => ({
+      air: document.querySelectorAll('[data-testid^="hero-filter-air-"]').length,
+      team: document.querySelectorAll('[data-testid^="hero-filter-team-"]').length,
+      job: document.querySelectorAll('[data-testid^="hero-filter-job-"]').length,
+    }));
+    out.E9 = teamPage;
+    run.check("E-9 隊伍編排頁的共用控制列只有原本的職業篩選，沒有對空與上陣按鈕", teamPage.air === 0 && teamPage.team === 0 && teamPage.job === 7, teamPage);
   });
 
   return run.finish({ out });

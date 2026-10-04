@@ -19,6 +19,7 @@ import {
   HeroFilterCriteria,
   filterAndSortHeroes,
   resolveHeroState,
+  teamHeroIdSet,
 } from "../../utils/heroFilter";
 import { jobInfo, rarityInfo } from "../../utils/heroCategories";
 import styles from "../../styles/shenmaSanguo.module.css";
@@ -556,14 +557,19 @@ export default function HeroListModal({
     );
   }
 
-  const teamHeroIds = new Set((player.team || []).map((s) => s.hero_id));
+  // 目前存檔出陣隊伍裡的武將（「在隊中」標示與上陣篩選共用；設定沒有的 id 不算）
+  const teamHeroIds = teamHeroIdSet(player.team, staticConfig.heroesConfig);
 
   // 每次都用目前的玩家資料計算（升級、切換帳號後立即反映）；在隊中的武將也照常顯示
   const listed = filterAndSortHeroes(
     staticConfig.heroesConfig,
     player.heroes,
-    criteria
+    criteria,
+    teamHeroIds
   );
+  const heroName = (id: string) =>
+    staticConfig.heroesConfig.find((c) => c.hero_id === id)?.name ?? id;
+  const shownIds = new Set(listed.items.map((e) => e.config.hero_id));
 
   const selectedConfig = selectedHeroId
     ? (staticConfig.heroesConfig.find((c) => c.hero_id === selectedHeroId) ??
@@ -596,14 +602,15 @@ export default function HeroListModal({
               onChange={setCriteria}
               matched={listed.matched}
               total={listed.total}
+              statusFilters
+              teamUnknown={listed.teamUnknown}
             />
             <HeroCompareBar
               active={compare.active}
-              names={compare.selected.map(
-                (id) =>
-                  staticConfig.heroesConfig.find((c) => c.hero_id === id)
-                    ?.name ?? id
-              )}
+              names={compare.selected.map(heroName)}
+              hiddenNames={compare.selected
+                .filter((id) => !shownIds.has(id))
+                .map(heroName)}
               refused={compare.refused}
               onToggle={compare.toggleMode}
               onStart={compare.start}
@@ -618,7 +625,7 @@ export default function HeroListModal({
                 const color = rarity.color;
                 const jColor = job.color;
                 const isSelected = config.hero_id === selectedHeroId;
-                const inTeam = teamHeroIds.has(config.hero_id);
+                const inTeam = !!teamHeroIds?.has(config.hero_id);
                 const canAfford = player.gold >= upgradeCost;
                 const picked = compare.selected.includes(config.hero_id);
                 return (

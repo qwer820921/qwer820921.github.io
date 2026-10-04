@@ -3,8 +3,10 @@
 // - 涵蓋：選取（加入、取消、選滿時不替換也不加入、不改原陣列）；設定重新載入後拿掉不在設定裡與重複的選取；
 //   比較欄的數值來自目前存檔（沒有升級紀錄的是 Lv1 與基礎屬性）；基礎射程不含技能、射程技能只在「戰場有效射程」乘一次；
 //   攻擊間隔與既有公式相同；技能名稱與沒有技能；對空依職業；設定或存檔無效時不能比較（不猜 0）；沒有總戰力、排名或每秒傷害
+// - 比較畫面狀態（components/useHeroCompare.ts）：設定拿掉再恢復時選取不復活、視窗不自動重開；載入中與有效空清單分開；
+//   換存檔清除；設定重新載入時數值更新；沒有無限重畫
 // 用法：node scripts/shenma-regression/web/hero-compare.test.mjs
-// 反向驗證：HERO_COMPARE_SRC 指向改壞的 heroCompare.ts 時應該要有測試失敗
+// 反向驗證：HERO_COMPARE_SRC 指向改壞的 heroCompare.ts、HERO_COMPARE_HOOK_SRC 指向改壞的 useHeroCompare.ts 時應該要有測試失敗
 // 輸出 PASS／FAIL 各行與一行 RESULT_JSON；有任何失敗時結束碼為 1
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -42,6 +44,9 @@ const {
   pruneCompare,
   compareColumn,
   compareColumns,
+  compareDiffs,
+  battleRangeOf,
+  COMPARE_DIFF_KEYS,
 } = require(REAL);
 const { attackIntervalSec } = require(join(UTILS, "heroStats.ts"));
 
@@ -224,6 +229,253 @@ check(
     CONFIGS[1].attack_range === 5,
   cols.map((c) => c.heroId)
 );
+
+// ── 差額（右欄−左欄）──
+{
+  const gyCol = compareColumn(CONFIGS[0], SAVE);
+  const hzCol = compareColumn(CONFIGS[1], SAVE);
+  const gyCopy = JSON.stringify(gyCol);
+  const d = compareDiffs(gyCol, hzCol);
+  const r = compareDiffs(hzCol, gyCol);
+  check(
+    "差額以左欄為基準、右欄−左欄：關羽→黃忠 ATK +18、DEF +4、HP +60、出陣容量 −1、基礎射程 +4.5、戰場射程 +7.5（關羽沒有射程技能沿用基礎射程 1.5，黃忠 9）、攻擊間隔 +0.24；左右對調正負號相反；不改傳入的欄",
+    d.atk === 18 &&
+      d.def === 4 &&
+      d.hp === 60 &&
+      d.cost === -1 &&
+      d.range === 4.5 &&
+      d.battleRange === 7.5 &&
+      d.interval === 0.24 &&
+      COMPARE_DIFF_KEYS.every((k) => r[k] === -d[k]) &&
+      battleRangeOf(gyCol) === 1.5 &&
+      battleRangeOf(hzCol) === 9 &&
+      JSON.stringify(gyCol) === gyCopy,
+    { d, r }
+  );
+  const same = compareDiffs(gyCol, compareColumn(CONFIGS[0], SAVE));
+  const fast = compareColumn(hero("zhou_cang", { attack_speed: 1 }), []);
+  const slow = compareColumn(hero("guan_yu", { attack_speed: 1.2 }), []);
+  const f = compareDiffs(slow, fast);
+  check(
+    "差額：數值相同是 0（不是 −0）；先照畫面四捨五入再相減，沒有浮點誤差（1.2→1 秒是 −0.2，不是 −0.19999…）；只有 7 個數值鍵，沒有百分比、總戰力或排名",
+    COMPARE_DIFF_KEYS.every((k) => Object.is(same[k], 0)) &&
+      f.interval === -0.2 &&
+      Object.keys(d).sort().join() === [...COMPARE_DIFF_KEYS].sort().join() &&
+      COMPARE_DIFF_KEYS.length === 7,
+    { same, interval: f.interval, keys: Object.keys(d) }
+  );
+  const bad = compareColumn(hero("guan_yu", { attack_range: Number.NaN }), []);
+  const b1 = compareDiffs(bad, hzCol);
+  const b2 = compareDiffs(hzCol, bad);
+  check(
+    "差額：任一欄不能比較（射程不是有限的數字）時每一列都是 null（不能比較），不把無效值當 0；戰場射程也不能用另一欄單獨算",
+    COMPARE_DIFF_KEYS.every((k) => b1[k] === null && b2[k] === null) &&
+      battleRangeOf(bad) === null,
+    { b1, b2 }
+  );
+}
+
+// ── 比較畫面狀態（components/useHeroCompare.ts）──
+// 用最小的 React hook 模擬執行真正的 hook：依呼叫順序的 state／ref／memo 槽、effect 依賴有變才執行、
+// effect 或操作改了 state 就重畫到穩定（超過 20 次視為無限循環）。不是瀏覽器；掛載畫面的情境在 hero-compare-web.js
+const HOOK = join(
+  ROOT,
+  "src/app/(games)/shenmaSanguo/components/useHeroCompare.ts"
+);
+const HOOK_SRC = process.env.HERO_COMPARE_HOOK_SRC
+  ? resolve(process.env.HERO_COMPARE_HOOK_SRC)
+  : HOOK;
+function mountHook() {
+  const slots = [];
+  let cursor = 0;
+  let pending = [];
+  let dirty = false;
+  const same = (a, b) =>
+    !!a &&
+    !!b &&
+    a.length === b.length &&
+    a.every((v, i) => Object.is(v, b[i]));
+  const fakeReact = {
+    useState(init) {
+      const i = cursor++;
+      if (!(i in slots)) slots[i] = { v: init };
+      const s = slots[i];
+      const set = (next) => {
+        const v = typeof next === "function" ? next(s.v) : next;
+        if (!Object.is(v, s.v)) {
+          s.v = v;
+          dirty = true;
+        }
+      };
+      return [s.v, set];
+    },
+    useRef(init) {
+      const i = cursor++;
+      if (!(i in slots)) slots[i] = { current: init };
+      return slots[i];
+    },
+    useMemo(fn, deps) {
+      const i = cursor++;
+      if (!slots[i] || !same(slots[i].deps, deps)) slots[i] = { v: fn(), deps };
+      return slots[i].v;
+    },
+    useEffect(fn, deps) {
+      const i = cursor++;
+      if (!slots[i] || !same(slots[i].deps, deps)) {
+        slots[i] = { deps };
+        pending.push(fn);
+      }
+    },
+  };
+  const out = ts.transpileModule(readFileSync(HOOK_SRC, "utf8"), {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020,
+    },
+    fileName: HOOK,
+  }).outputText;
+  const mod = { exports: {} };
+  const req = createRequire(HOOK);
+  new Function("require", "module", "exports", out)(
+    (id) => (id === "react" ? fakeReact : req(id)),
+    mod,
+    mod.exports
+  );
+  let props = null;
+  let view = null;
+  let passes = 0;
+  const settle = () => {
+    passes = 0;
+    do {
+      dirty = false;
+      cursor = 0;
+      pending = [];
+      view = mod.exports.useHeroCompare(props.key, props.configs);
+      for (const fn of pending) fn();
+      passes += 1;
+    } while (dirty && passes <= 20);
+    return view;
+  };
+  return {
+    render: (key, configs) => {
+      props = { key, configs };
+      return settle();
+    },
+    act: (fn) => {
+      fn(view);
+      return settle();
+    },
+    passes: () => passes,
+  };
+}
+const shot = (v) => ({ active: v.active, selected: v.selected, open: v.open });
+const ALL = CONFIGS;
+const NO_GY = CONFIGS.filter((c) => c.hero_id !== "guan_yu");
+const picked = (h, key = "test_a") => {
+  h.render(key, ALL);
+  h.act((v) => v.toggleMode());
+  h.act((v) => v.pick("guan_yu"));
+  h.act((v) => v.pick("huang_zhong"));
+  return h.act((v) => v.start());
+};
+
+{
+  const h = mountHook();
+  const before = shot(picked(h));
+  const removed = shot(h.render("test_a", NO_GY));
+  const restored = shot(h.render("test_a", ALL));
+  const third = shot(h.act((v) => v.pick("zhou_cang")));
+  const started = shot(h.act((v) => v.start()));
+  check(
+    "比較狀態：有效設定清單拿掉關羽→選取只剩黃忠、視窗關閉；設定再有關羽也不會重新入選或自動重開；再選周倉滿兩位仍不自動開，按「比較這兩位」才開",
+    before.open === true &&
+      before.selected.join() === "guan_yu,huang_zhong" &&
+      removed.open === false &&
+      removed.selected.join() === "huang_zhong" &&
+      restored.open === false &&
+      restored.selected.join() === "huang_zhong" &&
+      third.selected.join() === "huang_zhong,zhou_cang" &&
+      third.open === false &&
+      started.open === true,
+    { before, removed, restored, third, started }
+  );
+}
+{
+  const h = mountHook();
+  picked(h);
+  const loading = shot(h.render("test_a", null));
+  const back = shot(h.render("test_a", ALL));
+  const empty = shot(h.render("test_a", []));
+  const afterEmpty = shot(h.render("test_a", ALL));
+  check(
+    "比較狀態：設定載入中或失敗（null）不顯示選取也不比較、視窗關閉，但選取不算失效；設定回來後兩位仍在、視窗不自動重開；有效的空清單則把選取全部移除，之後設定恢復也不回來",
+    loading.selected.length === 0 &&
+      loading.open === false &&
+      back.selected.join() === "guan_yu,huang_zhong" &&
+      back.open === false &&
+      empty.selected.length === 0 &&
+      afterEmpty.selected.length === 0 &&
+      afterEmpty.active === true,
+    { loading, back, empty, afterEmpty }
+  );
+}
+{
+  const h = mountHook();
+  picked(h);
+  const sameKey = shot(h.render("test_a", ALL));
+  const otherKey = shot(h.render("test_b", ALL));
+  const backKey = shot(h.render("test_a", ALL));
+  check(
+    "比較狀態：同一個存檔重畫保留選取與視窗；換成不同的 player.key 時比較模式、選取與視窗全部清掉，換回來也不恢復",
+    sameKey.open === true &&
+      sameKey.selected.length === 2 &&
+      otherKey.active === false &&
+      otherKey.selected.length === 0 &&
+      otherKey.open === false &&
+      backKey.active === false &&
+      backKey.selected.length === 0,
+    { sameKey, otherKey, backKey }
+  );
+}
+{
+  const h = mountHook();
+  const v0 = picked(h);
+  const refreshed = CONFIGS.map((c) =>
+    c.hero_id === "guan_yu" ? { ...c, cost: 6 } : { ...c }
+  );
+  const v1 = h.render("test_a", refreshed);
+  const c0 = compareColumns(v0.selected, CONFIGS, SAVE);
+  const c1 = compareColumns(v1.selected, refreshed, SAVE);
+  check(
+    "比較狀態：設定重新載入（新的陣列、同樣的武將）時選取與視窗照舊，比較表的數值改用新的設定（關羽出陣容量 4→6）",
+    v1.open === true &&
+      v1.selected.join() === "guan_yu,huang_zhong" &&
+      c0[0].cost === 4 &&
+      c1[0].cost === 6,
+    { selected: v1.selected, open: v1.open, cost: [c0[0].cost, c1[0].cost] }
+  );
+}
+{
+  const h = mountHook();
+  picked(h);
+  const counts = [];
+  let stable = true;
+  let last = h.render("test_a", [...ALL]);
+  for (let i = 0; i < 5; i++) {
+    const v = h.render("test_a", [...ALL]);
+    counts.push(h.passes());
+    if (v.selected.join() !== last.selected.join() || v.open !== last.open)
+      stable = false;
+    last = v;
+  }
+  h.render("test_a", NO_GY);
+  counts.push(h.passes());
+  check(
+    "比較狀態沒有循環：每次傳入新的設定陣列（內容相同）重畫一次就穩定、選取與視窗不變；拿掉一位時最多再重畫兩次",
+    stable && counts.slice(0, 5).every((n) => n === 1) && counts[5] <= 3,
+    counts
+  );
+}
 
 const failed = results.filter((r) => !r.ok).length;
 console.log("RESULT_JSON " + JSON.stringify({ total: results.length, failed }));

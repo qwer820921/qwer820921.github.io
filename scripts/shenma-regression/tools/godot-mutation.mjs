@@ -4,18 +4,15 @@
 // - none：不改程式，同一組測試必須全部通過、log 也要通過 check-log.mjs 的檢查（確認基準）
 // - 其他名稱：預期的測試項目必須 FAIL，否則結束碼 1（測試抓不到這個錯誤）
 // - check：只檢查全部變異定義的原文（見 checkDefinitions），不需要 GODOT；有任何一種失配、缺檔或定義無效時結束碼 1
-// 不寫入倉庫，暫存目錄保留供查看（log 在 <暫存>/test.log）
+// - --keep-temp（或 SHENMA_KEEP_TEMP=1）：一律保留暫存目錄
+// 不寫入倉庫。暫存目錄（log 在 <暫存>/test.log）在結果符合預期、而且結果與 log 已存到 <EVIDENCE_DIR>/temp-evidence/ 時刪除；
+// 沒有符合預期、中斷或沒有 EVIDENCE_DIR 時保留供查看（見 temp-dir.mjs）
 import { spawnSync, execFileSync } from "node:child_process";
-import {
-  cpSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createTempDir, finishTempDir } from "./temp-dir.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const GAME = join(ROOT, "godot/shenmaSanguo");
@@ -2209,8 +2206,8 @@ const MUTATIONS = {
   "spawn-kills-not-per-wave": {
     why: "上一波的敵人倒下也算進這一波的擊殺",
     file: WAVE,
-    from: "\tif int(enemy.get_meta(WAVE_META, -1)) != _prog_wave or enemy.has_meta(\"spawn_counted\"):\n",
-    to: "\tif enemy.has_meta(\"spawn_counted\"):\n",
+    from: '\tif int(enemy.get_meta(WAVE_META, -1)) != _prog_wave or enemy.has_meta("spawn_counted"):\n',
+    to: '\tif enemy.has_meta("spawn_counted"):\n',
     only: "spawn",
     expect: ["出兵進度-4 "],
   },
@@ -2291,7 +2288,7 @@ function checkDefinitions() {
   return problems.length === 0;
 }
 
-const name = process.argv[2];
+const name = process.argv.slice(2).find((a) => a !== "--keep-temp");
 if (name === "check") process.exit(checkDefinitions() ? 0 : 1);
 if (!name || name === "list") {
   for (const [k, m] of Object.entries(MUTATIONS))
@@ -2311,7 +2308,8 @@ if (!GODOT) {
 }
 const only = mut ? mut.only : process.env.SHENMA_TEST_ONLY || "sweep";
 
-const work = mkdtempSync(join(tmpdir(), "shenma-godot-mutation-"));
+const tmp = createTempDir("shenma-godot-mutation-");
+const work = tmp.dir;
 const proj = join(work, "project");
 mkdirSync(proj, { recursive: true });
 const files = execFileSync("git", ["ls-files", "-z", "."], { cwd: GAME })
@@ -2322,6 +2320,7 @@ for (const f of files) {
   mkdirSync(dirname(join(proj, f)), { recursive: true });
   cpSync(join(GAME, f), join(proj, f));
 }
+const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 if (mut) {
   const p = join(proj, mut.file);
   const text = readFileSync(p, "utf8").replace(/\r\n/g, "\n");
@@ -2388,25 +2387,41 @@ const ok = mut
     logCheck === 0;
 
 for (const f of fails) console.log("FAIL  " + f.slice(0, 160));
-console.log(
-  "RESULT_JSON " +
-    JSON.stringify({
-      mutation: name,
-      why: mut?.why ?? "基準（未改程式）",
-      only,
-      import_code: imp.code,
-      test_code: test.code,
-      timed_out: test.timedOut,
-      pass: passes,
-      fail: fails.length,
-      failed_names: fails.map((f) => f.split("  ")[0]),
-      expected: mut?.expect.map((e) => e.trim()) ?? [],
-      missed: missed.map((e) => e.trim()),
-      script_errors: scriptErrors.length,
-      log_check: logCheck === null ? null : logCheck === 0,
-      caught: mut ? ok : null,
-      seconds: Math.round((Date.now() - t0) / 1000),
-      work,
-    })
-);
+const summary = {
+  mutation: name,
+  why: mut?.why ?? "基準（未改程式）",
+  only,
+  import_code: imp.code,
+  test_code: test.code,
+  timed_out: test.timedOut,
+  pass: passes,
+  fail: fails.length,
+  failed_names: fails.map((f) => f.split("  ")[0]),
+  expected: mut?.expect.map((e) => e.trim()) ?? [],
+  missed: missed.map((e) => e.trim()),
+  script_errors: scriptErrors.length,
+  log_check: logCheck === null ? null : logCheck === 0,
+  caught: mut ? ok : null,
+  seconds: Math.round((Date.now() - t0) / 1000),
+  work,
+};
+console.log("RESULT_JSON " + JSON.stringify(summary));
+// 證據：結果、變異身份（檔案、原文與改後的 sha256）、改過的遊戲程式的指紋與兩份 log
+finishTempDir(tmp, {
+  passed: ok,
+  name: `godot-mutation ${name}`,
+  result: {
+    ...summary,
+    identity: mut
+      ? {
+          file: mut.file,
+          fromSha256: sha256(mut.from),
+          toSha256: sha256(mut.to),
+          mutatedFileSha256: sha256(readFileSync(join(proj, mut.file))),
+        }
+      : null,
+    projectFiles: files.length,
+  },
+  files: ["import.log", "test.log"],
+});
 process.exit(ok ? 0 : 1);

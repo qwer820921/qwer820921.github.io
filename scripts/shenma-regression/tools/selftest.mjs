@@ -1,20 +1,15 @@
 // 回歸工具自我測試：用刻意製造的 fixture 確認 verify-export.mjs 與 check-log.mjs
 // 「該失敗時一定失敗、允許的差異才放行」。不需要 Godot，也不會修改傳入的目錄。
-// 用法：node selftest.mjs <交付產物目錄，例如 public/games/shenmaSanguo-v/<版本>>
+// 用法：node selftest.mjs <交付產物目錄，例如 public/games/shenmaSanguo-v/<版本>> [--keep-temp]
 // 結束碼：0 = 每個 fixture 的結果都符合預期；1 = 有工具誤判
+// fixture 放在這次建立的暫存目錄：全部符合預期而且結果已存到 EVIDENCE_DIR 時刪除，其他情況保留（見 temp-dir.mjs）
 import { spawnSync } from "node:child_process";
-import {
-  cpSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { cpSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { maskNodeIds, parsePck } from "./pck.mjs";
+import { createTempDir, finishTempDir } from "./temp-dir.mjs";
 import {
   VERSION_PLACEHOLDER,
   htmlVersionOf,
@@ -23,12 +18,13 @@ import {
 } from "./postexport.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const publicDir = process.argv[2];
+const publicDir = process.argv.slice(2).find((a) => a !== "--keep-temp");
 if (!publicDir) {
   console.error("用法：node selftest.mjs <交付產物目錄>");
   process.exit(2);
 }
-const root = mkdtempSync(join(tmpdir(), "shenma-selftest-"));
+const tmp = createTempDir("shenma-selftest-");
+const root = tmp.dir;
 const base = join(root, "base");
 cpSync(publicDir, base, { recursive: true });
 
@@ -370,4 +366,27 @@ console.log(
     ? `自我測試：失敗（${bad} 個 fixture 被誤判）`
     : `自我測試：通過（${rows.length} 個 fixture 都符合預期）`
 );
+// 證據：交付產物的指紋（檔名＋sha256）與每個 fixture 的結果
+const packageFiles = readdirSync(base)
+  .sort()
+  .map((f) => [
+    f,
+    createHash("sha256")
+      .update(readFileSync(join(base, f)))
+      .digest("hex"),
+  ]);
+finishTempDir(tmp, {
+  passed: bad === 0,
+  name: "selftest",
+  result: {
+    package: publicDir,
+    packageFingerprint: createHash("sha256")
+      .update(JSON.stringify(packageFiles))
+      .digest("hex"),
+    packageFiles,
+    fixtures: rows.length,
+    bad,
+    rows,
+  },
+});
 process.exit(bad ? 1 : 0);

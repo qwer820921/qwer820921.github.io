@@ -11,6 +11,7 @@ export default function HeroCompareBar({
   active,
   names,
   refused,
+  hiddenNames = [],
   onToggle,
   onStart,
   onClear,
@@ -20,6 +21,8 @@ export default function HeroCompareBar({
   names: string[];
   /** 剛才選滿時又點了第三位 */
   refused: boolean;
+  /** 已選、但目前被列表的篩選藏起來的武將名稱（選取照 hero_id 保留，說明可以清除） */
+  hiddenNames?: string[];
   onToggle: () => void;
   onStart: () => void;
   onClear: () => void;
@@ -68,6 +71,12 @@ export default function HeroCompareBar({
       {active && (
         <div id={hintId} className="small text-muted mt-1">
           點選武將卡片加入比較（兩位不同的武將），再點一次取消；比較模式中點卡片不會開啟升級。
+        </div>
+      )}
+      {active && hiddenNames.length > 0 && (
+        <div className="small text-muted" data-testid="hero-compare-hidden">
+          {hiddenNames.join("、")}
+          目前被篩選條件藏起來，仍在比較的選取裡；可以按「清除選取」。
         </div>
       )}
       <div

@@ -28,6 +28,7 @@ import {
   HeroFilterCriteria,
   filterAndSortHeroes,
   resolveHeroState,
+  teamHeroIdSet,
 } from "../../utils/heroFilter";
 import { jobInfo, rarityInfo } from "../../utils/heroCategories";
 import styles from "../../styles/shenmaSanguo.module.css";
@@ -671,12 +672,17 @@ export default function HeroesPageContent() {
   const selectedHero = selectedConfig
     ? resolveHeroState(selectedConfig, player.heroes)
     : null;
-  // 每次都用目前的玩家資料計算（升級、切換帳號後立即反映）；在隊中的武將也照常顯示
+  // 每次都用目前的玩家資料計算（升級、切換帳號後立即反映）；在隊中的武將也照常顯示。
+  // 上陣篩選用目前存檔的出陣隊伍（設定沒有的 id 不算）
   const listed = filterAndSortHeroes(
     staticConfig.heroesConfig,
     player.heroes,
-    criteria
+    criteria,
+    teamHeroIdSet(player.team, staticConfig.heroesConfig)
   );
+  const heroName = (id: string) =>
+    staticConfig.heroesConfig.find((c) => c.hero_id === id)?.name ?? id;
+  const shownIds = new Set(listed.items.map((e) => e.config.hero_id));
 
   return (
     <Container fluid className={styles.pageContainer}>
@@ -695,13 +701,15 @@ export default function HeroesPageContent() {
         onChange={setCriteria}
         matched={listed.matched}
         total={listed.total}
+        statusFilters
+        teamUnknown={listed.teamUnknown}
       />
       <HeroCompareBar
         active={compare.active}
-        names={compare.selected.map(
-          (id) =>
-            staticConfig.heroesConfig.find((c) => c.hero_id === id)?.name ?? id
-        )}
+        names={compare.selected.map(heroName)}
+        hiddenNames={compare.selected
+          .filter((id) => !shownIds.has(id))
+          .map(heroName)}
         refused={compare.refused}
         onToggle={compare.toggleMode}
         onStart={compare.start}
