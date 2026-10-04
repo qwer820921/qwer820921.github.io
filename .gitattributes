@@ -1,0 +1,10 @@
+# 神馬三國的版本目錄（發布後內容不變）：Service Worker 與發布核對以 Git 保存的位元為準。
+# 文字檔一律以 LF 取出（Windows 的 core.autocrlf 不再轉成 CRLF），二進位檔不做任何換行轉換。
+# 只涵蓋版本目錄；舊正式版目錄 public/games/shenmaSanguo/ 固定是原檔，不在這裡改設定。
+public/games/shenmaSanguo-v/**/*.html text eol=lf
+public/games/shenmaSanguo-v/**/*.js text eol=lf
+public/games/shenmaSanguo-v/**/*.json text eol=lf
+public/games/shenmaSanguo-v/**/*.wasm binary
+public/games/shenmaSanguo-v/**/*.pck binary
+public/games/shenmaSanguo-v/**/*.png binary
+public/games/shenmaSanguo-v/**/*.ogg binary

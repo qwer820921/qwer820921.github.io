@@ -1,9 +1,14 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Row, Col } from "react-bootstrap";
 import { EnemyConfig, HeroConfig, MapConfig, TeamSlot } from "../../types";
 import { buildStagePreview, PreviewWave } from "../../utils/stagePreview";
+import {
+  StageComposition,
+  stageComposition,
+} from "../../utils/stageComposition";
 import { FLYING_RULE_TEXT } from "../../utils/antiAir";
 import { stageAirReadiness } from "../../utils/stageAirReadiness";
 import {
@@ -24,11 +29,17 @@ interface Props {
   /** 關卡尚未解鎖（只顯示資訊，不改變解鎖規則） */
   locked: boolean;
   onClose: () => void;
+  /**
+   * 關閉時開啟它的「敵軍預覽」按鈕已經不在畫面上（那張卡片被篩選藏起，或這一關已從設定移除）：焦點改交給這裡回傳的元素
+   * （關卡的搜尋框）
+   */
+  fallbackFocus?: () => HTMLElement | null;
 }
 
 /**
  * 關卡敵軍預覽（唯讀）：主頁的「關卡」視窗與獨立的關卡頁共用。
  * 只讀已載入的靜態設定（utils/stagePreview），沒有出征、切換關卡或任何寫入；
+ * 「敵軍組成」依敵人合計已確認會出兵的組（utils/stageComposition，可以收起），全關總數與逐波內容照舊；
  * 用 portal 放在神馬三國的 gameBody（主題變數 --sg-* 定義在那裡；放到 body 會變成透明、沒有文字顏色），
  * 不在關卡卡片裡面，點擊不會觸發卡片（卡片本身點下去就是出征／切換關卡）。
  * 鍵盤：開啟時焦點移到視窗裡、Tab 只在視窗內循環（不能操作背後的關卡卡片與出征按鈕），
@@ -41,11 +52,13 @@ export default function EnemyPreviewModal({
   heroesConfig,
   locked,
   onClose,
+  fallbackFocus,
 }: Props) {
   const preview = useMemo(
     () => buildStagePreview(map, enemies),
     [map, enemies]
   );
+  const composition = useMemo(() => stageComposition(preview), [preview]);
   const air = useMemo(
     () => stageAirReadiness(map, enemies, team, heroesConfig),
     [map, enemies, team, heroesConfig]
@@ -60,8 +73,11 @@ export default function EnemyPreviewModal({
 
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  // 開啟時焦點移到右上的關閉鈕，關閉時還給觸發的「敵軍預覽」按鈕；Esc 只關閉這個預覽、Tab 只在視窗內循環
-  const onKeyDown = useDialogFocus(panelRef, closeRef, onClose);
+  // 開啟時焦點移到右上的關閉鈕，關閉時還給觸發的「敵軍預覽」按鈕（已不在畫面上時交給 fallbackFocus）；
+  // Esc 只關閉這個預覽、Tab 只在視窗內循環
+  const onKeyDown = useDialogFocus(panelRef, closeRef, onClose, {
+    fallbackFocus: () => fallbackFocus?.() ?? null,
+  });
 
   return createPortal(
     <div
@@ -149,6 +165,8 @@ export default function EnemyPreviewModal({
             <StageAirReadinessNote readiness={air} variant="panel" />
           </div>
 
+          <CompositionBlock composition={composition} />
+
           {preview.waves.map((w) => (
             <WaveBlock
               key={w.wave}
@@ -169,6 +187,104 @@ export default function EnemyPreviewModal({
       </div>
     </div>,
     document.getElementsByClassName(styles.gameBody)[0] ?? document.body
+  );
+}
+
+/** 敵軍組成：依敵人合計已確認會出兵的組（預設展開，可以收起） */
+function CompositionBlock({
+  composition: c,
+}: {
+  composition: StageComposition;
+}) {
+  const [open, setOpen] = useState(true);
+  const bodyId = useId();
+  // 名稱相同但 enemy_id 不同的敵人分開列，並附上 id 才分得出來
+  const names = c.rows.map((r) => r.name);
+  const sameName = (n: string) => names.indexOf(n) !== names.lastIndexOf(n);
+  const headline =
+    c.rows.length === 0
+      ? "沒有可確認的出兵"
+      : c.complete
+        ? `共 ${c.confirmed} 隻`
+        : `已確認 ${c.confirmed} 隻`;
+  return (
+    <div
+      className={styles.previewWave}
+      data-testid="preview-composition"
+      data-complete={String(c.complete)}
+    >
+      <button
+        className={styles.previewWaveHeader}
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls={bodyId}
+        data-testid="preview-composition-toggle"
+      >
+        <span>{open ? "▾" : "▸"} 敵軍組成</span>
+        <span>{headline}</span>
+      </button>
+      {open && (
+        <div id={bodyId} className={styles.previewWaveBody}>
+          <div
+            className={styles.previewHint}
+            data-testid="preview-composition-summary"
+          >
+            {c.rows.length === 0
+              ? "沒有可以確認會出兵的組：不代表這一關沒有敵軍，也不代表可以開戰。"
+              : c.complete
+                ? `全關共 ${c.confirmed} 隻、${c.rows.length} 種敵人（依第一次出現的順序）。`
+                : `僅已確認組：共 ${c.confirmed} 隻、${c.rows.length} 種敵人；尚有資料問題，非全關總數。`}
+          </div>
+          {c.gaps.map((g) => (
+            <div
+              key={g}
+              className={styles.previewNote}
+              data-testid="preview-composition-gap"
+            >
+              資料問題：{g}
+            </div>
+          ))}
+          {c.unknownIds.length > 0 && (
+            <div
+              className={styles.previewNote}
+              data-testid="preview-composition-unknown"
+            >
+              資料問題：找不到敵人設定「{c.unknownIds.join("」、「")}
+              」，遊戲會略過，不列入組成。
+            </div>
+          )}
+          {c.rows.map((r) => (
+            <div
+              key={r.enemyId}
+              className={styles.previewGroup}
+              data-testid="preview-composition-row"
+              data-enemy-id={r.enemyId}
+              data-count={r.count}
+              data-movement={r.movement?.value ?? ""}
+            >
+              <Row className="g-1 align-items-center">
+                <Col xs={8} className={styles.previewGroupMain}>
+                  <strong>{r.name}</strong>
+                  {sameName(r.name) && (
+                    <span className={styles.previewGroupIndex}>
+                      （{r.enemyId}）
+                    </span>
+                  )}{" "}
+                  {r.movement?.value === "flying" ? (
+                    <span className={styles.previewFlying}>✈ 飛行</span>
+                  ) : (
+                    <span className={styles.previewGround}>地面</span>
+                  )}
+                </Col>
+                <Col xs={4} className="text-end">
+                  ×{r.count}
+                </Col>
+              </Row>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

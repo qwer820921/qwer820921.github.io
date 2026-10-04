@@ -10,7 +10,10 @@
 // - 回退：只改入口指標（point legacy 或 point <保留中的版本>）再建置網站，不刪除、不覆寫任何遊戲目錄
 //
 // 用法：
-//   node game-release.mjs check [--out]             核對發布目錄（--out 另核對 out/ 與 public/ 相同）；結束碼 0 通過、1 有問題
+//   node game-release.mjs check [--out]             候選自洽：核對發布目錄（--out 另核對 out/ 與 public/ 相同）；離線；結束碼 0 通過、1 有問題
+//   node game-release.mjs check-published <gh-pages 完整 SHA> [--out]
+//                                                   發布前的正式保留核對：候選自洽＋正式基準（釘選的 gh-pages 提交）上已發布的版本目錄
+//                                                   全部原樣保留、舊正式版目錄就是固定原檔；基準讀不到時結束碼 2（不當成沒有已發布版本）
 //   node game-release.mjs publish <匯出目錄>         把經過 postexport 的匯出放進它的版本目錄，入口改成這一版（上一個入口版本保留）
 //   node game-release.mjs point <版本|legacy>        只改入口指標（回退用）；目標必須是保留中的版本目錄或舊正式版
 //   node game-release.mjs restore-legacy            從 legacy-root.json 的來源 commit 取回舊正式版目錄的原檔（不在清單的檔案移除）
@@ -296,6 +299,131 @@ export function checkRelease(root = ROOT, { withOut = false } = {}) {
   return problems;
 }
 
+/** 正式基準讀不到或不是正式 Pages 的樹：停止核對（不能當成「沒有已發布版本」） */
+export class BaselineError extends Error {}
+
+/** git 的 blob id（文字檔 CRLF 視為 LF，和提交時相同） */
+const blobId = (buf) => {
+  const data = canonical(buf);
+  return createHash("sha1")
+    .update(Buffer.concat([Buffer.from(`blob ${data.length}\0`), data]))
+    .digest("hex");
+};
+
+/**
+ * 讀正式基準：gh-pages 的完整 SHA（由唯讀的 git ls-remote 取得、git fetch 到本機後釘選）裡的舊正式版目錄與已發布的版本目錄。
+ * 回傳 { baseline, legacy: Map<檔名, blob>, published: Map<版本, Map<檔名, blob>> }；讀不到就丟 BaselineError
+ */
+export function readPublished(baseline, repo = ROOT) {
+  if (!/^[0-9a-f]{40}$/.test(baseline || ""))
+    throw new BaselineError(
+      "正式基準必須是 gh-pages 的完整 40 字元 SHA（先 git ls-remote 取得、git fetch 到本機再指定；不接受分支名稱）"
+    );
+  let type;
+  try {
+    type = execFileSync("git", ["-C", repo, "cat-file", "-t", baseline], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch {
+    throw new BaselineError(
+      `本機沒有正式基準 ${baseline}（先 git fetch origin gh-pages）`
+    );
+  }
+  if (type !== "commit")
+    throw new BaselineError(`正式基準 ${baseline} 不是提交（${type}）`);
+  const legacyPath = LEGACY_PATH.slice(1);
+  const packagesPath = PACKAGES_PATH.slice(1);
+  const rows = git(repo, [
+    "ls-tree",
+    "-r",
+    "-z",
+    baseline,
+    "--",
+    legacyPath,
+    packagesPath,
+  ])
+    .split("\0")
+    .filter(Boolean)
+    .map((l) => {
+      const [meta, path] = l.split("\t");
+      return { blob: meta.split(" ")[2], path };
+    });
+  const legacy = new Map();
+  const published = new Map();
+  for (const { blob, path } of rows) {
+    if (path.startsWith(legacyPath)) {
+      legacy.set(path.slice(legacyPath.length), blob);
+      continue;
+    }
+    const [v, ...rest] = path.slice(packagesPath.length).split("/");
+    if (!rest.length)
+      throw new BaselineError(
+        `正式基準的 ${packagesPath} 底下直接放了檔案 ${v}，無法解析`
+      );
+    if (!published.has(v)) published.set(v, new Map());
+    published.get(v).set(rest.join("/"), blob);
+  }
+  if (!legacy.size)
+    throw new BaselineError(
+      `正式基準 ${baseline.slice(0, 8)} 沒有舊正式版目錄 ${legacyPath}（不是神馬三國的正式 Pages 樹？）`
+    );
+  return { baseline, legacy, published };
+}
+
+/**
+ * 正式保留核對（發布前用）：候選（root 的 public/ 與入口指標）必須原樣保留正式基準上已發布的一切——
+ * 每一個已發布版本都在 retained、版本目錄的檔案和正式基準完全相同（不多不少）；正式基準的舊正式版目錄必須就是 legacy-root.json 的原檔。
+ * 依據是外部的正式基準，不是候選自己的入口指標（候選把 retained 與目錄一起刪掉時，checkRelease 仍會通過）。
+ * 候選自己的一致性另用 checkRelease（離線）；這個核對要正式基準，不放進每次的快速測試。回傳 { published, problems }
+ */
+export function publishedProblems(root, baseline, repo = ROOT) {
+  const live = readPublished(baseline, repo);
+  const problems = [];
+  const manifest = JSON.parse(
+    readFileSync(join(root, LEGACY_MANIFEST), "utf8")
+  );
+  for (const [f, blob] of live.legacy)
+    if (!manifest.files[f])
+      problems.push(`正式基準的舊正式版目錄有 ${f}，但 legacy-root.json 沒有`);
+    else if (manifest.files[f].blob !== blob)
+      problems.push(
+        `正式基準的舊正式版目錄 ${f} 和 legacy-root.json 的原檔不同（${blob.slice(0, 8)}）`
+      );
+  for (const f of Object.keys(manifest.files))
+    if (!live.legacy.has(f)) problems.push(`正式基準的舊正式版目錄少了 ${f}`);
+  let retained = [];
+  try {
+    const r = readRelease(root).retained;
+    if (Array.isArray(r)) retained = r;
+  } catch {
+    retained = [];
+  }
+  for (const [v, files] of live.published) {
+    const label = `已正式發布的版本 ${v}`;
+    if (!VERSION_RE.test(v)) problems.push(`正式基準有不是版本名稱的目錄 ${v}`);
+    if (!retained.includes(v))
+      problems.push(`${label} 不在入口指標的 retained（發布後必須保留）`);
+    const dir = join(root, PACKAGES_DIR, v);
+    if (!existsSync(dir)) {
+      problems.push(`${label} 的目錄 ${PACKAGES_DIR}/${v} 不存在`);
+      continue;
+    }
+    for (const [f, blob] of files) {
+      const p = join(dir, f);
+      if (!existsSync(p)) problems.push(`${label} 少了 ${f}`);
+      else if (blobId(readFileSync(p)) !== blob)
+        problems.push(
+          `${label} 的 ${f} 和正式基準不同（發布後不能改；正式 ${blob.slice(0, 8)}）`
+        );
+    }
+    for (const f of listFiles(dir))
+      if (!files.has(f))
+        problems.push(`${label} 多了 ${f}（正式基準沒有；發布後不能改）`);
+  }
+  return { published: [...live.published.keys()].sort(), problems };
+}
+
 /** 把經過 postexport 的匯出放進版本目錄；入口改成這一版。已發布的同一版內容必須完全相同（版本目錄發布後不能改） */
 export function publish(exportDir, root = ROOT) {
   const { version, problems } = packageProblems(exportDir);
@@ -411,9 +539,25 @@ if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  const [cmd, arg] = process.argv.slice(2);
+  const [cmd, arg, opt] = process.argv.slice(2);
   try {
-    if (cmd === "check") {
+    if (cmd === "check-published") {
+      // 候選自洽（離線）＋正式保留核對（外部正式基準），分開列出
+      const self = checkRelease(ROOT, { withOut: opt === "--out" });
+      const live = publishedProblems(ROOT, arg);
+      for (const p of self) console.log("✗ 候選自洽：" + p);
+      for (const p of live.problems) console.log("✗ 正式保留：" + p);
+      console.log(
+        JSON.stringify({
+          baseline: arg,
+          published: live.published,
+          retained: readRelease(ROOT).retained,
+          candidateProblems: self.length,
+          publishedProblems: live.problems.length,
+        })
+      );
+      process.exit(self.length || live.problems.length ? 1 : 0);
+    } else if (cmd === "check") {
       const problems = checkRelease(ROOT, { withOut: arg === "--out" });
       const release = readRelease(ROOT);
       for (const p of problems) console.log("✗ " + p);
@@ -439,12 +583,12 @@ if (
       console.log(out);
     } else {
       console.error(
-        "用法：game-release.mjs check [--out] | publish <匯出目錄> | point <版本|legacy> | restore-legacy | legacy-manifest <commit>"
+        "用法：game-release.mjs check [--out] | check-published <gh-pages 完整 SHA> [--out] | publish <匯出目錄> | point <版本|legacy> | restore-legacy | legacy-manifest <commit>"
       );
       process.exit(2);
     }
   } catch (e) {
     console.error(String((e && e.message) || e));
-    process.exit(1);
+    process.exit(e instanceof BaselineError ? 2 : 1);
   }
 }

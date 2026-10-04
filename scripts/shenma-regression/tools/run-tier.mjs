@@ -129,6 +129,11 @@ const QUICK = [
     ["scripts/shenma-regression/web/hero-compare.test.mjs"],
   ],
   [
+    "關卡搜尋與狀態篩選、敵軍組成的規則測試",
+    "node",
+    ["scripts/shenma-regression/web/stage-browse.test.mjs"],
+  ],
+  [
     "地圖編輯器設定寫入的錯誤說明測試",
     "node",
     ["scripts/shenma-regression/web/admin-error-text.test.mjs"],
@@ -325,6 +330,10 @@ const AREAS = {
     scripts: ["next-wave-web.js"],
   },
   "stage-preview": { what: "攻速成長、關卡敵軍預覽", scripts: ["r16-web.js"] },
+  "stage-browse": {
+    what: "關卡的搜尋、章節與狀態篩選（主頁關卡選擇視窗、獨立關卡頁：而且、空結果與清除、篩選不改出征規則、鍵盤、進度與設定更新後重新計算、預覽開著時卡片被藏起或關卡被移除）與敵軍預覽的敵軍組成（依敵人合計、同名不同 id、重複波次、資料不完整時不是全關總數、收起）、390 寬；只操作篩選時不換關、不寫入（需要 Godot 產物）",
+    scripts: ["stage-browse-web.js"],
+  },
   "stage-data": {
     what: "關卡資料未完成的入口：兩個關卡選擇入口的卡片（尚未開放／尚未解鎖）、主頁與獨立戰鬥頁直接進入時不送關卡資料並說明原因與出口、在有效戰場點尚未開放的關卡不改變目前的戰場、快速連點、重玩、遊戲設定讀取失敗與重試、390 寬（需要 Godot 產物）",
     scripts: ["stage-data-web.js"],
@@ -435,6 +444,7 @@ const FULL = [
   "panel-safe-web.js",
   "release-entry-web.js",
   "hero-compare-web.js",
+  "stage-browse-web.js",
 ];
 
 const argv = process.argv.slice(2);

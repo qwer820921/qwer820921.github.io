@@ -3,6 +3,7 @@
 // 沒有列管的版本目錄、網站寫死遊戲目錄、out/ 和 public/ 不同；發布同一版內容不同時拒絕、回退只改入口指標。
 // 另外在真的倉庫（唯讀）核對：legacy-root.json 可以由來源 commit 重新產生（不依賴暫存的回退包）。不需要瀏覽器與 Godot
 // 用法：node scripts/shenma-regression/tools/game-release.test.mjs
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   cpSync,
@@ -22,12 +23,14 @@ import {
   PACKAGE_FILES,
   RELEASE_FILE,
   ROOT,
+  BaselineError,
   checkRelease,
   entryPath,
   legacyManifest,
   packageProblems,
   point,
   publish,
+  publishedProblems,
   readRelease,
 } from "./game-release.mjs";
 import { buildInfo, patchServiceWorker } from "./postexport.mjs";
@@ -57,6 +60,10 @@ const throws = (fn, re) => {
   }
 };
 const sha256 = (b) => createHash("sha256").update(b).digest("hex");
+const blobOf = (b) =>
+  createHash("sha1")
+    .update(Buffer.concat([Buffer.from(`blob ${b.length}\0`), b]))
+    .digest("hex");
 const tmp = mkdtempSync(join(tmpdir(), "shenma-release-test-"));
 
 /** 一份經過 postexport 的假匯出（label 決定外殼頁內容、pck 決定資料包）；寫到 dir，回傳版本 */
@@ -92,7 +99,7 @@ function makeRepo(name) {
   for (const f of ["index.html", "index.js", "index.pck", "index.wasm"]) {
     const data = Buffer.from(`legacy ${f}\n`);
     writeFileSync(join(legacy, f), data);
-    files[f] = { bytes: data.length, sha256: sha256(data) };
+    files[f] = { bytes: data.length, sha256: sha256(data), blob: blobOf(data) };
   }
   mkdirSync(dirname(join(root, LEGACY_MANIFEST)), { recursive: true });
   writeFileSync(
@@ -305,6 +312,184 @@ check(
     checkRelease(rel.root).length === 0 &&
     throws(() => point("fedcba9876543210", rel.root), /不是保留中的版本目錄/),
   { back, backRelease, forward }
+);
+
+// ── 正式保留核對（外部正式基準）──
+/** 假的正式 Pages（另一個 git 倉庫）：舊正式版目錄照 legacyFrom、已發布的版本目錄照 versions 的 [版本, 來源倉庫]；回傳 { repo, sha } */
+function makePages(name, legacyFrom, versions) {
+  const dir = join(tmp, name + "-pages");
+  mkdirSync(dir, { recursive: true });
+  if (legacyFrom)
+    cpSync(join(legacyFrom, LEGACY_DIR), join(dir, "games/shenmaSanguo"), {
+      recursive: true,
+    });
+  for (const [v, from] of versions)
+    cpSync(join(from, PACKAGES_DIR, v), join(dir, "games/shenmaSanguo-v", v), {
+      recursive: true,
+    });
+  writeFileSync(join(dir, "shenmaSanguo.html"), "<html></html>\n");
+  const g = (...a) =>
+    execFileSync(
+      "git",
+      [
+        "-C",
+        dir,
+        "-c",
+        "core.autocrlf=false",
+        "-c",
+        "user.name=test",
+        "-c",
+        "user.email=test@example.invalid",
+        ...a,
+      ],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
+    );
+  g("init", "-q");
+  g("add", "-A");
+  g("commit", "-q", "-m", "pages");
+  return { repo: dir, sha: g("rev-parse", "HEAD").trim() };
+}
+const pubProblems = (root, pages) =>
+  publishedProblems(root, pages.sha, pages.repo).problems;
+
+const fresh = makeRepo("pub-fresh");
+const emptyPages = makePages("pub-empty", fresh.root, []);
+const emptyResult = publishedProblems(
+  fresh.root,
+  emptyPages.sha,
+  emptyPages.repo
+);
+check(
+  "正式基準還沒有已發布版本（只有舊正式版）＋這個候選：通過",
+  emptyResult.problems.length === 0 &&
+    emptyResult.published.length === 0 &&
+    checkRelease(fresh.root).length === 0,
+  emptyResult
+);
+
+// 已發布 A（正式基準有 A 的原檔）；候選再發布 B：retained [A, B]、A 原樣保留
+const kept = makeRepo("pub-kept");
+const pagesA = makePages("pub-a", kept.root, [[kept.v, kept.root]]);
+makeExport(join(tmp, "pub-b-export"), "pub-b", "pckB");
+const vB = publish(join(tmp, "pub-b-export"), kept.root).version;
+check(
+  "正式基準已有版本 A＋候選保留 A 原檔並加上 B：通過",
+  pubProblems(kept.root, pagesA).length === 0 &&
+    checkRelease(kept.root).length === 0 &&
+    JSON.stringify(readRelease(kept.root).retained) ===
+      JSON.stringify([kept.v, vB]),
+  pubProblems(kept.root, pagesA)
+);
+
+/** 複製 kept（A 已發布、候選 A＋B）再做手腳 */
+const variant = (name, mutate) => {
+  const root = join(tmp, name);
+  cpSync(kept.root, root, { recursive: true });
+  mutate(root);
+  return root;
+};
+const onlyRetained = variant("pub-only-retained", (root) =>
+  writeFileSync(
+    join(root, RELEASE_FILE),
+    JSON.stringify({ entry: vB, retained: [vB] })
+  )
+);
+const bothGone = variant("pub-both-gone", (root) => {
+  writeFileSync(
+    join(root, RELEASE_FILE),
+    JSON.stringify({ entry: vB, retained: [vB] })
+  );
+  rmSync(join(root, PACKAGES_DIR, kept.v), { recursive: true });
+});
+const blobChanged = variant("pub-blob-changed", (root) =>
+  writeFileSync(join(root, PACKAGES_DIR, kept.v, "index.png"), "other png")
+);
+check(
+  "候選只漏了 retained、retained 與目錄一起刪掉、改了已發布版本的檔案：正式保留核對都失敗（後兩者候選自洽核對仍會通過）",
+  has(
+    pubProblems(onlyRetained, pagesA),
+    /已正式發布的版本 .* 不在入口指標的 retained/
+  ) &&
+    has(pubProblems(bothGone, pagesA), /不在入口指標的 retained/) &&
+    has(pubProblems(bothGone, pagesA), /的目錄 .* 不存在/) &&
+    checkRelease(bothGone).length === 0 &&
+    has(pubProblems(blobChanged, pagesA), /的 index\.png 和正式基準不同/) &&
+    checkRelease(blobChanged).length === 0,
+  {
+    onlyRetained: pubProblems(onlyRetained, pagesA),
+    bothGone: pubProblems(bothGone, pagesA),
+    bothGoneSelf: checkRelease(bothGone),
+    blobChanged: pubProblems(blobChanged, pagesA),
+    blobChangedSelf: checkRelease(blobChanged),
+  }
+);
+
+const legacyChangedPages = makePages("pub-legacy-changed", kept.root, []);
+writeFileSync(
+  join(legacyChangedPages.repo, "games/shenmaSanguo/index.pck"),
+  "live pck\n"
+);
+execFileSync(
+  "git",
+  [
+    "-C",
+    legacyChangedPages.repo,
+    "-c",
+    "user.name=test",
+    "-c",
+    "user.email=test@example.invalid",
+    "commit",
+    "-q",
+    "-am",
+    "changed",
+  ],
+  { stdio: ["ignore", "pipe", "pipe"] }
+);
+legacyChangedPages.sha = execFileSync(
+  "git",
+  ["-C", legacyChangedPages.repo, "rev-parse", "HEAD"],
+  { encoding: "utf8" }
+).trim();
+check(
+  "正式基準的舊正式版目錄和 legacy-root.json 的原檔不同：失敗",
+  has(
+    pubProblems(fresh.root, legacyChangedPages),
+    /正式基準的舊正式版目錄 index\.pck 和 legacy-root\.json 的原檔不同/
+  ),
+  pubProblems(fresh.root, legacyChangedPages)
+);
+
+const notPages = makePages("pub-not-pages", null, []);
+const baselineErr = (sha, repo) =>
+  throws(() => publishedProblems(fresh.root, sha, repo), /正式基準|本機沒有/) &&
+  (() => {
+    try {
+      publishedProblems(fresh.root, sha, repo);
+    } catch (e) {
+      return e instanceof BaselineError;
+    }
+    return false;
+  })();
+let cliExit = null;
+try {
+  execFileSync(
+    process.execPath,
+    [join(HERE, "game-release.mjs"), "check-published"],
+    { stdio: ["ignore", "pipe", "pipe"] }
+  );
+  cliExit = 0;
+} catch (e) {
+  cliExit = e.status;
+}
+check(
+  "正式基準缺失／不是完整 SHA／本機沒有／不是神馬三國的 Pages 樹：停止（BaselineError、CLI 結束碼 2），不當成沒有已發布版本",
+  baselineErr(undefined, emptyPages.repo) &&
+    baselineErr("origin/gh-pages", emptyPages.repo) &&
+    baselineErr(emptyPages.sha.slice(0, 12), emptyPages.repo) &&
+    baselineErr("1".repeat(40), emptyPages.repo) &&
+    baselineErr(notPages.sha, notPages.repo) &&
+    cliExit === 2,
+  { cliExit }
 );
 
 // ── 真的倉庫（唯讀）──

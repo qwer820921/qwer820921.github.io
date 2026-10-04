@@ -94,6 +94,7 @@ export const BROWSER_SECONDS = {
   "release-entry-web.js": 70,
   "hero-compare-web.js": 60,
   "panel-safe-web.js": 70,
+  "stage-browse-web.js": 90,
 };
 export const QUICK_SECONDS = 104;
 export const GODOT_FULL_SECONDS = 1800;
@@ -132,6 +133,11 @@ export const RULES = [
     test: /^(AGENTS|CLAUDE|README)(\.md)?$|^\.gitignore$|^\.github\//,
     why: "專案說明與 CI 設定（不影響本機回歸）",
     none: true,
+  },
+  {
+    test: /^\.gitattributes$/,
+    why: "Git 的換行屬性（版本目錄的遊戲檔以 LF 取出；快速一層核對版本目錄）",
+    quickOnly: true,
   },
   {
     test: /^scripts\/shenma-regression\/(harness\.js|tools\/run-browser\.mjs)$/,
@@ -315,7 +321,13 @@ export const RULES = [
         "(stages/|components/modals/(StageSelectModal|EnemyPreviewModal)\\.tsx|components/(Stage[A-Za-z]*|PreviewWaveDetail)\\.tsx|utils/stage[A-Za-z]*\\.ts)"
     ),
     why: "關卡選擇、敵軍預覽與關卡資料",
-    areas: ["stage-data", "stage-preview", "wave-reject", "air-readiness"],
+    areas: [
+      "stage-data",
+      "stage-preview",
+      "stage-browse",
+      "wave-reject",
+      "air-readiness",
+    ],
   },
   {
     test: re(SG + "utils/tower(Target|Sell)\\.ts"),
