@@ -10,7 +10,8 @@
 # 工作目錄：省略時用 mktemp 建立唯一的新目錄。指定時必須「不存在」或「是空目錄」，
 #   而且不能是倉庫本身、倉庫的上層目錄或倉庫內的目錄，否則直接拒絕（結束碼 2）。
 # 選用環境變數：
-#   PUBLIC_DIR    要核對的交付產物目錄（預設：工作區的 public/games/shenmaSanguo）
+#   PUBLIC_DIR    要核對的交付產物目錄（預設：工作區網站入口指向的版本目錄 public/games/shenmaSanguo-v/<版本>，
+#                 見 tools/game-release.mjs；入口指回舊正式版時必須指定）
 #   TEST_SCRIPT   要執行的測試（預設：res://__regression__/lifecycle_test.gd；失敗 fixture 見 README）
 #   COMPARE_HEAD  設為 1 時另外列出與 HEAD 版 public/ 的差異（僅供診斷，不影響結果）
 #   TEST_TIMEOUT  headless 測試的逾時秒數（預設 1500；完整回歸約 16 分鐘，技能測試增加時可以調高）
@@ -33,9 +34,14 @@ canon() {
 }
 REPO_RAW=$(git rev-parse --show-toplevel) || die "請在倉庫內執行"
 REPO=$(canon "$REPO_RAW")
-PUBLIC_DIR=${PUBLIC_DIR:-"$REPO/public/games/shenmaSanguo"}
 TEST_SCRIPT=${TEST_SCRIPT:-res://__regression__/lifecycle_test.gd}
 TOOLS="$REPO/scripts/shenma-regression/tools"
+if [ -z "${PUBLIC_DIR:-}" ]; then
+  ENTRY=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).entry)" "$(win "$REPO/src/app/(games)/shenmaSanguo/utils/gameRelease.json")") \
+    || die "讀不到網站入口指標 gameRelease.json"
+  [ "$ENTRY" != "legacy" ] || die "網站入口指回舊正式版（legacy）：請用 PUBLIC_DIR 指定要核對的版本目錄"
+  PUBLIC_DIR="$REPO/public/games/shenmaSanguo-v/$ENTRY"
+fi
 
 # ── 工作目錄：先驗證，驗證通過前不做任何寫入 ──
 # Windows 路徑不分大小寫，比對前一律轉小寫
@@ -111,9 +117,9 @@ echo "== 產物核對（本次匯出 vs 交付產物）"
 node "$(win "$TOOLS/verify-export.mjs")" "$(win "$WORK/export")" "$(win "$PUBLIC_DIR")" || fail "產物與交付產物不一致"
 
 if [ "${COMPARE_HEAD:-}" = "1" ]; then
-  echo "== 診斷：HEAD 版 public/index.pck vs 本次匯出（不影響結果）"
+  echo "== 診斷：HEAD 版交付產物的 index.pck vs 本次匯出（不影響結果）"
   mkdir -p "$WORK/head-public"
-  git -C "$REPO" show "HEAD:public/games/shenmaSanguo/index.pck" > "$WORK/head-public/index.pck"
+  git -C "$REPO" show "HEAD:${PUBLIC_DIR#"$REPO"/}/index.pck" > "$WORK/head-public/index.pck"
   node "$(win "$TOOLS/pck-diff.mjs")" "$(win "$WORK/head-public/index.pck")" "$(win "$WORK/export/index.pck")"
 fi
 

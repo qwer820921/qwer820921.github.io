@@ -1,6 +1,6 @@
 // 回歸工具自我測試：用刻意製造的 fixture 確認 verify-export.mjs 與 check-log.mjs
 // 「該失敗時一定失敗、允許的差異才放行」。不需要 Godot，也不會修改傳入的目錄。
-// 用法：node selftest.mjs <交付產物目錄，例如 public/games/shenmaSanguo>
+// 用法：node selftest.mjs <交付產物目錄，例如 public/games/shenmaSanguo-v/<版本>>
 // 結束碼：0 = 每個 fixture 的結果都符合預期；1 = 有工具誤判
 import { spawnSync } from "node:child_process";
 import {
@@ -50,7 +50,8 @@ function patchPck(dir, entryTest, offsetOf) {
 }
 const nodeIdsStart = (data) => maskNodeIds(data).hits[0].start;
 // 經過匯出後處理的 Service Worker 記錄了 index.pck 的 sha256，版本（外殼頁與 Service Worker）也由它決定：
-// 照 postexport.mjs 的方式跟著更新（真正重新匯出時也是這樣）。withVersion=false 時只更新 EXPECTED、版本不動
+// 照 postexport.mjs 的方式跟著更新（真正重新匯出時也是這樣；Service Worker 的 VERSION 與 CACHE_VERSION 都是版本）。
+// withVersion=false 時只更新 EXPECTED、版本不動
 function syncExpectedPck(dir, withVersion = true) {
   const sw = join(dir, "index.service.worker.js");
   const text = readFileSync(sw, "utf8");
@@ -87,6 +88,10 @@ function syncExpectedPck(dir, withVersion = true) {
       .replace(
         /^const VERSION = '[0-9a-f]{16}';$/m,
         () => `const VERSION = '${version}';`
+      )
+      .replace(
+        /^const CACHE_VERSION = '[^'\n]*';$/m,
+        () => `const CACHE_VERSION = '${version}';`
       );
   }
   writeFileSync(sw, out);
@@ -109,12 +114,14 @@ const editText = (dir, file, fn) =>
 const exportCases = [
   [variant("完全相同", () => {}), 0],
   [
-    variant("只改 SW 的 CACHE_VERSION", (d) =>
-      editText(d, "index.service.worker.js", (s) =>
-        s.replace(/CACHE_VERSION = '[^']*'/, "CACHE_VERSION = 'selftest|1'")
-      )
+    variant(
+      "SW 的 CACHE_VERSION 不是這一版的版本（例如匯出時間戳，沒有經過現在的匯出後處理）",
+      (d) =>
+        editText(d, "index.service.worker.js", (s) =>
+          s.replace(/CACHE_VERSION = '[^']*'/, "CACHE_VERSION = 'selftest|1'")
+        )
     ),
-    0,
+    1,
   ],
   [
     variant(

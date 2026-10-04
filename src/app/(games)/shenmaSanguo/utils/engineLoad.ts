@@ -1,5 +1,5 @@
 /**
- * 遊戲引擎的載入進度：從同源的遊戲 iframe（Godot 匯出的外殼頁 games/shenmaSanguo/index.html）讀取外殼頁自己顯示的狀態，
+ * 遊戲引擎的載入進度：從同源的遊戲 iframe（Godot 匯出的外殼頁，目錄見 gameEngine.ts 的 GAME_ENTRY）讀取外殼頁自己顯示的狀態，
  * 不改遊戲產物。外殼頁的狀態：
  * - #status-progress 顯示：下載引擎（index.wasm）與遊戲資料（index.pck）。value／max 是已下載／總共的位元組（解壓縮後的大小），
  *   還不知道大小時沒有 value

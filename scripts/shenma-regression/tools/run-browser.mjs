@@ -41,6 +41,20 @@ if (process.env.EVIDENCE_DIR) {
   mkdirSync(process.env.EVIDENCE_DIR, { recursive: true });
   context.__shenmaEvidence = process.env.EVIDENCE_DIR;
 }
+// 網站入口目前的遊戲目錄（gameRelease.json：版本目錄或舊正式版目錄），情境腳本由 H.GAME_DIR 取得，
+// 檢查或攔截遊戲檔案時以它為準（不用碰巧也符合舊目錄的路由字串）
+{
+  const release = JSON.parse(
+    readFileSync(
+      join(ROOT, "src/app/(games)/shenmaSanguo/utils/gameRelease.json"),
+      "utf8"
+    )
+  );
+  context.__shenmaGameDir =
+    release.entry === "legacy"
+      ? "/games/shenmaSanguo/"
+      : `/games/shenmaSanguo-v/${release.entry}/`;
+}
 if (process.env.ENGINE_DIR) {
   // 反向驗證用：遊戲的 index.html／index.pck／index.service.worker.js 改由這個目錄提供（例如刻意改壞後匯出的遊戲），
   // 情境腳本讀 context.__shenmaEngineDir 自行攔截

@@ -3,7 +3,7 @@
 三層測試，外加一組工具自我測試：
 
 1. **Godot headless 測試**（`godot-check.sh`）：在暫存目錄匯入 → debug 匯出 → 與交付產物核對 → 執行 `godot/lifecycle_test.gd`。任何一步失敗都以非零結束。
-2. **瀏覽器回歸**（Playwright MCP 的 `browser_run_code_unsafe`，`filename` 參數）：跑本機 `next dev` 與 `public/games/shenmaSanguo/` 的實際產物，後端全部 mock。
+2. **瀏覽器回歸**（Playwright MCP 的 `browser_run_code_unsafe`，`filename` 參數）：跑本機 `next dev` 與網站入口指向的遊戲目錄（`public/games/shenmaSanguo-v/<版本>/`，見「發布方式」）的實際產物，後端全部 mock。
 3. **工具自我測試**（`tools/selftest.mjs`）：用刻意製造的 fixture 確認產物核對與 log 檢查「該失敗時一定失敗」。
 4. **玩家存檔 store 測試**（`web/player-store.test.mjs`）：在 Node 內執行 `playerStore.ts`，每個 GAS 請求的成功／失敗與回應順序、以及計時器都由測試控制，驗證登入、切換帳號與同步的非同步規則。
 5. **跨來源隔離開機腳本測試**（`web/site-isolation.test.mjs`，Round 13 起）：在 Node 內用假的 window 執行 `src/utils/siteIsolation/boot.ts`，驗證遷移、查不到舊註冊與備份寫不回時的保護，以及「不會無限重新載入」的規則；真實瀏覽器的行為由 `r13-web.js` 驗證。
@@ -85,28 +85,69 @@
 
 後端草稿（GAS）的模擬測試與反向驗證不在版控內，由後端的交付紀錄另外說明。
 
-## 首次載入與回訪的量測（`tools/load-measure.mjs`）
+另外，快速一層也跑發布目錄核對（`game-release.mjs check`）與發布工具測試（`game-release.test.mjs`）；改到發布方式（`gameRelease.json`、`public/games/` 底下的遊戲目錄、`game-release.mjs`、匯出後處理的 Service Worker）時跑 `release`、`engine-load`、`artifacts`、`engine-version`，並跑「發布方式」一節的原生瀏覽器過渡驗證。
+
+## 發布方式：版本目錄與舊正式版目錄（`tools/game-release.mjs`）
+
+遊戲（Godot 匯出）不再原地覆寫同一個目錄：舊頁面或舊正式版的 Service Worker 補下載時，會拿到新版的資料包配舊的載入程式（混版）。現在：
+
+- **版本目錄**：每一版（匯出後處理算出的版本）放在 `public/games/shenmaSanguo-v/<版本>/`，發布後內容不再改變、不刪除。同一個網址永遠是同一份內容，HTTP 快取或 CDN 再舊也只會是同一版。
+- **舊正式版目錄** `public/games/shenmaSanguo/`：固定是 `release/legacy-root.json` 記錄的來源 commit 的原檔（不放新版的任何檔案）。已經裝了舊正式版 Service Worker、或還開著舊頁面的玩家，之後重試或補下載都還是舊正式版的成套檔案；舊版的 Service Worker 範圍（`/games/shenmaSanguo/`）也不包含版本目錄。
+- **網站入口指標** `src/app/(games)/shenmaSanguo/utils/gameRelease.json`：`entry` 是兩個入口（主頁、獨立戰鬥頁）的 iframe 要開的版本（`"legacy"`＝舊正式版目錄），`retained` 是保留在伺服器上的版本目錄。網站程式只從 `gameEngine.ts` 的 `GAME_ENTRY` 取得遊戲網址（寫死遊戲目錄時核對會失敗）。
+- 版本目錄的 Service Worker 用自己的快取命名空間 `shenmaSanguo-pkg-`：舊正式版的 Service Worker（Godot 原本的 `shenmaSanguo-sw-cache-`）啟用時刪不到它，它也不刪舊正式版的快取；同一個命名空間裡其他版本的快取，只在沒有頁面開著那一版時刪除。
+
+```bash
+node scripts/shenma-regression/tools/game-release.mjs check [--out]        # 核對（--out 另核對 out/ 與 public/ 相同）
+node scripts/shenma-regression/tools/game-release.mjs publish <匯出目錄>     # 經過 postexport 的匯出放進它的版本目錄，入口改成這一版
+node scripts/shenma-regression/tools/game-release.mjs point <版本|legacy>    # 只改入口指標（回退）
+node scripts/shenma-regression/tools/game-release.mjs restore-legacy        # 由來源 commit 取回舊正式版目錄的原檔
+node scripts/shenma-regression/tools/game-release.mjs legacy-manifest <commit>  # 換舊正式版時才用：重新產生 legacy-root.json
+```
+
+- `check`：舊正式版目錄和 `legacy-root.json` 相同（不多不少）；每個保留的版本目錄自我一致（外殼頁、Service Worker 的 `VERSION` 與 `CACHE_VERSION`、`EXPECTED`、重新計算的版本、目錄名稱、快取前綴、引擎快取名稱）；入口指向保留中的目錄；沒有沒列管的版本目錄；網站沒有寫死遊戲目錄。
+- `publish`：同一版已經發布過時內容必須完全相同（版本目錄發布後不能改），不同就拒絕；上一個入口版本留在 `retained`。
+- **回退**：`point legacy`（或 `point <保留中的版本>`）後重新建置網站。不刪除、不覆寫任何遊戲目錄，不要用 git revert 把整個發布（含版本目錄）退掉。舊正式版目錄一直在倉庫裡，缺了可以用 `restore-legacy` 從來源 commit 重建，不依賴暫存的回退包。
+- **保留多久**：舊正式版目錄與上一個入口版本目錄先一直保留（這一版不自動清理）。之後要移除時另外決定，至少等新版上線一段時間（遠大於 `max-age` 與一般分頁開著的時間）；移除後還開著舊頁面的玩家補下載會 404（明確失敗，不會混版）。
+- 停用 Service Worker 的瀏覽器直接從網路載入版本目錄，沒有大小與 sha256 核對；保護只來自每一版的網址不同（同一個網址只會有同一份內容）。
+
+**發布過渡的原生瀏覽器驗證**（`tools/release-transition.mjs`，本機伺服器＋Chrome，不經網站）：
 
 ```bash
 PLAYWRIGHT_DIR=<含 playwright 的 node_modules> EVIDENCE_DIR=<證據目錄> \
-  node scripts/shenma-regression/tools/load-measure.mjs --dir <舊版遊戲目錄> --update-dir <新版遊戲目錄> --profile desktop|mobile [--max-age 600]
+  node scripts/shenma-regression/tools/release-transition.mjs [--v2 <同一個引擎的另一版>] [--only S1,S2]
 ```
 
-- 自己用 GitHub Pages 的方式提供遊戲目錄（gzip、ETag、`Cache-Control: max-age`、304，不送 COOP／COEP），伺服器記錄每個請求實際送出的位元組；直接開遊戲外殼頁到 game_ready，不經網站、不呼叫後端。
-- 每一輪用新的使用者資料夾（有磁碟上的 HTTP 快取），依序量 cold、warm1、warm2、update（伺服器換成新版：舊的 Service Worker 先開舊版，新的裝好後照主頁的做法送 "update" 接管，量到新版就緒），並記錄 Cache Storage 裡每個檔案的大小與 sha256（核對是不是同一版）。
+模擬伺服器從「只有舊正式版」換成「舊正式版目錄＋版本目錄」的各個時間點，核對每個頁面實際拿到的外殼頁／載入程式／資料包（回應內容的 sha256）、伺服器送出的檔案、控制頁面的 Service Worker 與 Cache Storage：S1 舊正式版 Service Worker 已裝、舊頁面的大檔下載中才換拓樸；S2 只裝好小檔後才開舊頁面；S3 舊正式版完整快取；S4 停用 Service Worker、HTTP 快取有舊外殼頁；S5 兩個版本目錄（同一個引擎）與新版目錄被回成別版內容；S6 缺檔、半包、完整快取後離線。`--in-place <目錄>` 是反向驗證：改成原地覆寫舊目錄的舊發布方式，S1／S2 必須失敗（抓到舊頁面拿到新版檔案）。
+
+瀏覽器腳本 `release-entry-web.js`（功能 `release`）：網站兩個入口都開入口指標的版本目錄、開戰到結算、背景音樂從版本目錄下載、手機尺寸，全程沒有舊正式版目錄的請求。
+
+## 首次載入、回訪與換版的量測（`tools/load-measure.mjs`）
+
+```bash
+PLAYWRIGHT_DIR=<含 playwright 的 node_modules> EVIDENCE_DIR=<證據目錄> \
+  node scripts/shenma-regression/tools/load-measure.mjs [--dir <遊戲包>] [--update-dir <另一個遊戲包>] --profile desktop|mobile [--max-age 600]
+```
+
+- 遊戲包是經過 postexport 的版本目錄或匯出目錄（放在 `/games/shenmaSanguo-v/<版本>/`），或和 `legacy-root.json` 相同的舊正式版（放在 `/games/shenmaSanguo/`）；`--dir` 預設是網站入口的版本目錄。
+- **前置檢查**（不符時結束碼 2、不開瀏覽器）：必要的檔案都在、版本目錄自我一致、舊正式版和清單相同；兩個包不能是同一版、也不能放在同一個網址（原地覆寫）。只放了外殼頁與 Service Worker 的證據目錄會在這裡被拒絕。
+- 自己用 GitHub Pages 的方式提供遊戲包（gzip、ETag、`Cache-Control: max-age`、304，不送 COOP／COEP），伺服器記錄每個請求實際送出的位元組與內容的 sha256；直接開遊戲外殼頁到 game_ready，不經網站、不呼叫後端。
+- 每一輪用新的使用者資料夾（有磁碟上的 HTTP 快取），依序量 cold、warm1、warm2；有 `--update-dir` 時再量 update：伺服器同時提供兩個包，同一個瀏覽器開新包的外殼頁（網站入口換到新版本，或回退到舊正式版），從這一次開啟起算到 game_ready。
+- **每一輪都核對真的載入了目標包**：頁面網址是目標包的目錄（版本目錄另要網址帶它的版本、由它目錄的 Service Worker 控制）；頁面拿到的外殼頁／載入程式／資料包、伺服器送出的引擎（沒送出時快取裡的引擎）、這一版快取裡的資料包都是目標包的內容；沒有向其他目錄要遊戲檔案；game_ready 時間是這一次開啟之後的正數；一輪的請求不超過 120 個（沒有失控的重試）。任何一項不符就在結果寫 `failed` 與原因、結束碼 1。
+- 反向驗證：`--tamper-update index.html`（新網址還是舊外殼頁，仍是舊版）、`--tamper-update index.pck`（新外殼頁配舊資料包）都必須失敗。
 - `--profile mobile` 是 390×844、伺服器端限速 1250 KB/s、往返 150 ms、CPU 4 倍慢（模擬，不是實體手機）；`--max-age 0` 相當於超過快取時間後回訪。結果是 `<EVIDENCE_DIR>/load-measure-<label>.json`。
 - 另外記錄外殼頁進度條的取樣（不同值的個數、是否一路不減；Service Worker 下載時由版本守門顯示）與版本守門確認版本花的時間（`__shenmaGuard.stats`）。伺服器端限速對 Service Worker 發出的請求也有效（瀏覽器端的 CDP 限速只作用在頁面）。
 
 ## 匯出後處理（`tools/postexport.mjs`）
 
-交付的 `public/games/shenmaSanguo` 是「Godot 匯出＋匯出後處理」的結果，`godot-check.sh` 照同樣的步驟核對：
+交付的版本目錄（`public/games/shenmaSanguo-v/<版本>/`）是「Godot 匯出＋匯出後處理」的結果，`godot-check.sh` 照同樣的步驟核對：
 
 - 背景音樂不放進資料包（`export_presets.cfg` 的 `exclude_filter`），原始檔複製成 `bgm_battle.ogg`。
 - **版本完整性**：一個頁面只會拿到同一版的外殼頁、`index.js`、`index.wasm`、`index.pck`，拿不到就明確失敗。版本（`VERSION`，由外殼頁與其他檔案的內容決定）同時寫進外殼頁與 Service Worker。
   - 外殼頁的版本守門：網址加上 `shenma_ver=<版本>`，確認控制這個頁面的 Service Worker 是同一版（不是就讓同一版接手；伺服器上沒有這一版時重新載入一次，仍不行就說明）之後，才載入 `index.js`、開始下載引擎與資料包。Service Worker 下載與核對時送來的進度顯示在進度條，拒絕交付時以中文說明原因（網站的載入畫面會讀到）。
   - Service Worker：`index.js`／`index.wasm`／`index.pck` 只給同一版的頁面（不是就 503 拒絕）；快取裡的（放進快取前都核對過）直接用，沒有才下載，完整讀完、大小與 sha256 相符才交付並放進快取。舊版、新版、沒下載完、404、網路錯誤都不交給頁面、不放進快取，告訴頁面原因；安裝時先載入的檔案不符就不安裝。下載與外殼頁的導覽都向伺服器重新驗證（`cache: 'no-cache'`，關掉導覽預載）。啟用時接手範圍內的頁面（第一次開啟也經過核對）。
-- 引擎快取：`index.js`＋`index.wasm` 相同時跨版本沿用，不重新下載。
-- `verify-export.mjs` 允許的差異：Service Worker 記錄的 `index.pck`／`index.html` sha256 與兩個檔案裡的版本（跟著 node_ids 不同）；兩邊各自要和自己的檔案相符、外殼頁與 Service Worker 的版本相同，而且等於由自己的檔案重新計算的版本。
+- 引擎快取：`index.js`＋`index.wasm` 相同時跨版本沿用，不重新下載。快取鍵用版本目錄上一層的固定網址（只當快取鍵），不同版本目錄共用。
+- 版本目錄：快取前綴換成 `shenmaSanguo-pkg-`（不以舊正式版的 `shenmaSanguo-sw-cache-` 開頭）、`CACHE_VERSION` 換成這一版的版本（同一版的 Service Worker 內容固定）；啟用時只刪這個命名空間裡沒有頁面開著的其他版本的快取（有其他版本開著時引擎快取都保留，查不到開著的頁面時都不刪）。
+- `verify-export.mjs` 允許的差異：Service Worker 記錄的 `index.pck`／`index.html` sha256 與兩個檔案裡的版本（含 `CACHE_VERSION`，跟著 node_ids 不同）；兩邊各自要和自己的檔案相符、外殼頁與 Service Worker 的版本相同，而且等於由自己的檔案重新計算的版本。
 
 `godot-check.sh` 一律用 `web-template/manifest.json` 釘選的裁減模板：`WEB_TEMPLATE_DEBUG=<模板 zip>` 必填、sha256 必須相同，否則拒絕（不會靜默改用官方模板產生交付產物）；重建模板見 `web-template/README.md`。
 
@@ -142,15 +183,14 @@ GODOT="<編輯器目錄>/Godot_v4.6.2-stable_win64_console.exe" \
 | 版本     | `--version`                                                                                                              | 不是 `4.6.2.stable.*`                                                                                                                                         |
 | 複製     | 只複製 `godot/shenmaSanguo/` 中**版本控制內**的檔案（取工作區內容）；有未追蹤檔會提示                                    | 複製失敗                                                                                                                                                      |
 | 匯入     | `--import`                                                                                                               | 結束碼非 0、逾時，或 log 有任何 `ERROR`／`SCRIPT ERROR`／`Parse Error`                                                                                        |
-| 匯出     | `--export-debug "Web"`（釘選的裁減 `web_nothreads_debug` 模板），之後跑匯出後處理                                                | 同上                                                                                                                                                          |
-| 產物核對 | `tools/verify-export.mjs`：本次匯出 vs 交付產物（預設工作區 `public/games/shenmaSanguo`）                                | 有任何不允許的差異（見下方）                                                                                                                                  |
+| 匯出     | `--export-debug "Web"`（釘選的裁減 `web_nothreads_debug` 模板），之後跑匯出後處理                                        | 同上                                                                                                                                                          |
+| 產物核對 | `tools/verify-export.mjs`：本次匯出 vs 交付產物（預設網站入口的版本目錄）                                                | 有任何不允許的差異（見下方）                                                                                                                                  |
 | 測試     | 把 `godot/` 整個複製到另一份暫存專案的 `res://__regression__/`，執行 `TEST_SCRIPT`，再用 `tools/check-log.mjs test` 檢查 | 結束碼非 0、逾時、`SCRIPT ERROR`／`Parse Error`、不在允許清單的 `ERROR`、沒有剛好一行 `RESULT_JSON`、`failed≠0`、`total=0`、`PASS` 行數≠`total`、有 `FAIL` 行 |
 
-**產物核對只允許三種已知的隨機差異**，其他內容（包含所有 `.gdc`、`uid_cache.bin`、引擎檔、`index.html` 版本以外的內容、`bgm_battle.ogg`）都必須逐位元組相同：
+**產物核對只允許兩種已知的隨機差異**，其他內容（包含所有 `.gdc`、`uid_cache.bin`、引擎檔、`index.html` 版本以外的內容、`bgm_battle.ogg`）都必須逐位元組相同：
 
 1. `index.pck` 內 `*.scn` 的 `node_ids` 陣列內容：專案的 `.tscn` 沒有 `unique_id`，每次匯出隨機產生。工具會在二進位資源中找到 `node_ids` 這個 PackedInt32Array，只把它的元素清零後再比對，其餘位元組必須相同。
-2. `index.service.worker.js` 的 `const CACHE_VERSION = '…';` 那一行（匯出時間戳）。
-3. 這一版的版本（跟著 1 不同）：`index.html` 與 `index.service.worker.js` 的 `VERSION`，以及 `const EXPECTED = …;` 裡 `index.pck`、`index.html` 的 sha256。兩邊各自：EXPECTED 和自己的檔案相符、外殼頁與 Service Worker 的版本相同、等於由自己的檔案重新計算的版本；其他欄位必須相同。
+2. 這一版的版本（跟著 1 不同）：`index.html` 與 `index.service.worker.js` 的 `VERSION`、Service Worker 的 `CACHE_VERSION`（匯出後處理換成版本），以及 `const EXPECTED = …;` 裡 `index.pck`、`index.html` 的 sha256。兩邊各自：EXPECTED 和自己的檔案相符、外殼頁與 Service Worker 的版本（含 `CACHE_VERSION`）相同、等於由自己的檔案重新計算的版本；其他欄位必須相同。
 
 文字檔（前 8000 bytes 沒有 NUL，與 git 的判定相同）比較時把 CRLF 視為 LF：本機 `core.autocrlf=true` 會讓未修改的檔案在工作區是 CRLF，提交時再轉回 LF。
 
@@ -164,13 +204,13 @@ GODOT="<編輯器目錄>/Godot_v4.6.2-stable_win64_console.exe" \
 
 | 變數               | 說明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PUBLIC_DIR`       | 要核對的交付產物目錄（預設工作區的 `public/games/shenmaSanguo`）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `PUBLIC_DIR`       | 要核對的交付產物目錄（預設網站入口指向的版本目錄；入口指回舊正式版時必須指定）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `TEST_SCRIPT`      | 要執行的測試（預設 `res://__regression__/lifecycle_test.gd`）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `COMPARE_HEAD`     | 設為 `1` 時另外用 `tools/pck-diff.mjs` 列出與 HEAD 版 `index.pck` 的差異（僅供診斷，不影響結果）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `TEST_TIMEOUT`     | headless 測試的逾時秒數（預設 1500；完整回歸約 16 分鐘）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `SHENMA_TEST_ONLY` | 只跑 `lifecycle_test.gd` 的一部分（診斷與反向驗證用）：`sweep` 只跑橫掃（技能原型，合成的測試武將），`skills` 跑武將的技能（馬超的首擊加倍、黃忠、周瑜、趙雲的閃避、關羽的減速光環、劉備的防禦光環、張飛的暈眩、魏延的吸血、曹操的攻速光環、夏侯惇的反擊、灼燒的入口、廖化的堅韌、顏良的威壓、孫尚香的連射）、橫掃原型與攻速成長，`firststrike` 只跑首擊加倍（馬超「衝鋒」），`dodge` 只跑趙雲「閃避」，`blocker` 只跑敵人攻擊阻路武將的冷卻，`flying` 跑飛行敵人與對空（加上防禦塔目標優先、飛行路線無效與優先飛行），`airfirst` 只跑飛行路線無效與優先飛行，`route` 跑飛行與地面的路線無效，`stagedata` 跑關卡資料未完成（沒有波次、波次或路線的格式不對），`enemyatk` 跑敵人設定的對武將攻擊力，`immune` 跑免疫減速，`slow` 跑倍率減速的來源與有效期與關羽的減速光環，`aura` 只跑減速光環，`defaura` 只跑劉備的防禦光環，`stun` 只跑張飛的暈眩，`lifesteal` 只跑魏延的吸血，`atkspeed` 只跑曹操的攻速光環，`damage` 只跑敵人受傷的入口（拒絕無效的傷害），`burninput` 只跑灼燒的入口（拒絕無效的灼燒參數），`counter` 只跑夏侯惇的反擊，`tenacity` 只跑廖化的堅韌，`atkdown` 只跑顏良的威壓，`doubleshot` 只跑孫尚香的連射；完整回歸不設定 |
 
-**更新 `public/`**：runner 不會寫入倉庫。確認「測試通過、只有產物核對失敗（原始碼改了、產物還是舊的）」之後，把工作目錄 `export/` 內的 `index.pck`、`index.html`、`index.service.worker.js` 複製到 `public/games/shenmaSanguo/`（其餘檔案屬於引擎模板，版本不變時完全相同），**再用新的工作目錄完整重跑一次**，全部通過才算完成。
+**發布新的產物**：runner 不會寫入倉庫。確認「測試通過、只有產物核對失敗（原始碼改了、產物還是舊的）」之後，用 `node scripts/shenma-regression/tools/game-release.mjs publish <工作目錄>/export` 把這次的匯出放進它的版本目錄、網站入口改成這一版（不覆寫舊的目錄，見「發布方式」），**再用新的工作目錄完整重跑一次**，全部通過才算完成。
 
 目前正式產物使用的是 **debug** 模板（`public/index.wasm` 與官方 `web_nothreads_debug` 的 wasm 逐位元組相同），所以這裡用 `--export-debug`。
 
@@ -249,10 +289,10 @@ TEST_SCRIPT=res://__regression__/fixtures/exit0_with_fail.gd GODOT=… bash scri
 ## 2. 工具自我測試（不需要 Godot）
 
 ```bash
-node scripts/shenma-regression/tools/selftest.mjs public/games/shenmaSanguo
+node scripts/shenma-regression/tools/selftest.mjs public/games/shenmaSanguo-v/<版本>
 ```
 
-複製交付產物到系統暫存目錄後逐一製造差異，確認 `verify-export.mjs` 只放行「node_ids、CACHE_VERSION、跟著資料包重算的 sha256 與版本、換行」這幾種差異，`.gdc`、`.scn` 其他位元組、`uid_cache.bin`、SW 其他內容、`index.html` 版本以外的內容、多出檔案、記錄的 sha256 沒有跟著資料包更新、版本沒有跟著重算、外殼頁的版本和 Service Worker 不同、背景音樂改一個 byte 都會失敗；並用合成 log 確認 `check-log.mjs` 對 ERROR／SCRIPT ERROR／Parse Error／FAIL／缺 RESULT_JSON／total=0 都會失敗。每個 fixture 也會檢查「確實改到了檔案」，避免允許差異的案例空過。不會修改傳入的目錄。
+複製交付產物到系統暫存目錄後逐一製造差異，確認 `verify-export.mjs` 只放行「node_ids、跟著資料包重算的 sha256 與版本（含 CACHE_VERSION）、換行」這幾種差異，CACHE_VERSION 不是這一版的版本、`.gdc`、`.scn` 其他位元組、`uid_cache.bin`、SW 其他內容、`index.html` 版本以外的內容、多出檔案、記錄的 sha256 沒有跟著資料包更新、版本沒有跟著重算、外殼頁的版本和 Service Worker 不同、背景音樂改一個 byte 都會失敗；並用合成 log 確認 `check-log.mjs` 對 ERROR／SCRIPT ERROR／Parse Error／FAIL／缺 RESULT_JSON／total=0 都會失敗。每個 fixture 也會檢查「確實改到了檔案」，避免允許差異的案例空過。不會修改傳入的目錄。
 
 素材引用檢查：
 
@@ -454,7 +494,15 @@ node scripts/shenma-regression/web/read-retry.test.mjs
 node scripts/shenma-regression/tools/postexport.test.mjs
 ```
 
-- `postexport.test.mjs`：把 Godot 4.6.2 產生的 Service Worker 與外殼頁（`fixtures/godot-4.6.2-service-worker.js`、`fixtures/godot-4.6.2-index.html`）經 `tools/postexport.mjs` 處理後放進 Node 的 vm 沙盒（假的 Cache Storage、網路與頁面），核對：外殼頁的守門（`index.js` 確認版本後才載入、版本與 Service Worker 相同、遮掉版本後重算相同）；只交付同一版（沒有版本或別的版本的頁面拒絕）；錯的內容不交付（伺服器換成新版時 A 的頁面拿不到 B 的資料包，也不放進快取，告訴頁面原因並檢查新版）、半包／中途斷線／404／連不上都拒絕、已有正確快取時不碰網路、新版啟用後伺服器回舊檔時拒絕、剛拒絕過不再重新下載；導覽在檔案齊全時用快取、不齊全時重新驗證、連不上給離線頁；安裝成套、啟用時關導覽預載並接手、引擎跨版本沿用、從原本的模板 Service Worker 升級；模板改版時直接失敗。
+- `postexport.test.mjs`：把 Godot 4.6.2 產生的 Service Worker 與外殼頁（`fixtures/godot-4.6.2-service-worker.js`、`fixtures/godot-4.6.2-index.html`）經 `tools/postexport.mjs` 處理後放進 Node 的 vm 沙盒（假的 Cache Storage、網路與頁面），核對：外殼頁的守門（`index.js` 確認版本後才載入、版本與 Service Worker 相同、遮掉版本後重算相同）；只交付同一版（沒有版本或別的版本的頁面拒絕）；錯的內容不交付（伺服器換成新版時 A 的頁面拿不到 B 的資料包，也不放進快取，告訴頁面原因並檢查新版）、半包／中途斷線／404／連不上都拒絕、已有正確快取時不碰網路、新版啟用後伺服器回舊檔時拒絕、剛拒絕過不再重新下載；導覽在檔案齊全時用快取、不齊全時重新驗證、連不上給離線頁；安裝成套、啟用時關導覽預載並接手；版本目錄：快取前綴與 `CACHE_VERSION`、引擎快取鍵在版本目錄上一層（同一個引擎的新版本不重新下載）、還開著的舊版本頁面仍由舊版本自己的 Service Worker 成套提供（快取被回收時從它自己的目錄重新下載）、只刪沒有頁面開著的其他版本的快取（查不到時都不刪）、舊正式版（Godot 原本的 Service Worker）與版本目錄互不刪除對方的快取；模板改版時直接失敗。
+
+### 3o. 發布工具測試（不需要瀏覽器）
+
+```bash
+node scripts/shenma-regression/tools/game-release.test.mjs
+```
+
+- 在暫存目錄建立假的倉庫，核對 `game-release.mjs` 該失敗時一定失敗：舊正式版目錄多了新版的檔案、資料包被換掉、少了檔案；版本目錄的資料包換成別版、快取前綴用回舊正式版的、目錄名稱和內容的版本不同；入口指向不在 `retained` 的版本、`retained` 的目錄不存在、沒有列管的版本目錄；網站寫死遊戲目錄；`out/` 和 `public/` 不同。發布同一版內容不同時拒絕、回退只改入口指標。另外在真的倉庫（唯讀）核對 `legacy-root.json` 可以由來源 commit 重新產生。
 
 ## 4. 瀏覽器回歸
 
@@ -521,13 +569,14 @@ node scripts/shenma-regression/tools/postexport.test.mjs
 | 7zw  | `battle-tips-web.js`          | 戰場的玩法提示（真 Godot）。還沒選過時：主頁桌面固定在視窗左下角、390×844 接在戰場下方（遊戲畫面讓出 HUD 的高度、寬度不變），都不和遊戲畫面重疊、不擋 HUD；矮的畫面（主頁 375×667、740×360，獨立戰鬥頁 375×740）預設收起，手動展開後接在下方；內容（部署武將、戰場金幣建造與升級防禦塔、迎戰與城防、和戰場點數分開）；開關（圖示，名稱「玩法提示」）的 aria-expanded、Enter 收起展開、提示裡的「收起」把焦點交給開關；記住收起（重新整理、換到獨立戰鬥頁）；獨立戰鬥頁的位置與 Tab 順序；戰鬥中切換不暫停、不送請求；結算時不顯示                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 7zx  | `engine-load-web.js`          | 主頁載入畫面的遊戲引擎進度（真 Godot、mock 後端）。載入動畫下面寫出存檔與設定、遊戲引擎各自的階段，引擎下載中寫出已下載／總共的大小（讀遊戲 iframe 外殼頁自己的進度）並提醒第一次要下載；限速每秒約 2 MB 時大小一路增加、整體進度不減、下載中不超過 93%；index.pck 一直沒有回應時 30 秒後說明停住了並提供重新載入；index.pck 回 404 時改顯示引擎無法啟動與原始訊息；沒有 WebGL2 時說明瀏覽器缺少的功能；一般載入沒有任何提示                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 7zy  | `bgm-load-web.js`             | 背景音樂不在啟動必載的資料包裡（真 Godot，主頁）：game_ready 之前沒有請求；收到關卡資料、套用音效設定（音效開著）後下載一次（1 609 183 bytes），按掉進場畫面後播放；換關沿用不再下載；音效關閉不下載；404 時遊戲照常、不自動重試，再要播放才試第 2 次，之後不再下載。計次用遊戲自己的紀錄（[SFXManager]）與遊戲頁面送出的請求                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 7zz  | `release-entry-web.js`        | 發布入口：兩個入口都開網站入口指標（`gameRelease.json`）的版本目錄、game_ready 協定 7、由那個目錄的 Service Worker 控制；主頁與獨立戰鬥頁各開戰到結算一次；背景音樂從版本目錄下載；390×844 開戰換波；全程沒有舊正式版目錄的請求；引擎啟動時網頁開著視窗不搶焦點、沒有在用焦點時照常交給遊戲畫面                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | 7j   | `r14-web.js`                  | R14：黃忠「百步穿楊」。技能說明（主頁武將視窗、武將頁，詳情寫出目前等級在戰場上的實際射程）；主頁用部署選單實際放置在 (12,4)，用快照的 `hero_ranges`／`hero_enemy_dist` 量第一次扣血時敵人的距離（原射程 5 格外、7.5 格內），更遠時沒有扣血、每一擊就是攻擊力；選取時既有的武將資訊面板顯示實際射程；戰鬥中升級兩次，射程依序 7.545、7.59（不疊乘）；獨立戰鬥頁（`place_hero` 訊息）同樣有效；存檔、session 沒有技能或射程欄位。mock 名單多了黃忠（射程 5、成長 0.03、花費 6），預設隊伍不變                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 8    | `fixtures/deliberate-fail.js` | 刻意失敗的 fixture（見下方）；會汙染錯誤紀錄，所以放在最後或另開 context                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 **不經 MCP 執行**（MCP 無法使用，或需要把原始回傳存成檔案時）：
 
 ```bash
-PLAYWRIGHT_DIR=<含 playwright 套件的 node_modules>   node scripts/shenma-regression/tools/run-browser.mjs harness.js i1-init.js i2-lifecycle.js auto-timer.js normal-flows.js r3-mixed.js r4-web.js r5-web.js r7-web.js r8-web.js r9-web.js r10-web.js r12-web.js r13-web.js r14-web.js r15-web.js r16-web.js artifacts-and-network.js r17-web.js r18-web.js r19-web.js r20-web.js save-conflict-web.js backup-preview-web.js map-editor-web.js skill-slow-aura-web.js hero-filter-web.js team-filter-web.js hero-category-web.js settle-web.js settle-invalid-web.js flying-web.js enemy-column-web.js air-readiness-web.js air-first-web.js next-wave-web.js skill-dodge-web.js stage-data-web.js enemy-traits-web.js wave-reject-exit-web.js stage-keyboard-web.js skill-def-aura-web.js skill-stun-web.js player-info-keyboard-web.js skill-lifesteal-web.js skill-atk-speed-web.js skill-counter-web.js skill-tenacity-web.js skill-atk-down-web.js hero-keyboard-web.js skill-double-shot-web.js hud-keyboard-web.js read-retry-web.js save-dialog-keyboard-web.js battle-tips-web.js engine-load-web.js
+PLAYWRIGHT_DIR=<含 playwright 套件的 node_modules>   node scripts/shenma-regression/tools/run-browser.mjs harness.js i1-init.js i2-lifecycle.js auto-timer.js normal-flows.js r3-mixed.js r4-web.js r5-web.js r7-web.js r8-web.js r9-web.js r10-web.js r12-web.js r13-web.js r14-web.js r15-web.js r16-web.js artifacts-and-network.js r17-web.js r18-web.js r19-web.js r20-web.js save-conflict-web.js backup-preview-web.js map-editor-web.js skill-slow-aura-web.js hero-filter-web.js team-filter-web.js hero-category-web.js settle-web.js settle-invalid-web.js flying-web.js enemy-column-web.js air-readiness-web.js air-first-web.js next-wave-web.js skill-dodge-web.js stage-data-web.js enemy-traits-web.js wave-reject-exit-web.js stage-keyboard-web.js skill-def-aura-web.js skill-stun-web.js player-info-keyboard-web.js skill-lifesteal-web.js skill-atk-speed-web.js skill-counter-web.js skill-tenacity-web.js skill-atk-down-web.js hero-keyboard-web.js skill-double-shot-web.js hud-keyboard-web.js read-retry-web.js save-dialog-keyboard-web.js battle-tips-web.js engine-load-web.js bgm-load-web.js release-entry-web.js
 ```
 
 `tools/run-tier.mjs full` 跑的是同一份清單（前面加上快速一層）。

@@ -8,19 +8,29 @@
 //   飛行路線無效與優先飛行選項、地面路線沒有路程與戰場內的下一波、關卡能不能出征與敵人攻擊力／免疫減速、備份檔、武將列表篩選、
 //   地圖編輯器的錯誤說明與敵人表的移動方式欄判斷、
 //   跨來源隔離開機腳本）、harness 雜訊規則、
-//   工具自我測試、素材引用檢查、Godot 反向驗證的變異原文檢查（只讀原始碼）、匯出後處理的 Service Worker 與外殼頁測試。
+//   工具自我測試、發布目錄核對與發布工具測試、素材引用檢查、Godot 反向驗證的變異原文檢查（只讀原始碼）、匯出後處理的 Service Worker 與外殼頁測試。
 //   不需要 dev server 與 Godot
 // - related：quick 之後，只跑指定功能的瀏覽器腳本；full：quick 之後跑全部瀏覽器腳本（約 35 分鐘）
 //   瀏覽器腳本需要 npm run dev 與 PLAYWRIGHT_DIR（見 README）；Godot 端另外用 godot-check.sh
 // - EVIDENCE_DIR：瀏覽器腳本的證據目錄，耗時摘要寫在 <EVIDENCE_DIR>/tier-<層>.json（沒有設定時只印出）
 // - 跑瀏覽器腳本時不要同時改 src、跑 build 或另一批瀏覽器回歸
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const npx = process.platform === "win32" ? "npx.cmd" : "npx";
+// 工具自我測試用的交付產物：網站入口的版本目錄（入口指回舊正式版時用最後一個保留的版本目錄；見 tools/game-release.mjs）
+const RELEASE = JSON.parse(
+  readFileSync(
+    join(ROOT, "src/app/(games)/shenmaSanguo/utils/gameRelease.json"),
+    "utf8"
+  )
+);
+const PACKAGE_DIR = `public/games/shenmaSanguo-v/${
+  RELEASE.entry === "legacy" ? RELEASE.retained.at(-1) : RELEASE.entry
+}`;
 
 const QUICK = [
   ["型別檢查（tsc）", npx, ["tsc", "--noEmit", "-p", "tsconfig.json"]],
@@ -102,10 +112,17 @@ const QUICK = [
   [
     "工具自我測試",
     "node",
-    [
-      "scripts/shenma-regression/tools/selftest.mjs",
-      "public/games/shenmaSanguo",
-    ],
+    ["scripts/shenma-regression/tools/selftest.mjs", PACKAGE_DIR],
+  ],
+  [
+    "發布目錄核對（舊正式版目錄沒有改、版本目錄自我一致、網站入口指向保留中的目錄）",
+    "node",
+    ["scripts/shenma-regression/tools/game-release.mjs", "check"],
+  ],
+  [
+    "發布工具測試（核對、發布、回退指標的正反案例）",
+    "node",
+    ["scripts/shenma-regression/tools/game-release.test.mjs"],
   ],
   [
     "素材引用檢查",
@@ -158,6 +175,10 @@ const AREAS = {
   bgm: {
     what: "背景音樂不在啟動時下載：第一次要播放時才下載一次、不重複、遊戲照常（需要 Godot 產物）",
     scripts: ["bgm-load-web.js"],
+  },
+  release: {
+    what: "發布入口：兩個入口都開網站入口指標的版本目錄、開戰到結算、背景音樂與手機尺寸，沒有碰舊正式版目錄（需要 Godot 產物）",
+    scripts: ["release-entry-web.js"],
   },
   "battle-tips": {
     what: "戰場的玩法提示：兩個戰鬥入口的位置（不疊在遊戲畫面上）、開關與收起、記住收起、不暫停戰鬥（需要 Godot 產物）",
@@ -336,6 +357,7 @@ const FULL = [
   "battle-tips-web.js",
   "engine-load-web.js",
   "bgm-load-web.js",
+  "release-entry-web.js",
 ];
 
 const [mode, ...rest] = process.argv.slice(2);

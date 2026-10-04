@@ -14,32 +14,42 @@ async (page) => {
     return !!d && !!d.getElementById("canvas") && !d.getElementById("status");
   }, null, { timeout: 120000, polling: 200 });
 
-  const served = await page.evaluate(async () => {
+  const served = await page.evaluate(async (GAME_DIR) => {
     const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
     const files = ["index.pck", "index.wasm", "index.js", "index.html", "index.service.worker.js"];
     const out = {};
     let swText = "";
     for (const f of files) {
-      const r = await fetch("/games/shenmaSanguo/" + f, { cache: "no-store" });
+      const r = await fetch(GAME_DIR + f, { cache: "no-store" });
       const b = await r.arrayBuffer();
       if (f === "index.service.worker.js") swText = new TextDecoder().decode(b);
       out[f] = { status: r.status, size: b.byteLength, sha256: hex(await crypto.subtle.digest("SHA-256", b)) };
     }
     const frame = document.querySelector('iframe[title="Shenma Sanguo"]');
     const fw = frame.contentWindow;
-    const cfgText = [...fw.document.scripts].map((s) => s.textContent).find((t) => t.includes("GODOT_CONFIG")) || "";
+    const iframeSrc = frame.getAttribute("src");
+    const iframePath = fw.location.pathname;
+    const cfgText = [...fw.document.scripts].map((s) => s.textContent).find((t) => t.includes("const GODOT_CONFIG =")) || "";
     const fileSizes = (cfgText.match(/"fileSizes":(\{[^}]*\})/) || [])[1] || null;
     const entries = fw.performance.getEntriesByType("resource")
       .filter((e) => /index\.(pck|wasm|js)$/.test(e.name))
       .map((e) => ({ name: e.name.replace(location.origin, ""), transferSize: e.transferSize, encodedBodySize: e.encodedBodySize, decodedBodySize: e.decodedBodySize }));
     const regs = (await navigator.serviceWorker.getRegistrations()).map((r) => ({ scope: r.scope, script: (r.active || r.waiting || r.installing || {}).scriptURL }));
     const cacheVersion = (swText.match(/^const CACHE_VERSION = '([^']*)';$/m) || [])[1] || null;
+    const cachePrefix = (swText.match(/^const CACHE_PREFIX = '([^']*)';$/m) || [])[1] || null;
     // 匯出後處理加上的引擎快取（同一個引擎跨版本共用）；沒有這一行就是 null
     const engineCache = (swText.match(/^const ENGINE_CACHE = CACHE_PREFIX \+ '([^']*)';$/m) || [])[1] || null;
-    return { files: out, cacheVersion, engineCache, iframeFileSizes: fileSizes, iframeResourceEntries: entries, swRegistrations: regs, cacheKeys: await caches.keys() };
-  });
+    return { files: out, cacheVersion, cachePrefix, engineCache, iframeSrc, iframePath, iframeFileSizes: fileSizes, iframeResourceEntries: entries, swRegistrations: regs, cacheKeys: await caches.keys() };
+  }, H.GAME_DIR);
 
   const f = served.files;
+  // 網站入口的遊戲目錄（gameRelease.json）：iframe 實際開的是它，遊戲檔案也都從它載入（沒有混到其他目錄）
+  run.check("iframe 開的是網站入口指標的遊戲目錄（" + H.GAME_DIR + "index.html）",
+    served.iframeSrc === H.GAME_DIR + "index.html" && served.iframePath === H.GAME_DIR + "index.html",
+    { src: served.iframeSrc, path: served.iframePath, gameDir: H.GAME_DIR });
+  run.check("iframe 載入的 pck／wasm／js 都在這個遊戲目錄",
+    served.iframeResourceEntries.length >= 3 && served.iframeResourceEntries.every((e) => e.name.startsWith(H.GAME_DIR)),
+    served.iframeResourceEntries);
   run.check("5 個 Godot 檔案都能取得（HTTP 200）", Object.values(f).every((x) => x.status === 200), f);
   let sizes = {};
   try {
@@ -56,11 +66,12 @@ async (page) => {
   run.check("iframe 實際載入的 pck／wasm／js 大小與目前檔案一致",
     ["index.pck", "index.wasm", "index.js"].every((n) => loaded(n) && loaded(n).decodedBodySize === f[n].size),
     served.iframeResourceEntries);
-  const godotCaches = served.cacheKeys.filter((k) => k.startsWith("shenmaSanguo-sw-cache-"));
-  const keepCaches = [served.cacheVersion, served.engineCache].filter(Boolean).map((v) => "shenmaSanguo-sw-cache-" + v);
+  // 快取前綴照目前的 Service Worker（版本目錄是 shenmaSanguo-pkg-，舊正式版是 Godot 原本的 shenmaSanguo-sw-cache-）
+  const godotCaches = served.cacheKeys.filter((k) => served.cachePrefix && k.startsWith(served.cachePrefix));
+  const keepCaches = [served.cacheVersion, served.engineCache].filter(Boolean).map((v) => served.cachePrefix + v);
   run.check("Godot SW 快取只有目前 CACHE_VERSION 與目前這個引擎（沒有舊產物快取）",
-    served.cacheVersion !== null && godotCaches.every((k) => keepCaches.includes(k)),
-    { cacheVersion: served.cacheVersion, engineCache: served.engineCache, cacheKeys: served.cacheKeys });
+    served.cacheVersion !== null && served.cachePrefix !== null && godotCaches.length > 0 && godotCaches.every((k) => keepCaches.includes(k)),
+    { cachePrefix: served.cachePrefix, cacheVersion: served.cacheVersion, engineCache: served.engineCache, cacheKeys: served.cacheKeys });
 
   // 整個 browser context 期間（不只本腳本）的防線統計
   const gasLog = await H.gasLog(page);

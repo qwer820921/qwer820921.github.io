@@ -1,8 +1,9 @@
 async (page) => {
   // R10（瀏覽器）：遊戲版本不相容的提示與重試、延遲切換失敗的提示（D10）
-  // - 舊版遊戲用「真實舊產物」：24b1315b（正式站目前部署的版本）的 public/games/shenmaSanguo/
+  // - 舊版遊戲用「真實舊產物」：24b1315b（當時正式站部署的版本）的 public/games/shenmaSanguo/
   //   index.html、index.pck、index.service.worker.js，先放在 .handoff/evidence/round-10/legacy-godot/，
-  //   由 browser context 的 route 回應（包括遊戲 Service Worker 發出的請求）。不是自己寫的相容性 fixture
+  //   網站入口的遊戲目錄（H.GAME_DIR）的這幾個檔案改由它回應（browser context 的 route，包括遊戲 Service Worker 發出的請求）。
+  //   不是自己寫的相容性 fixture
   // - A／B：主頁載入舊版 → 提示、不送關卡資料、不開戰 → 換回新版後重試：只重新載入遊戲，
   //   未同步的暱稱／隊伍與待確認升級都保留；已移除的 iframe 晚到的訊息不採用；之後正常開戰、只結算一次
   // - C：新版只是載入慢（index.pck 延遲 10 秒）：不誤判
@@ -26,7 +27,8 @@ async (page) => {
   const PROTOCOL = 7;
 
   // ── 遊戲檔案的路由：legacy＝回應真實舊產物；slow＝新版 index.pck 延遲 10 秒；off＝照常 ──
-  const GAME_FILE = /\/games\/shenmaSanguo\/(index\.(?:html|pck|service\.worker\.js))(?:\?[^#]*)?$/;
+  // 只攔網站入口的遊戲目錄（H.GAME_DIR，gameRelease.json）：舊產物模擬「這個網址拿到舊版遊戲」
+  const GAME_FILE = new RegExp(H.GAME_DIR.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&") + "(index\\.(?:html|pck|service\\.worker\\.js))(?:\\?[^#]*)?$");
   const game = { mode: "off", hits: [] };
   const gameRoute = async (route) => {
     const name = (route.request().url().match(GAME_FILE) || [])[1];
@@ -84,27 +86,29 @@ async (page) => {
   const toGodot = (sel, msg) => page.evaluate(({ sel, msg }) => document.querySelector(sel).contentWindow.postMessage({ __godot_bridge: true, ...msg }, "*"), { sel, msg });
   // 從「另一個、之後就移除的」iframe 送出訊息：模擬舊 iframe 在重新載入後才送達的訊息
   const postFromRemovedFrame = (msgs) =>
-    page.evaluate(async (msgs) => {
+    page.evaluate(async ({ msgs, src }) => {
       const f = document.createElement("iframe");
       f.style.display = "none";
-      f.src = "/games/shenmaSanguo/index.offline.html";
+      f.src = src;
       document.body.appendChild(f);
       await new Promise((r) => f.addEventListener("load", r, { once: true }));
       for (const m of msgs) f.contentWindow.eval("window.parent.postMessage(" + JSON.stringify(m) + ", '*')");
       f.remove();
       await new Promise((r) => setTimeout(r, 500));
-    }, msgs);
+    }, { msgs, src: H.GAME_DIR + "index.offline.html" });
   const swState = () =>
     page.evaluate(async () => ({
       regs: (await navigator.serviceWorker.getRegistrations()).map((r) => ({ scope: r.scope, active: r.active ? r.active.scriptURL : null, waiting: !!r.waiting })),
-      caches: (await caches.keys()).filter((k) => k.startsWith("shenmaSanguo-sw-cache-")),
+      caches: (await caches.keys()).filter((k) => k.startsWith("shenmaSanguo-")),
     }));
   const currentCacheVersion = async () => {
-    const text = await (await page.request.get(H.BASE + "/games/shenmaSanguo/index.service.worker.js")).text();
+    const text = await (await page.request.get(H.BASE + H.GAME_DIR + "index.service.worker.js")).text();
     const version = (text.match(/^const CACHE_VERSION = '([^']*)';$/m) || [])[1] || null;
+    // 快取前綴：版本目錄是 shenmaSanguo-pkg-（舊正式版是 Godot 原本的 shenmaSanguo-sw-cache-）
+    const prefix = (text.match(/^const CACHE_PREFIX = '([^']*)';$/m) || [])[1] || null;
     // 匯出後處理加上的引擎快取（同一個引擎跨版本共用）；沒有這一行就是 null
     const engine = (text.match(/^const ENGINE_CACHE = CACHE_PREFIX \+ '([^']*)';$/m) || [])[1] || null;
-    return { version, engine };
+    return { version, prefix, engine };
   };
   const openPlayerInfo = async () => {
     await page.locator('button[class*="hudAvatar"]').click();
@@ -248,9 +252,13 @@ async (page) => {
         before.pageId === after.pageId && JSON.stringify(before.session) === JSON.stringify(after.session) &&
           after.session.nickname === "未同步暱稱" && after.session.pendingUpgrade === "r10-op/unknown" && saves.length === 0,
         out.B_retry);
-      const keep = [version.version, version.engine].filter(Boolean).map((v) => "shenmaSanguo-sw-cache-" + v);
-      run.check("B-3 遊戲的 Service Worker 換成新版本：快取只剩目前的版本與目前這個引擎（舊版本的快取已刪除）",
-        !!version.version && sw.caches.includes("shenmaSanguo-sw-cache-" + version.version) && sw.caches.every((k) => keep.includes(k)),
+      // 版本目錄的 Service Worker 只管自己命名空間（CACHE_PREFIX）的快取；舊版遊戲（Godot 原本前綴）的快取屬於舊正式版，不由它刪除
+      const keep = [version.version, version.engine].filter(Boolean).map((v) => version.prefix + v);
+      const mine = sw.caches.filter((k) => version.prefix && k.startsWith(version.prefix));
+      const scope = sw.regs.find((r) => r.scope === H.BASE + H.GAME_DIR);
+      run.check("B-3 遊戲目錄的 Service Worker 換成新版本：控制這個目錄的是目前的 Service Worker；它命名空間裡的快取只剩目前的版本與目前這個引擎",
+        !!version.version && !!version.prefix && !!scope && scope.active === H.BASE + H.GAME_DIR + "index.service.worker.js" && !scope.waiting &&
+          mine.includes(version.prefix + version.version) && mine.every((k) => keep.includes(k)),
         out.B_retry);
       out.B_shot = await H.shot(page, "r10-b-after-retry");
       // 放行載入時暫停的請求（待確認升級照既有規則重新確認：伺服器看不到升級，仍待確認）

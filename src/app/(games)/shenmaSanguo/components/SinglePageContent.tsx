@@ -27,6 +27,7 @@ import {
 } from "../utils/towerSell";
 import {
   EngineStatus,
+  GAME_ENTRY,
   activateLatestGameWorker,
   isCompatibleEngine,
 } from "../utils/gameEngine";
@@ -1334,7 +1335,7 @@ export default function SinglePageContent() {
           <iframe
             key={iframeKey}
             ref={iframeRef}
-            src="/games/shenmaSanguo/index.html"
+            src={GAME_ENTRY}
             className={styles.gameIframe}
             onLoad={() => setIframeLoading(false)}
             allow="autoplay; fullscreen"

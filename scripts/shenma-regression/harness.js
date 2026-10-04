@@ -21,6 +21,9 @@ async (page) => {
   const BASE = "http://localhost:3000";
   // 證據目錄：tools/run-browser.mjs 可用 EVIDENCE_DIR 指定（context.__shenmaEvidence），避免不同批次互相覆寫
   const EVIDENCE = context.__shenmaEvidence || ".handoff/evidence/round-18";
+  // 網站入口目前的遊戲目錄（tools/run-browser.mjs 由 gameRelease.json 設定）：版本目錄或舊正式版目錄
+  const GAME_DIR = context.__shenmaGameDir;
+  if (!GAME_DIR) return { error: "沒有遊戲目錄（context.__shenmaGameDir）：請用 tools/run-browser.mjs 執行" };
 
   // ── mock 靜態設定：14×11 地圖，第 5 列直線道路，上下兩列建築格 ──
   const ROW = 5;
@@ -348,14 +351,15 @@ async (page) => {
         /^http:\/\/localhost:3000\/_next\/static\/chunks\/src_components_common_[0-9a-z_-]+\._\.js$/i.test(c.url),
     },
     {
-      why: "網站首頁「聯絡」卡片的封面 /images/cover/contact.webp 不存在（public/ 沒有這個檔案，和神馬三國無關；Round 13 的測試會經過首頁）",
+      why: "網站首頁卡片的封面不存在（public/images/cover/ 沒有 contact、bobaSurvivors、shenmaSanguo 這三張，和遊戲無關；經過首頁的測試會遇到，封面是 lazy 載入，哪幾張被要求依捲動與時間而定）",
       test: (c) => /^Failed to load resource: the server responded with a status of 404/.test(c.text) &&
-        /^http:\/\/localhost:3000\/images\/cover\/contact\.webp$/.test(c.url),
+        /^http:\/\/localhost:3000\/images\/cover\/(?:contact|bobaSurvivors|shenmaSanguo)\.webp$/.test(c.url),
     },
     {
-      why: "只在正式靜態匯出出現（tools/serve-out.mjs）：Next 16 預先載入要求 __next.<區段>.<區段>.txt，out/ 裡是巢狀目錄（__next.<區段>/<區段>.txt），GitHub Pages 同樣找不到；最早在首頁的部落格連結看到，地圖編輯器捲到頁尾時的「登入」連結也會；只略過已觀察到的部落格與登入路徑，遊戲與其他路徑的同類錯誤仍須失敗",
+      why: "只在正式靜態匯出出現（tools/serve-out.mjs）：Next 16 預先載入要求 __next.<區段>.<區段>.txt，out/ 裡是巢狀目錄（__next.<區段>/<區段>.txt），GitHub Pages 同樣找不到；最早在首頁的部落格連結看到，地圖編輯器捲到頁尾時的「登入」連結也會，首頁的連結也會（關於、部落格、聯絡、小說；首頁卡片在可見範圍內才預先載入，每次出現哪幾個不固定）；只略過已觀察到的部落格、登入路徑，以及網站一般頁面群組 (general)（網址裡的 !KGdlbmVyYWwp）的預先載入，遊戲（(games) 群組）與其他路徑的同類錯誤仍須失敗",
       test: (c) => /^Failed to load resource: the server responded with a status of 404/.test(c.text) &&
-        /^http:\/\/localhost:3000\/(?:blog\/[^?]*\/|logIn\/)__next\.[^/?]+\.txt(\?|$)/.test(c.url),
+        (/^http:\/\/localhost:3000\/(?:blog\/[^?]*\/|logIn\/|contact\/|novels\/)__next\.[^/?]+\.txt(\?|$)/.test(c.url) ||
+          /^http:\/\/localhost:3000\/[^?#]*__next\.!KGdlbmVyYWwp\.[^/?]+\.txt(\?|$)/.test(c.url)),
     },
   ];
   page.on("pageerror", (e) => state.pageErrors.push({ t: Date.now(), text: String(e).slice(0, 300) }));
@@ -365,6 +369,7 @@ async (page) => {
   const H = {
     BASE,
     EVIDENCE,
+    GAME_DIR,
     sleep: (ms) => page.waitForTimeout(ms),
     async shot(p, name) {
       await p.screenshot({ path: `${EVIDENCE}/${name}.png` });
@@ -378,7 +383,7 @@ async (page) => {
     async resetOrigin(p, { keepMockDb = false } = {}) {
       const passes = [];
       for (let i = 0; i < 2; i++) {
-        await p.goto(BASE + "/games/shenmaSanguo/index.offline.html");
+        await p.goto(BASE + GAME_DIR + "index.offline.html");
         passes.push(await p.evaluate(async (keep) => {
           const regs = await navigator.serviceWorker.getRegistrations();
           await Promise.all(regs.map((r) => r.unregister()));
