@@ -21,6 +21,7 @@ async (page) => {
   // - C：獨立戰鬥頁：同樣不重新點選就看到奇襲 1→0；敵軍數量＝遊戲的數量；武將低生命＋排序、敵軍依攻擊力排序、技能狀態篩選
   // - A4：主頁「Mock LV 怪力」2 倍速、選取許褚後不重新點選：怪力 3→0（面板與遊戲送的觀測都要看到冷卻出現再降到 0）
   //   前置：快照確認是這一關的備戰中、等進場畫面確實出現（遊戲區變暗）才點掉、確認關掉（變亮）才部署；部署選單沒出現時保存診斷並照樣失敗
+  //   （亮度門檻只是這個測試關與視窗大小下的測試判斷，不是產品的就緒條件）
   // - 任何一段失敗時清掉殘局並回到主頁，下一段（B、E）自己重新建立前置，不讓一段的失敗連鎖到後面
   // 全部虛構金鑰 test_lv_*
   const S = page.context().__shenma;
@@ -1107,7 +1108,8 @@ async (page) => {
   });
 
   // ── A4. 主頁：許褚的怪力 3→0（專用的測試關：起點有一個不會移動的木樁，這一場不會在冷卻期間結束）──
-  // 遊戲區（iframe 的範圍）的平均亮度 0～255：進場畫面是蓋滿遊戲區的深色半透明層（實測約 23），關掉後是地圖（約 89）
+  // 遊戲區（iframe 的範圍）的平均亮度 0～255：只用在這支測試、這個固定的測試關與視窗大小，判斷進場畫面（蓋滿遊戲區的深色半透明層，
+  // 實測約 23）是否開著、關掉後的地圖（約 89）；不是產品的就緒判斷
   const luma = async (sel) => {
     const r = await page.evaluate((sel) => {
       const b = document.querySelector(sel).getBoundingClientRect();
@@ -1128,14 +1130,22 @@ async (page) => {
   };
   const SPLASH_DARK = 45;
   const MAP_CLEAR = 60;
+  const iframeRect = () =>
+    page.evaluate((sel) => {
+      const b = document.querySelector(sel).getBoundingClientRect();
+      return { left: b.left, top: b.top, width: b.width, height: b.height };
+    }, IFRAME);
   await section("A4", async () => {
+    // 診斷紀錄一開始就掛上（中途失敗也留得下）
+    const prep = { snap: null, dark: [], clicks: [], preClick: null };
+    out.A4prep = prep;
     await page.goto(H.BASE + "/shenmaSanguo");
     await H.waitHud(page);
     await H.selectStage(page, KB.name);
     // 前置（有明確判斷與上限，失敗時保留診斷）：快照確認是怪力專用關、備戰中；等進場畫面確實出現（遊戲區變暗）才點掉，
-    // 確認已關掉（變亮）才點路上的格子。selectStage 只等「有一份 wave 0 的同步」，遊戲在那之後才顯示進場畫面，太早點會點空，
-    // 下一次點格子就只是關掉進場畫面、不會打開部署選單
-    const prep = { snap: null, dark: [], clicks: [] };
+    // 確認已關掉（變亮）才點路上的格子。這是推論、不是已證實的唯一原因：原始碼裡 selectStage 只等「有一份 wave 0 的同步」，
+    // 遊戲在那之後才顯示進場畫面，太早點會點空、下一次點格子就只是關掉進場畫面；支持的依據是原始碼順序、亮度實測（約 23→89）
+    // 與改用這個前置後的成功執行，曾失敗的那一次本身沒有亮度與快照紀錄
     await waitUntil(async () => {
       const s = await snapshot(IFRAME);
       prep.snap = { stage: s.stage, game_state: s.game_state, battle_id: s.battle_id };
@@ -1151,17 +1161,18 @@ async (page) => {
       prep.clicks.push(await luma(IFRAME));
       if (prep.clicks[prep.clicks.length - 1] > MAP_CLEAR) break;
     }
-    out.A4prep = prep;
     if (!(prep.clicks[prep.clicks.length - 1] > MAP_CLEAR))
       throw new Error("進場畫面點了 3 次仍沒有關掉：" + JSON.stringify(prep));
+    // 實際點擊部署前的遊戲區範圍與點擊座標（失敗時另外記錄失敗當下的，兩者分開，不拿事後重算的點當原點）
+    prep.preClick = { rect: await iframeRect(), click: await cellPoint(IFRAME, KB_CELL[0], KB_CELL[1]) };
     try {
       await deploy(IFRAME, KB_CELL, "許褚");
     } catch (e) {
-      // 部署選單沒出現：保存目前的快照、遊戲區範圍與實際點擊座標、亮度、這一場的橋接訊息與截圖，照樣讓這一段失敗
+      // 部署選單沒出現：保存失敗當下的快照、遊戲區範圍與重算的點擊座標、亮度、這一場的橋接訊息與截圖，照樣讓這一段失敗
       const s = await snapshot(IFRAME).catch(() => null);
       out.A4deployFail = {
         snap: s && { stage: s.stage, game_state: s.game_state, battle_id: s.battle_id, wave: s.wave },
-        rect: await page.evaluate((sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return { left: b.left, top: b.top, width: b.width, height: b.height }; }, IFRAME),
+        rect: await iframeRect(),
         click: await cellPoint(IFRAME, KB_CELL[0], KB_CELL[1]),
         luma: await luma(IFRAME).catch(() => null),
         bridge: await page.evaluate(() => (window.__bridgeLog || []).slice(-15).map((m) => ({ type: m.type, wave: m.wave, game_state: m.game_state, battle_id: m.battle_id }))),

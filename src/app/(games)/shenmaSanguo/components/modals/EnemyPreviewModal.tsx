@@ -9,9 +9,11 @@ import {
   CompositionRow,
   RouteComposition,
   StageComposition,
+  WaveRouteView,
   routeComposition,
   stageComposition,
   waveListText,
+  waveRouteView,
 } from "../../utils/stageComposition";
 import {
   keepExistingWaves,
@@ -52,7 +54,9 @@ interface Props {
  * 只讀已載入的靜態設定（utils/stagePreview），沒有出征、切換關卡或任何寫入；
  * 「敵軍組成」依敵人合計已確認會出兵的組（utils/stageComposition，可以收起），全關總數與逐波內容照舊；
  * 多條路線時組成可以依路線查看（routeComposition）：選的路線是這裡持有的同一個狀態，「路線預覽」的「顯示路線」也是它，
- * 兩邊不會各選各的；設定更新後選的路線不在了就回到全部。
+ * 兩邊不會各選各的；設定更新後選的路線不在了就回到全部。逐波內容也跟著這個選擇（waveRouteView）：選了路線時每一波只列那條路線的組
+ * （原本的組序）並寫明那條路線已確認的隻數與組數，其他路線的資料問題另列「全波資料提醒」；波次標題、波次導覽與出兵節奏仍是整波。
+ * 戰場內的「下一波」不帶這個選擇。
  * 「路線預覽」畫關卡設定的路線格子（StageRoutePreview，預設收起）；逐波內容另列「設定出兵節奏」（utils/spawnRhythm）；
  * 逐波區上方的波次導覽（PreviewWaveNav）
  * 只改展開哪幾波與焦點（全部展開／收合、前往某一波、下一個資料問題），波次一律用編號識別，設定更新後不存在的波次移除；
@@ -271,12 +275,25 @@ export default function EnemyPreviewModal({
             />
           )}
 
+          {routeComp && route !== null && preview.waves.length > 0 && (
+            <div
+              className={styles.previewHint}
+              data-testid="preview-wave-route-scope"
+            >
+              逐波內容只列路線 {route}{" "}
+              的組（和「敵軍組成」「路線預覽」是同一個選擇）；波次標題、波次導覽與設定出兵節奏仍是全波。
+            </div>
+          )}
+
           {preview.waves.map((w) => (
             <WaveBlock
               key={w.wave}
               wave={w}
               open={open.includes(w.wave)}
               onToggle={() => toggle(w.wave)}
+              route={
+                routeComp && route !== null ? waveRouteView(w, route) : null
+              }
             />
           ))}
 
@@ -469,10 +486,13 @@ function WaveBlock({
   wave: w,
   open,
   onToggle,
+  route,
 }: {
   wave: PreviewWave;
   open: boolean;
   onToggle: () => void;
+  /** 依路線查看時這一波在那條路線的組（null＝全部路線） */
+  route: WaveRouteView | null;
 }) {
   return (
     <div className={styles.previewWave} data-testid={`preview-wave-${w.wave}`}>
@@ -492,7 +512,7 @@ function WaveBlock({
           {previewWaveStatus(w)}
         </span>
       </button>
-      {open && <PreviewWaveBody wave={w} showRhythm />}
+      {open && <PreviewWaveBody wave={w} showRhythm route={route} />}
     </div>
   );
 }

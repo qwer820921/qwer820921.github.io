@@ -9,6 +9,10 @@ async (page) => {
   //   沒有 Infinity；組成依路線寫這條路線與全關的資料問題；M-5 只操作預覽時沒有切換或結束目前的戰場、沒有寫入
   // - P 獨立關卡頁：P-1 同樣的組成與節奏；P-2 設定更新後選的路線被刪掉→組成與路線預覽都回到全部、焦點留在選單；P-3 仍存在的路線保留；
   //   P-4 390×600／390×844（組成選單、節奏區塊在畫面內、關閉鈕沒有被擋、沒有橫向捲動）；全程沒有寫入
+  // - 逐波依路線查看（和組成、路線預覽同一個選擇）：W-1 主頁「討伐」全部→path_a→（路線預覽改）path_b→全部：每一波只列那條路線的組、原本的組序，
+  //   「本路線已確認 N 隻／M 組」與全波摘要，沒有組時寫沒有已確認出兵組；波次標題、導覽與節奏是全波（標明全波），回到全部和原本完全相同；
+  //   鍵盤（導覽前往、Enter 收合展開）；W-2「邊界」的資料問題（本路線的問題組照列、其他路線的問題另列全波資料提醒、不重複、不補 0）；
+  //   W-3「缺波」（缺少、拒絕、重複照整波）；P-5 獨立關卡頁同樣；P-2b 設定更新刪掉選的路線時逐波回到全部；P-4b 手機寬度的逐波路線摘要與提醒
   // 全部 mock、虛構金鑰 test_rhythm_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -69,6 +73,13 @@ async (page) => {
       { wave: 9, enemies: [g(G2, 2, 1234567890123, "path_a")] },
     ]),
     FRESH_REFRESH,
+    // 逐波依路線（D176）：第 2 波缺少、第 3 波只有找不到設定的組（遊戲會拒絕）、第 4 波有重複資料（遊戲只用第一筆）
+    stage("chapter3_5", "Mock RC 缺波", { path_a: [[0, 5], [13, 5]], path_b: [[0, 8], [13, 8]] }, [
+      { wave: 1, enemies: [g(G2, 2, 1, "path_a"), g(G3, 3, 1, "path_b")] },
+      { wave: 3, enemies: [g("mock_rc_ghost", 1, 1, "path_a")] },
+      { wave: 4, enemies: [g(G2, 2, 1, "path_b")] },
+      { wave: 4, enemies: [g(G2, 9, 1, "path_a")] },
+    ]),
   ];
   await ctx.addInitScript(({ maps }) => {
     if (window.top !== window) return;
@@ -176,6 +187,73 @@ async (page) => {
     };
   });
   const rhythmOf = (s, n) => s.rhythm.find((r) => r.wave === n) || null;
+  // 逐波依路線：每一波（展開的）列出的組（原本的組序）、路線摘要、全波資料提醒、節奏標題與組數
+  const waves = () => page.evaluate(() => {
+    const p = document.querySelector('[data-testid="enemy-preview"]');
+    if (!p) return null;
+    const text = (x) => x?.innerText.replace(/\s+/g, " ").trim() ?? null;
+    const idx = (x) => Number((text(x).match(/^第 (\d+) 組/) || [])[1]);
+    return {
+      scope: text(p.querySelector('[data-testid="preview-wave-route-scope"]')),
+      waves: [...p.querySelectorAll('[data-testid^="preview-wave-"]')].filter((w) => /^preview-wave-\d+$/.test(w.dataset.testid)).map((w) => {
+        const other = w.querySelector('[data-testid="preview-wave-other-problems"]');
+        const route = w.querySelector('[data-testid="preview-wave-route"]');
+        const rh = w.querySelector('[data-testid="preview-rhythm"]');
+        const body = w.querySelector('[class*="previewWaveBody"]');
+        return {
+          wave: Number(w.dataset.testid.replace("preview-wave-", "")),
+          header: text(w.querySelector('[data-testid^="preview-wave-toggle-"]')),
+          open: !!body,
+          groups: [...w.querySelectorAll('[data-testid="preview-group"]')].filter((x) => !other || !other.contains(x)).map(idx),
+          other: other ? [...other.querySelectorAll('[data-testid="preview-group"]')].map(idx) : [],
+          otherText: text(other),
+          route: route ? { text: text(route), id: route.dataset.route, n: Number(route.dataset.confirmed), m: Number(route.dataset.confirmedGroups) } : null,
+          rhythm: rh ? { title: text(rh.querySelector('[class*="previewRhythmTitle"]')), scope: rh.dataset.scope ?? null, groups: rh.querySelectorAll('[data-testid="preview-rhythm-group"]').length, last: rh.dataset.lastSec } : null,
+          bodyText: text(body),
+        };
+      }),
+      focus: document.activeElement?.dataset?.testid ?? null,
+    };
+  });
+  const waveOf = (s, n) => s.waves.find((w) => w.wave === n) || null;
+  const expandAll = async () => {
+    await page.locator('[data-testid="preview-wave-expand-all"]').click();
+    await H.sleep(250);
+  };
+  // W-1／P-5 共用：「討伐」（正式 chapter1_3 的逐波資料）全部→path_a→（路線預覽改）path_b→全部
+  const waveRouteFlow = async () => {
+    await openPreview("chapter3_1");
+    await expandAll();
+    const all0 = await waves();
+    await pickRoute("preview-composition-route", "route:path_a");
+    const a = await waves();
+    await expandRoute();
+    await pickRoute("preview-route-select", "route:path_b");
+    const b = await waves();
+    await pickRoute("preview-composition-route", "");
+    const all1 = await waves();
+    return { all0, a, b, all1 };
+  };
+  const RHYTHM_WHOLE = "設定出兵節奏（全波：所有路線的組；遊戲時間預估）";
+  const waveRouteFlowOk = ({ all0, a, b, all1 }) => {
+    const w = (s, n) => waveOf(s, n) || {};
+    return all0.scope === null && all0.waves.every((x) => x.open && x.route === null && x.other.length === 0 && x.rhythm && x.rhythm.title === "設定出兵節奏（遊戲時間預估）" && x.rhythm.scope === null) &&
+      same(all0.waves.map((x) => x.groups), [[1, 2, 3], [1, 2, 3], [1, 2, 3, 4, 5, 6]]) &&
+      same(all0.waves.map((x) => x.header), ["▾ 第 1 波 15 隻", "▾ 第 2 波 15 隻", "▾ 第 3 波 40 隻"]) &&
+      /逐波內容只列路線 path_a 的組（和「敵軍組成」「路線預覽」是同一個選擇）；波次標題、波次導覽與設定出兵節奏仍是全波。/.test(a.scope || "") &&
+      same(a.waves.map((x) => x.groups), [[1, 2, 3], [1], [1, 3, 5]]) &&
+      same(a.waves.map((x) => x.header), all0.waves.map((x) => x.header)) &&
+      w(a, 1).route?.text === "路線 path_a：本路線已確認 15 隻／3 組（第 1 波全波：15 隻）。" &&
+      w(a, 2).route?.text === "路線 path_a：本路線已確認 5 隻／1 組（第 2 波全波：15 隻）。其他路線另有 2 組沒有列出（在「敵軍組成」或「路線預覽」選全部路線查看）。" &&
+      w(a, 3).route?.n === 25 && w(a, 3).route?.m === 3 && /（第 3 波全波：40 隻）/.test(w(a, 3).route?.text || "") &&
+      a.waves.every((x) => x.other.length === 0 && x.rhythm && x.rhythm.title === RHYTHM_WHOLE && x.rhythm.scope === "wave") &&
+      same(a.waves.map((x) => x.rhythm.groups), [3, 3, 6]) && same(a.waves.map((x) => x.rhythm.last), all0.waves.map((x) => x.rhythm.last)) &&
+      same(b.waves.map((x) => x.groups), [[], [2, 3], [2, 4, 6]]) &&
+      w(b, 1).route?.text === "路線 path_b：本路線沒有已確認出兵組（第 1 波全波：15 隻）。其他路線另有 3 組沒有列出（在「敵軍組成」或「路線預覽」選全部路線查看）。" &&
+      w(b, 1).route?.n === 0 && w(b, 1).route?.m === 0 && w(b, 2).route?.n === 10 && w(b, 2).route?.m === 2 && w(b, 3).route?.n === 15 && w(b, 3).route?.m === 3 &&
+      same(b.waves.map((x) => x.rhythm.groups), [3, 3, 6]) &&
+      all1.scope === null && same(all1.waves.map((x) => x.bodyText), all0.waves.map((x) => x.bodyText)) && same(all1.waves.map((x) => x.header), all0.waves.map((x) => x.header));
+  };
   // 手機寬度：預覽、組成選單、節奏區塊在畫面內，關閉鈕沒有被擋
   const layout = () => page.evaluate(() => {
     const p = document.querySelector('[data-testid="enemy-preview"] [role="dialog"]');
@@ -242,6 +320,7 @@ async (page) => {
   });
 
   // ── M 主頁 ──
+  let wf = { a: { waves: [] }, b: { waves: [] } };
   await section("main", async () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(H.BASE + "/shenmaSanguo");
@@ -337,6 +416,70 @@ async (page) => {
       { all: s4.comp, b: s4b.comp, a: s4a.comp });
     await closePreview();
 
+    // W-1 逐波依路線查看（正式 chapter1_3 的逐波資料）
+    wf = await waveRouteFlow();
+    out.W1 = { all0: wf.all0, a: wf.a, b: wf.b, all1: wf.all1.scope };
+    run.check("W-1 逐波依路線（正式 chapter1_3）：預設全部和原本相同（沒有路線摘要、節奏標題不變）；選 path_a 時第 1、2、3 波只列第 1～3、第 1、第 1／3／5 組（原本的組序），" +
+      "寫「本路線已確認 15 隻／3 組」「5 隻／1 組」「25 隻／3 組」與全波摘要、其他路線沒有列出的組數；路線預覽改選 path_b→第 1 波寫沒有已確認出兵組、第 2、3 波 10、15 隻；" +
+      "波次標題不變、節奏標明全波且仍是全部的組（3、3、6 組）；選回全部時每一波的內容和原本完全相同",
+      waveRouteFlowOk(wf), out.W1);
+    // 鍵盤與導覽：選了路線時前往第 3 波→只展開第 3 波、焦點在它的標題、仍只列 path_a 的組；Enter 收合、再 Enter 展開
+    await pickRoute("preview-composition-route", "route:path_a");
+    await page.locator('[data-testid="preview-wave-select"]').selectOption("3");
+    await page.locator('[data-testid="preview-wave-goto"]').click();
+    await H.sleep(300);
+    const k1 = await waves();
+    await press("Enter");
+    const k2 = await waves();
+    await press("Enter");
+    const k3 = await waves();
+    out.W1kb = { k1: { focus: k1.focus, open: k1.waves.filter((x) => x.open).map((x) => x.wave), w3: waveOf(k1, 3)?.groups }, k2: k2.waves.filter((x) => x.open).map((x) => x.wave), k3: { focus: k3.focus, w3: waveOf(k3, 3)?.groups } };
+    run.check("W-1 鍵盤：選了 path_a 時用波次導覽前往第 3 波→只展開第 3 波、焦點在它的標題、列第 1、3、5 組；Enter 收合、再 Enter 展開仍只列 path_a 的組",
+      k1.focus === "preview-wave-toggle-3" && same(out.W1kb.k1.open, [3]) && same(waveOf(k1, 3)?.groups, [1, 3, 5]) &&
+        same(k2.waves.filter((x) => x.open).map((x) => x.wave), []) && k3.focus === "preview-wave-toggle-3" && same(waveOf(k3, 3)?.groups, [1, 3, 5]),
+      out.W1kb);
+    await closePreview();
+
+    // W-2 邊界的資料問題：本路線的問題組照列、其他路線的問題另列全波資料提醒（原內容、不重複）、不補 0
+    await openPreview("chapter3_3");
+    await expandAll();
+    await pickRoute("preview-composition-route", "route:path_a");
+    const ea = await waves();
+    await pickRoute("preview-composition-route", "route:path_b");
+    const eb = await waves();
+    out.W2 = { a4: waveOf(ea, 4), a1: waveOf(ea, 1), b4: waveOf(eb, 4), b3: waveOf(eb, 3) };
+    const eA4 = waveOf(ea, 4) || {}, eA1 = waveOf(ea, 1) || {}, eB4 = waveOf(eb, 4) || {}, eB3 = waveOf(eb, 3) || {};
+    run.check("W-2 邊界（第 4 波：path_b 數量無法判讀、path_a 找不到設定、path_z 沒有路點、path_a 正常 2 隻）：path_a 列第 2、4 組、已確認 2 隻／1 組，全波資料提醒列第 1、3 組（原本的說明）；" +
+      "path_b 列第 1 組、寫沒有已確認出兵組＋另有 1 組無法確定，提醒列第 2、3 組；整波摘要是數量無法確定；第 1 波 path_a 的提醒列 path_b 沒有提供間隔的第 2 組；第 3 波 path_b 其他路線沒有問題時只寫沒有列出的組數",
+      same(eA4.groups, [2, 4]) && eA4.route?.n === 2 && eA4.route?.m === 1 && same(eA4.other, [1, 3]) &&
+        /全波資料提醒（其他路線）/.test(eA4.otherText || "") && /路線 path_z/.test(eA4.otherText || "") && /數量無法判讀/.test(eA4.otherText || "") &&
+        /（第 4 波全波：數量無法確定）/.test(eA4.route?.text || "") &&
+        same(eB4.groups, [1]) && eB4.route?.text === "路線 path_b：本路線沒有已確認出兵組，另有 1 組無法確定能不能出兵或數量（第 4 波全波：數量無法確定）。其他路線另有 1 組沒有列出（在「敵軍組成」或「路線預覽」選全部路線查看）。" &&
+        same(eB4.other, [2, 3]) && /找不到敵人設定「mock_rc_ghost」/.test(eB4.otherText || "") &&
+        same(eA1.groups, [1]) && same(eA1.other, [2]) && /沒有提供出兵間隔/.test(eA1.otherText || "") &&
+        same(eB3.groups, [2]) && same(eB3.other, []) && /其他路線另有 1 組沒有列出/.test(eB3.route?.text || "") &&
+        [eA4, eB4].every((x) => new Set([...x.groups, ...x.other]).size === x.groups.length + x.other.length),
+      out.W2);
+    await closePreview();
+
+    // W-3 缺波、拒絕、重複照整波
+    await openPreview("chapter3_5");
+    await expandAll();
+    await pickRoute("preview-composition-route", "route:path_a");
+    const ma = await waves();
+    await pickRoute("preview-composition-route", "route:path_b");
+    const mb = await waves();
+    out.W3 = { a: ma.waves, b: mb.waves.map((x) => ({ wave: x.wave, groups: x.groups, other: x.other, route: x.route })) };
+    const m2 = waveOf(ma, 2) || {}, m3 = waveOf(ma, 3) || {}, m4 = waveOf(ma, 4) || {}, n3 = waveOf(mb, 3) || {}, n4 = waveOf(mb, 4) || {};
+    run.check("W-3 缺波、拒絕、重複：第 2 波（沒有資料）仍寫遊戲會拒絕開始、path_a 沒有已確認出兵組（全波：沒有資料）；第 3 波 path_a 列找不到設定的第 1 組、沒有已確認，path_b 把它列在全波資料提醒；" +
+      "第 4 波重複資料的說明照列，path_b 只算第一筆的 2 隻、path_a 沒有組",
+      /關卡資料沒有第 2 波：遊戲打到這一波會拒絕開始/.test(m2.bodyText || "") && /本路線沒有已確認出兵組（第 2 波全波：沒有資料）/.test(m2.route?.text || "") && same(m2.groups, []) &&
+        /這一波沒有可以出兵的敵人組：遊戲會拒絕開始這一波/.test(m3.bodyText || "") && same(m3.groups, [1]) && m3.route?.m === 0 && /（第 3 波全波：遊戲會拒絕這一波）/.test(m3.route?.text || "") &&
+        same(n3.groups, []) && same(n3.other, [1]) &&
+        /第 4 波另有 1 筆重複的資料，遊戲只使用第一筆/.test(m4.bodyText || "") && same(m4.groups, []) && n4.route?.n === 2 && same(n4.groups, [1]),
+      out.W3);
+    await closePreview();
+
     // M-5 關閉關卡選擇：戰場不變、沒有寫入
     await press("Escape");
     await H.sleep(300);
@@ -365,6 +508,13 @@ async (page) => {
     run.check("P-1 獨立關卡頁：依路線查看與路線預覽同步（全部→path_a 45→path_b 25→全部）、第 1 波節奏 6 秒，和主頁相同",
       routeFlowOk(f) && wave1Ok(sw), out.P1);
 
+    // P-5 獨立關卡頁：逐波依路線查看和主頁相同
+    const pf = await waveRouteFlow();
+    await closePreview();
+    out.P5 = { a: pf.a.waves.map((x) => [x.groups, x.route && x.route.text]), b: pf.b.waves.map((x) => [x.groups, x.route && x.route.text]) };
+    run.check("P-5 獨立關卡頁：逐波依路線（全部→path_a→path_b→全部）的組、摘要、全波節奏與回到全部的內容都和主頁相同",
+      waveRouteFlowOk(pf) && same(out.P5, { a: wf.a.waves.map((x) => [x.groups, x.route && x.route.text]), b: wf.b.waves.map((x) => [x.groups, x.route && x.route.text]) }), out.P5);
+
     // 過期的設定快取（「刷新」多 path_b），重新讀取暫停後放行
     const staleReload = async () => {
       await page.evaluate((stale) => {
@@ -392,8 +542,15 @@ async (page) => {
     await pickRoute("preview-composition-route", "route:path_b");
     await page.locator('[data-testid="preview-composition-route"]').focus();
     const before = await state();
+    const wBefore = await waves();
     await release();
     const after = await state();
+    const wAfter = await waves();
+    out.P2b = { before: wBefore, after: wAfter };
+    run.check("P-2b 設定更新刪掉選的 path_b：更新前第 1 波只列 path_b 的第 3 組；更新後逐波也回到全部（第 1、2 組、沒有路線摘要與範圍說明）",
+      same(waveOf(wBefore, 1)?.groups, [3]) && waveOf(wBefore, 1)?.route?.id === "path_b" &&
+        wAfter.scope === null && same(waveOf(wAfter, 1)?.groups, [1, 2]) && waveOf(wAfter, 1)?.route === null,
+      out.P2b);
     out.P2 = { before: { comp: before.comp, route: before.route }, after: { title: after.title, comp: after.comp, route: after.route, focus: after.focus } };
     run.check("P-2 設定更新（預覽開著）：組成選的 path_b 被刪掉→組成與路線預覽都回到全部（path_a、path_c），組成回到全關說明；焦點留在依路線查看的選單；仍是同一關",
       before.comp.route === "path_b" && same(before.comp.rows, [[C2, 4, "1"]]) && same(before.route.lines, ["path_b"]) &&
@@ -436,6 +593,18 @@ async (page) => {
       await H.sleep(200);
       fit[vp.height].rhythm = await layout();
       shots[vp.height + "-rhythm"] = await H.shot(page, `stage-rhythm-wave2-390x${vp.height}`);
+      await page.locator('[data-testid="preview-wave-select"]').selectOption("4");
+      await page.locator('[data-testid="preview-wave-goto"]').click();
+      await H.sleep(300);
+      await page.locator('[data-testid="preview-wave-4"] [data-testid="preview-wave-other-problems"]').scrollIntoViewIfNeeded();
+      await H.sleep(200);
+      fit[vp.height].wave = await page.evaluate(() => {
+        const p = document.querySelector('[data-testid="enemy-preview"] [role="dialog"]').getBoundingClientRect();
+        const box = (sel) => { const x = document.querySelector(sel); if (!x) return null; const q = x.getBoundingClientRect(); return { left: Math.round(q.left), right: Math.round(q.right), w: Math.round(q.width), sw: x.scrollWidth, cw: x.clientWidth }; };
+        return { panel: { left: Math.round(p.left), right: Math.round(p.right) }, vw: innerWidth, docScroll: document.documentElement.scrollWidth,
+          route: box('[data-testid="preview-wave-4"] [data-testid="preview-wave-route"]'), other: box('[data-testid="preview-wave-4"] [data-testid="preview-wave-other-problems"]') };
+      });
+      shots[vp.height + "-wave-route"] = await H.shot(page, `stage-rhythm-wave4-route-390x${vp.height}`);
       await closePreview();
     }
     const a1 = await gasActions();
@@ -446,6 +615,10 @@ async (page) => {
       [600, 844].every((h) => ok(fit[h].comp) && ok(fit[h].rhythm) && inPanel(fit[h].comp, "select") && inPanel(fit[h].rhythm, "rhythm")) &&
         out.P4.writes === 0,
       out.P4);
+    const inside = (l, b) => !!b && b.w > 0 && b.left >= l.panel.left && b.right <= l.panel.right && b.sw <= b.cw + 1;
+    run.check("P-4b 獨立關卡頁 390×600／390×844：選 path_b 前往第 4 波，路線摘要與全波資料提醒都在預覽裡（沒有內部橫向溢出）、沒有橫向捲動",
+      [600, 844].every((h) => { const l = fit[h].wave; return l && inside(l, l.route) && inside(l, l.other) && l.docScroll <= l.vw; }),
+      { 600: fit[600].wave, 844: fit[844].wave });
     await page.setViewportSize({ width: 1280, height: 800 });
   });
 

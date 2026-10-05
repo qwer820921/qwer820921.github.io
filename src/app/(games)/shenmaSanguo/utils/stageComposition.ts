@@ -1,5 +1,5 @@
 import { MovementInfo } from "./antiAir";
-import { StagePreview } from "./stagePreview";
+import { PreviewGroup, PreviewWave, StagePreview } from "./stagePreview";
 
 /**
  * 敵軍預覽的「敵軍組成」（唯讀）：從 buildStagePreview 的結果計算，不另外解析出兵規則。
@@ -189,6 +189,53 @@ export function routeComposition(
     skipped,
     unknownIds,
     gaps,
+  };
+}
+
+export interface WaveRouteView {
+  pathId: string;
+  /** 這一波在這條路線上的組：原本的組序（index）與順序都不變，含遊戲會略過或無法確定的組 */
+  groups: PreviewGroup[];
+  /** 這條路線已確認會出兵的隻數（outcome＝spawn、數量與敵人設定都確定的組） */
+  confirmed: number;
+  /** 這條路線已確認會出兵的組數 */
+  confirmedGroups: number;
+  /** 這條路線上無法確定能不能出兵或數量的組數 */
+  undetermined: number;
+  /**
+   * 其他路線上有資料問題的組（遊戲會略過、無法確定，或有資料不完整的註記；含沒有路點、不能選的路線）：
+   * 全波資料提醒，原內容照列，和這條路線的組不重複
+   */
+  otherProblems: PreviewGroup[];
+  /** 其他路線上沒有資料問題、不在這裡列出的組數 */
+  otherHidden: number;
+}
+
+/**
+ * 一波依路線查看（唯讀）：只從 buildStagePreview 的組篩選，不重新解析關卡資料、不改組序與內容。
+ * 已確認的隻數只算 outcome＝spawn 的組；數量無法確定、遊戲會略過的組不補 0。
+ * 其他路線的問題組不藏起來（otherProblems）；缺波、拒絕、重複與空白列是整波的事，由呼叫端照原樣顯示
+ */
+export function waveRouteView(
+  wave: PreviewWave,
+  pathId: string
+): WaveRouteView {
+  const groups = wave.groups.filter((g) => g.path === pathId);
+  const confirmedList = groups.filter(
+    (g) => g.outcome === "spawn" && g.count !== null && g.name !== null
+  );
+  const others = wave.groups.filter((g) => g.path !== pathId);
+  const otherProblems = others.filter(
+    (g) => g.outcome !== "spawn" || g.notes.length > 0
+  );
+  return {
+    pathId,
+    groups,
+    confirmed: confirmedList.reduce((s, g) => s + (g.count ?? 0), 0),
+    confirmedGroups: confirmedList.length,
+    undetermined: groups.filter((g) => g.outcome === "unknown").length,
+    otherProblems,
+    otherHidden: others.length - otherProblems.length,
   };
 }
 

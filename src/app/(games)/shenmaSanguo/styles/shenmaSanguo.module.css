@@ -3447,3 +3447,14 @@
   font-size: 0.72rem;
   color: var(--sg-muted);
 }
+
+/* 依路線查看逐波時，其他路線的資料問題（全波資料提醒） */
+.previewRouteOther {
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px dashed #f59e0b;
+  border-radius: 8px;
+  font-size: 0.76rem;
+  color: var(--sg-text);
+  overflow-wrap: anywhere;
+}

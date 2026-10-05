@@ -2,6 +2,9 @@
 // - utils/stageComposition 的 routeComposition：只看 path 等於選的路線的組，依 enemy_id 合計、第一次出現的順序、記下出兵的波次；
 //   全關的出兵都能確定時合計才是這條路線的全部，否則只寫已確認（缺波、遊戲會拒絕、無法確定的組都不補 0）；沒有路點的路線不會出現；
 //   各路線已確認的合計加起來等於全關；不改輸入
+// - utils/stageComposition 的 waveRouteView（逐波依路線查看）：只列 path 等於選的路線的組，原本的組序與物件不變；已確認只算確定會出兵的組
+//   （數量無法確定、略過不補 0）；其他路線的資料問題（略過、無法確定、資料不完整的註記，含沒有路點的路線）另列、不重複；
+//   缺波、拒絕、重複照整波；用正式 chapter1_3、chapter1_5 的逐波資料核對各波各路線的隻數；不改預覽與整波出兵節奏
 // - utils/spawnRhythm：同一波各組同時開始、各組第一隻立刻出兵，最後一隻名義在 (n−1)×interval 秒，整波取各組最大值（不相加）；
 //   n＝1 是 0 秒（間隔是什麼都一樣）；沒有提供間隔照遊戲以 1 秒計並標出預設；間隔 ≤ 0 或小於計時器最短時間時依處理幀出兵、
 //   不寫成 0 秒；不是數字的間隔不強轉；數字太大時無法估算（不出現 Infinity）；有無法估算的組時只寫已知範圍
@@ -30,7 +33,7 @@ require.extensions[".ts"] = (module, filename) => {
 };
 
 const { buildStagePreview } = require(join(UTILS, "stagePreview.ts"));
-const { routeComposition, stageComposition } = require(
+const { routeComposition, stageComposition, waveRouteView } = require(
   join(UTILS, "stageComposition.ts")
 );
 const {
@@ -351,6 +354,283 @@ const filler = (n) => ({
       b.rows.length === 0 &&
       b.skipped === 1,
     { a, b }
+  );
+}
+
+// ── 逐波依路線查看（waveRouteView）：正式 chapter1_3、chapter1_5 的逐波資料（敵人 id、數量、間隔、路線照正式設定） ──
+const routeIdx = (v) => v.groups.map((x) => x.index);
+const viewOf = (p, pathId) =>
+  p.waves.map((w) => {
+    const v = waveRouteView(w, pathId);
+    return [v.confirmed, v.confirmedGroups];
+  });
+{
+  const map = deepFreeze(stage(PATHS_13, WAVES_13));
+  const p = buildStagePreview(map, deepFreeze(ENEMIES));
+  const before = JSON.stringify(p);
+  const rhythmBefore = p.waves.map((w) => JSON.stringify(waveRhythm(w)));
+  const a = p.waves.map((w) => waveRouteView(w, "path_a"));
+  const b = p.waves.map((w) => waveRouteView(w, "path_b"));
+  check(
+    "逐波依路線（正式 chapter1_3）：path_a 第 1 波第 1、2、3 組 15 隻／3 組，第 2 波第 1 組 5 隻，第 3 波第 1、3、5 組 25 隻；" +
+      "path_b 第 1 波沒有已確認出兵組（0 組、其他路線 3 組沒有列出），第 2 波第 2、3 組 10 隻，第 3 波第 2、4、6 組 15 隻；組序是原本的編號",
+    same(a.map(routeIdx), [[1, 2, 3], [1], [1, 3, 5]]) &&
+      same(viewOf(p, "path_a"), [
+        [15, 3],
+        [5, 1],
+        [25, 3],
+      ]) &&
+      same(b.map(routeIdx), [[], [2, 3], [2, 4, 6]]) &&
+      same(viewOf(p, "path_b"), [
+        [0, 0],
+        [10, 2],
+        [15, 3],
+      ]) &&
+      b[0].otherHidden === 3 &&
+      b[0].otherProblems.length === 0 &&
+      a.every((v) => v.undetermined === 0 && v.otherProblems.length === 0),
+    {
+      a: a.map(routeIdx),
+      b: b.map(routeIdx),
+      va: viewOf(p, "path_a"),
+      vb: viewOf(p, "path_b"),
+    }
+  );
+  const whole = stageComposition(p);
+  check(
+    "逐波依路線（正式 chapter1_3）：各波兩條路線的已確認隻數加起來等於那一波的總數；逐波加總等於依路線組成（45、25）；" +
+      "列出的組就是原本那幾組（同一個物件，不複製、不改內容）；預覽與整波出兵節奏不變",
+    p.waves.every((w, i) => a[i].confirmed + b[i].confirmed === w.total) &&
+      a.reduce((s, v) => s + v.confirmed, 0) ===
+        routeComposition(p, "path_a", whole).confirmed &&
+      b.reduce((s, v) => s + v.confirmed, 0) ===
+        routeComposition(p, "path_b", whole).confirmed &&
+      a.every((v, i) =>
+        v.groups.every((x) => p.waves[i].groups[x.index - 1] === x)
+      ) &&
+      JSON.stringify(p) === before &&
+      p.waves.every(
+        (w, i) => JSON.stringify(waveRhythm(w)) === rhythmBefore[i]
+      ),
+    { a: a.map((v) => v.confirmed), b: b.map((v) => v.confirmed) }
+  );
+}
+const WAVES_15 = [
+  {
+    wave: 1,
+    enemies: [
+      g("grunt_lv1", 10, 1.5, "path_a"),
+      g("cavalry_lv1", 10, 1.1, "path_a"),
+      g("siege_lv1", 10, 1.1, "path_a"),
+    ],
+  },
+  {
+    wave: 2,
+    enemies: [
+      g("grunt_lv2", 10, 1.1, "path_a"),
+      g("cavalry_lv2", 10, 1.1, "path_a"),
+      g("siege_lv1", 10, 1.1, "path_b"),
+    ],
+  },
+  {
+    wave: 3,
+    enemies: [
+      g("grunt_lv1", 10, 1.1, "path_a"),
+      g("cavalry_lv2", 10, 1.1, "path_a"),
+      g("siege_lv2", 10, 1.5, "path_a"),
+      g("siege_lv2", 10, 1.5, "path_b"),
+    ],
+  },
+  {
+    wave: 4,
+    enemies: [
+      g("grunt_lv2", 10, 1.1, "path_a"),
+      g("cavalry_lv2", 10, 1.1, "path_a"),
+      g("siege_lv2", 10, 1.1, "path_b"),
+      g("cavalry_lv2", 10, 1.1, "path_b"),
+    ],
+  },
+  {
+    wave: 5,
+    enemies: [
+      g("grunt_lv2", 10, 1.1, "path_a"),
+      g("cavalry_lv2", 10, 1.1, "path_a"),
+      g("siege_lv2", 10, 1.1, "path_a"),
+      g("grunt_lv2", 10, 1.1, "path_b"),
+      g("cavalry_lv2", 10, 1.1, "path_b"),
+      g("siege_lv2", 10, 1.1, "path_b"),
+    ],
+  },
+  {
+    wave: 6,
+    enemies: [
+      g("grunt_lv2", 10, 1.1, "path_a"),
+      g("cavalry_lv2", 10, 1.1, "path_a"),
+      g("siege_lv2", 10, 1.1, "path_a"),
+      g("cavalry_lv3", 10, 1.1, "path_b"),
+      g("grunt_lv2", 10, 1.1, "path_b"),
+      g("cavalry_lv2", 10, 1.1, "path_b"),
+      g("siege_lv2", 10, 1.1, "path_b"),
+    ],
+  },
+  {
+    wave: 7,
+    enemies: [
+      g("grunt_lv2", 10, 1.1, "path_a"),
+      g("cavalry_lv2", 10, 1.1, "path_a"),
+      g("siege_lv2", 10, 1.1, "path_a"),
+      g("cavalry_lv3", 10, 1.6, "path_a"),
+      g("grunt_lv3", 10, 1.6, "path_a"),
+      g("grunt_lv2", 10, 1.1, "path_b"),
+      g("cavalry_lv2", 10, 1.1, "path_b"),
+      g("siege_lv2", 10, 1.1, "path_b"),
+      g("siege_lv3", 10, 1.6, "path_b"),
+    ],
+  },
+];
+{
+  const map = deepFreeze(stage(PATHS_15, WAVES_15));
+  const p = buildStagePreview(map, deepFreeze(ENEMIES));
+  const a = viewOf(p, "path_a");
+  const b = viewOf(p, "path_b");
+  const sum = (l) => l.reduce((s, [n]) => s + n, 0);
+  const v7a = waveRouteView(p.waves[6], "path_a");
+  const v7b = waveRouteView(p.waves[6], "path_b");
+  check(
+    "逐波依路線（正式 chapter1_5）：path_a 各波 30、20、30、20、30、30、50（共 210），path_b 0、10、10、20、30、40、40（共 150），全關 360；" +
+      "第 7 波 path_a 第 1～5 組、path_b 第 6～9 組（原本的組序）；整波出兵節奏仍是 9 組、14.4 秒",
+    same(
+      a.map(([n]) => n),
+      [30, 20, 30, 20, 30, 30, 50]
+    ) &&
+      same(
+        b.map(([n]) => n),
+        [0, 10, 10, 20, 30, 40, 40]
+      ) &&
+      sum(a) === 210 &&
+      sum(b) === 150 &&
+      p.total === 360 &&
+      same(routeIdx(v7a), [1, 2, 3, 4, 5]) &&
+      same(routeIdx(v7b), [6, 7, 8, 9]) &&
+      waveRhythm(p.waves[6]).groups.length === 9 &&
+      secText(waveRhythm(p.waves[6]).lastSec) === "14.4",
+    { a, b, total: p.total }
+  );
+}
+
+// ── 逐波依路線查看：資料問題不被藏起來、不補 0、不重複 ──
+{
+  const map = deepFreeze(
+    stage(
+      {
+        path_a: [
+          [0, 5],
+          [13, 5],
+        ],
+        path_b: [
+          [0, 8],
+          [13, 8],
+        ],
+      },
+      [
+        // 第 1 波：path_a 第 1 組數量無法判讀、第 3 組正常；path_b 第 2 組找不到敵人設定；第 4 組在沒有路點的 path_z；
+        // 第 5 組 path_b 沒有提供間隔（資料不完整的註記）
+        {
+          wave: 1,
+          enemies: [
+            g("grunt_lv1", "many", 1, "path_a"),
+            g("ghost", 2, 1, "path_b"),
+            g("grunt_lv2", 3, 1, "path_a"),
+            g("grunt_lv3", 2, 1, "path_z"),
+            { enemy_id: "cavalry_lv1", count: 4, path: "path_b" },
+          ],
+        },
+        // 第 2 波缺少；第 3 波只有 path_a 上找不到設定的組（整波遊戲會拒絕）
+        { wave: 3, enemies: [g("ghost", 1, 1, "path_a")] },
+        // 第 4 波有重複資料（遊戲只用第一筆）
+        { wave: 4, enemies: [g("grunt_lv1", 2, 1, "path_b")] },
+        { wave: 4, enemies: [g("grunt_lv1", 9, 1, "path_a")] },
+      ]
+    )
+  );
+  const p = buildStagePreview(map, deepFreeze(ENEMIES));
+  const [w1, w2, w3, w4] = p.waves;
+  const a1 = waveRouteView(w1, "path_a");
+  const b1 = waveRouteView(w1, "path_b");
+  check(
+    "資料問題（第 1 波 path_a）：列第 1 組（數量無法確定）與第 3 組，已確認只算第 3 組 3 隻／1 組、另有 1 組無法確定；" +
+      "其他路線的問題照原內容另列：第 2 組（找不到設定）、第 4 組（沒有路點的 path_z）、第 5 組（沒有提供間隔），沒有可以不列的組",
+    same(routeIdx(a1), [1, 3]) &&
+      a1.confirmed === 3 &&
+      a1.confirmedGroups === 1 &&
+      a1.undetermined === 1 &&
+      same(
+        a1.otherProblems.map((x) => x.index),
+        [2, 4, 5]
+      ) &&
+      a1.otherProblems.every((x) => x.notes.length > 0) &&
+      a1.otherHidden === 0,
+    {
+      a1: routeIdx(a1),
+      c: a1.confirmed,
+      other: a1.otherProblems.map((x) => [x.index, x.notes]),
+    }
+  );
+  check(
+    "資料問題（第 1 波 path_b）：列第 2 組（找不到設定，遊戲會略過）與第 5 組，已確認只算第 5 組 4 隻；其他路線的問題是第 1 組與 path_z 的第 4 組，" +
+      "第 3 組（path_a 正常）不列、算在其他路線沒有列出的 1 組；每一組只出現一次（本路線與全波資料提醒不重複，合起來是整波）",
+    same(routeIdx(b1), [2, 5]) &&
+      b1.confirmed === 4 &&
+      b1.confirmedGroups === 1 &&
+      b1.undetermined === 0 &&
+      same(
+        b1.otherProblems.map((x) => x.index),
+        [1, 4]
+      ) &&
+      b1.otherHidden === 1 &&
+      [a1, b1].every((v) => {
+        const ids = [...v.groups, ...v.otherProblems].map((x) => x.index);
+        return (
+          new Set(ids).size === ids.length &&
+          ids.length + v.otherHidden === w1.groups.length
+        );
+      }),
+    {
+      b1: routeIdx(b1),
+      other: b1.otherProblems.map((x) => x.index),
+      hidden: b1.otherHidden,
+    }
+  );
+  const a2 = waveRouteView(w2, "path_a");
+  const a3 = waveRouteView(w3, "path_a");
+  const b3 = waveRouteView(w3, "path_b");
+  const a4 = waveRouteView(w4, "path_a");
+  const b4 = waveRouteView(w4, "path_b");
+  check(
+    "缺波、拒絕、重複：第 2 波沒有資料時兩條路線都是 0 組、沒有已確認（不補成 0 隻的完整波）；第 3 波 path_a 列出找不到設定的第 1 組、沒有已確認，" +
+      "path_b 把它列在全波資料提醒；第 4 波重複資料照預覽只用第一筆（path_b 2 隻，path_a 沒有組）",
+    w2.missing &&
+      a2.groups.length === 0 &&
+      a2.confirmedGroups === 0 &&
+      a2.otherProblems.length === 0 &&
+      w3.rejected &&
+      same(routeIdx(a3), [1]) &&
+      a3.confirmedGroups === 0 &&
+      same(
+        b3.otherProblems.map((x) => x.index),
+        [1]
+      ) &&
+      w4.duplicates === 1 &&
+      b4.confirmed === 2 &&
+      a4.groups.length === 0 &&
+      a4.otherHidden === 1,
+    {
+      a2,
+      a3: routeIdx(a3),
+      b3: b3.otherProblems.length,
+      b4: b4.confirmed,
+      a4: a4.groups.length,
+    }
   );
 }
 
