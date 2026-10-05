@@ -77,7 +77,9 @@ async (page) => {
       width: fill ? parseFloat(fill.style.width) : null,
       stalled: stalled ? stalled.innerText.replace(/\s+/g, " ").trim() : "",
       failed: failed ? failed.innerText.replace(/\s+/g, " ").trim() : "",
-      hud: !!document.querySelector('[title="切換關卡"]'),
+      // 進入戰場的頂欄（引擎還在載入時提早顯示的頂欄另外記在 preHud）
+      hud: (() => { const b = document.querySelector('[title="切換關卡"]'); const bar = b && b.closest("[data-hud-phase]"); return !!b && (!bar || bar.dataset.hudPhase !== "preload"); })(),
+      preHud: !!document.querySelector('[data-hud-phase="preload"] [title="切換關卡"]'),
     };
   });
   const DL = /^遊戲引擎：下載中 ([0-9.]+) \/ ([0-9.]+) MB$/;

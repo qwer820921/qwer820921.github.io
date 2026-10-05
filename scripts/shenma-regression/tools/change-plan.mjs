@@ -97,6 +97,8 @@ export const BROWSER_SECONDS = {
   "stage-browse-web.js": 90,
   "stage-route-web.js": 90,
   "stage-rhythm-web.js": 90,
+  "stage-sort-web.js": 60,
+  "hud-preload-web.js": 120,
 };
 export const QUICK_SECONDS = 104;
 export const GODOT_FULL_SECONDS = 1800;
@@ -259,7 +261,13 @@ export const RULES = [
         "(components/SinglePageContent\\.tsx|battle/components/BattlePageContent\\.tsx|components/MainMenuContent\\.tsx|layout\\.tsx|page\\.tsx|battle/page\\.tsx)"
     ),
     why: "戰鬥入口（共用）",
-    areas: ["battle-flow", "battle-live", "settle", "floating-ui"],
+    areas: [
+      "battle-flow",
+      "battle-live",
+      "settle",
+      "floating-ui",
+      "hud-preload",
+    ],
     smoke: true,
     review:
       "戰鬥入口有改：預設跑煙霧、戰鬥流程、戰況與結算；如果改到結算、同步、帳號、命令協定或 iframe 生命週期，改跑完整（--full）",
@@ -350,6 +358,7 @@ export const RULES = [
       "stage-browse",
       "stage-route",
       "stage-rhythm",
+      "stage-sort",
       "wave-reject",
       "air-readiness",
     ],

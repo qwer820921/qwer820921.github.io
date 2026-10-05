@@ -436,8 +436,13 @@ async (page) => {
       for (const e of entries) c[e.action] = (c[e.action] || 0) + 1;
       return c;
     },
+    // 等頂欄出現：已送出關卡資料、寫入限制或這一關不能出征時的頂欄（引擎還在載入時提早顯示的 data-hud-phase＝preload 不算，
+    // 那時遊戲還沒有這一場；要等提早顯示的頂欄用 waitPreloadHud）
     async waitHud(p, timeout = 120000) {
-      await p.waitForFunction(() => document.querySelector('[title="切換關卡"]') !== null, null, { timeout });
+      await p.waitForFunction(() => (() => { const b = document.querySelector('[title="切換關卡"]'); const bar = b && b.closest("[data-hud-phase]"); return !!b && (!bar || bar.dataset.hudPhase !== "preload"); })(), null, { timeout });
+    },
+    async waitPreloadHud(p, timeout = 120000) {
+      await p.waitForFunction(() => document.querySelector('[data-hud-phase="preload"] [title="切換關卡"]') !== null, null, { timeout });
     },
     async hud(p) {
       return p.evaluate(() => {

@@ -7,10 +7,12 @@ import { EnemyConfig, HeroConfig, MapConfig, TeamSlot } from "../../types";
 import { buildStagePreview, PreviewWave } from "../../utils/stagePreview";
 import {
   CompositionRow,
+  CompositionSort,
   RouteComposition,
   StageComposition,
   WaveRouteView,
   routeComposition,
+  sortCompositionRows,
   stageComposition,
   waveListText,
   waveRouteView,
@@ -54,7 +56,8 @@ interface Props {
  * 只讀已載入的靜態設定（utils/stagePreview），沒有出征、切換關卡或任何寫入；
  * 「敵軍組成」依敵人合計已確認會出兵的組（utils/stageComposition，可以收起），全關總數與逐波內容照舊；
  * 多條路線時組成可以依路線查看（routeComposition）：選的路線是這裡持有的同一個狀態，「路線預覽」的「顯示路線」也是它，
- * 兩邊不會各選各的；設定更新後選的路線不在了就回到全部。逐波內容也跟著這個選擇（waveRouteView）：選了路線時每一波只列那條路線的組
+ * 兩邊不會各選各的；設定更新後選的路線不在了就回到全部。組成可以改依已確認隻數由多到少排列（sortCompositionRows，預設是首次出現），
+ * 只是這個視窗暫時的顯示：換路線保留、每次都用最新的列重新排，關閉預覽後回到預設。逐波內容也跟著這個選擇（waveRouteView）：選了路線時每一波只列那條路線的組
  * （原本的組序）並寫明那條路線已確認的隻數與組數，其他路線的資料問題另列「全波資料提醒」；波次標題、波次導覽與出兵節奏仍是整波。
  * 戰場內的「下一波」不帶這個選擇。
  * 「路線預覽」畫關卡設定的路線格子（StageRoutePreview，預設收起）；逐波內容另列「設定出兵節奏」（utils/spawnRhythm）；
@@ -313,7 +316,8 @@ export default function EnemyPreviewModal({
 
 /**
  * 敵軍組成：依敵人合計已確認會出兵的組（預設展開，可以收起）。
- * 多條路線時可以選一條路線，只看那條路線上的組成（和路線預覽共用同一個選擇）；全部路線時是原本的全關總覽
+ * 多條路線時可以選一條路線，只看那條路線上的組成（和路線預覽共用同一個選擇）；全部路線時是原本的全關總覽。
+ * 排列：首次出現（預設，原本的順序）或已確認隻數由多到少（同數量維持首次出現的順序）；只改顯示順序，數量、說明與資料問題不變
  */
 function CompositionBlock({
   composition: c,
@@ -330,11 +334,23 @@ function CompositionBlock({
   onRouteChange: (route: string | null) => void;
 }) {
   const [open, setOpen] = useState(true);
+  // 排列方式：收起再展開、換路線都保留；關閉預覽（卸載）後回到首次出現
+  const [sort, setSort] = useState<CompositionSort>("first");
   const bodyId = useId();
   const selectId = useId();
+  const sortId = useId();
   // 名稱相同但 enemy_id 不同的敵人分開列，並附上 id 才分得出來
   // 依路線查看時每一列另有出兵的波次（waves）；全部路線時沒有
-  const rows: (CompositionRow & { waves?: number[] })[] = rc ? rc.rows : c.rows;
+  const rows: (CompositionRow & { waves?: number[] })[] = sortCompositionRows(
+    rc ? rc.rows : c.rows,
+    sort
+  );
+  const orderText =
+    sort === "count"
+      ? "依已確認隻數由多到少，同數量依第一次出現"
+      : "依第一次出現的順序";
+  // 資料不完整的說明原本沒有寫順序：改依隻數排列時另外註明
+  const sortNote = sort === "count" ? "依已確認隻數由多到少排列。" : "";
   const names = rows.map((r) => r.name);
   const sameName = (n: string) => names.indexOf(n) !== names.lastIndexOf(n);
   const confirmed = rc ? rc.confirmed : c.confirmed;
@@ -354,6 +370,7 @@ function CompositionBlock({
       data-testid="preview-composition"
       data-complete={String(complete)}
       data-route={rc ? rc.pathId : ""}
+      data-sort={sort}
     >
       <button
         className={styles.previewWaveHeader}
@@ -367,36 +384,57 @@ function CompositionBlock({
       </button>
       {open && (
         <div id={bodyId} className={styles.previewWaveBody}>
-          {routeIds.length > 1 && (
+          {(routeIds.length > 1 || c.rows.length > 1) && (
             <Row className="g-2 mb-2">
-              <Col xs={12} sm={7}>
-                <label htmlFor={selectId} className={styles.heroFilterLabel}>
-                  依路線查看
-                </label>
-                <select
-                  id={selectId}
-                  className={`form-select form-select-sm ${styles.heroSortField}`}
-                  value={route === null ? "" : `route:${route}`}
-                  onChange={(e) =>
-                    onRouteChange(
-                      e.target.value === ""
-                        ? null
-                        : e.target.value.slice("route:".length)
-                    )
-                  }
-                  data-testid="preview-composition-route"
-                >
-                  <option value="">全部路線（{routeIds.length} 條）</option>
-                  {routeIds.map((id) => (
-                    <option key={id} value={`route:${id}`}>
-                      {id}
-                    </option>
-                  ))}
-                </select>
-              </Col>
-              <Col xs={12} className={styles.previewHint}>
-                和路線預覽的「顯示路線」是同一個選擇。
-              </Col>
+              {routeIds.length > 1 && (
+                <Col xs={12} sm={7}>
+                  <label htmlFor={selectId} className={styles.heroFilterLabel}>
+                    依路線查看
+                  </label>
+                  <select
+                    id={selectId}
+                    className={`form-select form-select-sm ${styles.heroSortField}`}
+                    value={route === null ? "" : `route:${route}`}
+                    onChange={(e) =>
+                      onRouteChange(
+                        e.target.value === ""
+                          ? null
+                          : e.target.value.slice("route:".length)
+                      )
+                    }
+                    data-testid="preview-composition-route"
+                  >
+                    <option value="">全部路線（{routeIds.length} 條）</option>
+                    {routeIds.map((id) => (
+                      <option key={id} value={`route:${id}`}>
+                        {id}
+                      </option>
+                    ))}
+                  </select>
+                </Col>
+              )}
+              {c.rows.length > 1 && (
+                <Col xs={12} sm={5}>
+                  <label htmlFor={sortId} className={styles.heroFilterLabel}>
+                    排列
+                  </label>
+                  <select
+                    id={sortId}
+                    className={`form-select form-select-sm ${styles.heroSortField}`}
+                    value={sort}
+                    onChange={(e) => setSort(e.target.value as CompositionSort)}
+                    data-testid="preview-composition-sort"
+                  >
+                    <option value="first">首次出現</option>
+                    <option value="count">已確認隻數（多→少）</option>
+                  </select>
+                </Col>
+              )}
+              {routeIds.length > 1 && (
+                <Col xs={12} className={styles.previewHint}>
+                  和路線預覽的「顯示路線」是同一個選擇。
+                </Col>
+              )}
             </Row>
           )}
           <div
@@ -407,13 +445,13 @@ function CompositionBlock({
               ? rows.length === 0
                 ? `路線 ${rc.pathId} 沒有可以確認會出兵的組：不代表這條路線沒有敵軍。`
                 : rc.complete
-                  ? `路線 ${rc.pathId} 共 ${rc.confirmed} 隻、${rows.length} 種敵人（全關 ${c.confirmed} 隻中的這條路線；依第一次出現的順序），出兵在${waveListText(rc.waves)}。`
-                  : `路線 ${rc.pathId} 僅已確認組：${rc.confirmed} 隻、${rows.length} 種敵人，出兵在${waveListText(rc.waves)}；尚有資料問題，非這條路線的全部。`
+                  ? `路線 ${rc.pathId} 共 ${rc.confirmed} 隻、${rows.length} 種敵人（全關 ${c.confirmed} 隻中的這條路線；${orderText}），出兵在${waveListText(rc.waves)}。`
+                  : `路線 ${rc.pathId} 僅已確認組：${rc.confirmed} 隻、${rows.length} 種敵人，出兵在${waveListText(rc.waves)}；尚有資料問題，非這條路線的全部。${sortNote}`
               : rows.length === 0
                 ? "沒有可以確認會出兵的組：不代表這一關沒有敵軍，也不代表可以開戰。"
                 : c.complete
-                  ? `全關共 ${c.confirmed} 隻、${c.rows.length} 種敵人（依第一次出現的順序）。`
-                  : `僅已確認組：共 ${c.confirmed} 隻、${c.rows.length} 種敵人；尚有資料問題，非全關總數。`}
+                  ? `全關共 ${c.confirmed} 隻、${c.rows.length} 種敵人（${orderText}）。`
+                  : `僅已確認組：共 ${c.confirmed} 隻、${c.rows.length} 種敵人；尚有資料問題，非全關總數。${sortNote}`}
           </div>
           {gaps.map((g) => (
             <div

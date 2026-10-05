@@ -5,6 +5,8 @@
 // - utils/stageComposition 的 waveRouteView（逐波依路線查看）：只列 path 等於選的路線的組，原本的組序與物件不變；已確認只算確定會出兵的組
 //   （數量無法確定、略過不補 0）；其他路線的資料問題（略過、無法確定、資料不完整的註記，含沒有路點的路線）另列、不重複；
 //   缺波、拒絕、重複照整波；用正式 chapter1_3、chapter1_5 的逐波資料核對各波各路線的隻數；不改預覽與整波出兵節奏
+// - utils/stageComposition 的 sortCompositionRows（敵軍組成的排列）：首次出現＝原本的順序；已確認隻數由多到少、同數量維持首次出現；
+//   用正式 chapter1_3、chapter1_5 核對全關與兩條路線的順序與合計；同名不同 id 分開、資料問題的組不會變成列；回傳新陣列、不改來源；設定更新後重新排
 // - utils/spawnRhythm：同一波各組同時開始、各組第一隻立刻出兵，最後一隻名義在 (n−1)×interval 秒，整波取各組最大值（不相加）；
 //   n＝1 是 0 秒（間隔是什麼都一樣）；沒有提供間隔照遊戲以 1 秒計並標出預設；間隔 ≤ 0 或小於計時器最短時間時依處理幀出兵、
 //   不寫成 0 秒；不是數字的間隔不強轉；數字太大時無法估算（不出現 Infinity）；有無法估算的組時只寫已知範圍
@@ -33,9 +35,12 @@ require.extensions[".ts"] = (module, filename) => {
 };
 
 const { buildStagePreview } = require(join(UTILS, "stagePreview.ts"));
-const { routeComposition, stageComposition, waveRouteView } = require(
-  join(UTILS, "stageComposition.ts")
-);
+const {
+  routeComposition,
+  sortCompositionRows,
+  stageComposition,
+  waveRouteView,
+} = require(join(UTILS, "stageComposition.ts"));
 const {
   MIN_TIMER_SEC,
   groupRhythmText,
@@ -631,6 +636,204 @@ const WAVES_15 = [
       b4: b4.confirmed,
       a4: a4.groups.length,
     }
+  );
+}
+
+// ── 敵軍組成的排列（sortCompositionRows）：正式 chapter1_3、chapter1_5 的逐波資料，期望值是正式設定算出的隻數 ──
+const idCount = (rows) => rows.map((r) => [r.enemyId, r.count]);
+{
+  const p = buildStagePreview(
+    deepFreeze(stage(PATHS_13, WAVES_13)),
+    deepFreeze(ENEMIES)
+  );
+  const whole = deepFreeze(stageComposition(p));
+  const a = deepFreeze(routeComposition(p, "path_a", whole));
+  const b = deepFreeze(routeComposition(p, "path_b", whole));
+  const before = JSON.stringify([whole, a, b]);
+  const wFirst = sortCompositionRows(whole.rows, "first");
+  const wCount = sortCompositionRows(whole.rows, "count");
+  check(
+    "組成排列（正式 chapter1_3 全關 70）：首次出現＝原本的順序 grunt_lv2 30、grunt_lv3 5、cavalry_lv2 10、siege_lv3 10、siege_lv2 5、cavalry_lv3 10；" +
+      "已確認隻數＝grunt_lv2 30、cavalry_lv2 10、siege_lv3 10、cavalry_lv3 10、grunt_lv3 5、siege_lv2 5（三個 10 與兩個 5 維持首次出現的先後）",
+    same(idCount(wFirst), [
+      ["grunt_lv2", 30],
+      ["grunt_lv3", 5],
+      ["cavalry_lv2", 10],
+      ["siege_lv3", 10],
+      ["siege_lv2", 5],
+      ["cavalry_lv3", 10],
+    ]) &&
+      same(idCount(wCount), [
+        ["grunt_lv2", 30],
+        ["cavalry_lv2", 10],
+        ["siege_lv3", 10],
+        ["cavalry_lv3", 10],
+        ["grunt_lv3", 5],
+        ["siege_lv2", 5],
+      ]),
+    { first: idCount(wFirst), count: idCount(wCount) }
+  );
+  const aCount = sortCompositionRows(a.rows, "count");
+  const bCount = sortCompositionRows(b.rows, "count");
+  check(
+    "組成排列（正式 chapter1_3 兩條路線）：path_a 45＝grunt_lv2 25、cavalry_lv3 10、grunt_lv3 5、cavalry_lv2 5；path_b 25＝siege_lv3 10、siege_lv2 5、cavalry_lv2 5、grunt_lv2 5（同數量依首次出現）；" +
+      "出兵波次跟著列走；合計、說明用的資料都不變；回傳新陣列、列物件不複製，來源陣列與組成都沒有被改",
+    same(idCount(aCount), [
+      ["grunt_lv2", 25],
+      ["cavalry_lv3", 10],
+      ["grunt_lv3", 5],
+      ["cavalry_lv2", 5],
+    ]) &&
+      same(
+        aCount.map((r) => r.waves.join(",")),
+        ["1,2,3", "3", "1", "1"]
+      ) &&
+      same(idCount(bCount), [
+        ["siege_lv3", 10],
+        ["siege_lv2", 5],
+        ["cavalry_lv2", 5],
+        ["grunt_lv2", 5],
+      ]) &&
+      aCount.reduce((s, r) => s + r.count, 0) === 45 &&
+      bCount.reduce((s, r) => s + r.count, 0) === 25 &&
+      wCount !== whole.rows &&
+      wFirst !== whole.rows &&
+      wCount.every((r) => whole.rows.includes(r)) &&
+      JSON.stringify([whole, a, b]) === before,
+    { a: idCount(aCount), b: idCount(bCount) }
+  );
+}
+{
+  const p = buildStagePreview(
+    deepFreeze(stage(PATHS_15, WAVES_15)),
+    deepFreeze(ENEMIES)
+  );
+  const whole = deepFreeze(stageComposition(p));
+  const a = routeComposition(p, "path_a", whole);
+  const b = routeComposition(p, "path_b", whole);
+  check(
+    "組成排列（正式 chapter1_5 全關 360）：cavalry_lv2 100、siege_lv2 90、grunt_lv2 80、grunt_lv1 20、siege_lv1 20、cavalry_lv3 20、cavalry_lv1 10、grunt_lv3 10、siege_lv3 10；" +
+      "path_a 210＝cavalry_lv2 60、grunt_lv2 50、siege_lv2 40、grunt_lv1 20、cavalry_lv1 10、siege_lv1 10、cavalry_lv3 10、grunt_lv3 10；" +
+      "path_b 150＝siege_lv2 50、cavalry_lv2 40、grunt_lv2 30、siege_lv1 10、cavalry_lv3 10、siege_lv3 10",
+    same(idCount(sortCompositionRows(whole.rows, "count")), [
+      ["cavalry_lv2", 100],
+      ["siege_lv2", 90],
+      ["grunt_lv2", 80],
+      ["grunt_lv1", 20],
+      ["siege_lv1", 20],
+      ["cavalry_lv3", 20],
+      ["cavalry_lv1", 10],
+      ["grunt_lv3", 10],
+      ["siege_lv3", 10],
+    ]) &&
+      same(idCount(sortCompositionRows(a.rows, "count")), [
+        ["cavalry_lv2", 60],
+        ["grunt_lv2", 50],
+        ["siege_lv2", 40],
+        ["grunt_lv1", 20],
+        ["cavalry_lv1", 10],
+        ["siege_lv1", 10],
+        ["cavalry_lv3", 10],
+        ["grunt_lv3", 10],
+      ]) &&
+      same(idCount(sortCompositionRows(b.rows, "count")), [
+        ["siege_lv2", 50],
+        ["cavalry_lv2", 40],
+        ["grunt_lv2", 30],
+        ["siege_lv1", 10],
+        ["cavalry_lv3", 10],
+        ["siege_lv3", 10],
+      ]) &&
+      whole.confirmed === 360 &&
+      a.confirmed === 210 &&
+      b.confirmed === 150,
+    { whole: idCount(sortCompositionRows(whole.rows, "count")) }
+  );
+}
+{
+  // 同名不同 id、找不到設定、略過、缺波、數量無法確定：排列只動已確認的列，不補 0、不改資料問題
+  const twins = [...ENEMIES, enemy("grunt_twin", "黃巾力士")];
+  const map = deepFreeze(
+    stage(
+      {
+        path_a: [
+          [0, 5],
+          [13, 5],
+        ],
+      },
+      [
+        {
+          wave: 1,
+          enemies: [
+            g("grunt_lv2", 2, 1, "path_a"),
+            g("grunt_twin", 7, 1, "path_a"),
+            g("ghost", 9, 1, "path_a"),
+          ],
+        },
+        {
+          wave: 3,
+          enemies: [
+            g("grunt_lv2", 3, 1, "path_a"),
+            g("grunt_lv3", "many", 1, "path_a"),
+            g("cavalry_lv1", 0, 1, "path_a"),
+          ],
+        },
+      ]
+    )
+  );
+  const p = buildStagePreview(map, deepFreeze(twins));
+  const c = deepFreeze(stageComposition(p));
+  const before = JSON.stringify(c);
+  const sorted = sortCompositionRows(c.rows, "count");
+  check(
+    "組成排列（資料問題）：同名不同 id 分開排（grunt_twin 7 在 grunt_lv2 5 前面）；找不到設定的 ghost、數量無法判讀、數量 0 的組不會變成列；" +
+      "已確認合計 12、不是全關總數，資料問題與略過的組數不變",
+    same(idCount(sorted), [
+      ["grunt_twin", 7],
+      ["grunt_lv2", 5],
+    ]) &&
+      sorted.reduce((s, r) => s + r.count, 0) === 12 &&
+      !c.complete &&
+      c.unknownIds.includes("ghost") &&
+      c.gaps.length > 0 &&
+      JSON.stringify(c) === before,
+    {
+      sorted: idCount(sorted),
+      gaps: c.gaps,
+      unknown: c.unknownIds,
+      skipped: c.skipped,
+    }
+  );
+  // 設定更新：用新的資料重新排，不沿用舊的順序
+  const updated = buildStagePreview(
+    stage(
+      {
+        path_a: [
+          [0, 5],
+          [13, 5],
+        ],
+      },
+      [
+        {
+          wave: 1,
+          enemies: [
+            g("grunt_lv2", 9, 1, "path_a"),
+            g("grunt_twin", 7, 1, "path_a"),
+          ],
+        },
+      ]
+    ),
+    twins
+  );
+  check(
+    "組成排列（設定更新）：grunt_lv2 改成 9 隻後重新排，變成 grunt_lv2 9、grunt_twin 7（用最新的列，不是舊的順序）",
+    same(
+      idCount(sortCompositionRows(stageComposition(updated).rows, "count")),
+      [
+        ["grunt_lv2", 9],
+        ["grunt_twin", 7],
+      ]
+    )
   );
 }
 

@@ -239,5 +239,21 @@ export function waveRouteView(
   };
 }
 
+/**
+ * 敵軍組成的排列：first＝首次出現（預設，就是組成原本的順序）、count＝已確認隻數由多到少（同數量維持首次出現的順序）。
+ * 只排目前顯示的列（全關或選的路線），不估戰力或難度
+ */
+export type CompositionSort = "first" | "count";
+
+/** 依排列方式回傳新的陣列（不改傳入的列與陣列；Array.prototype.sort 是穩定排序，同數量保持原本的先後） */
+export function sortCompositionRows<T extends CompositionRow>(
+  rows: readonly T[],
+  sort: CompositionSort
+): T[] {
+  const copy = rows.slice();
+  if (sort === "count") copy.sort((a, b) => b.count - a.count);
+  return copy;
+}
+
 /** 波次編號的清單文字（第 1、3、5 波） */
 export const waveListText = (ns: number[]) => `第 ${ns.join("、")} 波`;

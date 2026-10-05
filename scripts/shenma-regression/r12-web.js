@@ -311,7 +311,8 @@ async (page) => {
       out.F_battle = { ok: battleOk, bridge: (await H.bridgeSince(page, 0)).map((m) => m.type || "result"), loading: await page.evaluate(() => /載入戰場中/.test(document.body.innerText)) };
       if (!battleOk) out.F_battle.shot = await H.shot(page, "r12-f-battle-route-stuck");
       await page.goto(H.BASE + "/shenmaSanguo");
-      const mainOk = await readyWithin(() => document.querySelector('[title="切換關卡"]') !== null, 60000);
+      // 進入戰場的頂欄（引擎還在載入時提早顯示的不算）
+      const mainOk = await readyWithin(() => (() => { const b = document.querySelector('[title="切換關卡"]'); const bar = b && b.closest("[data-hud-phase]"); return !!b && (!bar || bar.dataset.hudPhase !== "preload"); })(), 60000);
       out.F_main = { ok: mainOk, bridge: (await H.bridgeSince(page, 0)).map((m) => m.type || "result") };
       if (!mainOk) out.F_main.shot = await H.shot(page, "r12-f-main-stuck");
     } finally {

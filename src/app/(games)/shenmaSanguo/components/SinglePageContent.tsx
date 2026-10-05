@@ -478,6 +478,11 @@ export default function SinglePageContent() {
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   const [swUpdateReady, setSwUpdateReady] = useState(false);
   const [payloadSent, setPayloadSent] = useState(false);
+  // 隊伍更新（update_team）只在已經送出關卡資料、遊戲裡有這一場時才送；還沒送出時，送出的關卡資料就會用最新的隊伍
+  const payloadSentRef = useRef(false);
+  useEffect(() => {
+    payloadSentRef.current = payloadSent;
+  }, [payloadSent]);
   const [currentMapId, setCurrentMapId] = useState<string>("");
   const [battleStats, setBattleStats] = useState<BattleStats | null>(null);
   const [placementMenu, setPlacementMenu] = useState<{
@@ -916,8 +921,9 @@ export default function SinglePageContent() {
     );
   };
 
-  // 隊伍更新後同步給 Godot
+  // 隊伍更新後同步給 Godot（引擎還在載入、還沒送出關卡資料時不送：之後送出的關卡資料會帶最新的隊伍）
   const sendTeamUpdate = useCallback(() => {
+    if (!payloadSentRef.current) return;
     const latestPlayer = usePlayerStore.getState().player;
     if (!latestPlayer || !staticConfig || !iframeRef.current?.contentWindow)
       return;
@@ -1220,6 +1226,30 @@ export default function SinglePageContent() {
               ?.name ?? player?.max_stage,
         })
       : null;
+  // 引擎還沒就緒、還沒送出關卡資料，但目前帳號的存檔與遊戲設定已經讀好：先顯示頂欄（D177）。
+  // 可以看武將、隊伍、玩家資訊與選關；戰鬥相關的按鈕要有戰況才出現，選的關卡照原本的流程在 game_ready 之後才送出。
+  // 只在引擎正常載入中才提早顯示：讀取失敗、設定讀不到、正在輸入金鑰，以及引擎無法啟動、版本不符、載入逾時時照舊不顯示（各自有說明與出口）；
+  // 存檔要屬於目前的金鑰，不顯示其他帳號的舊資料
+  const preEngineHud =
+    !payloadSent &&
+    hasKey &&
+    !!player &&
+    !!staticConfig &&
+    player.key === getPlayerKey() &&
+    !keyEntryVisible &&
+    !playerLoadFailed &&
+    !configFailed &&
+    engineStatus === "loading" &&
+    !engineFailed &&
+    !loadTimedOut;
+  // 頂欄為什麼出現（data-hud-phase，測試用來分辨）：battle＝已送出關卡資料、hold＝寫入限制、blocked＝這一關不能出征、preload＝引擎還在載入
+  const hudPhase = payloadSent
+    ? "battle"
+    : writeHold && !!player
+      ? "hold"
+      : stageBlocked
+        ? "blocked"
+        : "preload";
   const latestPlayable = stageBlocked
     ? latestPlayableStage(staticConfig?.maps, player?.max_stage)
     : null;
@@ -1437,12 +1467,19 @@ export default function SinglePageContent() {
         </div>
       </div>
 
-      {/* HUD 疊加層：寫入限制中沒有開戰，仍顯示 HUD 供查看武將、隊伍與玩家資訊（戰鬥按鈕要有戰況才出現） */}
-      {(payloadSent || (writeHold && !!player) || stageBlocked) &&
+      {/* HUD 疊加層：寫入限制中沒有開戰、引擎還在載入（preEngineHud）時也顯示，供查看武將、隊伍、玩家資訊與選關（戰鬥按鈕要有戰況才出現） */}
+      {(payloadSent ||
+        (writeHold && !!player) ||
+        stageBlocked ||
+        preEngineHud) &&
         !battleResult && (
           <>
             {/* 頂欄 */}
-            <div className={styles.hudTopBar} data-stage-reserve="top">
+            <div
+              className={styles.hudTopBar}
+              data-stage-reserve="top"
+              data-hud-phase={hudPhase}
+            >
               <button
                 ref={playerBtnRef}
                 className={styles.hudAvatar}
