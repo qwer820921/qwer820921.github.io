@@ -95,6 +95,7 @@ export const BROWSER_SECONDS = {
   "hero-compare-web.js": 60,
   "panel-safe-web.js": 70,
   "stage-browse-web.js": 90,
+  "stage-route-web.js": 90,
 };
 export const QUICK_SECONDS = 104;
 export const GODOT_FULL_SECONDS = 1800;
@@ -129,6 +130,11 @@ const re = (s) => new RegExp("^" + s);
  */
 export const RULES = [
   { test: /(^docs\/|\.md$|\/doc\/)/, why: "文件", none: true },
+  {
+    test: /^\.github\/workflows\/deploy\.yml$/,
+    why: "部署流程（快速一層核對部署前正式保留核對的接線）",
+    quickOnly: true,
+  },
   {
     test: /^(AGENTS|CLAUDE|README)(\.md)?$|^\.gitignore$|^\.github\//,
     why: "專案說明與 CI 設定（不影響本機回歸）",
@@ -318,13 +324,14 @@ export const RULES = [
   {
     test: re(
       SG +
-        "(stages/|components/modals/(StageSelectModal|EnemyPreviewModal)\\.tsx|components/(Stage[A-Za-z]*|PreviewWaveDetail)\\.tsx|utils/stage[A-Za-z]*\\.ts)"
+        "(stages/|components/modals/(StageSelectModal|EnemyPreviewModal)\\.tsx|components/(Stage[A-Za-z]*|PreviewWave[A-Za-z]*)\\.tsx|utils/(stage[A-Za-z]*|waveNav)\\.ts)"
     ),
     why: "關卡選擇、敵軍預覽與關卡資料",
     areas: [
       "stage-data",
       "stage-preview",
       "stage-browse",
+      "stage-route",
       "wave-reject",
       "air-readiness",
     ],

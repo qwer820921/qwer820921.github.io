@@ -13,7 +13,8 @@
 //   node game-release.mjs check [--out]             候選自洽：核對發布目錄（--out 另核對 out/ 與 public/ 相同）；離線；結束碼 0 通過、1 有問題
 //   node game-release.mjs check-published <gh-pages 完整 SHA> [--out]
 //                                                   發布前的正式保留核對：候選自洽＋正式基準（釘選的 gh-pages 提交）上已發布的版本目錄
-//                                                   全部原樣保留、舊正式版目錄就是固定原檔；基準讀不到時結束碼 2（不當成沒有已發布版本）
+//                                                   全部原樣保留（含子目錄逐檔比對，不多不少）、舊正式版目錄就是固定原檔；
+//                                                   基準讀不到時結束碼 2（不當成沒有已發布版本）
 //   node game-release.mjs publish <匯出目錄>         把經過 postexport 的匯出放進它的版本目錄，入口改成這一版（上一個入口版本保留）
 //   node game-release.mjs point <版本|legacy>        只改入口指標（回退用）；目標必須是保留中的版本目錄或舊正式版
 //   node game-release.mjs restore-legacy            從 legacy-root.json 的來源 commit 取回舊正式版目錄的原檔（不在清單的檔案移除）
@@ -24,6 +25,7 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  lstatSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -76,16 +78,75 @@ const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 const isText = (buf) => !buf.subarray(0, 8000).includes(0);
 /** 比較用：文字檔把 CRLF 視為 LF（本機 core.autocrlf=true，git 以 LF 保存與部署） */
 const canonical = (buf) => (isText(buf) ? stripCR(buf) : buf);
-const listFiles = (dir) =>
-  readdirSync(dir)
-    .filter((f) => statSync(join(dir, f)).isFile())
-    .sort();
-const listDirs = (dir) =>
-  existsSync(dir)
-    ? readdirSync(dir)
-        .filter((f) => statSync(join(dir, f)).isDirectory())
-        .sort()
-    : [];
+const errText = (e) => (e && (e.code || e.message)) || String(e);
+/** 是一般目錄（不是符號連結、junction 或檔案） */
+const isRealDir = (p) => {
+  try {
+    const st = lstatSync(p);
+    return st.isDirectory() && !st.isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
+const isRealFile = (p) => {
+  try {
+    return lstatSync(p).isFile();
+  } catch {
+    return false;
+  }
+};
+/**
+ * 目錄底下所有檔案的相對路徑（遞迴、以 / 分隔、排序）。不跟隨符號連結／junction（不會讀到目錄外），
+ * 符號連結、其他型態的項目、讀取失敗都列進 problems，不當成沒有這個項目。回傳 { files, problems }
+ */
+function walkFiles(dir) {
+  const files = [];
+  const problems = [];
+  if (!isRealDir(dir))
+    return {
+      files,
+      problems: ["目錄不存在或不是一般目錄（符號連結、junction 或檔案）"],
+    };
+  const walk = (abs, rel) => {
+    let names;
+    try {
+      names = readdirSync(abs);
+    } catch (e) {
+      problems.push(`${rel || "."} 讀不到（${errText(e)}）`);
+      return;
+    }
+    for (const name of names) {
+      const r = rel ? `${rel}/${name}` : name;
+      let st;
+      try {
+        st = lstatSync(join(abs, name));
+      } catch (e) {
+        problems.push(`${r} 讀不到（${errText(e)}）`);
+        continue;
+      }
+      if (st.isSymbolicLink())
+        problems.push(`${r} 是符號連結或 junction（不支援、不跟隨）`);
+      else if (st.isDirectory()) walk(join(abs, name), r);
+      else if (st.isFile()) files.push(r);
+      else problems.push(`${r} 不是一般檔案或目錄（不支援）`);
+    }
+  };
+  walk(dir, "");
+  return { files: files.sort(), problems };
+}
+/** 目錄第一層的項目（不跟隨符號連結）：{ dirs, files, others }（others＝符號連結、junction 或其他型態） */
+function topEntries(dir) {
+  const out = { dirs: [], files: [], others: [] };
+  if (!existsSync(dir)) return out;
+  for (const name of readdirSync(dir).sort()) {
+    const st = lstatSync(join(dir, name));
+    if (st.isSymbolicLink()) out.others.push(name);
+    else if (st.isDirectory()) out.dirs.push(name);
+    else if (st.isFile()) out.files.push(name);
+    else out.others.push(name);
+  }
+  return out;
+}
 
 /** 入口指標 → 網站上的遊戲目錄 */
 export const entryPath = (entry) =>
@@ -116,7 +177,7 @@ function writeRelease(root, release) {
  */
 export function packageProblems(dir, expectVersion = null) {
   const problems = [];
-  const missing = PACKAGE_FILES.filter((f) => !existsSync(join(dir, f)));
+  const missing = PACKAGE_FILES.filter((f) => !isRealFile(join(dir, f)));
   if (missing.length) {
     problems.push(`缺少 ${missing.join("、")}`);
     return { version: null, problems };
@@ -173,21 +234,30 @@ export function packageProblems(dir, expectVersion = null) {
   return { version, problems };
 }
 
-/** 兩個目錄的檔案是否完全相同（文字檔 CRLF 視為 LF）；回傳不同的檔名 */
+/** 兩個目錄的檔案（含子目錄）是否完全相同（文字檔 CRLF 視為 LF）；回傳不同的相對路徑與無法核對的項目 */
 function dirDifferences(a, b) {
-  const [fa, fb] = [listFiles(a), existsSync(b) ? listFiles(b) : []];
-  const out = [];
+  const wa = walkFiles(a);
+  const wb = existsSync(b) ? walkFiles(b) : { files: [], problems: [] };
+  const out = [
+    ...wa.problems.map((p) => `${p}（前者）`),
+    ...wb.problems.map((p) => `${p}（後者）`),
+  ];
+  const [fa, fb] = [new Set(wa.files), new Set(wb.files)];
   for (const f of [...new Set([...fa, ...fb])].sort()) {
-    if (!fa.includes(f) || !fb.includes(f)) {
-      out.push(`${f}（只在${fa.includes(f) ? "前者" : "後者"}）`);
+    if (!fa.has(f) || !fb.has(f)) {
+      out.push(`${f}（只在${fa.has(f) ? "前者" : "後者"}）`);
       continue;
     }
-    if (
-      !canonical(readFileSync(join(a, f))).equals(
-        canonical(readFileSync(join(b, f)))
+    try {
+      if (
+        !canonical(readFileSync(join(a, f))).equals(
+          canonical(readFileSync(join(b, f)))
+        )
       )
-    )
-      out.push(f);
+        out.push(f);
+    } catch (e) {
+      out.push(`${f}（讀不到：${errText(e)}）`);
+    }
   }
   return out;
 }
@@ -199,8 +269,13 @@ export function legacyProblems(root = ROOT) {
   );
   const dir = join(root, LEGACY_DIR);
   if (!existsSync(dir)) return [`舊正式版目錄 ${LEGACY_DIR} 不存在`];
-  const problems = [];
-  const files = listFiles(dir);
+  if (!isRealDir(dir))
+    return [
+      `舊正式版目錄 ${LEGACY_DIR} 不是一般目錄（符號連結、junction 或檔案）`,
+    ];
+  const walked = walkFiles(dir);
+  const problems = walked.problems.map((p) => `舊正式版目錄的 ${p}`);
+  const files = walked.files;
   for (const f of files)
     if (!manifest.files[f])
       problems.push(`舊正式版目錄多了 ${f}（舊目錄不能放新版的檔案）`);
@@ -265,19 +340,34 @@ export function checkRelease(root = ROOT, { withOut = false } = {}) {
       problems.push(`保留的版本目錄 ${PACKAGES_DIR}/${v} 不存在`);
       continue;
     }
+    if (!isRealDir(dir)) {
+      problems.push(
+        `保留的版本目錄 ${PACKAGES_DIR}/${v} 不是一般目錄（符號連結、junction 或檔案；不支援）`
+      );
+      continue;
+    }
+    const walked = walkFiles(dir);
+    for (const p of walked.problems)
+      problems.push(`${PACKAGES_DIR}/${v}：${p}`);
     for (const p of packageProblems(dir, v).problems)
       problems.push(`${PACKAGES_DIR}/${v}：${p}`);
-    const extra = listFiles(dir).filter((f) => !PACKAGE_FILES.includes(f));
+    const extra = walked.files.filter((f) => !PACKAGE_FILES.includes(f));
     if (extra.length)
       problems.push(`${PACKAGES_DIR}/${v}：多了 ${extra.join("、")}`);
   }
-  for (const d of listDirs(pkgRoot))
+  const top = topEntries(pkgRoot);
+  for (const d of top.dirs)
     if (!(retained || []).includes(d))
       problems.push(
         `${PACKAGES_DIR}/${d} 不在入口指標的 retained（沒有列管的版本目錄）`
       );
-  for (const f of existsSync(pkgRoot) ? listFiles(pkgRoot) : [])
+  for (const f of top.files)
     problems.push(`${PACKAGES_DIR} 底下不能直接放檔案：${f}`);
+  for (const o of top.others)
+    if (!(retained || []).includes(o))
+      problems.push(
+        `${PACKAGES_DIR}/${o} 是符號連結、junction 或其他型態（不支援）`
+      );
   for (const f of hardcodedEntries(root))
     problems.push(`${f} 寫死了遊戲目錄（請用 gameEngine.ts 的 GAME_ENTRY）`);
   if (withOut) {
@@ -290,7 +380,8 @@ export function checkRelease(root = ROOT, { withOut = false } = {}) {
         : ["目錄不存在"];
       if (diff.length) problems.push(`${b} 和 ${a} 不同：${diff.join("、")}`);
     }
-    for (const d of listDirs(join(root, "out/games/shenmaSanguo-v")))
+    const outTop = topEntries(join(root, "out/games/shenmaSanguo-v"));
+    for (const d of [...outTop.dirs, ...outTop.others])
       if (!(retained || []).includes(d))
         problems.push(
           `out/games/shenmaSanguo-v/${d} 不在 retained（請重新建置網站）`
@@ -311,8 +402,8 @@ const blobId = (buf) => {
 };
 
 /**
- * 讀正式基準：gh-pages 的完整 SHA（由唯讀的 git ls-remote 取得、git fetch 到本機後釘選）裡的舊正式版目錄與已發布的版本目錄。
- * 回傳 { baseline, legacy: Map<檔名, blob>, published: Map<版本, Map<檔名, blob>> }；讀不到就丟 BaselineError
+ * 讀正式基準：gh-pages 的完整 SHA（由唯讀的 git ls-remote 取得、git fetch 到本機後釘選）裡的舊正式版目錄與已發布的版本目錄（含子目錄）。
+ * 回傳 { baseline, legacy: Map<檔名, blob>, published: Map<版本, Map<相對路徑, blob>>, unsupported: 不是一般檔案的項目 }；讀不到就丟 BaselineError
  */
 export function readPublished(baseline, repo = ROOT) {
   if (!/^[0-9a-f]{40}$/.test(baseline || ""))
@@ -347,11 +438,18 @@ export function readPublished(baseline, repo = ROOT) {
     .filter(Boolean)
     .map((l) => {
       const [meta, path] = l.split("\t");
-      return { blob: meta.split(" ")[2], path };
+      const [mode, type, blob] = meta.split(" ");
+      return { mode, type, blob, path };
     });
   const legacy = new Map();
   const published = new Map();
-  for (const { blob, path } of rows) {
+  const unsupported = [];
+  for (const { mode, type, blob, path } of rows) {
+    // 只收一般檔案；符號連結（120000）、子模組等不支援，列成問題（不跟隨、不略過）
+    if (type !== "blob" || (mode !== "100644" && mode !== "100755")) {
+      unsupported.push(`${path}（${mode} ${type}）`);
+      continue;
+    }
     if (path.startsWith(legacyPath)) {
       legacy.set(path.slice(legacyPath.length), blob);
       continue;
@@ -368,7 +466,7 @@ export function readPublished(baseline, repo = ROOT) {
     throw new BaselineError(
       `正式基準 ${baseline.slice(0, 8)} 沒有舊正式版目錄 ${legacyPath}（不是神馬三國的正式 Pages 樹？）`
     );
-  return { baseline, legacy, published };
+  return { baseline, legacy, published, unsupported };
 }
 
 /**
@@ -379,7 +477,9 @@ export function readPublished(baseline, repo = ROOT) {
  */
 export function publishedProblems(root, baseline, repo = ROOT) {
   const live = readPublished(baseline, repo);
-  const problems = [];
+  const problems = live.unsupported.map(
+    (u) => `正式基準的 ${u} 不是一般檔案（符號連結或子模組；不支援）`
+  );
   const manifest = JSON.parse(
     readFileSync(join(root, LEGACY_MANIFEST), "utf8")
   );
@@ -409,15 +509,28 @@ export function publishedProblems(root, baseline, repo = ROOT) {
       problems.push(`${label} 的目錄 ${PACKAGES_DIR}/${v} 不存在`);
       continue;
     }
+    // 候選版本目錄的遞迴檔案集合和正式基準逐筆比對（不多不少、原 blob）
+    const walked = walkFiles(dir);
+    for (const p of walked.problems) problems.push(`${label}：${p}`);
+    const have = new Set(walked.files);
     for (const [f, blob] of files) {
-      const p = join(dir, f);
-      if (!existsSync(p)) problems.push(`${label} 少了 ${f}`);
-      else if (blobId(readFileSync(p)) !== blob)
+      if (!have.has(f)) {
+        problems.push(`${label} 少了 ${f}`);
+        continue;
+      }
+      let id;
+      try {
+        id = blobId(readFileSync(join(dir, f)));
+      } catch (e) {
+        problems.push(`${label} 的 ${f} 讀不到（${errText(e)}）`);
+        continue;
+      }
+      if (id !== blob)
         problems.push(
           `${label} 的 ${f} 和正式基準不同（發布後不能改；正式 ${blob.slice(0, 8)}）`
         );
     }
-    for (const f of listFiles(dir))
+    for (const f of walked.files)
       if (!files.has(f))
         problems.push(`${label} 多了 ${f}（正式基準沒有；發布後不能改）`);
   }
@@ -429,9 +542,12 @@ export function publish(exportDir, root = ROOT) {
   const { version, problems } = packageProblems(exportDir);
   if (problems.length)
     throw new Error("匯出目錄有問題：" + problems.join("；"));
-  const extra = listFiles(exportDir).filter((f) => !PACKAGE_FILES.includes(f));
-  if (extra.length)
-    throw new Error("匯出目錄有不認得的檔案：" + extra.join("、"));
+  const walked = walkFiles(exportDir);
+  const extra = walked.files.filter((f) => !PACKAGE_FILES.includes(f));
+  if (extra.length || walked.problems.length)
+    throw new Error(
+      "匯出目錄有不認得的檔案：" + [...extra, ...walked.problems].join("、")
+    );
   const target = join(root, PACKAGES_DIR, version);
   let copied = false;
   if (existsSync(target)) {
@@ -498,7 +614,7 @@ export function restoreLegacy(root = ROOT) {
   const dir = join(root, LEGACY_DIR);
   mkdirSync(dir, { recursive: true });
   const removed = [];
-  for (const f of listFiles(dir))
+  for (const f of walkFiles(dir).files)
     if (!manifest.files[f]) {
       rmSync(join(dir, f));
       removed.push(f);

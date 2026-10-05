@@ -3366,3 +3366,61 @@
 .compareTable td {
   overflow-wrap: anywhere;
 }
+
+/* ── 敵軍預覽的路線預覽（唯讀小地圖；StageRoutePreview）── */
+/* 寬度跟著視窗，高度依地圖比例；很高的地圖限制高度（等比例縮小），手機不溢出 */
+.routeMapSvg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 320px;
+  margin: 0 auto 0.5rem;
+}
+
+.routeMapGround {
+  fill: var(--sg-surface2);
+}
+
+.routeMapGrid line {
+  stroke: rgba(0, 0, 0, 0.14);
+  stroke-width: 0.03;
+}
+
+.routeMapMarkerText {
+  fill: #ffffff;
+  font-weight: 700;
+}
+
+.routeLegend {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  color: var(--sg-text);
+}
+
+.routeLegendItem {
+  padding: 0.3rem 0;
+  border-bottom: 1px dashed var(--sg-border);
+  overflow-wrap: anywhere;
+}
+
+.routeLegendItem:last-of-type {
+  border-bottom: none;
+}
+
+.routeSwatch {
+  width: 30px;
+  height: 10px;
+  vertical-align: middle;
+  margin-right: 0.35rem;
+}
+
+/* ── 敵軍預覽的波次導覽（PreviewWaveNav）── */
+.waveNav {
+  border: 1px solid var(--sg-border);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  margin-bottom: 0.6rem;
+  background: var(--sg-surface);
+}

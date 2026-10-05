@@ -29,6 +29,15 @@ jobs:
         env:
           NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
 
+      # 神馬三國正式保留核對：釘選遠端 gh-pages 的完整 SHA 當正式基準，已發布的遊戲版本目錄必須原樣保留在 out/；
+      # 發布前再讀一次遠端，基準已變（核對後有其他發布）就停止。讀不到基準、核對失敗、遠端漂移都不發布
+      - name: Check published game versions are retained 🛡️
+        shell: bash
+        run: |
+          sha=$(node scripts/shenma-regression/tools/deploy-guard.mjs pin)
+          node scripts/shenma-regression/tools/game-release.mjs check-published "$sha" --out
+          node scripts/shenma-regression/tools/deploy-guard.mjs unchanged "$sha"
+
       - name: Deploy 🚀
         uses: JamesIves/github-pages-deploy-action@v4
         with:

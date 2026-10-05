@@ -1,6 +1,7 @@
 // 發布工具（tools/game-release.mjs）的測試：在暫存目錄建立假的倉庫（舊正式版目錄、版本目錄、網站入口指標），
 // 核對「該失敗時一定失敗」：舊目錄被改或多了新版檔案、版本目錄不一致或用了舊的快取前綴、入口指向不存在的目錄、
 // 沒有列管的版本目錄、網站寫死遊戲目錄、out/ 和 public/ 不同；發布同一版內容不同時拒絕、回退只改入口指標。
+// 正式保留核對（假的正式 Pages 倉庫）：已發布版本的檔案集合遞迴比對（子目錄多出／被改／被刪都失敗）、符號連結與 junction 不跟隨。
 // 另外在真的倉庫（唯讀）核對：legacy-root.json 可以由來源 commit 重新產生（不依賴暫存的回退包）。不需要瀏覽器與 Godot
 // 用法：node scripts/shenma-regression/tools/game-release.test.mjs
 import { execFileSync } from "node:child_process";
@@ -11,6 +12,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -381,10 +383,10 @@ check(
   pubProblems(kept.root, pagesA)
 );
 
-/** 複製 kept（A 已發布、候選 A＋B）再做手腳 */
-const variant = (name, mutate) => {
+/** 複製 kept（A 已發布、候選 A＋B；或指定的 from）再做手腳 */
+const variant = (name, mutate, from = kept.root) => {
   const root = join(tmp, name);
-  cpSync(kept.root, root, { recursive: true });
+  cpSync(from, root, { recursive: true });
   mutate(root);
   return root;
 };
@@ -422,6 +424,163 @@ check(
     blobChanged: pubProblems(blobChanged, pagesA),
     blobChangedSelf: checkRelease(blobChanged),
   }
+);
+
+// 子目錄：版本目錄的檔案集合要遞迴比對（原本只讀第一層，子目錄裡多出或被改的檔案驗不出來）
+const nestedA = (root, ...p) => join(root, PACKAGES_DIR, kept.v, ...p);
+const addNested = (root, rel, text) => {
+  mkdirSync(dirname(nestedA(root, rel)), { recursive: true });
+  writeFileSync(nestedA(root, rel), text);
+};
+const nestedKept = variant("pub-nested", (root) => {
+  addNested(root, "extra/a.js", "nested a\n");
+  addNested(root, "extra/deep/b.js", "nested b\n");
+});
+const pagesNested = makePages("pub-nested", nestedKept, [[kept.v, nestedKept]]);
+const nestedChanged = variant(
+  "pub-nested-changed",
+  (root) => writeFileSync(nestedA(root, "extra/deep/b.js"), "changed b\n"),
+  nestedKept
+);
+const nestedGone = variant(
+  "pub-nested-gone",
+  (root) => rmSync(nestedA(root, "extra"), { recursive: true }),
+  nestedKept
+);
+check(
+  "正式基準的版本目錄有子目錄檔案：候選原樣保留通過；改了或刪了子目錄的檔案（整個子目錄）失敗",
+  pubProblems(nestedKept, pagesNested).length === 0 &&
+    has(
+      pubProblems(nestedChanged, pagesNested),
+      /的 extra\/deep\/b\.js 和正式基準不同/
+    ) &&
+    has(pubProblems(nestedGone, pagesNested), /少了 extra\/a\.js/) &&
+    has(pubProblems(nestedGone, pagesNested), /少了 extra\/deep\/b\.js/),
+  {
+    kept: pubProblems(nestedKept, pagesNested),
+    changed: pubProblems(nestedChanged, pagesNested),
+    gone: pubProblems(nestedGone, pagesNested),
+  }
+);
+
+const extraOne = variant("pub-extra-one", (root) =>
+  addNested(root, "extra/changed.js", "unpublished\n")
+);
+const extraTwo = variant("pub-extra-two", (root) =>
+  addNested(root, "a/b/changed.js", "unpublished\n")
+);
+const extraNew = variant("pub-extra-new", (root) => {
+  const p = join(root, PACKAGES_DIR, vB, "x/y.js");
+  mkdirSync(dirname(p), { recursive: true });
+  writeFileSync(p, "unpublished\n");
+});
+check(
+  "已發布版本多了一層、兩層子目錄的未發布檔案：正式保留核對與候選自洽都失敗；未發布的新版本有子目錄檔案：候選自洽失敗",
+  has(pubProblems(extraOne, pagesA), /多了 extra\/changed\.js/) &&
+    has(checkRelease(extraOne), /多了 extra\/changed\.js/) &&
+    has(pubProblems(extraTwo, pagesA), /多了 a\/b\/changed\.js/) &&
+    has(checkRelease(extraTwo), /多了 a\/b\/changed\.js/) &&
+    has(checkRelease(extraNew), new RegExp(`${vB}：多了 x/y\\.js`)),
+  {
+    one: pubProblems(extraOne, pagesA),
+    oneSelf: checkRelease(extraOne),
+    two: pubProblems(extraTwo, pagesA),
+    twoSelf: checkRelease(extraTwo),
+    newSelf: checkRelease(extraNew),
+  }
+);
+
+// 符號連結／junction：不跟隨到版本目錄外，直接列為問題（Windows 用 junction，不需要系統管理員）
+const outside = join(tmp, "outside-dir");
+mkdirSync(outside, { recursive: true });
+writeFileSync(join(outside, "x.js"), "outside\n");
+const linkInside = variant("pub-link-inside", (root) =>
+  symlinkSync(outside, nestedA(root, "linked"), "junction")
+);
+const linkWhole = variant("pub-link-whole", (root) => {
+  const copy = join(tmp, "pub-link-whole-copy");
+  cpSync(nestedA(root), copy, { recursive: true });
+  rmSync(nestedA(root), { recursive: true });
+  symlinkSync(copy, nestedA(root), "junction");
+});
+check(
+  "版本目錄裡有 junction、整個已發布版本目錄是 junction：兩種核對都列為不支援，不跟隨到目錄外",
+  has(pubProblems(linkInside, pagesA), /linked 是符號連結或 junction/) &&
+    has(checkRelease(linkInside), /linked 是符號連結或 junction/) &&
+    has(pubProblems(linkWhole, pagesA), /不是一般目錄/) &&
+    has(checkRelease(linkWhole), /不是一般目錄/),
+  {
+    inside: pubProblems(linkInside, pagesA),
+    insideSelf: checkRelease(linkInside),
+    whole: pubProblems(linkWhole, pagesA),
+    wholeSelf: checkRelease(linkWhole),
+  }
+);
+
+// 正式基準本身有符號連結（git 模式 120000）：列為問題，不略過
+const linkPages = makePages("pub-link-pages", kept.root, [[kept.v, kept.root]]);
+const lg = (...a) =>
+  execFileSync(
+    "git",
+    [
+      "-C",
+      linkPages.repo,
+      "-c",
+      "user.name=test",
+      "-c",
+      "user.email=test@example.invalid",
+      ...a,
+    ],
+    { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }
+  ).trim();
+const linkBlob = execFileSync(
+  "git",
+  ["-C", linkPages.repo, "hash-object", "-w", "--stdin"],
+  { input: "index.js", encoding: "utf8" }
+).trim();
+lg(
+  "update-index",
+  "--add",
+  "--cacheinfo",
+  `120000,${linkBlob},games/shenmaSanguo-v/${kept.v}/alias.js`
+);
+lg("commit", "-q", "-m", "link");
+linkPages.sha = lg("rev-parse", "HEAD");
+check(
+  "正式基準的版本目錄有符號連結：正式保留核對失敗（不支援的型態）",
+  has(
+    pubProblems(kept.root, linkPages),
+    /alias\.js（120000 blob） 不是一般檔案/
+  ),
+  pubProblems(kept.root, linkPages)
+);
+
+const outNested = makeRepo("out-nested");
+cpSync(
+  join(outNested.root, LEGACY_DIR),
+  join(outNested.root, "out/games/shenmaSanguo"),
+  { recursive: true }
+);
+cpSync(
+  join(outNested.root, PACKAGES_DIR),
+  join(outNested.root, "out/games/shenmaSanguo-v"),
+  { recursive: true }
+);
+const outNestedFile = join(
+  outNested.root,
+  "out/games/shenmaSanguo-v",
+  outNested.v,
+  "sub/extra.js"
+);
+mkdirSync(dirname(outNestedFile), { recursive: true });
+writeFileSync(outNestedFile, "stale nested");
+check(
+  "--out：out/ 的版本目錄多了子目錄檔案：失敗",
+  has(
+    checkRelease(outNested.root, { withOut: true }),
+    /sub\/extra\.js（只在後者）/
+  ),
+  checkRelease(outNested.root, { withOut: true })
 );
 
 const legacyChangedPages = makePages("pub-legacy-changed", kept.root, []);

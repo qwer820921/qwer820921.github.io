@@ -134,6 +134,11 @@ const QUICK = [
     ["scripts/shenma-regression/web/stage-browse.test.mjs"],
   ],
   [
+    "敵軍預覽的路線預覽與波次導覽的規則測試",
+    "node",
+    ["scripts/shenma-regression/web/stage-route.test.mjs"],
+  ],
+  [
     "地圖編輯器設定寫入的錯誤說明測試",
     "node",
     ["scripts/shenma-regression/web/admin-error-text.test.mjs"],
@@ -172,6 +177,11 @@ const QUICK = [
     "發布工具測試（核對、發布、回退指標的正反案例）",
     "node",
     ["scripts/shenma-regression/tools/game-release.test.mjs"],
+  ],
+  [
+    "部署前正式保留核對的守門與部署流程接線（假遠端，不連網路、不部署）",
+    "node",
+    ["scripts/shenma-regression/tools/deploy-guard.test.mjs"],
   ],
   [
     "素材引用檢查",
@@ -334,6 +344,10 @@ const AREAS = {
     what: "關卡的搜尋、章節與狀態篩選（主頁關卡選擇視窗、獨立關卡頁：而且、空結果與清除、篩選不改出征規則、鍵盤、進度與設定更新後重新計算、預覽開著時卡片被藏起或關卡被移除）與敵軍預覽的敵軍組成（依敵人合計、同名不同 id、重複波次、資料不完整時不是全關總數、收起）、390 寬；只操作篩選時不換關、不寫入（需要 Godot 產物）",
     scripts: ["stage-browse-web.js"],
   },
+  "stage-route": {
+    what: "敵軍預覽的路線預覽（正式路線形狀、多路線全部／單一、飛行折線說明、無法判讀與超出地圖的路點切斷、缺尺寸與無路線的說明）與波次導覽（資料問題清單、下一個資料問題、前往選的波次、全部展開／收合、鍵盤）；設定更新後刪掉的路線與波次、仍存在的選取保留；兩個入口、390 寬；只操作預覽時不換關、不寫入（需要 Godot 產物）",
+    scripts: ["stage-route-web.js"],
+  },
   "stage-data": {
     what: "關卡資料未完成的入口：兩個關卡選擇入口的卡片（尚未開放／尚未解鎖）、主頁與獨立戰鬥頁直接進入時不送關卡資料並說明原因與出口、在有效戰場點尚未開放的關卡不改變目前的戰場、快速連點、重玩、遊戲設定讀取失敗與重試、390 寬（需要 Godot 產物）",
     scripts: ["stage-data-web.js"],
@@ -445,6 +459,7 @@ const FULL = [
   "release-entry-web.js",
   "hero-compare-web.js",
   "stage-browse-web.js",
+  "stage-route-web.js",
 ];
 
 const argv = process.argv.slice(2);
