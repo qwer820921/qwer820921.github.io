@@ -59,7 +59,9 @@ interface Props {
  * 兩邊不會各選各的；設定更新後選的路線不在了就回到全部。組成可以改依已確認隻數由多到少排列（sortCompositionRows，預設是首次出現），
  * 只是這個視窗暫時的顯示：換路線保留、每次都用最新的列重新排，關閉預覽後回到預設。
  * 組成的每一列可以前往它在目前範圍（全關或選的路線）首次已確認出兵的波次（列的 firstWave），沿用波次導覽的前往：
- * 只展開那一波、同步導覽的選擇與說明、捲到並聚焦那一波的標題；不換關、不改路線與排列。逐波內容也跟著這個選擇（waveRouteView）：選了路線時每一波只列那條路線的組
+ * 只展開那一波、同步導覽的選擇與說明、捲到並聚焦那一波的標題；不換關、不改路線與排列。
+ * 每一列也可以展開這個範圍逐波已確認的隻數（列的 perWave，預設收合）：只是顯示，不改列的合計、首次出兵、排列、路線與波次的展開；
+ * 換路線或設定更新後不在的列關掉，關閉預覽後全部收合。逐波內容也跟著選的路線（waveRouteView）：選了路線時每一波只列那條路線的組
  * （原本的組序）並寫明那條路線已確認的隻數與組數，其他路線的資料問題另列「全波資料提醒」；波次標題、波次導覽與出兵節奏仍是整波。
  * 戰場內的「下一波」不帶這個選擇。
  * 「路線預覽」畫關卡設定的路線格子（StageRoutePreview，預設收起）；逐波內容另列「設定出兵節奏」（utils/spawnRhythm）；
@@ -322,7 +324,8 @@ export default function EnemyPreviewModal({
 /**
  * 敵軍組成：依敵人合計已確認會出兵的組（預設展開，可以收起）。
  * 多條路線時可以選一條路線，只看那條路線上的組成（和路線預覽共用同一個選擇）；全部路線時是原本的全關總覽。
- * 排列：首次出現（預設，原本的順序）或已確認隻數由多到少（同數量維持首次出現的順序）；只改顯示順序，數量、說明與資料問題不變
+ * 排列：首次出現（預設，原本的順序）或已確認隻數由多到少（同數量維持首次出現的順序）；只改顯示順序，數量、說明與資料問題不變。
+ * 每一列可以展開目前範圍逐波已確認的隻數（預設收合）：沒有已確認出兵的波次不列、不補 0
  */
 function CompositionBlock({
   composition: c,
@@ -344,9 +347,12 @@ function CompositionBlock({
   const [open, setOpen] = useState(true);
   // 排列方式：收起再展開、換路線都保留；關閉預覽（卸載）後回到首次出現
   const [sort, setSort] = useState<CompositionSort>("first");
+  // 展開逐波隻數的列（enemy_id，預設收合）：關閉預覽（卸載）後全部收合
+  const [detailOpen, setDetailOpen] = useState<string[]>([]);
   const bodyId = useId();
   const selectId = useId();
   const sortId = useId();
+  const detailBaseId = useId();
   // 名稱相同但 enemy_id 不同的敵人分開列，並附上 id 才分得出來
   // 依路線查看時每一列另有出兵的波次（waves）；全部路線時沒有
   const rows: (CompositionRow & { waves?: number[] })[] = sortCompositionRows(
@@ -361,6 +367,15 @@ function CompositionBlock({
   const sortNote = sort === "count" ? "依已確認隻數由多到少排列。" : "";
   const names = rows.map((r) => r.name);
   const sameName = (n: string) => names.indexOf(n) !== names.lastIndexOf(n);
+  // 換路線或設定更新後不在的列：關掉它的逐波隻數（之後再出現也是收合）
+  const keptDetail = detailOpen.filter((id) =>
+    rows.some((r) => r.enemyId === id)
+  );
+  if (keptDetail.length !== detailOpen.length) setDetailOpen(keptDetail);
+  const toggleDetail = (id: string) =>
+    setDetailOpen((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   const confirmed = rc ? rc.confirmed : c.confirmed;
   const complete = rc ? rc.complete : c.complete;
   const count =
@@ -519,7 +534,7 @@ function CompositionBlock({
                     {waveListText(r.waves)}
                   </Col>
                 )}
-                <Col xs={12}>
+                <Col xs="auto">
                   <button
                     type="button"
                     className={`btn btn-sm ${styles.heroClearBtn}`}
@@ -537,6 +552,49 @@ function CompositionBlock({
                     {r.firstWave} 波）
                   </button>
                 </Col>
+                <Col xs="auto">
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${styles.heroClearBtn}`}
+                    onClick={() => toggleDetail(r.enemyId)}
+                    aria-expanded={detailOpen.includes(r.enemyId)}
+                    aria-controls={`${detailBaseId}-${encodeURIComponent(r.enemyId)}`}
+                    aria-label={`${r.name}${sameName(r.name) ? `（${r.enemyId}）` : ""}${rc ? `在路線 ${rc.pathId} ` : ""}的逐波已確認隻數（${r.perWave.length} 波）`}
+                    data-testid="preview-composition-detail-toggle"
+                  >
+                    {detailOpen.includes(r.enemyId) ? "▾" : "▸"} 逐波隻數（
+                    {r.perWave.length} 波）
+                  </button>
+                </Col>
+                {detailOpen.includes(r.enemyId) && (
+                  <Col
+                    xs={12}
+                    id={`${detailBaseId}-${encodeURIComponent(r.enemyId)}`}
+                    className={styles.previewStats}
+                    data-testid="preview-composition-detail"
+                  >
+                    <div>
+                      {rc ? `路線 ${rc.pathId} ` : "全關"}逐波已確認隻數
+                      {complete
+                        ? "："
+                        : "（只列已確認的出兵；有資料問題的波次可能還有這個敵人）："}
+                    </div>
+                    <Row className="g-1">
+                      {r.perWave.map((x) => (
+                        <Col
+                          key={x.wave}
+                          xs={6}
+                          sm={4}
+                          data-testid="preview-composition-detail-wave"
+                          data-wave={x.wave}
+                          data-count={x.count}
+                        >
+                          第 {x.wave} 波 ×{x.count}
+                        </Col>
+                      ))}
+                    </Row>
+                  </Col>
+                )}
               </Row>
             </div>
           ))}

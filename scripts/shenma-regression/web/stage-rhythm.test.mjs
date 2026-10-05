@@ -9,6 +9,9 @@
 //   用正式 chapter1_3、chapter1_5 核對全關與兩條路線的順序與合計；同名不同 id 分開、資料問題的組不會變成列；回傳新陣列、不改來源；設定更新後重新排
 // - 敵軍組成每一列的 firstWave（前往首次出兵用）：全關與每條路線各自的首次已確認出兵波次（正式 chapter1_3 cavalry_lv2 全關 1、path_a 1、path_b 3；
 //   chapter1_5 全關 2、path_a 2、path_b 4）；排列後跟著列走；只有已確認的列有首次，缺波與有問題的組不是首次；設定更新後用新的資料
+// - 敵軍組成每一列的 perWave（逐波隻數的明細用）：全關與每條路線各自的逐波已確認隻數，用正式 chapter1_3、chapter1_5 逐列核對（cavalry_lv2 在 chapter1_5
+//   全關第 2、3 波各 10、第 4～7 波各 20，path_a 第 2～7 波各 10，path_b 第 4～7 波各 10）；同一波同一敵人多組相加、加起來等於合計、第一筆是首次；
+//   缺波、找不到設定、數量無法判讀或 0、略過與重複波次的第二筆都不進逐波（不補 0）；同名不同 id 分開；排列後跟著列走；設定更新後用新的資料
 // - utils/spawnRhythm：同一波各組同時開始、各組第一隻立刻出兵，最後一隻名義在 (n−1)×interval 秒，整波取各組最大值（不相加）；
 //   n＝1 是 0 秒（間隔是什麼都一樣）；沒有提供間隔照遊戲以 1 秒計並標出預設；間隔 ≤ 0 或小於計時器最短時間時依處理幀出兵、
 //   不寫成 0 秒；不是數字的間隔不強轉；數字太大時無法估算（不出現 Infinity）；有無法估算的組時只寫已知範圍
@@ -995,6 +998,239 @@ const idWave = (rows) => rows.map((r) => [r.enemyId, r.firstWave]);
   check(
     "首次出兵（設定更新）：只剩第 1 波時 grunt_lv2 的首次是第 1 波、grunt_twin 不再有列（用最新的資料，不留舊的目標）",
     same(idWave(stageComposition(updated).rows), [["grunt_lv2", 1]])
+  );
+}
+
+// ── 敵軍組成的逐波已確認隻數（列的 perWave，逐波隻數的明細用）：正式 chapter1_3、chapter1_5，期望值是正式設定算出的逐波隻數 ──
+// 每一列：[enemy_id, 合計, "波次:隻數 波次:隻數 …"]
+const idPerWave = (rows) =>
+  rows.map((r) => [
+    r.enemyId,
+    r.count,
+    r.perWave.map((x) => `${x.wave}:${x.count}`).join(" "),
+  ]);
+const PER_WAVE_13 = {
+  all: [
+    ["grunt_lv2", 30, "1:5 2:5 3:20"],
+    ["grunt_lv3", 5, "1:5"],
+    ["cavalry_lv2", 10, "1:5 3:5"],
+    ["siege_lv3", 10, "2:5 3:5"],
+    ["siege_lv2", 5, "2:5"],
+    ["cavalry_lv3", 10, "3:10"],
+  ],
+  path_a: [
+    ["grunt_lv2", 25, "1:5 2:5 3:15"],
+    ["grunt_lv3", 5, "1:5"],
+    ["cavalry_lv2", 5, "1:5"],
+    ["cavalry_lv3", 10, "3:10"],
+  ],
+  path_b: [
+    ["siege_lv3", 10, "2:5 3:5"],
+    ["siege_lv2", 5, "2:5"],
+    ["cavalry_lv2", 5, "3:5"],
+    ["grunt_lv2", 5, "3:5"],
+  ],
+};
+const PER_WAVE_15 = {
+  all: [
+    ["grunt_lv1", 20, "1:10 3:10"],
+    ["cavalry_lv1", 10, "1:10"],
+    ["siege_lv1", 20, "1:10 2:10"],
+    ["grunt_lv2", 80, "2:10 4:10 5:20 6:20 7:20"],
+    ["cavalry_lv2", 100, "2:10 3:10 4:20 5:20 6:20 7:20"],
+    ["siege_lv2", 90, "3:20 4:10 5:20 6:20 7:20"],
+    ["cavalry_lv3", 20, "6:10 7:10"],
+    ["grunt_lv3", 10, "7:10"],
+    ["siege_lv3", 10, "7:10"],
+  ],
+  path_a: [
+    ["grunt_lv1", 20, "1:10 3:10"],
+    ["cavalry_lv1", 10, "1:10"],
+    ["siege_lv1", 10, "1:10"],
+    ["grunt_lv2", 50, "2:10 4:10 5:10 6:10 7:10"],
+    ["cavalry_lv2", 60, "2:10 3:10 4:10 5:10 6:10 7:10"],
+    ["siege_lv2", 40, "3:10 5:10 6:10 7:10"],
+    ["cavalry_lv3", 10, "7:10"],
+    ["grunt_lv3", 10, "7:10"],
+  ],
+  path_b: [
+    ["siege_lv1", 10, "2:10"],
+    ["siege_lv2", 50, "3:10 4:10 5:10 6:10 7:10"],
+    ["cavalry_lv2", 40, "4:10 5:10 6:10 7:10"],
+    ["grunt_lv2", 30, "5:10 6:10 7:10"],
+    ["cavalry_lv3", 10, "6:10"],
+    ["siege_lv3", 10, "7:10"],
+  ],
+};
+// 每一列的逐波隻數：加起來等於合計、波次由小到大不重複、沒有 0、第一筆是首次出兵；路線的列和它的出兵波次相同
+const perWaveSane = (rows) =>
+  rows.every(
+    (r) =>
+      r.perWave.reduce((s, x) => s + x.count, 0) === r.count &&
+      r.perWave.every(
+        (x, i) => x.count > 0 && (i === 0 || x.wave > r.perWave[i - 1].wave)
+      ) &&
+      r.perWave[0].wave === r.firstWave &&
+      (!r.waves ||
+        same(
+          r.waves,
+          r.perWave.map((x) => x.wave)
+        ))
+  );
+const scopesOf = (paths, waves) => {
+  const p = buildStagePreview(
+    deepFreeze(stage(paths, waves)),
+    deepFreeze(ENEMIES)
+  );
+  const whole = stageComposition(p);
+  return {
+    all: whole.rows,
+    path_a: routeComposition(p, "path_a", whole).rows,
+    path_b: routeComposition(p, "path_b", whole).rows,
+  };
+};
+const perWaveOf = (rows, id) =>
+  (idPerWave(rows).find((r) => r[0] === id) || [])[2] ?? null;
+{
+  const s13 = scopesOf(PATHS_13, WAVES_13);
+  const s15 = scopesOf(PATHS_15, WAVES_15);
+  const cav = {
+    c13: ["all", "path_a", "path_b"].map((k) =>
+      perWaveOf(s13[k], "cavalry_lv2")
+    ),
+    c15: ["all", "path_a", "path_b"].map((k) =>
+      perWaveOf(s15[k], "cavalry_lv2")
+    ),
+  };
+  check(
+    "逐波隻數（正式 cavalry_lv2）：chapter1_5 全關 100＝第 2 波 10、第 3 波 10、第 4～7 波各 20（第 4 波起兩條路線各 10 相加），path_a 第 2～7 波各 10 共 60，path_b 第 4～7 波各 10 共 40；" +
+      "chapter1_3 全關第 1 波 5、第 3 波 5，path_a 只有第 1 波 5，path_b 只有第 3 波 5（每個範圍用自己的逐波，不借全關的）",
+    same(cav.c15, [
+      "2:10 3:10 4:20 5:20 6:20 7:20",
+      "2:10 3:10 4:10 5:10 6:10 7:10",
+      "4:10 5:10 6:10 7:10",
+    ]) && same(cav.c13, ["1:5 3:5", "1:5", "3:5"]),
+    cav
+  );
+  check(
+    "逐波隻數（正式 chapter1_3）：全關與兩條路線每一列的合計與逐波都和正式設定算出的相同；第 3 波的 grunt_lv2 是 path_a 的 5＋10 與 path_b 的 5（同一波同一敵人多組相加：全關 20、path_a 15、path_b 5）",
+    same(idPerWave(s13.all), PER_WAVE_13.all) &&
+      same(idPerWave(s13.path_a), PER_WAVE_13.path_a) &&
+      same(idPerWave(s13.path_b), PER_WAVE_13.path_b),
+    {
+      all: idPerWave(s13.all),
+      a: idPerWave(s13.path_a),
+      b: idPerWave(s13.path_b),
+    }
+  );
+  check(
+    "逐波隻數（正式 chapter1_5）：全關 360、path_a 210、path_b 150 每一列的合計與逐波都和正式設定算出的相同",
+    same(idPerWave(s15.all), PER_WAVE_15.all) &&
+      same(idPerWave(s15.path_a), PER_WAVE_15.path_a) &&
+      same(idPerWave(s15.path_b), PER_WAVE_15.path_b),
+    {
+      all: idPerWave(s15.all),
+      a: idPerWave(s15.path_a),
+      b: idPerWave(s15.path_b),
+    }
+  );
+  check(
+    "逐波隻數（一致性）：兩關六個範圍的每一列逐波加起來等於合計、波次由小到大不重複、沒有 0、第一筆就是首次出兵；路線的列和它的出兵波次相同",
+    [s13, s15].every((s) => Object.values(s).every(perWaveSane))
+  );
+  // 依隻數排列：逐波跟著列走（同一個列，不重算、不換成別的列的）
+  const sorted = sortCompositionRows(s15.path_b, "count");
+  check(
+    "逐波隻數（排列）：chapter1_5 path_b 依已確認隻數排列後 siege_lv2 50、cavalry_lv2 40、grunt_lv2 30 的逐波跟著各自的列，和首次出現時相同",
+    same(idPerWave(sorted).slice(0, 3), [
+      PER_WAVE_15.path_b[1],
+      PER_WAVE_15.path_b[2],
+      PER_WAVE_15.path_b[3],
+    ]) &&
+      sorted.every(
+        (r) =>
+          r.perWave === s15.path_b.find((x) => x.enemyId === r.enemyId).perWave
+      )
+  );
+}
+{
+  // 資料問題：缺少的波、找不到設定、數量無法判讀、數量 0、遊戲會略過的組都不進逐波（不補 0）；同名不同 id 各自一列；
+  // 同一波重複的資料照預覽只用第一筆；同一波同一敵人兩組相加
+  const twins = [...ENEMIES, enemy("grunt_twin", "黃巾力士")];
+  const paths = {
+    path_a: [
+      [0, 5],
+      [13, 5],
+    ],
+    path_b: [
+      [0, 8],
+      [13, 8],
+    ],
+  };
+  const p = buildStagePreview(
+    deepFreeze(
+      stage(paths, [
+        // 第 1 波缺少
+        {
+          wave: 2,
+          enemies: [
+            g("ghost", 2, 1, "path_a"),
+            g("grunt_lv3", "many", 1, "path_a"),
+            g("cavalry_lv1", 0, 1, "path_a"),
+            g("grunt_lv2", 3, 1, "path_z"),
+            g("grunt_lv2", 4, 1, "path_a"),
+            g("grunt_twin", 2, 1, "path_b"),
+          ],
+        },
+        // 第 3 波兩筆：預覽只用第一筆（grunt_lv2 兩組 1＋5），第二筆的 50 不算
+        {
+          wave: 3,
+          enemies: [
+            g("grunt_lv2", 1, 1, "path_a"),
+            g("grunt_lv2", 5, 1, "path_b"),
+          ],
+        },
+        { wave: 3, enemies: [g("grunt_lv2", 50, 1, "path_a")] },
+        { wave: 4, enemies: [g("grunt_twin", 3, 1, "path_b")] },
+      ])
+    ),
+    deepFreeze(twins)
+  );
+  const whole = stageComposition(p);
+  const a = routeComposition(p, "path_a", whole);
+  const b = routeComposition(p, "path_b", whole);
+  check(
+    "逐波隻數（資料問題）：全關 grunt_lv2 第 2 波 4、第 3 波 6（同一波兩條路線 1＋5 相加；重複的第 3 波第二筆 50 不算；沒有路點的 path_z 會略過、不算）、grunt_twin 第 2 波 2、第 4 波 3（同名不同 id 各自一列）；" +
+      "path_a 只有 grunt_lv2 第 2 波 4、第 3 波 1；path_b grunt_twin 2、3 與 grunt_lv2 第 3 波 5；缺少的第 1 波、找不到設定、數量無法判讀、數量 0 都沒有列也沒有逐波，不補 0",
+    !whole.complete &&
+      same(idPerWave(whole.rows), [
+        ["grunt_lv2", 10, "2:4 3:6"],
+        ["grunt_twin", 5, "2:2 4:3"],
+      ]) &&
+      same(idPerWave(a.rows), [["grunt_lv2", 5, "2:4 3:1"]]) &&
+      same(idPerWave(b.rows), [
+        ["grunt_twin", 5, "2:2 4:3"],
+        ["grunt_lv2", 5, "3:5"],
+      ]) &&
+      [whole.rows, a.rows, b.rows].every(perWaveSane),
+    { whole: idPerWave(whole.rows), a: idPerWave(a.rows), b: idPerWave(b.rows) }
+  );
+  // 設定更新：用新的資料重算（舊的波次不留）
+  const updated = buildStagePreview(
+    stage(paths, [
+      {
+        wave: 1,
+        enemies: [
+          g("grunt_lv2", 2, 1, "path_a"),
+          g("grunt_lv2", 3, 1, "path_a"),
+        ],
+      },
+    ]),
+    twins
+  );
+  check(
+    "逐波隻數（設定更新）：只剩第 1 波兩組 grunt_lv2 時逐波是第 1 波 5（兩組相加）、grunt_twin 不再有列；舊的第 2、3 波不留",
+    same(idPerWave(stageComposition(updated).rows), [["grunt_lv2", 5, "1:5"]])
   );
 }
 

@@ -8,7 +8,14 @@ import { PreviewGroup, PreviewWave, StagePreview } from "./stagePreview";
  * - 依 enemy_id 合計（名稱相同但 id 不同的分開），順序是第一次出現的位置（波次、組的順序）；不排難度、不估戰力
  * - 全關的出兵都能確定時（preview.total 不是 null）合計就是全關總數；否則只是已確認的部分，畫面要寫明不是全關總數
  * - 找不到敵人設定的 enemy_id 列為資料問題，不造敵人、不用預設屬性
+ * - 每一列另記逐波的已確認隻數（perWave）：同一波的多組相加，沒有已確認出兵的波次不列、不補 0
  */
+
+/** 一個敵人在某一波已確認會出兵的隻數（同一波的多組相加） */
+export interface WaveCount {
+  wave: number;
+  count: number;
+}
 
 export interface CompositionRow {
   enemyId: string;
@@ -20,6 +27,15 @@ export interface CompositionRow {
   movement: MovementInfo | null;
   /** 第一次出現的波次 */
   firstWave: number;
+  /** 逐波已確認的隻數（依波次編號；加起來就是 count） */
+  perWave: WaveCount[];
+}
+
+/** 把一組已確認的出兵加進逐波隻數：預覽的波次依編號由小到大，同一波一定接在最後一筆，相加 */
+function addWaveCount(perWave: WaveCount[], wave: number, count: number) {
+  const last = perWave[perWave.length - 1];
+  if (last && last.wave === wave) last.count += count;
+  else perWave.push({ wave, count });
 }
 
 export interface StageComposition {
@@ -61,14 +77,17 @@ export function stageComposition(preview: StagePreview): StageComposition {
       if (g.outcome !== "spawn" || g.count === null || g.name === null)
         continue;
       const row = byId.get(g.enemyId);
-      if (row) row.count += g.count;
-      else {
+      if (row) {
+        row.count += g.count;
+        addWaveCount(row.perWave, w.wave, g.count);
+      } else {
         const r: CompositionRow = {
           enemyId: g.enemyId,
           name: g.name,
           count: g.count,
           movement: g.movement,
           firstWave: w.wave,
+          perWave: [{ wave: w.wave, count: g.count }],
         };
         byId.set(g.enemyId, r);
         rows.push(r);
@@ -156,6 +175,7 @@ export function routeComposition(
       if (row) {
         row.count += g.count;
         if (!row.waves.includes(w.wave)) row.waves.push(w.wave);
+        addWaveCount(row.perWave, w.wave, g.count);
       } else {
         const r: RouteCompositionRow = {
           enemyId: g.enemyId,
@@ -164,6 +184,7 @@ export function routeComposition(
           movement: g.movement,
           firstWave: w.wave,
           waves: [w.wave],
+          perWave: [{ wave: w.wave, count: g.count }],
         };
         byId.set(g.enemyId, r);
         rows.push(r);

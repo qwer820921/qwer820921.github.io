@@ -12,8 +12,9 @@ async (page) => {
   // - H-9 設定讀取失敗、瀏覽器沒有 WebGL2：照舊不顯示頂欄，顯示原因與出口，沒有送出關卡資料
   // - H-10 寫入限制中：頂欄照舊（hold），放行後沒有送出關卡資料
   // - H-11 獨立戰鬥頁：載入中只有返回與標題，沒有戰鬥按鈕、沒有送出關卡資料；放行後送出並出現戰鬥按鈕（這一頁沒有改）
-  // - H-12 載入中遇到真正的存檔版本衝突（REV_CONFLICT）：保存暫停、本機隊伍保留、沒有送任何東西給遊戲；衝突沒處理時再改隊伍並等過 30 秒，
-  //   仍只有第一次被拒的保存；放行後只送一次最後的關卡、目前帳號與本機最新的隊伍，可以迎戰
+  // - H-12 載入中遇到真正的存檔版本衝突（REV_CONFLICT）：讀到的存檔是版本 1，第一次保存帶 base_rev 1、雲端回版本 7 與另一份存檔；
+  //   保存暫停、本機隊伍保留、沒有送任何東西給遊戲；衝突沒處理時再改隊伍並等過 30 秒，仍只有第一次被拒的保存；
+  //   放行後只送一次最後的關卡、目前帳號與本機最新的隊伍，可以迎戰。版本衝突的回應是測試注入的（契約 mock），不是後端實際比較版本的結果
   // 全部 mock、虛構金鑰 test_hudpre_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -419,15 +420,33 @@ async (page) => {
   });
 
   // ── H-12 載入中遇到真正的存檔版本衝突 ──
-  // 這一頁的 save_profile 回有效的 REV_CONFLICT（雲端是另一份存檔、版本號 7；只包住這一頁的 fetch，其他讀取照 harness 的 mock）
+  // 讀取存檔（get_profile）的成功回應附上雲端版本 1，所以保存會帶 base_rev 1；這一頁的 save_profile 回有效的 REV_CONFLICT
+  // （雲端是另一份存檔、版本號 7）。只在這一段打開（__shenma_h12_rev）、只包住這一頁的 fetch，其他讀取照 harness 的 mock；
+  // 衝突的回應是測試注入的，不是後端實際比較版本的結果
+  const CLOUD_REV = 7;
   await section("conflict", async () => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await setup(A);
+    await ctx.addInitScript(() => {
+      if (window.top !== window || localStorage.getItem("__shenma_h12_rev") !== "1") return;
+      const inner = window.fetch.bind(window);
+      window.__h12Reads = [];
+      window.fetch = async (input, init) => {
+        let body = {};
+        try { body = JSON.parse((init && init.body) || "{}"); } catch { body = {}; }
+        const res = await inner(input, init);
+        if (body.action !== "get_profile") return res;
+        const value = await res.clone().json().catch(() => null);
+        if (!(value && value.status === 200)) return res;
+        window.__h12Reads.push({ key: body.key, rev: 1 });
+        return new Response(JSON.stringify({ ...value, rev: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      };
+    });
+    await setup(A, { __shenma_h12_rev: "1" });
     holding = true;
     await page.goto(H.BASE + "/shenmaSanguo");
     await H.waitPreloadHud(page, 60000);
     await until(async () => held.length > 0, 30000, "引擎被攔住");
-    await page.evaluate((cloud) => {
+    await page.evaluate(({ cloud, rev }) => {
       const inner = window.fetch.bind(window);
       window.__h12Saves = [];
       window.fetch = async (input, init) => {
@@ -436,11 +455,11 @@ async (page) => {
         if (body.action === "save_profile") {
           const data = body.payload && body.payload.data;
           window.__h12Saves.push({ t: Math.round(performance.now()), key: body.key, base: body.payload ? body.payload.base_rev ?? null : null, team: data && Array.isArray(data.team) ? data.team.map((x) => x.hero_id) : null });
-          return new Response(JSON.stringify({ status: 409, error: "REV_CONFLICT", rev: 7, data: cloud }), { status: 200, headers: { "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ status: 409, error: "REV_CONFLICT", rev, data: cloud }), { status: 200, headers: { "Content-Type": "application/json" } });
         }
         return inner(input, init);
       };
-    }, { ...profileA, nickname: "雲端另一台", team: [{ hero_id: "zhao_yun", slot: 1 }] });
+    }, { cloud: { ...profileA, nickname: "雲端另一台", team: [{ hero_id: "zhao_yun", slot: 1 }] }, rev: CLOUD_REV });
     const localTeam = () => page.evaluate(() => {
       const st = JSON.parse(sessionStorage.getItem("shenma_player_state") || "null");
       const t = st ? st.team || (st.player && st.player.team) || null : null;
@@ -449,6 +468,7 @@ async (page) => {
     const state12 = () => page.evaluate(() => ({
       notice: document.querySelector('[data-testid="save-conflict"]')?.innerText.replace(/\s+/g, " ").trim() ?? null,
       saves: window.__h12Saves || [],
+      reads: window.__h12Reads || null,
       sync: document.querySelector("[data-sync-status]")?.dataset.syncStatus ?? null,
     }));
     // 1. 載入中移除趙雲並儲存 → 照既有規則約 30 秒後保存 → 雲端回版本衝突
@@ -466,8 +486,11 @@ async (page) => {
     const h1 = await hud();
     const m1 = await recv();
     out.H12a = { ...c1, team: t1, phase: h1.phase, recv: m1 };
-    run.check("H-12a 引擎仍在載入：載入中移除趙雲並儲存，既有的保存送出一次就收到版本衝突（REV_CONFLICT）→ 顯示存檔衝突、保存暫停；本機隊伍保留（只剩關羽）；頂欄仍是 preload；遊戲沒有收到關卡資料或 update_team",
-      !!c1.notice && /暫停/.test(c1.notice) && c1.saves.length === 1 && c1.saves[0].key === A && same(c1.saves[0].team, ["guan_yu"]) &&
+    run.check("H-12a 引擎仍在載入：讀到的存檔是版本 1；載入中移除趙雲並儲存，既有的保存送出一次（帶 base_rev 1）就收到版本衝突（REV_CONFLICT，雲端版本 7、另一份存檔）→ 顯示存檔衝突、保存暫停；" +
+      "本機隊伍保留（只剩關羽）；頂欄仍是 preload；遊戲沒有收到關卡資料或 update_team",
+      Array.isArray(c1.reads) && c1.reads.length > 0 && c1.reads.every((r) => r.key === A && r.rev === 1) &&
+        c1.saves.length === 1 && c1.saves[0].base === 1 && c1.saves[0].base !== CLOUD_REV &&
+        !!c1.notice && /暫停/.test(c1.notice) && c1.saves.length === 1 && c1.saves[0].key === A && same(c1.saves[0].team, ["guan_yu"]) &&
         same(t1, ["guan_yu"]) && h1.phase === "preload" && Array.isArray(m1) && m1.length === 0,
       out.H12a);
     // 2. 衝突還沒處理：真的改隊伍（加回趙雲），儲存鈕可按、儲存；等過既有的 30 秒保存時間
@@ -511,5 +534,6 @@ async (page) => {
 
   await release();
   await ctx.unroute(ENGINE).catch(() => {});
+  await page.evaluate(() => localStorage.removeItem("__shenma_h12_rev")).catch(() => {});
   return run.finish({ out });
 }
