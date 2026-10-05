@@ -7,6 +7,8 @@
 //   缺波、拒絕、重複照整波；用正式 chapter1_3、chapter1_5 的逐波資料核對各波各路線的隻數；不改預覽與整波出兵節奏
 // - utils/stageComposition 的 sortCompositionRows（敵軍組成的排列）：首次出現＝原本的順序；已確認隻數由多到少、同數量維持首次出現；
 //   用正式 chapter1_3、chapter1_5 核對全關與兩條路線的順序與合計；同名不同 id 分開、資料問題的組不會變成列；回傳新陣列、不改來源；設定更新後重新排
+// - 敵軍組成每一列的 firstWave（前往首次出兵用）：全關與每條路線各自的首次已確認出兵波次（正式 chapter1_3 cavalry_lv2 全關 1、path_a 1、path_b 3；
+//   chapter1_5 全關 2、path_a 2、path_b 4）；排列後跟著列走；只有已確認的列有首次，缺波與有問題的組不是首次；設定更新後用新的資料
 // - utils/spawnRhythm：同一波各組同時開始、各組第一隻立刻出兵，最後一隻名義在 (n−1)×interval 秒，整波取各組最大值（不相加）；
 //   n＝1 是 0 秒（間隔是什麼都一樣）；沒有提供間隔照遊戲以 1 秒計並標出預設；間隔 ≤ 0 或小於計時器最短時間時依處理幀出兵、
 //   不寫成 0 秒；不是數字的間隔不強轉；數字太大時無法估算（不出現 Infinity）；有無法估算的組時只寫已知範圍
@@ -834,6 +836,165 @@ const idCount = (rows) => rows.map((r) => [r.enemyId, r.count]);
         ["grunt_twin", 7],
       ]
     )
+  );
+}
+
+// ── 敵軍組成的首次出兵波次（列的 firstWave，前往首次出兵用）：正式 chapter1_3、chapter1_5，期望值是正式設定算出的波次 ──
+const idWave = (rows) => rows.map((r) => [r.enemyId, r.firstWave]);
+{
+  const p = buildStagePreview(
+    deepFreeze(stage(PATHS_13, WAVES_13)),
+    deepFreeze(ENEMIES)
+  );
+  const whole = stageComposition(p);
+  const a = routeComposition(p, "path_a", whole);
+  const b = routeComposition(p, "path_b", whole);
+  check(
+    "首次出兵（正式 chapter1_3）：全關 grunt_lv2 1、grunt_lv3 1、cavalry_lv2 1、siege_lv3 2、siege_lv2 2、cavalry_lv3 3；" +
+      "path_a grunt_lv2 1、grunt_lv3 1、cavalry_lv2 1、cavalry_lv3 3；path_b siege_lv3 2、siege_lv2 2、cavalry_lv2 3、grunt_lv2 3" +
+      "（cavalry_lv2 全關與 path_a 是第 1 波、path_b 是第 3 波：每個範圍用自己的首次，不借全關的）",
+    same(idWave(whole.rows), [
+      ["grunt_lv2", 1],
+      ["grunt_lv3", 1],
+      ["cavalry_lv2", 1],
+      ["siege_lv3", 2],
+      ["siege_lv2", 2],
+      ["cavalry_lv3", 3],
+    ]) &&
+      same(idWave(a.rows), [
+        ["grunt_lv2", 1],
+        ["grunt_lv3", 1],
+        ["cavalry_lv2", 1],
+        ["cavalry_lv3", 3],
+      ]) &&
+      same(idWave(b.rows), [
+        ["siege_lv3", 2],
+        ["siege_lv2", 2],
+        ["cavalry_lv2", 3],
+        ["grunt_lv2", 3],
+      ]),
+    { whole: idWave(whole.rows), a: idWave(a.rows), b: idWave(b.rows) }
+  );
+  // 依隻數排列後首次出兵跟著列走（不重算、不換成別的列的）
+  check(
+    "首次出兵（排列）：path_b 依已確認隻數排列後，cavalry_lv2 仍是第 3 波、grunt_lv2 第 3 波、siege_lv3 第 2 波",
+    same(idWave(sortCompositionRows(b.rows, "count")), [
+      ["siege_lv3", 2],
+      ["siege_lv2", 2],
+      ["cavalry_lv2", 3],
+      ["grunt_lv2", 3],
+    ]) &&
+      same(
+        idWave(sortCompositionRows(whole.rows, "count")).find(
+          (x) => x[0] === "cavalry_lv3"
+        ),
+        ["cavalry_lv3", 3]
+      )
+  );
+}
+{
+  const p = buildStagePreview(
+    deepFreeze(stage(PATHS_15, WAVES_15)),
+    deepFreeze(ENEMIES)
+  );
+  const whole = stageComposition(p);
+  const a = routeComposition(p, "path_a", whole);
+  const b = routeComposition(p, "path_b", whole);
+  check(
+    "首次出兵（正式 chapter1_5）：cavalry_lv2 全關第 2 波、path_a 第 2 波、path_b 第 4 波；全關 grunt_lv1 1、cavalry_lv1 1、siege_lv1 1、grunt_lv2 2、cavalry_lv2 2、siege_lv2 3、cavalry_lv3 6、grunt_lv3 7、siege_lv3 7；" +
+      "path_b siege_lv1 2、siege_lv2 3、cavalry_lv2 4、grunt_lv2 5、cavalry_lv3 6、siege_lv3 7",
+    same(idWave(whole.rows), [
+      ["grunt_lv1", 1],
+      ["cavalry_lv1", 1],
+      ["siege_lv1", 1],
+      ["grunt_lv2", 2],
+      ["cavalry_lv2", 2],
+      ["siege_lv2", 3],
+      ["cavalry_lv3", 6],
+      ["grunt_lv3", 7],
+      ["siege_lv3", 7],
+    ]) &&
+      same(idWave(a.rows), [
+        ["grunt_lv1", 1],
+        ["cavalry_lv1", 1],
+        ["siege_lv1", 1],
+        ["grunt_lv2", 2],
+        ["cavalry_lv2", 2],
+        ["siege_lv2", 3],
+        ["cavalry_lv3", 7],
+        ["grunt_lv3", 7],
+      ]) &&
+      same(idWave(b.rows), [
+        ["siege_lv1", 2],
+        ["siege_lv2", 3],
+        ["cavalry_lv2", 4],
+        ["grunt_lv2", 5],
+        ["cavalry_lv3", 6],
+        ["siege_lv3", 7],
+      ]),
+    { whole: idWave(whole.rows), a: idWave(a.rows), b: idWave(b.rows) }
+  );
+}
+{
+  // 同名不同 id、找不到設定、略過、缺波、數量無法確定：只有已確認的列有首次出兵；缺的波次不會被當成首次
+  const twins = [...ENEMIES, enemy("grunt_twin", "黃巾力士")];
+  const p = buildStagePreview(
+    deepFreeze(
+      stage(
+        {
+          path_a: [
+            [0, 5],
+            [13, 5],
+          ],
+        },
+        [
+          // 第 1 波缺少；第 2 波：找不到設定、數量無法判讀、數量 0；第 3 波：grunt_lv2 與同名的 grunt_twin
+          {
+            wave: 2,
+            enemies: [
+              g("ghost", 2, 1, "path_a"),
+              g("grunt_lv3", "many", 1, "path_a"),
+              g("cavalry_lv1", 0, 1, "path_a"),
+            ],
+          },
+          {
+            wave: 3,
+            enemies: [
+              g("grunt_twin", 4, 1, "path_a"),
+              g("grunt_lv2", 4, 1, "path_a"),
+            ],
+          },
+          { wave: 4, enemies: [g("grunt_lv2", 1, 1, "path_a")] },
+        ]
+      )
+    ),
+    deepFreeze(twins)
+  );
+  const c = stageComposition(p);
+  check(
+    "首次出兵（資料問題）：只有已確認的 grunt_twin 與 grunt_lv2 有首次（都是第 3 波，同名不同 id 各自一列）；找不到設定、數量無法判讀、數量 0 的組沒有列；缺少的第 1 波與有問題的第 2 波都不是首次",
+    same(idWave(c.rows), [
+      ["grunt_twin", 3],
+      ["grunt_lv2", 3],
+    ]) && !c.complete,
+    { rows: idWave(c.rows), gaps: c.gaps }
+  );
+  // 設定更新：首次出兵改成新的資料（舊的第 3 波不再是首次）
+  const updated = buildStagePreview(
+    stage(
+      {
+        path_a: [
+          [0, 5],
+          [13, 5],
+        ],
+      },
+      [{ wave: 1, enemies: [g("grunt_lv2", 2, 1, "path_a")] }]
+    ),
+    twins
+  );
+  check(
+    "首次出兵（設定更新）：只剩第 1 波時 grunt_lv2 的首次是第 1 波、grunt_twin 不再有列（用最新的資料，不留舊的目標）",
+    same(idWave(stageComposition(updated).rows), [["grunt_lv2", 1]])
   );
 }
 

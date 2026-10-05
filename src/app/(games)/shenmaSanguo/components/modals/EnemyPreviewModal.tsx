@@ -57,7 +57,9 @@ interface Props {
  * 「敵軍組成」依敵人合計已確認會出兵的組（utils/stageComposition，可以收起），全關總數與逐波內容照舊；
  * 多條路線時組成可以依路線查看（routeComposition）：選的路線是這裡持有的同一個狀態，「路線預覽」的「顯示路線」也是它，
  * 兩邊不會各選各的；設定更新後選的路線不在了就回到全部。組成可以改依已確認隻數由多到少排列（sortCompositionRows，預設是首次出現），
- * 只是這個視窗暫時的顯示：換路線保留、每次都用最新的列重新排，關閉預覽後回到預設。逐波內容也跟著這個選擇（waveRouteView）：選了路線時每一波只列那條路線的組
+ * 只是這個視窗暫時的顯示：換路線保留、每次都用最新的列重新排，關閉預覽後回到預設。
+ * 組成的每一列可以前往它在目前範圍（全關或選的路線）首次已確認出兵的波次（列的 firstWave），沿用波次導覽的前往：
+ * 只展開那一波、同步導覽的選擇與說明、捲到並聚焦那一波的標題；不換關、不改路線與排列。逐波內容也跟著這個選擇（waveRouteView）：選了路線時每一波只列那條路線的組
  * （原本的組序）並寫明那條路線已確認的隻數與組數，其他路線的資料問題另列「全波資料提醒」；波次標題、波次導覽與出兵節奏仍是整波。
  * 戰場內的「下一波」不帶這個選擇。
  * 「路線預覽」畫關卡設定的路線格子（StageRoutePreview，預設收起）；逐波內容另列「設定出兵節奏」（utils/spawnRhythm）；
@@ -249,6 +251,9 @@ export default function EnemyPreviewModal({
             route={routeComp ? route : null}
             routeComp={routeComp}
             onRouteChange={setRoute}
+            onGotoWave={(n, label) =>
+              gotoWave(n, `已前往第 ${n} 波（${label}）`)
+            }
           />
 
           <StageRoutePreview
@@ -325,6 +330,7 @@ function CompositionBlock({
   route,
   routeComp: rc,
   onRouteChange,
+  onGotoWave,
 }: {
   composition: StageComposition;
   routeIds: string[];
@@ -332,6 +338,8 @@ function CompositionBlock({
   route: string | null;
   routeComp: RouteComposition | null;
   onRouteChange: (route: string | null) => void;
+  /** 前往某一波（第二個參數是狀態說明裡的說明） */
+  onGotoWave: (wave: number, label: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   // 排列方式：收起再展開、換路線都保留；關閉預覽（卸載）後回到首次出現
@@ -511,6 +519,24 @@ function CompositionBlock({
                     {waveListText(r.waves)}
                   </Col>
                 )}
+                <Col xs={12}>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${styles.heroClearBtn}`}
+                    onClick={() =>
+                      onGotoWave(
+                        r.firstWave,
+                        `${r.name}${sameName(r.name) ? `（${r.enemyId}）` : ""}${complete ? "的首次出兵" : "已確認的首次出兵"}`
+                      )
+                    }
+                    aria-label={`前往${r.name}${sameName(r.name) ? `（${r.enemyId}）` : ""}${rc ? `在路線 ${rc.pathId} ` : ""}${complete ? "首次出兵" : "已確認的首次出兵"}的第 ${r.firstWave} 波`}
+                    data-testid="preview-composition-goto"
+                    data-wave={r.firstWave}
+                  >
+                    {complete ? "前往首次出兵" : "前往已確認的首次出兵"}（第{" "}
+                    {r.firstWave} 波）
+                  </button>
+                </Col>
               </Row>
             </div>
           ))}

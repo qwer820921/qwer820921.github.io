@@ -12,6 +12,8 @@ async (page) => {
   // - H-9 設定讀取失敗、瀏覽器沒有 WebGL2：照舊不顯示頂欄，顯示原因與出口，沒有送出關卡資料
   // - H-10 寫入限制中：頂欄照舊（hold），放行後沒有送出關卡資料
   // - H-11 獨立戰鬥頁：載入中只有返回與標題，沒有戰鬥按鈕、沒有送出關卡資料；放行後送出並出現戰鬥按鈕（這一頁沒有改）
+  // - H-12 載入中遇到真正的存檔版本衝突（REV_CONFLICT）：保存暫停、本機隊伍保留、沒有送任何東西給遊戲；衝突沒處理時再改隊伍並等過 30 秒，
+  //   仍只有第一次被拒的保存；放行後只送一次最後的關卡、目前帳號與本機最新的隊伍，可以迎戰
   // 全部 mock、虛構金鑰 test_hudpre_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -414,6 +416,97 @@ async (page) => {
     out.H11 = { during, recvBefore: mb, payloads: pb };
     run.check("H-11 獨立戰鬥頁：載入中只有返回與標題、沒有戰鬥按鈕，遊戲只收到既有的就緒握手（request_ready），沒有關卡資料或戰鬥命令；放行後送出一次 chapter1_1、出現戰鬥按鈕",
       during.back && during.battle === 0 && Array.isArray(mb) && payloads(mb).length === 0 && commands(mb).length === 0 && pb.length === 1 && pb[0].stage === "chapter1_1", out.H11);
+  });
+
+  // ── H-12 載入中遇到真正的存檔版本衝突 ──
+  // 這一頁的 save_profile 回有效的 REV_CONFLICT（雲端是另一份存檔、版本號 7；只包住這一頁的 fetch，其他讀取照 harness 的 mock）
+  await section("conflict", async () => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await setup(A);
+    holding = true;
+    await page.goto(H.BASE + "/shenmaSanguo");
+    await H.waitPreloadHud(page, 60000);
+    await until(async () => held.length > 0, 30000, "引擎被攔住");
+    await page.evaluate((cloud) => {
+      const inner = window.fetch.bind(window);
+      window.__h12Saves = [];
+      window.fetch = async (input, init) => {
+        let body = {};
+        try { body = JSON.parse((init && init.body) || "{}"); } catch { body = {}; }
+        if (body.action === "save_profile") {
+          const data = body.payload && body.payload.data;
+          window.__h12Saves.push({ t: Math.round(performance.now()), key: body.key, base: body.payload ? body.payload.base_rev ?? null : null, team: data && Array.isArray(data.team) ? data.team.map((x) => x.hero_id) : null });
+          return new Response(JSON.stringify({ status: 409, error: "REV_CONFLICT", rev: 7, data: cloud }), { status: 200, headers: { "Content-Type": "application/json" } });
+        }
+        return inner(input, init);
+      };
+    }, { ...profileA, nickname: "雲端另一台", team: [{ hero_id: "zhao_yun", slot: 1 }] });
+    const localTeam = () => page.evaluate(() => {
+      const st = JSON.parse(sessionStorage.getItem("shenma_player_state") || "null");
+      const t = st ? st.team || (st.player && st.player.team) || null : null;
+      return t ? t.map((x) => x.hero_id) : null;
+    });
+    const state12 = () => page.evaluate(() => ({
+      notice: document.querySelector('[data-testid="save-conflict"]')?.innerText.replace(/\s+/g, " ").trim() ?? null,
+      saves: window.__h12Saves || [],
+      sync: document.querySelector("[data-sync-status]")?.dataset.syncStatus ?? null,
+    }));
+    // 1. 載入中移除趙雲並儲存 → 照既有規則約 30 秒後保存 → 雲端回版本衝突
+    await page.getByRole("button", { name: "隊伍", exact: true }).click();
+    await page.waitForSelector('[data-testid="team-slot"]', { timeout: 10000 });
+    await page.locator('[data-testid="team-slot"][data-hero-id="zhao_yun"] [data-testid="team-slot-remove"]').click();
+    await H.sleep(200);
+    await page.getByRole("button", { name: "儲存隊伍", exact: true }).click();
+    await H.sleep(500);
+    await press("Escape");
+    await page.waitForSelector('[data-testid="save-conflict"]', { timeout: 60000 });
+    await H.sleep(500);
+    const c1 = await state12();
+    const t1 = await localTeam();
+    const h1 = await hud();
+    const m1 = await recv();
+    out.H12a = { ...c1, team: t1, phase: h1.phase, recv: m1 };
+    run.check("H-12a 引擎仍在載入：載入中移除趙雲並儲存，既有的保存送出一次就收到版本衝突（REV_CONFLICT）→ 顯示存檔衝突、保存暫停；本機隊伍保留（只剩關羽）；頂欄仍是 preload；遊戲沒有收到關卡資料或 update_team",
+      !!c1.notice && /暫停/.test(c1.notice) && c1.saves.length === 1 && c1.saves[0].key === A && same(c1.saves[0].team, ["guan_yu"]) &&
+        same(t1, ["guan_yu"]) && h1.phase === "preload" && Array.isArray(m1) && m1.length === 0,
+      out.H12a);
+    // 2. 衝突還沒處理：真的改隊伍（加回趙雲），儲存鈕可按、儲存；等過既有的 30 秒保存時間
+    await page.getByRole("button", { name: "隊伍", exact: true }).click();
+    await page.waitForSelector('[data-testid="team-slot"]', { timeout: 10000 });
+    await page.locator('[data-testid="team-pool-card"][data-hero-id="zhao_yun"]').click();
+    await H.sleep(200);
+    const saveBtn = page.getByRole("button", { name: "儲存隊伍", exact: true });
+    const enabled = await saveBtn.isEnabled();
+    await saveBtn.click();
+    await H.sleep(500);
+    await press("Escape");
+    await H.sleep(35000);
+    const c2 = await state12();
+    const t2 = await localTeam();
+    const m2 = await recv();
+    out.H12b = { enabled, ...c2, team: t2, recv: m2 };
+    run.check("H-12b 衝突還沒處理時再改隊伍（加回趙雲，儲存鈕可按）並等過 30 秒：仍只有第一次被拒的保存（沒有新的寫入）、衝突提示還在；本機隊伍是最新的關羽與趙雲；遊戲仍沒有收到任何東西",
+      enabled && !!c2.notice && c2.saves.length === 1 && same(t2, ["guan_yu", "zhao_yun"]) && Array.isArray(m2) && m2.length === 0,
+      out.H12b);
+    // 3. 載入中選 B 關，放行引擎 → 只送一次：B 關、帳號 A、本機最新的隊伍；可以迎戰
+    await openStageModal();
+    await selectStageById("chapter1_2");
+    await release();
+    await H.waitHud(page);
+    await until(async () => payloads(await recv()).length > 0, 30000, "送出關卡資料");
+    await H.sleep(500);
+    const m3 = await recv();
+    await H.dismissSplash(page);
+    const idx = await H.bridgeLen(page);
+    await H.clickButton(page, "迎戰");
+    const fought = await H.waitBridge(page, idx, { type: "update_stats", game_state: 2 }, 30000).then(() => true).catch(() => false);
+    const c3 = await state12();
+    out.H12c = { payloads: payloads(m3), commandsBeforePayload: m3.slice(0, m3.findIndex((x) => x.type === "payload")).length, fought, saves: c3.saves.length, notice: !!c3.notice };
+    const p3 = payloads(m3);
+    run.check("H-12c 放行後只送出一次關卡資料：B 關、帳號 A、本機最新的隊伍（關羽、趙雲），之前沒有命令；可以迎戰；衝突仍待處理、沒有新的保存",
+      p3.length === 1 && p3[0].stage === "chapter1_2" && p3[0].key === A && same(p3[0].team, ["guan_yu", "zhao_yun"]) &&
+        out.H12c.commandsBeforePayload === 0 && fought && c3.saves.length === 1 && !!c3.notice,
+      out.H12c);
   });
 
   await release();
