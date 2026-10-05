@@ -1,7 +1,8 @@
 // 部署前正式基準守門（tools/deploy-guard.mjs）與部署流程接線的測試：只用暫存目錄裡的假遠端（本機 bare 倉庫），
 // 不連 GitHub、不觸發任何部署。依部署流程的順序實際執行 CLI（pin → game-release check-published --out → unchanged），
 // 核對結束碼：核對成功 0；已發布版本被拿掉時核對失敗（不會走到發布）；遠端沒有 gh-pages 時停止；核對後遠端被其他發布改了時停止。
-// 另外靜態核對 .github/workflows/deploy.yml：守門步驟在建置之後、發布之前，任何一步失敗都會停止。
+// 另外靜態核對 .github/workflows/deploy.yml：最上層固定排隊組（queue: max、不取消進行中的發布）；守門步驟在建置之後、發布之前，
+// 任何一步失敗都會停止；從實際檔案改一處的反例都要被抓到。
 // 用法：node scripts/shenma-regression/tools/deploy-guard.test.mjs
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -243,30 +244,152 @@ check(
 );
 
 // ── 部署流程接線（靜態）──
-const yml = readFileSync(join(ROOT, ".github/workflows/deploy.yml"), "utf8")
-  .replace(/\r\n/g, "\n")
-  .split("\n");
-const stepAt = (re) => yml.findIndex((l) => re.test(l));
-const build = stepAt(/^\s+- name: Build with Next\.js/);
-const guard = stepAt(/^\s+- name: Check published game versions are retained/);
-const deploy = stepAt(/^\s+- name: Deploy/);
-const guardBlock = yml.slice(guard, deploy).join("\n");
-const nextSteps = yml
-  .slice(guard + 1, deploy)
-  .filter((l) => /^\s+- name:/.test(l));
+const DEPLOY_GROUP = "pages-production-deploy";
+const GUARD_RUN =
+  /sha=\$\(node scripts\/shenma-regression\/tools\/deploy-guard\.mjs pin\)\n\s+node scripts\/shenma-regression\/tools\/game-release\.mjs check-published "\$sha" --out\n\s+node scripts\/shenma-regression\/tools\/deploy-guard\.mjs unchanged "\$sha"/;
+/**
+ * deploy.yml 的接線問題（逐行判讀，不需要 YAML 套件）：
+ * - 最上層 concurrency 固定一組 pages-production-deploy、queue: max、cancel-in-progress: false（排隊，不取代等待中的、不取消進行中的）；
+ *   整份只有這一個 concurrency，任何地方都沒有 cancel-in-progress: true
+ * - 守門步驟在建置之後、緊接在發布之前，以 bash（-e）依序 pin → check-published --out → unchanged；沒有 continue-on-error；發布的仍是 out
+ */
+function workflowProblems(text) {
+  const yml = text.replace(/\r\n/g, "\n").split("\n");
+  const problems = [];
+  const tops = yml
+    .map((l, i) => (/^concurrency:/.test(l) ? i : -1))
+    .filter((i) => i >= 0);
+  const anyConcurrency = yml.filter((l) => /^\s*concurrency:/.test(l)).length;
+  if (tops.length !== 1)
+    problems.push(`最上層的 concurrency 應該剛好一個（目前 ${tops.length}）`);
+  if (anyConcurrency !== tops.length)
+    problems.push("有 job 層的 concurrency（只能用最上層固定的一組）");
+  if (tops.length === 1) {
+    const body = [];
+    for (const l of yml.slice(tops[0] + 1)) {
+      if (l.trim() === "" || /^\s*#/.test(l)) continue;
+      if (!/^\s/.test(l)) break;
+      body.push(l.trim());
+    }
+    const keys = Object.fromEntries(
+      body.map((l) => {
+        const m = l.match(/^([\w-]+):\s*(.*)$/);
+        return m ? [m[1], m[2].replace(/^["']|["']$/g, "")] : [l, ""];
+      })
+    );
+    if (keys.group !== DEPLOY_GROUP)
+      problems.push(
+        `concurrency.group 應該是 ${DEPLOY_GROUP}（目前 ${keys.group}）`
+      );
+    if (keys.queue !== "max")
+      problems.push(
+        `concurrency.queue 應該是 max（目前 ${keys.queue}；預設 single 會取代等待中的發布）`
+      );
+    if (keys["cancel-in-progress"] !== "false")
+      problems.push(
+        `concurrency.cancel-in-progress 應該明寫 false（目前 ${keys["cancel-in-progress"]}）`
+      );
+    const extra = Object.keys(keys).filter(
+      (k) => !["group", "queue", "cancel-in-progress"].includes(k)
+    );
+    if (extra.length)
+      problems.push(`concurrency 有不認得的設定：${extra.join("、")}`);
+    const jobs = yml.findIndex((l) => /^jobs:/.test(l));
+    if (jobs >= 0 && tops[0] > jobs)
+      problems.push("concurrency 寫在 jobs 之後（應該是最上層、jobs 之前）");
+  }
+  if (yml.some((l) => /cancel-in-progress:\s*true/.test(l)))
+    problems.push("有 cancel-in-progress: true（會取消進行中的發布）");
+  const stepAt = (re) => yml.findIndex((l) => re.test(l));
+  const build = stepAt(/^\s+- name: Build with Next\.js/);
+  const guard = stepAt(
+    /^\s+- name: Check published game versions are retained/
+  );
+  const deploy = stepAt(/^\s+- name: Deploy/);
+  if (!(build > 0 && guard > build && deploy > guard))
+    problems.push(
+      `步驟順序不對（建置 ${build}、守門 ${guard}、發布 ${deploy}）`
+    );
+  else {
+    const guardBlock = yml.slice(guard, deploy).join("\n");
+    const between = yml
+      .slice(guard + 1, deploy)
+      .filter((l) => /^\s+- name:/.test(l));
+    if (between.length) problems.push("守門步驟和發布之間還有其他步驟");
+    if (!/shell: bash/.test(guardBlock))
+      problems.push("守門步驟不是 shell: bash（-e）");
+    if (!GUARD_RUN.test(guardBlock))
+      problems.push("守門步驟不是依序 pin → check-published --out → unchanged");
+    if (!yml.slice(deploy).some((l) => /^\s+folder: out\b/.test(l)))
+      problems.push("發布的不是 out");
+  }
+  if (yml.some((l) => /continue-on-error/.test(l)))
+    problems.push("有 continue-on-error（失敗不會停止）");
+  return problems;
+}
+
+const realYml = readFileSync(
+  join(ROOT, ".github/workflows/deploy.yml"),
+  "utf8"
+);
+const realProblems = workflowProblems(realYml);
 check(
-  "deploy.yml：守門步驟在建置之後、緊接在發布之前，以 bash（-e）依序 pin → check-published --out → unchanged，沒有 continue-on-error；發布的仍是 out",
-  build > 0 &&
-    guard > build &&
-    deploy > guard &&
-    nextSteps.length === 0 &&
-    /shell: bash/.test(guardBlock) &&
-    /sha=\$\(node scripts\/shenma-regression\/tools\/deploy-guard\.mjs pin\)\n\s+node scripts\/shenma-regression\/tools\/game-release\.mjs check-published "\$sha" --out\n\s+node scripts\/shenma-regression\/tools\/deploy-guard\.mjs unchanged "\$sha"/.test(
-      guardBlock
-    ) &&
-    !yml.some((l) => /continue-on-error/.test(l)) &&
-    yml.slice(deploy).some((l) => /^\s+folder: out\b/.test(l)),
-  { build, guard, deploy, nextSteps }
+  "deploy.yml：最上層固定排隊組 pages-production-deploy（queue: max、cancel-in-progress: false）；守門步驟在建置之後、緊接在發布之前，以 bash（-e）依序 pin → check-published --out → unchanged，沒有 continue-on-error；發布的仍是 out",
+  realProblems.length === 0,
+  { problems: realProblems }
+);
+
+// 反例：從實際的 deploy.yml 改一處，每一種都要被抓到（只在記憶體裡改，不寫檔）
+const lf = realYml.replace(/\r\n/g, "\n");
+const swap = (from, to) => {
+  if (!lf.includes(from)) throw new Error(`反例的原文不在 deploy.yml：${from}`);
+  return lf.replace(from, to);
+};
+const concurrencyBlock =
+  "concurrency:\n  group: pages-production-deploy\n  queue: max\n  cancel-in-progress: false\n";
+const guardStepText = lf.slice(
+  lf.indexOf("      - name: Check published game versions are retained"),
+  lf.indexOf("      - name: Deploy")
+);
+const negatives = {
+  "沒有 concurrency": swap(concurrencyBlock, ""),
+  "queue 用預設（沒寫）": swap("  queue: max\n", ""),
+  "queue: single": swap("  queue: max\n", "  queue: single\n"),
+  "cancel-in-progress: true": swap(
+    "  cancel-in-progress: false\n",
+    "  cancel-in-progress: true\n"
+  ),
+  "沒寫 cancel-in-progress": swap("  cancel-in-progress: false\n", ""),
+  別的組名: swap(
+    "  group: pages-production-deploy\n",
+    "  group: ${{ github.workflow }}-${{ github.ref }}\n"
+  ),
+  "改成 job 層": swap(concurrencyBlock, "").replace(
+    "    runs-on: ubuntu-latest\n",
+    "    runs-on: ubuntu-latest\n    concurrency:\n      group: pages-production-deploy\n      queue: max\n      cancel-in-progress: false\n"
+  ),
+  "最上層之外又有 job 層": lf.replace(
+    "    runs-on: ubuntu-latest\n",
+    "    runs-on: ubuntu-latest\n    concurrency:\n      group: other\n"
+  ),
+  守門移到發布之後: swap(guardStepText, "") + "\n" + guardStepText,
+  "拿掉 unchanged": swap(
+    '\n          node scripts/shenma-regression/tools/deploy-guard.mjs unchanged "$sha"',
+    ""
+  ),
+  守門失敗也繼續: swap(
+    "        shell: bash\n",
+    "        shell: bash\n        continue-on-error: true\n"
+  ),
+};
+const missed = Object.entries(negatives)
+  .map(([name, text]) => ({ name, problems: workflowProblems(text) }))
+  .filter((r) => r.problems.length === 0)
+  .map((r) => r.name);
+check(
+  `deploy.yml 接線反例 ${Object.keys(negatives).length} 種都被抓到（沒有排隊、預設 single、取消進行中、別的組名、job 層、守門位置與 unchanged、continue-on-error）`,
+  missed.length === 0,
+  { missed }
 );
 
 rmSync(tmp, { recursive: true, force: true });

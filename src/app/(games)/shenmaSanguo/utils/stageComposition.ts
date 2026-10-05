@@ -95,3 +95,102 @@ export function stageComposition(preview: StagePreview): StageComposition {
     skipped,
   };
 }
+
+export interface RouteCompositionRow extends CompositionRow {
+  /** 這個敵人在這條路線上已確認出兵的波次（依編號） */
+  waves: number[];
+}
+
+export interface RouteComposition {
+  pathId: string;
+  rows: RouteCompositionRow[];
+  /** 這條路線上已確認會出兵的隻數合計 */
+  confirmed: number;
+  /** 全關的出兵都能確定：confirmed 就是這條路線的全部（否則只是已確認的部分） */
+  complete: boolean;
+  /** 這條路線有已確認出兵的波次（依編號） */
+  waves: number[];
+  /** 這條路線上有無法確定能不能出兵或數量的組的波次 */
+  undeterminedWaves: number[];
+  /** 這條路線上遊戲會略過的組數 */
+  skipped: number;
+  /** 這條路線上找不到敵人設定的 enemy_id */
+  unknownIds: string[];
+  /** 這條路線的數量不是全部的原因（complete 時是空的）：這條路線自己的、全關的 */
+  gaps: string[];
+}
+
+/**
+ * 依路線的敵軍組成（唯讀）：和 stageComposition 同一套規則，只看 path 等於 pathId 的組，依 enemy_id 合計、第一次出現的順序。
+ * 路線 ID 由呼叫端從 preview.pathIds（和路線預覽同一個解析）選，不另外解析路線；沒有路點的路線上的組遊戲會略過，
+ * 不屬於任何可選的路線（不造出虛構的路線）。
+ * 全關的出兵都能確定時（preview.total 不是 null）這條路線的合計才是它的全部：有缺資料、遊戲會拒絕或無法確定的波次時，
+ * 那一波之後可能不會開始、無法確定的組可能在這條路線上，所以只能寫「已確認」，不補 0、不當成這條路線的全部
+ */
+export function routeComposition(
+  preview: StagePreview,
+  pathId: string,
+  whole: StageComposition = stageComposition(preview)
+): RouteComposition {
+  const rows: RouteCompositionRow[] = [];
+  const byId = new Map<string, RouteCompositionRow>();
+  const unknownIds: string[] = [];
+  const waves: number[] = [];
+  const undeterminedWaves: number[] = [];
+  let skipped = 0;
+  for (const w of preview.waves) {
+    for (const g of w.groups) {
+      if (g.path !== pathId) continue;
+      if (g.outcome === "skip") {
+        skipped += 1;
+        if (g.name === null && !unknownIds.includes(g.enemyId))
+          unknownIds.push(g.enemyId);
+        continue;
+      }
+      if (g.outcome !== "spawn" || g.count === null || g.name === null) {
+        if (!undeterminedWaves.includes(w.wave)) undeterminedWaves.push(w.wave);
+        continue;
+      }
+      if (!waves.includes(w.wave)) waves.push(w.wave);
+      const row = byId.get(g.enemyId);
+      if (row) {
+        row.count += g.count;
+        if (!row.waves.includes(w.wave)) row.waves.push(w.wave);
+      } else {
+        const r: RouteCompositionRow = {
+          enemyId: g.enemyId,
+          name: g.name,
+          count: g.count,
+          movement: g.movement,
+          firstWave: w.wave,
+          waves: [w.wave],
+        };
+        byId.set(g.enemyId, r);
+        rows.push(r);
+      }
+    }
+  }
+  const complete = whole.complete;
+  const gaps: string[] = [];
+  if (!complete) {
+    if (undeterminedWaves.length)
+      gaps.push(
+        `這條路線在${waveList(undeterminedWaves)}有無法確定能不能出兵或數量的組`
+      );
+    gaps.push(...whole.gaps.map((g) => `全關：${g}`));
+  }
+  return {
+    pathId,
+    rows,
+    confirmed: rows.reduce((s, r) => s + r.count, 0),
+    complete,
+    waves,
+    undeterminedWaves,
+    skipped,
+    unknownIds,
+    gaps,
+  };
+}
+
+/** 波次編號的清單文字（第 1、3、5 波） */
+export const waveListText = (ns: number[]) => `第 ${ns.join("、")} 波`;

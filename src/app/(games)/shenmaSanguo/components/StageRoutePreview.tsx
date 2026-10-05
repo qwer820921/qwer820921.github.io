@@ -33,28 +33,32 @@ const center = (p: Cell) => `${p[0] + 0.5},${p[1] + 0.5}`;
 /**
  * 敵軍預覽的「路線預覽」（唯讀，預設收起）：依關卡設定的地圖尺寸畫格子與每條路線的路點折線，標出路線起點「起」與終點「終」。
  * 規則見 utils/stageRouteMap：路點只用 stagePathPoints、不補造尺寸或路點、無法判讀與超出地圖的路點會切斷折線。
- * 多條路線時可以選「全部」或單一路線（預設全部、順序和設定相同）；設定更新後選的路線不在了就回到全部。
+ * 多條路線時可以選「全部」或單一路線（預設全部、順序和設定相同）。選的路線由敵軍預覽持有（selected／onSelect），
+ * 和「敵軍組成」依路線查看是同一個選擇；設定更新後選的路線不在了，由敵軍預覽改回全部。
  * 只讀設定：不能拖曳或編輯、不送任何請求、不改戰場；有飛行敵人的路線另外說明飛行是直線飛到終點
  */
 export default function StageRoutePreview({
   map,
   preview,
+  selected,
+  onSelect,
 }: {
   map: MapConfig;
   preview: StagePreview;
+  /** 選的路線（null＝全部）；必須是 preview.pathIds 裡的路線 */
+  selected: string | null;
+  onSelect: (route: string | null) => void;
 }) {
   const routeMap = useMemo(() => stageRouteMap(map.path_json), [map.path_json]);
   const flying = useMemo(() => new Set(flyingRouteIds(preview)), [preview]);
   const [open, setOpen] = useState(false);
-  // 選的路線（null＝全部）；設定更新後已不存在就回到全部
-  const [selected, setSelected] = useState<string | null>(null);
-  if (selected !== null && !routeMap.routes.some((r) => r.id === selected))
-    setSelected(null);
   const bodyId = useId();
   const selectId = useId();
   const routes = routeMap.routes;
-  const shown =
-    selected === null ? routes : routes.filter((r) => r.id === selected);
+  const picked =
+    selected === null ? [] : routes.filter((r) => r.id === selected);
+  // 選的路線不在這份設定裡（設定剛更新、敵軍預覽還沒改回全部）時照全部顯示
+  const shown = picked.length > 0 ? picked : routes;
   const flyingShown = shown.filter((r) => flying.has(r.id)).map((r) => r.id);
 
   return (
@@ -99,9 +103,9 @@ export default function StageRoutePreview({
                     <select
                       id={selectId}
                       className={`form-select form-select-sm ${styles.heroSortField}`}
-                      value={selected === null ? "" : `route:${selected}`}
+                      value={picked.length > 0 ? `route:${selected}` : ""}
                       onChange={(e) =>
-                        setSelected(
+                        onSelect(
                           e.target.value === ""
                             ? null
                             : e.target.value.slice("route:".length)

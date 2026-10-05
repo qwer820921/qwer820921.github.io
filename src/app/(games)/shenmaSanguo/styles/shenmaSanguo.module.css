@@ -3424,3 +3424,26 @@
   margin-bottom: 0.6rem;
   background: var(--sg-surface);
 }
+
+/* ── 敵軍預覽逐波內容的設定出兵節奏（PreviewWaveBody showRhythm）── */
+.previewRhythm {
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--sg-border);
+  border-radius: 8px;
+  font-size: 0.76rem;
+  color: var(--sg-text);
+  overflow-wrap: anywhere;
+}
+
+.previewRhythmTitle {
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+
+.previewRhythmList {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.72rem;
+  color: var(--sg-muted);
+}

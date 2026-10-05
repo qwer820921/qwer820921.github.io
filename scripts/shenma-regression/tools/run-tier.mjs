@@ -8,7 +8,8 @@
 //   飛行路線無效與優先飛行選項、地面路線沒有路程與戰場內的下一波、戰況觀測、關卡能不能出征與敵人攻擊力／免疫減速、備份檔、武將列表篩選、
 //   地圖編輯器的錯誤說明、敵人表的移動方式欄判斷、地圖資訊保存判斷、地圖資料檢查與波次保存判斷、
 //   跨來源隔離開機腳本）、harness 雜訊規則、
-//   工具自我測試、素材引用檢查、Godot 反向驗證的變異原文檢查（只讀原始碼）。不需要 dev server 與 Godot
+//   工具自我測試、發布目錄核對與發布工具測試、素材引用檢查、Godot 反向驗證的變異原文檢查（只讀原始碼）、匯出後處理的 Service Worker 與外殼頁測試。
+//   不需要 dev server 與 Godot
 // - related：quick 之後，只跑指定功能的瀏覽器腳本；full：quick 之後跑全部瀏覽器腳本（開發模式約 60～90 分鐘）
 //   瀏覽器腳本需要 npm run dev 與 PLAYWRIGHT_DIR（見 README）；Godot 端另外用 godot-check.sh
 // - plan：只列出計畫，不執行。相對基準（--base，預設 HEAD；含未提交與未追蹤的檔案）的每個改動檔案 → 對應的測試、
@@ -137,6 +138,11 @@ const QUICK = [
     "敵軍預覽的路線預覽與波次導覽的規則測試",
     "node",
     ["scripts/shenma-regression/web/stage-route.test.mjs"],
+  ],
+  [
+    "敵軍預覽的依路線組成與設定出兵節奏的規則測試",
+    "node",
+    ["scripts/shenma-regression/web/stage-rhythm.test.mjs"],
   ],
   [
     "地圖編輯器設定寫入的錯誤說明測試",
@@ -348,6 +354,10 @@ const AREAS = {
     what: "敵軍預覽的路線預覽（正式路線形狀、多路線全部／單一、飛行折線說明、無法判讀與超出地圖的路點切斷、缺尺寸與無路線的說明）與波次導覽（資料問題清單、下一個資料問題、前往選的波次、全部展開／收合、鍵盤）；設定更新後刪掉的路線與波次、仍存在的選取保留；兩個入口、390 寬；只操作預覽時不換關、不寫入（需要 Godot 產物）",
     scripts: ["stage-route-web.js"],
   },
+  "stage-rhythm": {
+    what: "敵軍預覽的依路線組成（正式兩條路線的形狀、全部／單一路線的數量與波次、和路線預覽同一個選擇、資料問題時只寫已確認）與設定出兵節奏（同時開始、名義最後一隻、整波取最晚、預設間隔、依處理幀、無法估算、沒有 Infinity）；波次導覽前往、設定更新後刪掉的路線回到全部、兩個入口、390 寬；只操作預覽時不換關、不寫入（需要 Godot 產物）",
+    scripts: ["stage-rhythm-web.js"],
+  },
   "stage-data": {
     what: "關卡資料未完成的入口：兩個關卡選擇入口的卡片（尚未開放／尚未解鎖）、主頁與獨立戰鬥頁直接進入時不送關卡資料並說明原因與出口、在有效戰場點尚未開放的關卡不改變目前的戰場、快速連點、重玩、遊戲設定讀取失敗與重試、390 寬（需要 Godot 產物）",
     scripts: ["stage-data-web.js"],
@@ -460,6 +470,7 @@ const FULL = [
   "hero-compare-web.js",
   "stage-browse-web.js",
   "stage-route-web.js",
+  "stage-rhythm-web.js",
 ];
 
 const argv = process.argv.slice(2);

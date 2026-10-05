@@ -46,8 +46,10 @@ export interface PreviewGroup {
   path: string;
   hp: number | null;
   speed: number | null;
-  /** 每隻之間的出兵間隔（秒） */
+  /** 每隻之間的出兵間隔（秒）；負數照遊戲當作 0，不是數字時是 null（不強轉） */
   interval: number | null;
+  /** 設定沒有提供間隔，用的是遊戲的預設 1 秒 */
+  intervalDefault: boolean;
   /** 移動方式（遊戲的判讀）；找不到敵人設定時是 null */
   movement: MovementInfo | null;
   /** 被武將擋住時每次攻擊那位武將的攻擊力（遊戲的判讀，含預設值）；找不到敵人設定時是 null */
@@ -302,6 +304,7 @@ function previewGroup(
     hp,
     speed,
     interval,
+    intervalDefault: g.interval === undefined,
     movement,
     blockerAtk: cfg ? enemyBlockerAtk(cfg) : null,
     immuneSlow: traits?.immuneSlow ?? false,

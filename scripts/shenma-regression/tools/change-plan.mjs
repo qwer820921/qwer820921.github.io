@@ -96,6 +96,7 @@ export const BROWSER_SECONDS = {
   "panel-safe-web.js": 70,
   "stage-browse-web.js": 90,
   "stage-route-web.js": 90,
+  "stage-rhythm-web.js": 90,
 };
 export const QUICK_SECONDS = 104;
 export const GODOT_FULL_SECONDS = 1800;
@@ -323,8 +324,24 @@ export const RULES = [
   },
   {
     test: re(
+      SG + "(components/PreviewWaveDetail\\.tsx|utils/stagePreview\\.ts)"
+    ),
+    why: "敵軍預覽的解析與逐波內容（戰場內的下一波也共用）",
+    areas: [
+      "stage-data",
+      "stage-preview",
+      "stage-browse",
+      "stage-route",
+      "stage-rhythm",
+      "wave-reject",
+      "air-readiness",
+      "next-wave",
+    ],
+  },
+  {
+    test: re(
       SG +
-        "(stages/|components/modals/(StageSelectModal|EnemyPreviewModal)\\.tsx|components/(Stage[A-Za-z]*|PreviewWave[A-Za-z]*)\\.tsx|utils/(stage[A-Za-z]*|waveNav)\\.ts)"
+        "(stages/|components/modals/(StageSelectModal|EnemyPreviewModal)\\.tsx|components/(Stage[A-Za-z]*|PreviewWave[A-Za-z]*)\\.tsx|utils/(stage[A-Za-z]*|waveNav|spawnRhythm)\\.ts)"
     ),
     why: "關卡選擇、敵軍預覽與關卡資料",
     areas: [
@@ -332,6 +349,7 @@ export const RULES = [
       "stage-preview",
       "stage-browse",
       "stage-route",
+      "stage-rhythm",
       "wave-reject",
       "air-readiness",
     ],

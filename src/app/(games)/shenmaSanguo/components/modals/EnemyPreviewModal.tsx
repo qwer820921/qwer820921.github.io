@@ -6,8 +6,12 @@ import { Row, Col } from "react-bootstrap";
 import { EnemyConfig, HeroConfig, MapConfig, TeamSlot } from "../../types";
 import { buildStagePreview, PreviewWave } from "../../utils/stagePreview";
 import {
+  CompositionRow,
+  RouteComposition,
   StageComposition,
+  routeComposition,
   stageComposition,
+  waveListText,
 } from "../../utils/stageComposition";
 import {
   keepExistingWaves,
@@ -47,7 +51,10 @@ interface Props {
  * 關卡敵軍預覽（唯讀）：主頁的「關卡」視窗與獨立的關卡頁共用。
  * 只讀已載入的靜態設定（utils/stagePreview），沒有出征、切換關卡或任何寫入；
  * 「敵軍組成」依敵人合計已確認會出兵的組（utils/stageComposition，可以收起），全關總數與逐波內容照舊；
- * 「路線預覽」畫關卡設定的路線格子（StageRoutePreview，預設收起）；逐波區上方的波次導覽（PreviewWaveNav）
+ * 多條路線時組成可以依路線查看（routeComposition）：選的路線是這裡持有的同一個狀態，「路線預覽」的「顯示路線」也是它，
+ * 兩邊不會各選各的；設定更新後選的路線不在了就回到全部。
+ * 「路線預覽」畫關卡設定的路線格子（StageRoutePreview，預設收起）；逐波內容另列「設定出兵節奏」（utils/spawnRhythm）；
+ * 逐波區上方的波次導覽（PreviewWaveNav）
  * 只改展開哪幾波與焦點（全部展開／收合、前往某一波、下一個資料問題），波次一律用編號識別，設定更新後不存在的波次移除；
  * 用 portal 放在神馬三國的 gameBody（主題變數 --sg-* 定義在那裡；放到 body 會變成透明、沒有文字顏色），
  * 不在關卡卡片裡面，點擊不會觸發卡片（卡片本身點下去就是出征／切換關卡）。
@@ -68,6 +75,17 @@ export default function EnemyPreviewModal({
     [map, enemies]
   );
   const composition = useMemo(() => stageComposition(preview), [preview]);
+  // 依路線查看組成與路線預覽共用的選擇（null＝全部）；只能是這份設定的路線，設定更新後不在了就回到全部
+  const [route, setRoute] = useState<string | null>(null);
+  const routeValid = route !== null && preview.pathIds.includes(route);
+  if (route !== null && !routeValid) setRoute(null);
+  const routeComp = useMemo(
+    () =>
+      routeValid && route !== null
+        ? routeComposition(preview, route, composition)
+        : null,
+    [preview, route, routeValid, composition]
+  );
   const air = useMemo(
     () => stageAirReadiness(map, enemies, team, heroesConfig),
     [map, enemies, team, heroesConfig]
@@ -218,9 +236,20 @@ export default function EnemyPreviewModal({
             <StageAirReadinessNote readiness={air} variant="panel" />
           </div>
 
-          <CompositionBlock composition={composition} />
+          <CompositionBlock
+            composition={composition}
+            routeIds={preview.pathIds}
+            route={routeComp ? route : null}
+            routeComp={routeComp}
+            onRouteChange={setRoute}
+          />
 
-          <StageRoutePreview map={map} preview={preview} />
+          <StageRoutePreview
+            map={map}
+            preview={preview}
+            selected={routeComp ? route : null}
+            onSelect={setRoute}
+          />
 
           {preview.waves.length > 0 && (
             <PreviewWaveNav
@@ -265,28 +294,49 @@ export default function EnemyPreviewModal({
   );
 }
 
-/** 敵軍組成：依敵人合計已確認會出兵的組（預設展開，可以收起） */
+/**
+ * 敵軍組成：依敵人合計已確認會出兵的組（預設展開，可以收起）。
+ * 多條路線時可以選一條路線，只看那條路線上的組成（和路線預覽共用同一個選擇）；全部路線時是原本的全關總覽
+ */
 function CompositionBlock({
   composition: c,
+  routeIds,
+  route,
+  routeComp: rc,
+  onRouteChange,
 }: {
   composition: StageComposition;
+  routeIds: string[];
+  /** 選的路線（null＝全部） */
+  route: string | null;
+  routeComp: RouteComposition | null;
+  onRouteChange: (route: string | null) => void;
 }) {
   const [open, setOpen] = useState(true);
   const bodyId = useId();
+  const selectId = useId();
   // 名稱相同但 enemy_id 不同的敵人分開列，並附上 id 才分得出來
-  const names = c.rows.map((r) => r.name);
+  // 依路線查看時每一列另有出兵的波次（waves）；全部路線時沒有
+  const rows: (CompositionRow & { waves?: number[] })[] = rc ? rc.rows : c.rows;
+  const names = rows.map((r) => r.name);
   const sameName = (n: string) => names.indexOf(n) !== names.lastIndexOf(n);
-  const headline =
-    c.rows.length === 0
+  const confirmed = rc ? rc.confirmed : c.confirmed;
+  const complete = rc ? rc.complete : c.complete;
+  const count =
+    rows.length === 0
       ? "沒有可確認的出兵"
-      : c.complete
-        ? `共 ${c.confirmed} 隻`
-        : `已確認 ${c.confirmed} 隻`;
+      : complete
+        ? `共 ${confirmed} 隻`
+        : `已確認 ${confirmed} 隻`;
+  const headline = rc ? `${rc.pathId}：${count}` : count;
+  const gaps = rc ? rc.gaps : c.gaps;
+  const unknownIds = rc ? rc.unknownIds : c.unknownIds;
   return (
     <div
       className={styles.previewWave}
       data-testid="preview-composition"
-      data-complete={String(c.complete)}
+      data-complete={String(complete)}
+      data-route={rc ? rc.pathId : ""}
     >
       <button
         className={styles.previewWaveHeader}
@@ -300,17 +350,55 @@ function CompositionBlock({
       </button>
       {open && (
         <div id={bodyId} className={styles.previewWaveBody}>
+          {routeIds.length > 1 && (
+            <Row className="g-2 mb-2">
+              <Col xs={12} sm={7}>
+                <label htmlFor={selectId} className={styles.heroFilterLabel}>
+                  依路線查看
+                </label>
+                <select
+                  id={selectId}
+                  className={`form-select form-select-sm ${styles.heroSortField}`}
+                  value={route === null ? "" : `route:${route}`}
+                  onChange={(e) =>
+                    onRouteChange(
+                      e.target.value === ""
+                        ? null
+                        : e.target.value.slice("route:".length)
+                    )
+                  }
+                  data-testid="preview-composition-route"
+                >
+                  <option value="">全部路線（{routeIds.length} 條）</option>
+                  {routeIds.map((id) => (
+                    <option key={id} value={`route:${id}`}>
+                      {id}
+                    </option>
+                  ))}
+                </select>
+              </Col>
+              <Col xs={12} className={styles.previewHint}>
+                和路線預覽的「顯示路線」是同一個選擇。
+              </Col>
+            </Row>
+          )}
           <div
             className={styles.previewHint}
             data-testid="preview-composition-summary"
           >
-            {c.rows.length === 0
-              ? "沒有可以確認會出兵的組：不代表這一關沒有敵軍，也不代表可以開戰。"
-              : c.complete
-                ? `全關共 ${c.confirmed} 隻、${c.rows.length} 種敵人（依第一次出現的順序）。`
-                : `僅已確認組：共 ${c.confirmed} 隻、${c.rows.length} 種敵人；尚有資料問題，非全關總數。`}
+            {rc
+              ? rows.length === 0
+                ? `路線 ${rc.pathId} 沒有可以確認會出兵的組：不代表這條路線沒有敵軍。`
+                : rc.complete
+                  ? `路線 ${rc.pathId} 共 ${rc.confirmed} 隻、${rows.length} 種敵人（全關 ${c.confirmed} 隻中的這條路線；依第一次出現的順序），出兵在${waveListText(rc.waves)}。`
+                  : `路線 ${rc.pathId} 僅已確認組：${rc.confirmed} 隻、${rows.length} 種敵人，出兵在${waveListText(rc.waves)}；尚有資料問題，非這條路線的全部。`
+              : rows.length === 0
+                ? "沒有可以確認會出兵的組：不代表這一關沒有敵軍，也不代表可以開戰。"
+                : c.complete
+                  ? `全關共 ${c.confirmed} 隻、${c.rows.length} 種敵人（依第一次出現的順序）。`
+                  : `僅已確認組：共 ${c.confirmed} 隻、${c.rows.length} 種敵人；尚有資料問題，非全關總數。`}
           </div>
-          {c.gaps.map((g) => (
+          {gaps.map((g) => (
             <div
               key={g}
               className={styles.previewNote}
@@ -319,16 +407,24 @@ function CompositionBlock({
               資料問題：{g}
             </div>
           ))}
-          {c.unknownIds.length > 0 && (
+          {unknownIds.length > 0 && (
             <div
               className={styles.previewNote}
               data-testid="preview-composition-unknown"
             >
-              資料問題：找不到敵人設定「{c.unknownIds.join("」、「")}
+              資料問題：找不到敵人設定「{unknownIds.join("」、「")}
               」，遊戲會略過，不列入組成。
             </div>
           )}
-          {c.rows.map((r) => (
+          {rc && rc.skipped > 0 && (
+            <div
+              className={styles.previewHint}
+              data-testid="preview-composition-route-skipped"
+            >
+              這條路線另有 {rc.skipped} 組遊戲會略過、不列入（原因見逐波內容）。
+            </div>
+          )}
+          {rows.map((r) => (
             <div
               key={r.enemyId}
               className={styles.previewGroup}
@@ -336,6 +432,7 @@ function CompositionBlock({
               data-enemy-id={r.enemyId}
               data-count={r.count}
               data-movement={r.movement?.value ?? ""}
+              data-waves={r.waves ? r.waves.join(",") : ""}
             >
               <Row className="g-1 align-items-center">
                 <Col xs={8} className={styles.previewGroupMain}>
@@ -354,6 +451,11 @@ function CompositionBlock({
                 <Col xs={4} className="text-end">
                   ×{r.count}
                 </Col>
+                {r.waves && (
+                  <Col xs={12} className={styles.previewStats}>
+                    {waveListText(r.waves)}
+                  </Col>
+                )}
               </Row>
             </div>
           ))}
@@ -390,7 +492,7 @@ function WaveBlock({
           {previewWaveStatus(w)}
         </span>
       </button>
-      {open && <PreviewWaveBody wave={w} />}
+      {open && <PreviewWaveBody wave={w} showRhythm />}
     </div>
   );
 }

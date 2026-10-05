@@ -26,10 +26,11 @@ import {
 } from "./postexport.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+// fixture 以 LF 為準（Git 保存與 Godot 匯出都是 LF）：Windows 取出成 CRLF 時先換回 LF，反例的片段替換才不會落空
 const TEMPLATE = readFileSync(
   join(HERE, "..", "fixtures", "godot-4.6.2-service-worker.js"),
   "utf8"
-);
+).replace(/\r\n/g, "\n");
 const HTML = readFileSync(
   join(HERE, "..", "fixtures", "godot-4.6.2-index.html"),
   "utf8"
@@ -333,29 +334,34 @@ check(
     ),
   templateHash(TEMPLATE)
 );
-check(
-  "模板改版（要整段換掉的區塊內容不同、或找不到已知的片段）時直接失敗，不產生半套的 Service Worker",
-  throws(
-    () =>
-      patchServiceWorker(
-        TEMPLATE.replace("cache.addAll(CACHED_FILES)", "cache.addAll(OTHER)"),
-        version("x", "p").info
+{
+  // 反例必須真的改到模板（替換落空時這一項失敗，不會因為輸入沒變而誤判）
+  const changedBlock = TEMPLATE.replace(
+    "cache.addAll(CACHED_FILES)",
+    "cache.addAll(OTHER)"
+  );
+  const missingSnippet = TEMPLATE.replace(
+    "caches.delete(CACHE_NAME);\n",
+    "caches.delete(X);\n"
+  );
+  check(
+    "模板改版（要整段換掉的區塊內容不同、或找不到已知的片段）時直接失敗，不產生半套的 Service Worker",
+    changedBlock !== TEMPLATE &&
+      missingSnippet !== TEMPLATE &&
+      throws(
+        () => patchServiceWorker(changedBlock, version("x", "p").info),
+        /區塊和預期不同/
+      ) &&
+      throws(
+        () => patchServiceWorker(missingSnippet, version("x", "p").info),
+        /片段出現 0 次/
       ),
-    /區塊和預期不同/
-  ) &&
-    throws(
-      () =>
-        patchServiceWorker(
-          TEMPLATE.replace(
-            "caches.delete(CACHE_NAME);\n",
-            "caches.delete(X);\n"
-          ),
-          version("x", "p").info
-        ),
-      /片段出現 0 次/
-    ),
-  null
-);
+    {
+      changedBlock: changedBlock !== TEMPLATE,
+      missingSnippet: missingSnippet !== TEMPLATE,
+    }
+  );
+}
 check(
   "外殼頁：fixture 是 Godot 4.6.2 產生的 index.html（sha256 固定）；處理過的再處理一次、模板改版（片段找不到）都直接失敗",
   sha(HTML.replace(/\r\n/g, "\n")) ===

@@ -2,9 +2,10 @@ async (page) => {
   // 戰況觀測（瀏覽器，真 Godot 產物）：武將面板與「戰況」的即時技能狀態、敵軍查看
   // - 測試資料（只在這支腳本加進 mock 名單，__shenma_lv_fixture）：甘寧（奇襲）、貂蟬（魅惑）、許褚（怪力），數值和正式設定相同；
   //   關卡「Mock LV 戰況」：直線路線（第 5 列，從 (3,5) 走到 (13,5)），6 個慢慢走的步卒（生命 99999）；
-  //   關卡「Mock LV 大軍」：38 個不會移動的木樁與 1 個會走到城池的快兵（共 39 隻）
+  //   關卡「Mock LV 大軍」：38 個不會移動的木樁與 1 個會走到城池的快兵（共 39 隻）；
+  //   關卡「Mock LV 怪力」：起點 1 個不會移動的木樁（這一場不會結束）＋1 個生命 300 的木人（許褚站在路上擋住它，第 1 擊推動、第 3 擊打倒）
   // - A：主頁。備戰中拆除確認不受觀測更新影響（確認框與焦點都留著）；三位武將部署後「戰況」列出目前的技能狀態；
-  //      選取甘寧後不重新點選：開戰後奇襲 1→0；貂蟬的魅惑冷卻從約 6 秒照戰鬥時間降到 0（暫停時不變、觀測照常送）；許褚的怪力 3→0；
+  //      選取甘寧後不重新點選：開戰後奇襲 1→0；貂蟬的魅惑冷卻從約 6 秒照戰鬥時間降到 0（暫停時不變、觀測照常送）；
   //      敵軍分頁的數量＝遊戲計入波次的敵人數（含受控的），受控的敵人可以查看來源；
   //      舊的一份（seq 較小）、不合理的一份（NaN、負的剩下時間、重複的 uid）、上一場的一份都不採用；
   //      game_ready 沒有宣告戰況觀測（舊版遊戲）時隱藏「戰況」、面板退回選取時的快照與重新點選說明
@@ -18,6 +19,9 @@ async (page) => {
   // - K：武將的技能狀態篩選（冷卻中＝怪力／魅惑而且還有剩下的秒數、本場已用過＝衝鋒／奇襲而且 used、無特殊技能＝skill: null）：
   //      和生命、搜尋一起（AND）、沒有新的觀測時不自己倒數、冷卻結束後照新的一份、清除、鍵盤、390×600、換場回到全部、沒有後端請求
   // - C：獨立戰鬥頁：同樣不重新點選就看到奇襲 1→0；敵軍數量＝遊戲的數量；武將低生命＋排序、敵軍依攻擊力排序、技能狀態篩選
+  // - A4：主頁「Mock LV 怪力」2 倍速、選取許褚後不重新點選：怪力 3→0（面板與遊戲送的觀測都要看到冷卻出現再降到 0）
+  //   前置：快照確認是這一關的備戰中、等進場畫面確實出現（遊戲區變暗）才點掉、確認關掉（變亮）才部署；部署選單沒出現時保存診斷並照樣失敗
+  // - 任何一段失敗時清掉殘局並回到主頁，下一段（B、E）自己重新建立前置，不讓一段的失敗連鎖到後面
   // 全部虛構金鑰 test_lv_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -30,9 +34,12 @@ async (page) => {
   const BIFRAME = 'iframe[title="Shenma Sanguo Battle"]';
   const MAP = { id: "chapter3_4", name: "Mock LV 戰況" };
   const ARMY = { id: "chapter3_5", name: "Mock LV 大軍" };
+  const KB = { id: "chapter3_6", name: "Mock LV 怪力" };
   const GN_CELL = [4, 4];
   const DC_CELL = [5, 6];
   const XC_CELL = [6, 4];
+  // A4：許褚站在路上（第 5 列）擋住木人
+  const KB_CELL = [6, 5];
 
   const ROW = 5;
   const zones = [];
@@ -60,6 +67,8 @@ async (page) => {
       { enemy_id: "mock_lv_walk", name: "步卒", hp: 99999, speed: 8, atk: 30, image: "enemy_grunt1.webp" },
       { enemy_id: "mock_lv_post", name: "木樁", hp: 99999, speed: 0, atk: 5, armor: 30, image: "enemy_grunt2.webp" },
       { enemy_id: "mock_lv_runner", name: "快兵", hp: 99999, speed: 30, atk: 10, trait: "immune_slow", image: "enemy_cavalry1.webp" },
+      // 怪力專用：攻擊力很低（不會打倒擋路的許褚）、生命 300：許褚第 1 擊（103）推動它，第 3 擊打倒它，之後沒有目標，冷卻一路降到 0 並停在 0
+      { enemy_id: "mock_lv_tap", name: "木人", hp: 300, speed: 8, atk: 1, image: "enemy_grunt1.webp" },
     ],
     maps: [
       {
@@ -69,6 +78,12 @@ async (page) => {
       {
         map_id: ARMY.id, chapter: 3, name: ARMY.name, unlock_stage: MAP.id, path_json: pj,
         waves: [{ wave: 1, enemies: [{ enemy_id: "mock_lv_post", count: 38, interval: 0.05, path: "path_a" }, { enemy_id: "mock_lv_runner", count: 1, interval: 0.5, path: "path_a" }] }],
+      },
+      // 怪力冷卻專用（A4）：一個不會移動的木樁留在起點（這一場不會結束，戰鬥時間持續走，冷卻一定降得到 0）；
+      // 許褚站在路上擋住木人（只有站在路上才會擋住敵人；站在路邊時沿直線走的敵人只在正下方一瞬間進入 1 格射程）
+      {
+        map_id: KB.id, chapter: 3, name: KB.name, unlock_stage: MAP.id, path_json: pj,
+        waves: [{ wave: 1, enemies: [{ enemy_id: "mock_lv_post", count: 1, interval: 0.5, path: "path_a" }, { enemy_id: "mock_lv_tap", count: 1, interval: 1.0, path: "path_a" }] }],
       },
     ],
   };
@@ -207,12 +222,22 @@ async (page) => {
     detail: (() => { const d = document.querySelector('[data-testid="live-enemy-detail"]'); return d ? { uid: d.dataset.uid ?? null, gone: d.dataset.gone, text: d.innerText.replace(/\s+/g, " ") } : null; })(),
   }));
   const snapCharmed = (s) => Object.values((s && s.enemy_charm) || {}).filter((c) => c && c.charmed).length;
+  // 一段失敗後清掉它的殘局（面板、倍速、結算畫面），重新回到主頁；下一段自己建立需要的前置，不沿用失敗的那一場
+  let recovered = false;
+  const recover = async () => {
+    await page.locator('[data-testid="unit-panel"] button[class*="closeBtn"]').click({ timeout: 2000 }).catch(() => {});
+    await page.locator('[data-testid="speed-1"]').first().click({ timeout: 2000 }).catch(() => {});
+    await page.goto(H.BASE + "/shenmaSanguo").catch(() => {});
+    await H.waitHud(page).catch(() => {});
+    recovered = true;
+  };
   const section = async (name, fn) => {
     try {
       await fn();
     } catch (e) {
       run.check(`${name}：執行時發生例外`, false, String(e && e.stack ? e.stack.split("\n").slice(0, 3).join(" | ") : e).slice(0, 400));
       try { out[name + "_shot"] = await H.shot(page, `battle-live-${name}-exception`); } catch { /* 截圖失敗不影響判定 */ }
+      await recover().catch(() => {});
     }
   };
   // 每 250 毫秒讀一次面板上的剩下時間與目前採用的觀測 seq，共 ms 毫秒
@@ -230,7 +255,8 @@ async (page) => {
 
   await section("setup", async () => {
     await H.resetOrigin(page);
-    const profile = { nickname: "戰況玩家", level: 5, exp: 0, gold: 5000, capacity: 30, max_stage: ARMY.id, heroes: [],
+    // 進度到怪力專用的測試關（關卡編號不大於進度才解鎖），三個測試關都能選
+    const profile = { nickname: "戰況玩家", level: 5, exp: 0, gold: 5000, capacity: 30, max_stage: KB.id, heroes: [],
       team: [{ hero_id: "gan_ning", slot: 1 }, { hero_id: "diao_chan", slot: 2 }, { hero_id: "xu_chu", slot: 3 }] };
     await page.evaluate(({ k, p }) => {
       localStorage.setItem("__shenma_mock_gas_db", JSON.stringify({ profiles: { [k]: p }, battle_logs: [] }));
@@ -322,22 +348,7 @@ async (page) => {
     run.check("A-3 選取貂蟬後不重新點選：魅惑冷卻中面板的剩下時間逐次遞減；手動暫停 1.5 秒時遊戲照常送觀測（seq 增加）但剩下時間完全不變（不是用牆鐘倒數）；繼續後降到 0（「目前可以控制」或 0.3 秒以下）",
       dec3 && frozen3 && !!low3 && low3.live === "1", out.A3);
 
-    // A-4：許褚的怪力 3→0（不重新點選）；2 倍速
-    await page.locator('[data-testid="speed-2"]').first().click();
-    await select(IFRAME, XC_CELL, "unit-panel-knockback");
-    let high4 = null;
-    let low4 = null;
-    await waitUntil(async () => {
-      const n = await note("unit-panel-knockback");
-      if (n && n.remaining > 1.5) high4 = n;
-      if (high4 && n && n.remaining <= 0.2) low4 = n;
-      return !!low4;
-    }, 40000, "怪力冷卻 3→0");
-    await page.locator('[data-testid="speed-1"]').first().click();
-    out.A4 = { high4, low4 };
-    run.check("A-4 2 倍速、選取許褚後不重新點選：怪力推動後面板出現冷卻（大於 1.5 秒），之後同一個面板降到 0（可以推動）",
-      !!high4 && !!low4 && /怪力：目前冷卻中/.test(high4.text) && low4.live === "1", out.A4);
-    await page.locator('[data-testid="unit-panel"] button[class*="closeBtn"]').click().catch(() => {});
+    // A-4（許褚的怪力 3→0）在檔尾的 A4 段，用專用的測試關（這一場的步卒走完會結束，不能保證冷卻期間仍在戰鬥）
 
     // A-5：敵軍分頁：數量＝遊戲計入波次的數量（含受控的）；受控的可以查看來源
     await openLive();
@@ -432,6 +443,13 @@ async (page) => {
 
   // ── B. 主頁：39 隻敵人、分頁、離場、鍵盤、390×600 ──
   await section("B", async () => {
+    // 前置是 A-8 留下的：大軍那一關的備戰中、「戰況」開著；A 中途失敗（已回到主頁）時在這裡重新建立
+    if (recovered) {
+      await H.selectStage(page, ARMY.name);
+      await H.sleep(800);
+      await openLive();
+      recovered = false;
+    }
     await page.locator('[data-testid="battle-live-tab-enemies"]').click();
     const recv0 = await page.evaluate((sel) => (document.querySelector(sel).contentWindow.__lvRecv || []).filter((m) => m.type !== "debug_snapshot").length, IFRAME);
     await dismissSplash(IFRAME).catch(() => {});
@@ -534,6 +552,17 @@ async (page) => {
 
   // ── E. 敵軍的搜尋與狀態篩選；F. 本波出兵進度（主頁，接在 B 的大軍之後）──
   await section("E", async () => {
+    // 前置是 B 的大軍那一場（開戰中）；B 失敗（已回到主頁）時在這裡重新開一場
+    if (recovered) {
+      await H.selectStage(page, ARMY.name);
+      await H.sleep(800);
+      await openLive();
+      await page.locator('[data-testid="battle-live-tab-enemies"]').click();
+      await dismissSplash(IFRAME).catch(() => {});
+      await H.clickButton(page, "迎戰");
+      await waitUntil(async () => (await liveEnemies()).total >= 38, 60000, "重新開的大軍出兵");
+      recovered = false;
+    }
     await openLive();
     await page.locator('[data-testid="battle-live-tab-enemies"]').click();
     await H.sleep(600);
@@ -1075,6 +1104,99 @@ async (page) => {
     out.C3 = { uids: kc.uids, matched: kc.matched, pressed: kc.pressed };
     run.check("C-3 獨立戰鬥頁：技能狀態「本場已用過」只有甘寧（符合 1／在場 6 位）",
       kc.uids.join() === "hero-3" && kc.matched?.matched === 1 && kc.matched?.total === 6 && kc.pressed.join() === "used", out.C3);
+  });
+
+  // ── A4. 主頁：許褚的怪力 3→0（專用的測試關：起點有一個不會移動的木樁，這一場不會在冷卻期間結束）──
+  // 遊戲區（iframe 的範圍）的平均亮度 0～255：進場畫面是蓋滿遊戲區的深色半透明層（實測約 23），關掉後是地圖（約 89）
+  const luma = async (sel) => {
+    const r = await page.evaluate((sel) => {
+      const b = document.querySelector(sel).getBoundingClientRect();
+      return { x: b.left, y: b.top, width: b.width, height: b.height };
+    }, sel);
+    const png = await page.screenshot({ clip: r });
+    return page.evaluate(async (b64) => {
+      const blob = await (await fetch("data:image/png;base64," + b64)).blob();
+      const bmp = await createImageBitmap(blob);
+      const c = new OffscreenCanvas(64, 64);
+      const g = c.getContext("2d");
+      g.drawImage(bmp, 0, 0, 64, 64);
+      const d = g.getImageData(0, 0, 64, 64).data;
+      let t = 0;
+      for (let i = 0; i < d.length; i += 4) t += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      return Math.round(t / (d.length / 4));
+    }, png.toString("base64"));
+  };
+  const SPLASH_DARK = 45;
+  const MAP_CLEAR = 60;
+  await section("A4", async () => {
+    await page.goto(H.BASE + "/shenmaSanguo");
+    await H.waitHud(page);
+    await H.selectStage(page, KB.name);
+    // 前置（有明確判斷與上限，失敗時保留診斷）：快照確認是怪力專用關、備戰中；等進場畫面確實出現（遊戲區變暗）才點掉，
+    // 確認已關掉（變亮）才點路上的格子。selectStage 只等「有一份 wave 0 的同步」，遊戲在那之後才顯示進場畫面，太早點會點空，
+    // 下一次點格子就只是關掉進場畫面、不會打開部署選單
+    const prep = { snap: null, dark: [], clicks: [] };
+    await waitUntil(async () => {
+      const s = await snapshot(IFRAME);
+      prep.snap = { stage: s.stage, game_state: s.game_state, battle_id: s.battle_id };
+      return s.stage === KB.id && s.game_state === 1;
+    }, 30000, "切到怪力專用關（備戰中）");
+    await waitUntil(async () => {
+      const l = await luma(IFRAME);
+      prep.dark.push(l);
+      return l < SPLASH_DARK;
+    }, 20000, "進場畫面出現（遊戲區變暗）");
+    for (let i = 0; i < 3; i++) {
+      await dismissSplash(IFRAME);
+      prep.clicks.push(await luma(IFRAME));
+      if (prep.clicks[prep.clicks.length - 1] > MAP_CLEAR) break;
+    }
+    out.A4prep = prep;
+    if (!(prep.clicks[prep.clicks.length - 1] > MAP_CLEAR))
+      throw new Error("進場畫面點了 3 次仍沒有關掉：" + JSON.stringify(prep));
+    try {
+      await deploy(IFRAME, KB_CELL, "許褚");
+    } catch (e) {
+      // 部署選單沒出現：保存目前的快照、遊戲區範圍與實際點擊座標、亮度、這一場的橋接訊息與截圖，照樣讓這一段失敗
+      const s = await snapshot(IFRAME).catch(() => null);
+      out.A4deployFail = {
+        snap: s && { stage: s.stage, game_state: s.game_state, battle_id: s.battle_id, wave: s.wave },
+        rect: await page.evaluate((sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return { left: b.left, top: b.top, width: b.width, height: b.height }; }, IFRAME),
+        click: await cellPoint(IFRAME, KB_CELL[0], KB_CELL[1]),
+        luma: await luma(IFRAME).catch(() => null),
+        bridge: await page.evaluate(() => (window.__bridgeLog || []).slice(-15).map((m) => ({ type: m.type, wave: m.wave, game_state: m.game_state, battle_id: m.battle_id }))),
+        shot: await H.shot(page, "battle-live-A4-deploy-fail").catch(() => null),
+      };
+      throw e;
+    }
+    // 備戰中選取一次（和 A-2 的甘寧相同），之後不重新點選；開戰、切 2 倍速後木人才走到許褚面前
+    await select(IFRAME, KB_CELL, "unit-panel-knockback");
+    await H.clickButton(page, "迎戰");
+    await page.locator('[data-testid="speed-2"]').first().click();
+    const obs0 = (await obsTail())?.seq ?? 0;
+    let high4 = null;
+    let low4 = null;
+    const seen4 = [];
+    await waitUntil(async () => {
+      const n = await note("unit-panel-knockback");
+      if (n) seen4.push(n.remaining);
+      if (n && n.remaining > 1.5) high4 = n;
+      if (high4 && n && n.remaining <= 0.2) low4 = n;
+      return !!low4;
+    }, 60000, "怪力冷卻 3→0");
+    await page.locator('[data-testid="speed-1"]').first().click();
+    // 遊戲自己送的觀測裡許褚的冷卻（證據：冷卻出現、下降到 0 的過程，和面板對照）
+    const obs4 = await page.evaluate((from) => (window.__obsLog || []).filter((o) => o.seq > from).map((o) => {
+      const h = (o.heroes || []).find((x) => x.hero_id === "xu_chu");
+      return { seq: o.seq, state: o.state ?? o.game_state ?? null, rem: h && h.skill ? h.skill.remaining : null };
+    }), obs0);
+    const obsHigh = obs4.findIndex((o) => o.rem > 1.5);
+    const obsLow = obsHigh >= 0 ? obs4.slice(obsHigh).findIndex((o) => o.rem !== null && o.rem <= 0.2) : -1;
+    out.A4 = { high4, low4, panel: seen4.slice(0, 80), obs: obs4.slice(0, 120), obsHigh, obsLow };
+    run.check("A-4 2 倍速、選取許褚後不重新點選：怪力推動後面板出現冷卻（大於 1.5 秒），之後同一個面板降到 0（可以推動）；遊戲送的觀測同樣出現冷卻後降到 0",
+      !!high4 && !!low4 && /怪力：目前冷卻中/.test(high4.text) && low4.live === "1" && obsHigh >= 0 && obsLow >= 0,
+      { high4, low4, obsHigh, obsLow });
+    await page.locator('[data-testid="unit-panel"] button[class*="closeBtn"]').click().catch(() => {});
   });
 
   await page.evaluate(() => localStorage.removeItem("__shenma_lv_fixture")).catch(() => {});
