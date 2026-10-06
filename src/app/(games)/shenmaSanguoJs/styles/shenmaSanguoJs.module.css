@@ -1,0 +1,210 @@
+/**
+ * shenmaSanguoJs.module.css
+ * 神馬三國 Canvas 2D 極致古風戰場 UI 樣式表
+ * 融合沉浸式三國暗色琉璃玻璃態、青銅暗紋與鎏金微光動態效果
+ */
+
+.container {
+  padding-top: 1rem;
+  padding-bottom: 2.5rem;
+  max-width: 1320px;
+}
+
+/* 頂部 HUD 狀態列 (琉璃暗金風) */
+.hudWrapper {
+  background: rgba(26, 23, 20, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  border-radius: 12px;
+  padding: 0.85rem 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.stageSelectBtn {
+  font-weight: 600;
+  border-radius: 8px;
+  transition: all 0.2s ease-in-out;
+}
+.stageSelectBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 193, 7, 0.25);
+}
+
+.hudIcon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.hpProgressBar {
+  height: 10px;
+  background-color: rgba(0, 0, 0, 0.6);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.statBox {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0.35rem 0.65rem;
+}
+
+.goldCounter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: #ffca28;
+  letter-spacing: 0.5px;
+}
+
+.waveCounter {
+  font-size: 1.2rem;
+  letter-spacing: 0.5px;
+}
+
+.coinIcon {
+  filter: drop-shadow(0 2px 4px rgba(255, 202, 40, 0.4));
+}
+
+/* 戰鬥畫布容器 */
+.canvasContainer {
+  position: relative;
+  width: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 2px solid rgba(212, 175, 55, 0.35);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(212, 175, 55, 0.1);
+  background-color: #1a1715;
+}
+
+.battleCanvas {
+  display: block;
+  width: 100%;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+/* 佈防階段底部操作條 */
+.prepActionBar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(180deg, rgba(20, 18, 16, 0.75) 0%, rgba(15, 13, 12, 0.96) 100%);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid rgba(212, 175, 55, 0.25);
+  padding: 0.65rem 1.25rem;
+  z-index: 10;
+}
+
+/* 呼吸脈衝特效按鈕 */
+.pulseBtn {
+  animation: pulseGlow 2s infinite;
+  box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
+}
+
+@keyframes pulseGlow {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
+  }
+  70% {
+    transform: scale(1.03);
+    box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
+  }
+}
+
+/* 模態彈窗自訂深色琉璃風格 */
+.modalHeader {
+  background: #231f1c;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.3);
+  color: #fff;
+}
+
+.modalHeaderWin {
+  background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%);
+  border-bottom: 2px solid #ffca28;
+}
+
+.modalHeaderLose {
+  background: linear-gradient(135deg, #b71c1c 0%, #7f0000 100%);
+  border-bottom: 2px solid #e57373;
+}
+
+.modalBody {
+  background: #191614;
+  color: #e0e0e0;
+}
+
+.modalFooter {
+  background: #231f1c;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* 單位部署卡片 */
+.deployCard {
+  background: #25211e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  transition: all 0.2s ease-in-out;
+}
+
+.deployCard:hover {
+  border-color: rgba(212, 175, 55, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.cardDisabled {
+  opacity: 0.55;
+  filter: grayscale(40%);
+}
+
+.statsCard {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 0.85rem;
+}
+
+.selectDark {
+  background-color: #25211e;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.selectDark:focus {
+  background-color: #25211e;
+  color: #fff;
+  border-color: #ffc107;
+  box-shadow: 0 0 0 0.25rem rgba(255, 193, 7, 0.25);
+}
+
+/* 關卡選擇卡片 */
+.stageCard {
+  background: #24201d;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.stageCard:hover {
+  border-color: #ffc107;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.stageCardActive {
+  border-color: #4caf50;
+  box-shadow: 0 0 12px rgba(76, 175, 80, 0.3);
+}

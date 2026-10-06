@@ -184,6 +184,13 @@ export const seoMap: {
     keywords:
       "神馬三國, 塔防遊戲, 三國遊戲, 策略遊戲, Tower Defense, 武將, 關羽, 趙雲, 線上遊戲, 子yee 萬事屋",
   },
+  [ROUTES.SHENMA_SANGUO_JS]: {
+    title: "子yee 萬事屋 | 神馬三國 (JS版) - 純前端渲染策略塔防遊戲",
+    description:
+      "以三國為舞台的純前端渲染策略塔防遊戲！無需下載沉重引擎，極速秒開，招募關羽、趙雲等武將守護陣地，部署防禦塔抵擋敵軍波次攻勢。",
+    keywords:
+      "神馬三國, 神馬三國JS, 純前端渲染, 塔防遊戲, 三國遊戲, 策略遊戲, Tower Defense, 武將, 線上遊戲, 子yee 萬事屋",
+  },
   [ROUTES.MAP_EDITOR]: {
     title: "子yee 萬事屋 | 地圖編輯器 - 塔防地圖路徑設計工具",
     description:

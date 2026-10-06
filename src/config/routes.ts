@@ -35,6 +35,11 @@ const routes: RouteGroup[] = [
         showInNavbar: true,
       },
       {
+        path: ROUTES.SHENMA_SANGUO_JS,
+        name: "神馬三國 (JS版)",
+        showInNavbar: true,
+      },
+      {
         path: ROUTES.MONSTER_TIDE,
         name: "怪物洪流",
         showInNavbar: true,

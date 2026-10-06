@@ -29,6 +29,7 @@ export const ROUTES = {
   CLOCK_OUT: "/clockOut", // 下班倒數
   BOBA_SURVIVORS: "/bobaSurvivors", // 重裝全糖珍奶
   SHENMA_SANGUO: "/shenmaSanguo", // 神馬三國
+  SHENMA_SANGUO_JS: "/shenmaSanguoJs", // 神馬三國 (JS版)
   MONSTER_TIDE: "/monsterTide", // 怪物洪流
   MAP_EDITOR: "/mapEditor", // 地圖編輯器
   LINE_TEST: "/lineTest", // 測試 LINE 串接
