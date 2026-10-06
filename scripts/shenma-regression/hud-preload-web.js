@@ -15,6 +15,7 @@ async (page) => {
   // - H-12 載入中遇到真正的存檔版本衝突（REV_CONFLICT）：讀到的存檔是版本 1，第一次保存帶 base_rev 1、雲端回版本 7 與另一份存檔；
   //   保存暫停、本機隊伍保留、沒有送任何東西給遊戲；衝突沒處理時再改隊伍並等過 30 秒，仍只有第一次被拒的保存；
   //   放行後只送一次最後的關卡、目前帳號與本機最新的隊伍，可以迎戰。版本衝突的回應是測試注入的（契約 mock），不是後端實際比較版本的結果
+  // - H-13 H-12 讀取包裝的安裝範圍：只裝在旗標打開時的頂層同來源頁（iframe 不裝）；移除旗標不撤銷已裝的；about:blank 不丟頁面錯誤、不裝
   // 全部 mock、虛構金鑰 test_hudpre_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -427,7 +428,17 @@ async (page) => {
   await section("conflict", async () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await ctx.addInitScript(() => {
-      if (window.top !== window || localStorage.getItem("__shenma_h12_rev") !== "1") return;
+      if (window.top !== window) return;
+      // 沒有來源的文件（about:blank 等）讀 localStorage 會丟 SecurityError：當成旗標沒有打開、不安裝；其他錯誤照樣丟出
+      let on = false;
+      try {
+        on = localStorage.getItem("__shenma_h12_rev") === "1";
+      } catch (e) {
+        if (e && e.name === "SecurityError") return;
+        throw e;
+      }
+      if (!on) return;
+      window.__h12Installed = true;
       const inner = window.fetch.bind(window);
       window.__h12Reads = [];
       window.fetch = async (input, init) => {
@@ -534,7 +545,44 @@ async (page) => {
 
   await release();
   await ctx.unroute(ENGINE).catch(() => {});
-  // 之後載入的頁面不再安裝 H-12 的讀取包裝（這一頁已經裝的不受影響）
+
+  // ── H-13 H-12 讀取包裝的安裝範圍（包裝註冊在 context 上，之後每個新文件都會先跑一次）──
+  // 目前這一頁（H-12 的主頁）有裝、遊戲 iframe 沒裝；移除旗標不撤銷已裝的；旗標關閉的同來源新頁不裝；
+  // 沒有來源的 about:blank 不丟頁面錯誤、不裝；旗標打開的同來源新頁有裝
+  await section("scope", async () => {
+    const installed = () => page.evaluate((sel) => {
+      const f = document.querySelector(sel);
+      let frame = null;
+      try { frame = f ? f.contentWindow.__h12Installed ?? null : null; } catch { frame = "unreadable"; }
+      return { url: location.href, top: window.__h12Installed ?? null, frame };
+    }, IFRAME);
+    const errors = [];
+    const onErr = (e) => errors.push(String(e && e.message ? e.message : e).slice(0, 200));
+    page.on("pageerror", onErr);
+    try {
+      const s0 = await installed();
+      await page.evaluate(() => localStorage.removeItem("__shenma_h12_rev"));
+      const s1 = await installed();
+      await page.goto(H.BASE + "/robots.txt");
+      const s2 = await installed();
+      await page.evaluate(() => localStorage.setItem("__shenma_h12_rev", "1"));
+      await page.goto("about:blank");
+      await H.sleep(300);
+      const s3 = await page.evaluate(() => ({ url: location.href, top: window.__h12Installed ?? null }));
+      const errBlank = errors.length;
+      await page.goto(H.BASE + "/robots.txt");
+      const s4 = await installed();
+      // 之後載入的頁面不再安裝 H-12 的讀取包裝（這一頁已經裝的不受影響）
+      await page.evaluate(() => localStorage.removeItem("__shenma_h12_rev"));
+      out.H13 = { s0, s1, s2, s3, s4, errBlank, errors: errors.slice() };
+      run.check("H-13 H-12 讀取包裝的安裝範圍：H-12 的主頁有裝、遊戲 iframe 沒裝；移除旗標後這一頁仍有裝（不撤銷）；旗標關閉時同來源的新頁不裝；" +
+        "旗標打開時到 about:blank 沒有頁面錯誤、也不裝；回到同來源的新頁有裝",
+        s0.top === true && s0.frame === null && s1.top === true && s2.top === null && s3.url === "about:blank" && s3.top === null && errBlank === 0 && s4.top === true && errors.length === 0,
+        out.H13);
+    } finally {
+      page.off("pageerror", onErr);
+    }
+  });
   await page.evaluate(() => localStorage.removeItem("__shenma_h12_rev")).catch(() => {});
   return run.finish({ out });
 }

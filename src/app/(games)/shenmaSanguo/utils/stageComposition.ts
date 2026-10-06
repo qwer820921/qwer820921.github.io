@@ -261,18 +261,21 @@ export function waveRouteView(
 }
 
 /**
- * 敵軍組成的排列：first＝首次出現（預設，就是組成原本的順序）、count＝已確認隻數由多到少（同數量維持首次出現的順序）。
+ * 敵軍組成的排列：first＝首次出現（預設，就是組成原本的順序）、count＝已確認隻數由多到少（同數量維持首次出現的順序）、
+ * waves＝已確認出兵的波數由多到少（列的 perWave 筆數，同一波的多組只算一波；同波數維持首次出現的順序）。
  * 只排目前顯示的列（全關或選的路線），不估戰力或難度
  */
-export type CompositionSort = "first" | "count";
+export type CompositionSort = "first" | "count" | "waves";
 
-/** 依排列方式回傳新的陣列（不改傳入的列與陣列；Array.prototype.sort 是穩定排序，同數量保持原本的先後） */
+/** 依排列方式回傳新的陣列（不改傳入的列與陣列；Array.prototype.sort 是穩定排序，同數量或同波數保持原本的先後） */
 export function sortCompositionRows<T extends CompositionRow>(
   rows: readonly T[],
   sort: CompositionSort
 ): T[] {
   const copy = rows.slice();
   if (sort === "count") copy.sort((a, b) => b.count - a.count);
+  else if (sort === "waves")
+    copy.sort((a, b) => b.perWave.length - a.perWave.length);
   return copy;
 }
 

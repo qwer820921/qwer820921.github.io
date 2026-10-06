@@ -17,7 +17,10 @@ async (page) => {
   // - 組成搜尋（名稱或 ID，去掉前後空白、不分大小寫，只篩選目前範圍已排列的列）：S-1「進京」預設和原本相同；名稱、大寫 ID、換路線保留查詢且不借全關、
   //   兩種排列、沒有符合、收起保留、關閉重開空白，小計寫明只是顯示的列；S-2 清除保留路線／排列／導覽、焦點回搜尋框、藏起過的列逐波已收合；
   //   S-3 鍵盤 Tab／打字／Enter 清除／Esc；S-4 資料不完整；S-5 沒有送東西給遊戲；S-6 獨立關卡頁同樣；S-7 設定更新保留查詢、用新的列重算；
-  //   S-8 390×600／390×844。mock 敵人只是正式形狀的別名（不代表正式敵人的屬性），正式名稱的搜尋在 web/stage-rhythm.test.mjs
+  //   S-8 390×600／390×844。mock 敵人只是正式形狀的別名（不代表正式敵人的屬性），正式名稱的搜尋在 web/stage-rhythm.test.mjs；
+  //   S-9 設定更新成只剩一種敵人時搜尋與排列藏起來、看不到的查詢與排列不影響列；S-10 變回多種時搜尋出現且空白（「單種」「多種」兩個測試關）
+  // - 依已確認出現波數排列（排列選單第三項）：V-1「進京」全關與兩條路線的波數順序、只改順序、搜尋與清除、前往與逐波、關閉重開回到首次出現，
+  //   「討伐」和依隻數的順序不同；V-2 鍵盤；V-3 資料不完整的說明；V-4 沒有送東西給遊戲；V-5 獨立關卡頁同樣；V-6 390×600／390×844；V-7 設定更新保留排列
   // 全部 mock、虛構金鑰 test_sort_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -45,6 +48,11 @@ async (page) => {
   ]);
   // 過期的設定快取裡的「刷新」：步兵 9 隻、多一組 C 快騎 4 隻
   const STALE_REFRESH = { ...FRESH_REFRESH, waves: [{ wave: 1, enemies: [g(G2, 9, 1, "path_a"), g(C2, 4, 1, "path_a")] }, { wave: 2, enemies: [g(G3, 3, 1, "path_a")] }] };
+  // 設定更新時敵人種類變成一種（「單種」：過期的設定是步兵＋C 快騎）與變回多種（「多種」：過期的設定只有步兵）
+  const FRESH_ONE = stage("chapter3_5", "Mock SS 單種", { path_a: [[0, 5], [13, 5]] }, [{ wave: 1, enemies: [g(G2, 4, 1, "path_a")] }]);
+  const STALE_ONE = { ...FRESH_ONE, waves: [{ wave: 1, enemies: [g(G2, 4, 1, "path_a"), g(C2, 3, 1, "path_a")] }] };
+  const FRESH_TWO = stage("chapter3_6", "Mock SS 多種", { path_a: [[0, 5], [13, 5]] }, [{ wave: 1, enemies: [g(G2, 4, 1, "path_a"), g(C2, 3, 1, "path_a")] }]);
+  const STALE_TWO = { ...FRESH_TWO, waves: [{ wave: 1, enemies: [g(G2, 4, 1, "path_a")] }] };
   const EXTRA_MAPS = [
     stage("chapter3_1", "Mock SS 討伐", { path_a: A13, path_b: B13 }, [
       { wave: 1, enemies: [g(G2, 5, 1.5, "path_a"), g(G3, 5, 1.5, "path_a"), g(C2, 5, 1.5, "path_a")] },
@@ -65,6 +73,8 @@ async (page) => {
       { wave: 2, enemies: [g(G2, 3, 1, "path_a"), g(C2, "many", 1, "path_b"), g(S2, 0, 1, "path_a"), g(C3, 2, 1, "path_z")] },
     ]),
     FRESH_REFRESH,
+    FRESH_ONE,
+    FRESH_TWO,
   ];
   await ctx.addInitScript(({ maps }) => {
     if (window.top !== window) return;
@@ -379,6 +389,73 @@ async (page) => {
     s8.rows.length === 0 && s8.searchSummary === "全關沒有符合搜尋「no_such」的已確認敵人。" && s8.header === s0.header && s8.summary === s7.summary &&
     s9.search === "no_such" && s9.sort === "count" && s9.rows.length === 0 &&
     s10.search === "" && s10.sort === "first" && s10.searchSummary === null && same(s10.rows, s0.rows);
+  // 依已確認出兵的波數排列：「進京」（正式 chapter1_5 的形狀）各範圍依波數由多到少、同波數依首次出現（正式的 enemy_id 寫在後面）
+  const WAVES_ALL_15 = [C2, G2, S2, GL1, SL1, C3, CL1, G3, SL3]; // cavalry_lv2 6、grunt_lv2 5、siege_lv2 5、grunt_lv1 2、siege_lv1 2、cavalry_lv3 2、cavalry_lv1 1、grunt_lv3 1、siege_lv3 1
+  const WAVES_A_15 = [C2, G2, S2, GL1, CL1, SL1, C3, G3]; // 6、5、4、2、1、1、1、1
+  const WAVES_B_15 = [S2, C2, G2, SL1, C3, SL3]; // 5、4、3、1、1、1
+  // 每一列逐波按鈕上的波數（「逐波隻數（N 波）」）
+  const waveCounts = (d) => d.rows.map((r) => `${r.id}:${((r.text || "").match(/（(\d+) 波）/) || [])[1] ?? "?"}`).join(" ");
+  // V-1／V-5 共用
+  const wavesFlow = async () => {
+    await openPreview("chapter3_2");
+    const v0 = await sstate();
+    await pick("preview-composition-sort", "waves");
+    const v1 = await sstate();
+    const d1 = await details();
+    await pick("preview-composition-route", "route:path_a");
+    const v2 = await sstate();
+    await pick("preview-composition-route", "route:path_b");
+    const v3 = await sstate();
+    const v4 = await search("步兵");
+    await pick("preview-composition-route", "");
+    const v5 = await search("兵");
+    await page.locator('[data-testid="preview-composition-search-clear"]').click();
+    await H.sleep(200);
+    const v6 = await sstate();
+    const g6 = await goto(C2);
+    const d6 = await toggleDetail(C2);
+    await closePreview();
+    await openPreview("chapter3_2");
+    const v7 = await sstate();
+    await closePreview();
+    // 「討伐」（正式 chapter1_3）：依波數和依隻數的順序不同
+    await openPreview("chapter3_1");
+    await pick("preview-composition-sort", "waves");
+    const t1 = await sstate();
+    await pick("preview-composition-sort", "count");
+    const t2 = await sstate();
+    await closePreview();
+    return { v0, v1, waves1: waveCounts(d1), v2, v3, v4, v5, v6, g6, d6: wavesOf(d6, C2), v7, t1, t2 };
+  };
+  // 每一列的隻數與首次（和列的順序無關，排序後比較）
+  const factOf = (s) => s.rows.map((r) => r.join("|")).sort();
+  const wavesFlowOk = ({ v0, v1, waves1, v2, v3, v4, v5, v6, g6, d6, v7, t1, t2 }) =>
+    v0.sort === "first" && same(ids(v0), FIRST_15) &&
+    v1.sort === "waves" && same(ids(v1), WAVES_ALL_15) && same(factOf(v1), factOf(v0)) && v1.header === v0.header &&
+    v1.summary === "全關共 360 隻、9 種敵人（依已確認出兵的波數由多到少（這個範圍裡已確認出兵的波），同波數依第一次出現）。" &&
+    waves1 === [C2, G2, S2, GL1, SL1, C3, CL1, G3, SL3].map((x, i) => `${x}:${[6, 5, 5, 2, 2, 2, 1, 1, 1][i]}`).join(" ") &&
+    v2.route === "path_a" && v2.sort === "waves" && same(ids(v2), WAVES_A_15) &&
+    v3.route === "path_b" && same(ids(v3), WAVES_B_15) && same((v3.rows.find((r) => r[0] === C2) || []).slice(1), [40, 4]) &&
+    same(v4.rows, [[G2, 30, 5]]) && v4.sort === "waves" &&
+    same(ids(v5), [G2, GL1, SL1, G3]) && v5.searchSummary === searchNote("兵", 4, 130, "全關") &&
+    v6.search === "" && v6.sort === "waves" && same(ids(v6), WAVES_ALL_15) &&
+    landed(g6, 2, "", "waves", "C 快騎的首次出兵") && same(d6, C2_15.all) &&
+    v7.sort === "first" && same(ids(v7), FIRST_15) &&
+    same(ids(t1), [G2, C2, S3, G3, S2, C3]) && same(ids(t2), COUNT_ALL.map((r) => r[0])) && !same(ids(t1), ids(t2));
+  // 設定更新：注入過期的設定、攔住讀取再重新載入，之後由呼叫端放行
+  const staleReload = async (stales, waitMapId) => {
+    await page.evaluate((stales) => {
+      const raw = JSON.parse(localStorage.getItem("shenma_static_config"));
+      raw.maps = raw.maps.map((m) => stales.find((s) => s.map_id === m.map_id) || m);
+      localStorage.setItem("shenma_static_config", JSON.stringify(raw));
+      localStorage.setItem("shenma_static_ts", "0");
+      localStorage.setItem("__shenma_mock_hold", JSON.stringify(["get_all_maps"]));
+    }, stales);
+    await page.reload();
+    await page.waitForSelector(`[data-testid="stage-card"][data-map-id="${waitMapId}"]`, { timeout: 60000 });
+    await page.evaluate(() => localStorage.removeItem("__shenma_mock_hold"));
+    await page.waitForFunction(() => window.__shenmaMock.pending("get_all_maps").length === 1, null, { timeout: 30000, polling: 100 });
+  };
 
   // 「討伐」的預期（正式 chapter1_3：全關 70、path_a 45、path_b 25）
   const FIRST_ALL = [[G2, 30, ""], [G3, 5, ""], [C2, 10, ""], [S3, 10, ""], [S2, 5, ""], [C3, 10, ""]];
@@ -412,7 +489,7 @@ async (page) => {
     return { s0, s1, sa, sb, sc, se, sAll, sr };
   };
   const sortFlowOk = ({ s0, s1, sa, sb, sc, se, sAll, sr }) =>
-    s0.sort === "first" && same(s0.select.options, ["首次出現", "已確認隻數（多→少）"]) && s0.select.value === "first" &&
+    s0.sort === "first" && same(s0.select.options, ["首次出現", "已確認隻數（多→少）", "已確認出現波數（多→少）"]) && s0.select.value === "first" &&
     same(s0.rows, FIRST_ALL) && s0.summary === "全關共 70 隻、6 種敵人（依第一次出現的順序）。" && s0.header === "▾ 敵軍組成 共 70 隻" &&
     s1.sort === "count" && same(s1.rows, COUNT_ALL) && s1.summary === "全關共 70 隻、6 種敵人（依已確認隻數由多到少，同數量依第一次出現）。" &&
     s1.header === s0.header && same(s1.waveHeaders, s0.waveHeaders) &&
@@ -660,6 +737,53 @@ async (page) => {
     run.check("S-5 主頁操作組成搜尋（S-1～S-4）的期間沒有送任何訊息給遊戲（沒有關卡資料、update_team 或命令）",
       sWatching && Array.isArray(sSent) && sSent.length === 0, out.S5);
 
+    // V-1 依已確認出兵的波數排列（主頁）：重新記錄送給遊戲的訊息
+    const vWatching = await watchSent();
+    const vf = await wavesFlow();
+    out.V1 = vf;
+    run.check("V-1 依已確認出現波數排列（「進京」，正式 chapter1_5 的形狀）：C 快騎 6 波、步兵與重甲各 5 波、傷兵／A 慢兵／衝鋒各 2 波、其餘 1 波（同波數依首次出現），每一列的隻數與首次、標題不變，說明寫依波數；" +
+      "path_a 與 path_b 用各自的波數（path_b 的 C 快騎 4 波、40 隻）；path_b 搜「步兵」只有步兵；全關搜「兵」照波數是步兵、傷兵、A 慢兵、B 步兵，清除後排列仍是波數；前往 C 快騎到第 2 波、逐波明細不變；關閉重開回到首次出現；" +
+      "「討伐」依波數（衝鋒排最後）和依隻數的順序不同",
+      vWatching && wavesFlowOk(vf), out.V1);
+
+    // V-2 鍵盤：排列選單用方向鍵從首次出現→已確認隻數→已確認出現波數，Esc 只關閉預覽
+    await openPreview("chapter3_2");
+    await page.locator('[data-testid="preview-composition-sort"]').focus();
+    await press("ArrowDown");
+    const vk1 = await sstate();
+    await press("ArrowDown");
+    const vk2 = await sstate();
+    await press("Escape");
+    await H.sleep(300);
+    const vkEsc = await page.evaluate(() => ({
+      open: !!document.querySelector('[data-testid="enemy-preview"]'),
+      focus: document.activeElement?.dataset?.testid ?? null,
+      focusMap: document.activeElement?.closest('[data-testid="stage-card"]')?.dataset.mapId ?? null,
+    }));
+    out.V2 = { vk1: [vk1.sort, vk1.focus], vk2: [vk2.sort, vk2.focus, ids(vk2)], vkEsc };
+    run.check("V-2 鍵盤：排列選單按方向鍵依序是已確認隻數、已確認出現波數（列跟著重排，焦點留在選單）；Esc 只關閉預覽，焦點回到「進京」的敵軍預覽按鈕",
+      vk1.sort === "count" && vk1.focus === "preview-composition-sort" && vk2.sort === "waves" && vk2.focus === "preview-composition-sort" && same(ids(vk2), WAVES_ALL_15) &&
+        !vkEsc.open && vkEsc.focus === "enemy-preview-open" && vkEsc.focusMap === "chapter3_2",
+      out.V2);
+
+    // V-3 資料不完整：依波數排列時另外註明只算已確認的波，資料問題照舊
+    await openPreview("chapter3_3");
+    const ve0 = await sstate();
+    await pick("preview-composition-sort", "waves");
+    const ve1 = await sstate();
+    await closePreview();
+    out.V3 = { ve0, ve1 };
+    run.check("V-3 資料不完整（「邊界」）：依已確認出現波數排列後是步兵（2 波）、B 步兵（1 波），說明在原本之後加「依已確認出兵的波數由多到少排列（只算已確認的波）。」，資料問題、找不到設定與標題都不變",
+      same(ids(ve1), [G2, G3]) && ve1.summary === ve0.summary + "依已確認出兵的波數由多到少排列（只算已確認的波）。" &&
+        same(ve1.gaps, ve0.gaps) && ve1.unknown === ve0.unknown && ve1.header === ve0.header,
+      out.V3);
+
+    // V-4 送給遊戲的訊息
+    const vSent = await sentTypes();
+    out.V4 = { vWatching, vSent };
+    run.check("V-4 主頁操作依波數排列（V-1～V-3）的期間沒有送任何訊息給遊戲（沒有關卡資料、update_team 或命令）",
+      vWatching && Array.isArray(vSent) && vSent.length === 0, out.V4);
+
     // M-4 關閉關卡選擇：戰場不變、沒有寫入
     await press("Escape");
     await H.sleep(300);
@@ -879,6 +1003,93 @@ async (page) => {
       [600, 844].every((h) => sfits[h].input && sfits[h].clear && sfits[h].note && sfits[h].docScroll <= sfits[h].vw && same(sfits[h].rows, [GL1, SL1, G2, G3])) &&
         out.S8.writes === 0,
       out.S8);
+
+    // V-5 獨立關卡頁：依波數排列和主頁相同
+    const vp5 = await wavesFlow();
+    out.V5 = vp5;
+    run.check("V-5 獨立關卡頁：依已確認出現波數排列的全關與兩條路線、搜尋與清除、前往與逐波、關閉重開回到首次出現、和依隻數的不同，都和主頁相同", wavesFlowOk(vp5), out.V5);
+
+    // V-6 390×600／390×844：依波數排列的選單在預覽裡、沒有橫向捲動，列的順序正確
+    const vfits = {};
+    for (const h of [600, 844]) {
+      await page.setViewportSize({ width: 390, height: h });
+      await H.sleep(300);
+      await openPreview("chapter3_2");
+      await pick("preview-composition-sort", "waves");
+      await page.locator('[data-testid="preview-composition-sort"]').scrollIntoViewIfNeeded();
+      await H.sleep(200);
+      const box = await page.evaluate(() => {
+        const p = document.querySelector('[data-testid="enemy-preview"] [role="dialog"]').getBoundingClientRect();
+        const s = document.querySelector('[data-testid="preview-composition-sort"]').getBoundingClientRect();
+        return { vw: innerWidth, docScroll: document.documentElement.scrollWidth, inside: s.width > 0 && s.left >= p.left && s.right <= p.right };
+      });
+      const vs = await sstate();
+      const vshot = await H.shot(page, `stage-sort-waves-390x${h}`);
+      await closePreview();
+      vfits[h] = { ...box, rows: ids(vs), sort: vs.sort, shot: vshot };
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    out.V6 = vfits;
+    run.check("V-6 390×600／390×844：排列選單在預覽裡、沒有橫向捲動，選依已確認出現波數後的順序和桌面相同",
+      [600, 844].every((h) => vfits[h].inside && vfits[h].docScroll <= vfits[h].vw && vfits[h].sort === "waves" && same(vfits[h].rows, WAVES_ALL_15)), out.V6);
+
+    // V-7 設定更新（預覽開著）：保留依波數排列，用新的列重排
+    await staleReload([STALE_REFRESH], "chapter3_4");
+    await openPreview("chapter3_4");
+    await pick("preview-composition-sort", "waves");
+    const vr0 = await sstate();
+    const vr0d = await details();
+    await page.evaluate(() => window.__shenmaMock.release("get_all_maps"));
+    await page.waitForFunction(() => document.querySelector('[data-testid="preview-composition-summary"]')?.innerText.includes("共 5 隻"), null, { timeout: 30000, polling: 100 });
+    await H.sleep(300);
+    const vr1 = await sstate();
+    const vr1d = await details();
+    await closePreview();
+    out.V7 = { before: [vr0.sort, ids(vr0), waveCounts(vr0d)], after: [vr1.sort, ids(vr1), waveCounts(vr1d)] };
+    run.check("V-7 設定更新（預覽開著）：依已確認出現波數的排列保留；過期的設定是步兵、C 快騎（第 1 波）、B 步兵（第 2 波）各 1 波，新的設定是步兵、B 步兵各 1 波（都在第 1 波）",
+      vr0.sort === "waves" && same(ids(vr0), [G2, C2, G3]) && waveCounts(vr0d) === `${G2}:1 ${C2}:1 ${G3}:1` &&
+        vr1.sort === "waves" && same(ids(vr1), [G2, G3]) && waveCounts(vr1d) === `${G2}:1 ${G3}:1`,
+      out.V7);
+
+    // S-9 設定更新後只剩一種敵人（預覽開著、有查詢與依隻數排列）：搜尋與排列藏起來，看不到的查詢與排列不影響顯示，列照常顯示
+    await staleReload([STALE_ONE], "chapter3_5");
+    await openPreview("chapter3_5");
+    await pick("preview-composition-sort", "count");
+    const o0 = await search("快騎");
+    await page.evaluate(() => window.__shenmaMock.release("get_all_maps"));
+    await page.waitForFunction(() => !document.querySelector('[data-testid="preview-composition-search"]'), null, { timeout: 30000, polling: 100 });
+    await H.sleep(300);
+    const o1 = await sstate();
+    // 步兵的列不在（被看不到的查詢藏掉）時不去點它的逐波按鈕，讓 S-9 以具名的失敗呈現
+    const o1d = o1.rows.some((r) => r[0] === G2) ? await toggleDetail(G2) : null;
+    const o1sel = await page.evaluate(() => !!document.querySelector('[data-testid="preview-composition-sort"]'));
+    await closePreview();
+    out.S9 = { before: { rows: o0.rows, note: o0.searchSummary, sort: o0.sort }, after: { ...o1, sortSelect: o1sel, g2: o1d ? wavesOf(o1d, G2) : null } };
+    run.check("S-9 設定更新成只剩一種敵人（預覽開著，查詢「快騎」、依隻數排列）：更新前只列 C 快騎；更新後搜尋與排列都藏起來，步兵 4 隻照常顯示（看不到的查詢「快騎」沒有把它藏掉），" +
+      "說明照首次出現、沒有搜尋小計，首次第 1 波、逐波第 1 波 4 隻",
+      same(o0.rows, [[C2, 3, 1]]) && o0.sort === "count" &&
+        o1.search === null && !o1sel && o1.searchSummary === null && same(o1.rows, [[G2, 4, 1]]) && o1.sort === "first" &&
+        o1.header === "▾ 敵軍組成 共 4 隻" && o1.summary === "全關共 4 隻、1 種敵人（依第一次出現的順序）。" && same(out.S9.after.g2, [[1, 4]]),
+      out.S9);
+
+    // S-10 設定更新後變回多種（預覽開著）：搜尋與排列出現、內容空白（只有一種時沒辦法輸入），列與小計照新的設定
+    await staleReload([STALE_TWO], "chapter3_6");
+    await openPreview("chapter3_6");
+    const m0 = await sstate();
+    const m0sel = await page.evaluate(() => !!document.querySelector('[data-testid="preview-composition-sort"]'));
+    await page.evaluate(() => window.__shenmaMock.release("get_all_maps"));
+    await page.waitForSelector('[data-testid="preview-composition-search"]', { timeout: 30000 });
+    await H.sleep(300);
+    const m1 = await sstate();
+    const m2 = await search("快騎");
+    await closePreview();
+    const a4 = await gasActions();
+    out.S10 = { before: { search: m0.search, sortSelect: m0sel, rows: m0.rows }, after: m1, typed: m2, writes: writes(a4) - writes(a0) };
+    run.check("S-10 設定更新後變回多種敵人（預覽開著）：更新前只有步兵、沒有搜尋與排列；更新後搜尋框出現且空白、排列是首次出現、步兵 4 與 C 快騎 3 都列出、沒有搜尋小計；之後搜「快騎」只剩 C 快騎、小計 3 隻；獨立關卡頁全程沒有寫入",
+      m0.search === null && !m0sel && same(m0.rows, [[G2, 4, 1]]) &&
+        m1.search === "" && m1.sort === "first" && same(m1.rows, [[G2, 4, 1], [C2, 3, 1]]) && m1.searchSummary === null &&
+        same(m2.rows, [[C2, 3, 1]]) && m2.searchSummary === searchNote("快騎", 1, 3, "全關") && out.S10.writes === 0,
+      out.S10);
   });
 
   await page.evaluate(() => localStorage.removeItem("__shenma_ss_fixture")).catch(() => {});

@@ -459,6 +459,17 @@ async (page) => {
     run.check("F-5 關卡頁的遊戲設定讀取失敗：說明讀取失敗與重試（不是一直轉圈）；重試成功後列出關卡", /遊戲設定讀取失敗/.test(text) && n >= 7, out.F5);
   });
 
+  // 經過 Service Worker 的遊戲檔下載（index.wasm／index.pck）：收尾時等它們結束
+  const swDownloads = new Map();
+  const isGameDownload = (r) => {
+    try { return !!(r.serviceWorker && r.serviceWorker()) && /\/index\.(wasm|pck)(\?|$)/.test(r.url()); } catch { return false; }
+  };
+  const onDownloadStart = (r) => { if (isGameDownload(r)) swDownloads.set(r, Date.now()); };
+  const onDownloadEnd = (r) => { swDownloads.delete(r); };
+  page.context().on("request", onDownloadStart);
+  page.context().on("requestfinished", onDownloadEnd);
+  page.context().on("requestfailed", onDownloadEnd);
+
   // ── N. 390 寬 ──
   await section("N", async () => {
     await setup(M.type.id);
@@ -496,5 +507,16 @@ async (page) => {
     localStorage.removeItem("__shenma_sd_fixture");
     localStorage.removeItem("__shenma_mock_fail");
   }).catch(() => {});
+  // 收尾：最後停在戰鬥頁（關卡被擋下，但遊戲 iframe 仍經過 Service Worker 下載引擎與資料包）。先離開到同來源、
+  // 不在遊戲 Service Worker 範圍內的 robots.txt，等這些下載結束（最多 60 秒）才交給下一支腳本：緊接在這支之後的腳本
+  // 清理時導航到遊戲目錄的靜態頁曾經逾時（根因沒有確認）。等待的時間與剩下的下載記在 out.teardown，不影響判定
+  const t0 = Date.now();
+  await page.goto(H.BASE + "/robots.txt").catch(() => {});
+  const pendingAtLeave = swDownloads.size;
+  while (swDownloads.size > 0 && Date.now() - t0 < 60000) await H.sleep(200);
+  out.teardown = { left: page.url(), pendingAtLeave, waitedMs: Date.now() - t0, remaining: [...swDownloads.keys()].map((r) => r.url().replace(/^https?:\/\/[^/]+/, "")) };
+  page.context().off("request", onDownloadStart);
+  page.context().off("requestfinished", onDownloadEnd);
+  page.context().off("requestfailed", onDownloadEnd);
   return run.finish({ out });
 }

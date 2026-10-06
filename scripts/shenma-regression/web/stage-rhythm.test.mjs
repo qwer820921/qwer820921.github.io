@@ -14,6 +14,8 @@
 //   缺波、找不到設定、數量無法判讀或 0、略過與重複波次的第二筆都不進逐波（不補 0）；同名不同 id 分開；排列後跟著列走；設定更新後用新的資料
 // - utils/stageComposition 的 filterCompositionRows（敵軍組成的搜尋）：名稱或 enemy_id 包含查詢（去掉前後空白、不分大小寫），只篩選目前範圍已排列的列；
 //   用正式 chapter1_3、chapter1_5（正式名稱）六個範圍核對符合的列、種數與小計；路線不借全關的；同類不同等級、同名不同 id 分開；資料問題的組沒有列也搜不到
+// - sortCompositionRows 的 waves（依已確認出兵的波數）：perWave 筆數由多到少、同波數依首次出現；正式六個範圍的順序與波數寫死；同一波多組只算一波、
+//   資料問題的組不算波；只改順序（合計、首次、逐波不變、新陣列不改來源）；和依隻數的順序不同的例子
 // - utils/spawnRhythm：同一波各組同時開始、各組第一隻立刻出兵，最後一隻名義在 (n−1)×interval 秒，整波取各組最大值（不相加）；
 //   n＝1 是 0 秒（間隔是什麼都一樣）；沒有提供間隔照遊戲以 1 秒計並標出預設；間隔 ≤ 0 或小於計時器最短時間時依處理幀出兵、
 //   不寫成 0 秒；不是數字的間隔不強轉；數字太大時無法估算（不出現 Infinity）；有無法估算的組時只寫已知範圍
@@ -1488,6 +1490,160 @@ const searchTable = (scopes) =>
       same(searchCase(whole.rows, "輕騎兵"), ["輕騎兵", "", 0, 0]) &&
       same(searchCase(b.rows, "grunt_lv2"), ["grunt_lv2", "", 0, 0]),
     { whole: whole.rows.map((r) => [r.enemyId, r.name, r.count]) }
+  );
+}
+
+// ── 敵軍組成依已確認出兵的波數排列（sortCompositionRows 的 waves）：正式 chapter1_3、chapter1_5，期望值是正式設定算出的 ──
+// 每一個範圍：[已確認合計, "enemy_id:波數 …（依波數由多到少、同波數依首次出現）"]
+const byWaves = (rows) =>
+  sortCompositionRows(rows, "waves")
+    .map((r) => `${r.enemyId}:${r.perWave.length}`)
+    .join(" ");
+const WAVES_SORT_13 = {
+  all: [
+    70,
+    "grunt_lv2:3 cavalry_lv2:2 siege_lv3:2 grunt_lv3:1 siege_lv2:1 cavalry_lv3:1",
+  ],
+  path_a: [45, "grunt_lv2:3 grunt_lv3:1 cavalry_lv2:1 cavalry_lv3:1"],
+  path_b: [25, "siege_lv3:2 siege_lv2:1 cavalry_lv2:1 grunt_lv2:1"],
+};
+const WAVES_SORT_15 = {
+  all: [
+    360,
+    "cavalry_lv2:6 grunt_lv2:5 siege_lv2:5 grunt_lv1:2 siege_lv1:2 cavalry_lv3:2 cavalry_lv1:1 grunt_lv3:1 siege_lv3:1",
+  ],
+  path_a: [
+    210,
+    "cavalry_lv2:6 grunt_lv2:5 siege_lv2:4 grunt_lv1:2 cavalry_lv1:1 siege_lv1:1 cavalry_lv3:1 grunt_lv3:1",
+  ],
+  path_b: [
+    150,
+    "siege_lv2:5 cavalry_lv2:4 grunt_lv2:3 siege_lv1:1 cavalry_lv3:1 siege_lv3:1",
+  ],
+};
+{
+  const s13 = formalScopes(PATHS_13, WAVES_13);
+  const s15 = formalScopes(PATHS_15, WAVES_15);
+  const table = (s) =>
+    Object.fromEntries(
+      Object.entries(s).map(([k, [confirmed, rows]]) => [
+        k,
+        [confirmed, byWaves(rows)],
+      ])
+    );
+  const t13 = table(s13);
+  const t15 = table(s15);
+  check(
+    "依波數排列（正式 chapter1_3）：全關 70 是 grunt_lv2 3 波、cavalry_lv2 與 siege_lv3 各 2 波、其餘 1 波（同波數依首次出現）；path_a 45、path_b 25 各用自己的波數（第 3 波 grunt_lv2 的三組只算一波）",
+    same(t13, WAVES_SORT_13),
+    t13
+  );
+  check(
+    "依波數排列（正式 chapter1_5）：全關 360 是 cavalry_lv2 6 波、grunt_lv2 與 siege_lv2 各 5 波…；path_a 210、path_b 150 各用自己的波數（path_b 的 cavalry_lv2 是 4 波，不借全關的 6 波）",
+    same(t15, WAVES_SORT_15),
+    t15
+  );
+  // 只改順序：每一列的合計、首次、逐波都是原本的列；正式輕騎兵 LV2 全關／path_a／path_b 是 6／6／4 波、100／60／40 隻
+  const cav = ["all", "path_a", "path_b"].map((k) => {
+    const r = sortCompositionRows(s15[k][1], "waves").find(
+      (x) => x.enemyId === "cavalry_lv2"
+    );
+    return [r.perWave.length, r.count, r.firstWave];
+  });
+  const [, all15] = s15.all;
+  const before = JSON.stringify(all15);
+  const sorted = sortCompositionRows(all15, "waves");
+  check(
+    "依波數排列（只排順序）：正式 cavalry_lv2 在 chapter1_5 全關／path_a／path_b 是 6／6／4 波、100／60／40 隻、首次第 2／2／4 波；排列後是同一批列物件、回傳新陣列、來源不變",
+    same(cav, [
+      [6, 100, 2],
+      [6, 60, 2],
+      [4, 40, 4],
+    ]) &&
+      sorted !== all15 &&
+      sorted.length === all15.length &&
+      sorted.every((r) => all15.includes(r)) &&
+      JSON.stringify(all15) === before
+  );
+  // 和依隻數排列不同：隻數多不等於出現的波數多
+  check(
+    "依波數排列和依隻數不同：chapter1_5 全關依隻數是 siege_lv2 90 在 grunt_lv2 80 前面，依波數兩者都是 5 波、照首次出現 grunt_lv2 在前；chapter1_3 全關的 cavalry_lv3（10 隻、1 波）依隻數排第 4、依波數排最後",
+    same(
+      sortCompositionRows(all15, "count")
+        .slice(1, 3)
+        .map((r) => r.enemyId),
+      ["siege_lv2", "grunt_lv2"]
+    ) &&
+      same(
+        sortCompositionRows(all15, "waves")
+          .slice(1, 3)
+          .map((r) => r.enemyId),
+        ["grunt_lv2", "siege_lv2"]
+      ) &&
+      sortCompositionRows(s13.all[1], "count")
+        .map((r) => r.enemyId)
+        .indexOf("cavalry_lv3") === 3 &&
+      sortCompositionRows(s13.all[1], "waves")
+        .map((r) => r.enemyId)
+        .indexOf("cavalry_lv3") === 5
+  );
+}
+{
+  // 同一波多組只算一波；找不到設定、數量無法判讀、數量 0、沒有路點的路線、缺波都不算波；同波數維持首次出現
+  const p = buildStagePreview(
+    deepFreeze(
+      stage(
+        {
+          path_a: [
+            [0, 5],
+            [13, 5],
+          ],
+        },
+        [
+          {
+            wave: 1,
+            enemies: [
+              g("grunt_lv1", 2, 1, "path_a"),
+              g("grunt_lv1", 3, 1, "path_a"),
+              g("cavalry_lv1", 1, 1, "path_a"),
+            ],
+          },
+          {
+            wave: 2,
+            enemies: [
+              g("cavalry_lv1", 9, 1, "path_a"),
+              g("grunt_lv1", "many", 1, "path_a"),
+              g("siege_lv1", 0, 1, "path_a"),
+              g("ghost", 4, 1, "path_a"),
+            ],
+          },
+          // 第 3 波缺少
+          {
+            wave: 4,
+            enemies: [
+              g("siege_lv1", 5, 1, "path_a"),
+              g("grunt_lv1", 1, 1, "path_z"),
+            ],
+          },
+        ]
+      )
+    ),
+    deepFreeze(FORMAL_ENEMIES)
+  );
+  const c = stageComposition(p);
+  check(
+    "依波數排列（資料問題）：grunt_lv1 第 1 波兩組只算 1 波（第 2 波數量無法判讀、第 4 波在沒有路點的路線都不算）、cavalry_lv1 2 波、siege_lv1 1 波（第 2 波數量 0 不算）；依波數是 cavalry_lv1、grunt_lv1、siege_lv1（同 1 波依首次出現），依隻數是 cavalry_lv1 10、grunt_lv1 5、siege_lv1 5",
+    !c.complete &&
+      byWaves(c.rows) === "cavalry_lv1:2 grunt_lv1:1 siege_lv1:1" &&
+      same(
+        sortCompositionRows(c.rows, "count").map((r) => [r.enemyId, r.count]),
+        [
+          ["cavalry_lv1", 10],
+          ["grunt_lv1", 5],
+          ["siege_lv1", 5],
+        ]
+      ),
+    { rows: c.rows.map((r) => [r.enemyId, r.count, r.perWave]) }
   );
 }
 
