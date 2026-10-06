@@ -276,5 +276,21 @@ export function sortCompositionRows<T extends CompositionRow>(
   return copy;
 }
 
+/**
+ * 敵軍組成的搜尋：敵人名稱或 enemy_id 包含查詢文字（去掉前後空白、不分大小寫）的列，順序不變。
+ * 只從傳入的列（目前的範圍、已排列）篩選，不重算、不改列；同名不同 id 各自比對、不合併；空白的查詢回傳全部的列
+ */
+export function filterCompositionRows<T extends CompositionRow>(
+  rows: readonly T[],
+  query: string
+): T[] {
+  const q = query.trim().toLowerCase();
+  if (q === "") return rows.slice();
+  return rows.filter(
+    (r) =>
+      r.name.toLowerCase().includes(q) || r.enemyId.toLowerCase().includes(q)
+  );
+}
+
 /** 波次編號的清單文字（第 1、3、5 波） */
 export const waveListText = (ns: number[]) => `第 ${ns.join("、")} 波`;

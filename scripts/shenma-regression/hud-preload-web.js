@@ -421,8 +421,8 @@ async (page) => {
 
   // ── H-12 載入中遇到真正的存檔版本衝突 ──
   // 讀取存檔（get_profile）的成功回應附上雲端版本 1，所以保存會帶 base_rev 1；這一頁的 save_profile 回有效的 REV_CONFLICT
-  // （雲端是另一份存檔、版本號 7）。只在這一段打開（__shenma_h12_rev）、只包住這一頁的 fetch，其他讀取照 harness 的 mock；
-  // 衝突的回應是測試注入的，不是後端實際比較版本的結果
+  // （雲端是另一份存檔、版本號 7）。讀取的包裝註冊在 context 上，只在 __shenma_h12_rev 打開時的頂層頁面安裝（之後旗標關閉的新頁面不安裝；
+  // 已經安裝的包裝會留到那一頁離開為止，移除旗標不會撤銷它），其他讀取照 harness 的 mock；衝突的回應是測試注入的，不是後端實際比較版本的結果
   const CLOUD_REV = 7;
   await section("conflict", async () => {
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -534,6 +534,7 @@ async (page) => {
 
   await release();
   await ctx.unroute(ENGINE).catch(() => {});
+  // 之後載入的頁面不再安裝 H-12 的讀取包裝（這一頁已經裝的不受影響）
   await page.evaluate(() => localStorage.removeItem("__shenma_h12_rev")).catch(() => {});
   return run.finish({ out });
 }

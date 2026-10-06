@@ -6,6 +6,8 @@ async (page) => {
   //      取消選關回到戰場：提示回來並取得焦點、Esc 關閉、場次不變；再按迎戰又被拒絕，出口可以再打開關卡選擇
   //      實際換到新關卡才有新的 battle_id；沒有結算、玩家資源與戰鬥紀錄不變
   // - Y：獨立戰鬥頁（390×844）拒絕 → 出口「返回關卡選擇」→ 用真實滑鼠點有效關卡 → 進入新的一場（新的 battle_id），沒有結算、資源不變
+  // - X-0 前置：先離開上一支腳本留下的頁面，再兩次清理（隔離與非隔離）、注入固定的存檔並核對五個資源欄位；清理前後的頁面、Service Worker
+  //   與資料另存在 out.setup。前置沒有完成就不跑 X／Y（具名失敗）；資源比較先確定欄位都在、型別正確、是注入時的值，再比「不變」
   // 全部 mock、虛構金鑰 test_rejexit_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -56,6 +58,34 @@ async (page) => {
       const p = (d.profiles || {})[k] || {};
       return { gold: p.gold, exp: p.exp, level: p.level, max_stage: p.max_stage, logs: (d.battle_logs || []).length };
     }, KEY);
+  // 資源比較要先確定五個欄位都在而且型別對（JSON.stringify 會省略 undefined，兩邊都缺也會相等），再比內容；注入的存檔是固定的字面值
+  const RES_FIELDS = ["gold", "exp", "level", "max_stage", "logs"];
+  const BASE_RES = { gold: 1000, exp: 0, level: 1, max_stage: "chapter2_1", logs: 0 };
+  const resValid = (r) =>
+    !!r && Number.isFinite(r.gold) && Number.isFinite(r.exp) && Number.isFinite(r.level) && typeof r.max_stage === "string" && r.max_stage !== "" && Number.isFinite(r.logs);
+  const resIsBase = (r) => resValid(r) && RES_FIELDS.every((k) => r[k] === BASE_RES[k]);
+  // 診斷：上一支腳本留下的頁面、Service Worker 與資料（清理前、清理失敗後、清理後各記一次；頁面卡住時最多等 10 秒）
+  const originState = async (label) => {
+    const url = page.url();
+    const probe = page.evaluate(async (k) => {
+      let regs = null;
+      try {
+        regs = (await navigator.serviceWorker.getRegistrations()).map((r) => ({ scope: r.scope, active: r.active ? r.active.state : null, installing: r.installing ? r.installing.state : null, waiting: r.waiting ? r.waiting.state : null }));
+      } catch { regs = null; }
+      let db = null;
+      try { db = JSON.parse(localStorage.getItem("__shenma_mock_gas_db") || "null"); } catch { db = "unreadable"; }
+      return {
+        readyState: document.readyState, isolated: window.crossOriginIsolated,
+        controller: navigator.serviceWorker && navigator.serviceWorker.controller ? navigator.serviceWorker.controller.scriptURL : null, regs,
+        mockDb: db && typeof db === "object" ? { profile: !!(db.profiles && db.profiles[k]), profiles: Object.keys(db.profiles || {}).length, logs: (db.battle_logs || []).length } : db,
+        playerKey: localStorage.getItem("shenma_player_key"),
+        flags: Object.keys(localStorage).filter((x) => x.startsWith("__shenma_")),
+        localItems: localStorage.length, sessionItems: sessionStorage.length,
+      };
+    }, KEY).catch((e) => ({ error: String(e).slice(0, 200) }));
+    const st = await Promise.race([probe, H.sleep(10000).then(() => ({ error: "10 秒內讀不到頁面狀態" }))]);
+    return { label, at: new Date().toISOString(), url, ...st };
+  };
   const rejectState = () =>
     page.evaluate(() => {
       const n = document.querySelector('[data-testid="wave-reject"]');
@@ -124,13 +154,42 @@ async (page) => {
   };
 
   // ── 準備 ──
+  // 上一支腳本可能停在還在載入遊戲的頁面（例如戰鬥頁的 iframe 仍在經過 Service Worker 下載），清理時導航到遊戲目錄的靜態頁會被拖住：
+  // 先離開那一頁，到同來源、不在遊戲 Service Worker 範圍內的純文字檔（robots.txt；不用 about:blank：它沒有來源，
+  // 其他腳本留在 context 上的初始化程式在那裡讀 localStorage 會被拒而變成 pageerror），再照原本的兩次清理（隔離與非隔離各一次）。
+  // 清理或注入沒有完成就不跑後面的情境（不用沒有注入的存檔繼續），留下具名的失敗
+  let setupOk = false;
   await section("setup", async () => {
-    await H.resetOrigin(page);
+    out.setup = { before: await originState("beforeReset") };
+    await page.goto(H.BASE + "/robots.txt");
+    out.setup.left = page.url();
+    let reset;
+    try {
+      reset = await H.resetOrigin(page);
+    } catch (e) {
+      out.setup.error = String(e && e.message ? e.message : e).slice(0, 400);
+      out.setup.afterFail = await originState("afterFail");
+      throw e;
+    }
+    const cleared = await page.evaluate(async () => ({
+      regs: (await navigator.serviceWorker.getRegistrations()).length, localItems: localStorage.length, sessionItems: sessionStorage.length, isolated: window.crossOriginIsolated,
+    }));
     await page.evaluate(({ k, p }) => {
       localStorage.setItem("__shenma_mock_gas_db", JSON.stringify({ profiles: { [k]: p }, battle_logs: [] }));
       localStorage.setItem("shenma_player_key", k);
     }, { k: KEY, p: profile() });
+    const injected = await resources();
+    const key = await page.evaluate(() => localStorage.getItem("shenma_player_key"));
+    out.setup = { ...out.setup, reset, cleared, injected, key, after: await originState("afterSetup") };
+    setupOk = reset.isolated.length === 2 && reset.isolated[1] === false && cleared.regs === 0 && cleared.localItems === 0 && cleared.sessionItems === 0 && !cleared.isolated &&
+      key === KEY && resIsBase(injected);
+    run.check("X-0 前置：兩次清理完成（第二次在沒有 Service Worker 的非隔離頁面）、沒有留下 Service Worker 與資料；注入的存檔是 test_rejexit_a，金幣 1000、經驗 0、等級 1、進度 chapter2_1、戰鬥紀錄 0（五個欄位都在、型別正確）",
+      setupOk, out.setup);
   });
+  if (!setupOk) {
+    run.check("X／Y 沒有執行：前置沒有完成，不用沒有注入的存檔繼續拒絕開戰與資源檢查（原因見 X-0 或 setup 的例外）", false, out.setup || null);
+    return run.finish({ out });
+  }
 
   // ── X. 主頁：拒絕 → 切換關卡 → 取消／再開／真的換關 ──
   const mainFlow = async (tag, vp) => {
@@ -193,8 +252,8 @@ async (page) => {
         s2.stage === pick2.id && s2.battle_id && s2.battle_id !== s0.battle_id && s2.gs === 1 && s2.wave === 0 && s2.hp === 20 &&
         hud.map === pick2.name && !after.modal && after.notice === null,
       { rej2, pick2, switched, s2, hud, after, shotSwitched });
-    run.check(`X-4 ${tag} 拒絕、取消、換關都沒有結算：沒有結算畫面，金幣／經驗／等級／進度與戰鬥紀錄不變`,
-      after.resultCards === 0 && JSON.stringify(res1) === JSON.stringify(res0), { res0, res1, resultCards: after.resultCards });
+    run.check(`X-4 ${tag} 拒絕、取消、換關都沒有結算：沒有結算畫面，金幣／經驗／等級／進度與戰鬥紀錄不變（前後五個欄位都在、型別正確，都是注入時的值，戰鬥紀錄 0）`,
+      after.resultCards === 0 && JSON.stringify(res1) === JSON.stringify(res0) && resIsBase(res0) && resIsBase(res1), { res0, res1, resultCards: after.resultCards });
   };
   await section("desktop", () => mainFlow("desktop", { width: 1280, height: 800 }));
   await section("m390", () => mainFlow("390", { width: 390, height: 844 }));
@@ -231,8 +290,8 @@ async (page) => {
     run.check("Y-1 獨立戰鬥頁拒絕開戰 → 出口「返回關卡選擇」回到關卡頁；真實滑鼠點畫面中央的有效關卡 → 進入那一關的新的一場（新的 battle_id、備戰、波次 0、城池 20）",
       rej.wave === 1 && s0.stage === E.id && pick && pick.onButton && arrived && s1 && s1.stage === pick.id && s1.battle_id && s1.battle_id !== s0.battle_id && s1.gs === 1 && s1.wave === 0 && s1.hp === 20,
       { ...out.Y, shot });
-    run.check("Y-2 獨立戰鬥頁：沒有結算畫面，金幣／經驗／等級／進度與戰鬥紀錄不變",
-      (await resultCards()) === 0 && JSON.stringify(res1) === JSON.stringify(res0), { res0, res1 });
+    run.check("Y-2 獨立戰鬥頁：沒有結算畫面，金幣／經驗／等級／進度與戰鬥紀錄不變（前後五個欄位都在、型別正確，都是注入時的值，戰鬥紀錄 0）",
+      (await resultCards()) === 0 && JSON.stringify(res1) === JSON.stringify(res0) && resIsBase(res0) && resIsBase(res1), { res0, res1 });
   });
 
   return run.finish({ out });

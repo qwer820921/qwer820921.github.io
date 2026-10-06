@@ -12,6 +12,8 @@
 // - 敵軍組成每一列的 perWave（逐波隻數的明細用）：全關與每條路線各自的逐波已確認隻數，用正式 chapter1_3、chapter1_5 逐列核對（cavalry_lv2 在 chapter1_5
 //   全關第 2、3 波各 10、第 4～7 波各 20，path_a 第 2～7 波各 10，path_b 第 4～7 波各 10）；同一波同一敵人多組相加、加起來等於合計、第一筆是首次；
 //   缺波、找不到設定、數量無法判讀或 0、略過與重複波次的第二筆都不進逐波（不補 0）；同名不同 id 分開；排列後跟著列走；設定更新後用新的資料
+// - utils/stageComposition 的 filterCompositionRows（敵軍組成的搜尋）：名稱或 enemy_id 包含查詢（去掉前後空白、不分大小寫），只篩選目前範圍已排列的列；
+//   用正式 chapter1_3、chapter1_5（正式名稱）六個範圍核對符合的列、種數與小計；路線不借全關的；同類不同等級、同名不同 id 分開；資料問題的組沒有列也搜不到
 // - utils/spawnRhythm：同一波各組同時開始、各組第一隻立刻出兵，最後一隻名義在 (n−1)×interval 秒，整波取各組最大值（不相加）；
 //   n＝1 是 0 秒（間隔是什麼都一樣）；沒有提供間隔照遊戲以 1 秒計並標出預設；間隔 ≤ 0 或小於計時器最短時間時依處理幀出兵、
 //   不寫成 0 秒；不是數字的間隔不強轉；數字太大時無法估算（不出現 Infinity）；有無法估算的組時只寫已知範圍
@@ -41,6 +43,7 @@ require.extensions[".ts"] = (module, filename) => {
 
 const { buildStagePreview } = require(join(UTILS, "stagePreview.ts"));
 const {
+  filterCompositionRows,
   routeComposition,
   sortCompositionRows,
   stageComposition,
@@ -1231,6 +1234,260 @@ const perWaveOf = (rows, id) =>
   check(
     "逐波隻數（設定更新）：只剩第 1 波兩組 grunt_lv2 時逐波是第 1 波 5（兩組相加）、grunt_twin 不再有列；舊的第 2、3 波不留",
     same(idPerWave(stageComposition(updated).rows), [["grunt_lv2", 5, "1:5"]])
+  );
+}
+
+// ── 敵軍組成的搜尋（filterCompositionRows）：正式 chapter1_3、chapter1_5，敵人名稱用正式設定的名稱，期望值是正式設定算出的 ──
+// 每一個查詢：[查詢, "符合的 enemy_id（顯示順序）", 種數, 已確認隻數的小計]；目前範圍的合計另外寫
+const FORMAL_ENEMIES = [
+  enemy("grunt_lv1", "普通兵LV1"),
+  enemy("grunt_lv2", "普通兵LV2"),
+  enemy("grunt_lv3", "普通兵LV3"),
+  enemy("cavalry_lv1", "輕騎兵LV1"),
+  enemy("cavalry_lv2", "輕騎兵LV2"),
+  enemy("cavalry_lv3", "輕騎兵LV3"),
+  enemy("siege_lv1", "攻城車LV1"),
+  enemy("siege_lv2", "攻城車LV2"),
+  enemy("siege_lv3", "攻城車LV3"),
+];
+const QUERIES = [
+  "",
+  "輕騎兵LV2",
+  " CAVALRY_LV2 ",
+  "lv2",
+  "輕騎兵",
+  "no_such_enemy",
+];
+const searchCase = (rows, q) => {
+  const hit = filterCompositionRows(rows, q);
+  return [
+    q,
+    hit.map((r) => r.enemyId).join(","),
+    hit.length,
+    hit.reduce((s, r) => s + r.count, 0),
+  ];
+};
+const SEARCH_13 = {
+  all: [
+    70,
+    [
+      [
+        "",
+        "grunt_lv2,grunt_lv3,cavalry_lv2,siege_lv3,siege_lv2,cavalry_lv3",
+        6,
+        70,
+      ],
+      ["輕騎兵LV2", "cavalry_lv2", 1, 10],
+      [" CAVALRY_LV2 ", "cavalry_lv2", 1, 10],
+      ["lv2", "grunt_lv2,cavalry_lv2,siege_lv2", 3, 45],
+      ["輕騎兵", "cavalry_lv2,cavalry_lv3", 2, 20],
+      ["no_such_enemy", "", 0, 0],
+    ],
+  ],
+  path_a: [
+    45,
+    [
+      ["", "grunt_lv2,grunt_lv3,cavalry_lv2,cavalry_lv3", 4, 45],
+      ["輕騎兵LV2", "cavalry_lv2", 1, 5],
+      [" CAVALRY_LV2 ", "cavalry_lv2", 1, 5],
+      ["lv2", "grunt_lv2,cavalry_lv2", 2, 30],
+      ["輕騎兵", "cavalry_lv2,cavalry_lv3", 2, 15],
+      ["no_such_enemy", "", 0, 0],
+    ],
+  ],
+  path_b: [
+    25,
+    [
+      ["", "siege_lv3,siege_lv2,cavalry_lv2,grunt_lv2", 4, 25],
+      ["輕騎兵LV2", "cavalry_lv2", 1, 5],
+      [" CAVALRY_LV2 ", "cavalry_lv2", 1, 5],
+      ["lv2", "siege_lv2,cavalry_lv2,grunt_lv2", 3, 15],
+      ["輕騎兵", "cavalry_lv2", 1, 5],
+      ["no_such_enemy", "", 0, 0],
+    ],
+  ],
+};
+const SEARCH_15 = {
+  all: [
+    360,
+    [
+      [
+        "",
+        "grunt_lv1,cavalry_lv1,siege_lv1,grunt_lv2,cavalry_lv2,siege_lv2,cavalry_lv3,grunt_lv3,siege_lv3",
+        9,
+        360,
+      ],
+      ["輕騎兵LV2", "cavalry_lv2", 1, 100],
+      [" CAVALRY_LV2 ", "cavalry_lv2", 1, 100],
+      ["lv2", "grunt_lv2,cavalry_lv2,siege_lv2", 3, 270],
+      ["輕騎兵", "cavalry_lv1,cavalry_lv2,cavalry_lv3", 3, 130],
+      ["no_such_enemy", "", 0, 0],
+    ],
+  ],
+  path_a: [
+    210,
+    [
+      [
+        "",
+        "grunt_lv1,cavalry_lv1,siege_lv1,grunt_lv2,cavalry_lv2,siege_lv2,cavalry_lv3,grunt_lv3",
+        8,
+        210,
+      ],
+      ["輕騎兵LV2", "cavalry_lv2", 1, 60],
+      [" CAVALRY_LV2 ", "cavalry_lv2", 1, 60],
+      ["lv2", "grunt_lv2,cavalry_lv2,siege_lv2", 3, 150],
+      ["輕騎兵", "cavalry_lv1,cavalry_lv2,cavalry_lv3", 3, 80],
+      ["no_such_enemy", "", 0, 0],
+    ],
+  ],
+  path_b: [
+    150,
+    [
+      [
+        "",
+        "siege_lv1,siege_lv2,cavalry_lv2,grunt_lv2,cavalry_lv3,siege_lv3",
+        6,
+        150,
+      ],
+      ["輕騎兵LV2", "cavalry_lv2", 1, 40],
+      [" CAVALRY_LV2 ", "cavalry_lv2", 1, 40],
+      ["lv2", "siege_lv2,cavalry_lv2,grunt_lv2", 3, 120],
+      ["輕騎兵", "cavalry_lv2,cavalry_lv3", 2, 50],
+      ["no_such_enemy", "", 0, 0],
+    ],
+  ],
+};
+const formalScopes = (paths, waves) => {
+  const p = buildStagePreview(
+    deepFreeze(stage(paths, waves)),
+    deepFreeze(FORMAL_ENEMIES)
+  );
+  const whole = stageComposition(p);
+  const a = routeComposition(p, "path_a", whole);
+  const b = routeComposition(p, "path_b", whole);
+  return {
+    all: [whole.confirmed, whole.rows],
+    path_a: [a.confirmed, a.rows],
+    path_b: [b.confirmed, b.rows],
+  };
+};
+const searchTable = (scopes) =>
+  Object.fromEntries(
+    Object.entries(scopes).map(([k, [confirmed, rows]]) => [
+      k,
+      [confirmed, QUERIES.map((q) => searchCase(rows, q))],
+    ])
+  );
+{
+  const s13 = formalScopes(PATHS_13, WAVES_13);
+  const s15 = formalScopes(PATHS_15, WAVES_15);
+  const t13 = searchTable(s13);
+  const t15 = searchTable(s15);
+  check(
+    "組成搜尋（正式 chapter1_3）：全關 70、path_a 45、path_b 25 各自搜尋「輕騎兵LV2」「 CAVALRY_LV2 」（大寫加前後空白）「lv2」「輕騎兵」與沒有符合的查詢，符合的列、種數與已確認小計都和正式設定算出的相同；" +
+      "path_b 的「輕騎兵」只有 cavalry_lv2 5（不借全關的 cavalry_lv3）；目前範圍的合計不因搜尋改變",
+    same(t13, SEARCH_13),
+    t13
+  );
+  check(
+    "組成搜尋（正式 chapter1_5）：全關 360 搜尋「輕騎兵」是 LV1 10、LV2 100、LV3 20 共 130（同類不同等級分開成三列），「輕騎兵LV2」只有 100；path_a 60、path_b 40；「lv2」全關 270、path_a 150、path_b 120；沒有符合的查詢是 0 種 0 隻",
+    same(t15, SEARCH_15),
+    t15
+  );
+  // 搜尋只篩選：符合的列就是原本的列物件（合計、首次、逐波不變），不改來源；查詢只有空白時是全部的列
+  const [, allRows] = s15.all;
+  const before = JSON.stringify(allRows);
+  const hit = filterCompositionRows(allRows, "輕騎兵");
+  check(
+    "組成搜尋（只篩選）：符合的列是原本的列（cavalry_lv2 仍是 100 隻、首次第 2 波、逐波 2:10 3:10 4:20 5:20 6:20 7:20），來源的列不變；查詢只有空白（「   」）時回傳全部 9 列",
+    hit.every((r) => allRows.includes(r)) &&
+      JSON.stringify(allRows) === before &&
+      same(idPerWave(hit.filter((r) => r.enemyId === "cavalry_lv2")), [
+        ["cavalry_lv2", 100, "2:10 3:10 4:20 5:20 6:20 7:20"],
+      ]) &&
+      hit.find((r) => r.enemyId === "cavalry_lv2").firstWave === 2 &&
+      filterCompositionRows(allRows, "   ").length === 9 &&
+      filterCompositionRows(allRows, "   ") !== allRows
+  );
+  // 先排列再搜尋：符合的列照排列後的順序
+  check(
+    "組成搜尋（排列）：chapter1_5 全關依已確認隻數排列後搜尋「輕騎兵」是 cavalry_lv2 100、cavalry_lv3 20、cavalry_lv1 10（首次出現時是 LV1、LV2、LV3）",
+    same(searchCase(sortCompositionRows(allRows, "count"), "輕騎兵"), [
+      "輕騎兵",
+      "cavalry_lv2,cavalry_lv3,cavalry_lv1",
+      3,
+      130,
+    ]) &&
+      same(searchCase(allRows, "輕騎兵"), [
+        "輕騎兵",
+        "cavalry_lv1,cavalry_lv2,cavalry_lv3",
+        3,
+        130,
+      ])
+  );
+}
+{
+  // 同名不同 id、找不到設定、略過、數量無法判讀、缺波：搜尋只看已確認的列，不造列、不合併
+  const twins = [...FORMAL_ENEMIES, enemy("grunt_twin", "普通兵LV2")];
+  const p = buildStagePreview(
+    deepFreeze(
+      stage(
+        {
+          path_a: [
+            [0, 5],
+            [13, 5],
+          ],
+          path_b: [
+            [0, 8],
+            [13, 8],
+          ],
+        },
+        [
+          // 第 1 波缺少
+          {
+            wave: 2,
+            enemies: [
+              g("ghost_lv2", 2, 1, "path_a"),
+              g("cavalry_lv2", "many", 1, "path_a"),
+              g("siege_lv2", 0, 1, "path_a"),
+              g("grunt_lv2", 4, 1, "path_a"),
+              g("grunt_twin", 3, 1, "path_b"),
+            ],
+          },
+          { wave: 3, enemies: [g("cavalry_lv2", 6, 1, "path_z")] },
+        ]
+      )
+    ),
+    deepFreeze(twins)
+  );
+  const whole = stageComposition(p);
+  const b = routeComposition(p, "path_b", whole);
+  check(
+    "組成搜尋（資料問題）：「普通兵LV2」符合 grunt_lv2 4 與同名的 grunt_twin 3 兩列（不合併）、小計 7；「grunt_twin」只有 grunt_twin；「lv2」也只有這兩列——找不到設定的 ghost_lv2、數量無法判讀的輕騎兵、數量 0 的攻城車、沒有路點的路線上的輕騎兵都沒有列，不會被搜尋出來；" +
+      "path_b 搜尋「grunt_lv2」沒有符合（不借全關的 grunt_lv2）",
+    !whole.complete &&
+      same(searchCase(whole.rows, "普通兵LV2"), [
+        "普通兵LV2",
+        "grunt_lv2,grunt_twin",
+        2,
+        7,
+      ]) &&
+      same(searchCase(whole.rows, "grunt_twin"), [
+        "grunt_twin",
+        "grunt_twin",
+        1,
+        3,
+      ]) &&
+      same(searchCase(whole.rows, "lv2"), [
+        "lv2",
+        "grunt_lv2,grunt_twin",
+        2,
+        7,
+      ]) &&
+      same(searchCase(whole.rows, "ghost"), ["ghost", "", 0, 0]) &&
+      same(searchCase(whole.rows, "輕騎兵"), ["輕騎兵", "", 0, 0]) &&
+      same(searchCase(b.rows, "grunt_lv2"), ["grunt_lv2", "", 0, 0]),
+    { whole: whole.rows.map((r) => [r.enemyId, r.name, r.count]) }
   );
 }
 

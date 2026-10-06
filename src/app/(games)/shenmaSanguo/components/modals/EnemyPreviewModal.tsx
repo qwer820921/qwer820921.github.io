@@ -11,6 +11,7 @@ import {
   RouteComposition,
   StageComposition,
   WaveRouteView,
+  filterCompositionRows,
   routeComposition,
   sortCompositionRows,
   stageComposition,
@@ -61,7 +62,8 @@ interface Props {
  * 組成的每一列可以前往它在目前範圍（全關或選的路線）首次已確認出兵的波次（列的 firstWave），沿用波次導覽的前往：
  * 只展開那一波、同步導覽的選擇與說明、捲到並聚焦那一波的標題；不換關、不改路線與排列。
  * 每一列也可以展開這個範圍逐波已確認的隻數（列的 perWave，預設收合）：只是顯示，不改列的合計、首次出兵、排列、路線與波次的展開；
- * 換路線或設定更新後不在的列關掉，關閉預覽後全部收合。逐波內容也跟著選的路線（waveRouteView）：選了路線時每一波只列那條路線的組
+ * 換路線或設定更新後不在的列關掉，關閉預覽後全部收合。組成可以搜尋敵人名稱或 ID：只篩選顯示的列並另寫小計，
+ * 換路線、排列、收起都保留，關閉預覽後回到空白；被搜尋藏起的列也關掉逐波隻數。逐波內容也跟著選的路線（waveRouteView）：選了路線時每一波只列那條路線的組
  * （原本的組序）並寫明那條路線已確認的隻數與組數，其他路線的資料問題另列「全波資料提醒」；波次標題、波次導覽與出兵節奏仍是整波。
  * 戰場內的「下一波」不帶這個選擇。
  * 「路線預覽」畫關卡設定的路線格子（StageRoutePreview，預設收起）；逐波內容另列「設定出兵節奏」（utils/spawnRhythm）；
@@ -325,7 +327,9 @@ export default function EnemyPreviewModal({
  * 敵軍組成：依敵人合計已確認會出兵的組（預設展開，可以收起）。
  * 多條路線時可以選一條路線，只看那條路線上的組成（和路線預覽共用同一個選擇）；全部路線時是原本的全關總覽。
  * 排列：首次出現（預設，原本的順序）或已確認隻數由多到少（同數量維持首次出現的順序）；只改顯示順序，數量、說明與資料問題不變。
- * 每一列可以展開目前範圍逐波已確認的隻數（預設收合）：沒有已確認出兵的波次不列、不補 0
+ * 每一列可以展開目前範圍逐波已確認的隻數（預設收合）：沒有已確認出兵的波次不列、不補 0。
+ * 搜尋敵人名稱或 ID（filterCompositionRows）：只篩選目前範圍已排列的列，另寫符合的種數與已確認隻數的小計；
+ * 組成的標題、說明、資料問題與每一列的內容都不變，沒有符合時只說目前範圍沒有符合的已確認敵人
  */
 function CompositionBlock({
   composition: c,
@@ -349,9 +353,13 @@ function CompositionBlock({
   const [sort, setSort] = useState<CompositionSort>("first");
   // 展開逐波隻數的列（enemy_id，預設收合）：關閉預覽（卸載）後全部收合
   const [detailOpen, setDetailOpen] = useState<string[]>([]);
+  // 搜尋敵人名稱或 ID：換路線、排列、收起再展開都保留，關閉預覽（卸載）後回到空白；只篩選顯示的列
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const bodyId = useId();
   const selectId = useId();
   const sortId = useId();
+  const searchId = useId();
   const detailBaseId = useId();
   // 名稱相同但 enemy_id 不同的敵人分開列，並附上 id 才分得出來
   // 依路線查看時每一列另有出兵的波次（waves）；全部路線時沒有
@@ -359,6 +367,11 @@ function CompositionBlock({
     rc ? rc.rows : c.rows,
     sort
   );
+  // 組成只有一種敵人時不顯示搜尋（和排列相同），這時也不篩選，不讓看不到的條件藏起列
+  const searchable = c.rows.length > 1;
+  const q = searchable ? query.trim() : "";
+  // 目前範圍（已排列）裡符合搜尋的列：不重算，合計、首次與逐波都是原本的列
+  const shown = filterCompositionRows(rows, q);
   const orderText =
     sort === "count"
       ? "依已確認隻數由多到少，同數量依第一次出現"
@@ -367,9 +380,9 @@ function CompositionBlock({
   const sortNote = sort === "count" ? "依已確認隻數由多到少排列。" : "";
   const names = rows.map((r) => r.name);
   const sameName = (n: string) => names.indexOf(n) !== names.lastIndexOf(n);
-  // 換路線或設定更新後不在的列：關掉它的逐波隻數（之後再出現也是收合）
+  // 換路線、搜尋或設定更新後不在畫面上的列：關掉它的逐波隻數（之後再出現也是收合）
   const keptDetail = detailOpen.filter((id) =>
-    rows.some((r) => r.enemyId === id)
+    shown.some((r) => r.enemyId === id)
   );
   if (keptDetail.length !== detailOpen.length) setDetailOpen(keptDetail);
   const toggleDetail = (id: string) =>
@@ -458,6 +471,43 @@ function CompositionBlock({
                   和路線預覽的「顯示路線」是同一個選擇。
                 </Col>
               )}
+              {searchable && (
+                <Col xs={12}>
+                  <label htmlFor={searchId} className={styles.heroFilterLabel}>
+                    搜尋敵人名稱或 ID
+                  </label>
+                  <Row className="g-1">
+                    <Col>
+                      <input
+                        id={searchId}
+                        ref={searchRef}
+                        type="text"
+                        className={`form-control form-control-sm ${styles.heroSearchInput}`}
+                        placeholder="名稱或 id"
+                        autoComplete="off"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        data-testid="preview-composition-search"
+                      />
+                    </Col>
+                    <Col xs="auto">
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${styles.heroClearBtn}`}
+                        onClick={() => {
+                          setQuery("");
+                          // 清除鈕會變成停用，焦點交回搜尋框
+                          searchRef.current?.focus();
+                        }}
+                        disabled={query === ""}
+                        data-testid="preview-composition-search-clear"
+                      >
+                        清除
+                      </button>
+                    </Col>
+                  </Row>
+                </Col>
+              )}
             </Row>
           )}
           <div
@@ -502,7 +552,18 @@ function CompositionBlock({
               這條路線另有 {rc.skipped} 組遊戲會略過、不列入（原因見逐波內容）。
             </div>
           )}
-          {rows.map((r) => (
+          {q !== "" && (
+            <div
+              className={styles.previewHint}
+              aria-live="polite"
+              data-testid="preview-composition-search-summary"
+            >
+              {shown.length > 0
+                ? `符合搜尋「${q}」${shown.length} 種，已確認 ${shown.reduce((s, r) => s + r.count, 0)} 隻（只是下面列出的列的小計，不是${rc ? `路線 ${rc.pathId} ` : "全關"}的總數）。`
+                : `${rc ? `路線 ${rc.pathId} ` : "全關"}沒有符合搜尋「${q}」的已確認敵人${complete ? "" : "（只比對已確認的出兵；有資料問題的部分可能還有）"}。`}
+            </div>
+          )}
+          {shown.map((r) => (
             <div
               key={r.enemyId}
               className={styles.previewGroup}
