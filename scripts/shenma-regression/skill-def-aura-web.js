@@ -4,8 +4,7 @@ async (page) => {
   // - 測試資料（只在這支腳本加進 mock 名單，__shenma_defaura_fixture）：武將劉備（射程 1.5 格）與合成的護衛（mock_def_guard：沒有綁定任何技能、防禦 120、血量 99999；
   //   原本用張飛當沒有技能的對照，張飛有了暈眩之後改用合成武將，讓這裡只量防禦公式；張飛＋劉備的組合在 skill-stun-web.js 另外驗證），
   //   關卡「Mock DA 防禦光環」：直線路線（第 5 列），一個攻擊力 100、血量很多的地面兵
-  // - A：技能說明（主頁的武將視窗、獨立的武將頁）：技能名稱「防禦光環」、提升 20%、目前的範圍半徑 1.5 格、不含自己、照防禦公式計算、取最強不疊加、
-  //      只在戰場；沒有治療的字樣；390×844 說明在畫面寬度內、字級至少 12px
+  // - A：技能說明（主頁的武將視窗、獨立的武將頁）：技能名稱「防禦光環」、短版說明（只寫效果、目前的數值與主要例外，和整句比對）；沒有治療的字樣；390×844 說明在畫面寬度內、字級至少 12px
   // - B：主頁用部署選單把護衛放在道路 (4,5)（擋住敵人）、劉備放在建築格 (5,4)（距離 √2 格，在範圍內）：遊戲 iframe 收到的劉備 skill 正好是
   //      {id: def_aura, def_mult: 1.2}、護衛沒有 skill；備戰時光環還沒作用。開戰後護衛有劉備的加成（有效防禦 144），每擊實際扣 100 × 100 ÷ 244 ≈ 40.98；
   //      劉備自己沒有加成；在戰場點護衛，面板的防禦是「120 → 144」並說明不改存檔、生命值與防禦是選取時的數值（390 寬度在畫面內）；
@@ -249,9 +248,11 @@ async (page) => {
     await page.locator('[class*="heroName"]', { hasText: "劉備" }).first().click();
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { card, allyCard, detail, shot: await H.shot(page, "defaura-a-skill-detail") };
-    run.check("A-1 主頁武將視窗：劉備的卡片是「技能：防禦光環」（護衛沒有技能）；詳情寫明其他友軍武將防禦力提升 20%、目前等級的範圍半徑 1.5 格（含邊界）、不含自己與防禦塔、照防禦公式計算（不是直接少扣 20%）、取最強不疊加、只在戰場；沒有治療",
-      /技能：防禦光環/.test(card) && !/技能：/.test(allyCard) && /其他友軍武將防禦力提升 20%/.test(detail) && /目前等級的範圍半徑是 1\.5 格/.test(detail) && /含邊界/.test(detail) &&
-        /不含自己，防禦塔與城池不受影響/.test(detail) && /不是直接少扣 20% 的傷害/.test(detail) && /取最強的一個，不會疊加/.test(detail) && /只在戰場生效/.test(detail) && !/治療|恢復/.test(card + detail),
+    run.check("A-1 主頁武將視窗：劉備的卡片是「技能：防禦光環」（護衛沒有技能）；詳情是短版說明：射程內（目前 1.5 格）其他友軍防禦 +20%、不含自己、防禦塔與城池、取最強不疊加；沒有治療",
+      /技能：防禦光環/.test(card) &&
+        !/技能：/.test(allyCard) &&
+        detail.includes("射程內（目前 1.5 格）的其他友軍武將防禦力 +20%（不含自己、防禦塔與城池）；多個防禦光環取最強、不疊加。") &&
+        !/治療|恢復/.test(card + detail),
       out.A_modal);
     await page.locator('button[class*="modalClose"]').last().click();
     await H.sleep(300);

@@ -145,8 +145,9 @@ async (page) => {
     // 首擊加倍只給馬超：趙雲的卡片是「閃避」、關羽是「減速光環」，都不是衝鋒
     run.check("A-1 主頁武將視窗：馬超的卡片顯示「技能：衝鋒」，趙雲是「技能：閃避」、關羽是「技能：減速光環」（都不是衝鋒）",
       /技能：衝鋒/.test(maCard) && /技能：閃避/.test(zhaoCard) && /技能：減速光環/.test(guanCard) && !/衝鋒/.test(zhaoCard) && !/衝鋒/.test(guanCard), out.A_modal);
-    run.check("A-2 馬超的詳情顯示完整規則：第一次命中 2 倍、沒有目標不會用掉、同一場不再觸發、換關或重來才重置",
-      /技能：衝鋒/.test(detail) && /第一次命中敵人的普通攻擊造成 2 倍傷害/.test(detail) && /沒有目標時不會用掉/.test(detail) && /切換關卡或重新開始才會重置/.test(detail),
+    run.check("A-2 馬超的詳情是短版說明",
+      /技能：衝鋒/.test(detail) &&
+        detail.includes("每場戰鬥第一次命中的普通攻擊造成 2 倍傷害，之後恢復普通攻擊；換波次或移動位置不會再觸發。"),
       out.A_modal);
     out.A_shot = await H.shot(page, "r12-a-skill-detail");
     await page.goto(H.BASE + "/shenmaSanguo/heroes");

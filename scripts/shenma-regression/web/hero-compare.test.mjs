@@ -169,18 +169,24 @@ check(
 );
 const zc = compareColumn(CONFIGS[2], SAVE);
 check(
-  "技能：有技能的列名稱與說明（關羽「減速光環」、黃忠「百步穿楊」），沒有技能的是 null（周倉，不造技能）；對空依職業（弓兵、法師可以，步兵不行）",
+  "技能：有技能的列名稱與說明（關羽「減速光環」、黃忠「百步穿楊」，說明是和詳情相同的短版、用這一欄的射程），沒有技能的是 null（周倉，不造技能）；對空依職業（弓兵、法師可以，步兵不行）",
   gy.skillName === "減速光環" &&
-    typeof gy.skillText === "string" &&
-    gy.skillText.length > 0 &&
+    gy.skillText ===
+      "射程內（目前 1.5 格）的地面敵人移動速度 −10%；飛行與免疫減速的敵人不受影響。和其他減速取最強、不疊加，但文士塔的減速另外計算。" &&
     hz.skillName === "百步穿楊" &&
+    hz.skillText ===
+      "戰場上的有效射程是屬性射程的 1.5 倍（升級的射程成長也一起乘）：目前 6 格，戰場上 9 格。傷害與攻擊間隔不變。" &&
     zc.skillName === null &&
     zc.skillText === null &&
     hz.canHitAir === true &&
     compareColumn(CONFIGS[3], SAVE).canHitAir === true &&
     gy.canHitAir === false &&
     /打不到飛行/.test(gy.airText),
-  { gy: gy.skillName, hz: hz.skillName, zc: zc.skillName }
+  {
+    gy: [gy.skillName, gy.skillText],
+    hz: [hz.skillName, hz.skillText],
+    zc: zc.skillName,
+  }
 );
 const badRange = compareColumn(
   hero("guan_yu", { attack_range: Number.NaN }),

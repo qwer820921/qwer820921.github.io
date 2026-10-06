@@ -459,16 +459,29 @@ async (page) => {
     run.check("F-5 關卡頁的遊戲設定讀取失敗：說明讀取失敗與重試（不是一直轉圈）；重試成功後列出關卡", /遊戲設定讀取失敗/.test(text) && n >= 7, out.F5);
   });
 
-  // 經過 Service Worker 的遊戲檔下載（index.wasm／index.pck）：收尾時等它們結束
-  const swDownloads = new Map();
-  const isGameDownload = (r) => {
-    try { return !!(r.serviceWorker && r.serviceWorker()) && /\/index\.(wasm|pck)(\?|$)/.test(r.url()); } catch { return false; }
+  // 遊戲檔（index.wasm／index.pck）的請求：每個請求一個編號，分清 Service Worker 代抓的與 iframe 自己發出的，記開始／結束／失敗；
+  // 收尾時等 Service Worker 代抓的結束（iframe 那一側的請求在頁面拆掉後可能既不結束也不失敗，不等）
+  let gameReqSeq = 0;
+  const gameReqs = new Map();
+  const gameReqLog = [];
+  const gameReqStart = (r) => {
+    if (!/\/index\.(wasm|pck)(\?|$)/.test(r.url())) return;
+    let sw = null;
+    try { sw = !!(r.serviceWorker && r.serviceWorker()); } catch { sw = null; }
+    gameReqs.set(r, { id: ++gameReqSeq, file: r.url().split("/").pop(), sw, t0: Date.now() });
   };
-  const onDownloadStart = (r) => { if (isGameDownload(r)) swDownloads.set(r, Date.now()); };
-  const onDownloadEnd = (r) => { swDownloads.delete(r); };
-  page.context().on("request", onDownloadStart);
-  page.context().on("requestfinished", onDownloadEnd);
-  page.context().on("requestfailed", onDownloadEnd);
+  const gameReqEnd = (kind) => (r) => {
+    const e = gameReqs.get(r);
+    if (!e) return;
+    gameReqs.delete(r);
+    gameReqLog.push({ ...e, end: kind, ms: Date.now() - e.t0, err: kind === "failed" ? (r.failure() || {}).errorText : undefined });
+  };
+  const gameReqFinished = gameReqEnd("finished");
+  const gameReqFailed = gameReqEnd("failed");
+  const swPending = () => [...gameReqs.values()].filter((e) => e.sw);
+  page.context().on("request", gameReqStart);
+  page.context().on("requestfinished", gameReqFinished);
+  page.context().on("requestfailed", gameReqFailed);
 
   // ── N. 390 寬 ──
   await section("N", async () => {
@@ -509,14 +522,28 @@ async (page) => {
   }).catch(() => {});
   // 收尾：最後停在戰鬥頁（關卡被擋下，但遊戲 iframe 仍經過 Service Worker 下載引擎與資料包）。先離開到同來源、
   // 不在遊戲 Service Worker 範圍內的 robots.txt，等這些下載結束（最多 60 秒）才交給下一支腳本：緊接在這支之後的腳本
-  // 清理時導航到遊戲目錄的靜態頁曾經逾時（根因沒有確認）。等待的時間與剩下的下載記在 out.teardown，不影響判定
+  // 清理時導航到遊戲目錄的靜態頁曾經逾時（根因沒有確認）。離開的導航結果（成功或完整的錯誤原文，不截斷）、離開時還在進行的請求、等待的時間、
+  // 之後的跨來源隔離與 Service Worker 數記在 out.teardown，不影響判定；不延長逾時、不重試
   const t0 = Date.now();
-  await page.goto(H.BASE + "/robots.txt").catch(() => {});
-  const pendingAtLeave = swDownloads.size;
-  while (swDownloads.size > 0 && Date.now() - t0 < 60000) await H.sleep(200);
-  out.teardown = { left: page.url(), pendingAtLeave, waitedMs: Date.now() - t0, remaining: [...swDownloads.keys()].map((r) => r.url().replace(/^https?:\/\/[^/]+/, "")) };
-  page.context().off("request", onDownloadStart);
-  page.context().off("requestfinished", onDownloadEnd);
-  page.context().off("requestfailed", onDownloadEnd);
+  try {
+    const open = (list) => list.map((e) => ({ id: e.id, file: e.file, sw: e.sw, ageMs: Date.now() - e.t0 }));
+    const atLeave = open([...gameReqs.values()]);
+    let nav;
+    try {
+      await page.goto(H.BASE + "/robots.txt");
+      nav = { ok: true, ms: Date.now() - t0 };
+    } catch (e) {
+      nav = { ok: false, ms: Date.now() - t0, error: String(e && e.message ? e.message : e) };
+    }
+    const swAtLeave = swPending().length;
+    while (swPending().length > 0 && Date.now() - t0 < 60000) await H.sleep(200);
+    const after = await page.evaluate(async () => ({ isolated: window.crossOriginIsolated, serviceWorkers: (await navigator.serviceWorker.getRegistrations()).length }))
+      .catch((e) => ({ error: String(e && e.message ? e.message : e) }));
+    out.teardown = { left: page.url(), nav, atLeave, swAtLeave, waitedMs: Date.now() - t0, stillOpen: open([...gameReqs.values()]), after, log: gameReqLog.slice(-20) };
+  } finally {
+    page.context().off("request", gameReqStart);
+    page.context().off("requestfinished", gameReqFinished);
+    page.context().off("requestfailed", gameReqFailed);
+  }
   return run.finish({ out });
 }

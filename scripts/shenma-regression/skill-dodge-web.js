@@ -185,9 +185,10 @@ async (page) => {
     detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { card, detail };
     out.A_shot = await H.shot(page, "dodge-a-skill-detail");
-    run.check("A-1 主頁武將視窗：趙雲的卡片顯示「技能：閃避」（不是衝鋒或奇襲）；詳情寫明每一擊 15% 閃避、不扣血、「MISS」、沒閃避照防禦計算、各自判定沒有冷卻不疊加、敵人的攻擊間隔照常、升級移動換波維持",
-      /技能：閃避/.test(card) && !/衝鋒|奇襲/.test(card) && /每一擊有 15% 的機率閃避/.test(detail) && /這一擊不扣血/.test(detail) && /「MISS」/.test(detail) &&
-        /照原本的防禦計算扣血/.test(detail) && /沒有冷卻、不會疊加/.test(detail) && /敵人的攻擊間隔照常/.test(detail) && /升級、移動位置、換波次都維持同樣的機率/.test(detail) &&
+    run.check("A-1 主頁武將視窗：趙雲的卡片顯示「技能：閃避」（不是衝鋒或奇襲）；詳情是短版說明：每一擊 15% 機率閃避、不扣血",
+      /技能：閃避/.test(card) &&
+        !/衝鋒|奇襲/.test(card) &&
+        detail.includes("受到敵人攻擊時，每一擊有 15% 機率閃避、不扣血。") &&
         !/2 倍/.test(detail),
       out.A_modal);
     await page.locator('button[class*="modalClose"]').last().click();
