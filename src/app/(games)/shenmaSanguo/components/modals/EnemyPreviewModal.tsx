@@ -12,6 +12,7 @@ import {
   StageComposition,
   WaveRouteView,
   filterCompositionRows,
+  lastConfirmedWave,
   routeComposition,
   sortCompositionRows,
   stageComposition,
@@ -61,6 +62,8 @@ interface Props {
  * 只是這個視窗暫時的顯示：換路線保留、每次都用最新的列重新排，關閉預覽後回到預設。
  * 組成的每一列可以前往它在目前範圍（全關或選的路線）首次已確認出兵的波次（列的 firstWave），沿用波次導覽的前往：
  * 只展開那一波、同步導覽的選擇與說明、捲到並聚焦那一波的標題；不換關、不改路線與排列。
+ * 末次已確認出兵（lastConfirmedWave，逐波隻數的最後一筆）比首次晚的列，另外可以用同樣的方式前往末次的波次；
+ * 首末同一波或沒有已確認的筆數時不加這個按鈕。
  * 每一列也可以展開這個範圍逐波已確認的隻數（列的 perWave，預設收合）：只是顯示，不改列的合計、首次出兵、排列、路線與波次的展開；
  * 換路線或設定更新後不在的列關掉，關閉預覽後全部收合。組成可以搜尋敵人名稱或 ID：只篩選顯示的列並另寫小計，
  * 換路線、排列、收起都保留，關閉預覽後回到空白；被搜尋藏起的列也關掉逐波隻數。逐波內容也跟著選的路線（waveRouteView）：選了路線時每一波只列那條路線的組
@@ -623,6 +626,30 @@ function CompositionBlock({
                     {r.firstWave} 波）
                   </button>
                 </Col>
+                {(() => {
+                  const last = lastConfirmedWave(r);
+                  if (last === null || last <= r.firstWave) return null;
+                  return (
+                    <Col xs="auto">
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${styles.heroClearBtn}`}
+                        onClick={() =>
+                          onGotoWave(
+                            last,
+                            `${r.name}${sameName(r.name) ? `（${r.enemyId}）` : ""}${complete ? "的末次出兵" : "已確認的末次出兵"}`
+                          )
+                        }
+                        aria-label={`前往${r.name}${sameName(r.name) ? `（${r.enemyId}）` : ""}${rc ? `在路線 ${rc.pathId} ` : ""}${complete ? "末次出兵" : "已確認的末次出兵"}的第 ${last} 波`}
+                        data-testid="preview-composition-goto-last"
+                        data-wave={last}
+                      >
+                        {complete ? "前往末次出兵" : "前往已確認的末次出兵"}（第{" "}
+                        {last} 波）
+                      </button>
+                    </Col>
+                  );
+                })()}
                 <Col xs="auto">
                   <button
                     type="button"

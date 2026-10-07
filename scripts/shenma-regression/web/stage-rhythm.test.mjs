@@ -16,6 +16,8 @@
 //   用正式 chapter1_3、chapter1_5（正式名稱）六個範圍核對符合的列、種數與小計；路線不借全關的；同類不同等級、同名不同 id 分開；資料問題的組沒有列也搜不到
 // - sortCompositionRows 的 waves（依已確認出兵的波數）：perWave 筆數由多到少、同波數依首次出現；正式六個範圍的順序與波數寫死；同一波多組只算一波、
 //   資料問題的組不算波；只改順序（合計、首次、逐波不變、新陣列不改來源）；和依隻數的順序不同的例子
+// - 敵軍組成每一列的末次已確認出兵（lastConfirmedWave，前往末次出兵用）：逐波隻數的最後一筆；正式 chapter1_3、chapter1_5 六個範圍每一列的首次與末次寫死
+//   （cavalry_lv2 chapter1_5 path_b 首次 4、末次 7）；缺波、數量無法確定、重複波次的第二筆、找不到設定都不算；沒有筆數是 null；排列與搜尋後跟著列走；設定更新後用新的資料
 // - utils/spawnRhythm：同一波各組同時開始、各組第一隻立刻出兵，最後一隻名義在 (n−1)×interval 秒，整波取各組最大值（不相加）；
 //   n＝1 是 0 秒（間隔是什麼都一樣）；沒有提供間隔照遊戲以 1 秒計並標出預設；間隔 ≤ 0 或小於計時器最短時間時依處理幀出兵、
 //   不寫成 0 秒；不是數字的間隔不強轉；數字太大時無法估算（不出現 Infinity）；有無法估算的組時只寫已知範圍
@@ -46,6 +48,7 @@ require.extensions[".ts"] = (module, filename) => {
 const { buildStagePreview } = require(join(UTILS, "stagePreview.ts"));
 const {
   filterCompositionRows,
+  lastConfirmedWave,
   routeComposition,
   sortCompositionRows,
   stageComposition,
@@ -1997,6 +2000,172 @@ const rhythmOf = (enemies) =>
       texts[5] === "設定間隔 0.001 秒" &&
       texts[6] === "設定間隔 1.5 秒",
     texts
+  );
+}
+
+// ── 敵軍組成的末次已確認出兵（lastConfirmedWave，前往末次出兵用）：正式 chapter1_3、chapter1_5 ──
+// 每一列：[enemy_id, 首次, 末次已確認]；期望值寫死，是另外從正式設定的 raw 波次與組直接算出的（不是用被測的函式產生）
+const idFirstLast = (rows) =>
+  rows.map((r) => [r.enemyId, r.firstWave, lastConfirmedWave(r)]);
+const LAST_13 = {
+  all: [
+    ["grunt_lv2", 1, 3],
+    ["grunt_lv3", 1, 1],
+    ["cavalry_lv2", 1, 3],
+    ["siege_lv3", 2, 3],
+    ["siege_lv2", 2, 2],
+    ["cavalry_lv3", 3, 3],
+  ],
+  path_a: [
+    ["grunt_lv2", 1, 3],
+    ["grunt_lv3", 1, 1],
+    ["cavalry_lv2", 1, 1],
+    ["cavalry_lv3", 3, 3],
+  ],
+  path_b: [
+    ["siege_lv3", 2, 3],
+    ["siege_lv2", 2, 2],
+    ["cavalry_lv2", 3, 3],
+    ["grunt_lv2", 3, 3],
+  ],
+};
+const LAST_15 = {
+  all: [
+    ["grunt_lv1", 1, 3],
+    ["cavalry_lv1", 1, 1],
+    ["siege_lv1", 1, 2],
+    ["grunt_lv2", 2, 7],
+    ["cavalry_lv2", 2, 7],
+    ["siege_lv2", 3, 7],
+    ["cavalry_lv3", 6, 7],
+    ["grunt_lv3", 7, 7],
+    ["siege_lv3", 7, 7],
+  ],
+  path_a: [
+    ["grunt_lv1", 1, 3],
+    ["cavalry_lv1", 1, 1],
+    ["siege_lv1", 1, 1],
+    ["grunt_lv2", 2, 7],
+    ["cavalry_lv2", 2, 7],
+    ["siege_lv2", 3, 7],
+    ["cavalry_lv3", 7, 7],
+    ["grunt_lv3", 7, 7],
+  ],
+  path_b: [
+    ["siege_lv1", 2, 2],
+    ["siege_lv2", 3, 7],
+    ["cavalry_lv2", 4, 7],
+    ["grunt_lv2", 5, 7],
+    ["cavalry_lv3", 6, 6],
+    ["siege_lv3", 7, 7],
+  ],
+};
+{
+  const s13 = scopesOf(PATHS_13, WAVES_13);
+  const s15 = scopesOf(PATHS_15, WAVES_15);
+  const scopes = ["all", "path_a", "path_b"];
+  check(
+    "末次已確認出兵（正式 chapter1_3）：cavalry_lv2 全關第 1→3 波、path_a 第 1→1 波、path_b 第 3→3 波；全關與兩條路線每一列的首次與末次都和正式設定算出的相同（路線用自己的，不借全關的）",
+    scopes.every((k) => same(idFirstLast(s13[k]), LAST_13[k])),
+    Object.fromEntries(scopes.map((k) => [k, idFirstLast(s13[k])]))
+  );
+  check(
+    "末次已確認出兵（正式 chapter1_5）：cavalry_lv2 全關第 2→7 波、path_a 第 2→7 波、path_b 第 4→7 波（末次是 7，不是路線的首次 4，也不是出現的波數 4）；cavalry_lv3 path_b 只有第 6 波（首末同一波）；全關與兩條路線每一列都和正式設定算出的相同",
+    scopes.every((k) => same(idFirstLast(s15[k]), LAST_15[k])),
+    Object.fromEntries(scopes.map((k) => [k, idFirstLast(s15[k])]))
+  );
+  const allRows = [
+    ...scopes.map((k) => s13[k]),
+    ...scopes.map((k) => s15[k]),
+  ].flat();
+  check(
+    "末次已確認出兵：每一列的末次就是逐波隻數最後一筆的波次、不早於首次；排列（依隻數、依波數）與搜尋後末次跟著各自的列",
+    allRows.every(
+      (r) =>
+        lastConfirmedWave(r) === r.perWave[r.perWave.length - 1].wave &&
+        lastConfirmedWave(r) >= r.firstWave
+    ) &&
+      same(
+        idFirstLast(sortCompositionRows(s15.path_b, "count")).sort(),
+        LAST_15.path_b.slice().sort()
+      ) &&
+      same(
+        idFirstLast(sortCompositionRows(s15.all, "waves")).sort(),
+        LAST_15.all.slice().sort()
+      ) &&
+      same(idFirstLast(filterCompositionRows(s15.path_b, "輕騎")), [
+        ["cavalry_lv2", 4, 7],
+      ]),
+    {
+      count: idFirstLast(sortCompositionRows(s15.path_b, "count")),
+      search: idFirstLast(filterCompositionRows(s15.path_b, "輕騎")),
+    }
+  );
+}
+{
+  // 資料問題：第 2、5 波缺少；第 3 波重複（第二筆的 cavalry_lv1 遊戲不用）；第 4 波 grunt_lv2 數量無法判讀；第 6 波只有找不到設定的組。
+  // grunt_lv2 已確認出兵的是第 1、3 波：末次是 3，不是有它但數量無法確定的第 4 波，也不是最後一筆資料的第 6 波
+  const p = buildStagePreview(
+    deepFreeze(
+      stage(
+        {
+          path_a: [
+            [0, 5],
+            [13, 5],
+          ],
+        },
+        [
+          { wave: 1, enemies: [g("grunt_lv2", 2, 1, "path_a")] },
+          { wave: 3, enemies: [g("grunt_lv2", 3, 1, "path_a")] },
+          { wave: 3, enemies: [g("cavalry_lv1", 9, 1, "path_a")] },
+          { wave: 4, enemies: [g("grunt_lv2", "many", 1, "path_a")] },
+          { wave: 6, enemies: [g("ghost", 2, 1, "path_a")] },
+        ]
+      )
+    ),
+    deepFreeze(ENEMIES)
+  );
+  const c = stageComposition(p);
+  const r = routeComposition(p, "path_a", c);
+  check(
+    "末次已確認出兵（資料問題）：grunt_lv2 只算已確認的第 1、3 波，末次是第 3 波（不是數量無法確定的第 4 波、不是最後一筆資料的第 6 波）；重複波次第二筆的 cavalry_lv1、找不到設定的組沒有列；資料不完整",
+    same(idFirstLast(c.rows), [["grunt_lv2", 1, 3]]) &&
+      same(idFirstLast(r.rows), [["grunt_lv2", 1, 3]]) &&
+      !c.complete,
+    { rows: idFirstLast(c.rows), route: idFirstLast(r.rows), gaps: c.gaps }
+  );
+  const row = deepFreeze({
+    perWave: [
+      { wave: 2, count: 1 },
+      { wave: 5, count: 3 },
+    ],
+  });
+  check(
+    "末次已確認出兵（輸入）：沒有已確認的筆數回傳 null（不補全關的最後一波、不當成 0）；只有一筆時就是那一波；不改傳入的列（凍結的列照樣可以讀）",
+    lastConfirmedWave({ perWave: [] }) === null &&
+      lastConfirmedWave({ perWave: [{ wave: 4, count: 2 }] }) === 4 &&
+      lastConfirmedWave(row) === 5 &&
+      row.perWave.length === 2
+  );
+  // 設定更新：末次改成新的資料
+  const updated = buildStagePreview(
+    stage(
+      {
+        path_a: [
+          [0, 5],
+          [13, 5],
+        ],
+      },
+      [
+        { wave: 1, enemies: [g("grunt_lv2", 2, 1, "path_a")] },
+        { wave: 2, enemies: [g("grunt_lv2", 2, 1, "path_a")] },
+      ]
+    ),
+    ENEMIES
+  );
+  check(
+    "末次已確認出兵（設定更新）：新的資料只有第 1、2 波時 grunt_lv2 的末次是第 2 波（用最新的資料，不留舊的第 3 波）",
+    same(idFirstLast(stageComposition(updated).rows), [["grunt_lv2", 1, 2]])
   );
 }
 

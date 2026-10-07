@@ -21,6 +21,10 @@ async (page) => {
   //   S-9 設定更新成只剩一種敵人時搜尋與排列藏起來、看不到的查詢與排列不影響列；S-10 變回多種時搜尋出現且空白（「單種」「多種」兩個測試關）
   // - 依已確認出現波數排列（排列選單第三項）：V-1「進京」全關與兩條路線的波數順序、只改順序、搜尋與清除、前往與逐波、關閉重開回到首次出現，
   //   「討伐」和依隻數的順序不同；V-2 鍵盤；V-3 資料不完整的說明；V-4 沒有送東西給遊戲；V-5 獨立關卡頁同樣；V-6 390×600／390×844；V-7 設定更新保留排列
+  // - 前往末次已確認出兵（組成每一列的第二個前往按鈕，末次比首次晚才有）：L-1「進京」全關與兩條路線各自的末次（C 快騎全關 2→7、path_b 4→7）、
+  //   排列／搜尋／收起再展開後跟著列、關閉重開回到預設，「討伐」全關、依波數排列與兩條路線；L-2 首末同一波不重複；L-3 鍵盤；
+  //   L-4 資料不完整寫「已確認的末次」；L-5 沒有送東西給遊戲（之後 M-4 再核不換關、不寫入）；L-6 獨立關卡頁同樣；L-7 390×600／390×844。
+  //   W-2 的鍵盤順序因此變成前往首次 → 前往末次 → 逐波
   // 全部 mock、虛構金鑰 test_sort_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -175,7 +179,7 @@ async (page) => {
   };
   const waveOf = (n, id) => (n.buttons.find((b) => b[0] === id) || [])[1] ?? null;
   const landed = (n, wave, route, sort, label) =>
-    JSON.stringify(n.open) === JSON.stringify([wave]) && n.select === String(wave) && n.focus === `preview-wave-toggle-${wave}` &&
+    !!n && JSON.stringify(n.open) === JSON.stringify([wave]) && n.select === String(wave) && n.focus === `preview-wave-toggle-${wave}` &&
     n.status === `已前往第 ${wave} 波（${label}）` && n.route === route && n.sort === sort;
   // G-1／P-4 共用：「討伐」的 C 快騎（正式 cavalry_lv2：全關 1、path_a 1、path_b 3）
   const gotoFlow = async () => {
@@ -198,6 +202,103 @@ async (page) => {
     waveOf(nb, C2) === 3 && /在路線 path_b/.test((nb.buttons.find((x) => x[0] === C2) || [])[3] || "") &&
     landed(b, 3, "path_b", "count", "C 快騎的首次出兵") &&
     landed(a, 1, "path_a", "count", "C 快騎的首次出兵");
+
+  // 前往末次已確認出兵：組成列的第二個前往按鈕（末次比首次晚才有；首末同一波或沒有已確認的筆數時不加）
+  const lastBtn = (enemyId) => page.locator(`[data-testid="preview-composition-row"][data-enemy-id="${enemyId}"] [data-testid="preview-composition-goto-last"]`);
+  const lasts = () => page.evaluate(() => {
+    const c = document.querySelector('[data-testid="enemy-preview"] [data-testid="preview-composition"]');
+    return {
+      route: c.dataset.route, sort: c.dataset.sort,
+      rows: [...c.querySelectorAll('[data-testid="preview-composition-row"]')].map((r) => {
+        const f = r.querySelector('[data-testid="preview-composition-goto"]');
+        const l = [...r.querySelectorAll('[data-testid="preview-composition-goto-last"]')];
+        const b = l[0];
+        return {
+          id: r.dataset.enemyId, first: f ? Number(f.dataset.wave) : null, last: b ? Number(b.dataset.wave) : null, n: l.length,
+          text: b ? b.innerText.replace(/\s+/g, " ").trim() : null, label: b ? b.getAttribute("aria-label") : null,
+        };
+      }),
+    };
+  });
+  // 每一列：[別名, 首次, 末次（沒有按鈕是 null）]
+  const fl = (s) => s.rows.map((r) => [r.id, r.first, r.last]);
+  const flSorted = (s) => fl(s).map((r) => r.join("|")).sort();
+  const tableSorted = (t) => t.map((r) => r.join("|")).sort();
+  const lastRow = (s, id) => s.rows.find((r) => r.id === id) || null;
+  // 按鈕不在（不該不見時）不去點它，讓斷言以具名的失敗呈現，不是點擊逾時
+  const gotoLast = async (enemyId) => {
+    if ((await lastBtn(enemyId).count()) !== 1) return null;
+    await lastBtn(enemyId).click();
+    await H.sleep(350);
+    return nav();
+  };
+  // 「進京」（正式 chapter1_5：grunt_lv1→傷兵、cavalry_lv1→前鋒、siege_lv1→A 慢兵、grunt_lv2→步兵、cavalry_lv2→C 快騎、siege_lv2→重甲、
+  // cavalry_lv3→衝鋒、grunt_lv3→B 步兵、siege_lv3→飛騎）：首次與末次是正式設定算出的（cavalry_lv2 path_b 首次 4、末次 7）
+  const LAST_ALL_15 = [[GL1, 1, 3], [CL1, 1, null], [SL1, 1, 2], [G2, 2, 7], [C2, 2, 7], [S2, 3, 7], [C3, 6, 7], [G3, 7, null], [SL3, 7, null]];
+  const LAST_A_15 = [[GL1, 1, 3], [CL1, 1, null], [SL1, 1, null], [G2, 2, 7], [C2, 2, 7], [S2, 3, 7], [C3, 7, null], [G3, 7, null]];
+  const LAST_B_15 = [[SL1, 2, null], [S2, 3, 7], [C2, 4, 7], [G2, 5, 7], [C3, 6, null], [SL3, 7, null]];
+  // 「討伐」（正式 chapter1_3：grunt_lv2→步兵、grunt_lv3→B 步兵、cavalry_lv2→C 快騎、cavalry_lv3→衝鋒、siege_lv3→A 慢兵、siege_lv2→重甲）
+  const LAST_ALL_13 = [[G2, 1, 3], [G3, 1, null], [C2, 1, 3], [S3, 2, 3], [S2, 2, null], [C3, 3, null]];
+  const LAST_A_13 = [[G2, 1, 3], [G3, 1, null], [C2, 1, null], [C3, 3, null]];
+  const LAST_B_13 = [[S3, 2, 3], [S2, 2, null], [C2, 3, null], [G2, 3, null]];
+  // 按鈕：每一列最多一個；文字寫末次的波次（資料不完整時寫「已確認的末次」），aria-label 寫前往、路線（選了路線時）與末次的波次
+  const lastLabelsOk = (s, route, complete = true) =>
+    s.rows.every((r) =>
+      r.last === null
+        ? r.n === 0
+        : r.n === 1 && r.text === `${complete ? "前往末次出兵" : "前往已確認的末次出兵"}（第 ${r.last} 波）` &&
+          (r.label || "").startsWith("前往") && (r.label || "").endsWith(`${complete ? "末次出兵" : "已確認的末次出兵"}的第 ${r.last} 波`) &&
+          (route ? (r.label || "").includes(`在路線 ${route} `) : !(r.label || "").includes("在路線")));
+  // L-1／L-6 共用
+  const lastFlow = async () => {
+    await openPreview("chapter3_2");
+    const l0 = await lasts();
+    const gAll = await gotoLast(C2);
+    await pick("preview-composition-route", "route:path_a");
+    const la = await lasts();
+    await pick("preview-composition-route", "route:path_b");
+    const lb = await lasts();
+    const gB = await gotoLast(C2);
+    await pick("preview-composition-sort", "count");
+    const lbc = await lasts();
+    await search("步兵");
+    const lbs = await lasts();
+    const gS = await gotoLast(G2);
+    await page.locator('[data-testid="preview-composition-toggle"]').click();
+    await H.sleep(150);
+    await page.locator('[data-testid="preview-composition-toggle"]').click();
+    await H.sleep(150);
+    const lce = await lasts();
+    await closePreview();
+    await openPreview("chapter3_2");
+    const lr = await lasts();
+    await closePreview();
+    await openPreview("chapter3_1");
+    const t0 = await lasts();
+    await pick("preview-composition-sort", "waves");
+    const tw = await lasts();
+    await pick("preview-composition-route", "route:path_a");
+    const ta = await lasts();
+    await pick("preview-composition-route", "route:path_b");
+    const tb = await lasts();
+    const gT = await gotoLast(S3);
+    await closePreview();
+    return { l0, gAll, la, lb, gB, lbc, lbs, gS, lce, lr, t0, tw, ta, tb, gT };
+  };
+  const lastFlowOk = ({ l0, gAll, la, lb, gB, lbc, lbs, gS, lce, lr, t0, tw, ta, tb, gT }) =>
+    same(fl(l0), LAST_ALL_15) && lastLabelsOk(l0, null) && /C 快騎/.test(lastRow(l0, C2)?.label || "") &&
+    landed(gAll, 7, "", "first", "C 快騎的末次出兵") &&
+    la.route === "path_a" && same(fl(la), LAST_A_15) && lastLabelsOk(la, "path_a") &&
+    lb.route === "path_b" && same(fl(lb), LAST_B_15) && lastLabelsOk(lb, "path_b") &&
+    landed(gB, 7, "path_b", "first", "C 快騎的末次出兵") &&
+    lbc.sort === "count" && same(flSorted(lbc), tableSorted(LAST_B_15)) && lbc.rows[0].id === S2 &&
+    same(fl(lbs), [[G2, 5, 7]]) && landed(gS, 7, "path_b", "count", "步兵的末次出兵") &&
+    lce.route === "path_b" && lce.sort === "count" && same(fl(lce), [[G2, 5, 7]]) &&
+    lr.route === "" && lr.sort === "first" && same(fl(lr), LAST_ALL_15) &&
+    same(fl(t0), LAST_ALL_13) && lastLabelsOk(t0, null) &&
+    tw.sort === "waves" && same(flSorted(tw), tableSorted(LAST_ALL_13)) &&
+    same(flSorted(ta), tableSorted(LAST_A_13)) && same(flSorted(tb), tableSorted(LAST_B_13)) && lastLabelsOk(tb, "path_b") &&
+    landed(gT, 3, "path_b", "waves", "A 慢兵的末次出兵");
 
   // 逐波隻數：組成列的明細按鈕、展開的內容，以及展開不該動到的東西（合計、首次、排列、路線、波次的展開與導覽）
   const IFRAME = 'iframe[title="Shenma Sanguo"]';
@@ -617,6 +718,8 @@ async (page) => {
     await openPreview("chapter3_2");
     await gotoBtn(C2).focus();
     await press("Tab");
+    const wkLast = await page.evaluate(() => [document.activeElement?.dataset?.testid ?? null, document.activeElement?.closest('[data-testid="preview-composition-row"]')?.dataset.enemyId ?? null]);
+    await press("Tab");
     const wk0 = await details();
     await press("Enter");
     const wk1 = await details();
@@ -632,8 +735,9 @@ async (page) => {
       focus: document.activeElement?.dataset?.testid ?? null,
       focusMap: document.activeElement?.closest('[data-testid="stage-card"]')?.dataset.mapId ?? null,
     }));
-    out.W2 = { wk0: [wk0.focus, wk0.focusRow], wk1: [wk1.focus, expandedIds(wk1)], wk2: [wk2.focus, expandedIds(wk2)], wk3: wavesOf(wk3, C2), wkEsc };
-    run.check("W-2 鍵盤：C 快騎的前往按鈕按 Tab 到同一列的逐波按鈕；Enter 展開、空白鍵收合、Enter 再展開（焦點都留在按鈕上）；Esc 只關閉預覽，焦點回到「進京」的敵軍預覽按鈕",
+    out.W2 = { wkLast, wk0: [wk0.focus, wk0.focusRow], wk1: [wk1.focus, expandedIds(wk1)], wk2: [wk2.focus, expandedIds(wk2)], wk3: wavesOf(wk3, C2), wkEsc };
+    run.check("W-2 鍵盤：C 快騎的前往首次按鈕按 Tab 到同一列的前往末次按鈕、再按 Tab 到逐波按鈕；Enter 展開、空白鍵收合、Enter 再展開（焦點都留在按鈕上）；Esc 只關閉預覽，焦點回到「進京」的敵軍預覽按鈕",
+      same(wkLast, ["preview-composition-goto-last", C2]) &&
       wk0.focus === "preview-composition-detail-toggle" && wk0.focusRow === C2 &&
         wk1.focus === "preview-composition-detail-toggle" && same(expandedIds(wk1), [C2]) &&
         wk2.focus === "preview-composition-detail-toggle" && expandedIds(wk2).length === 0 &&
@@ -783,6 +887,57 @@ async (page) => {
     out.V4 = { vWatching, vSent };
     run.check("V-4 主頁操作依波數排列（V-1～V-3）的期間沒有送任何訊息給遊戲（沒有關卡資料、update_team 或命令）",
       vWatching && Array.isArray(vSent) && vSent.length === 0, out.V4);
+
+    // L-1 前往末次已確認出兵（主頁）：重新記錄送給遊戲的訊息
+    const lWatching = await watchSent();
+    const lf = await lastFlow();
+    out.L1 = lf;
+    run.check("L-1 前往末次出兵（「進京」，正式 chapter1_5 的形狀）：末次比首次晚的列才有按鈕（每列一個），全關與兩條路線用各自的末次，C 快騎全關第 2→7 波、path_b 第 4→7 波（不是路線的首次 4）；" +
+      "按下只展開那一波、導覽與說明同步、焦點在那一波的標題，路線與排列不變；依隻數排列、搜尋「步兵」、收起再展開後按鈕跟著列；關閉重開回到全關與首次出現；" +
+      "「討伐」（正式 chapter1_3）全關、依波數排列、path_a、path_b 各自的末次，path_b 的 A 慢兵前往第 3 波",
+      lWatching && lastFlowOk(lf), out.L1);
+
+    // L-2 首末同一波不重複：「進京」的前鋒、B 步兵、飛騎與「討伐」path_b 的步兵只有一個前往首次的按鈕
+    await openPreview("chapter3_1");
+    await pick("preview-composition-route", "route:path_b");
+    const ls2 = await lasts();
+    const ln2 = await nav();
+    await closePreview();
+    out.L2 = { rows: ls2.rows, first: ln2.buttons };
+    run.check("L-2 首末同一波（或只出現一波）的列沒有前往末次的按鈕，只留原本的前往首次（「討伐」path_b：重甲第 2 波、C 快騎與步兵第 3 波）；A 慢兵第 2→3 波有",
+      same(fl(ls2), LAST_B_13) && [S2, C2, G2].every((id) => lastRow(ls2, id)?.n === 0) && lastRow(ls2, S3)?.n === 1 &&
+        [S3, S2, C2, G2].every((id) => waveOf(ln2, id) === LAST_B_13.find((r) => r[0] === id)[1]),
+      out.L2);
+
+    // L-3 鍵盤：前往首次按 Tab 到同一列的前往末次，Enter 前往
+    await openPreview("chapter3_2");
+    await gotoBtn(C2).focus();
+    await press("Tab");
+    const lk0 = await page.evaluate(() => [document.activeElement?.dataset?.testid ?? null, document.activeElement?.closest('[data-testid="preview-composition-row"]')?.dataset.enemyId ?? null]);
+    await press("Enter");
+    await H.sleep(300);
+    const lk1 = await nav();
+    await closePreview();
+    out.L3 = { lk0, lk1 };
+    run.check("L-3 鍵盤：C 快騎的前往首次按 Tab 到同一列的前往末次，Enter 前往第 7 波、焦點在那一波的標題",
+      same(lk0, ["preview-composition-goto-last", C2]) && landed(lk1, 7, "", "first", "C 快騎的末次出兵"), out.L3);
+
+    // L-4 資料不完整（「邊界」）：寫「已確認的末次」；找不到設定、數量無法判讀、數量 0 的組沒有列
+    await openPreview("chapter3_3");
+    const le = await lasts();
+    const leGo = await gotoLast(G2);
+    await closePreview();
+    out.L4 = { rows: le.rows, leGo };
+    run.check("L-4 資料不完整（「邊界」）：步兵已確認的是第 1、2 波，按鈕寫「前往已確認的末次出兵（第 2 波）」，按下到第 2 波、說明寫已確認的末次；B 步兵只有第 1 波沒有按鈕；找不到設定的 mock_ss_ghost 沒有列",
+      same(fl(le), [[G2, 1, 2], [G3, 1, null]]) && lastLabelsOk(le, null, false) && !le.rows.some((r) => r.id === "mock_ss_ghost") &&
+        landed(leGo, 2, "", "first", "步兵已確認的末次出兵"),
+      out.L4);
+
+    // L-5 送給遊戲的訊息
+    const lSent = await sentTypes();
+    out.L5 = { lWatching, lSent };
+    run.check("L-5 主頁操作前往末次出兵（L-1～L-4）的期間沒有送任何訊息給遊戲（沒有關卡資料、update_team 或命令）",
+      lWatching && Array.isArray(lSent) && lSent.length === 0, out.L5);
 
     // M-4 關閉關卡選擇：戰場不變、沒有寫入
     await press("Escape");
@@ -1032,6 +1187,34 @@ async (page) => {
     out.V6 = vfits;
     run.check("V-6 390×600／390×844：排列選單在預覽裡、沒有橫向捲動，選依已確認出現波數後的順序和桌面相同",
       [600, 844].every((h) => vfits[h].inside && vfits[h].docScroll <= vfits[h].vw && vfits[h].sort === "waves" && same(vfits[h].rows, WAVES_ALL_15)), out.V6);
+
+    // L-6 獨立關卡頁：前往末次出兵和主頁相同
+    const lp = await lastFlow();
+    out.L6 = lp;
+    run.check("L-6 獨立關卡頁：前往末次出兵的全關與兩條路線、按鈕文字與說明、前往與焦點、排列與搜尋、收起再展開、關閉重開，都和主頁相同", lastFlowOk(lp), out.L6);
+
+    // L-7 390×600／390×844：前往末次的按鈕都在預覽裡、沒有橫向捲動，按下到對的那一波
+    const lfits = {};
+    for (const h of [600, 844]) {
+      await page.setViewportSize({ width: 390, height: h });
+      await H.sleep(300);
+      await openPreview("chapter3_2");
+      if ((await lastBtn(C2).count()) === 1) await lastBtn(C2).scrollIntoViewIfNeeded();
+      await H.sleep(200);
+      const box = await page.evaluate(() => {
+        const p = document.querySelector('[data-testid="enemy-preview"] [role="dialog"]').getBoundingClientRect();
+        const bs = [...document.querySelectorAll('[data-testid="preview-composition-goto-last"]')].map((b) => b.getBoundingClientRect());
+        return { vw: innerWidth, docScroll: document.documentElement.scrollWidth, n: bs.length, inside: bs.every((r) => r.width > 0 && r.left >= p.left && r.right <= p.right) };
+      });
+      const lshot = await H.shot(page, `stage-sort-last-390x${h}`);
+      const lgo = await gotoLast(C2);
+      await closePreview();
+      lfits[h] = { ...box, shot: lshot, landed: landed(lgo, 7, "", "first", "C 快騎的末次出兵") };
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    out.L7 = lfits;
+    run.check("L-7 390×600／390×844：「進京」的 6 個前往末次按鈕（傷兵、A 慢兵、步兵、C 快騎、重甲、衝鋒）都在預覽裡、沒有橫向捲動；按 C 快騎的到第 7 波",
+      [600, 844].every((h) => lfits[h].n === 6 && lfits[h].inside && lfits[h].docScroll <= lfits[h].vw && lfits[h].landed), out.L7);
 
     // V-7 設定更新（預覽開著）：保留依波數排列，用新的列重排
     await staleReload([STALE_REFRESH], "chapter3_4");

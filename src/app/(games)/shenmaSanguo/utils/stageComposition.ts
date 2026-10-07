@@ -31,6 +31,17 @@ export interface CompositionRow {
   perWave: WaveCount[];
 }
 
+/**
+ * 一列在它的範圍（全關或選的路線）最後一次已確認出兵的波次：逐波隻數（perWave，依波次編號）的最後一筆。
+ * 沒有已確認的筆數時回傳 null；不用全關的最後一波、最後一筆資料的波次或波數推估，不改傳入的列
+ */
+export function lastConfirmedWave(
+  row: Pick<CompositionRow, "perWave">
+): number | null {
+  const last = row.perWave[row.perWave.length - 1];
+  return last ? last.wave : null;
+}
+
 /** 把一組已確認的出兵加進逐波隻數：預覽的波次依編號由小到大，同一波一定接在最後一筆，相加 */
 function addWaveCount(perWave: WaveCount[], wave: number, count: number) {
   const last = perWave[perWave.length - 1];
