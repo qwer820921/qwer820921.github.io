@@ -93,7 +93,7 @@ export class AssetLoader {
     }
 
     const promise = new Promise<HTMLImageElement | null>((resolve) => {
-      if (typeof window === "undefined") {
+      if (typeof window === "undefined" || typeof Image === "undefined") {
         resolve(null);
         return;
       }

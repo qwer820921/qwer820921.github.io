@@ -1,210 +1,1072 @@
 /**
  * shenmaSanguoJs.module.css
- * 神馬三國 Canvas 2D 極致古風戰場 UI 樣式表
- * 融合沉浸式三國暗色琉璃玻璃態、青銅暗紋與鎏金微光動態效果
+ * 神馬三國 (JS版) — 95%+ UI/UX 高相近度主題與沉浸式直式街機框佈局
+ * 與原版 Godot 前端佈局完全對齊：
+ * 1. 滿版草地背景 (tile_grass1.webp)
+ * 2. 3:4 比例置中直式戰場 (aspect-ratio: 3 / 4, width: min(100cqw, 75cqh))
+ * 3. 懸浮 HUD 頂欄 (hudTopBar) 與懸浮操作子欄 (hudActionBar)
+ * 4. 左下角懸浮玩法提示卡片 (battleTipsPanel)
+ * 5. 錨定式懸浮部署選單 (placementMenu) 與升級/指令面板 (upgradePanel)
+ * 6. 原版結算彈窗 (resultCard: resultWin / resultLose)
  */
 
-.container {
-  padding-top: 1rem;
-  padding-bottom: 2.5rem;
-  max-width: 1320px;
+/* ── 全局變數 ──────────────────────────────────────────────── */
+:root {
+  --sg-bg: #1a1a2e;
+  --sg-surface: #1e293b;
+  --sg-surface2: #0f172a;
+  --sg-border: rgba(255, 255, 255, 0.12);
+  --sg-border-hi: rgba(245, 158, 11, 0.5);
+  --sg-gold: #f59e0b;
+  --sg-gold-dim: #d97706;
+  --sg-primary: #6366f1;
+  --sg-text: #f8fafc;
+  --sg-muted: #94a3b8;
+  --sg-red: #ef4444;
+  --sg-green: #10b981;
+  --sg-blue: #3b82f6;
+  --sg-purple: #8b5cf6;
 }
 
-/* 頂部 HUD 狀態列 (琉璃暗金風) */
-.hudWrapper {
-  background: rgba(26, 23, 20, 0.88);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(212, 175, 55, 0.3);
-  border-radius: 12px;
-  padding: 0.85rem 1.25rem;
-  margin-bottom: 1rem;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-.stageSelectBtn {
-  font-weight: 600;
-  border-radius: 8px;
-  transition: all 0.2s ease-in-out;
-}
-.stageSelectBtn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(255, 193, 7, 0.25);
-}
-
-.hudIcon {
-  font-size: 1.5rem;
-  line-height: 1;
-}
-
-.hpProgressBar {
-  height: 10px;
-  background-color: rgba(0, 0, 0, 0.6);
-  border-radius: 6px;
+/* ── 外層置中街機主體 (滿版桌面居中 700px 框，兩側為全站草地背景) ──────── */
+.gameBody {
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 700px;
+  margin: 0 auto;
+  position: relative;
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
   overflow: hidden;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 
-.statBox {
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 0.35rem 0.65rem;
+/* ── 滿版直式街機遊戲頁面 ──────────────────────────────────── */
+.singlePage {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background-color: #1a1a2e;
+  background-image: url("/images/shenmaSanguo/tiles/tile_grass1.webp");
+  background-repeat: repeat;
+  background-size: 64px;
+  display: flex;
+  flex-direction: column;
 }
 
-.goldCounter {
+/* ── 戰場中央金屬圓形「進入戰場」迎戰徽章 ───────────────────── */
+.centerEnterBattleBtn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #474039 0%, #1e1915 65%, #0f0c0a 100%);
+  border: 7px solid #78716c;
+  box-shadow:
+    0 0 0 2px #292524,
+    0 8px 24px rgba(0, 0, 0, 0.8),
+    inset 0 3px 6px rgba(255, 255, 255, 0.25),
+    inset 0 -4px 10px rgba(0, 0, 0, 0.9);
+  cursor: pointer;
+  z-index: 12;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
-  font-weight: 700;
-  font-size: 1.2rem;
-  color: #ffca28;
-  letter-spacing: 0.5px;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  padding: 0;
+  outline: none;
 }
 
-.waveCounter {
-  font-size: 1.2rem;
-  letter-spacing: 0.5px;
+.centerEnterBattleBtn:hover {
+  transform: translate(-50%, -50%) scale(1.06);
+  border-color: #a8a29e;
+  box-shadow:
+    0 0 0 2px #d97706,
+    0 12px 32px rgba(245, 158, 11, 0.4),
+    inset 0 3px 8px rgba(255, 255, 255, 0.4),
+    inset 0 -4px 12px rgba(0, 0, 0, 0.9);
 }
 
-.coinIcon {
-  filter: drop-shadow(0 2px 4px rgba(255, 202, 40, 0.4));
+.centerEnterBattleBtn:active {
+  transform: translate(-50%, -50%) scale(0.96);
 }
 
-/* 戰鬥畫布容器 */
+.centerEnterBattleInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.15;
+  color: #fbbf24;
+  font-weight: 900;
+  font-size: 1.25rem;
+  letter-spacing: 2px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+}
+
+/* ── 直式遊戲框戰場區域 ────────────────────────────────────── */
+.gamePortraitWrap {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+  container-type: size;
+}
+
+/* 3:4 比例遊戲容器 (對齊原版 540x720) */
+.gameWrapper {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  background: #1a1a2e;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+@supports (width: 1cqw) {
+  .gameWrapper {
+    flex: none;
+    width: min(100cqw, 75cqh);
+    height: auto;
+    aspect-ratio: 3 / 4;
+  }
+}
+
+/* 畫布容器與原生 Canvas */
 .canvasContainer {
   position: relative;
   width: 100%;
-  border-radius: 14px;
+  height: 100%;
   overflow: hidden;
-  border: 2px solid rgba(212, 175, 55, 0.35);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(212, 175, 55, 0.1);
-  background-color: #1a1715;
 }
 
 .battleCanvas {
   display: block;
   width: 100%;
+  height: 100%;
   touch-action: none;
   cursor: crosshair;
 }
 
-/* 佈防階段底部操作條 */
-.prepActionBar {
+/* ── HUD 頂欄 (hudTopBar) ──────────────────────────────────── */
+.hudTopBar {
   position: absolute;
-  bottom: 0;
+  top: 0;
   left: 0;
   right: 0;
-  background: linear-gradient(180deg, rgba(20, 18, 16, 0.75) 0%, rgba(15, 13, 12, 0.96) 100%);
-  backdrop-filter: blur(8px);
-  border-top: 1px solid rgba(212, 175, 55, 0.25);
-  padding: 0.65rem 1.25rem;
   z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(10, 15, 35, 0.75);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  min-height: 36px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* 呼吸脈衝特效按鈕 */
-.pulseBtn {
-  animation: pulseGlow 2s infinite;
-  box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
+.hudAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  font-size: 0.9rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  transition: all 0.15s;
 }
 
-@keyframes pulseGlow {
-  0% {
+.hudAvatar:hover {
+  background: rgba(99, 102, 241, 0.45);
+  border-color: rgba(99, 102, 241, 0.7);
+}
+
+.hudCenter {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.hudStageBtn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 0.9rem;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.hudStageBtn:hover {
+  background: rgba(99, 102, 241, 0.4);
+  border-color: rgba(99, 102, 241, 0.55);
+}
+
+.hudMapName {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hudWave {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 600;
+}
+
+.hudRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.hudStat {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* ── HUD 操作子列 (hudActionBar) ───────────────────────────── */
+.hudActionBar {
+  position: absolute;
+  top: 44px;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 6px;
+  pointer-events: none;
+}
+
+.hudActionBarLeft,
+.hudActionBarRight {
+  display: flex;
+  gap: 5px;
+  pointer-events: auto;
+}
+
+.hudBarBtn {
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 8px;
+  background: rgba(10, 15, 35, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: all 0.15s;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hudBarBtn:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.45);
+  border-color: rgba(99, 102, 241, 0.6);
+}
+
+.hudBarBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hudActionBtnActive {
+  background: rgba(99, 102, 241, 0.65) !important;
+  border-color: rgba(99, 102, 241, 0.9) !important;
+  color: #fff !important;
+}
+
+.hudBarBtnBattle {
+  background: rgba(239, 68, 68, 0.65) !important;
+  border-color: rgba(239, 68, 68, 0.9) !important;
+}
+
+/* ── 暫停徽章 (PauseBadge) ─────────────────────────────────── */
+.pauseBadge {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid #f59e0b;
+  border-radius: 20px;
+  padding: 6px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #f59e0b;
+  font-size: 0.82rem;
+  font-weight: 700;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+}
+
+.pauseBadgeBtn {
+  background: #f59e0b;
+  color: #000;
+  border: none;
+  border-radius: 12px;
+  padding: 2px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.pauseBadgeBtn:hover {
+  background: #fbbf24;
+}
+
+/* ── 左下角玩法提示 (BattleTipsPanel) ───────────────────────── */
+.battleTips {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  width: 270px;
+  max-width: calc(100vw - 24px);
+  z-index: 15;
+  background: rgba(10, 15, 35, 0.92);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 12px;
+  padding: 10px 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #e2e8f0;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.battleTipsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 4px;
+}
+
+.battleTipsTitle {
+  font-weight: 700;
+  color: #f59e0b;
+  letter-spacing: 0.05em;
+  font-size: 0.84rem;
+}
+
+.battleTipsClose {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-radius: 6px;
+  padding: 1px 8px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.battleTipsClose:hover {
+  background: rgba(99, 102, 241, 0.45);
+}
+
+.battleTipsList {
+  margin: 0;
+  padding-left: 1.15rem;
+}
+
+.battleTipsList li {
+  margin-bottom: 4px;
+}
+
+.battleTipsNote {
+  margin: 6px 0 0;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+/* ── 懸浮部署選單 (PlacementMenu) ──────────────────────────── */
+.placementOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.placementMenu {
+  position: absolute;
+  width: 230px;
+  background: #1a1f36;
+  border: 2px solid #f59e0b;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: scaleIn 0.15s ease-out;
+  max-height: 80vh;
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+  to {
     transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
-  }
-  70% {
-    transform: scale(1.03);
-    box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
-  }
-  100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
+    opacity: 1;
   }
 }
 
-/* 模態彈窗自訂深色琉璃風格 */
-.modalHeader {
-  background: #231f1c;
-  border-bottom: 1px solid rgba(212, 175, 55, 0.3);
+.placementHeader {
+  background: rgba(245, 158, 11, 0.15);
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #f59e0b;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: #f59e0b;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.tabSwitcher {
+  display: flex;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 4px;
+  gap: 4px;
+}
+
+.tabBtn {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #94a3b8;
+  padding: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.tabBtn:hover {
   color: #fff;
 }
 
-.modalHeaderWin {
-  background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%);
-  border-bottom: 2px solid #ffca28;
+.tabActive {
+  background: rgba(245, 158, 11, 0.25);
+  color: #f59e0b;
 }
 
-.modalHeaderLose {
-  background: linear-gradient(135deg, #b71c1c 0%, #7f0000 100%);
-  border-bottom: 2px solid #e57373;
+.placementContent {
+  padding: 0.75rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
-.modalBody {
-  background: #191614;
-  color: #e0e0e0;
+.heroGrid,
+.towerGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem;
 }
 
-.modalFooter {
-  background: #231f1c;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* 單位部署卡片 */
-.deployCard {
-  background: #25211e;
+.menuCard {
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  transition: all 0.2s ease-in-out;
+  border-radius: 8px;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #fff;
+  text-align: center;
 }
 
-.deployCard:hover {
-  border-color: rgba(212, 175, 55, 0.6);
+.menuCard:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #f59e0b;
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
 }
 
 .cardDisabled {
-  opacity: 0.55;
-  filter: grayscale(40%);
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: grayscale(0.8);
 }
 
-.statsCard {
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+.cardIcon {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.cardName {
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.cardStatus,
+.cardCost {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.cardAir {
+  font-size: 0.62rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+}
+
+.cardAirYes {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.emptyMsg {
+  grid-column: span 2;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  padding: 1rem 0;
+}
+
+.lockNotice {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  border-radius: 6px;
+  padding: 4px;
+  font-size: 0.72rem;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+/* ── 懸浮升級與指令面板 (UpgradePanel) ──────────────────────── */
+.upgradePanel {
+  position: absolute;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: rgba(15, 23, 42, 0.96);
+  border: 2px solid #6366f1;
+  border-radius: 12px;
+  padding: 12px;
+  width: 236px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: white;
+  animation: scaleIn 0.15s ease-out;
+}
+
+.upgradeHeader {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 6px;
+}
+
+.unitName {
+  font-weight: 700;
+  color: #818cf8;
+  font-size: 1.05rem;
+}
+
+.unitName small {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin-left: 6px;
+  font-weight: 400;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.upgStatItem {
+  display: flex;
+  flex-direction: column;
+}
+
+.upgStatLabel {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.upgStatValue {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.targetModeBox {
+  margin-bottom: 12px;
+}
+
+.targetModeRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.targetModeBtn {
+  width: 100%;
+  min-height: 28px;
+  padding: 3px 2px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.targetModeBtnActive {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: #fff;
+  font-weight: 700;
+}
+
+.upgradeActions {
+  display: flex;
+  gap: 8px;
+}
+
+.actionBtn {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.82rem;
+}
+
+.upgradeBtn {
+  background: #6366f1;
+  color: #fff;
+}
+
+.upgradeBtn:hover:not(:disabled) {
+  background: #4f46e5;
+}
+
+.upgradeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sellBtn {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.sellBtn:hover {
+  background: rgba(239, 68, 68, 0.4);
+}
+
+.maxLevelTag {
+  flex: 1;
+  text-align: center;
+  color: #818cf8;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 8px 0;
+}
+
+/* ── 結算彈窗 (BattleResultModal) ──────────────────────────── */
+.resultOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  background: rgba(0, 0, 0, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.resultCard {
+  border-radius: 16px;
+  padding: 2rem 1.75rem;
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  animation: scaleIn 0.2s ease-out;
+}
+
+.resultWin {
+  background: linear-gradient(160deg, #0f172a 0%, #1e3a2f 100%);
+  border: 2px solid rgba(16, 185, 129, 0.5);
+}
+
+.resultLose {
+  background: linear-gradient(160deg, #0f172a 0%, #3a1e1e 100%);
+  border: 2px solid rgba(239, 68, 68, 0.4);
+}
+
+.resultTitle {
+  font-size: 2.1rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  color: #fff;
+  margin-bottom: 0.75rem;
+}
+
+.resultStars {
+  font-size: 1.8rem;
+  color: #f59e0b;
+  margin-bottom: 1rem;
+  letter-spacing: 4px;
+}
+
+.resultLoots {
+  background: rgba(255, 255, 255, 0.06);
   border-radius: 10px;
-  padding: 0.85rem;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.resultLootItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.25rem 0;
+}
+
+.resultLootName {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.resultLootCount {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #f59e0b;
+}
+
+/* ── 通用按鈕 ──────────────────────────────────────────────── */
+.btnGold {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  border: none;
+  color: #1a1a2e;
+  border-radius: 8px;
+  padding: 0.55rem 1.25rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.05em;
+}
+
+.btnGold:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+}
+
+.btnGold:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btnOutline {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  border-radius: 8px;
+  padding: 0.55rem 1.25rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btnOutline:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* ── KeySetup 全螢幕遮罩 ─────────────────────────────────────── */
+.keySetupOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(10, 15, 35, 0.96);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.keySetupCard {
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 2rem 1.75rem;
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  animation: scaleIn 0.2s ease-out;
+}
+
+.gameTitle {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #f59e0b;
+  margin-bottom: 0.25rem;
+  letter-spacing: 2px;
+}
+
+.subtitle {
+  font-size: 0.88rem;
+  color: #94a3b8;
+  margin-bottom: 1rem;
+}
+
+.keySetupHint {
+  font-size: 0.82rem;
+  color: #cbd5e1;
+  margin-bottom: 1.25rem;
+  line-height: 1.7;
+}
+
+.keyInput {
+  background: #0f172a !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  color: #f8fafc !important;
+  border-radius: 8px !important;
+  text-align: center !important;
+  font-size: 1rem !important;
+  padding: 0.55rem 1rem !important;
+}
+
+.keyInput:focus {
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25) !important;
+}
+
+/* ── 動畫效果 ──────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ── 三國沉浸式深色模態視窗與卡片樣式 ───────────────────────────── */
+.darkModalContent {
+  background-color: #0b1120 !important;
+  color: #f1f5f9 !important;
+  border: 1px solid rgba(245, 158, 11, 0.45) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.95), 0 0 20px rgba(245, 158, 11, 0.15) !important;
+  overflow: hidden;
+}
+
+.modalHeader {
+  background: #111827 !important;
+  color: #f8fafc !important;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3) !important;
+  padding: 14px 20px !important;
+}
+
+.modalBody {
+  background: #0b1120 !important;
+  color: #e2e8f0 !important;
+  padding: 16px 20px !important;
+}
+
+.modalFooter {
+  background: #111827 !important;
+  color: #f8fafc !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  padding: 12px 20px !important;
 }
 
 .selectDark {
-  background-color: #25211e;
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #1e293b !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
 }
 .selectDark:focus {
-  background-color: #25211e;
-  color: #fff;
-  border-color: #ffc107;
-  box-shadow: 0 0 0 0.25rem rgba(255, 193, 7, 0.25);
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25) !important;
 }
 
 /* 關卡選擇卡片 */
 .stageCard {
-  background: #24201d;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 10px !important;
+  transition: all 0.2s ease !important;
+}
+.stageCard:hover {
+  border-color: rgba(245, 158, 11, 0.6) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+}
+.stageCardActive {
+  background: rgba(16, 185, 129, 0.18) !important;
+  border: 2px solid #10b981 !important;
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.25) !important;
+}
+.stageCardUnavailable {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  border-color: rgba(239, 68, 68, 0.25) !important;
+  background: rgba(30, 20, 25, 0.6) !important;
+}
+.stageCardUnavailable:hover {
+  transform: none !important;
+  border-color: rgba(239, 68, 68, 0.45) !important;
+  box-shadow: none !important;
+}
+.stageCardLocked {
+  opacity: 0.65 !important;
+  cursor: not-allowed !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background: rgba(15, 23, 42, 0.5) !important;
+}
+.stageCardLocked:hover {
+  transform: none !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  box-shadow: none !important;
+}
+
+/* 武將名錄名冊卡片 */
+.heroRosterCard {
+  background: rgba(30, 41, 59, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 8px 10px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
-
-.stageCard:hover {
-  border-color: #ffc107;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+.heroRosterCard:hover {
+  border-color: #f59e0b;
+  background: rgba(45, 60, 85, 0.85);
+  transform: translateY(-1px);
+}
+.heroRosterInTeam {
+  background: rgba(245, 158, 11, 0.15) !important;
+  border: 2px solid #f59e0b !important;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.3) !important;
 }
 
-.stageCardActive {
-  border-color: #4caf50;
-  box-shadow: 0 0 12px rgba(76, 175, 80, 0.3);
+/* 隊伍席位槽位卡片 */
+.teamSlotCard {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+  min-height: 110px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+.teamSlotFilled {
+  background: rgba(30, 41, 59, 0.9) !important;
+  border: 1px solid rgba(245, 158, 11, 0.45) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
 }

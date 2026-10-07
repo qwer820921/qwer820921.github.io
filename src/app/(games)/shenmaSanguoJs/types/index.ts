@@ -1,6 +1,7 @@
 // 神馬三國 (JS版) 相關型別定義匯出
 
 export * from "./render";
+export * from "./player";
 export type { StatsSyncData, BattleResultData } from "../engine/BattleManager";
 export { GameState } from "../engine/BattleManager";
 export type { WaveConfigData, WaveGroupConfig } from "../engine/WaveManager";

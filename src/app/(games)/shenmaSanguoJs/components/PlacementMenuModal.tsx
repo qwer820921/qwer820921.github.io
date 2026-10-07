@@ -1,9 +1,7 @@
 "use client";
 
-import React from "react";
-import { Modal, Button, Row, Col, Card, Badge } from "react-bootstrap";
+import React, { useState } from "react";
 import { PlacementMenuData } from "../types";
-import { TOWER_CONFIGS, TowerConfigInfo } from "../engine/entities/TowerEntity";
 import { HeroStateData } from "../engine/entities/HeroEntity";
 import { BUILTIN_HEROES_CONFIG } from "../engine/builtinData";
 import styles from "../styles/shenmaSanguoJs.module.css";
@@ -13,6 +11,7 @@ interface PlacementMenuModalProps {
   data: PlacementMenuData | null;
   currentGold: number;
   playerHeroes: HeroStateData[];
+  placedHeroIds?: string[];
   onPlaceTower: (col: number, row: number, typeKey: string) => void;
   onPlaceHero: (col: number, row: number, heroState: HeroStateData) => void;
   onClose: () => void;
@@ -23,202 +22,151 @@ export const PlacementMenuModal: React.FC<PlacementMenuModalProps> = ({
   data,
   currentGold,
   playerHeroes,
+  placedHeroIds = [],
   onPlaceTower,
   onPlaceHero,
   onClose,
 }) => {
-  if (!data) return null;
+  const isRoad = data?.isRoad ?? true;
+  const [activeTab, setActiveTab] = useState<"hero" | "tower">(
+    isRoad ? "hero" : "tower"
+  );
 
-  const { col, row, isRoad, isBuild } = data;
+  if (!show || !data) return null;
 
-  // 取得英雄資訊與技能描述
-  const getHeroInfo = (heroId: string) => {
-    const norm = heroId.replace(/^hero_/, "");
-    const cfg = BUILTIN_HEROES_CONFIG.find((h) => h.hero_id.replace(/^hero_/, "") === norm);
-    let skillDesc = "強力作戰技能";
-    switch (norm) {
-      case "ma_chao":
-        skillDesc = "騎兵衝鋒：首擊 2.5x 爆發傷害";
-        break;
-      case "zhao_yun":
-        skillDesc = "槍神：25% 閃避 + 致命反擊";
-        break;
-      case "guan_yu":
-        skillDesc = "青龍偃月：40% 範圍緩速光環";
-        break;
-      case "zhang_fei":
-        skillDesc = "咆哮長坂：周遭友軍攻速 +30% 光環";
-        break;
-      case "zhou_yu":
-        skillDesc = "赤壁烈火：攻擊附加 4 秒持續灼燒";
-        break;
-      case "huang_zhong":
-        skillDesc = "百步穿楊：射程 +30% 且 20% 雙箭齊發";
-        break;
-      case "liu_bei":
-        skillDesc = "仁德昭烈：周遭友軍防禦 +35% 光環";
-        break;
-      case "wei_yan":
-        skillDesc = "狂骨嗜血：攻擊吸血 25% 回復生命";
-        break;
-      case "cao_cao":
-        skillDesc = "奸雄威壓：降低周遭敵人 25% 攻擊力";
-        break;
-      case "xia_hou_dun":
-        skillDesc = "拔矢啖睛：血量越低減傷越高 (最高 50%)";
-        break;
-      case "liao_hua":
-        skillDesc = "先鋒不屈：受到致命傷時死戰不倒";
-        break;
-      case "yan_liang":
-        skillDesc = "勇冠三軍：攻擊 20% 機率擊暈敵軍 1 秒";
-        break;
-      case "sun_shang_xiang":
-        skillDesc = "弓腰姬：35% 機率觸發連續雙重射擊";
-        break;
-      default:
-        break;
-    }
-    return { name: cfg?.name || norm, job: cfg?.job || "武將", skillDesc, norm };
-  };
+  const { col, row, isBuild } = data;
+
+  const towerList = [
+    { id: "archer", name: "弓兵塔", cost: 50, image: "tower_archer.webp", air: "可對空" },
+    { id: "infantry", name: "步兵塔", cost: 70, image: "tower_infantry.webp", air: "只打地面" },
+    { id: "artillery", name: "砲兵塔", cost: 100, image: "tower_artillery.webp", air: "只打地面" },
+    { id: "cavalry", name: "騎兵塔", cost: 120, image: "tower_cavalry.webp", air: "只打地面" },
+    { id: "scholar", name: "文士塔", cost: 80, image: "tower_scholar.webp", air: "可減速" },
+  ];
 
   return (
-    <Modal show={show} onHide={onClose} centered size="lg">
-      <Modal.Header closeButton className={styles.modalHeader}>
-        <Modal.Title className="text-light fw-bold">
-          📍 部署作戰單位 (座標: {col}, {row})
-        </Modal.Title>
-      </Modal.Header>
+    <div className={styles.placementOverlay} onClick={onClose}>
+      <div
+        className={styles.placementMenu}
+        data-testid="placement-menu"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 選單標題列 */}
+        <div className={styles.placementHeader}>
+          <span>{isRoad ? "路徑部署" : "建築位部署"}</span>
+          <button type="button" className={styles.closeBtn} onClick={onClose}>
+            ×
+          </button>
+        </div>
 
-      <Modal.Body className={styles.modalBody}>
-        {/* 高台建築：防禦塔選單 */}
+        {/* 高台位切換標籤 */}
         {isBuild && (
-          <div>
-            <div className="d-flex align-items-center justify-content-between mb-3">
-              <h5 className="text-warning fw-bold mb-0">🏗️ 高台防禦塔建造</h5>
-              <span className="text-light small">
-                當前軍資金幣: <strong className="text-warning">{currentGold}</strong>
-              </span>
-            </div>
-
-            <Row className="g-3">
-              {Object.values(TOWER_CONFIGS).map((tower: TowerConfigInfo) => {
-                const canAfford = currentGold >= tower.cost;
-                const towerImg = `/images/shenmaSanguo/units/${tower.image || `tower_${tower.typeKey}.webp`}`;
-                return (
-                  <Col xs={12} sm={6} md={4} key={tower.typeKey}>
-                    <Card className={`h-100 ${styles.deployCard} ${!canAfford ? styles.cardDisabled : ""}`}>
-                      <Card.Body className="d-flex flex-column justify-content-between">
-                        <div>
-                          <div className="d-flex justify-content-between align-items-center mb-2">
-                            <div className="d-flex align-items-center gap-2">
-                              <img
-                                src={towerImg}
-                                alt={tower.name}
-                                style={{ width: 32, height: 32, objectFit: "contain" }}
-                              />
-                              <h6 className="fw-bold text-light mb-0">{tower.name}</h6>
-                            </div>
-                            <Badge bg={canAfford ? "warning" : "secondary"} className="text-dark">
-                              💰 {tower.cost}
-                            </Badge>
-                          </div>
-                          <div className="small text-secondary mb-2">
-                            <div>攻擊力: <span className="text-light">{tower.atk}</span></div>
-                            <div>攻速: <span className="text-light">{tower.atkSpd}s/次</span></div>
-                            <div>射程: <span className="text-light">{tower.rangeTiles} 格</span></div>
-                          </div>
-                          <div className="small text-info">
-                            {tower.antiAir && <Badge bg="primary" className="me-1">對空</Badge>}
-                            {tower.aoe && <Badge bg="danger" className="me-1">範圍群傷</Badge>}
-                            {tower.slowMult && <Badge bg="info" className="me-1">減速光環</Badge>}
-                            {tower.stackSlowAmount && <Badge bg="info" className="me-1">疊加冰凍</Badge>}
-                          </div>
-                        </div>
-
-                        <Button
-                          variant={canAfford ? "warning" : "secondary"}
-                          size="sm"
-                          disabled={!canAfford}
-                          className="w-100 mt-3 fw-bold"
-                          onClick={() => onPlaceTower(col, row, tower.typeKey)}
-                        >
-                          {canAfford ? "立即建造" : "金幣不足"}
-                        </Button>
-                      </Card.Body>
-                    </Card>
-                  </Col>
-                );
-              })}
-            </Row>
+          <div className={styles.tabSwitcher}>
+            <button
+              type="button"
+              className={`${styles.tabBtn} ${activeTab === "tower" ? styles.tabActive : ""}`}
+              onClick={() => setActiveTab("tower")}
+            >
+              防禦塔
+            </button>
+            <button
+              type="button"
+              className={`${styles.tabBtn} ${activeTab === "hero" ? styles.tabActive : ""}`}
+              onClick={() => setActiveTab("hero")}
+            >
+              武將
+            </button>
           </div>
         )}
 
-        {/* 道路部署：肉盾阻擋武將選單 */}
-        {isRoad && (
-          <div>
-            <div className="d-flex align-items-center justify-content-between mb-3">
-              <h5 className="text-danger fw-bold mb-0">🛡️ 道路肉盾武將召喚 (花費: 100 金幣)</h5>
-              <span className="text-light small">
-                當前軍資金幣: <strong className="text-warning">{currentGold}</strong>
-              </span>
-            </div>
-
-            <Row className="g-3">
+        {/* 選單主體 */}
+        <div className={styles.placementContent}>
+          {activeTab === "hero" || isRoad ? (
+            <div className={styles.heroGrid}>
               {playerHeroes.map((hero) => {
-                const info = getHeroInfo(hero.hero_id);
-                const canAfford = currentGold >= 100;
-                const heroImg = `/images/shenmaSanguo/units/hero_${info.norm}.webp`;
-                return (
-                  <Col xs={12} sm={6} md={4} key={hero.hero_id}>
-                    <Card className={`h-100 ${styles.deployCard} ${!canAfford ? styles.cardDisabled : ""}`}>
-                      <Card.Body className="d-flex flex-column justify-content-between">
-                        <div>
-                          <div className="d-flex justify-content-between align-items-center mb-2">
-                            <div className="d-flex align-items-center gap-2">
-                              <img
-                                src={heroImg}
-                                alt={info.name}
-                                style={{ width: 32, height: 32, objectFit: "contain" }}
-                              />
-                              <h6 className="fw-bold text-light mb-0">{info.name}</h6>
-                            </div>
-                            <Badge bg="danger">Lv.{hero.level || 1}</Badge>
-                          </div>
-                          <div className="small text-secondary mb-2">
-                            <div>生命: <span className="text-success">{hero.hp || 1000}</span></div>
-                            <div>攻擊: <span className="text-warning">{hero.atk || 100}</span></div>
-                            <div>防禦: <span className="text-info">{hero.def || 50}</span></div>
-                          </div>
-                          <div className="small text-warning fw-semibold">
-                            {info.skillDesc}
-                          </div>
-                        </div>
+                const norm = hero.hero_id.replace(/^hero_/, "");
+                const config = BUILTIN_HEROES_CONFIG.find(
+                  (c) => c.hero_id.replace(/^hero_/, "") === norm
+                );
+                const isPlaced = placedHeroIds.includes(hero.hero_id) || placedHeroIds.includes(norm);
+                const canHitAir = config?.job === "archer" || config?.job === "mage" || norm === "sun_shang_xiang" || norm === "huang_zhong" || norm === "zhou_yu";
 
-                        <Button
-                          variant={canAfford ? "danger" : "secondary"}
-                          size="sm"
-                          disabled={!canAfford}
-                          className="w-100 mt-3 fw-bold"
-                          onClick={() => onPlaceHero(col, row, hero)}
-                        >
-                          {canAfford ? "派遣出戰" : "金幣不足"}
-                        </Button>
-                      </Card.Body>
-                    </Card>
-                  </Col>
+                return (
+                  <button
+                    key={hero.hero_id}
+                    type="button"
+                    className={`${styles.menuCard} ${isPlaced ? styles.cardDisabled : ""}`}
+                    disabled={isPlaced}
+                    onClick={() => {
+                      onPlaceHero(col, row, hero);
+                      onClose();
+                    }}
+                  >
+                    <div className={styles.cardIcon}>
+                      <img
+                        src={`/images/shenmaSanguo/units/hero_${norm}.webp`}
+                        alt={config?.name || norm}
+                        style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = "none";
+                        }}
+                      />
+                    </div>
+                    <div className={styles.cardName}>{config?.name || norm}</div>
+                    <div className={styles.cardStatus}>
+                      {isPlaced ? "已在場上" : `Lv.${hero.level || 1}`}
+                    </div>
+                    <div className={`${styles.cardAir} ${canHitAir ? styles.cardAirYes : ""}`}>
+                      {canHitAir ? "可對空" : "只打地面"}
+                    </div>
+                  </button>
                 );
               })}
-            </Row>
-          </div>
-        )}
-      </Modal.Body>
+              {playerHeroes.length === 0 && (
+                <p className={styles.emptyMsg}>出征隊伍中尚無武將</p>
+              )}
+            </div>
+          ) : (
+            <div className={styles.towerGrid}>
+              {towerList.map((t) => {
+                const canAfford = currentGold >= t.cost;
+                const isAir = t.id === "archer" || t.id === "scholar";
 
-      <Modal.Footer className={styles.modalFooter}>
-        <Button variant="outline-secondary" onClick={onClose}>
-          取消
-        </Button>
-      </Modal.Footer>
-    </Modal>
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className={`${styles.menuCard} ${!canAfford ? styles.cardDisabled : ""}`}
+                    disabled={!canAfford}
+                    onClick={() => {
+                      onPlaceTower(col, row, t.id);
+                      onClose();
+                    }}
+                  >
+                    <div className={styles.cardIcon}>
+                      <img
+                        src={`/images/shenmaSanguo/units/${t.image}`}
+                        alt={t.name}
+                        style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                      />
+                    </div>
+                    <div className={styles.cardName}>{t.name}</div>
+                    <div
+                      className={styles.cardCost}
+                      style={{ color: canAfford ? "#f59e0b" : "#ef4444" }}
+                    >
+                      💰 {t.cost}G
+                    </div>
+                    <div className={`${styles.cardAir} ${isAir ? styles.cardAirYes : ""}`}>
+                      {t.air}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 };

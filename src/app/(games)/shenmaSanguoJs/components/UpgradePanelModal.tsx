@@ -1,8 +1,7 @@
 "use client";
 
 import React from "react";
-import { Modal, Button, Row, Col, Badge, Form } from "react-bootstrap";
-import { TowerEntity } from "../engine/entities/TowerEntity";
+import { TowerEntity, TOWER_CONFIGS } from "../engine/entities/TowerEntity";
 import styles from "../styles/shenmaSanguoJs.module.css";
 
 interface UpgradePanelModalProps {
@@ -26,102 +25,105 @@ export const UpgradePanelModal: React.FC<UpgradePanelModalProps> = ({
   onTargetModeChange,
   onClose,
 }) => {
-  if (!tower) return null;
+  if (!show || !tower) return null;
 
-  const { gridCell, towerName, towerLevel, atk, atkSpd, rangeTiles, targetMode } = tower;
+  const { gridCell, towerName, towerLevel, atk, atkSpd, rangeTiles, targetMode, towerTypeKey } = tower;
+  const antiAir = TOWER_CONFIGS[towerTypeKey]?.antiAir ?? false;
   const upgradeCost = tower.getUpgradeCost();
   const canAfford = currentGold >= upgradeCost;
   const sellRefund = tower.getSellRefund(isPrepPhase);
 
-  return (
-    <Modal show={show} onHide={onClose} centered>
-      <Modal.Header closeButton className={styles.modalHeader}>
-        <Modal.Title className="text-light fw-bold">
-          🏰 防禦塔強化設施 ({gridCell.col}, {gridCell.row})
-        </Modal.Title>
-      </Modal.Header>
+  const targetModes = [
+    { key: "first", label: "第一" },
+    { key: "weakest", label: "殘血" },
+    { key: "strongest", label: "威脅" },
+    ...(antiAir ? [{ key: "air_first", label: "對空" }] : []),
+  ];
 
-      <Modal.Body className={styles.modalBody}>
-        {/* 頂部名稱與當前等級 */}
-        <div className="d-flex justify-content-between align-items-center mb-3">
-          <div>
-            <h4 className="text-warning fw-bold mb-1">{towerName}</h4>
-            <span className="text-secondary small">
-              累計投資: <strong className="text-light">{tower.investedGold}</strong> 金幣
-            </span>
+  return (
+    <div className={styles.placementOverlay} onClick={onClose}>
+      <div
+        className={styles.upgradePanel}
+        data-testid="upgrade-panel"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 標題與關閉按鈕 */}
+        <div className={styles.upgradeHeader}>
+          <div className={styles.unitName}>
+            {towerName}
+            <small>Lv.{towerLevel}</small>
           </div>
-          <Badge bg="warning" className="text-dark fs-6 px-3 py-2">
-            Lv. {towerLevel}
-          </Badge>
+          <button type="button" className={styles.closeBtn} onClick={onClose}>
+            ×
+          </button>
         </div>
 
-        {/* 數值面板與下一級預覽 */}
-        <div className={styles.statsCard}>
-          <Row className="g-2 text-center">
-            <Col xs={4}>
-              <div className="text-secondary small">攻擊力</div>
-              <div className="fw-bold text-light fs-5">{Math.round(atk)}</div>
-              <div className="text-success small">➔ {Math.round(atk * 1.3)}</div>
-            </Col>
-            <Col xs={4}>
-              <div className="text-secondary small">攻擊週期</div>
-              <div className="fw-bold text-light fs-5">{atkSpd}s</div>
-              <div className="text-secondary small">維持</div>
-            </Col>
-            <Col xs={4}>
-              <div className="text-secondary small">射程半徑</div>
-              <div className="fw-bold text-light fs-5">{rangeTiles} 格</div>
-              <div className="text-secondary small">維持</div>
-            </Col>
-          </Row>
+        {/* 數值面板 */}
+        <div className={styles.statsGrid}>
+          <div className={styles.upgStatItem}>
+            <span className={styles.upgStatLabel}>攻擊力</span>
+            <span className={styles.upgStatValue}>{Math.round(atk)}</span>
+          </div>
+          <div className={styles.upgStatItem}>
+            <span className={styles.upgStatLabel}>攻擊間隔</span>
+            <span className={styles.upgStatValue}>{atkSpd}s</span>
+          </div>
+          <div className={styles.upgStatItem}>
+            <span className={styles.upgStatLabel}>射程半徑</span>
+            <span className={styles.upgStatValue}>{rangeTiles} 格</span>
+          </div>
+          <div className={styles.upgStatItem}>
+            <span className={styles.upgStatLabel}>累計軍資</span>
+            <span className={styles.upgStatValue}>💰 {tower.investedGold}</span>
+          </div>
         </div>
 
         {/* 索敵模式選擇 */}
-        <div className="mt-3">
-          <Form.Label className="text-light small fw-bold mb-2">🎯 索敵優先級目標：</Form.Label>
-          <Form.Select
-            size="sm"
-            className={styles.selectDark}
-            value={targetMode}
-            onChange={(e) => onTargetModeChange(gridCell.col, gridCell.row, e.target.value)}
+        <div className={styles.targetModeBox}>
+          <div className={styles.upgStatLabel}>目標優先</div>
+          <div
+            className={styles.targetModeRow}
+            style={{
+              gridTemplateColumns: `repeat(${targetModes.length}, 1fr)`,
+            }}
           >
-            <option value="first">首要敵人 (進度最前)</option>
-            <option value="weakest">殘血敵軍 (生命最低)</option>
-            <option value="strongest">威脅巨首 (生命最高)</option>
-            <option value="air_first">制空獵鳥 (空中單位優先)</option>
-          </Form.Select>
+            {targetModes.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                className={`${styles.targetModeBtn} ${targetMode === m.key ? styles.targetModeBtnActive : ""}`}
+                onClick={() => onTargetModeChange(gridCell.col, gridCell.row, m.key)}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* 升級與拆除按鈕 */}
-        <Row className="g-2 mt-3">
-          <Col xs={8}>
-            <Button
-              variant={canAfford ? "warning" : "secondary"}
-              className="w-100 fw-bold py-2"
-              disabled={!canAfford}
-              onClick={() => onUpgrade(gridCell.col, gridCell.row)}
-            >
-              ⭐ 升級為 Lv.{towerLevel + 1} (💰 {upgradeCost})
-            </Button>
-          </Col>
-          <Col xs={4}>
-            <Button
-              variant="outline-danger"
-              className="w-100 fw-bold py-2"
-              onClick={() => onSell(gridCell.col, gridCell.row)}
-              title={isPrepPhase ? "佈防階段 100% 全額返還" : "交戰中折損 50% 返還"}
-            >
-              ♻️ 拆除 (+{sellRefund})
-            </Button>
-          </Col>
-        </Row>
-      </Modal.Body>
-
-      <Modal.Footer className={styles.modalFooter}>
-        <Button variant="outline-secondary" size="sm" onClick={onClose}>
-          關閉
-        </Button>
-      </Modal.Footer>
-    </Modal>
+        {/* 升級與拆除動作 */}
+        <div className={styles.upgradeActions}>
+          <button
+            type="button"
+            className={`${styles.actionBtn} ${styles.upgradeBtn}`}
+            disabled={!canAfford}
+            onClick={() => {
+              onUpgrade(gridCell.col, gridCell.row);
+            }}
+          >
+            升級 💰{upgradeCost}
+          </button>
+          <button
+            type="button"
+            className={`${styles.actionBtn} ${styles.sellBtn}`}
+            onClick={() => {
+              onSell(gridCell.col, gridCell.row);
+              onClose();
+            }}
+          >
+            拆除 +{sellRefund}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };

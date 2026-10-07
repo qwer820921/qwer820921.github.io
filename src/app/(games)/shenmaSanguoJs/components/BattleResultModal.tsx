@@ -1,13 +1,15 @@
 "use client";
 
 import React from "react";
-import { Modal, Button, Row, Col, Badge } from "react-bootstrap";
 import { BattleResultData } from "../engine/BattleManager";
+import { BattleRewardResult } from "../types/player";
 import styles from "../styles/shenmaSanguoJs.module.css";
 
 interface BattleResultModalProps {
   show: boolean;
   result: BattleResultData | null;
+  rewardResult?: BattleRewardResult | null;
+  hasNextStage?: boolean;
   onRetry: () => void;
   onNextStage: () => void;
   onOpenStageSelector: () => void;
@@ -16,86 +18,112 @@ interface BattleResultModalProps {
 export const BattleResultModal: React.FC<BattleResultModalProps> = ({
   show,
   result,
+  rewardResult,
+  hasNextStage = true,
   onRetry,
   onNextStage,
   onOpenStageSelector,
 }) => {
-  if (!result) return null;
+  if (!show || !result) return null;
 
   const isWin = result.result === "WIN";
-  const stars = result.stars_earned || 0;
-  const points = result.loots.find((l) => l.item === "battle_points")?.count || 0;
+  const stars = rewardResult?.stars ?? (result.stars_earned || 0);
 
   return (
-    <Modal show={show} backdrop="static" keyboard={false} centered>
-      <Modal.Header className={isWin ? styles.modalHeaderWin : styles.modalHeaderLose}>
-        <Modal.Title className="text-light fw-bold mx-auto">
-          {isWin ? "🏆 大 獲 全 勝 🏆" : "💀 城 池 失 守 💀"}
-        </Modal.Title>
-      </Modal.Header>
-
-      <Modal.Body className={styles.modalBody}>
-        {/* 星級評價 */}
-        {isWin ? (
-          <div className="text-center my-3">
-            <div className="display-4 mb-2">
-              {"⭐".repeat(stars)}
-              {"☆".repeat(Math.max(0, 3 - stars))}
-            </div>
-            <div className="text-warning fw-bold fs-5">
-              {stars === 3 ? "完美三星防守！" : stars === 2 ? "精彩過關！" : "險勝！"}
-            </div>
-          </div>
-        ) : (
-          <div className="text-center my-3">
-            <div className="fs-1 mb-2">🛡️💥</div>
-            <div className="text-danger fw-bold fs-5">主基地耐久耗盡，防線被敵軍擊破！</div>
-            <div className="text-muted small mt-2">
-              軍師建言：嘗試在拐角設置【步兵塔】緩速敵軍，並在後方佈置【砲兵塔】進行範圍轟炸！
-            </div>
-          </div>
-        )}
-
-        {/* 戰績數據盒 */}
-        <div className={styles.statsCard}>
-          <Row className="g-2 text-center">
-            <Col xs={4}>
-              <div className="text-secondary small">擊殺敵兵</div>
-              <div className="fw-bold text-light fs-5">{result.kills} 隻</div>
-            </Col>
-            <Col xs={4}>
-              <div className="text-secondary small">作戰時間</div>
-              <div className="fw-bold text-light fs-5">{result.time_seconds} 秒</div>
-            </Col>
-            <Col xs={4}>
-              <div className="text-secondary small">戰功積分</div>
-              <div className="fw-bold text-warning fs-5">+{points}</div>
-            </Col>
-          </Row>
+    <div className={styles.resultOverlay} data-testid="result-overlay">
+      <div
+        className={`${styles.resultCard} ${isWin ? styles.resultWin : styles.resultLose}`}
+        data-testid="result-card"
+      >
+        <div className={styles.resultTitle}>
+          {isWin ? "勝 利" : "落 敗"}
         </div>
 
-        {/* 獎勵展示 */}
-        {isWin && (
-          <div className="mt-3 p-3 rounded bg-dark border border-warning text-center">
-            <Badge bg="warning" className="text-dark me-2">獲取獎勵</Badge>
-            <span className="text-light fw-bold">戰功物資 × {points}</span>
+        <div className={styles.resultStars}>
+          {"★".repeat(stars)}
+          {"☆".repeat(Math.max(0, 3 - stars))}
+        </div>
+
+        {/* 斬獲獎勵與戰利品 */}
+        {isWin && rewardResult && (
+          <div className={styles.resultLoots}>
+            <div className={styles.resultLootItem}>
+              <span className={styles.resultLootName}>🪙 主公金幣</span>
+              <span className={styles.resultLootCount}>+{rewardResult.goldEarned}</span>
+            </div>
+            <div className={styles.resultLootItem}>
+              <span className={styles.resultLootName}>🎓 主公經驗</span>
+              <span className={styles.resultLootCount}>+{rewardResult.expEarned}</span>
+            </div>
+            {rewardResult.leveledUp && (
+              <div className={styles.resultLootItem} style={{ borderTop: "1px dashed rgba(245, 158, 11, 0.3)", paddingTop: 4, marginTop: 4 }}>
+                <span className={styles.resultLootName} style={{ color: "#f59e0b", fontWeight: 700 }}>🎉 主公升級！</span>
+                <span className={styles.resultLootCount} style={{ color: "#f59e0b" }}>Lv.{rewardResult.newLevel}</span>
+              </div>
+            )}
+            {rewardResult.stageUnlocked && (
+              <div className={styles.resultLootItem} style={{ borderTop: "1px dashed rgba(16, 185, 129, 0.3)", paddingTop: 4, marginTop: 4 }}>
+                <span className={styles.resultLootName} style={{ color: "#34d399", fontWeight: 700 }}>🗺️ 解鎖新戰役</span>
+                <span className={styles.resultLootCount} style={{ color: "#34d399" }}>{rewardResult.stageUnlocked}</span>
+              </div>
+            )}
           </div>
         )}
-      </Modal.Body>
 
-      <Modal.Footer className="justify-content-center gap-2">
-        <Button variant="outline-light" onClick={onRetry}>
-          🔄 重新挑戰
-        </Button>
-        <Button variant="outline-warning" onClick={onOpenStageSelector}>
-          🗺️ 關卡選擇
-        </Button>
-        {isWin && (
-          <Button variant="success" className="fw-bold px-4" onClick={onNextStage}>
-            下一關 ➔
-          </Button>
+        {!isWin && (
+          <div style={{ color: "rgba(255,255,255,0.75)", fontSize: "0.82rem", marginBottom: "1rem" }}>
+            城池失守，可嘗試調整防禦塔佈局或提升武將等級後再戰！
+          </div>
         )}
-      </Modal.Footer>
-    </Modal>
+
+        {/* 按鈕組 */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: "1rem" }}>
+          {isWin && hasNextStage && (
+            <button
+              type="button"
+              className={styles.btnGold}
+              onClick={onNextStage}
+              style={{ width: "100%" }}
+            >
+              下一關
+            </button>
+          )}
+          {isWin && !hasNextStage && (
+            <div
+              style={{
+                background: "rgba(245, 158, 11, 0.15)",
+                border: "1px dashed #f59e0b",
+                borderRadius: 8,
+                padding: "6px 10px",
+                textAlign: "center",
+                color: "#ffca28",
+                fontSize: "0.82rem",
+                fontWeight: 700,
+              }}
+            >
+              🏆 恭喜主公！已通關當前版本所有開放關卡！
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              className={styles.btnOutline}
+              onClick={onRetry}
+              style={{ flex: 1 }}
+            >
+              重新挑戰
+            </button>
+            <button
+              type="button"
+              className={styles.btnOutline}
+              onClick={onOpenStageSelector}
+              style={{ flex: 1 }}
+            >
+              選擇關卡
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
