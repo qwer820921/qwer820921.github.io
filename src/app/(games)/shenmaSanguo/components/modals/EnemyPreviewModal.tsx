@@ -65,6 +65,7 @@ interface Props {
  * 末次已確認出兵（lastConfirmedWave，逐波隻數的最後一筆）比首次晚的列，另外可以用同樣的方式前往末次的波次；
  * 首末同一波或沒有已確認的筆數時不加這個按鈕。
  * 每一列也可以展開這個範圍逐波已確認的隻數（列的 perWave，預設收合）：只是顯示，不改列的合計、首次出兵、排列、路線與波次的展開；
+ * 明細的每一筆可以用同樣的方式前往那一波（只有已確認的筆數，不補缺的波次）；
  * 換路線或設定更新後不在的列關掉，關閉預覽後全部收合。組成可以搜尋敵人名稱或 ID：只篩選顯示的列並另寫小計，
  * 換路線、排列、收起都保留，關閉預覽後回到空白；被搜尋藏起的列也關掉逐波隻數。逐波內容也跟著選的路線（waveRouteView）：選了路線時每一波只列那條路線的組
  * （原本的組序）並寫明那條路線已確認的隻數與組數，其他路線的資料問題另列「全波資料提醒」；波次標題、波次導覽與出兵節奏仍是整波。
@@ -679,15 +680,29 @@ function CompositionBlock({
                     </div>
                     <Row className="g-1">
                       {r.perWave.map((x) => (
-                        <Col
-                          key={x.wave}
-                          xs={6}
-                          sm={4}
-                          data-testid="preview-composition-detail-wave"
-                          data-wave={x.wave}
-                          data-count={x.count}
-                        >
-                          第 {x.wave} 波 ×{x.count}
+                        <Col key={x.wave} xs={6} sm={4}>
+                          <div
+                            data-testid="preview-composition-detail-wave"
+                            data-wave={x.wave}
+                            data-count={x.count}
+                          >
+                            第 {x.wave} 波 ×{x.count}
+                          </div>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${styles.heroClearBtn}`}
+                            onClick={() =>
+                              onGotoWave(
+                                x.wave,
+                                `${r.name}${sameName(r.name) ? `（${r.enemyId}）` : ""}${complete ? "的出兵" : "已確認的出兵"}`
+                              )
+                            }
+                            aria-label={`前往${r.name}${sameName(r.name) ? `（${r.enemyId}）` : ""}${rc ? `在路線 ${rc.pathId} ` : ""}${complete ? "出兵" : "已確認出兵"}的第 ${x.wave} 波`}
+                            data-testid="preview-composition-detail-goto"
+                            data-wave={x.wave}
+                          >
+                            {complete ? "前往" : "前往已確認的"}第 {x.wave} 波
+                          </button>
                         </Col>
                       ))}
                     </Row>

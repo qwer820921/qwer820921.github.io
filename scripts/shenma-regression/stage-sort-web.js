@@ -25,6 +25,10 @@ async (page) => {
   //   排列／搜尋／收起再展開後跟著列、關閉重開回到預設，「討伐」全關、依波數排列與兩條路線；L-2 首末同一波不重複；L-3 鍵盤；
   //   L-4 資料不完整寫「已確認的末次」；L-5 沒有送東西給遊戲（之後 M-4 再核不換關、不寫入）；L-6 獨立關卡頁同樣；L-7 390×600／390×844。
   //   W-2 的鍵盤順序因此變成前往首次 → 前往末次 → 逐波
+  // - 逐波明細前往那一波（明細每一筆已確認的波次旁邊的按鈕，明細原本的「第 N 波 ×M」不變）：N-1「進京」「討伐」六個範圍每一列的按鈕和正式設定
+  //   算出的逐波波次相同（路線用自己的波次），按中間的波與路線自己的波、依隻數排列與搜尋後跟著列、收合時沒有按鈕、關閉重開收合；
+  //   N-2 資料不完整寫「已確認的」；N-3 鍵盤；N-4 沒有送東西給遊戲（之後 M-4 再核不換關、不寫入）；N-5 獨立關卡頁同樣；N-6 390×600／390×844。
+  //   按鈕在逐波按鈕之後，W-2 的鍵盤順序（收合時）不變
   // 全部 mock、虛構金鑰 test_sort_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -396,6 +400,113 @@ async (page) => {
     !!rowOf(dp2, CL1) && rowOf(dp2, CL1).expanded === "false" && expandedIds(dp2).length === 0 &&
     dr.sort === "first" && expandedIds(dr).length === 0 && dr.rows.every((r) => !r.detail) &&
     same(wavesOf(t1, G2), G2_13.all) && rowOf(t1, G2).count === 30 && same(wavesOf(t2, G2), G2_13.path_a) && rowOf(t2, G2).count === 25;
+
+  // 逐波明細前往那一波：明細每一筆旁邊的前往按鈕（只有已確認的筆數；文字與說明寫波次，資料不完整時寫「已確認的」）
+  const dgBtn = (enemyId, wave) => page.locator(`[data-testid="preview-composition-row"][data-enemy-id="${enemyId}"] [data-testid="preview-composition-detail-goto"][data-wave="${wave}"]`);
+  const dgState = () => page.evaluate(() => {
+    const c = document.querySelector('[data-testid="enemy-preview"] [data-testid="preview-composition"]');
+    return {
+      route: c.dataset.route, sort: c.dataset.sort,
+      rows: [...c.querySelectorAll('[data-testid="preview-composition-row"]')].map((r) => {
+        const d = r.querySelector('[data-testid="preview-composition-detail"]');
+        const ws = d ? [...d.querySelectorAll('[data-testid="preview-composition-detail-wave"]')] : [];
+        return {
+          id: r.dataset.enemyId, open: !!d,
+          waves: ws.map((x) => Number(x.dataset.wave)), texts: ws.map((x) => x.innerText.trim()),
+          buttons: [...r.querySelectorAll('[data-testid="preview-composition-detail-goto"]')].map((b) => ({
+            wave: Number(b.dataset.wave), text: b.innerText.replace(/\s+/g, " ").trim(), label: b.getAttribute("aria-label"), inDetail: !!d && d.contains(b),
+          })),
+        };
+      }),
+    };
+  });
+  // 展開目前範圍每一列的逐波明細（已展開的不再按）
+  const openAllDetails = async () => {
+    const list = await page.evaluate(() => [...document.querySelectorAll('[data-testid="enemy-preview"] [data-testid="preview-composition-row"]')].map((r) => r.dataset.enemyId));
+    for (const id of list) {
+      if ((await detailBtn(id).getAttribute("aria-expanded")) !== "true") {
+        await detailBtn(id).click();
+        await H.sleep(120);
+      }
+    }
+    return dgState();
+  };
+  // 按鈕不在（不該不見時）不去點它，讓斷言以具名的失敗呈現，不是點擊逾時
+  const gotoDetail = async (enemyId, wave) => {
+    if ((await dgBtn(enemyId, wave).count()) !== 1) return null;
+    await dgBtn(enemyId, wave).click();
+    await H.sleep(350);
+    return nav();
+  };
+  // 每一列：[別名, [明細前往按鈕的波次...]]
+  const dwOf = (s) => s.rows.map((r) => [r.id, r.buttons.map((b) => b.wave)]);
+  // 每一列都展開、按鈕和明細已確認的每一筆一對一（同一波不重複、不多不少），都在明細裡；明細原本的文字不變；
+  // 文字寫波次（資料不完整時寫「已確認的」），aria-label 寫前往、敵人、路線（選了路線時）與出兵的波次
+  const dgLabelsOk = (s, route, complete = true) =>
+    s.rows.every((r) =>
+      r.open && r.buttons.length > 0 && same(r.buttons.map((b) => b.wave), r.waves) && r.texts.every((t) => /^第 \d+ 波 ×\d+$/.test(t)) &&
+      r.buttons.every((b) => b.inDetail && b.text === `${complete ? "前往" : "前往已確認的"}第 ${b.wave} 波` &&
+        (b.label || "").startsWith("前往") && (b.label || "").endsWith(`${complete ? "出兵" : "已確認出兵"}的第 ${b.wave} 波`) &&
+        (complete ? !(b.label || "").includes("已確認") : true) &&
+        (route ? (b.label || "").includes(`在路線 ${route} `) : !(b.label || "").includes("在路線"))));
+  const dgRow = (s, id) => s.rows.find((r) => r.id === id) || null;
+  // 正式設定算出的逐波已確認波次（別名同上；chapter1_5 C 快騎全關第 2～7 波、path_b 第 4～7 波）：
+  // 期望先和正式 raw 的獨立計算、工作樹的計算與審查的依據逐列核對過才寫死
+  const DW_ALL_13 = [[G2, [1, 2, 3]], [G3, [1]], [C2, [1, 3]], [S3, [2, 3]], [S2, [2]], [C3, [3]]];
+  const DW_A_13 = [[G2, [1, 2, 3]], [G3, [1]], [C2, [1]], [C3, [3]]];
+  const DW_B_13 = [[S3, [2, 3]], [S2, [2]], [C2, [3]], [G2, [3]]];
+  const DW_ALL_15 = [[GL1, [1, 3]], [CL1, [1]], [SL1, [1, 2]], [G2, [2, 4, 5, 6, 7]], [C2, [2, 3, 4, 5, 6, 7]], [S2, [3, 4, 5, 6, 7]], [C3, [6, 7]], [G3, [7]], [SL3, [7]]];
+  const DW_A_15 = [[GL1, [1, 3]], [CL1, [1]], [SL1, [1]], [G2, [2, 4, 5, 6, 7]], [C2, [2, 3, 4, 5, 6, 7]], [S2, [3, 5, 6, 7]], [C3, [7]], [G3, [7]]];
+  const DW_B_15 = [[SL1, [2]], [S2, [3, 4, 5, 6, 7]], [C2, [4, 5, 6, 7]], [G2, [5, 6, 7]], [C3, [6]], [SL3, [7]]];
+  // N-1／N-5 共用
+  const dgFlow = async () => {
+    await openPreview("chapter3_2");
+    const z0 = await dgState();
+    const all15 = await openAllDetails();
+    const gMid = await gotoDetail(C2, 4);
+    await pick("preview-composition-route", "route:path_a");
+    const a15 = await openAllDetails();
+    await pick("preview-composition-route", "route:path_b");
+    const b15 = await openAllDetails();
+    const gB = await gotoDetail(C2, 5);
+    await pick("preview-composition-sort", "count");
+    await search("步兵");
+    const bs = await dgState();
+    const gS = await gotoDetail(G2, 6);
+    await detailBtn(G2).click();
+    await H.sleep(150);
+    const bc = await dgState();
+    await detailBtn(G2).click();
+    await H.sleep(150);
+    const bo = await dgState();
+    await closePreview();
+    await openPreview("chapter3_2");
+    const zr = await dgState();
+    await closePreview();
+    await openPreview("chapter3_1");
+    const all13 = await openAllDetails();
+    await pick("preview-composition-route", "route:path_a");
+    const a13 = await openAllDetails();
+    await pick("preview-composition-route", "route:path_b");
+    const b13 = await openAllDetails();
+    const gT = await gotoDetail(S3, 3);
+    await closePreview();
+    return { z0, all15, gMid, a15, b15, gB, bs, gS, bc, bo, zr, all13, a13, b13, gT };
+  };
+  const dgFlowOk = ({ z0, all15, gMid, a15, b15, gB, bs, gS, bc, bo, zr, all13, a13, b13, gT }) =>
+    z0.rows.length === 9 && z0.rows.every((r) => !r.open && r.buttons.length === 0) &&
+    same(dwOf(all15), DW_ALL_15) && dgLabelsOk(all15, null) && (dgRow(all15, C2)?.buttons || []).every((b) => /C 快騎/.test(b.label || "")) &&
+    landed(gMid, 4, "", "first", "C 快騎的出兵") &&
+    a15.route === "path_a" && same(dwOf(a15), DW_A_15) && dgLabelsOk(a15, "path_a") &&
+    b15.route === "path_b" && same(dwOf(b15), DW_B_15) && dgLabelsOk(b15, "path_b") &&
+    landed(gB, 5, "path_b", "first", "C 快騎的出兵") &&
+    bs.sort === "count" && same(dwOf(bs), [[G2, [5, 6, 7]]]) && dgLabelsOk(bs, "path_b") && landed(gS, 6, "path_b", "count", "步兵的出兵") &&
+    same(dwOf(bc), [[G2, []]]) && !bc.rows[0].open && same(dwOf(bo), [[G2, [5, 6, 7]]]) && dgLabelsOk(bo, "path_b") &&
+    zr.route === "" && zr.sort === "first" && zr.rows.length === 9 && zr.rows.every((r) => !r.open && r.buttons.length === 0) &&
+    same(dwOf(all13), DW_ALL_13) && dgLabelsOk(all13, null) &&
+    a13.route === "path_a" && same(dwOf(a13), DW_A_13) && dgLabelsOk(a13, "path_a") &&
+    b13.route === "path_b" && same(dwOf(b13), DW_B_13) && dgLabelsOk(b13, "path_b") &&
+    landed(gT, 3, "path_b", "first", "A 慢兵的出兵");
   // 送給遊戲 iframe 的訊息（Web → Godot）
   const watchSent = () => page.evaluate((sel) => {
     const f = document.querySelector(sel);
@@ -939,6 +1050,51 @@ async (page) => {
     run.check("L-5 主頁操作前往末次出兵（L-1～L-4）的期間沒有送任何訊息給遊戲（沒有關卡資料、update_team 或命令）",
       lWatching && Array.isArray(lSent) && lSent.length === 0, out.L5);
 
+    // N-1 逐波明細前往那一波（主頁）：重新記錄送給遊戲的訊息
+    const nWatching = await watchSent();
+    const nf = await dgFlow();
+    out.N1 = nf;
+    run.check("N-1 逐波明細前往那一波（「進京」與「討伐」，正式 chapter1_5／chapter1_3 的形狀）：預設收合時沒有按鈕；六個範圍每一列展開後，已確認的每一波各一個按鈕（和明細一對一、明細文字不變），" +
+      "C 快騎全關第 2～7 波、path_b 第 4～7 波（用路線自己的波次，不借全關）；按中間的第 4 波、path_b 的第 5 波只展開那一波、導覽與說明同步、焦點在那一波的標題，路線與排列不變；" +
+      "依隻數排列並搜尋「步兵」後按鈕跟著列（第 5～7 波，按第 6 波）；收合明細時按鈕消失、再展開回來；關閉重開全部收合；「討伐」path_b 的 A 慢兵前往第 3 波",
+      nWatching && dgFlowOk(nf), out.N1);
+
+    // N-2 資料不完整（「邊界」）：寫「已確認的」；找不到設定、數量無法判讀、數量 0、沒有路點的路線都沒有按鈕
+    await openPreview("chapter3_3");
+    const ne = await openAllDetails();
+    const neGo = await gotoDetail(G2, 2);
+    await closePreview();
+    out.N2 = { rows: ne.rows, neGo };
+    run.check("N-2 資料不完整（「邊界」）：步兵已確認的第 1、2 波、B 步兵的第 1 波各一個按鈕，寫「前往已確認的第 N 波」、說明寫已確認出兵；按步兵的第 2 波到第 2 波、說明寫已確認的出兵；" +
+      "找不到設定的 mock_ss_ghost 沒有列，數量無法判讀、數量 0、沒有路點的路線都沒有按鈕",
+      same(dwOf(ne), [[G2, [1, 2]], [G3, [1]]]) && dgLabelsOk(ne, null, false) && !ne.rows.some((r) => r.id === "mock_ss_ghost") &&
+        landed(neGo, 2, "", "first", "步兵已確認的出兵"),
+      out.N2);
+
+    // N-3 鍵盤：逐波按鈕 Enter 展開後 Tab 到明細的第一個前往、再 Tab 到下一個，Enter 前往
+    await openPreview("chapter3_2");
+    await detailBtn(C2).focus();
+    await press("Enter");
+    await press("Tab");
+    const nk0 = await page.evaluate(() => [document.activeElement?.dataset?.testid ?? null, document.activeElement?.closest('[data-testid="preview-composition-row"]')?.dataset.enemyId ?? null, document.activeElement?.dataset?.wave ?? null]);
+    await press("Tab");
+    const nk1 = await page.evaluate(() => [document.activeElement?.dataset?.testid ?? null, document.activeElement?.closest('[data-testid="preview-composition-row"]')?.dataset.enemyId ?? null, document.activeElement?.dataset?.wave ?? null]);
+    await press("Enter");
+    await H.sleep(300);
+    const nk2 = await nav();
+    await closePreview();
+    out.N3 = { nk0, nk1, nk2 };
+    run.check("N-3 鍵盤：C 快騎的逐波按鈕按 Enter 展開，Tab 到明細第 2 波的前往、再 Tab 到第 3 波的前往，Enter 前往第 3 波、焦點在那一波的標題",
+      same(nk0, ["preview-composition-detail-goto", C2, "2"]) && same(nk1, ["preview-composition-detail-goto", C2, "3"]) &&
+        landed(nk2, 3, "", "first", "C 快騎的出兵"),
+      out.N3);
+
+    // N-4 送給遊戲的訊息
+    const nSent = await sentTypes();
+    out.N4 = { nWatching, nSent };
+    run.check("N-4 主頁操作逐波明細的前往（N-1～N-3）的期間沒有送任何訊息給遊戲（沒有關卡資料、update_team 或命令）；之後 M-4 再核不換關、不寫入",
+      nWatching && Array.isArray(nSent) && nSent.length === 0, out.N4);
+
     // M-4 關閉關卡選擇：戰場不變、沒有寫入
     await press("Escape");
     await H.sleep(300);
@@ -1215,6 +1371,37 @@ async (page) => {
     out.L7 = lfits;
     run.check("L-7 390×600／390×844：「進京」的 6 個前往末次按鈕（傷兵、A 慢兵、步兵、C 快騎、重甲、衝鋒）都在預覽裡、沒有橫向捲動；按 C 快騎的到第 7 波",
       [600, 844].every((h) => lfits[h].n === 6 && lfits[h].inside && lfits[h].docScroll <= lfits[h].vw && lfits[h].landed), out.L7);
+
+    // N-5 獨立關卡頁：逐波明細的前往和主頁相同
+    const np = await dgFlow();
+    out.N5 = np;
+    run.check("N-5 獨立關卡頁：逐波明細前往的六個範圍、按鈕文字與說明、中間波與路線自己的波、排列與搜尋、收合再展開、關閉重開，都和主頁相同", dgFlowOk(np), out.N5);
+
+    // N-6 390×600／390×844：明細的前往按鈕都在預覽裡、沒有橫向捲動，按下到對的那一波
+    const nfits = {};
+    for (const h of [600, 844]) {
+      await page.setViewportSize({ width: 390, height: h });
+      await H.sleep(300);
+      await openPreview("chapter3_2");
+      await detailBtn(C2).scrollIntoViewIfNeeded();
+      await toggleDetail(C2);
+      await page.locator('[data-testid="preview-composition-detail"]').scrollIntoViewIfNeeded();
+      await H.sleep(200);
+      const box = await page.evaluate(() => {
+        const p = document.querySelector('[data-testid="enemy-preview"] [role="dialog"]').getBoundingClientRect();
+        const bs = [...document.querySelectorAll('[data-testid="preview-composition-detail-goto"]')].map((b) => b.getBoundingClientRect());
+        return { vw: innerWidth, docScroll: document.documentElement.scrollWidth, n: bs.length, inside: bs.every((r) => r.width > 0 && r.left >= p.left && r.right <= p.right) };
+      });
+      const nshot = await H.shot(page, `stage-sort-detail-goto-390x${h}`);
+      const ngo = await gotoDetail(C2, 5);
+      await closePreview();
+      nfits[h] = { ...box, shot: nshot, landed: landed(ngo, 5, "", "first", "C 快騎的出兵") };
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const aN = await gasActions();
+    out.N6 = { nfits, writes: writes(aN) - writes(a0) };
+    run.check("N-6 390×600／390×844：「進京」C 快騎明細的 6 個前往按鈕（第 2～7 波）都在預覽裡、沒有橫向捲動；按第 5 波到第 5 波；獨立關卡頁到這裡沒有寫入",
+      [600, 844].every((h) => nfits[h].n === 6 && nfits[h].inside && nfits[h].docScroll <= nfits[h].vw && nfits[h].landed) && out.N6.writes === 0, out.N6);
 
     // V-7 設定更新（預覽開著）：保留依波數排列，用新的列重排
     await staleReload([STALE_REFRESH], "chapter3_4");
