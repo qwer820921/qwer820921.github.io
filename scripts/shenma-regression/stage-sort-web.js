@@ -32,6 +32,9 @@ async (page) => {
   // - 單波最多已確認（展開的逐波明細標題之後一行「此範圍單波最多已確認：X 隻（第…波）」，並列全寫、統一寫已確認、收合時沒有）：K-1「進京」「討伐」
   //   六個範圍每一列和正式設定算出的相同（路線用自己的），依隻數排列與搜尋後值不變、收合沒有、關閉重開收合；K-2 資料不完整只看已確認；
   //   K-3 沒有送東西給遊戲（之後 M-4 再核不換關、不寫入）；K-4 獨立關卡頁同樣；K-5 390×600／390×844 整行不截掉；K-6 設定更新用新的資料重新算
+  // - 逐波明細標記單波最多（展開的明細裡等於單波最多的每一筆之後一行非互動的「單波最多已確認」，並列全標、其他不標，原本那一筆與前往按鈕不變）：
+  //   Q-1「進京」「討伐」六個範圍標了哪幾筆（波次與隻數）和寫死的正式期望整份相同（路線用自己的），依隻數排列與搜尋後不變、收合沒有、關閉重開收合；
+  //   Q-2 資料不完整只看已確認；Q-3 沒有送東西給遊戲（之後 M-4 再核不換關、不寫入）；Q-4 獨立關卡頁同樣；Q-5 390×600／390×844；Q-6 設定更新用新的資料重新標
   // 全部 mock、虛構金鑰 test_sort_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -598,6 +601,102 @@ async (page) => {
     same(pkOf(p13), DK_ALL_13) && pkTextOk(p13) &&
     a13.route === "path_a" && same(pkOf(a13), DK_A_13) && pkTextOk(a13) &&
     b13.route === "path_b" && same(pkOf(b13), DK_B_13) && pkTextOk(b13);
+  // 逐波明細的單波最多標記：每一列標了哪幾筆（[波次, 那一筆的隻數]）、標記放在哪裡、是不是非互動的文字，原本那一筆的文字與 data 屬性照舊
+  const markState = () => page.evaluate(() => {
+    const c = document.querySelector('[data-testid="enemy-preview"] [data-testid="preview-composition"]');
+    return {
+      route: c.dataset.route, sort: c.dataset.sort,
+      rows: [...c.querySelectorAll('[data-testid="preview-composition-row"]')].map((r) => {
+        const d = r.querySelector('[data-testid="preview-composition-detail"]');
+        const ms = [...r.querySelectorAll('[data-testid="preview-composition-detail-wave-peak"]')];
+        const ws = d ? [...d.querySelectorAll('[data-testid="preview-composition-detail-wave"]')] : [];
+        const pk = r.querySelector('[data-testid="preview-composition-detail-peak"]');
+        return {
+          id: r.dataset.enemyId, open: !!d,
+          marks: ms.map((m) => {
+            const w = m.previousElementSibling;
+            const isWave = !!w && w.dataset.testid === "preview-composition-detail-wave";
+            return [Number(m.dataset.wave), isWave && w.dataset.wave === m.dataset.wave ? Number(w.dataset.count) : null];
+          }),
+          // 標記緊接在同一波那一筆之後、不在它裡面、在明細裡；文字只有「單波最多已確認」；不是按鈕或連結、裡面沒有可以聚焦的東西
+          placedOk: ms.every((m) => {
+            const w = m.previousElementSibling;
+            return !!d && d.contains(m) && !!w && w.dataset.testid === "preview-composition-detail-wave" && w.dataset.wave === m.dataset.wave && !w.contains(m) &&
+              m.innerText.replace(/\s+/g, " ").trim() === "單波最多已確認" && m.tagName === "DIV" && m.tabIndex < 0 &&
+              !m.querySelector("a,button,input,select,textarea,[tabindex]") && !m.hasAttribute("role");
+          }),
+          // 原本的每一筆文字照舊（「第 N 波 ×隻數」）、前往按鈕的順序和筆數相同、明細裡能聚焦的只有前往按鈕
+          wavesOk: ws.every((x) => x.innerText.replace(/\s+/g, " ").trim() === `第 ${x.dataset.wave} 波 ×${x.dataset.count}`),
+          buttonsInOrder: !d || JSON.stringify([...d.querySelectorAll('[data-testid="preview-composition-detail-goto"]')].map((b) => b.dataset.wave)) === JSON.stringify(ws.map((x) => x.dataset.wave)),
+          focusables: d ? d.querySelectorAll("a,button,input,select,textarea,[tabindex]").length : 0,
+          gotoButtons: d ? d.querySelectorAll('[data-testid="preview-composition-detail-goto"]').length : 0,
+          summary: pk ? [Number(pk.dataset.count), pk.dataset.waves.split(",").map(Number)] : null,
+        };
+      }),
+    };
+  });
+  // 每一列：[別名, [[波次, 隻數]...]]
+  const mkOf = (s) => s.rows.map((r) => [r.id, r.marks]);
+  // 期望從寫死的 DK_* 表轉成同樣的形狀（並列的每一波都標，隻數是那一列的單波最多）
+  const mkExp = (dk) => dk.map(([id, n, ws]) => [id, ws.map((w) => [w, n])]);
+  // 展開的列：放置、文字、原本的筆數與按鈕都照舊，也和明細上方那一行的隻數與並列一致；收合的列沒有標記
+  const mkShapeOk = (s) =>
+    s.rows.every((r) => r.placedOk && r.wavesOk && r.buttonsInOrder && r.focusables === r.gotoButtons) &&
+    s.rows.every((r) => (r.open ? !!r.summary && same(r.marks, r.summary[1].map((w) => [w, r.summary[0]])) : r.marks.length === 0));
+  // Q-1／Q-4 共用（和 K-1／K-4 同樣的操作順序）
+  const mkFlow = async () => {
+    await openPreview("chapter3_2");
+    const z0 = await markState();
+    await openAllDetails();
+    const p15 = await markState();
+    await pick("preview-composition-route", "route:path_a");
+    await openAllDetails();
+    const a15 = await markState();
+    await pick("preview-composition-route", "route:path_b");
+    await openAllDetails();
+    const b15 = await markState();
+    await pick("preview-composition-sort", "count");
+    const bc = await markState();
+    await search("步兵");
+    const bs = await markState();
+    await detailBtn(G2).click();
+    await H.sleep(150);
+    const bh = await markState();
+    await detailBtn(G2).click();
+    await H.sleep(150);
+    const bo = await markState();
+    await closePreview();
+    await openPreview("chapter3_2");
+    const zr = await markState();
+    await closePreview();
+    await openPreview("chapter3_1");
+    await openAllDetails();
+    const p13 = await markState();
+    await pick("preview-composition-route", "route:path_a");
+    await openAllDetails();
+    const a13 = await markState();
+    await pick("preview-composition-route", "route:path_b");
+    await openAllDetails();
+    const b13 = await markState();
+    await closePreview();
+    return { z0, p15, a15, b15, bc, bs, bh, bo, zr, p13, a13, b13 };
+  };
+  const mkFlowOk = ({ z0, p15, a15, b15, bc, bs, bh, bo, zr, p13, a13, b13 }) =>
+    z0.rows.length === 9 && z0.rows.every((r) => !r.open && r.marks.length === 0) &&
+    same(mkOf(p15), mkExp(DK_ALL_15)) && mkShapeOk(p15) &&
+    same(mkOf(p15).find((x) => x[0] === C2), [C2, [[4, 20], [5, 20], [6, 20], [7, 20]]]) &&
+    a15.route === "path_a" && same(mkOf(a15), mkExp(DK_A_15)) && mkShapeOk(a15) &&
+    same(mkOf(a15).find((x) => x[0] === C2), [C2, [[2, 10], [3, 10], [4, 10], [5, 10], [6, 10], [7, 10]]]) &&
+    b15.route === "path_b" && same(mkOf(b15), mkExp(DK_B_15)) && mkShapeOk(b15) &&
+    same(mkOf(b15).find((x) => x[0] === C2), [C2, [[4, 10], [5, 10], [6, 10], [7, 10]]]) &&
+    bc.sort === "count" && same(pkSorted(mkOf(bc)), pkSorted(mkExp(DK_B_15))) && mkShapeOk(bc) &&
+    same(mkOf(bs), [[G2, [[5, 10], [6, 10], [7, 10]]]]) && mkShapeOk(bs) &&
+    bh.rows.length === 1 && !bh.rows[0].open && bh.rows[0].marks.length === 0 &&
+    same(mkOf(bo), [[G2, [[5, 10], [6, 10], [7, 10]]]]) && mkShapeOk(bo) &&
+    zr.route === "" && zr.sort === "first" && zr.rows.length === 9 && zr.rows.every((r) => !r.open && r.marks.length === 0) &&
+    same(mkOf(p13), mkExp(DK_ALL_13)) && mkShapeOk(p13) &&
+    a13.route === "path_a" && same(mkOf(a13), mkExp(DK_A_13)) && mkShapeOk(a13) &&
+    b13.route === "path_b" && same(mkOf(b13), mkExp(DK_B_13)) && mkShapeOk(b13);
   // 送給遊戲 iframe 的訊息（Web → Godot）
   const watchSent = () => page.evaluate((sel) => {
     const f = document.querySelector(sel);
@@ -1209,6 +1308,29 @@ async (page) => {
     run.check("K-3 主頁操作單波最多已確認（K-1～K-2）的期間沒有送任何訊息給遊戲（沒有關卡資料、update_team 或命令）；之後 M-4 再核不換關、不寫入",
       kWatching && Array.isArray(kSent) && kSent.length === 0, out.K3);
 
+    // Q-1 逐波明細標記單波最多（主頁）：重新記錄送給遊戲的訊息
+    const qWatching = await watchSent();
+    const qf = await mkFlow();
+    out.Q1 = qf;
+    run.check("Q-1 逐波明細的單波最多標記（「進京」與「討伐」，正式 chapter1_5／chapter1_3 的形狀）：預設收合時沒有；六個範圍每一列展開後，標了「單波最多已確認」的筆數（波次與隻數）和寫死的正式期望整份相同、所有並列都標、其他不標，" +
+      "C 快騎全關第 4～7 波各 20 隻、path_a 第 2～7 波各 10 隻、path_b 第 4～7 波各 10 隻（用路線自己的，不借全關）；標記緊接在那一筆之後、不在它裡面、不是可以聚焦的元素，原本的筆數文字與前往按鈕照舊；依隻數排列與搜尋「步兵」後不變；收合明細時沒有、再展開回來；關閉重開全部收合",
+      qWatching && mkFlowOk(qf), out.Q1);
+
+    // Q-2 資料不完整（「邊界」）：只看已確認的各波
+    await openPreview("chapter3_3");
+    await openAllDetails();
+    const qe = await markState();
+    await closePreview();
+    out.Q2 = qe;
+    run.check("Q-2 資料不完整（「邊界」）：步兵只標第 2 波（3 隻，不標第 1 波的 2 隻）、B 步兵只有一筆第 1 波（6 隻）也標；文字一樣是「單波最多已確認」",
+      same(mkOf(qe), [[G2, [[2, 3]]], [G3, [[1, 6]]]]) && mkShapeOk(qe), out.Q2);
+
+    // Q-3 送給遊戲的訊息
+    const qSent = await sentTypes();
+    out.Q3 = { qWatching, qSent };
+    run.check("Q-3 主頁操作單波最多標記（Q-1～Q-2）的期間沒有送任何訊息給遊戲（沒有關卡資料、update_team 或命令）；之後 M-4 再核不換關、不寫入",
+      qWatching && Array.isArray(qSent) && qSent.length === 0, out.Q3);
+
     // M-4 關閉關卡選擇：戰場不變、沒有寫入
     await press("Escape");
     await H.sleep(300);
@@ -1570,6 +1692,61 @@ async (page) => {
       same(pkOf(ku0), [[G2, 9, [1]], [C2, 4, [1]], [G3, 3, [2]]]) && pkTextOk(ku0) &&
         same(pkOf(ku1), [[G2, 2, [1]], [G3, 3, [1]]]) && pkTextOk(ku1),
       out.K6);
+
+    // Q-4 獨立關卡頁：單波最多標記和主頁相同
+    const qp = await mkFlow();
+    out.Q4 = qp;
+    run.check("Q-4 獨立關卡頁：逐波明細的單波最多標記在六個範圍、所有並列、排列與搜尋後、收合再展開、關閉重開，都和主頁相同", mkFlowOk(qp), out.Q4);
+
+    // Q-5 390×600／390×844：標記在預覽裡、沒有橫向捲動
+    const qfits = {};
+    for (const h of [600, 844]) {
+      await page.setViewportSize({ width: 390, height: h });
+      await H.sleep(300);
+      await openPreview("chapter3_2");
+      await pick("preview-composition-route", "route:path_a");
+      await detailBtn(C2).scrollIntoViewIfNeeded();
+      await toggleDetail(C2);
+      const qm = page.locator('[data-testid="preview-composition-detail-wave-peak"]');
+      if ((await qm.count()) > 0) await qm.last().scrollIntoViewIfNeeded();
+      await H.sleep(200);
+      const box = await page.evaluate(() => {
+        const p = document.querySelector('[data-testid="enemy-preview"] [role="dialog"]').getBoundingClientRect();
+        const ms = [...document.querySelectorAll('[data-testid="preview-composition-detail-wave-peak"]')];
+        return {
+          vw: innerWidth, docScroll: document.documentElement.scrollWidth,
+          waves: ms.map((m) => Number(m.dataset.wave)),
+          inside: ms.length > 0 && ms.every((m) => {
+            const r = m.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && r.left >= p.left && r.right <= p.right && m.scrollWidth <= m.clientWidth;
+          }),
+        };
+      });
+      const qshot = await H.shot(page, `stage-sort-detail-wave-peak-390x${h}`);
+      await closePreview();
+      qfits[h] = { ...box, shot: qshot };
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const aQ = await gasActions();
+    out.Q5 = { qfits, writes: writes(aQ) - writes(a0) };
+    run.check("Q-5 390×600／390×844：「進京」path_a C 快騎第 2～7 波的 6 個「單波最多已確認」都在預覽裡、沒有被截掉、沒有橫向捲動；獨立關卡頁到這裡沒有寫入",
+      [600, 844].every((h) => same(qfits[h].waves, [2, 3, 4, 5, 6, 7]) && qfits[h].inside && qfits[h].docScroll <= qfits[h].vw) && out.Q5.writes === 0, out.Q5);
+
+    // Q-6 設定更新（預覽開著）：過期的「刷新」第 1 波步兵 9、C 快騎 4，第 2 波 B 步兵 3 → 新的設定第 1 波步兵 2、B 步兵 3
+    await staleReload([STALE_REFRESH], "chapter3_4");
+    await openPreview("chapter3_4");
+    await openAllDetails();
+    const qu0 = await markState();
+    await page.evaluate(() => window.__shenmaMock.release("get_all_maps"));
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="preview-composition-row"]').length === 2, null, { timeout: 30000, polling: 100 });
+    await H.sleep(300);
+    const qu1 = await markState();
+    await closePreview();
+    out.Q6 = { before: mkOf(qu0), after: mkOf(qu1) };
+    run.check("Q-6 設定更新（預覽開著）：更新前步兵標第 1 波（9 隻）、C 快騎標第 1 波（4 隻）、B 步兵標第 2 波（3 隻）；更新後用新的資料改成步兵第 1 波（2 隻）、B 步兵第 1 波（3 隻），C 快騎的列沒了（不留舊的標記）",
+      same(mkOf(qu0), [[G2, [[1, 9]]], [C2, [[1, 4]]], [G3, [[2, 3]]]]) && mkShapeOk(qu0) &&
+        same(mkOf(qu1), [[G2, [[1, 2]]], [G3, [[1, 3]]]]) && mkShapeOk(qu1),
+      out.Q6);
 
     // V-7 設定更新（預覽開著）：保留依波數排列，用新的列重排
     await staleReload([STALE_REFRESH], "chapter3_4");

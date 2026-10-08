@@ -276,7 +276,40 @@ async (page) => {
     await dismissSplash(IFRAME);
 
     // A-0：備戰中拆除確認不受觀測更新影響
-    await H.placeTower(page, 8, 6);
+    // 第一次部署點擊的診斷紀錄（不是判定）：點擊前記關卡、最近一份觀測的 seq／階段、遊戲區範圍與點擊座標、看得到的部署狀態；
+    // 選單沒出現時另外記失敗當下的同一組資料、原始錯誤與截圖，照樣讓這一段失敗（部署照舊用 H.placeTower，單次點擊、逾時不變、不重試）。
+    // 點擊前不送橋接訊息（不拿快照），免得改變點擊的時機。點擊與紀錄用同一個格子
+    const A0_CELL = [8, 6];
+    const deployView = async () => ({
+      at: Date.now(),
+      map: MAP,
+      cell: A0_CELL,
+      obs: await obsTail().then((o) => o && { seq: o.seq, battle_id: o.battle_id, state: o.state ?? o.game_state ?? null }),
+      rect: await page.evaluate((sel) => {
+        const b = document.querySelector(sel).getBoundingClientRect();
+        return { left: b.left, top: b.top, width: b.width, height: b.height };
+      }, IFRAME),
+      click: await cellPoint(IFRAME, A0_CELL[0], A0_CELL[1]),
+      visible: await page.evaluate(() => ({
+        menuText: document.body.innerText.includes("建築位部署"),
+        placementMenu: !!document.querySelector('[data-testid="placement-menu"]'),
+        dialogs: [...document.querySelectorAll('[role="dialog"], .modal.show')].map((d) => d.getAttribute("data-testid") || d.className).slice(0, 5),
+        active: document.activeElement ? document.activeElement.tagName + (document.activeElement.title ? `[title=${document.activeElement.title}]` : "") : null,
+      })),
+    });
+    out.A_firstDeploy = { before: await deployView() };
+    try {
+      await H.placeTower(page, A0_CELL[0], A0_CELL[1]);
+      out.A_firstDeploy.ms = Date.now() - out.A_firstDeploy.before.at;
+    } catch (e) {
+      out.A_firstDeploy.fail = {
+        ...(await deployView().catch((x) => ({ viewError: String(x).slice(0, 200) }))),
+        error: String(e && e.stack ? e.stack.split("\n").slice(0, 3).join(" | ") : e).slice(0, 400),
+        bridge: await page.evaluate(() => (window.__bridgeLog || []).slice(-15).map((m) => ({ type: m.type, wave: m.wave, game_state: m.game_state, battle_id: m.battle_id }))).catch(() => null),
+        shot: await H.shot(page, "battle-live-A-first-deploy-fail").catch(() => null),
+      };
+      throw e;
+    }
     await clickCell(IFRAME, [8, 6]);
     await page.waitForSelector('[data-testid="tower-sell"]', { timeout: 15000 });
     await page.locator('[data-testid="tower-sell"]').click();
