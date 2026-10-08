@@ -35,6 +35,9 @@ async (page) => {
   // - 逐波明細標記單波最多（展開的明細裡等於單波最多的每一筆之後一行非互動的「單波最多已確認」，並列全標、其他不標，原本那一筆與前往按鈕不變）：
   //   Q-1「進京」「討伐」六個範圍標了哪幾筆（波次與隻數）和寫死的正式期望整份相同（路線用自己的），依隻數排列與搜尋後不變、收合沒有、關閉重開收合；
   //   Q-2 資料不完整只看已確認；Q-3 沒有送東西給遊戲（之後 M-4 再核不換關、不寫入）；Q-4 獨立關卡頁同樣；Q-5 390×600／390×844；Q-6 設定更新用新的資料重新標
+  // - 依已確認出兵的波數篩選（排列旁的「已確認出兵波數」：全部／至少 2／3／4 波，以目前範圍那一列的逐波已確認筆數為準）：Y-1「進京」「討伐」六個範圍的列與小計和
+  //   寫死的正式期望相同、兩種排列、和搜尋同時成立、沒有符合、清除搜尋保留下限、選全部回到原樣、展開剪除、單波最多標記、關閉重開；Y-2 資料不完整；Y-3 鍵盤；
+  //   Y-4 沒有送東西給遊戲（之後 M-4 再核不換關、不寫入）；Y-5 獨立關卡頁同樣；Y-6 390×600／390×844；Y-7 只有一種敵人時不顯示、不套用（設定更新前後）
   // 全部 mock、虛構金鑰 test_sort_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -697,6 +700,131 @@ async (page) => {
     same(mkOf(p13), mkExp(DK_ALL_13)) && mkShapeOk(p13) &&
     a13.route === "path_a" && same(mkOf(a13), mkExp(DK_A_13)) && mkShapeOk(a13) &&
     b13.route === "path_b" && same(mkOf(b13), mkExp(DK_B_13)) && mkShapeOk(b13);
+  // 依已確認出兵的波數篩選（排列旁的「已確認出兵波數」選單）
+  const ystate = () => page.evaluate(() => {
+    const c = document.querySelector('[data-testid="enemy-preview"] [data-testid="preview-composition"]');
+    const text = (x) => x?.innerText.replace(/\s+/g, " ").trim() ?? null;
+    const sel = c.querySelector('[data-testid="preview-composition-min-waves"]');
+    const rows = [...c.querySelectorAll('[data-testid="preview-composition-row"]')];
+    return {
+      route: c.dataset.route, sort: c.dataset.sort, min: c.dataset.minWaves,
+      select: sel ? { value: sel.value, options: [...sel.options].map((o) => [o.value, o.textContent.trim()]), label: text(document.querySelector(`label[for="${sel.id}"]`)) } : null,
+      rows: rows.map((r) => [r.dataset.enemyId, Number(r.dataset.count), Number(r.querySelector('[data-testid="preview-composition-goto"]')?.dataset.wave ?? NaN)]),
+      expanded: rows.filter((r) => r.querySelector('[data-testid="preview-composition-detail-toggle"]')?.getAttribute("aria-expanded") === "true").map((r) => r.dataset.enemyId),
+      peaks: rows.map((r) => [r.dataset.enemyId, [...r.querySelectorAll('[data-testid="preview-composition-detail-wave-peak"]')].map((m) => Number(m.dataset.wave))]).filter((x) => x[1].length > 0),
+      minSummary: text(c.querySelector('[data-testid="preview-composition-min-waves-summary"]')),
+      searchSummary: text(c.querySelector('[data-testid="preview-composition-search-summary"]')),
+      search: c.querySelector('[data-testid="preview-composition-search"]')?.value ?? null,
+      focus: document.activeElement?.dataset?.testid ?? null,
+    };
+  });
+  const yIds = (s) => s.rows.map((r) => r[0]);
+  const ySub = (s) => s.rows.reduce((t, r) => t + r[1], 0);
+  const MIN_OPTIONS = [["0", "全部"], ["2", "至少 2 波"], ["3", "至少 3 波"], ["4", "至少 4 波"]];
+  const minNote = (n, kinds, total, scope, q) =>
+    `${q ? `符合搜尋「${q}」而且` : ""}至少已確認 ${n} 波出兵的 ${kinds} 種，已確認 ${total} 隻（只是下面列出的列的小計，不是${scope}的總數；波數只算已確認的波）。`;
+  const minNone = (n, scope, q, partial) =>
+    `${scope}沒有${q ? `符合搜尋「${q}」而且` : ""}至少已確認 ${n} 波出兵的敵人${partial ? "（只算已確認的出兵；有資料問題的波次可能還有）" : ""}。`;
+  // 正式 chapter1_5／chapter1_3 的形狀每個範圍至少 2／3／4 波的列（首次出現的順序）與已確認隻數：
+  // 期望先和正式 raw 的獨立計算、審查提供的依據逐項核對過才寫死
+  const YW_15 = {
+    all: { 2: [[GL1, SL1, G2, C2, S2, C3], 330], 3: [[G2, C2, S2], 270], 4: [[G2, C2, S2], 270] },
+    path_a: { 2: [[GL1, G2, C2, S2], 170], 3: [[G2, C2, S2], 150], 4: [[G2, C2, S2], 150] },
+    path_b: { 2: [[S2, C2, G2], 120], 3: [[S2, C2, G2], 120], 4: [[S2, C2], 90] },
+  };
+  const YW_13 = {
+    all: { 2: [[G2, C2, S3], 50], 3: [[G2], 30], 4: [[], 0] },
+    path_a: { 2: [[G2], 25], 3: [[G2], 25], 4: [[], 0] },
+    path_b: { 2: [[S3], 10], 3: [[], 0], 4: [[], 0] },
+  };
+  const Y_SCOPES = [["all", "", "全關"], ["path_a", "route:path_a", "路線 path_a "], ["path_b", "route:path_b", "路線 path_b "]];
+  // 一個關卡三個範圍各取 0／2／3／4（範圍不篩選的列另外記，用來核對篩選後每一列的數量與前往首次的波次照舊）
+  const yScopes = async (mapId) => {
+    await openPreview(mapId);
+    const r = { base: {} };
+    for (const [scope, value] of Y_SCOPES) {
+      await pick("preview-composition-route", value);
+      await pick("preview-composition-min-waves", "0");
+      r.base[scope] = await ystate();
+      r[scope] = {};
+      for (const m of [2, 3, 4]) {
+        await pick("preview-composition-min-waves", String(m));
+        r[scope][m] = await ystate();
+      }
+    }
+    return r;
+  };
+  const yScopesOk = (r, want) =>
+    Y_SCOPES.every(([scope, value, label]) =>
+      r.base[scope].min === "0" && r.base[scope].minSummary === null &&
+      [2, 3, 4].every((m) => {
+        const s = r[scope][m];
+        const [ids, total] = want[scope][m];
+        return s.min === String(m) && s.select?.value === String(m) && s.route === value.replace("route:", "") &&
+          same(yIds(s), ids) && ySub(s) === total &&
+          s.rows.every((row) => r.base[scope].rows.some((b) => same(b, row))) &&
+          s.minSummary === (ids.length ? minNote(m, ids.length, total, label) : minNone(m, label)) && s.searchSummary === null;
+      }));
+  // Y-1／Y-5 共用：「進京」六個範圍的前半與排列、搜尋、清除、全部、展開剪除、關閉重開，接著「討伐」三個範圍
+  const yFlow = async () => {
+    const r = {};
+    r.p15 = await yScopes("chapter3_2");
+    await pick("preview-composition-route", "");
+    await pick("preview-composition-min-waves", "2");
+    await pick("preview-composition-sort", "count");
+    r.sc = await ystate();
+    await pick("preview-composition-sort", "waves");
+    r.sw = await ystate();
+    await pick("preview-composition-sort", "first");
+    await pick("preview-composition-min-waves", "3");
+    await search("步兵");
+    r.and = await ystate();
+    await pick("preview-composition-route", "route:path_b");
+    await pick("preview-composition-min-waves", "4");
+    r.none = await ystate();
+    await page.locator('[data-testid="preview-composition-search-clear"]').click();
+    await H.sleep(150);
+    r.cleared = await ystate();
+    await pick("preview-composition-min-waves", "0");
+    r.back = await ystate();
+    // 展開剪除：全關展開步兵（5 波）與 B 步兵（1 波）→ 至少 2 波時 B 步兵的列不在、它的明細關掉 → 回到全部時 B 步兵回來但收合
+    await pick("preview-composition-route", "");
+    await detailBtn(G2).click();
+    await H.sleep(120);
+    await detailBtn(G3).click();
+    await H.sleep(120);
+    r.pr0 = await ystate();
+    await pick("preview-composition-min-waves", "2");
+    r.pr1 = await ystate();
+    await pick("preview-composition-min-waves", "0");
+    r.pr2 = await ystate();
+    // 篩選後的列照樣標單波最多（path_a 至少 3 波：上面留著展開的步兵第 2、4～7 波，再展開 C 快騎第 2～7 波）
+    await pick("preview-composition-route", "route:path_a");
+    await pick("preview-composition-min-waves", "3");
+    if ((await detailBtn(C2).count()) === 1) await detailBtn(C2).click();
+    await H.sleep(120);
+    r.pk = await ystate();
+    await closePreview();
+    await openPreview("chapter3_2");
+    r.reopen = await ystate();
+    await closePreview();
+    r.p13 = await yScopes("chapter3_1");
+    await closePreview();
+    return r;
+  };
+  const yFlowOk = (r) =>
+    r.p15.base.all.rows.length === 9 && same(r.p15.base.all.select?.options, MIN_OPTIONS) && r.p15.base.all.select?.label === "已確認出兵波數" &&
+    yScopesOk(r.p15, YW_15) && yScopesOk(r.p13, YW_13) &&
+    r.sc.sort === "count" && r.sc.min === "2" && same(yIds(r.sc), [C2, S2, G2, GL1, SL1, C3]) &&
+    r.sw.sort === "waves" && r.sw.min === "2" && same(yIds(r.sw), [C2, G2, S2, GL1, SL1, C3]) &&
+    same(yIds(r.and), [G2]) && r.and.minSummary === minNote(3, 1, 80, "全關", "步兵") && r.and.searchSummary === null &&
+    r.none.route === "path_b" && r.none.rows.length === 0 && r.none.minSummary === minNone(4, "路線 path_b ", "步兵") &&
+    r.cleared.search === "" && r.cleared.min === "4" && same(yIds(r.cleared), [S2, C2]) && r.cleared.minSummary === minNote(4, 2, 90, "路線 path_b ") &&
+    r.back.min === "0" && same(r.back.rows, r.p15.base.path_b.rows) && r.back.minSummary === null && r.back.searchSummary === null &&
+    same(r.pr0.expanded, [G2, G3]) && same(r.pr1.expanded, [G2]) && !yIds(r.pr1).includes(G3) &&
+    same(r.pr2.expanded, [G2]) && yIds(r.pr2).includes(G3) &&
+    r.pk.route === "path_a" && same(yIds(r.pk), [G2, C2, S2]) && same(r.pk.peaks, [[G2, [2, 4, 5, 6, 7]], [C2, [2, 3, 4, 5, 6, 7]]]) &&
+    r.reopen.min === "0" && r.reopen.select?.value === "0" && r.reopen.rows.length === 9 && r.reopen.route === "" && r.reopen.minSummary === null;
   // 送給遊戲 iframe 的訊息（Web → Godot）
   const watchSent = () => page.evaluate((sel) => {
     const f = document.querySelector(sel);
@@ -1331,6 +1459,48 @@ async (page) => {
     run.check("Q-3 主頁操作單波最多標記（Q-1～Q-2）的期間沒有送任何訊息給遊戲（沒有關卡資料、update_team 或命令）；之後 M-4 再核不換關、不寫入",
       qWatching && Array.isArray(qSent) && qSent.length === 0, out.Q3);
 
+    // Y-1 依已確認出兵波數篩選（主頁）：重新記錄送給遊戲的訊息
+    const yWatching = await watchSent();
+    const yf = await yFlow();
+    out.Y1 = yf;
+    run.check("Y-1 已確認出兵波數篩選（「進京」與「討伐」，正式 chapter1_5／chapter1_3 的形狀）：預設全部、四個選項；六個範圍至少 2／3／4 波的列與已確認隻數和寫死的正式期望相同（路線用自己的列），" +
+      "小計與沒有符合時都寫「至少已確認」，篩選後每一列的數量與前往首次的波次照舊；依隻數、依波數排列保持篩選；和搜尋同時成立（至少 3 波＋「步兵」只剩步兵 80 隻），path_b 至少 4 波＋「步兵」沒有符合；" +
+      "清除搜尋保留下限，選全部回到原樣；下限藏起來的列的逐波明細關掉、放寬後不自動展開；篩選後的列照樣標單波最多；關閉重開回到全部",
+      yWatching && yFlowOk(yf), out.Y1);
+
+    // Y-2 資料不完整（「邊界」）：步兵已確認第 1、2 波（共 5 隻）、B 步兵只有第 1 波
+    await openPreview("chapter3_3");
+    await pick("preview-composition-min-waves", "2");
+    const ye2 = await ystate();
+    await pick("preview-composition-min-waves", "3");
+    const ye3 = await ystate();
+    await closePreview();
+    out.Y2 = { ye2, ye3 };
+    run.check("Y-2 資料不完整（「邊界」）：至少 2 波只剩步兵 5 隻（只算已確認的波，小計寫「至少已確認」）；至少 3 波沒有符合，另外說明有資料問題的波次可能還有",
+      same(yIds(ye2), [G2]) && ye2.minSummary === minNote(2, 1, 5, "全關") &&
+        ye3.rows.length === 0 && ye3.minSummary === minNone(3, "全關", "", true),
+      out.Y2);
+
+    // Y-3 鍵盤：搜尋框之後 Tab 到「已確認出兵波數」（清除鈕在沒有查詢時停用、不停留），方向鍵換到至少 2 波
+    await openPreview("chapter3_2");
+    await page.locator('[data-testid="preview-composition-search"]').focus();
+    await press("Tab");
+    const yk0 = await ystate();
+    if (yk0.focus === "preview-composition-min-waves") await press("ArrowDown");
+    const yk1 = await ystate();
+    await closePreview();
+    out.Y3 = { yk0: { focus: yk0.focus, min: yk0.min }, yk1: { focus: yk1.focus, min: yk1.min, rows: yIds(yk1) } };
+    run.check("Y-3 鍵盤：搜尋框之後按 Tab 到「已確認出兵波數」（排列之後仍是搜尋框，原本的順序不變），按向下鍵換成至少 2 波，列跟著篩選（「進京」全關 6 種）、焦點留在選單上",
+      yk0.focus === "preview-composition-min-waves" && yk0.min === "0" &&
+        yk1.focus === "preview-composition-min-waves" && yk1.min === "2" && same(yIds(yk1), YW_15.all[2][0]),
+      out.Y3);
+
+    // Y-4 送給遊戲的訊息
+    const ySent = await sentTypes();
+    out.Y4 = { yWatching, ySent };
+    run.check("Y-4 主頁操作已確認出兵波數篩選（Y-1～Y-3）的期間沒有送任何訊息給遊戲（沒有關卡資料、update_team 或命令）；之後 M-4 再核不換關、不寫入",
+      yWatching && Array.isArray(ySent) && ySent.length === 0, out.Y4);
+
     // M-4 關閉關卡選擇：戰場不變、沒有寫入
     await press("Escape");
     await H.sleep(300);
@@ -1805,6 +1975,75 @@ async (page) => {
         m1.search === "" && m1.sort === "first" && same(m1.rows, [[G2, 4, 1], [C2, 3, 1]]) && m1.searchSummary === null &&
         same(m2.rows, [[C2, 3, 1]]) && m2.searchSummary === searchNote("快騎", 1, 3, "全關") && out.S10.writes === 0,
       out.S10);
+
+    // Y-5 獨立關卡頁：已確認出兵波數篩選和主頁相同
+    const yp = await yFlow();
+    out.Y5 = yp;
+    run.check("Y-5 獨立關卡頁：已確認出兵波數篩選的六個範圍、排列、和搜尋同時成立、清除與全部、展開剪除、單波最多標記、關閉重開，都和主頁相同", yFlowOk(yp), out.Y5);
+
+    // Y-6 390×600／390×844：選單與小計在預覽裡、沒有橫向捲動
+    const yfits = {};
+    for (const h of [600, 844]) {
+      await page.setViewportSize({ width: 390, height: h });
+      await H.sleep(300);
+      await openPreview("chapter3_2");
+      await pick("preview-composition-min-waves", "2");
+      const sm = page.locator('[data-testid="preview-composition-min-waves-summary"]');
+      if ((await sm.count()) === 1) await sm.scrollIntoViewIfNeeded();
+      await H.sleep(200);
+      const box = await page.evaluate(() => {
+        const p = document.querySelector('[data-testid="enemy-preview"] [role="dialog"]').getBoundingClientRect();
+        const inside = (el) => {
+          if (!el) return false;
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && r.left >= p.left && r.right <= p.right;
+        };
+        const sel = document.querySelector('[data-testid="preview-composition-min-waves"]');
+        const sum = document.querySelector('[data-testid="preview-composition-min-waves-summary"]');
+        return {
+          vw: innerWidth, docScroll: document.documentElement.scrollWidth,
+          select: inside(sel), summary: inside(sum) && sum.scrollWidth <= sum.clientWidth,
+          rows: document.querySelectorAll('[data-testid="preview-composition-row"]').length,
+        };
+      });
+      const yshot = await H.shot(page, `stage-sort-min-waves-390x${h}`);
+      await closePreview();
+      yfits[h] = { ...box, shot: yshot };
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const aY = await gasActions();
+    out.Y6 = { yfits, writes: writes(aY) - writes(a0) };
+    run.check("Y-6 390×600／390×844：「進京」至少 2 波時，「已確認出兵波數」選單與小計都在預覽裡、沒有被截掉、沒有橫向捲動，列出 6 種；獨立關卡頁到這裡沒有寫入",
+      [600, 844].every((h) => yfits[h].select && yfits[h].summary && yfits[h].docScroll <= yfits[h].vw && yfits[h].rows === 6) && out.Y6.writes === 0, out.Y6);
+
+    // Y-7 只有一種敵人時不顯示、也不套用看不到的下限（設定更新，預覽開著）
+    await staleReload([STALE_ONE], "chapter3_5");
+    await openPreview("chapter3_5");
+    await pick("preview-composition-min-waves", "2");
+    const yo0 = await ystate();
+    await page.evaluate(() => window.__shenmaMock.release("get_all_maps"));
+    await page.waitForFunction(() => !document.querySelector('[data-testid="preview-composition-min-waves"]'), null, { timeout: 30000, polling: 100 });
+    await H.sleep(300);
+    const yo1 = await ystate();
+    await closePreview();
+    await staleReload([STALE_TWO], "chapter3_6");
+    await openPreview("chapter3_6");
+    const yt0 = await ystate();
+    await page.evaluate(() => window.__shenmaMock.release("get_all_maps"));
+    await page.waitForSelector('[data-testid="preview-composition-min-waves"]', { timeout: 30000 });
+    await H.sleep(300);
+    const yt1 = await ystate();
+    await closePreview();
+    const aY7 = await gasActions();
+    out.Y7 = { yo0, yo1, yt0, yt1, writes: writes(aY7) - writes(a0) };
+    run.check("Y-7 只有一種敵人：「單種」更新前兩種、至少 2 波時沒有符合；設定更新成只剩步兵後選單藏起來、看不到的下限不套用，步兵 4 隻照常列出、沒有篩選小計；" +
+      "「多種」更新前只有步兵、沒有選單，更新成兩種後選單出現且是全部、兩種都列出；獨立關卡頁全程沒有寫入",
+      yo0.select?.value === "2" && yo0.rows.length === 0 && yo0.minSummary === minNone(2, "全關") &&
+        yo1.select === null && yo1.min === "0" && same(yo1.rows, [[G2, 4, 1]]) && yo1.minSummary === null &&
+        yt0.select === null && same(yt0.rows, [[G2, 4, 1]]) &&
+        yt1.select?.value === "0" && yt1.min === "0" && same(yt1.rows, [[G2, 4, 1], [C2, 3, 1]]) && yt1.minSummary === null &&
+        out.Y7.writes === 0,
+      out.Y7);
   });
 
   await page.evaluate(() => localStorage.removeItem("__shenma_ss_fixture")).catch(() => {});

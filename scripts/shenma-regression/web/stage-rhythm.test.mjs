@@ -21,6 +21,8 @@
 // - 敵軍組成每一列的單波最多已確認隻數（compositionWavePeak，逐波明細上方那一行用）：逐波隻數的最大值與所有並列的波次；正式 chapter1_3、chapter1_5
 //   六個範圍每一列寫死（cavalry_lv2 chapter1_5 全關 20 隻在第 4～7 波、path_a 10 隻在第 2～7 波、path_b 10 隻在第 4～7 波）；同一波多組相加；
 //   數量無法確定、重複波次的第二筆、找不到設定都不算；沒有筆數是 null（不是 0）；不連續的並列全列；排列與搜尋後跟著列走；設定更新後用新的資料
+// - 敵軍組成依已確認出兵的波數篩選（filterCompositionByMinWaves）：逐波已確認筆數至少 2／3／4 波的列；正式 chapter1_3、chapter1_5 六個範圍的列與合計寫死；
+//   全部與 1 回傳全部、排列後保持順序、不改輸入；和搜尋同時成立；缺波、數量無法確定、重複波次的第二筆、找不到設定都不算一波（不用首次到末次的跨度）
 // - utils/spawnRhythm：同一波各組同時開始、各組第一隻立刻出兵，最後一隻名義在 (n−1)×interval 秒，整波取各組最大值（不相加）；
 //   n＝1 是 0 秒（間隔是什麼都一樣）；沒有提供間隔照遊戲以 1 秒計並標出預設；間隔 ≤ 0 或小於計時器最短時間時依處理幀出兵、
 //   不寫成 0 秒；不是數字的間隔不強轉；數字太大時無法估算（不出現 Infinity）；有無法估算的組時只寫已知範圍
@@ -51,6 +53,7 @@ require.extensions[".ts"] = (module, filename) => {
 const { buildStagePreview } = require(join(UTILS, "stagePreview.ts"));
 const {
   compositionWavePeak,
+  filterCompositionByMinWaves,
   filterCompositionRows,
   lastConfirmedWave,
   routeComposition,
@@ -2359,6 +2362,162 @@ const PEAK_15 = {
   check(
     "單波最多已確認（設定更新）：新的資料是第 1 波 7 隻、第 2 波 2 隻時最多是第 1 波 7 隻（用最新的資料，不留舊的第 2 波 5 隻）",
     same(idPeak(stageComposition(updated).rows), [["grunt_lv2", 7, [1]]])
+  );
+}
+
+// 依已確認出兵的波數篩選（filterCompositionByMinWaves）：正式六個範圍至少 2／3／4 波的列（enemy_id，原本的順序）與已確認隻數合計，
+// 期望先和正式 raw 的獨立計算、審查提供的依據逐項核對過才寫死（不用被測的程式產生）
+const MINW_13 = {
+  all: {
+    2: [["grunt_lv2", "cavalry_lv2", "siege_lv3"], 50],
+    3: [["grunt_lv2"], 30],
+    4: [[], 0],
+  },
+  path_a: { 2: [["grunt_lv2"], 25], 3: [["grunt_lv2"], 25], 4: [[], 0] },
+  path_b: { 2: [["siege_lv3"], 10], 3: [[], 0], 4: [[], 0] },
+};
+const MINW_15 = {
+  all: {
+    2: [
+      [
+        "grunt_lv1",
+        "siege_lv1",
+        "grunt_lv2",
+        "cavalry_lv2",
+        "siege_lv2",
+        "cavalry_lv3",
+      ],
+      330,
+    ],
+    3: [["grunt_lv2", "cavalry_lv2", "siege_lv2"], 270],
+    4: [["grunt_lv2", "cavalry_lv2", "siege_lv2"], 270],
+  },
+  path_a: {
+    2: [["grunt_lv1", "grunt_lv2", "cavalry_lv2", "siege_lv2"], 170],
+    3: [["grunt_lv2", "cavalry_lv2", "siege_lv2"], 150],
+    4: [["grunt_lv2", "cavalry_lv2", "siege_lv2"], 150],
+  },
+  path_b: {
+    2: [["siege_lv2", "cavalry_lv2", "grunt_lv2"], 120],
+    3: [["siege_lv2", "cavalry_lv2", "grunt_lv2"], 120],
+    4: [["siege_lv2", "cavalry_lv2"], 90],
+  },
+};
+const minWOf = (rows, min) => {
+  const ok = filterCompositionByMinWaves(rows, min);
+  return [ok.map((r) => r.enemyId), ok.reduce((s, r) => s + r.count, 0)];
+};
+{
+  const s13 = scopesOf(PATHS_13, WAVES_13);
+  const s15 = scopesOf(PATHS_15, WAVES_15);
+  const scopes = ["all", "path_a", "path_b"];
+  const table = (s, want) =>
+    scopes.every((k) =>
+      [2, 3, 4].every((m) => same(minWOf(s[k], m), want[k][m]))
+    );
+  check(
+    "已確認出兵波數篩選（正式 chapter1_3）：全關至少 2 波 3 種 50 隻、至少 3 波只有 grunt_lv2 30 隻、至少 4 波沒有；path_a 至少 2、3 波都是 grunt_lv2 25 隻；path_b 至少 2 波只有 siege_lv3 10 隻（路線用自己的列，不借全關的）",
+    table(s13, MINW_13),
+    scopes.map((k) => [k, [2, 3, 4].map((m) => minWOf(s13[k], m))])
+  );
+  check(
+    "已確認出兵波數篩選（正式 chapter1_5）：全關至少 2 波 6 種 330 隻、至少 3、4 波都是 grunt_lv2／cavalry_lv2／siege_lv2 270 隻；path_a 170／150／150；path_b 120／120／90（至少 4 波只剩 siege_lv2、cavalry_lv2）",
+    table(s15, MINW_15),
+    scopes.map((k) => [k, [2, 3, 4].map((m) => minWOf(s15[k], m))])
+  );
+  // 預設（全部）與順序：0、1 回傳全部的列（新陣列、同樣的列與順序）；排列之後篩選保持排列的順序；不改傳入的列
+  const frozen = deepFreeze(s15.all.slice());
+  const all0 = filterCompositionByMinWaves(frozen, 0);
+  const all1 = filterCompositionByMinWaves(frozen, 1);
+  const byCount = sortCompositionRows(s15.all, "count");
+  const byWaves = sortCompositionRows(s15.all, "waves");
+  check(
+    "已確認出兵波數篩選（預設與順序）：全部（0）與 1 回傳全部的列（新陣列、同樣的列、原本的順序）；依隻數或依波數排列之後篩選，留下的列保持排列的順序；不改傳入的列（凍結的陣列照樣可以篩）",
+    all0 !== frozen &&
+      same(
+        all0.map((r) => r.enemyId),
+        frozen.map((r) => r.enemyId)
+      ) &&
+      all0.every((r, i) => r === frozen[i]) &&
+      same(
+        all1.map((r) => r.enemyId),
+        frozen.map((r) => r.enemyId)
+      ) &&
+      same(
+        filterCompositionByMinWaves(byCount, 3).map((r) => r.enemyId),
+        byCount.filter((r) => r.perWave.length >= 3).map((r) => r.enemyId)
+      ) &&
+      same(
+        filterCompositionByMinWaves(byWaves, 2).map((r) => r.enemyId),
+        byWaves.filter((r) => r.perWave.length >= 2).map((r) => r.enemyId)
+      ) &&
+      frozen.length === s15.all.length,
+    {
+      all0: all0.map((r) => r.enemyId),
+      byCount: filterCompositionByMinWaves(byCount, 3).map((r) => r.enemyId),
+    }
+  );
+  check(
+    "已確認出兵波數篩選（和搜尋同時成立）：chapter1_5 全關搜尋「輕騎」再取至少 3 波只剩 cavalry_lv2（cavalry_lv1 只有 1 波、cavalry_lv3 只有 2 波）；先後順序不影響結果",
+    same(
+      filterCompositionByMinWaves(
+        filterCompositionRows(s15.all, "輕騎"),
+        3
+      ).map((r) => r.enemyId),
+      ["cavalry_lv2"]
+    ) &&
+      same(
+        filterCompositionRows(
+          filterCompositionByMinWaves(s15.all, 3),
+          "輕騎"
+        ).map((r) => r.enemyId),
+        ["cavalry_lv2"]
+      ),
+    filterCompositionByMinWaves(filterCompositionRows(s15.all, "輕騎"), 3).map(
+      (r) => r.enemyId
+    )
+  );
+}
+{
+  // 資料問題：grunt_lv2 已確認的是第 1、2、4 波（第 3 波數量無法判讀、第 4 波重複的第二筆、第 5 波找不到設定都不算）：
+  // 已確認 3 波（不是首次到末次的跨度 4 波），所以至少 3 波留下、至少 4 波不留
+  const p = buildStagePreview(
+    deepFreeze(
+      stage(
+        {
+          path_a: [
+            [0, 5],
+            [13, 5],
+          ],
+        },
+        [
+          { wave: 1, enemies: [g("grunt_lv2", 2, 1, "path_a")] },
+          {
+            wave: 2,
+            enemies: [
+              g("grunt_lv2", 3, 1, "path_a"),
+              g("grunt_lv2", 2, 1, "path_a"),
+            ],
+          },
+          { wave: 3, enemies: [g("grunt_lv2", "many", 1, "path_a")] },
+          { wave: 4, enemies: [g("grunt_lv2", 4, 1, "path_a")] },
+          { wave: 4, enemies: [g("grunt_lv2", 9, 1, "path_a")] },
+          { wave: 5, enemies: [g("ghost", 99, 1, "path_a")] },
+        ]
+      )
+    ),
+    deepFreeze(ENEMIES)
+  );
+  const rows = stageComposition(p).rows;
+  check(
+    "已確認出兵波數篩選（資料問題）：只看逐波已確認的筆數（第 1、2、4 波共 3 波）：至少 3 波留下 grunt_lv2、至少 4 波不留（不用首次到末次的跨度、不補缺的波）；數量無法判讀、重複波次的第二筆、找不到設定都不算一波",
+    same(minWOf(rows, 3), [["grunt_lv2"], 11]) &&
+      same(minWOf(rows, 4), [[], 0]),
+    {
+      r3: minWOf(rows, 3),
+      r4: minWOf(rows, 4),
+      per: rows.map((r) => r.perWave),
+    }
   );
 }
 

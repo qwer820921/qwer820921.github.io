@@ -327,5 +327,17 @@ export function filterCompositionRows<T extends CompositionRow>(
   );
 }
 
+/**
+ * 敵軍組成依已確認出兵的波數篩選：留下逐波已確認隻數（perWave）至少 min 筆的列（不推算缺的波、不用首次到末次的跨度），順序不變。
+ * 只從傳入的列（目前的範圍、已排列）篩選，不重算、不改列；min 不到 2 時回傳全部的列
+ */
+export function filterCompositionByMinWaves<T extends CompositionRow>(
+  rows: readonly T[],
+  min: number
+): T[] {
+  if (!(min >= 2)) return rows.slice();
+  return rows.filter((r) => r.perWave.length >= min);
+}
+
 /** 波次編號的清單文字（第 1、3、5 波） */
 export const waveListText = (ns: number[]) => `第 ${ns.join("、")} 波`;

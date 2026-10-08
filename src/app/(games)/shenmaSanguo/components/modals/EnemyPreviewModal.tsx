@@ -12,6 +12,7 @@ import {
   StageComposition,
   WaveRouteView,
   compositionWavePeak,
+  filterCompositionByMinWaves,
   filterCompositionRows,
   lastConfirmedWave,
   routeComposition,
@@ -336,7 +337,9 @@ export default function EnemyPreviewModal({
  * 只改顯示順序，數量、說明與資料問題不變。
  * 每一列可以展開目前範圍逐波已確認的隻數（預設收合）：沒有已確認出兵的波次不列、不補 0。
  * 搜尋敵人名稱或 ID（filterCompositionRows）：只篩選目前範圍已排列的列，另寫符合的種數與已確認隻數的小計；
- * 組成的標題、說明、資料問題與每一列的內容都不變，沒有符合時只說目前範圍沒有符合的已確認敵人
+ * 組成的標題、說明、資料問題與每一列的內容都不變，沒有符合時只說目前範圍沒有符合的已確認敵人。
+ * 另可依已確認出兵的波數篩選（至少 2／3／4 波，filterCompositionByMinWaves，以目前範圍那一列的逐波已確認筆數為準）：和搜尋同時成立才列出，
+ * 小計與沒有符合時的說明照篩選後的列、一律寫「至少已確認」；換路線、排列與清除搜尋都保留，選「全部」回到原樣，關閉預覽（卸載）後回到全部
  */
 function CompositionBlock({
   composition: c,
@@ -362,24 +365,31 @@ function CompositionBlock({
   const [detailOpen, setDetailOpen] = useState<string[]>([]);
   // 搜尋敵人名稱或 ID：換路線、排列、收起再展開都保留，關閉預覽（卸載）後回到空白；只篩選顯示的列
   const [query, setQuery] = useState("");
+  // 已確認出兵波數的下限（0＝全部）：換路線、排列、清除搜尋都保留，關閉預覽（卸載）後回到全部
+  const [minWaves, setMinWaves] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
   const bodyId = useId();
   const selectId = useId();
   const sortId = useId();
+  const minWavesId = useId();
   const searchId = useId();
   const detailBaseId = useId();
-  // 組成只有一種敵人時不顯示排列與搜尋，這時照首次出現、也不篩選：看不到的選擇不影響顯示（選擇本身保留）
+  // 組成只有一種敵人時不顯示排列、波數篩選與搜尋，這時照首次出現、也不篩選：看不到的選擇不影響顯示（選擇本身保留）
   const searchable = c.rows.length > 1;
   const shownSort: CompositionSort = searchable ? sort : "first";
   const q = searchable ? query.trim() : "";
+  const minW = searchable ? minWaves : 0;
   // 名稱相同但 enemy_id 不同的敵人分開列，並附上 id 才分得出來
   // 依路線查看時每一列另有出兵的波次（waves）；全部路線時沒有
   const rows: (CompositionRow & { waves?: number[] })[] = sortCompositionRows(
     rc ? rc.rows : c.rows,
     shownSort
   );
-  // 目前範圍（已排列）裡符合搜尋的列：不重算，合計、首次與逐波都是原本的列
-  const shown = filterCompositionRows(rows, q);
+  // 目前範圍（已排列）裡符合搜尋、而且已確認出兵波數到下限的列：不重算，合計、首次與逐波都是原本的列
+  const shown = filterCompositionByMinWaves(
+    filterCompositionRows(rows, q),
+    minW
+  );
   const orderText =
     shownSort === "count"
       ? "依已確認隻數由多到少，同數量依第一次出現"
@@ -395,7 +405,7 @@ function CompositionBlock({
         : "";
   const names = rows.map((r) => r.name);
   const sameName = (n: string) => names.indexOf(n) !== names.lastIndexOf(n);
-  // 換路線、搜尋或設定更新後不在畫面上的列：關掉它的逐波隻數（之後再出現也是收合）
+  // 換路線、搜尋、波數篩選或設定更新後不在畫面上的列：關掉它的逐波隻數（之後再出現也是收合）
   const keptDetail = detailOpen.filter((id) =>
     shown.some((r) => r.enemyId === id)
   );
@@ -422,6 +432,7 @@ function CompositionBlock({
       data-complete={String(complete)}
       data-route={rc ? rc.pathId : ""}
       data-sort={shownSort}
+      data-min-waves={minW}
     >
       <button
         className={styles.previewWaveHeader}
@@ -524,6 +535,28 @@ function CompositionBlock({
                   </Row>
                 </Col>
               )}
+              {searchable && (
+                <Col xs={12} sm={5}>
+                  <label
+                    htmlFor={minWavesId}
+                    className={styles.heroFilterLabel}
+                  >
+                    已確認出兵波數
+                  </label>
+                  <select
+                    id={minWavesId}
+                    className={`form-select form-select-sm ${styles.heroSortField}`}
+                    value={String(minWaves)}
+                    onChange={(e) => setMinWaves(Number(e.target.value))}
+                    data-testid="preview-composition-min-waves"
+                  >
+                    <option value="0">全部</option>
+                    <option value="2">至少 2 波</option>
+                    <option value="3">至少 3 波</option>
+                    <option value="4">至少 4 波</option>
+                  </select>
+                </Col>
+              )}
             </Row>
           )}
           <div
@@ -568,7 +601,18 @@ function CompositionBlock({
               這條路線另有 {rc.skipped} 組遊戲會略過、不列入（原因見逐波內容）。
             </div>
           )}
-          {q !== "" && (
+          {minW > 0 && (
+            <div
+              className={styles.previewHint}
+              aria-live="polite"
+              data-testid="preview-composition-min-waves-summary"
+            >
+              {shown.length > 0
+                ? `${q !== "" ? `符合搜尋「${q}」而且` : ""}至少已確認 ${minW} 波出兵的 ${shown.length} 種，已確認 ${shown.reduce((s, r) => s + r.count, 0)} 隻（只是下面列出的列的小計，不是${rc ? `路線 ${rc.pathId} ` : "全關"}的總數；波數只算已確認的波）。`
+                : `${rc ? `路線 ${rc.pathId} ` : "全關"}沒有${q !== "" ? `符合搜尋「${q}」而且` : ""}至少已確認 ${minW} 波出兵的敵人${complete ? "" : "（只算已確認的出兵；有資料問題的波次可能還有）"}。`}
+            </div>
+          )}
+          {q !== "" && minW === 0 && (
             <div
               className={styles.previewHint}
               aria-live="polite"
