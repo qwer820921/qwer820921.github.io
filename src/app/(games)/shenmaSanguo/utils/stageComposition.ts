@@ -42,6 +42,27 @@ export function lastConfirmedWave(
   return last ? last.wave : null;
 }
 
+/** 一列在它的範圍單波最多的已確認隻數，以及所有並列的波次（依波次編號） */
+export interface WavePeak {
+  count: number;
+  waves: number[];
+}
+
+/**
+ * 一列在它的範圍（全關或選的路線）單波最多的已確認隻數：逐波隻數（perWave）的最大值與所有同為最大值的波次。
+ * 沒有已確認的筆數時回傳 null（不寫成 0）；不用波號、合計或平均推估，不改傳入的列
+ */
+export function compositionWavePeak(
+  row: Pick<CompositionRow, "perWave">
+): WavePeak | null {
+  if (row.perWave.length === 0) return null;
+  const count = Math.max(...row.perWave.map((x) => x.count));
+  return {
+    count,
+    waves: row.perWave.filter((x) => x.count === count).map((x) => x.wave),
+  };
+}
+
 /** 把一組已確認的出兵加進逐波隻數：預覽的波次依編號由小到大，同一波一定接在最後一筆，相加 */
 function addWaveCount(perWave: WaveCount[], wave: number, count: number) {
   const last = perWave[perWave.length - 1];

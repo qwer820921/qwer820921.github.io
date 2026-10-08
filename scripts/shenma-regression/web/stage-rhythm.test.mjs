@@ -18,6 +18,9 @@
 //   資料問題的組不算波；只改順序（合計、首次、逐波不變、新陣列不改來源）；和依隻數的順序不同的例子
 // - 敵軍組成每一列的末次已確認出兵（lastConfirmedWave，前往末次出兵用）：逐波隻數的最後一筆；正式 chapter1_3、chapter1_5 六個範圍每一列的首次與末次寫死
 //   （cavalry_lv2 chapter1_5 path_b 首次 4、末次 7）；缺波、數量無法確定、重複波次的第二筆、找不到設定都不算；沒有筆數是 null；排列與搜尋後跟著列走；設定更新後用新的資料
+// - 敵軍組成每一列的單波最多已確認隻數（compositionWavePeak，逐波明細上方那一行用）：逐波隻數的最大值與所有並列的波次；正式 chapter1_3、chapter1_5
+//   六個範圍每一列寫死（cavalry_lv2 chapter1_5 全關 20 隻在第 4～7 波、path_a 10 隻在第 2～7 波、path_b 10 隻在第 4～7 波）；同一波多組相加；
+//   數量無法確定、重複波次的第二筆、找不到設定都不算；沒有筆數是 null（不是 0）；不連續的並列全列；排列與搜尋後跟著列走；設定更新後用新的資料
 // - utils/spawnRhythm：同一波各組同時開始、各組第一隻立刻出兵，最後一隻名義在 (n−1)×interval 秒，整波取各組最大值（不相加）；
 //   n＝1 是 0 秒（間隔是什麼都一樣）；沒有提供間隔照遊戲以 1 秒計並標出預設；間隔 ≤ 0 或小於計時器最短時間時依處理幀出兵、
 //   不寫成 0 秒；不是數字的間隔不強轉；數字太大時無法估算（不出現 Infinity）；有無法估算的組時只寫已知範圍
@@ -47,6 +50,7 @@ require.extensions[".ts"] = (module, filename) => {
 
 const { buildStagePreview } = require(join(UTILS, "stagePreview.ts"));
 const {
+  compositionWavePeak,
   filterCompositionRows,
   lastConfirmedWave,
   routeComposition,
@@ -2166,6 +2170,195 @@ const LAST_15 = {
   check(
     "末次已確認出兵（設定更新）：新的資料只有第 1、2 波時 grunt_lv2 的末次是第 2 波（用最新的資料，不留舊的第 3 波）",
     same(idFirstLast(stageComposition(updated).rows), [["grunt_lv2", 1, 2]])
+  );
+}
+
+// ── 敵軍組成每一列的單波最多已確認隻數（compositionWavePeak，逐波明細上方那一行用）：正式 chapter1_3、chapter1_5 ──
+// 每一列：[enemy_id, 單波最多隻數, [所有並列的波次]]；期望值寫死，是另外從正式設定的 raw 波次與組直接算出的（不是用被測的函式產生）
+const idPeak = (rows) =>
+  rows.map((r) => {
+    const k = compositionWavePeak(r);
+    return [r.enemyId, k ? k.count : null, k ? k.waves : null];
+  });
+const PEAK_13 = {
+  all: [
+    ["grunt_lv2", 20, [3]],
+    ["grunt_lv3", 5, [1]],
+    ["cavalry_lv2", 5, [1, 3]],
+    ["siege_lv3", 5, [2, 3]],
+    ["siege_lv2", 5, [2]],
+    ["cavalry_lv3", 10, [3]],
+  ],
+  path_a: [
+    ["grunt_lv2", 15, [3]],
+    ["grunt_lv3", 5, [1]],
+    ["cavalry_lv2", 5, [1]],
+    ["cavalry_lv3", 10, [3]],
+  ],
+  path_b: [
+    ["siege_lv3", 5, [2, 3]],
+    ["siege_lv2", 5, [2]],
+    ["cavalry_lv2", 5, [3]],
+    ["grunt_lv2", 5, [3]],
+  ],
+};
+const PEAK_15 = {
+  all: [
+    ["grunt_lv1", 10, [1, 3]],
+    ["cavalry_lv1", 10, [1]],
+    ["siege_lv1", 10, [1, 2]],
+    ["grunt_lv2", 20, [5, 6, 7]],
+    ["cavalry_lv2", 20, [4, 5, 6, 7]],
+    ["siege_lv2", 20, [3, 5, 6, 7]],
+    ["cavalry_lv3", 10, [6, 7]],
+    ["grunt_lv3", 10, [7]],
+    ["siege_lv3", 10, [7]],
+  ],
+  path_a: [
+    ["grunt_lv1", 10, [1, 3]],
+    ["cavalry_lv1", 10, [1]],
+    ["siege_lv1", 10, [1]],
+    ["grunt_lv2", 10, [2, 4, 5, 6, 7]],
+    ["cavalry_lv2", 10, [2, 3, 4, 5, 6, 7]],
+    ["siege_lv2", 10, [3, 5, 6, 7]],
+    ["cavalry_lv3", 10, [7]],
+    ["grunt_lv3", 10, [7]],
+  ],
+  path_b: [
+    ["siege_lv1", 10, [2]],
+    ["siege_lv2", 10, [3, 4, 5, 6, 7]],
+    ["cavalry_lv2", 10, [4, 5, 6, 7]],
+    ["grunt_lv2", 10, [5, 6, 7]],
+    ["cavalry_lv3", 10, [6]],
+    ["siege_lv3", 10, [7]],
+  ],
+};
+{
+  const s13 = scopesOf(PATHS_13, WAVES_13);
+  const s15 = scopesOf(PATHS_15, WAVES_15);
+  const scopes = ["all", "path_a", "path_b"];
+  check(
+    "單波最多已確認（正式 chapter1_3）：grunt_lv2 全關 20 隻在第 3 波、path_a 15 隻在第 3 波、path_b 5 隻在第 3 波；cavalry_lv2 全關 5 隻並列第 1、3 波；全關與兩條路線每一列都和正式設定算出的相同（路線用自己的，不借全關的）",
+    scopes.every((k) => same(idPeak(s13[k]), PEAK_13[k])),
+    Object.fromEntries(scopes.map((k) => [k, idPeak(s13[k])]))
+  );
+  check(
+    "單波最多已確認（正式 chapter1_5）：cavalry_lv2 全關 20 隻並列第 4、5、6、7 波，path_a 10 隻並列第 2～7 波，path_b 10 隻並列第 4～7 波；全關與兩條路線每一列都和正式設定算出的相同（並列全寫，不只第一個）",
+    scopes.every((k) => same(idPeak(s15[k]), PEAK_15[k])),
+    Object.fromEntries(scopes.map((k) => [k, idPeak(s15[k])]))
+  );
+  const allRows = [
+    ...scopes.map((k) => s13[k]),
+    ...scopes.map((k) => s15[k]),
+  ].flat();
+  check(
+    "單波最多已確認：每一列的隻數就是逐波隻數的最大值、波次是所有等於最大值的波（依波次編號，至少一個）；排列（依隻數、依波數）與搜尋後跟著各自的列、值不變",
+    allRows.every((r) => {
+      const k = compositionWavePeak(r);
+      const top = Math.max(...r.perWave.map((x) => x.count));
+      return (
+        !!k &&
+        k.count === top &&
+        same(
+          k.waves,
+          r.perWave.filter((x) => x.count === top).map((x) => x.wave)
+        ) &&
+        k.waves.length > 0
+      );
+    }) &&
+      same(
+        idPeak(sortCompositionRows(s15.path_b, "count")).sort(),
+        PEAK_15.path_b.slice().sort()
+      ) &&
+      same(
+        idPeak(sortCompositionRows(s15.all, "waves")).sort(),
+        PEAK_15.all.slice().sort()
+      ) &&
+      same(idPeak(filterCompositionRows(s15.path_b, "輕騎")), [
+        ["cavalry_lv2", 10, [4, 5, 6, 7]],
+      ]),
+    {
+      count: idPeak(sortCompositionRows(s15.path_b, "count")),
+      search: idPeak(filterCompositionRows(s15.path_b, "輕騎")),
+    }
+  );
+}
+{
+  // 資料問題：第 2 波兩組 grunt_lv2（3＋2）相加；第 3 波 grunt_lv2 數量無法判讀；第 4 波重複（第二筆的 9 隻遊戲不用）；
+  // 第 5 波只有找不到設定的 99 隻。grunt_lv2 已確認的是第 1 波 2、第 2 波 5、第 4 波 4：最多是第 2 波 5 隻
+  const p = buildStagePreview(
+    deepFreeze(
+      stage(
+        {
+          path_a: [
+            [0, 5],
+            [13, 5],
+          ],
+        },
+        [
+          { wave: 1, enemies: [g("grunt_lv2", 2, 1, "path_a")] },
+          {
+            wave: 2,
+            enemies: [
+              g("grunt_lv2", 3, 1, "path_a"),
+              g("grunt_lv2", 2, 1, "path_a"),
+            ],
+          },
+          { wave: 3, enemies: [g("grunt_lv2", "many", 1, "path_a")] },
+          { wave: 4, enemies: [g("grunt_lv2", 4, 1, "path_a")] },
+          { wave: 4, enemies: [g("grunt_lv2", 9, 1, "path_a")] },
+          { wave: 5, enemies: [g("ghost", 99, 1, "path_a")] },
+        ]
+      )
+    ),
+    deepFreeze(ENEMIES)
+  );
+  const c = stageComposition(p);
+  const r = routeComposition(p, "path_a", c);
+  check(
+    "單波最多已確認（資料問題）：同一波兩組相加（第 2 波 3＋2＝5 隻）是最多；數量無法判讀的第 3 波、重複波次第二筆的 9 隻、找不到設定的 99 隻都不算；資料不完整時仍只看已確認的",
+    same(idPeak(c.rows), [["grunt_lv2", 5, [2]]]) &&
+      same(idPeak(r.rows), [["grunt_lv2", 5, [2]]]) &&
+      !c.complete,
+    { rows: idPeak(c.rows), route: idPeak(r.rows), gaps: c.gaps }
+  );
+  const tie = deepFreeze({
+    perWave: [
+      { wave: 1, count: 3 },
+      { wave: 2, count: 1 },
+      { wave: 5, count: 3 },
+    ],
+  });
+  const k = compositionWavePeak(tie);
+  check(
+    "單波最多已確認（輸入）：沒有已確認的筆數回傳 null（不寫成 0）；只有一筆時就是那一波；不連續的並列（第 1、5 波各 3 隻）都列出、不只第一個；不改傳入的列（凍結的列照樣可以讀）",
+    compositionWavePeak({ perWave: [] }) === null &&
+      same(compositionWavePeak({ perWave: [{ wave: 4, count: 2 }] }), {
+        count: 2,
+        waves: [4],
+      }) &&
+      same(k, { count: 3, waves: [1, 5] }) &&
+      tie.perWave.length === 3,
+    k
+  );
+  const updated = buildStagePreview(
+    stage(
+      {
+        path_a: [
+          [0, 5],
+          [13, 5],
+        ],
+      },
+      [
+        { wave: 1, enemies: [g("grunt_lv2", 7, 1, "path_a")] },
+        { wave: 2, enemies: [g("grunt_lv2", 2, 1, "path_a")] },
+      ]
+    ),
+    ENEMIES
+  );
+  check(
+    "單波最多已確認（設定更新）：新的資料是第 1 波 7 隻、第 2 波 2 隻時最多是第 1 波 7 隻（用最新的資料，不留舊的第 2 波 5 隻）",
+    same(idPeak(stageComposition(updated).rows), [["grunt_lv2", 7, [1]]])
   );
 }
 

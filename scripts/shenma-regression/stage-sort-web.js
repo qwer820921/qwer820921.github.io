@@ -29,6 +29,9 @@ async (page) => {
   //   算出的逐波波次相同（路線用自己的波次），按中間的波與路線自己的波、依隻數排列與搜尋後跟著列、收合時沒有按鈕、關閉重開收合；
   //   N-2 資料不完整寫「已確認的」；N-3 鍵盤；N-4 沒有送東西給遊戲（之後 M-4 再核不換關、不寫入）；N-5 獨立關卡頁同樣；N-6 390×600／390×844。
   //   按鈕在逐波按鈕之後，W-2 的鍵盤順序（收合時）不變
+  // - 單波最多已確認（展開的逐波明細標題之後一行「此範圍單波最多已確認：X 隻（第…波）」，並列全寫、統一寫已確認、收合時沒有）：K-1「進京」「討伐」
+  //   六個範圍每一列和正式設定算出的相同（路線用自己的），依隻數排列與搜尋後值不變、收合沒有、關閉重開收合；K-2 資料不完整只看已確認；
+  //   K-3 沒有送東西給遊戲（之後 M-4 再核不換關、不寫入）；K-4 獨立關卡頁同樣；K-5 390×600／390×844 整行不截掉；K-6 設定更新用新的資料重新算
   // 全部 mock、虛構金鑰 test_sort_*
   const S = page.context().__shenma;
   if (!S) return { error: "請先執行 harness.js" };
@@ -507,6 +510,94 @@ async (page) => {
     a13.route === "path_a" && same(dwOf(a13), DW_A_13) && dgLabelsOk(a13, "path_a") &&
     b13.route === "path_b" && same(dwOf(b13), DW_B_13) && dgLabelsOk(b13, "path_b") &&
     landed(gT, 3, "path_b", "first", "A 慢兵的出兵");
+
+  // 單波最多已確認：展開的逐波明細上方那一行（標題之後；統一寫已確認、並列全寫；收合時沒有）
+  const peakState = () => page.evaluate(() => {
+    const c = document.querySelector('[data-testid="enemy-preview"] [data-testid="preview-composition"]');
+    return {
+      route: c.dataset.route, sort: c.dataset.sort,
+      rows: [...c.querySelectorAll('[data-testid="preview-composition-row"]')].map((r) => {
+        const d = r.querySelector('[data-testid="preview-composition-detail"]');
+        const ks = [...r.querySelectorAll('[data-testid="preview-composition-detail-peak"]')];
+        const k = ks[0];
+        return {
+          id: r.dataset.enemyId, open: !!d, n: ks.length,
+          count: k ? Number(k.dataset.count) : null, waves: k ? k.dataset.waves.split(",").map(Number) : null,
+          text: k ? k.innerText.replace(/\s+/g, " ").trim() : null,
+          afterHead: !!k && !!d && k.previousElementSibling === d.firstElementChild,
+          waveCounts: d ? [...d.querySelectorAll('[data-testid="preview-composition-detail-wave"]')].map((x) => [Number(x.dataset.wave), Number(x.dataset.count)]) : [],
+        };
+      }),
+    };
+  });
+  // 每一列：[別名, 單波最多隻數, [並列的波次...]]（收合的列是 null）
+  const pkOf = (s) => s.rows.map((r) => [r.id, r.count, r.waves]);
+  const pkSorted = (t) => t.map((r) => JSON.stringify(r)).sort();
+  const pkRow = (s, id) => s.rows.find((r) => r.id === id) || null;
+  // 每一列都展開、剛好一行、在明細標題之後；文字寫隻數與所有並列的波次；隻數是明細各波的最大值、波次是所有等於最大值的波
+  const pkTextOk = (s) =>
+    s.rows.every((r) =>
+      r.open && r.n === 1 && r.afterHead && r.text === `此範圍單波最多已確認：${r.count} 隻（第 ${r.waves.join("、")} 波）` &&
+      r.count === Math.max(...r.waveCounts.map((x) => x[1])) && same(r.waves, r.waveCounts.filter((x) => x[1] === r.count).map((x) => x[0])));
+  // 正式設定算出的單波最多已確認（別名同上；chapter1_5 C 快騎全關 20 隻在第 4～7 波、path_a 10 隻在第 2～7 波、path_b 10 隻在第 4～7 波）：
+  // 期望先和正式 raw 的獨立計算與審查的依據逐列核對過才寫死
+  const DK_ALL_13 = [[G2, 20, [3]], [G3, 5, [1]], [C2, 5, [1, 3]], [S3, 5, [2, 3]], [S2, 5, [2]], [C3, 10, [3]]];
+  const DK_A_13 = [[G2, 15, [3]], [G3, 5, [1]], [C2, 5, [1]], [C3, 10, [3]]];
+  const DK_B_13 = [[S3, 5, [2, 3]], [S2, 5, [2]], [C2, 5, [3]], [G2, 5, [3]]];
+  const DK_ALL_15 = [[GL1, 10, [1, 3]], [CL1, 10, [1]], [SL1, 10, [1, 2]], [G2, 20, [5, 6, 7]], [C2, 20, [4, 5, 6, 7]], [S2, 20, [3, 5, 6, 7]], [C3, 10, [6, 7]], [G3, 10, [7]], [SL3, 10, [7]]];
+  const DK_A_15 = [[GL1, 10, [1, 3]], [CL1, 10, [1]], [SL1, 10, [1]], [G2, 10, [2, 4, 5, 6, 7]], [C2, 10, [2, 3, 4, 5, 6, 7]], [S2, 10, [3, 5, 6, 7]], [C3, 10, [7]], [G3, 10, [7]]];
+  const DK_B_15 = [[SL1, 10, [2]], [S2, 10, [3, 4, 5, 6, 7]], [C2, 10, [4, 5, 6, 7]], [G2, 10, [5, 6, 7]], [C3, 10, [6]], [SL3, 10, [7]]];
+  // K-1／K-4 共用
+  const pkFlow = async () => {
+    await openPreview("chapter3_2");
+    const z0 = await peakState();
+    await openAllDetails();
+    const p15 = await peakState();
+    await pick("preview-composition-route", "route:path_a");
+    await openAllDetails();
+    const a15 = await peakState();
+    await pick("preview-composition-route", "route:path_b");
+    await openAllDetails();
+    const b15 = await peakState();
+    await pick("preview-composition-sort", "count");
+    const bc = await peakState();
+    await search("步兵");
+    const bs = await peakState();
+    await detailBtn(G2).click();
+    await H.sleep(150);
+    const bh = await peakState();
+    await detailBtn(G2).click();
+    await H.sleep(150);
+    const bo = await peakState();
+    await closePreview();
+    await openPreview("chapter3_2");
+    const zr = await peakState();
+    await closePreview();
+    await openPreview("chapter3_1");
+    await openAllDetails();
+    const p13 = await peakState();
+    await pick("preview-composition-route", "route:path_a");
+    await openAllDetails();
+    const a13 = await peakState();
+    await pick("preview-composition-route", "route:path_b");
+    await openAllDetails();
+    const b13 = await peakState();
+    await closePreview();
+    return { z0, p15, a15, b15, bc, bs, bh, bo, zr, p13, a13, b13 };
+  };
+  const pkFlowOk = ({ z0, p15, a15, b15, bc, bs, bh, bo, zr, p13, a13, b13 }) =>
+    z0.rows.length === 9 && z0.rows.every((r) => !r.open && r.n === 0) &&
+    same(pkOf(p15), DK_ALL_15) && pkTextOk(p15) && pkRow(p15, C2)?.text === "此範圍單波最多已確認：20 隻（第 4、5、6、7 波）" &&
+    a15.route === "path_a" && same(pkOf(a15), DK_A_15) && pkTextOk(a15) &&
+    b15.route === "path_b" && same(pkOf(b15), DK_B_15) && pkTextOk(b15) && pkRow(b15, C2)?.text === "此範圍單波最多已確認：10 隻（第 4、5、6、7 波）" &&
+    bc.sort === "count" && same(pkSorted(pkOf(bc)), pkSorted(DK_B_15)) && pkTextOk(bc) &&
+    same(pkOf(bs), [[G2, 10, [5, 6, 7]]]) && pkTextOk(bs) &&
+    bh.rows.length === 1 && !bh.rows[0].open && bh.rows[0].n === 0 &&
+    same(pkOf(bo), [[G2, 10, [5, 6, 7]]]) && pkTextOk(bo) &&
+    zr.route === "" && zr.sort === "first" && zr.rows.length === 9 && zr.rows.every((r) => !r.open && r.n === 0) &&
+    same(pkOf(p13), DK_ALL_13) && pkTextOk(p13) &&
+    a13.route === "path_a" && same(pkOf(a13), DK_A_13) && pkTextOk(a13) &&
+    b13.route === "path_b" && same(pkOf(b13), DK_B_13) && pkTextOk(b13);
   // 送給遊戲 iframe 的訊息（Web → Godot）
   const watchSent = () => page.evaluate((sel) => {
     const f = document.querySelector(sel);
@@ -1095,6 +1186,29 @@ async (page) => {
     run.check("N-4 主頁操作逐波明細的前往（N-1～N-3）的期間沒有送任何訊息給遊戲（沒有關卡資料、update_team 或命令）；之後 M-4 再核不換關、不寫入",
       nWatching && Array.isArray(nSent) && nSent.length === 0, out.N4);
 
+    // K-1 單波最多已確認（主頁）：重新記錄送給遊戲的訊息
+    const kWatching = await watchSent();
+    const kf = await pkFlow();
+    out.K1 = kf;
+    run.check("K-1 單波最多已確認（「進京」與「討伐」，正式 chapter1_5／chapter1_3 的形狀）：預設收合時沒有這一行；六個範圍每一列展開後在明細標題之後剛好一行，隻數與所有並列的波次和正式設定算出的相同，" +
+      "C 快騎全關 20 隻（第 4、5、6、7 波）、path_b 10 隻（第 4、5、6、7 波，用路線自己的，不借全關）；依隻數排列與搜尋「步兵」後值不變；收合明細時沒有、再展開回來；關閉重開全部收合",
+      kWatching && pkFlowOk(kf), out.K1);
+
+    // K-2 資料不完整（「邊界」）：一樣寫已確認，只看已確認的各波
+    await openPreview("chapter3_3");
+    await openAllDetails();
+    const ke = await peakState();
+    await closePreview();
+    out.K2 = ke;
+    run.check("K-2 資料不完整（「邊界」）：步兵已確認第 1 波 2、第 2 波 3 → 單波最多 3 隻（第 2 波），B 步兵 6 隻（第 1 波）；寫法和完整時相同（都是已確認）；數量無法判讀、數量 0、找不到設定、沒有路點的路線都不算",
+      same(pkOf(ke), [[G2, 3, [2]], [G3, 6, [1]]]) && pkTextOk(ke), out.K2);
+
+    // K-3 送給遊戲的訊息
+    const kSent = await sentTypes();
+    out.K3 = { kWatching, kSent };
+    run.check("K-3 主頁操作單波最多已確認（K-1～K-2）的期間沒有送任何訊息給遊戲（沒有關卡資料、update_team 或命令）；之後 M-4 再核不換關、不寫入",
+      kWatching && Array.isArray(kSent) && kSent.length === 0, out.K3);
+
     // M-4 關閉關卡選擇：戰場不變、沒有寫入
     await press("Escape");
     await H.sleep(300);
@@ -1402,6 +1516,60 @@ async (page) => {
     out.N6 = { nfits, writes: writes(aN) - writes(a0) };
     run.check("N-6 390×600／390×844：「進京」C 快騎明細的 6 個前往按鈕（第 2～7 波）都在預覽裡、沒有橫向捲動；按第 5 波到第 5 波；獨立關卡頁到這裡沒有寫入",
       [600, 844].every((h) => nfits[h].n === 6 && nfits[h].inside && nfits[h].docScroll <= nfits[h].vw && nfits[h].landed) && out.N6.writes === 0, out.N6);
+
+    // K-4 獨立關卡頁：單波最多已確認和主頁相同
+    const kp = await pkFlow();
+    out.K4 = kp;
+    run.check("K-4 獨立關卡頁：單波最多已確認的六個範圍、所有並列、排列與搜尋後值不變、收合再展開、關閉重開，都和主頁相同", pkFlowOk(kp), out.K4);
+
+    // K-5 390×600／390×844：這一行在預覽裡、整行沒有被截掉、沒有橫向捲動
+    const kfits = {};
+    for (const h of [600, 844]) {
+      await page.setViewportSize({ width: 390, height: h });
+      await H.sleep(300);
+      await openPreview("chapter3_2");
+      await pick("preview-composition-route", "route:path_a");
+      await detailBtn(C2).scrollIntoViewIfNeeded();
+      await toggleDetail(C2);
+      const pk = page.locator('[data-testid="preview-composition-detail-peak"]');
+      if ((await pk.count()) === 1) await pk.scrollIntoViewIfNeeded();
+      await H.sleep(200);
+      const box = await page.evaluate(() => {
+        const p = document.querySelector('[data-testid="enemy-preview"] [role="dialog"]').getBoundingClientRect();
+        const k = document.querySelector('[data-testid="preview-composition-detail-peak"]');
+        const r = k ? k.getBoundingClientRect() : null;
+        return {
+          vw: innerWidth, docScroll: document.documentElement.scrollWidth,
+          inside: !!r && r.width > 0 && r.left >= p.left && r.right <= p.right, notCut: !!k && k.scrollWidth <= k.clientWidth,
+          text: k ? k.innerText.replace(/\s+/g, " ").trim() : null,
+        };
+      });
+      const kshot = await H.shot(page, `stage-sort-detail-peak-390x${h}`);
+      await closePreview();
+      kfits[h] = { ...box, shot: kshot };
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const aK = await gasActions();
+    out.K5 = { kfits, writes: writes(aK) - writes(a0) };
+    run.check("K-5 390×600／390×844：「進京」path_a C 快騎「此範圍單波最多已確認：10 隻（第 2、3、4、5、6、7 波）」整行都在預覽裡、沒有被截掉、沒有橫向捲動；獨立關卡頁到這裡沒有寫入",
+      [600, 844].every((h) => kfits[h].inside && kfits[h].notCut && kfits[h].docScroll <= kfits[h].vw && kfits[h].text === "此範圍單波最多已確認：10 隻（第 2、3、4、5、6、7 波）") &&
+        out.K5.writes === 0, out.K5);
+
+    // K-6 設定更新（預覽開著）：過期的「刷新」第 1 波步兵 9、C 快騎 4，第 2 波 B 步兵 3 → 新的設定第 1 波步兵 2、B 步兵 3
+    await staleReload([STALE_REFRESH], "chapter3_4");
+    await openPreview("chapter3_4");
+    await openAllDetails();
+    const ku0 = await peakState();
+    await page.evaluate(() => window.__shenmaMock.release("get_all_maps"));
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="preview-composition-row"]').length === 2, null, { timeout: 30000, polling: 100 });
+    await H.sleep(300);
+    const ku1 = await peakState();
+    await closePreview();
+    out.K6 = { before: pkOf(ku0), after: pkOf(ku1) };
+    run.check("K-6 設定更新（預覽開著）：更新前是步兵 9 隻（第 1 波）、C 快騎 4 隻（第 1 波）、B 步兵 3 隻（第 2 波）；更新後用新的資料重新算成步兵 2 隻（第 1 波）、B 步兵 3 隻（第 1 波），C 快騎的列沒了（不留舊的數字與波次）",
+      same(pkOf(ku0), [[G2, 9, [1]], [C2, 4, [1]], [G3, 3, [2]]]) && pkTextOk(ku0) &&
+        same(pkOf(ku1), [[G2, 2, [1]], [G3, 3, [1]]]) && pkTextOk(ku1),
+      out.K6);
 
     // V-7 設定更新（預覽開著）：保留依波數排列，用新的列重排
     await staleReload([STALE_REFRESH], "chapter3_4");
