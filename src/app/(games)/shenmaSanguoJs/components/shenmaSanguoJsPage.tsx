@@ -1,8 +1,18 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import { LocalGameBridge, PlacementMenuData } from "../engine/LocalGameBridge";
-import { StatsSyncData, BattleResultData, GameState } from "../engine/BattleManager";
+import {
+  StatsSyncData,
+  BattleResultData,
+  GameState,
+} from "../engine/BattleManager";
 import { TowerEntity } from "../engine/entities/TowerEntity";
 import { HeroEntity, HeroStateData } from "../engine/entities/HeroEntity";
 import {
@@ -13,7 +23,11 @@ import {
   StageData,
 } from "../engine/builtinData";
 import { StageDataManager } from "../engine/StageDataManager";
-import { getNextStage, getStageDataProblem } from "../utils/stagePlayability";
+import {
+  getNextStage,
+  getStageDataProblem,
+  isStageUnlocked,
+} from "../utils/stagePlayability";
 import { useJsPlayerStore } from "../store/useJsPlayerStore";
 import { BattleRewardResult, TeamSlot } from "../types/player";
 import { KeySetupModal } from "./KeySetupModal";
@@ -59,26 +73,71 @@ const ShenmaSanguoJsPage: React.FC = () => {
     hasCheckedStorage,
     init: initPlayer,
     loginWithKey,
+    createProfile,
     startGuestMode,
     logout,
     updateNickname,
     updateTeam,
-    upgradeHero,
+    requestHeroUpgrade,
+    upgradePreview,
+    heroCostOf,
     settleBattle,
     forceSync,
     exportBackup,
     importBackup,
+    mode,
+    readOnly,
+    teamEditable,
+    notice,
+    busy,
+    writeBlocked,
+    pendingCreateKey,
+    error: accountError,
   } = useJsPlayerStore();
+
+  // 共用帳號不能寫入的原因（唯讀、結果待確認、正在保存）；訪客沒有限制
+  const writeBlockReason =
+    mode !== "shared"
+      ? null
+      : readOnly
+        ? "雲端存檔目前只能查看，不能寫入"
+        : writeBlocked
+          ? "上一個保存的結果不明：請先在主公資訊按「手動同步」確認"
+          : busy
+            ? "正在保存，請稍候"
+            : null;
+  const teamBlockReason =
+    writeBlockReason ??
+    (mode === "shared" && !teamEditable
+      ? "雲端的出征隊伍這裡還不支援：原樣保留，暫時不能在這裡修改"
+      : null);
+  // 共用帳號不能出征的原因：雲端隊伍不支援，或還沒有隊伍（不自動換成預設隊伍）
+  const sortieBlockReason =
+    mode !== "shared" || !player
+      ? null
+      : !teamEditable
+        ? "雲端的出征隊伍這裡還不支援：暫時不能出征"
+        : player.team.length === 0
+          ? "還沒有出征隊伍：請先到「隊伍」編排並保存"
+          : null;
 
   // 戰鬥狀態管理
   const [stats, setStats] = useState<StatsSyncData>(DEFAULT_STATS);
   const [allStages, setAllStages] = useState<StageData[]>(BUILTIN_STAGES);
-  const [currentStage, setCurrentStage] = useState<StageData>(BUILTIN_STAGES[0]);
-  const [placementMenu, setPlacementMenu] = useState<PlacementMenuData | null>(null);
+  const [currentStage, setCurrentStage] = useState<StageData>(
+    BUILTIN_STAGES[0]
+  );
+  const [placementMenu, setPlacementMenu] = useState<PlacementMenuData | null>(
+    null
+  );
   const [upgradeTower, setUpgradeTower] = useState<TowerEntity | null>(null);
   const [heroInfo, setHeroInfo] = useState<HeroEntity | null>(null);
-  const [battleResult, setBattleResult] = useState<BattleResultData | null>(null);
-  const [battleReward, setBattleReward] = useState<BattleRewardResult | null>(null);
+  const [battleResult, setBattleResult] = useState<BattleResultData | null>(
+    null
+  );
+  const [battleReward, setBattleReward] = useState<BattleRewardResult | null>(
+    null
+  );
   const [placedHeroIds, setPlacedHeroIds] = useState<string[]>([]);
 
   // 視窗 Modal 顯示狀態
@@ -100,23 +159,29 @@ const ShenmaSanguoJsPage: React.FC = () => {
     void initPlayer();
   }, [initPlayer]);
 
-  // 當前出征隊伍武將名單（嚴格取自 player.team 與 player.heroes）
+  // 當前出征隊伍武將名單（嚴格取自 player.team 與 player.heroes；數值 0 照樣是 0）。
+  // 共用帳號沒有隊伍或隊伍不支援時是空的（不自動換成預設隊伍）；訪客或尚未登入時照原本的預設展示
   const activeTeamHeroes: HeroStateData[] = useMemo(() => {
-    if (!player || !player.team || player.team.length === 0) {
-      return DEFAULT_PLAYER_HEROES;
+    if (
+      !player ||
+      !player.team ||
+      player.team.length === 0 ||
+      (mode === "shared" && !teamEditable)
+    ) {
+      return mode === "shared" ? [] : DEFAULT_PLAYER_HEROES;
     }
     return player.team.map((slot) => {
       const heroState = player.heroes.find((h) => h.hero_id === slot.hero_id);
       return {
         hero_id: slot.hero_id,
-        level: heroState?.level || 1,
-        star: heroState?.star || 1,
-        atk: heroState?.atk || 100,
-        def: heroState?.def || 50,
-        hp: heroState?.hp || 1000,
+        level: heroState?.level ?? 1,
+        star: heroState?.star ?? 1,
+        atk: heroState?.atk ?? 100,
+        def: heroState?.def ?? 50,
+        hp: heroState?.hp ?? 1000,
       };
     });
-  }, [player]);
+  }, [player, mode, teamEditable]);
 
   const currentStageRef = useRef<StageData>(BUILTIN_STAGES[0]);
   const statsRef = useRef<StatsSyncData>(stats);
@@ -177,8 +242,22 @@ const ShenmaSanguoJsPage: React.FC = () => {
     bridge.onBattleEnded = (r) => {
       setBattleResult(r);
       if (r.result === "WIN") {
-        const reward = settleBattle(currentStageRef.current.map_id, statsRef.current.hp, statsRef.current.max_hp);
+        const reward = settleBattle(
+          currentStageRef.current.map_id,
+          statsRef.current.hp,
+          statsRef.current.max_hp
+        );
         setBattleReward(reward);
+      } else if (useJsPlayerStore.getState().mode === "shared") {
+        // 共用帳號的落敗也照實說明：這場沒有寫入共用進度（勝負都一樣）
+        setBattleReward({
+          stars: 0,
+          expEarned: 0,
+          goldEarned: 0,
+          leveledUp: false,
+          newLevel: useJsPlayerStore.getState().player?.level ?? 1,
+          notSaved: true,
+        });
       } else {
         setBattleReward(null);
       }
@@ -206,7 +285,8 @@ const ShenmaSanguoJsPage: React.FC = () => {
     });
 
     if (typeof window !== "undefined") {
-      (window as unknown as { __testBridge?: LocalGameBridge }).__testBridge = bridge;
+      (window as unknown as { __testBridge?: LocalGameBridge }).__testBridge =
+        bridge;
     }
 
     // 非同步讀取完整地圖庫清單以供關卡選擇
@@ -214,7 +294,9 @@ const ShenmaSanguoJsPage: React.FC = () => {
     void stageMgr.loadAllStages().then((res) => {
       if (res.stages && res.stages.length > 0) {
         setAllStages(res.stages);
-        const match = res.stages.find((s) => s.map_id === currentStageRef.current.map_id);
+        const match = res.stages.find(
+          (s) => s.map_id === currentStageRef.current.map_id
+        );
         if (match) {
           setCurrentStage(match);
         }
@@ -223,7 +305,8 @@ const ShenmaSanguoJsPage: React.FC = () => {
 
     return () => {
       if (typeof window !== "undefined") {
-        delete (window as unknown as { __testBridge?: LocalGameBridge }).__testBridge;
+        delete (window as unknown as { __testBridge?: LocalGameBridge })
+          .__testBridge;
       }
       bridge.destroy();
       bridgeRef.current = null;
@@ -254,7 +337,10 @@ const ShenmaSanguoJsPage: React.FC = () => {
     if (bridgeRef.current) {
       bridgeRef.current.init(canvas);
       if (containerSizeRef.current) {
-        bridgeRef.current.resize(containerSizeRef.current.w, containerSizeRef.current.h);
+        bridgeRef.current.resize(
+          containerSizeRef.current.w,
+          containerSizeRef.current.h
+        );
       }
     }
   }, []);
@@ -266,8 +352,9 @@ const ShenmaSanguoJsPage: React.FC = () => {
     bridgeRef.current?.resize(width, height);
   }, []);
 
-  // 控制操作
+  // 控制操作（共用帳號的隊伍不支援或沒有隊伍時不能出征）
   const handleStartBattle = () => {
+    if (sortieBlockReason) return;
     bridgeRef.current?.startBattle();
   };
 
@@ -304,7 +391,11 @@ const ShenmaSanguoJsPage: React.FC = () => {
     bridgeRef.current?.placeTower(col, row, typeKey);
   };
 
-  const handlePlaceHero = (col: number, row: number, heroState: HeroStateData) => {
+  const handlePlaceHero = (
+    col: number,
+    row: number,
+    heroState: HeroStateData
+  ) => {
     const success = bridgeRef.current?.placeHero(col, row, heroState);
     if (success) {
       setPlacedHeroIds((prev) => [...prev, heroState.hero_id]);
@@ -330,29 +421,34 @@ const ShenmaSanguoJsPage: React.FC = () => {
     loadStageData(currentStage);
   };
 
-  // 判定是否有下一可挑戰關卡
-  const hasNextPlayableStage = useMemo(() => {
+  // 下一關：資料完整才算存在；共用帳號另外要在雲端已確認的進度裡已解鎖（這輪的戰鬥結果不寫入，不會因為這場勝利而解鎖）
+  const nextStageCandidate = useMemo(() => {
     const nextMapId = getNextStage(currentStage.map_id);
     const nextStage = allStages.find((s) => s.map_id === nextMapId);
-    return Boolean(nextStage && !getStageDataProblem(nextStage));
+    return nextStage && !getStageDataProblem(nextStage) ? nextStage : null;
   }, [allStages, currentStage.map_id]);
+  const nextStageUnlocked =
+    !!nextStageCandidate &&
+    (mode !== "shared" ||
+      isStageUnlocked(
+        nextStageCandidate.map_id,
+        player?.max_stage,
+        player?.cleared_stages
+      ));
+  const hasNextPlayableStage = !!nextStageCandidate && nextStageUnlocked;
 
   const handleNextStage = () => {
     setBattleResult(null);
     setBattleReward(null);
-    const nextMapId = getNextStage(currentStage.map_id);
-    const nextStage = allStages.find((s) => s.map_id === nextMapId);
-    if (nextStage && !getStageDataProblem(nextStage)) {
-      loadStageData(nextStage);
+    if (nextStageCandidate && nextStageUnlocked) {
+      loadStageData(nextStageCandidate);
     } else {
       setIsStageSelectorOpen(true);
     }
   };
 
-  // 隊伍保存後重新傳遞至 Bridge
-  const handleSaveTeam = (newTeam: TeamSlot[]) => {
-    updateTeam(newTeam);
-  };
+  // 隊伍保存（共用帳號等伺服器回應）；成功後畫面的隊伍更新，備戰中會重新傳給 Bridge
+  const handleSaveTeam = (newTeam: TeamSlot[]) => updateTeam(newTeam);
 
   return (
     <div className={styles.singlePage}>
@@ -370,8 +466,10 @@ const ShenmaSanguoJsPage: React.FC = () => {
               type="button"
               className={styles.centerEnterBattleBtn}
               onClick={handleStartBattle}
-              title="開始戰鬥"
+              title={sortieBlockReason ?? "開始戰鬥"}
               aria-label="進入戰場"
+              disabled={sortieBlockReason !== null}
+              data-testid="enter-battle"
             >
               <div className={styles.centerEnterBattleInner}>
                 <span>進入</span>
@@ -468,10 +566,17 @@ const ShenmaSanguoJsPage: React.FC = () => {
           <span
             className={styles.hudStat}
             style={{
-              color: stats.hp / stats.max_hp < 0.3 ? "#ef4444" : "rgba(255,255,255,0.9)",
+              color:
+                stats.hp / stats.max_hp < 0.3
+                  ? "#ef4444"
+                  : "rgba(255,255,255,0.9)",
             }}
           >
-            <span style={{ color: stats.hp / stats.max_hp < 0.3 ? "#ef4444" : "#6366f1" }}>
+            <span
+              style={{
+                color: stats.hp / stats.max_hp < 0.3 ? "#ef4444" : "#6366f1",
+              }}
+            >
               🛡️
             </span>
             <span>
@@ -504,7 +609,13 @@ const ShenmaSanguoJsPage: React.FC = () => {
             type="button"
             className={`${styles.hudBarBtn} ${stats.game_state === GameState.BATTLE ? styles.hudBarBtnBattle : ""}`}
             onClick={handleStartBattle}
-            disabled={stats.game_state !== GameState.PREP || stats.paused}
+            disabled={
+              stats.game_state !== GameState.PREP ||
+              stats.paused ||
+              sortieBlockReason !== null
+            }
+            title={sortieBlockReason ?? undefined}
+            data-testid="hud-start-battle"
           >
             {stats.game_state === GameState.BATTLE ? "戰鬥中" : "迎戰"}
           </button>
@@ -516,7 +627,14 @@ const ShenmaSanguoJsPage: React.FC = () => {
           >
             自動
           </button>
-          <div style={{ display: "inline-flex", borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255, 255, 255, 0.18)" }}>
+          <div
+            style={{
+              display: "inline-flex",
+              borderRadius: 8,
+              overflow: "hidden",
+              border: "1px solid rgba(255, 255, 255, 0.18)",
+            }}
+          >
             <button
               type="button"
               className={`${styles.hudBarBtn} ${stats.speed === 1 ? styles.hudActionBtnActive : ""}`}
@@ -529,7 +647,12 @@ const ShenmaSanguoJsPage: React.FC = () => {
             <button
               type="button"
               className={`${styles.hudBarBtn} ${stats.speed === 2 ? styles.hudActionBtnActive : ""}`}
-              style={{ borderRadius: 0, border: "none", borderLeft: "1px solid rgba(255, 255, 255, 0.18)", padding: "0 8px" }}
+              style={{
+                borderRadius: 0,
+                border: "none",
+                borderLeft: "1px solid rgba(255, 255, 255, 0.18)",
+                padding: "0 8px",
+              }}
               onClick={() => handleSetSpeed(2)}
               disabled={stats.paused}
             >
@@ -569,6 +692,19 @@ const ShenmaSanguoJsPage: React.FC = () => {
         </div>
       </div>
 
+      {/* 共用帳號的說明：不能出征的原因與存檔的狀態（唯讀、衝突、結果待確認、不支援的資料） */}
+      {mode === "shared" && (sortieBlockReason || notice) && (
+        <div
+          className="small text-warning px-2 py-1"
+          data-testid="shared-account-notice"
+        >
+          {sortieBlockReason && (
+            <div data-testid="sortie-blocked">{sortieBlockReason}</div>
+          )}
+          {notice && <div>{notice}</div>}
+        </div>
+      )}
+
       {/* 懸浮玩法提示 */}
       {isBattleTipsOpen && (
         <BattleTips onClose={() => setIsBattleTipsOpen(false)} />
@@ -587,8 +723,11 @@ const ShenmaSanguoJsPage: React.FC = () => {
       <KeySetupModal
         show={hasCheckedStorage && !player}
         onLogin={loginWithKey}
+        onCreate={createProfile}
         onGuestMode={startGuestMode}
         canCancel={false}
+        initialKey={pendingCreateKey}
+        initialError={accountError}
       />
 
       {/* 切換金鑰彈窗 (自設定或主公資訊開啟) */}
@@ -597,6 +736,11 @@ const ShenmaSanguoJsPage: React.FC = () => {
           show={isKeySwitchOpen}
           onLogin={async (k) => {
             const res = await loginWithKey(k);
+            if (res.success) setIsKeySwitchOpen(false);
+            return res;
+          }}
+          onCreate={async (k, n) => {
+            const res = await createProfile(k, n);
             if (res.success) setIsKeySwitchOpen(false);
             return res;
           }}
@@ -617,8 +761,12 @@ const ShenmaSanguoJsPage: React.FC = () => {
         onClose={() => setIsPlayerInfoOpen(false)}
         onUpdateNickname={updateNickname}
         onSwitchKey={loginWithKey}
+        onCreateProfile={createProfile}
         onGuestMode={startGuestMode}
         onForceSync={forceSync}
+        mode={mode}
+        notice={mode === "shared" ? notice : null}
+        writeDisabledReason={writeBlockReason}
         onOpenStageSelector={() => {
           setIsPlayerInfoOpen(false);
           setIsStageSelectorOpen(true);
@@ -632,6 +780,8 @@ const ShenmaSanguoJsPage: React.FC = () => {
         player={player}
         onClose={() => setIsTeamEditOpen(false)}
         onSaveTeam={handleSaveTeam}
+        heroCostOf={mode === "shared" ? heroCostOf : undefined}
+        writeDisabledReason={teamBlockReason}
       />
 
       {/* 武將名錄與修為升級視窗 */}
@@ -639,7 +789,10 @@ const ShenmaSanguoJsPage: React.FC = () => {
         show={isHeroRosterOpen}
         player={player}
         onClose={() => setIsHeroRosterOpen(false)}
-        onUpgradeHero={upgradeHero}
+        onUpgradeHero={requestHeroUpgrade}
+        upgradePreview={upgradePreview}
+        writeDisabledReason={writeBlockReason}
+        serverPriced={mode === "shared"}
       />
 
       {/* 系統設定與存檔備份視窗 */}
@@ -651,6 +804,11 @@ const ShenmaSanguoJsPage: React.FC = () => {
         onToggleSfx={handleToggleSfx}
         onExportBackup={exportBackup}
         onImportBackup={importBackup}
+        importDisabledReason={
+          mode === "shared"
+            ? "共用帳號不能用匯入覆蓋雲端存檔（可以匯出備份）。"
+            : null
+        }
         onSwitchKey={() => {
           setIsSettingsOpen(false);
           logout();
@@ -668,6 +826,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
         result={battleResult}
         rewardResult={battleReward}
         hasNextStage={hasNextPlayableStage}
+        nextLocked={!!nextStageCandidate && !nextStageUnlocked}
         onRetry={handleRetry}
         onNextStage={handleNextStage}
         onOpenStageSelector={() => {

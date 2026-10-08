@@ -15,6 +15,8 @@ interface SettingsModalProps {
   onSwitchKey: () => void;
   onLogout?: () => void;
   onClose: () => void;
+  /** 不能匯入覆蓋的原因（共用帳號停用匯入）；可以匯入時是 null */
+  importDisabledReason?: string | null;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -28,10 +30,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSwitchKey,
   onLogout,
   onClose,
+  importDisabledReason = null,
 }) => {
   const [importJson, setImportJson] = useState("");
   const [showImportBox, setShowImportBox] = useState(false);
-  const [feedback, setFeedback] = useState<{ type: "success" | "danger"; msg: string } | null>(null);
+  const [feedback, setFeedback] = useState<{
+    type: "success" | "danger";
+    msg: string;
+  } | null>(null);
 
   const handleDownloadBackup = () => {
     try {
@@ -57,17 +63,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
     const res = onImportBackup(importJson.trim());
     if (res.success) {
-      setFeedback({ type: "success", msg: "存檔匯入成功！已還原所有進度與名將！" });
+      setFeedback({
+        type: "success",
+        msg: "存檔匯入成功！已還原所有進度與名將！",
+      });
       setImportJson("");
       setShowImportBox(false);
     } else {
-      setFeedback({ type: "danger", msg: res.error || "存檔格式不正確，匯入失敗" });
+      setFeedback({
+        type: "danger",
+        msg: res.error || "存檔格式不正確，匯入失敗",
+      });
     }
   };
 
   return (
-    <Modal show={show} onHide={onClose} centered contentClassName={styles.darkModalContent}>
-      <Modal.Header closeButton closeVariant="white" className={styles.modalHeader}>
+    <Modal
+      show={show}
+      onHide={onClose}
+      centered
+      contentClassName={styles.darkModalContent}
+    >
+      <Modal.Header
+        closeButton
+        closeVariant="white"
+        className={styles.modalHeader}
+      >
         <Modal.Title className="text-warning fw-bold d-flex align-items-center gap-2">
           <span>⚙️</span>
           <span>遊戲系統設定與存檔備份</span>
@@ -76,13 +97,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
       <Modal.Body className={styles.modalBody}>
         {feedback && (
-          <Alert variant={feedback.type} className="py-2 small mb-3" dismissible onClose={() => setFeedback(null)}>
+          <Alert
+            variant={feedback.type}
+            className="py-2 small mb-3"
+            dismissible
+            onClose={() => setFeedback(null)}
+          >
             {feedback.msg}
           </Alert>
         )}
 
         {/* 音訊設定 */}
-        <div className="p-3 rounded mb-3" style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)" }}>
+        <div
+          className="p-3 rounded mb-3"
+          style={{
+            background: "rgba(0,0,0,0.3)",
+            border: "1px solid rgba(255,255,255,0.08)",
+          }}
+        >
           <h6 className="text-warning fw-bold mb-3">🎵 音訊與音效控制</h6>
           <div className="d-flex justify-content-between align-items-center mb-3">
             <div>
@@ -101,7 +133,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="d-flex justify-content-between align-items-center">
             <div>
               <div className="text-light fw-bold">打擊音效 (SFX)</div>
-              <small className="text-secondary">防禦塔射擊、武將技能與倒地音效</small>
+              <small className="text-secondary">
+                防禦塔射擊、武將技能與倒地音效
+              </small>
             </div>
             <Button
               variant={isSfxMuted ? "outline-secondary" : "outline-success"}
@@ -114,14 +148,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* 存檔備份與還原 */}
-        <div className="p-3 rounded mb-3" style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)" }}>
+        <div
+          className="p-3 rounded mb-3"
+          style={{
+            background: "rgba(0,0,0,0.3)",
+            border: "1px solid rgba(255,255,255,0.08)",
+          }}
+        >
           <h6 className="text-warning fw-bold mb-2">💾 存檔資料管理</h6>
           <p className="text-secondary small mb-3">
             隨時匯出 JSON 存檔以防瀏覽器快取被清空，或在上傳備份至新裝置。
           </p>
+          {importDisabledReason && (
+            <p
+              className="text-secondary small mb-2"
+              data-testid="settings-import-disabled"
+            >
+              {importDisabledReason}
+            </p>
+          )}
 
           <div className="d-flex gap-2 mb-2">
-            <Button variant="outline-warning" size="sm" className="w-100" onClick={handleDownloadBackup}>
+            <Button
+              variant="outline-warning"
+              size="sm"
+              className="w-100"
+              onClick={handleDownloadBackup}
+              data-testid="settings-export"
+            >
               📥 匯出存檔檔案
             </Button>
             <Button
@@ -129,15 +183,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               size="sm"
               className="w-100"
               onClick={() => setShowImportBox(!showImportBox)}
+              disabled={importDisabledReason !== null}
+              data-testid="settings-import"
             >
               📤 匯入還原存檔
             </Button>
           </div>
 
-          {showImportBox && (
+          {showImportBox && importDisabledReason === null && (
             <div className="mt-3 pt-2 border-top border-secondary">
               <Form.Group className="mb-2">
-                <Form.Label className="text-light small">貼上備份 JSON 代碼：</Form.Label>
+                <Form.Label className="text-light small">
+                  貼上備份 JSON 代碼：
+                </Form.Label>
                 <Form.Control
                   as="textarea"
                   rows={3}
@@ -149,10 +207,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
               </Form.Group>
               <div className="d-flex justify-content-end gap-2">
-                <Button variant="secondary" size="sm" onClick={() => setShowImportBox(false)}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowImportBox(false)}
+                >
                   取消
                 </Button>
-                <Button variant="warning" size="sm" onClick={handleExecuteImport}>
+                <Button
+                  variant="warning"
+                  size="sm"
+                  onClick={handleExecuteImport}
+                >
                   確認覆蓋還原
                 </Button>
               </div>
@@ -161,7 +227,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* 帳號切換與登出 */}
-        <div className="d-flex justify-content-between align-items-center p-2 rounded" style={{ background: "rgba(0,0,0,0.2)" }}>
+        <div
+          className="d-flex justify-content-between align-items-center p-2 rounded"
+          style={{ background: "rgba(0,0,0,0.2)" }}
+        >
           <span className="text-secondary small">欲登出或切換帳號？</span>
           <div className="d-flex gap-2">
             {onLogout && (

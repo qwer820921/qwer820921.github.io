@@ -17,7 +17,19 @@ export interface TeamSlot {
   hero_id: string;
 }
 
-export type SyncStatusType = "idle" | "syncing" | "pending" | "offline" | "error";
+/**
+ * 存檔狀態（畫面說明用）。共用帳號另外有：readonly（存檔格式不對，只能看）、conflict（雲端有較新的版本，剛才的修改沒有保存）、
+ * unknown（保存的結果不明，要先手動同步確認）
+ */
+export type SyncStatusType =
+  | "idle"
+  | "syncing"
+  | "pending"
+  | "offline"
+  | "error"
+  | "readonly"
+  | "conflict"
+  | "unknown";
 
 export interface PlayerState {
   key: string;
@@ -41,4 +53,6 @@ export interface BattleRewardResult {
   leveledUp: boolean;
   newLevel: number;
   stageUnlocked?: string;
+  /** 共用帳號：這場的結算沒有寫入雲端進度（兩版的結算規則對齊前暫停），沒有發獎勵也沒有解鎖 */
+  notSaved?: boolean;
 }

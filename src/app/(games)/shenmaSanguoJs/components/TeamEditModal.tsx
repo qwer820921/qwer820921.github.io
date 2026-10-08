@@ -1,7 +1,15 @@
 "use client";
 
 import React, { useState } from "react";
-import { Modal, Button, Row, Col, Badge, ProgressBar, Alert } from "react-bootstrap";
+import {
+  Modal,
+  Button,
+  Row,
+  Col,
+  Badge,
+  ProgressBar,
+  Alert,
+} from "react-bootstrap";
 import { PlayerState, TeamSlot } from "../types/player";
 import { BUILTIN_HEROES_CONFIG } from "../engine/builtinData";
 import styles from "../styles/shenmaSanguoJs.module.css";
@@ -10,12 +18,19 @@ interface TeamEditModalProps {
   show: boolean;
   player: PlayerState | null;
   onClose: () => void;
-  onSaveTeam: (team: TeamSlot[]) => void;
+  /** 保存隊伍：共用帳號要等伺服器回應，成功才關閉視窗 */
+  onSaveTeam: (
+    team: TeamSlot[]
+  ) => Promise<{ success: boolean; error?: string }>;
+  /** 共用帳號：武將在後端設定的 cost（查不到時 null，隊伍不能保存）；沒有提供時用這裡的訪客估算 */
+  heroCostOf?: (heroId: string) => number | null;
+  /** 不能保存隊伍的原因（唯讀、結果待確認、雲端隊伍不支援等）；可以保存時是 null */
+  writeDisabledReason?: string | null;
 }
 
 const MAX_TEAM_SIZE = 5;
 
-// 武將出征 Cost 權重估算
+// 訪客模式的武將出征 Cost 估算（共用帳號改用後端武將設定的 cost）
 const HERO_COST_MAP: Record<string, number> = {
   hero_ma_chao: 12,
   hero_zhao_yun: 12,
@@ -37,11 +52,16 @@ export const TeamEditModal: React.FC<TeamEditModalProps> = ({
   player,
   onClose,
   onSaveTeam,
+  heroCostOf,
+  writeDisabledReason = null,
 }) => {
   const [team, setTeam] = useState<string[]>([]);
-  const [prevTeamSignature, setPrevTeamSignature] = useState<string | null>(null);
+  const [prevTeamSignature, setPrevTeamSignature] = useState<string | null>(
+    null
+  );
   const [selectedJob, setSelectedJob] = useState<string>("all");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const currentSignature = `${show}_${player?.key}_${player?.team?.map((t) => t.hero_id).join(",")}`;
   if (prevTeamSignature !== currentSignature) {
@@ -55,24 +75,35 @@ export const TeamEditModal: React.FC<TeamEditModalProps> = ({
 
   if (!player) return null;
 
-  // 計算隊伍總 Cost
-  const totalCost = team.reduce((acc, hid) => acc + (HERO_COST_MAP[hid] || 10), 0);
-  const isOverCost = totalCost > player.capacity;
-  const costPercent = Math.min(100, Math.round((totalCost / player.capacity) * 100));
+  // 武將的 Cost：共用帳號用後端設定（查不到是 null），訪客用這裡的估算
+  const costOf = (hid: string): number | null =>
+    heroCostOf ? heroCostOf(hid) : (HERO_COST_MAP[hid] ?? 10);
+  // 計算隊伍總 Cost（有任何一位查不到時算不出來，不能保存）
+  const costs = team.map(costOf);
+  const totalCost = costs.some((c) => c === null)
+    ? null
+    : costs.reduce<number>((acc, c) => acc + (c as number), 0);
+  const isOverCost = totalCost !== null && totalCost > player.capacity;
+  const costPercent =
+    totalCost === null
+      ? 100
+      : player.capacity > 0
+        ? Math.min(100, Math.round((totalCost / player.capacity) * 100))
+        : 100;
 
-  // 取得武將資訊
+  // 取得武將資訊（數值 0 照樣顯示 0）
   const getHeroInfo = (heroId: string) => {
     const heroState = player.heroes.find((h) => h.hero_id === heroId);
     const cfg = BUILTIN_HEROES_CONFIG.find((c) => c.hero_id === heroId);
     return {
       name: cfg?.name || heroId,
       job: cfg?.job || "武將",
-      level: heroState?.level || 1,
-      star: heroState?.star || 1,
-      atk: heroState?.atk || 100,
-      def: heroState?.def || 50,
-      hp: heroState?.hp || 1000,
-      cost: HERO_COST_MAP[heroId] || 10,
+      level: heroState?.level ?? 1,
+      star: heroState?.star ?? 1,
+      atk: heroState?.atk ?? 100,
+      def: heroState?.def ?? 50,
+      hp: heroState?.hp ?? 1000,
+      cost: costOf(heroId),
     };
   };
 
@@ -111,7 +142,9 @@ export const TeamEditModal: React.FC<TeamEditModalProps> = ({
 
   // 一鍵推薦
   const handleAutoRecommend = () => {
-    const sorted = [...player.heroes].sort((a, b) => b.level - a.level || b.atk - a.atk);
+    const sorted = [...player.heroes].sort(
+      (a, b) => b.level - a.level || b.atk - a.atk
+    );
     const top5 = sorted.slice(0, MAX_TEAM_SIZE).map((h) => h.hero_id);
     setTeam(top5);
     setFeedback("已為您自動配置最高戰力名將！");
@@ -123,10 +156,15 @@ export const TeamEditModal: React.FC<TeamEditModalProps> = ({
     setFeedback("隊伍已清空");
   };
 
-  // 儲存出征隊伍
-  const handleSave = () => {
+  // 儲存出征隊伍：等保存結果，成功才關閉；失敗、衝突或結果不明時留在視窗並說明
+  const handleSave = async () => {
+    if (saving) return;
     if (team.length === 0) {
       setFeedback("請至少配置一位出征武將！");
+      return;
+    }
+    if (totalCost === null) {
+      setFeedback("武將的 Cost 設定還沒讀到，暫時不能保存隊伍");
       return;
     }
     if (isOverCost) {
@@ -139,8 +177,17 @@ export const TeamEditModal: React.FC<TeamEditModalProps> = ({
       hero_id,
     }));
 
-    onSaveTeam(newSlots);
-    onClose();
+    setSaving(true);
+    try {
+      const res = await onSaveTeam(newSlots);
+      if (res.success) {
+        onClose();
+      } else {
+        setFeedback(res.error || "隊伍沒有保存");
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   // 篩選武將錄
@@ -151,8 +198,18 @@ export const TeamEditModal: React.FC<TeamEditModalProps> = ({
   });
 
   return (
-    <Modal show={show} onHide={onClose} centered size="lg" contentClassName={styles.darkModalContent}>
-      <Modal.Header closeButton closeVariant="white" className={styles.modalHeader}>
+    <Modal
+      show={show}
+      onHide={onClose}
+      centered
+      size="lg"
+      contentClassName={styles.darkModalContent}
+    >
+      <Modal.Header
+        closeButton
+        closeVariant="white"
+        className={styles.modalHeader}
+      >
         <Modal.Title className="text-warning fw-bold d-flex align-items-center gap-2">
           <span>⚔️</span>
           <span>出征隊伍編排 (限額 5 位名將)</span>
@@ -160,24 +217,58 @@ export const TeamEditModal: React.FC<TeamEditModalProps> = ({
       </Modal.Header>
 
       <Modal.Body className={styles.modalBody}>
+        {writeDisabledReason && (
+          <Alert
+            variant="warning"
+            className="py-2 small mb-3"
+            data-testid="team-edit-blocked"
+          >
+            {writeDisabledReason}
+          </Alert>
+        )}
         {feedback && (
-          <Alert variant="info" className="py-2 small mb-3" dismissible onClose={() => setFeedback(null)}>
+          <Alert
+            variant="info"
+            className="py-2 small mb-3"
+            dismissible
+            onClose={() => setFeedback(null)}
+            data-testid="team-edit-feedback"
+          >
             {feedback}
           </Alert>
         )}
 
         {/* 隊伍容量 Cost 條與操作鈕 */}
-        <div className="p-3 rounded mb-3" style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)" }}>
+        <div
+          className="p-3 rounded mb-3"
+          style={{
+            background: "rgba(0,0,0,0.3)",
+            border: "1px solid rgba(255,255,255,0.08)",
+          }}
+        >
           <div className="d-flex justify-content-between align-items-center mb-1">
-            <span className="text-light small fw-bold">隊伍統率容量 (Cost Limit)</span>
-            <span className={isOverCost ? "text-danger fw-bold" : "text-warning fw-bold"}>
-              {totalCost} / {player.capacity} Cost
+            <span className="text-light small fw-bold">
+              隊伍統率容量 (Cost Limit)
+            </span>
+            <span
+              className={
+                isOverCost ? "text-danger fw-bold" : "text-warning fw-bold"
+              }
+              data-testid="team-edit-cost"
+            >
+              {totalCost ?? "?"} / {player.capacity} Cost
             </span>
           </div>
           <ProgressBar
             now={costPercent}
-            variant={isOverCost ? "danger" : costPercent > 80 ? "warning" : "success"}
-            style={{ height: 8, borderRadius: 4, backgroundColor: "rgba(0,0,0,0.5)" }}
+            variant={
+              isOverCost ? "danger" : costPercent > 80 ? "warning" : "success"
+            }
+            style={{
+              height: 8,
+              borderRadius: 4,
+              backgroundColor: "rgba(0,0,0,0.5)",
+            }}
             className="mb-2"
           />
           <div className="d-flex justify-content-between align-items-center">
@@ -185,10 +276,18 @@ export const TeamEditModal: React.FC<TeamEditModalProps> = ({
               戰場佈防選單將嚴格以此 5 位名將出戰（隨主公等級提升容量上限）。
             </small>
             <div className="d-flex gap-2">
-              <Button variant="outline-info" size="sm" onClick={handleAutoRecommend}>
+              <Button
+                variant="outline-info"
+                size="sm"
+                onClick={handleAutoRecommend}
+              >
                 ⚡ 一鍵推薦
               </Button>
-              <Button variant="outline-secondary" size="sm" onClick={handleClear}>
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                onClick={handleClear}
+              >
                 清空
               </Button>
             </div>
@@ -196,7 +295,9 @@ export const TeamEditModal: React.FC<TeamEditModalProps> = ({
         </div>
 
         {/* 5 個出征席次槽位 */}
-        <h6 className="text-warning fw-bold mb-2">🎯 當前出征陣列 (Slot 1 ~ 5)</h6>
+        <h6 className="text-warning fw-bold mb-2">
+          🎯 當前出征陣列 (Slot 1 ~ 5)
+        </h6>
         <Row className="g-2 mb-4">
           {Array.from({ length: MAX_TEAM_SIZE }).map((_, idx) => {
             const heroId = team[idx];
@@ -204,9 +305,15 @@ export const TeamEditModal: React.FC<TeamEditModalProps> = ({
               const info = getHeroInfo(heroId);
               return (
                 <Col key={idx} xs={12} sm={6} md={2} className="flex-grow-1">
-                  <div className={`${styles.teamSlotCard} ${styles.teamSlotFilled}`}>
+                  <div
+                    className={`${styles.teamSlotCard} ${styles.teamSlotFilled}`}
+                  >
                     <div className="d-flex justify-content-between align-items-center w-100 mb-1">
-                      <Badge bg="warning" text="dark" style={{ fontSize: "0.65rem" }}>
+                      <Badge
+                        bg="warning"
+                        text="dark"
+                        style={{ fontSize: "0.65rem" }}
+                      >
                         席位 {idx + 1}
                       </Badge>
                       <button
@@ -218,9 +325,15 @@ export const TeamEditModal: React.FC<TeamEditModalProps> = ({
                       />
                     </div>
                     <div className="fw-bold text-light mb-1">{info.name}</div>
-                    <div className="text-warning small mb-1">Lv.{info.level}</div>
-                    <Badge bg="secondary" className="mb-2" style={{ fontSize: "0.65rem" }}>
-                      Cost {info.cost}
+                    <div className="text-warning small mb-1">
+                      Lv.{info.level}
+                    </div>
+                    <Badge
+                      bg="secondary"
+                      className="mb-2"
+                      style={{ fontSize: "0.65rem" }}
+                    >
+                      Cost {info.cost ?? "?"}
                     </Badge>
                     <div className="d-flex gap-1">
                       <Button
@@ -259,7 +372,9 @@ export const TeamEditModal: React.FC<TeamEditModalProps> = ({
 
         {/* 麾下名將庫篩選 */}
         <div className="d-flex justify-content-between align-items-center mb-2">
-          <h6 className="text-light fw-bold mb-0">📜 麾下備選名將錄 (點擊加入隊伍)</h6>
+          <h6 className="text-light fw-bold mb-0">
+            📜 麾下備選名將錄 (點擊加入隊伍)
+          </h6>
           <div className="btn-group btn-group-sm">
             {[
               { id: "all", label: "全部" },
@@ -270,7 +385,9 @@ export const TeamEditModal: React.FC<TeamEditModalProps> = ({
             ].map((tab) => (
               <Button
                 key={tab.id}
-                variant={selectedJob === tab.id ? "warning" : "outline-secondary"}
+                variant={
+                  selectedJob === tab.id ? "warning" : "outline-secondary"
+                }
                 size="sm"
                 onClick={() => setSelectedJob(tab.id)}
               >
@@ -289,16 +406,24 @@ export const TeamEditModal: React.FC<TeamEditModalProps> = ({
               <Col key={hero.hero_id} xs={6} md={4} lg={3}>
                 <div
                   className={`${styles.heroRosterCard} ${inTeam ? styles.heroRosterInTeam : ""}`}
-                  onClick={() => (!inTeam ? handleAddHero(hero.hero_id) : undefined)}
+                  onClick={() =>
+                    !inTeam ? handleAddHero(hero.hero_id) : undefined
+                  }
                   style={{ opacity: inTeam ? 0.7 : 1 }}
                 >
                   <div className="d-flex justify-content-between align-items-start mb-1">
                     <strong className="text-light small">{info.name}</strong>
-                    <Badge bg={inTeam ? "success" : "secondary"} style={{ fontSize: "0.6rem" }}>
-                      {inTeam ? "已出征" : `Cost ${info.cost}`}
+                    <Badge
+                      bg={inTeam ? "success" : "secondary"}
+                      style={{ fontSize: "0.6rem" }}
+                    >
+                      {inTeam ? "已出征" : `Cost ${info.cost ?? "?"}`}
                     </Badge>
                   </div>
-                  <div className="d-flex justify-content-between text-secondary small" style={{ fontSize: "0.7rem" }}>
+                  <div
+                    className="d-flex justify-content-between text-secondary small"
+                    style={{ fontSize: "0.7rem" }}
+                  >
                     <span>Lv.{info.level}</span>
                     <span>ATK {info.atk}</span>
                   </div>
@@ -315,11 +440,18 @@ export const TeamEditModal: React.FC<TeamEditModalProps> = ({
         </Button>
         <Button
           variant="warning"
-          onClick={handleSave}
-          disabled={team.length === 0 || isOverCost}
+          onClick={() => void handleSave()}
+          disabled={
+            team.length === 0 ||
+            isOverCost ||
+            totalCost === null ||
+            saving ||
+            writeDisabledReason !== null
+          }
           className="fw-bold px-4"
+          data-testid="team-edit-save"
         >
-          確認並儲存陣容
+          {saving ? "保存中，等待伺服器回應…" : "確認並儲存陣容"}
         </Button>
       </Modal.Footer>
     </Modal>
