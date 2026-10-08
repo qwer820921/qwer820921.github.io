@@ -231,8 +231,15 @@ module.exports = async function profileContractWeb(page) {
     seed = [],
     viewport = { width: 1280, height: 800 },
     requireBaseRev = false,
+    maps = [],
+    enemies = [],
   } = {}) {
-    const fx = createProfileFixture({ heroesConfig: HEROES, requireBaseRev });
+    const fx = createProfileFixture({
+      heroesConfig: HEROES,
+      requireBaseRev,
+      maps,
+      enemies,
+    });
     for (const s of seed) fx.seed(s.key, clone(s.data), s.rev, s.opts || {});
     const ctx = await newContext({ viewport });
     const gas = await installGas(ctx, fx);
@@ -469,6 +476,105 @@ module.exports = async function profileContractWeb(page) {
       return "no-bridge";
     }, win);
   }
+  // 後端的關卡與敵人設定（虛構的最小完整資料：一條路線、一波兩隻）：讓 Canvas 用後端設定，出征才可能寫入共用進度
+  const ENEMIES = [
+    {
+      enemy_id: "grunt_lv1",
+      name: "黃巾小卒",
+      hp: 120,
+      speed: 65,
+      atk: 15,
+      movement_type: "ground",
+      image: "enemy_grunt1.webp",
+      attack_image: "enemy_grunt1_atk.webp",
+    },
+  ];
+  const MAP = (id, n) => ({
+    map_id: id,
+    chapter: 1,
+    name: `測試第${n}關`,
+    unlock_stage: id,
+    path_json: JSON.stringify({
+      cols: 14,
+      rows: 10,
+      paths: {
+        path_a: [
+          [0, 3],
+          [13, 3],
+        ],
+      },
+      base: [13, 3],
+      build_zones: [[2, 2]],
+    }),
+    waves: [
+      {
+        wave: 1,
+        enemies: [
+          { enemy_id: "grunt_lv1", count: 2, interval: 1.5, path: "path_a" },
+        ],
+      },
+    ],
+  });
+  const MAPS = [
+    MAP("chapter1_1", 1),
+    MAP("chapter1_2", 2),
+    MAP("chapter1_3", 3),
+  ];
+  const bm = (p, expr) =>
+    p.evaluate((e) => {
+      const b =
+        window.__testBridge &&
+        window.__testBridge.engine &&
+        window.__testBridge.engine.battleManager;
+      if (!b) return null;
+      return e === "battleId"
+        ? b.battleId
+        : e === "state"
+          ? b.gameState
+          : e === "stage"
+            ? b.stageId
+            : null;
+    }, expr);
+  /** 等後端設定讀到並用它重新載入這一關（battleId 換新、之後一段時間不再變） */
+  async function waitRemoteStage(p, E) {
+    await until(() => E.gas.count("get_all_maps") > 0, 15000);
+    let last = null;
+    let stable = 0;
+    await until(async () => {
+      const id = await bm(p, "battleId");
+      stable = id && id === last ? stable + 1 : 0;
+      last = id;
+      return stable >= 8;
+    }, 15000);
+    return last;
+  }
+  /** 按「進入戰場」開戰（第一次進入戰鬥時固定這一場） */
+  async function startBattle(p) {
+    await p.locator('[data-testid="enter-battle"]').click();
+    return until(async () => (await bm(p, "state")) === 2, 5000);
+  }
+  /** 受控的結束回呼：只設定基地、擊殺、時間後呼叫引擎的 endBattle（不驗收戰鬥本身） */
+  async function endWith(
+    p,
+    { win = true, baseHp = 20, kills = 12, time = 95.4 }
+  ) {
+    return p.evaluate(
+      ({ w, h, k, tm }) => {
+        const b = window.__testBridge.engine.battleManager;
+        b.baseHp = h;
+        b.kills = k;
+        b.battleTime = tm;
+        b.endBattle(w);
+        return "ok";
+      },
+      { w: win, h: baseHp, k: kills, tm: time }
+    );
+  }
+  const pendingKeys = async (p) =>
+    Object.keys((await storageOf(p)).ss).filter((k) =>
+      k.startsWith("shenma_js_settle_pending_")
+    );
+
   const shot = async (p, name) => {
     if (!C.evidenceDir) return null;
     const file = `${C.evidenceDir}/${name}.png`;
@@ -1581,40 +1687,682 @@ module.exports = async function profileContractWeb(page) {
   });
 
   // ═══ 17. 戰鬥結算：共用帳號不寫入、不發獎勵，結算畫面照實說明 ═══
-  await scenario("戰鬥結果不寫入共用進度", async (mk) => {
+  // 原本是「戰鬥結果不寫入共用進度」（結算暫停時的期望）；共用結算啟用後改成已解鎖的寫入控制組（原文與理由另存證據）
+  await scenario("戰鬥結算寫入共用進度（已解鎖控制組）", async (mk) => {
     const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
-    const E = await mk({ seed: [{ key: "k_bat", data, rev: 6 }] });
+    const E = await mk({
+      seed: [{ key: "k_bat", data, rev: 6 }],
+      maps: MAPS,
+      enemies: ENEMIES,
+    });
     const p = await E.page({ storage: { shenma_player_key: "k_bat" } });
     check("讀到存檔", (await loadShared(p)) === "player");
     await closeModal(p);
+    await waitRemoteStage(p, E);
+    check("目前是第一關", (await bm(p, "stage")) === "chapter1_1");
+    check("按進入戰場開戰", await startBattle(p));
     check(
-      "有隊伍：可以出征",
-      (await isDisabled(p, '[data-testid="hud-start-battle"]')) === false
+      "受控的勝利結束（基地 20、擊殺 12、時間 95.4）",
+      (await endWith(p, {})) === "ok"
     );
-    await sleep(500);
-    const won = await forceWin(p);
-    check("觸發勝利結算", won === "ok", won);
     check(
-      "結算畫面說明沒有寫入共用進度",
+      "結算畫面：已保存到共用進度",
+      await until(
+        () => p.locator('[data-testid="result-settle-confirmed"]').isVisible(),
+        10000
+      )
+    );
+    const sv = E.gas.log.filter((e) => e.action === "save_result");
+    const rid = sv[0] && sv[0].payload && sv[0].payload.request_id;
+    check(
+      "剛好一次 save_result，內容逐欄等於寫死的值（星數與點數來自這場的結果、base_rev 6、契約 2）",
+      sv.length === 1 &&
+        typeof rid === "string" &&
+        sameJson(sv[0].payload, {
+          stage_id: "chapter1_1",
+          result: "WIN",
+          stars_earned: 3,
+          kills: 12,
+          time_seconds: 95,
+          loots: [{ item: "battle_points", count: 1120 }],
+          request_id: rid,
+          base_rev: 6,
+          settle_contract: 2,
+        }),
+      sv.map((e) => e.payload)
+    );
+    check(
+      "沒有 save_profile 或其他寫入",
+      E.gas.writes().length === 1,
+      E.gas.writes().map((e) => e.action)
+    );
+    check(
+      "雲端讀回：rev 7，點數 +1120、經驗 110 升到 Lv.2、容量 12、進度第二關",
+      sameJson(readBack(E, "k_bat"), {
+        rev: 7,
+        data: {
+          ...data,
+          gold: 1620,
+          exp: 10,
+          level: 2,
+          capacity: 12,
+          max_stage: "chapter1_2",
+        },
+      }),
+      readBack(E, "k_bat")
+    );
+    const card = (await text(p, '[data-testid="result-card"]')) || "";
+    check(
+      "結算畫面列後端回應的獎勵（主公金幣 +1120、主公經驗 +110、Lv.2）與三顆星",
+      /主公金幣\s*\+1120/.test(card) &&
+        /主公經驗\s*\+110/.test(card) &&
+        /Lv\.2/.test(card) &&
+        /★★★/.test(card),
+      card
+    );
+    check("暫存已刪除", (await pendingKeys(p)).length === 0);
+    check(
+      "讀回的進度讓第二關可以走（下一關）",
+      await until(
+        async () =>
+          (await p.locator('[data-testid="result-next-stage"]').count()) === 1,
+        5000
+      )
+    );
+    await shot(p, "battle-settled-1280");
+    return E;
+  });
+
+  // ═══ 共用結算：自由演練與唯讀都不寫入 ═══
+  await scenario("戰鬥結算：自由演練不寫入", async (mk) => {
+    const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+    const E = await mk({
+      seed: [{ key: "k_free", data, rev: 6 }],
+      maps: MAPS,
+      enemies: ENEMIES,
+    });
+    const p = await E.page({ storage: { shenma_player_key: "k_free" } });
+    check("讀到存檔", (await loadShared(p)) === "player");
+    await closeModal(p);
+    await waitRemoteStage(p, E);
+    await p.locator('button[title="切換關卡"]').click();
+    await until(() => modal(p).isVisible(), 5000);
+    await p.locator("#free-play-switch").check();
+    await modal(p).locator(".card", { hasText: "測試第3關" }).first().click();
+    check(
+      "用自由演練進入未解鎖的第三關",
+      await until(async () => (await bm(p, "stage")) === "chapter1_3", 5000)
+    );
+    await until(async () => (await modal(p).count()) === 0, 5000);
+    await waitRemoteStage(p, E);
+    check("開戰", await startBattle(p));
+    check(
+      "說明這場不寫入（自由演練）",
+      /自由演練/.test(
+        (await text(p, '[data-testid="sortie-settle-note"]')) || ""
+      )
+    );
+    await endWith(p, {});
+    check(
+      "結算畫面：沒有寫入共用進度（自由演練）",
+      await until(
+        async () =>
+          /自由演練/.test(
+            (await text(p, '[data-testid="result-not-saved"]')) || ""
+          ),
+        5000
+      )
+    );
+    await sleep(800);
+    check("沒有任何寫入", E.gas.writes().length === 0, E.gas.writes());
+    check("雲端存檔沒有變", sameJson(readBack(E, "k_free"), { rev: 6, data }));
+    return E;
+  });
+  await scenario("戰鬥結算：唯讀不寫入", async (mk) => {
+    const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+    const E = await mk({
+      seed: [{ key: "k_ro", data, rev: 6 }],
+      maps: MAPS,
+      enemies: ENEMIES,
+    });
+    // 讀取的回應沒有版本：畫面唯讀
+    E.gas.rule("get_profile", "transform", {
+      times: 99,
+      fn: (res) => ({ ...res, rev: undefined }),
+    });
+    const p = await E.page({ storage: { shenma_player_key: "k_ro" } });
+    check("讀到存檔", (await loadShared(p)) === "player");
+    await closeModal(p);
+    await waitRemoteStage(p, E);
+    // 唯讀時原本就不能出征（隊伍不可編輯）；直接結束這一場也不寫入
+    check(
+      "唯讀：不能按進入戰場",
+      (await isDisabled(p, '[data-testid="enter-battle"]')) === true
+    );
+    await endWith(p, {});
+    check(
+      "結算畫面：沒有寫入共用進度",
       await until(
         () => p.locator('[data-testid="result-not-saved"]').isVisible(),
         5000
       )
     );
-    check(
-      "結算畫面沒有列出金幣或經驗獎勵",
-      !/主公金幣|主公經驗/.test(
-        (await text(p, '[data-testid="result-card"]')) || ""
-      )
+    await sleep(800);
+    check("沒有任何寫入", E.gas.writes().length === 0, E.gas.writes());
+    check("雲端存檔沒有變", sameJson(readBack(E, "k_ro"), { rev: 6, data }));
+    return E;
+  });
+
+  // ═══ 共用結算：結果不明 → 重新整理不自動送 → 鍵盤按「重新確認」原樣再送、獎勵只一次（三個尺寸） ═══
+  for (const vp of [
+    { width: 1280, height: 800 },
+    { width: 390, height: 600 },
+    { width: 390, height: 844 },
+  ]) {
+    await scenario(
+      `戰鬥結算：結果不明後重新確認 ${vp.width}×${vp.height}`,
+      async (mk) => {
+        const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+        const E = await mk({
+          seed: [{ key: "k_pend", data, rev: 6 }],
+          maps: MAPS,
+          enemies: ENEMIES,
+          viewport: vp,
+        });
+        // 第一次：後端已寫入，但回 SERVER_ERROR（結果不明）
+        E.gas.rule("save_result", "transform", {
+          fn: () => ({ status: 500, error: "SERVER_ERROR" }),
+        });
+        const p = await E.page({ storage: { shenma_player_key: "k_pend" } });
+        check("讀到存檔", (await loadShared(p)) === "player");
+        await closeModal(p);
+        await waitRemoteStage(p, E);
+        check("開戰", await startBattle(p));
+        // 2 星（基地 15、擊殺 9、時間 80.2）：星數與點數要直接來自這場的結果
+        await endWith(p, { baseHp: 15, kills: 9, time: 80.2 });
+        check(
+          "結算畫面：結果待確認，有「重新確認」",
+          await until(
+            () => p.locator('[data-testid="result-settle-retry"]').isVisible(),
+            10000
+          )
+        );
+        const first = E.gas.log.filter((e) => e.action === "save_result");
+        const rid = first[0] && first[0].payload && first[0].payload.request_id;
+        check(
+          "第一次送出的內容逐欄等於寫死的值（2 星、690 點、base_rev 6）",
+          first.length === 1 &&
+            typeof rid === "string" &&
+            sameJson(first[0].payload, {
+              stage_id: "chapter1_1",
+              result: "WIN",
+              stars_earned: 2,
+              kills: 9,
+              time_seconds: 80,
+              loots: [{ item: "battle_points", count: 690 }],
+              request_id: rid,
+              base_rev: 6,
+              settle_contract: 2,
+            }),
+          first.map((e) => e.payload)
+        );
+        check(
+          "後端其實已寫入（rev 7），暫存留著",
+          readBack(E, "k_pend").rev === 7 &&
+            (await pendingKeys(p)).length === 1,
+          readBack(E, "k_pend")
+        );
+        await shot(p, `settle-pending-${vp.width}x${vp.height}`);
+        // 重新整理：同一個分頁的暫存還在，不自動送
+        await p.reload();
+        check("重新整理後讀到存檔", (await loadShared(p)) === "player");
+        await closeModal(p);
+        check(
+          "重新整理後說明待確認並有「重新確認」",
+          await until(
+            () => p.locator('[data-testid="settle-retry"]').isVisible(),
+            10000
+          )
+        );
+        await sleep(1500);
+        check(
+          "重新整理後沒有自動送出",
+          E.gas.count("save_result") === 1,
+          E.gas.count("save_result")
+        );
+        const nick = await (async () => {
+          await openInfo(p);
+          const dis = await isDisabled(
+            p,
+            '[data-testid="player-info-nick-edit"]'
+          );
+          await closeModal(p);
+          return dis;
+        })();
+        check("待確認時不能改暱稱", nick === true, nick);
+        // 用鍵盤按「重新確認」；送出中按鈕停用
+        const hold = E.gas.rule("save_result", "hold");
+        await p.focus('[data-testid="settle-retry"]');
+        await p.keyboard.press("Enter");
+        await until(() => hold.hits === 1, 10000);
+        check(
+          "送出中「重新確認」停用",
+          (await isDisabled(p, '[data-testid="settle-retry"]')) === true
+        );
+        hold.release("ok");
+        check(
+          "重新確認後已保存",
+          await until(
+            () => p.locator('[data-testid="settle-confirmed"]').isVisible(),
+            10000
+          )
+        );
+        const all = E.gas.log.filter((e) => e.action === "save_result");
+        check(
+          "重新確認原樣再送：同一個 request_id、base_rev 6 與內容",
+          all.length === 2 && sameJson(all[1].payload, first[0].payload),
+          all.map((e) => e.payload)
+        );
+        check(
+          "只加一次：rev 7、點數 1190、經驗 90、進度第二關，暫存已刪除",
+          sameJson(readBack(E, "k_pend"), {
+            rev: 7,
+            data: {
+              ...data,
+              gold: 1190,
+              exp: 90,
+              level: 1,
+              capacity: 11,
+              max_stage: "chapter1_2",
+            },
+          }) && (await pendingKeys(p)).length === 0,
+          readBack(E, "k_pend")
+        );
+        await shot(p, `settle-retried-${vp.width}x${vp.height}`);
+        return E;
+      }
     );
+  }
+
+  // ═══ 共用結算的修正追加：人工確認重新整理後仍不能重送；舊場次的回呼；讀回不合法；暫存讀不到 ═══
+  await scenario("戰鬥結算：要人工確認時重新整理也不能重送", async (mk) => {
+    const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+    const E = await mk({
+      seed: [{ key: "k_rev", data, rev: 6 }],
+      maps: MAPS,
+      enemies: ENEMIES,
+    });
+    E.gas.rule("save_result", "reply", {
+      fn: () => ({ status: 409, error: "RESULT_UNKNOWN" }),
+    });
+    const p = await E.page({ storage: { shenma_player_key: "k_rev" } });
+    check("讀到存檔", (await loadShared(p)) === "player");
+    await closeModal(p);
+    await waitRemoteStage(p, E);
+    check("開戰", await startBattle(p));
+    await endWith(p, {});
+    check(
+      "結算畫面：要人工確認、沒有「重新確認」",
+      (await until(
+        () => p.locator('[data-testid="result-settle-review"]').isVisible(),
+        10000
+      )) &&
+        (await p.locator('[data-testid="result-settle-retry"]').count()) === 0
+    );
+    await p.reload();
+    check("重新整理後讀到存檔", (await loadShared(p)) === "player");
+    const nick = await isDisabled(p, '[data-testid="player-info-nick-edit"]');
+    await closeModal(p);
+    await sleep(1500);
+    check(
+      "重新整理後沒有「重新確認」、不能改暱稱、說明要人工確認",
+      (await p.locator('[data-testid="settle-retry"]').count()) === 0 &&
+        nick === true &&
+        /人工確認/.test(
+          (await text(p, '[data-testid="shared-account-notice"]')) || ""
+        ),
+      { nick }
+    );
+    check(
+      "只有一次 save_result、暫存留著、雲端沒有變",
+      E.gas.count("save_result") === 1 &&
+        (await pendingKeys(p)).length === 1 &&
+        sameJson(readBack(E, "k_rev"), { rev: 6, data }),
+      E.gas.count("save_result")
+    );
+    return E;
+  });
+  await scenario("戰鬥結算：舊場次的結束回呼不動這一場", async (mk) => {
+    const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+    const E = await mk({
+      seed: [{ key: "k_old", data, rev: 6 }],
+      maps: MAPS,
+      enemies: ENEMIES,
+    });
+    const p = await E.page({ storage: { shenma_player_key: "k_old" } });
+    check("讀到存檔", (await loadShared(p)) === "player");
+    await closeModal(p);
+    await waitRemoteStage(p, E);
+    check("開戰", await startBattle(p));
+    // 受控回呼：用另一個 battle_id 結束一次（像舊場次晚到），再把這一場恢復成戰鬥中
+    const cur = await p.evaluate(() => {
+      const b = window.__testBridge.engine.battleManager;
+      const id = b.battleId;
+      b.battleId = "battle_old_late";
+      b.endBattle(true);
+      b.battleId = id;
+      b.gameState = 2;
+      return id;
+    });
     await sleep(1000);
     check(
-      "沒有 save_result 或任何寫入",
-      E.gas.writes().length === 0,
-      E.gas.writes()
+      "舊場次的回呼：沒有結算畫面、沒有 save_result",
+      (await p.locator('[data-testid="result-overlay"]').count()) === 0 &&
+        E.gas.count("save_result") === 0
     );
-    check("雲端存檔沒有變", sameJson(readBack(E, "k_bat"), { rev: 6, data }));
-    await shot(p, "battle-not-saved-1280");
+    await endWith(p, {});
+    check(
+      "這一場的結果：已保存、只送一次、battle_id 是這一場",
+      (await until(
+        () => p.locator('[data-testid="result-settle-confirmed"]').isVisible(),
+        10000
+      )) && E.gas.count("save_result") === 1,
+      { cur, n: E.gas.count("save_result") }
+    );
+    return E;
+  });
+  await scenario("戰鬥結算：讀回的存檔不合法時不報已保存", async (mk) => {
+    const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+    const E = await mk({
+      seed: [{ key: "k_bad", data, rev: 6 }],
+      maps: MAPS,
+      enemies: ENEMIES,
+    });
+    const p = await E.page({ storage: { shenma_player_key: "k_bad" } });
+    check("讀到存檔", (await loadShared(p)) === "player");
+    await closeModal(p);
+    await waitRemoteStage(p, E);
+    check("開戰", await startBattle(p));
+    // 後端接受後的讀回：data 是 null
+    E.gas.rule("get_profile", "transform", {
+      fn: (res) => ({ ...res, data: null }),
+    });
+    await endWith(p, {});
+    check(
+      "結算畫面：待確認（有「重新確認」），不是已保存",
+      (await until(
+        () => p.locator('[data-testid="result-settle-retry"]').isVisible(),
+        10000
+      )) &&
+        (await p.locator('[data-testid="result-settle-confirmed"]').count()) ===
+          0
+    );
+    check(
+      "後端已寫入（rev 7）、暫存留著",
+      readBack(E, "k_bad").rev === 7 && (await pendingKeys(p)).length === 1
+    );
+    return E;
+  });
+  await scenario("戰鬥結算：暫存讀不到時不能寫入", async (mk) => {
+    const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+    const E = await mk({
+      seed: [{ key: "k_ss", data, rev: 6 }],
+      maps: MAPS,
+      enemies: ENEMIES,
+    });
+    E.gas.rule("save_result", "lost");
+    E.allowGasErrors = 1;
+    const p = await E.page({ storage: { shenma_player_key: "k_ss" } });
+    check("讀到存檔", (await loadShared(p)) === "player");
+    await closeModal(p);
+    await waitRemoteStage(p, E);
+    check("開戰", await startBattle(p));
+    await endWith(p, {});
+    check(
+      "結果不明：待確認",
+      await until(
+        () => p.locator('[data-testid="result-settle-retry"]').isVisible(),
+        10000
+      )
+    );
+    // 重新整理後 sessionStorage 讀取一律丟 SecurityError（模擬瀏覽器不讓讀）
+    await p.addInitScript(() => {
+      const orig = Storage.prototype.getItem;
+      Storage.prototype.getItem = function (k) {
+        if (this === window.sessionStorage)
+          throw new DOMException("blocked", "SecurityError");
+        return orig.call(this, k);
+      };
+    });
+    await p.reload();
+    check("重新整理後讀到存檔", (await loadShared(p)) === "player");
+    const nick = await isDisabled(p, '[data-testid="player-info-nick-edit"]');
+    await closeModal(p);
+    await sleep(1000);
+    check(
+      "暫存讀不到：不能改暱稱、沒有「重新確認」、說明暫存讀不到",
+      nick === true &&
+        (await p.locator('[data-testid="settle-retry"]').count()) === 0 &&
+        /暫存讀不到/.test(
+          (await text(p, '[data-testid="shared-account-notice"]')) || ""
+        ),
+      { nick }
+    );
+    check(
+      "沒有其他寫入（只有那一次 save_result）",
+      E.gas.writes().length === 1,
+      E.gas.writes().map((e) => e.action)
+    );
+    return E;
+  });
+
+  // ═══ 共用結算的第二次修正追加：送出中的標記寫不進去；人工確認的標記寫不進去；登入後標記才讀不到 ═══
+  const REVIEW_PREFIX = "shenma_js_settle_review_";
+  const reviewEntries = async (p) =>
+    Object.entries((await storageOf(p)).ss).filter(([k]) =>
+      k.startsWith(REVIEW_PREFIX)
+    );
+  /** 這個分頁寫入人工確認的標記時丟 QuotaExceededError（onlyTerminal：送出中的標記仍寫得進去）；重新整理後也一樣 */
+  async function failMarkerWrites(p, onlyTerminal) {
+    const fn = (only) => {
+      const orig = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (k, v) {
+        if (
+          this === window.sessionStorage &&
+          String(k).startsWith("shenma_js_settle_review_") &&
+          (!only || !String(v).includes('"SENDING"'))
+        )
+          throw new DOMException("quota", "QuotaExceededError");
+        return orig.call(this, k, v);
+      };
+    };
+    await p.addInitScript(fn, onlyTerminal);
+    await p.evaluate(fn, onlyTerminal);
+  }
+  await scenario("戰鬥結算：送出中的標記寫不進去時不送出", async (mk) => {
+    const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+    const E = await mk({
+      seed: [{ key: "k_mq", data, rev: 6 }],
+      maps: MAPS,
+      enemies: ENEMIES,
+    });
+    E.gas.rule("save_result", "reply", {
+      fn: () => ({ status: 409, error: "RESULT_UNKNOWN" }),
+    });
+    const p = await E.page({ storage: { shenma_player_key: "k_mq" } });
+    check("讀到存檔", (await loadShared(p)) === "player");
+    await closeModal(p);
+    await waitRemoteStage(p, E);
+    await failMarkerWrites(p, false);
+    check("開戰", await startBattle(p));
+    await endWith(p, {});
+    check(
+      "結算畫面：這場沒有寫入（不能暫存）、沒有「重新確認」",
+      (await until(
+        () => p.locator('[data-testid="result-not-saved"]').isVisible(),
+        10000
+      )) &&
+        /不能暫存/.test(
+          (await text(p, '[data-testid="result-not-saved"]')) || ""
+        ) &&
+        (await p.locator('[data-testid="result-settle-retry"]').count()) === 0
+    );
+    check(
+      "零 save_result、沒有留下暫存或標記",
+      E.gas.count("save_result") === 0 &&
+        (await pendingKeys(p)).length === 0 &&
+        (await reviewEntries(p)).length === 0,
+      E.gas.count("save_result")
+    );
+    await p.reload();
+    check("重新整理後讀到存檔", (await loadShared(p)) === "player");
+    const nick = await isDisabled(p, '[data-testid="player-info-nick-edit"]');
+    await closeModal(p);
+    await sleep(1000);
+    check(
+      "重新整理後沒有「重新確認」、可以改暱稱、仍是零 save_result",
+      (await p.locator('[data-testid="settle-retry"]').count()) === 0 &&
+        nick === false &&
+        E.gas.count("save_result") === 0,
+      { nick, n: E.gas.count("save_result") }
+    );
+    return E;
+  });
+  await scenario(
+    "戰鬥結算：人工確認的標記寫不進去時重新整理也不能重送",
+    async (mk) => {
+      const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+      const E = await mk({
+        seed: [{ key: "k_mr", data, rev: 6 }],
+        maps: MAPS,
+        enemies: ENEMIES,
+      });
+      E.gas.rule("save_result", "reply", {
+        fn: () => ({ status: 409, error: "RESULT_UNKNOWN" }),
+      });
+      const p = await E.page({ storage: { shenma_player_key: "k_mr" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      await failMarkerWrites(p, true);
+      check("開戰", await startBattle(p));
+      await endWith(p, {});
+      check(
+        "結算畫面：要人工確認、沒有「重新確認」",
+        (await until(
+          () => p.locator('[data-testid="result-settle-review"]').isVisible(),
+          10000
+        )) &&
+          (await p.locator('[data-testid="result-settle-retry"]').count()) === 0
+      );
+      const marks = await reviewEntries(p);
+      check(
+        "人工確認的標記沒有寫入，送出中的標記與暫存還在",
+        marks.length === 1 &&
+          /"SENDING"/.test(marks[0][1]) &&
+          (await pendingKeys(p)).length === 1,
+        marks
+      );
+      await p.reload();
+      check("重新整理後讀到存檔", (await loadShared(p)) === "player");
+      const nick = await isDisabled(p, '[data-testid="player-info-nick-edit"]');
+      await closeModal(p);
+      await sleep(1500);
+      check(
+        "重新整理後沒有「重新確認」、不能改暱稱、說明要人工確認",
+        (await p.locator('[data-testid="settle-retry"]').count()) === 0 &&
+          nick === true &&
+          /人工確認/.test(
+            (await text(p, '[data-testid="shared-account-notice"]')) || ""
+          ),
+        { nick }
+      );
+      check(
+        "只有一次 save_result、雲端沒有變",
+        E.gas.count("save_result") === 1 &&
+          sameJson(readBack(E, "k_mr"), { rev: 6, data }),
+        E.gas.count("save_result")
+      );
+      return E;
+    }
+  );
+  await scenario("戰鬥結算：登入後標記才讀不到時不能寫入", async (mk) => {
+    const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+    const E = await mk({
+      seed: [{ key: "k_late", data, rev: 6 }],
+      maps: MAPS,
+      enemies: ENEMIES,
+    });
+    const p = await E.page({ storage: { shenma_player_key: "k_late" } });
+    check("讀到存檔", (await loadShared(p)) === "player");
+    // 登入時讀得到；之後人工確認標記的讀取丟 SecurityError（暫存本身仍讀得到）
+    const breakMarks = () =>
+      p.evaluate(() => {
+        if (!window.__origGetItem)
+          window.__origGetItem = Storage.prototype.getItem;
+        Storage.prototype.getItem = function (k) {
+          if (
+            this === window.sessionStorage &&
+            String(k).startsWith("shenma_js_settle_review_")
+          )
+            throw new DOMException("blocked", "SecurityError");
+          return window.__origGetItem.call(this, k);
+        };
+      });
+    const restoreMarks = () =>
+      p.evaluate(() => {
+        Storage.prototype.getItem = window.__origGetItem;
+      });
+    await breakMarks();
+    const fb = await saveNickname(p, "改名");
+    check(
+      "改暱稱：不送出、說明暫存讀不到",
+      /暫存讀不到/.test(fb || "") && E.gas.count("save_profile") === 0,
+      fb
+    );
+    await restoreMarks();
+    // 畫面上的按鈕依目前的待確認狀態停用：按「手動同步」重新讀暫存後才恢復
+    await p.locator('[data-testid="player-info-sync-btn"]').click();
+    check(
+      "恢復可讀後手動同步：可以改暱稱",
+      await until(
+        async () =>
+          (await isDisabled(p, '[data-testid="player-info-nick-edit"]')) ===
+          false,
+        10000
+      )
+    );
+    const fb2 = await saveNickname(p, "恢復");
+    check(
+      "恢復可讀、沒有暫存：正常保存暱稱",
+      E.gas.count("save_profile") === 1 &&
+        readBack(E, "k_late").data.nickname === "恢復",
+      fb2
+    );
+    await breakMarks();
+    await closeModal(p);
+    await waitRemoteStage(p, E);
+    check("開戰", await startBattle(p));
+    check(
+      "出征說明：這場不會寫入共用進度（不能暫存）",
+      await until(
+        async () =>
+          /不會寫入共用進度.*不能暫存/.test(
+            (await text(p, '[data-testid="sortie-settle-note"]')) || ""
+          ),
+        5000
+      )
+    );
+    await endWith(p, {});
+    check(
+      "結算畫面：這場沒有寫入、零 save_result",
+      (await until(
+        () => p.locator('[data-testid="result-not-saved"]').isVisible(),
+        10000
+      )) && E.gas.count("save_result") === 0,
+      E.gas.count("save_result")
+    );
+    await restoreMarks();
     return E;
   });
 

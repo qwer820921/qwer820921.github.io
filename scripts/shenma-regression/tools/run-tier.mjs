@@ -7,7 +7,7 @@
 // - quick：型別檢查、神馬三國與地圖編輯器的 ESLint、Node 測試（store、後端讀取的自動重試、戰鬥結算獎勵規則、飛行敵人與對空規則、出征前的對空準備、
 //   飛行路線無效與優先飛行選項、地面路線沒有路程與戰場內的下一波、關卡能不能出征與敵人攻擊力／免疫減速、備份檔、武將列表篩選、
 //   地圖編輯器的錯誤說明與敵人表的移動方式欄判斷、
-//   跨來源隔離開機腳本）、harness 雜訊規則、
+//   跨來源隔離開機腳本、JS 版的共用存檔規則、共用結算的資料邊界與共用結算的生命週期）、harness 雜訊規則、
 //   工具自我測試、素材引用檢查、Godot 反向驗證的變異原文檢查（只讀原始碼）。不需要 dev server 與 Godot
 // - related：quick 之後，只跑指定功能的瀏覽器腳本；full：quick 之後跑全部瀏覽器腳本（約 35 分鐘）
 //   瀏覽器腳本需要 npm run dev 與 PLAYWRIGHT_DIR（見 README）；Godot 端另外用 godot-check.sh
@@ -97,6 +97,21 @@ const QUICK = [
     "跨來源隔離開機腳本測試",
     "node",
     ["scripts/shenma-regression/web/site-isolation.test.mjs"],
+  ],
+  [
+    "JS 版共用存檔規則測試",
+    "node",
+    ["src/app/(games)/shenmaSanguoJs/utils/sharedProfile.test.mjs"],
+  ],
+  [
+    "JS 版共用結算的資料邊界測試",
+    "node",
+    ["src/app/(games)/shenmaSanguoJs/utils/sharedBattleSettlement.test.mjs"],
+  ],
+  [
+    "JS 版共用結算的生命週期測試（暫存、送出、讀回、重新確認、換帳號）",
+    "node",
+    ["src/app/(games)/shenmaSanguoJs/utils/sharedSettlement.test.mjs"],
   ],
   [
     "工具自我測試",

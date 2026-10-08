@@ -3,14 +3,22 @@
 import React from "react";
 import { BattleResultData } from "../engine/BattleManager";
 import { BattleRewardResult } from "../types/player";
+import type { SharedSettleView } from "../store/useJsPlayerStore";
 import styles from "../styles/shenmaSanguoJs.module.css";
 
 interface BattleResultModalProps {
   show: boolean;
   result: BattleResultData | null;
   rewardResult?: BattleRewardResult | null;
+  /** 共用帳號這場的結算狀態（保存中、已保存、待確認、沒有送出、要人工確認）；訪客不傳 */
+  sharedSettle?: SharedSettleView | null;
+  /** 待確認時的「重新確認」（使用者明確按才原樣再送） */
+  onRetrySettle?: () => void;
+  retryDisabled?: boolean;
+  /** 重新確認沒有送出或沒有確認時的說明 */
+  retryMessage?: string | null;
   hasNextStage?: boolean;
-  /** 還有下一關，但還沒解鎖（共用帳號這場沒有寫入進度）：不顯示「已通關全部」，改說明下一關未解鎖 */
+  /** 還有下一關，但還沒解鎖：不顯示「已通關全部」，改說明下一關未解鎖 */
   nextLocked?: boolean;
   onRetry: () => void;
   onNextStage: () => void;
@@ -21,6 +29,10 @@ export const BattleResultModal: React.FC<BattleResultModalProps> = ({
   show,
   result,
   rewardResult,
+  sharedSettle = null,
+  onRetrySettle,
+  retryDisabled = false,
+  retryMessage = null,
   hasNextStage = true,
   nextLocked = false,
   onRetry,
@@ -30,7 +42,28 @@ export const BattleResultModal: React.FC<BattleResultModalProps> = ({
   if (!show || !result) return null;
 
   const isWin = result.result === "WIN";
+  // 共用帳號沒有本機的獎勵結果：星數直接用引擎回呼的這場結果
   const stars = rewardResult?.stars ?? (result.stars_earned || 0);
+  // 列出的獎勵：訪客用本機規則的結果；共用帳號只在後端保存並讀回確認後，列後端回應的這次獎勵
+  const loot =
+    rewardResult && !rewardResult.notSaved
+      ? rewardResult
+      : sharedSettle?.phase === "confirmed" && sharedSettle.reward
+        ? {
+            goldEarned: sharedSettle.reward.points,
+            expEarned: sharedSettle.reward.exp,
+            leveledUp: sharedSettle.reward.leveledUp,
+            newLevel: sharedSettle.reward.newLevel,
+            stageUnlocked: undefined,
+          }
+        : null;
+  const settleTestId: Record<SharedSettleView["phase"], string> = {
+    saving: "result-settle-saving",
+    confirmed: "result-settle-confirmed",
+    pending: "result-settle-pending",
+    "not-sent": "result-not-saved",
+    review: "result-settle-review",
+  };
 
   return (
     <div className={styles.resultOverlay} data-testid="result-overlay">
@@ -45,33 +78,51 @@ export const BattleResultModal: React.FC<BattleResultModalProps> = ({
           {"☆".repeat(Math.max(0, 3 - stars))}
         </div>
 
-        {/* 共用帳號：兩版的結算規則對齊前，勝負都不寫入雲端進度 */}
-        {rewardResult?.notSaved && (
-          <div className={styles.resultLoots} data-testid="result-not-saved">
+        {/* 共用帳號：這場結算的狀態（保存中、已保存、待確認、沒有送出、要人工確認） */}
+        {sharedSettle && (
+          <div
+            className={styles.resultLoots}
+            data-testid={settleTestId[sharedSettle.phase]}
+          >
             <div className={styles.resultLootItem}>
-              <span className={styles.resultLootName}>
-                這場的結果沒有寫入共用進度：不發獎勵、不解鎖關卡，雲端的進度不變（兩版的結算規則對齊前暫停）。
-              </span>
+              <span className={styles.resultLootName}>{sharedSettle.text}</span>
             </div>
+            {sharedSettle.phase === "pending" && onRetrySettle && (
+              <button
+                type="button"
+                className={`${styles.btnOutline} w-100 mt-2`}
+                onClick={onRetrySettle}
+                disabled={retryDisabled}
+                data-testid="result-settle-retry"
+              >
+                重新確認
+              </button>
+            )}
+            {retryMessage && (
+              <div className={styles.resultLootItem}>
+                <span
+                  className={styles.resultLootName}
+                  data-testid="result-settle-retry-feedback"
+                >
+                  {retryMessage}
+                </span>
+              </div>
+            )}
           </div>
         )}
 
-        {/* 斬獲獎勵與戰利品 */}
-        {isWin && rewardResult && !rewardResult.notSaved && (
+        {/* 斬獲獎勵與戰利品（共用帳號的落敗也有後端的點數與經驗） */}
+        {loot && (isWin || !!sharedSettle) && (
           <div className={styles.resultLoots}>
             <div className={styles.resultLootItem}>
               <span className={styles.resultLootName}>🪙 主公金幣</span>
-              <span className={styles.resultLootCount}>
-                +{rewardResult.goldEarned}
-              </span>
+              <span className={styles.resultLootCount}>+{loot.goldEarned}</span>
             </div>
             <div className={styles.resultLootItem}>
               <span className={styles.resultLootName}>🎓 主公經驗</span>
-              <span className={styles.resultLootCount}>
-                +{rewardResult.expEarned}
-              </span>
+              <span className={styles.resultLootCount}>+{loot.expEarned}</span>
             </div>
-            {rewardResult.leveledUp && (
+            {loot.leveledUp && (
               <div
                 className={styles.resultLootItem}
                 style={{
@@ -90,11 +141,11 @@ export const BattleResultModal: React.FC<BattleResultModalProps> = ({
                   className={styles.resultLootCount}
                   style={{ color: "#f59e0b" }}
                 >
-                  Lv.{rewardResult.newLevel}
+                  Lv.{loot.newLevel}
                 </span>
               </div>
             )}
-            {rewardResult.stageUnlocked && (
+            {loot.stageUnlocked && (
               <div
                 className={styles.resultLootItem}
                 style={{
@@ -113,7 +164,7 @@ export const BattleResultModal: React.FC<BattleResultModalProps> = ({
                   className={styles.resultLootCount}
                   style={{ color: "#34d399" }}
                 >
-                  {rewardResult.stageUnlocked}
+                  {loot.stageUnlocked}
                 </span>
               </div>
             )}
@@ -158,26 +209,31 @@ export const BattleResultModal: React.FC<BattleResultModalProps> = ({
               style={{ color: "rgba(255,255,255,0.8)" }}
               data-testid="result-next-locked"
             >
-              下一關還沒解鎖（這場沒有寫入共用進度）：可以從「選擇關卡」挑已解鎖的關卡，或用自由演練試玩。
+              下一關還沒解鎖：可以從「選擇關卡」挑已解鎖的關卡，或用自由演練試玩。
             </div>
           )}
-          {/* 共用帳號這場沒有寫入進度：不說「已通關全部」 */}
-          {isWin && !hasNextStage && !nextLocked && !rewardResult?.notSaved && (
-            <div
-              style={{
-                background: "rgba(245, 158, 11, 0.15)",
-                border: "1px dashed #f59e0b",
-                borderRadius: 8,
-                padding: "6px 10px",
-                textAlign: "center",
-                color: "#ffca28",
-                fontSize: "0.82rem",
-                fontWeight: 700,
-              }}
-            >
-              🏆 恭喜主公！已通關當前版本所有開放關卡！
-            </div>
-          )}
+          {/* 共用帳號只有保存並確認後才說「已通關全部」 */}
+          {isWin &&
+            !hasNextStage &&
+            !nextLocked &&
+            (sharedSettle
+              ? sharedSettle.phase === "confirmed"
+              : !rewardResult?.notSaved) && (
+              <div
+                style={{
+                  background: "rgba(245, 158, 11, 0.15)",
+                  border: "1px dashed #f59e0b",
+                  borderRadius: 8,
+                  padding: "6px 10px",
+                  textAlign: "center",
+                  color: "#ffca28",
+                  fontSize: "0.82rem",
+                  fontWeight: 700,
+                }}
+              >
+                🏆 恭喜主公！已通關當前版本所有開放關卡！
+              </div>
+            )}
           <div style={{ display: "flex", gap: 8 }}>
             <button
               type="button"

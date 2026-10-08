@@ -45,6 +45,12 @@ import { BattleTips } from "./BattleTips";
 import { NextWaveModal } from "./NextWaveModal";
 import styles from "../styles/shenmaSanguoJs.module.css";
 
+/** 關卡、武將與敵人設定都已讀到後端（或它的快取），不是內建的代用資料 */
+const isRemoteConfig = (mgr: StageDataManager) =>
+  mgr.getStages() !== BUILTIN_STAGES &&
+  mgr.getHeroesConfig() !== BUILTIN_HEROES_CONFIG &&
+  mgr.getEnemiesConfig() !== BUILTIN_ENEMIES_CONFIG;
+
 const DEFAULT_STATS: StatsSyncData = {
   battle_id: "",
   gold: 5000,
@@ -93,6 +99,11 @@ const ShenmaSanguoJsPage: React.FC = () => {
     writeBlocked,
     pendingCreateKey,
     error: accountError,
+    settleArmed,
+    sortieNote,
+    settleView,
+    pendingSettle,
+    retrySharedSettle,
   } = useJsPlayerStore();
 
   // 共用帳號不能寫入的原因（唯讀、結果待確認、正在保存）；訪客沒有限制
@@ -101,11 +112,19 @@ const ShenmaSanguoJsPage: React.FC = () => {
       ? null
       : readOnly
         ? "雲端存檔目前只能查看，不能寫入"
-        : writeBlocked
-          ? "上一個保存的結果不明：請先在主公資訊按「手動同步」確認"
-          : busy
-            ? "正在保存，請稍候"
-            : null;
+        : pendingSettle
+          ? pendingSettle.status === "unavailable"
+            ? "瀏覽器的暫存讀不到，暫時不能寫入"
+            : pendingSettle.status === "review"
+              ? "有一場戰鬥結算要人工確認，確認前不能寫入"
+              : "有一場戰鬥結算待確認：請先按「重新確認」"
+          : writeBlocked
+            ? "上一個保存的結果不明：請先在主公資訊按「手動同步」確認"
+            : busy
+              ? "正在保存，請稍候"
+              : settleArmed
+                ? "出征中：這場結算完成前不能修改共用存檔"
+                : null;
   const teamBlockReason =
     writeBlockReason ??
     (mode === "shared" && !teamEditable
@@ -186,6 +205,61 @@ const ShenmaSanguoJsPage: React.FC = () => {
   const currentStageRef = useRef<StageData>(BUILTIN_STAGES[0]);
   const statsRef = useRef<StatsSyncData>(stats);
   const activeTeamHeroesRef = useRef<HeroStateData[]>(activeTeamHeroes);
+  // 目前載入的這一場：每次 loadStage 產生一個 battleId，開戰與結算都用同一個（共用帳號在第一次進入戰鬥時固定）
+  const battleCtxRef = useRef<{
+    battleId: string;
+    stageId: string;
+    /** 這場用的是後端的關卡、武將與敵人設定 */
+    configReady: boolean;
+    /** 載入時這一關還沒解鎖（只能從自由演練進來） */
+    practice: boolean;
+    armTried: boolean;
+  } | null>(null);
+  const battleSeqRef = useRef(0);
+  const [settleRetryMsg, setSettleRetryMsg] = useState<string | null>(null);
+
+  /**
+   * 載入一場（初始、遠端設定就緒、換關、調隊備戰、下一關、重新挑戰都經過這裡）：產生新的 battleId、
+   * 記下這場是否用後端設定與是否為自由演練，放下上一場還沒結束的固定
+   */
+  const loadBattle = useCallback(
+    (stage: StageData, playerHeroes: HeroStateData[], builtin = false) => {
+      const bridge = bridgeRef.current;
+      if (!bridge) return;
+      const mgr = StageDataManager.getInstance();
+      const battleId = `battle_${Date.now()}_${++battleSeqRef.current}`;
+      const st = useJsPlayerStore.getState();
+      const c = st.canonical;
+      battleCtxRef.current = {
+        battleId,
+        stageId: stage.map_id,
+        configReady:
+          !builtin && isRemoteConfig(mgr) && mgr.getStages().includes(stage),
+        practice:
+          st.mode === "shared" &&
+          !isStageUnlocked(
+            stage.map_id,
+            typeof c?.max_stage === "string" ? c.max_stage : undefined,
+            c?.cleared_stages as Record<string, number> | undefined
+          ),
+        armTried: false,
+      };
+      st.disarmSharedSettle();
+      bridge.loadStage({
+        stageId: stage.map_id,
+        battleId,
+        totalWaves: stage.waves.length,
+        pathJson: stage.path_json,
+        waves: stage.waves,
+        heroesConfig: builtin ? BUILTIN_HEROES_CONFIG : mgr.getHeroesConfig(),
+        enemiesConfig: builtin
+          ? BUILTIN_ENEMIES_CONFIG
+          : mgr.getEnemiesConfig(),
+        playerHeroes,
+      });
+    },
+    []
+  );
 
   useEffect(() => {
     currentStageRef.current = currentStage;
@@ -200,64 +274,84 @@ const ShenmaSanguoJsPage: React.FC = () => {
   }, [activeTeamHeroes]);
 
   // 載入關卡（由關卡選擇視窗、結算下一關或重新挑戰觸發）
-  const loadStageData = useCallback((stage: StageData) => {
-    if (getStageDataProblem(stage)) {
-      console.warn("[ShenmaSanguoJs] 嘗試載入未開放關卡:", stage.map_id);
-      setIsStageSelectorOpen(true);
-      return;
-    }
+  const loadStageData = useCallback(
+    (stage: StageData) => {
+      if (getStageDataProblem(stage)) {
+        console.warn("[ShenmaSanguoJs] 嘗試載入未開放關卡:", stage.map_id);
+        setIsStageSelectorOpen(true);
+        return;
+      }
 
-    setCurrentStage(stage);
-    currentStageRef.current = stage;
-    setPlacementMenu(null);
-    setUpgradeTower(null);
-    setHeroInfo(null);
-    setBattleResult(null);
-    setBattleReward(null);
-    setPlacedHeroIds([]);
+      setCurrentStage(stage);
+      currentStageRef.current = stage;
+      setPlacementMenu(null);
+      setUpgradeTower(null);
+      setHeroInfo(null);
+      setBattleResult(null);
+      setBattleReward(null);
+      setPlacedHeroIds([]);
 
-    const stageMgr = StageDataManager.getInstance();
-    bridgeRef.current?.loadStage({
-      stageId: stage.map_id,
-      battleId: `battle_${Date.now()}`,
-      totalWaves: stage.waves.length,
-      pathJson: stage.path_json,
-      waves: stage.waves,
-      heroesConfig: stageMgr.getHeroesConfig(),
-      enemiesConfig: stageMgr.getEnemiesConfig(),
-      playerHeroes: activeTeamHeroesRef.current,
-    });
-  }, []);
+      loadBattle(stage, activeTeamHeroesRef.current);
+    },
+    [loadBattle]
+  );
 
   // 初始化 Bridge 實例（只在 mount 時建立一次，避免因 stats 或 currentStage 變更而重複重建）
   useEffect(() => {
     const bridge = new LocalGameBridge();
     bridgeRef.current = bridge;
 
-    bridge.onStatsChanged = (s) => setStats(s);
+    bridge.onStatsChanged = (s) => {
+      setStats(s);
+      // 共用帳號：這一場第一次進入戰鬥時固定（按進入戰場、自動、下一波都一樣），每場只試一次
+      const ctx = battleCtxRef.current;
+      if (
+        ctx &&
+        !ctx.armTried &&
+        s.game_state === GameState.BATTLE &&
+        s.battle_id === ctx.battleId
+      ) {
+        ctx.armTried = true;
+        const mgr = StageDataManager.getInstance();
+        const remote = ctx.configReady && isRemoteConfig(mgr);
+        useJsPlayerStore.getState().armSharedSettle({
+          battleId: ctx.battleId,
+          stageId: ctx.stageId,
+          configReady: remote,
+          completeStageIds: new Set(
+            remote
+              ? mgr
+                  .getStages()
+                  .filter((x) => !getStageDataProblem(x))
+                  .map((x) => x.map_id)
+              : []
+          ),
+          practice: ctx.practice,
+        });
+      }
+    };
     bridge.onPlacementMenuOpen = (m) => setPlacementMenu(m);
     bridge.onUpgradePanelOpen = (tw) => setUpgradeTower(tw);
     bridge.onHeroInfoOpen = (h) => setHeroInfo(h);
 
     bridge.onBattleEnded = (r) => {
+      // 只處理目前載入的這一場（舊場次晚到的回呼不改畫面、不結算）
+      const ctx = battleCtxRef.current;
+      if (!ctx || !r || r.battle_id !== ctx.battleId) return;
       setBattleResult(r);
-      if (r.result === "WIN") {
+      setSettleRetryMsg(null);
+      const store = useJsPlayerStore.getState();
+      if (store.mode === "shared") {
+        // 共用帳號：只用引擎回呼的凍結結果（星數、點數、擊殺、時間）結算，獎勵由後端計算
+        setBattleReward(null);
+        void store.settleSharedBattle(r);
+      } else if (r.result === "WIN") {
         const reward = settleBattle(
           currentStageRef.current.map_id,
           statsRef.current.hp,
           statsRef.current.max_hp
         );
         setBattleReward(reward);
-      } else if (useJsPlayerStore.getState().mode === "shared") {
-        // 共用帳號的落敗也照實說明：這場沒有寫入共用進度（勝負都一樣）
-        setBattleReward({
-          stars: 0,
-          expEarned: 0,
-          goldEarned: 0,
-          leveledUp: false,
-          newLevel: useJsPlayerStore.getState().player?.level ?? 1,
-          notSaved: true,
-        });
       } else {
         setBattleReward(null);
       }
@@ -271,18 +365,8 @@ const ShenmaSanguoJsPage: React.FC = () => {
       }
     }
 
-    // 初始載入當前關卡
-    const initialStage = currentStageRef.current;
-    bridge.loadStage({
-      stageId: initialStage.map_id,
-      battleId: `battle_${Date.now()}`,
-      totalWaves: initialStage.waves.length,
-      pathJson: initialStage.path_json,
-      waves: initialStage.waves,
-      heroesConfig: BUILTIN_HEROES_CONFIG,
-      enemiesConfig: BUILTIN_ENEMIES_CONFIG,
-      playerHeroes: activeTeamHeroesRef.current,
-    });
+    // 初始載入當前關卡（內建的代用設定：這場不寫入共用進度）
+    loadBattle(currentStageRef.current, activeTeamHeroesRef.current, true);
 
     if (typeof window !== "undefined") {
       (window as unknown as { __testBridge?: LocalGameBridge }).__testBridge =
@@ -299,6 +383,17 @@ const ShenmaSanguoJsPage: React.FC = () => {
         );
         if (match) {
           setCurrentStage(match);
+          // 遠端設定就緒：還沒開打時改用後端的資料重新載入這一關（新的 battleId）
+          const cur = statsRef.current;
+          if (
+            bridgeRef.current === bridge &&
+            cur.game_state === GameState.PREP &&
+            cur.wave === 0 &&
+            !cur.paused
+          ) {
+            currentStageRef.current = match;
+            loadBattle(match, activeTeamHeroesRef.current);
+          }
         }
       }
     });
@@ -311,25 +406,14 @@ const ShenmaSanguoJsPage: React.FC = () => {
       bridge.destroy();
       bridgeRef.current = null;
     };
-  }, [settleBattle]);
+  }, [settleBattle, loadBattle]);
 
   // 當隊伍陣容變更且處於備戰階段時，平滑更新戰場武將陣容
   useEffect(() => {
     if (bridgeRef.current && stats.game_state === GameState.PREP) {
-      const stageMgr = StageDataManager.getInstance();
-      const st = currentStageRef.current;
-      bridgeRef.current.loadStage({
-        stageId: st.map_id,
-        battleId: `battle_${Date.now()}`,
-        totalWaves: st.waves.length,
-        pathJson: st.path_json,
-        waves: st.waves,
-        heroesConfig: stageMgr.getHeroesConfig(),
-        enemiesConfig: stageMgr.getEnemiesConfig(),
-        playerHeroes: activeTeamHeroes,
-      });
+      loadBattle(currentStageRef.current, activeTeamHeroes);
     }
-  }, [activeTeamHeroes, stats.game_state]);
+  }, [activeTeamHeroes, stats.game_state, loadBattle]);
 
   // 畫布回調
   const handleCanvasReady = useCallback((canvas: HTMLCanvasElement) => {
@@ -421,7 +505,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
     loadStageData(currentStage);
   };
 
-  // 下一關：資料完整才算存在；共用帳號另外要在雲端已確認的進度裡已解鎖（這輪的戰鬥結果不寫入，不會因為這場勝利而解鎖）
+  // 下一關：資料完整才算存在；共用帳號另外要在雲端已確認的進度裡已解鎖（這場的結算讀回確認後才會更新）
   const nextStageCandidate = useMemo(() => {
     const nextMapId = getNextStage(currentStage.map_id);
     const nextStage = allStages.find((s) => s.map_id === nextMapId);
@@ -449,6 +533,20 @@ const ShenmaSanguoJsPage: React.FC = () => {
 
   // 隊伍保存（共用帳號等伺服器回應）；成功後畫面的隊伍更新，備戰中會重新傳給 Bridge
   const handleSaveTeam = (newTeam: TeamSlot[]) => updateTeam(newTeam);
+
+  // 共用帳號：使用者明確按「重新確認」才原樣再送待確認的結算（不自動重送）
+  const handleRetrySettle = async () => {
+    setSettleRetryMsg(null);
+    const res = await retrySharedSettle();
+    if (!res.success) setSettleRetryMsg(res.error ?? "這次沒有確認");
+  };
+  const resultSettleView =
+    mode === "shared" &&
+    battleResult &&
+    settleView &&
+    settleView.battleId === battleResult.battle_id
+      ? settleView
+      : null;
 
   return (
     <div className={styles.singlePage}>
@@ -693,17 +791,55 @@ const ShenmaSanguoJsPage: React.FC = () => {
       </div>
 
       {/* 共用帳號的說明：不能出征的原因與存檔的狀態（唯讀、衝突、結果待確認、不支援的資料） */}
-      {mode === "shared" && (sortieBlockReason || notice) && (
-        <div
-          className="small text-warning px-2 py-1"
-          data-testid="shared-account-notice"
-        >
-          {sortieBlockReason && (
-            <div data-testid="sortie-blocked">{sortieBlockReason}</div>
-          )}
-          {notice && <div>{notice}</div>}
-        </div>
-      )}
+      {mode === "shared" &&
+        (sortieBlockReason ||
+          notice ||
+          sortieNote ||
+          pendingSettle ||
+          (settleView?.phase === "confirmed" && !battleResult)) && (
+          <div
+            className="small text-warning px-2 py-1"
+            data-testid="shared-account-notice"
+          >
+            {sortieBlockReason && (
+              <div data-testid="sortie-blocked">{sortieBlockReason}</div>
+            )}
+            {sortieNote && (
+              <div data-testid="sortie-settle-note">{sortieNote}</div>
+            )}
+            {notice && <div>{notice}</div>}
+            {/* 重新確認後的結果（結算視窗關掉之後） */}
+            {!pendingSettle &&
+              !battleResult &&
+              settleView &&
+              settleView.phase === "confirmed" && (
+                <div data-testid="settle-confirmed">{settleView.text}</div>
+              )}
+            {pendingSettle?.status === "pending" && !battleResult && (
+              <div data-testid="settle-pending">
+                {settleView && settleView.phase !== "saving" && (
+                  <span data-testid="settle-pending-status">
+                    {settleView.text}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-warning ms-2"
+                  onClick={() => void handleRetrySettle()}
+                  disabled={busy}
+                  data-testid="settle-retry"
+                >
+                  重新確認
+                </button>
+                {settleRetryMsg && (
+                  <div data-testid="settle-retry-feedback">
+                    {settleRetryMsg}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
       {/* 懸浮玩法提示 */}
       {isBattleTipsOpen && (
@@ -825,6 +961,10 @@ const ShenmaSanguoJsPage: React.FC = () => {
         show={battleResult !== null}
         result={battleResult}
         rewardResult={battleReward}
+        sharedSettle={resultSettleView}
+        onRetrySettle={() => void handleRetrySettle()}
+        retryDisabled={busy}
+        retryMessage={resultSettleView ? settleRetryMsg : null}
         hasNextStage={hasNextPlayableStage}
         nextLocked={!!nextStageCandidate && !nextStageUnlocked}
         onRetry={handleRetry}
