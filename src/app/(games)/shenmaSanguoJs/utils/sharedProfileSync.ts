@@ -111,14 +111,31 @@ export interface SettleRequest {
 
 export const SETTLE_CONTRACT_V2 = 2;
 
-/** 建立一場結算的固定請求；base_rev 不是非負整數時不建立（沒有版本就不寫） */
+/** 非負安全整數 */
+const isCount = (v: unknown): v is number =>
+  typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+
+/**
+ * 建立一場結算的固定請求；任何一欄不合法就不建立（沒有版本就不寫）：
+ * request_id 非空且最多 100 字、base_rev 是非負安全整數、stage_id 非空字串且最多 50 字、result 剛好 WIN 或 LOSE、
+ * kills／time_seconds 是非負安全整數、星數 0～3 的整數、點數是非負安全整數
+ */
 export function buildSettleRequest(
   input: SettleInput,
   requestId: string,
   baseRev: number | null
 ): SettleRequest | null {
-  if (!requestId || requestId.length > 100) return null;
-  if (revOf(baseRev) === null) return null;
+  if (typeof requestId !== "string" || !requestId || requestId.length > 100)
+    return null;
+  if (revOf(baseRev) === null || !Number.isSafeInteger(baseRev)) return null;
+  if (
+    typeof input.stageId !== "string" ||
+    !input.stageId ||
+    input.stageId.length > 50
+  )
+    return null;
+  if (input.result !== "WIN" && input.result !== "LOSE") return null;
+  if (!isCount(input.kills) || !isCount(input.timeSeconds)) return null;
   if (
     !(
       Number.isInteger(input.starsEarned) &&

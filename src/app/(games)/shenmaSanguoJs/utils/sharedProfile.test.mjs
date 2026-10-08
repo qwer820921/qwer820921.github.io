@@ -753,6 +753,120 @@ const RICH = () => ({
   );
 }
 
+// ── 結算請求的欄位守門與邊界對照組（邊界本身的完整測試在 sharedBattleSettlement.test.mjs） ──
+{
+  const input = {
+    stageId: "chapter1_2",
+    result: "WIN",
+    starsEarned: 3,
+    kills: 12,
+    timeSeconds: 90,
+    battlePoints: 140,
+  };
+  const bad = [
+    ["版本是字串", input, "r-1", "4"],
+    ["版本是小數", input, "r-1", 1.5],
+    ["版本是負數", input, "r-1", -1],
+    ["版本超過安全整數", input, "r-1", 2 ** 53],
+    ["版本 NaN", input, "r-1", NaN],
+    ["request_id 不是字串", input, 7, 4],
+    ["空的關卡", { ...input, stageId: "" }, "r-1", 4],
+    ["51 字的關卡", { ...input, stageId: "c".repeat(51) }, "r-1", 4],
+    ["關卡不是字串", { ...input, stageId: 12 }, "r-1", 4],
+    ["result 小寫", { ...input, result: "win" }, "r-1", 4],
+    ["result 不明", { ...input, result: "DRAW" }, "r-1", 4],
+    ["kills 負數", { ...input, kills: -1 }, "r-1", 4],
+    ["kills 小數", { ...input, kills: 1.5 }, "r-1", 4],
+    ["kills 字串", { ...input, kills: "12" }, "r-1", 4],
+    ["kills NaN", { ...input, kills: NaN }, "r-1", 4],
+    ["kills Infinity", { ...input, kills: Infinity }, "r-1", 4],
+    ["time 負數", { ...input, timeSeconds: -1 }, "r-1", 4],
+    ["time 小數", { ...input, timeSeconds: 9.5 }, "r-1", 4],
+    ["time 字串", { ...input, timeSeconds: "90" }, "r-1", 4],
+    ["星數小數", { ...input, starsEarned: 2.5 }, "r-1", 4],
+    ["點數超過安全整數", { ...input, battlePoints: 2 ** 53 }, "r-1", 4],
+  ].map(([name, i, id, rev]) => [name, sync.buildSettleRequest(i, id, rev)]);
+  const ok = [
+    sync.buildSettleRequest({ ...input, stageId: "c".repeat(50) }, "r-1", 0),
+    sync.buildSettleRequest(
+      { ...input, result: "LOSE", starsEarned: 0, kills: 0, timeSeconds: 0 },
+      "x".repeat(100),
+      4
+    ),
+  ];
+  check(
+    "結算請求守門：版本（字串、小數、負數、超過安全整數、NaN）、request_id 不是字串、關卡（空、51 字、不是字串）、result（小寫、不明）、kills／time（負數、小數、字串、NaN、Infinity）、星數小數、點數超過安全整數都不建立；50 字關卡、版本 0、100 字 id、全 0 的落敗照樣建立",
+    bad.every(([, r]) => r === null) && ok.every((r) => r !== null),
+    { bad: bad.filter(([, r]) => r !== null), ok }
+  );
+}
+{
+  const bs = require(join(HERE, "sharedBattleSettlement.ts"));
+  const armed = bs.armSettle({
+    accountKey: "acc-A",
+    epoch: 1,
+    baseRev: 4,
+    stageId: "chapter1_2",
+    battleId: "battle_1",
+    requestId: "r-1",
+  }).armed;
+  const ctx = {
+    mode: "shared",
+    accountKey: "acc-A",
+    epoch: 1,
+    readOnly: false,
+    busy: false,
+    writeBlocked: false,
+    teamSupported: true,
+    configReady: true,
+    practice: false,
+    completeStageIds: new Set(["chapter1_1", "chapter1_2"]),
+    maxStage: "chapter1_2",
+  };
+  const viaAdapter = bs.prepareSettle(armed, ctx, {
+    result: "WIN",
+    stage_id: "chapter1_2",
+    battle_id: "battle_1",
+    stars_earned: 3,
+    kills: 12,
+    time_seconds: 90,
+    loots: [{ item: "battle_points", count: 140 }],
+  });
+  const direct = sync.buildSettleRequest(
+    {
+      stageId: "chapter1_2",
+      result: "WIN",
+      starsEarned: 3,
+      kills: 12,
+      timeSeconds: 90,
+      battlePoints: 140,
+    },
+    "r-1",
+    4
+  );
+  const blocked = bs.prepareSettle(
+    armed,
+    { ...ctx, practice: true },
+    {
+      result: "WIN",
+      stage_id: "chapter1_2",
+      battle_id: "battle_1",
+      stars_earned: 3,
+      kills: 12,
+      time_seconds: 90,
+      loots: [{ item: "battle_points", count: 140 }],
+    }
+  );
+  check(
+    "邊界對照組：同一場經過結算邊界與直接建立的請求完全相同（不另算獎勵、不改欄位）；自由演練時邊界不產生請求",
+    viaAdapter.ok &&
+      same(viaAdapter.request, direct) &&
+      !blocked.ok &&
+      blocked.reason === "practice",
+    { viaAdapter, direct, blocked }
+  );
+}
+
 const failed = results.filter((r) => !r.pass).length;
 console.log("RESULT_JSON " + JSON.stringify({ total: results.length, failed }));
 process.exit(failed ? 1 : 0);
