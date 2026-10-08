@@ -499,6 +499,9 @@ PLAYWRIGHT_DIR=<含 playwright 套件的 node_modules>   node scripts/shenma-reg
 
 **驗證正式靜態匯出**（Round 13）：`npm run build` 之後停掉 dev，用 `node scripts/shenma-regression/tools/serve-out.mjs` 在 3000 埠以 GitHub Pages 的方式提供 `out/`（`/path` → `path.html`，不送 COOP／COEP），執行器加上 `LOCAL_ASSETS=1`：正式版的 `_next` 資源指向 `https://qwer820921.github.io/`（assetPrefix），這些請求一律由本機 `out/` 回應，不會連到正式站。和正式站的差別：頁面在 `localhost`、資源是另一個來源（正式站兩者同源）；dev 專用的已知雜訊不會出現。
 
+- **Windows 建置的區段 RSC**：Next 16 在 Windows 建置時把兩層以上的預先載入檔寫成巢狀目錄（`__next.<段1>/<段2>.txt`），瀏覽器要的是扁平網址（`__next.<段1>.<段2>.txt`）；正式站是 Linux 建置，產物就是扁平檔。`serve-out.mjs` 的 `resolveOutPath` 只在扁平檔找不到、而且檔名符合這個格式時改找巢狀檔，其他缺檔照樣 404；這只讓本機和正式站提供的內容一致，不代表正式站沒有其他缺檔。
+- **console error 明細只列前 5 筆**：harness 的「沒有非預期的 console error」判定看全部，但結果裡的明細只保留前 5 筆；要知道實際有哪些請求失敗，看執行器另外記的網路紀錄，不要只看明細分類。
+
 **`r10-web.js` 的舊產物**：放在已 gitignore 的證據目錄，執行前先取出（`24b1315b` 是正式站目前部署的版本；`index.js`、`index.wasm` 與目前相同，不需要替換）：
 
 ```bash

@@ -112,7 +112,7 @@ const routes: RouteGroup[] = [
   },
   {
     type: "測試",
-    icon: "/images/icon/test_icon.webp",
+    icon: "/images/icon/tools_icon.webp",
     routeConfig: [
       { path: ROUTES.LINE_TEST, name: "測試 LINE 串接", showInNavbar: true },
       { path: ROUTES.WORK_PLAN, name: "工時計畫", showInNavbar: true },

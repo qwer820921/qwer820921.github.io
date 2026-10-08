@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { getSortedPostsData } from "@/app/(general)/blog/services/blogService";
 import { ROUTES } from "@/constants/routes";
 import { seoMap } from "@/constants/seoMap";
@@ -31,6 +33,22 @@ export const metadata = {
   },
 };
 
+/**
+ * 首頁卡片的封面：建置時列出 public/images/cover 實際有的 .webp 檔名（不含副檔名、大小寫照實）。
+ * 沒有封面的卡片直接用文字，不去請求不存在的圖片；讀不到目錄時回 null，照舊每張卡片都嘗試載入封面
+ */
+function readCoverNames(): string[] | null {
+  try {
+    return fs
+      .readdirSync(path.join(process.cwd(), "public/images/cover"))
+      .filter((f) => f.endsWith(".webp"))
+      .map((f) => f.slice(0, -".webp".length))
+      .sort();
+  } catch {
+    return null;
+  }
+}
+
 export default function HomePage() {
   const allPosts = getSortedPostsData();
   const latestPosts = allPosts.slice(0, 3);
@@ -52,7 +70,10 @@ export default function HomePage() {
           </>
         }
       />
-      <HomePageContent latestPosts={latestPosts} />
+      <HomePageContent
+        latestPosts={latestPosts}
+        coverNames={readCoverNames()}
+      />
     </>
   );
 }

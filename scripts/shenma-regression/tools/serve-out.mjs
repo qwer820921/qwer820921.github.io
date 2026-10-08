@@ -1,5 +1,7 @@
 // 用 GitHub Pages 的方式在本機提供 npm run build 產生的 out/（驗證正式靜態匯出，而不是 next dev）
 // - /path → out/path（檔案）→ out/path.html → out/path/index.html；都沒有時回 out/404.html（狀態 404）
+// - 例外只有一種：Windows 建置把兩層以上的區段 RSC（__next.<段1>.<段2>.txt）寫成巢狀目錄，
+//   正式站（Linux 建置）是扁平檔；扁平檔找不到時才換成巢狀路徑（見 windowsNestedRsc，其他缺檔照樣 404）
 // - 不送 COOP／COEP（和 GitHub Pages 相同），跨來源隔離只能靠 Service Worker
 // - 正式版的 _next 資源指向 https://qwer820921.github.io/_next/（assetPrefix），在正式站和頁面同源。
 //   本機的頁面在 localhost，資源就變成另一個來源：跨來源隔離的頁面（bgRemover，COEP require-corp）會擋下
@@ -8,7 +10,7 @@
 // 用法：node scripts/shenma-regression/tools/serve-out.mjs [port]（預設 3000；先停掉 npm run dev）
 import { createServer } from "node:http";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, extname, join, normalize, resolve } from "node:path";
+import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -42,7 +44,48 @@ export function resolveOutPath(pathname) {
   if (isFile(base)) return base;
   if (isFile(base + ".html")) return base + ".html";
   if (isFile(join(base, "index.html"))) return join(base, "index.html");
-  return null;
+  const nested = windowsNestedRsc(pathname, p);
+  return nested && isFile(nested) ? nested : null;
+}
+
+// 區段 RSC 檔的每一段只能是這些字元（Next 編碼後的 route group「!…」、$d$slug、__PAGE__、@parallel 等）
+const RSC_SEGMENT = /^[A-Za-z0-9_\-@!$]+$/;
+// 原始網址（解碼與正規化之前）裡不接受的寫法：編碼的點、斜線、反斜線、NUL，原始反斜線，冒號（磁碟代號）
+const UNSAFE_RAW = /%2e|%2f|%5c|%00|\\|:/i;
+
+/** 整條原始 pathname 是「乾淨」的：以 / 開頭、沒有 UNSAFE_RAW、每一段都非空而且不是「.」或「..」 */
+function isPlainRawPath(raw) {
+  if (!raw.startsWith("/") || UNSAFE_RAW.test(raw)) return false;
+  return raw
+    .slice(1)
+    .split("/")
+    .every((s) => s !== "" && s !== "." && s !== "..");
+}
+
+/**
+ * Windows 建置的兩層以上區段 RSC：瀏覽器要的是扁平檔 __next.<段1>.<段2>….txt（Linux 建置、GitHub Pages 上就是這樣），
+ * Windows 上的 next 把它寫成巢狀的 __next.<段1>/<段2>/….txt。上面的直接查找都找不到時才換成巢狀路徑：
+ * 整條原始路徑要乾淨（isPlainRawPath），原始檔名不能有任何百分比編碼，各段非空、只能是 RSC_SEGMENT 的字元、至少兩段，
+ * 副檔名剛好是 .txt，而且換算後的路徑仍要在 out/ 底下；其他缺檔不做任何替代
+ */
+function windowsNestedRsc(rawPathname, p) {
+  if (!isPlainRawPath(rawPathname)) return null;
+  const rawName = rawPathname.slice(rawPathname.lastIndexOf("/") + 1);
+  if (rawName.includes("%")) return null;
+  const m = /^(.*\/)?__next\.([^/]+)\.txt$/.exec(p);
+  if (!m) return null;
+  const segs = m[2].split(".");
+  if (segs.length < 2 || !segs.every((s) => RSC_SEGMENT.test(s))) return null;
+  const candidate = resolve(
+    join(
+      OUT,
+      m[1] || "",
+      `__next.${segs[0]}`,
+      ...segs.slice(1, -1),
+      `${segs[segs.length - 1]}.txt`
+    )
+  );
+  return candidate.startsWith(resolve(OUT) + sep) ? candidate : null;
 }
 
 const PROD_ASSETS = "https://qwer820921.github.io/_next/";

@@ -11,10 +11,19 @@ import styles from "./HomePageContent.module.css";
 
 interface HomePageContentProps {
   latestPosts: Omit<BlogPost, "content">[];
+  /** 建置時 public/images/cover 實際有的封面檔名（不含 .webp）；null 代表不知道，每張卡片照舊嘗試載入 */
+  coverNames: string[] | null;
 }
 
-const ToolCard = ({ route }: { route: RouteConfig }) => {
-  const [hasError, setHasError] = useState(false);
+const ToolCard = ({
+  route,
+  hasCover,
+}: {
+  route: RouteConfig;
+  hasCover: boolean;
+}) => {
+  // 已知沒有封面：一開始就用文字，不產生圖片也不送請求
+  const [hasError, setHasError] = useState(!hasCover);
   const [isLoaded, setIsLoaded] = useState(false);
   const imagePath = `/images/cover${route.path}.webp`;
 
@@ -71,7 +80,11 @@ const ToolCard = ({ route }: { route: RouteConfig }) => {
   );
 };
 
-export default function HomePageContent({ latestPosts }: HomePageContentProps) {
+export default function HomePageContent({
+  latestPosts,
+  coverNames,
+}: HomePageContentProps) {
+  const coverSet = coverNames ? new Set(coverNames) : null;
   // 先把每組中要顯示的 route 篩出來（showInNavbar 且 path !== "/"）
   const groupedTools = (routeGroups as RouteGroup[])
     .map((group) => ({
@@ -186,7 +199,11 @@ export default function HomePageContent({ latestPosts }: HomePageContentProps) {
                 className={`g-4 ${styles.toolsGrid}`}
               >
                 {group.routes.map((route: RouteConfig) => (
-                  <ToolCard key={route.path} route={route} />
+                  <ToolCard
+                    key={route.path}
+                    route={route}
+                    hasCover={!coverSet || coverSet.has(route.path.slice(1))}
+                  />
                 ))}
               </Row>
             </section>
