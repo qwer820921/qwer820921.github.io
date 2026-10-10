@@ -1,5 +1,5 @@
 1:"$Sreact.fragment"
-2:I[339756,["https://qwer820921.github.io/_next/static/chunks/0__txpvsmdwpk.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js"],"default"]
-3:I[837457,["https://qwer820921.github.io/_next/static/chunks/0__txpvsmdwpk.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js"],"default"]
-4:[]
-0:{"rsc":["$","$1","c",{"children":[null,["$","$L2",null,{"parallelRouterKey":"children","template":["$","$L3",null,{}]}]]}],"isPartial":false,"staleTime":300,"varyParams":"$W4","buildId":"VDzSg1GOXlD7tMk6IFPL3"}
+2:I[339756,["https://qwer820921.github.io/_next/static/chunks/1044q5xso3iyc.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js"],"default"]
+3:I[837457,["https://qwer820921.github.io/_next/static/chunks/1044q5xso3iyc.js","https://qwer820921.github.io/_next/static/chunks/0i.l9589uvx0j.js"],"default"]
+:HL["https://qwer820921.github.io/_next/static/chunks/0oz~p3kf0y7om.css","style"]
+0:{"rsc":["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"https://qwer820921.github.io/_next/static/chunks/0oz~p3kf0y7om.css","precedence":"next"}]],["$","div",null,{"className":"shenmaSanguoJs-module__Dz5dNW__gameBody","children":["$","$L2",null,{"parallelRouterKey":"children","template":["$","$L3",null,{}]}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"KeQ2fTz1fEg38c1YY8qwe"}
