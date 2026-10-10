@@ -1136,7 +1136,23 @@ for (const [name, fn] of [
   for (const [name, make] of variants) {
     await sendWith("test_settle_w", [["save_result", "network"]]);
     const k = pendingKey();
-    const env = JSON.parse(pendingRaw());
+    const raw0 = pendingRaw();
+    // 前置：第一次送出（網路錯誤）後要留有可解析的暫存；沒有或不是 JSON 物件時記成這一輪不通過（不略過、不中斷）
+    let env = null;
+    if (raw0 !== null) {
+      try {
+        env = JSON.parse(raw0);
+      } catch {
+        env = null;
+      }
+    }
+    if (!k || !env || typeof env !== "object") {
+      out.push({
+        name,
+        pre: raw0 === null ? "第一次送出後沒有暫存" : "暫存不是 JSON 物件",
+      });
+      continue;
+    }
     const hold = rule("get_profile", "hold");
     const p = st().retrySharedSettle();
     // 重新確認一定要先讀回（沒走到讀回時記下來、這項不通過，不讓整支測試中斷）
@@ -1160,6 +1176,7 @@ for (const [name, fn] of [
     "重新確認的讀回期間暫存被改成另一份自洽內容（版本 6、點數 2222）、換了這一場或被刪掉：不送（只有第一次的 save_result），改成人工確認",
     out.every(
       (x) =>
+        !x.pre &&
         x.reached &&
         x.valid &&
         !x.ok &&

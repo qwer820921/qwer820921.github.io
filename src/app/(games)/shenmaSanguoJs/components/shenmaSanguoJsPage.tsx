@@ -28,6 +28,7 @@ import {
   getStageDataProblem,
   isStageUnlocked,
 } from "../utils/stagePlayability";
+import { describePendingStage } from "../utils/sharedSettleDisplay";
 import { useJsPlayerStore } from "../store/useJsPlayerStore";
 import { BattleRewardResult, TeamSlot } from "../types/player";
 import { KeySetupModal } from "./KeySetupModal";
@@ -125,6 +126,15 @@ const ShenmaSanguoJsPage: React.FC = () => {
               : settleArmed
                 ? "出征中：這場結算完成前不能修改共用存檔"
                 : null;
+  // 待確認結算是哪一關：只用暫存記下的關卡 ID（不是目前選中的關卡）；關卡名稱確認來自後端才顯示名稱
+  const pendingStageLabel =
+    mode === "shared" && pendingSettle
+      ? describePendingStage(
+          pendingSettle,
+          StageDataManager.getInstance().getStages(),
+          StageDataManager.getInstance().hasConfirmedStageNames()
+        )
+      : null;
   const teamBlockReason =
     writeBlockReason ??
     (mode === "shared" && !teamEditable
@@ -808,6 +818,10 @@ const ShenmaSanguoJsPage: React.FC = () => {
               <div data-testid="sortie-settle-note">{sortieNote}</div>
             )}
             {notice && <div>{notice}</div>}
+            {/* 待確認的這一場是哪一關（只是資訊，沒有操作） */}
+            {pendingStageLabel && (
+              <div data-testid="settle-stage">{pendingStageLabel.text}</div>
+            )}
             {/* 重新確認後的結果（結算視窗關掉之後） */}
             {!pendingSettle &&
               !battleResult &&

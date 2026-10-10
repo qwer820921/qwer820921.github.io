@@ -6,13 +6,33 @@
  * 3. 離線或網路異常時平滑降級至 BUILTIN_STAGES，保證 100% 可玩性
  */
 
-import { StageData, BUILTIN_STAGES, BUILTIN_HEROES_CONFIG, BUILTIN_ENEMIES_CONFIG } from "./builtinData";
+import {
+  StageData,
+  BUILTIN_STAGES,
+  BUILTIN_HEROES_CONFIG,
+  BUILTIN_ENEMIES_CONFIG,
+} from "./builtinData";
 import { HeroConfigData } from "./entities/HeroEntity";
 import { EnemyConfigData } from "./entities/EnemyEntity";
 
 const STATIC_LOCAL_KEY = "shenma_static_config";
 const STATIC_TS_KEY = "shenma_static_ts";
 const CACHE_TTL_MS = 60_000; // 60 秒
+/** 快取裡和 maps 一起保存的名稱來源資料版本 */
+const MAPS_SOURCE_VERSION = 1;
+
+/** 這份關卡清單的指紋（關數＋每關的 map_id 與名稱）：來源資料要和目前的 maps 對得上 */
+function stagesFingerprint(stages: StageData[]): string {
+  let h = 0x811c9dc5;
+  for (const s of stages) {
+    const part = `${s.map_id}\u0000${s.name}\u0001`;
+    for (let i = 0; i < part.length; i++) {
+      h ^= part.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+  }
+  return `${stages.length}:${h.toString(16)}`;
+}
 
 const DEFAULT_GAS_URL =
   process.env.NEXT_PUBLIC_SHENMA_GAS_URL ||
@@ -26,6 +46,8 @@ export class StageDataManager {
   private enemiesConfig: EnemyConfigData[] = BUILTIN_ENEMIES_CONFIG;
   private isLoaded = false;
   private isLoading = false;
+  /** 名稱來源已確認的那一份關卡清單（正式 get_all_maps 的正常回應，或帶著相符來源資料的快取）；換掉 stages 就不再相符 */
+  private namesConfirmedFor: StageData[] | null = null;
 
   private constructor() {}
 
@@ -48,6 +70,15 @@ export class StageDataManager {
    */
   public getStageById(mapId: string): StageData | null {
     return this.stages.find((s) => s.map_id === mapId) ?? null;
+  }
+
+  /**
+   * 目前這份關卡清單的名稱是否確認來自後端（只給顯示用；內建資料、空或無效的回應、沒有來源資料的舊快取都不算）
+   */
+  public hasConfirmedStageNames(): boolean {
+    return (
+      this.namesConfirmedFor !== null && this.namesConfirmedFor === this.stages
+    );
   }
 
   public getHeroesConfig(): HeroConfigData[] {
@@ -84,11 +115,25 @@ export class StageDataManager {
           const parsed = JSON.parse(raw);
           if (parsed && Array.isArray(parsed.maps) && parsed.maps.length > 0) {
             this.stages = this.normalizeMaps(parsed.maps);
+            // 名稱來源：同一份快取裡、版本可辨識、和這份 maps 對得上的來源資料才算確認（舊快取沒有就不確認）
+            const src = parsed.mapsSource;
+            this.namesConfirmedFor =
+              this.stages !== BUILTIN_STAGES &&
+              !!src &&
+              src.v === MAPS_SOURCE_VERSION &&
+              src.action === "get_all_maps" &&
+              src.fp === stagesFingerprint(this.stages)
+                ? this.stages
+                : null;
             if (Array.isArray(parsed.heroesConfig)) {
-              this.heroesConfig = this.normalizeHeroesConfig(parsed.heroesConfig);
+              this.heroesConfig = this.normalizeHeroesConfig(
+                parsed.heroesConfig
+              );
             }
             if (Array.isArray(parsed.enemiesConfig)) {
-              this.enemiesConfig = this.normalizeEnemiesConfig(parsed.enemiesConfig);
+              this.enemiesConfig = this.normalizeEnemiesConfig(
+                parsed.enemiesConfig
+              );
             }
             this.isLoaded = true;
 
@@ -132,11 +177,26 @@ export class StageDataManager {
 
       if (mapsRes && Array.isArray(mapsRes.maps) && mapsRes.maps.length > 0) {
         this.stages = this.normalizeMaps(mapsRes.maps);
+        // 名稱來源：正常成功的回應（status 200、沒有 error）而且正規化出後端的關卡才確認；回退成內建資料不確認
+        this.namesConfirmedFor =
+          mapsRes.status === 200 &&
+          mapsRes.error === undefined &&
+          this.stages !== BUILTIN_STAGES
+            ? this.stages
+            : null;
       }
-      if (heroesRes && Array.isArray(heroesRes.heroes) && heroesRes.heroes.length > 0) {
+      if (
+        heroesRes &&
+        Array.isArray(heroesRes.heroes) &&
+        heroesRes.heroes.length > 0
+      ) {
         this.heroesConfig = this.normalizeHeroesConfig(heroesRes.heroes);
       }
-      if (enemiesRes && Array.isArray(enemiesRes.enemies) && enemiesRes.enemies.length > 0) {
+      if (
+        enemiesRes &&
+        Array.isArray(enemiesRes.enemies) &&
+        enemiesRes.enemies.length > 0
+      ) {
         this.enemiesConfig = this.normalizeEnemiesConfig(enemiesRes.enemies);
       }
 
@@ -151,6 +211,14 @@ export class StageDataManager {
               maps: this.stages,
               heroesConfig: this.heroesConfig,
               enemiesConfig: this.enemiesConfig,
+              // 和這份 maps 一起保存的名稱來源資料（沒有確認時是 null）
+              mapsSource: this.hasConfirmedStageNames()
+                ? {
+                    v: MAPS_SOURCE_VERSION,
+                    action: "get_all_maps",
+                    fp: stagesFingerprint(this.stages),
+                  }
+                : null,
             })
           );
           localStorage.setItem(STATIC_TS_KEY, String(Date.now()));

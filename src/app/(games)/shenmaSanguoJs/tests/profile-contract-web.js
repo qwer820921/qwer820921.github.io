@@ -2366,6 +2366,465 @@ module.exports = async function profileContractWeb(page) {
     return E;
   });
 
+  // ═══ 待確認結算顯示它自己的關卡（只用暫存記下的關卡 ID；後端設定就緒才顯示名稱；只是資訊） ═══
+  // 關卡名稱用正式後端 get_all_maps 的名稱（chapter1_1 黃巾起義、chapter1_2 桃園結義、chapter1_3 討伐黃巾）
+  const FMAPS = [
+    { ...MAP("chapter1_1", 1), name: "黃巾起義" },
+    { ...MAP("chapter1_2", 2), name: "桃園結義" },
+    { ...MAP("chapter1_3", 3), name: "討伐黃巾" },
+  ];
+  const stageLabel = (p) => text(p, '[data-testid="settle-stage"]');
+  /** 說明那一行裡沒有可以操作的東西 */
+  const labelInert = async (p) =>
+    (await p
+      .locator(
+        '[data-testid="settle-stage"] button, [data-testid="settle-stage"] a, [data-testid="settle-stage"] input'
+      )
+      .count()) === 0;
+  /** 第一場結果不明（寫入了但回應遺失）→ 待確認，重新整理後讀到存檔、關掉主公資訊 */
+  async function pendingThenReload(p, E) {
+    await waitRemoteStage(p, E);
+    const started = await startBattle(p);
+    await endWith(p, {});
+    const pending = await until(
+      () => p.locator('[data-testid="result-settle-retry"]').isVisible(),
+      10000
+    );
+    await p.reload();
+    const loaded = (await loadShared(p)) === "player";
+    await closeModal(p);
+    return started && pending && loaded;
+  }
+  for (const vp of [
+    { width: 1280, height: 800 },
+    { width: 390, height: 600 },
+    { width: 390, height: 844 },
+  ]) {
+    await scenario(
+      `待確認結算的關卡：切到別關仍顯示原本那一關 ${vp.width}×${vp.height}`,
+      async (mk) => {
+        const data = NEW({
+          team: [{ hero_id: "guan_yu", slot: 1 }],
+          max_stage: "chapter1_2",
+        });
+        const E = await mk({
+          seed: [{ key: "k_lb", data, rev: 6 }],
+          maps: FMAPS,
+          enemies: ENEMIES,
+          viewport: vp,
+        });
+        E.gas.rule("save_result", "lost");
+        E.allowGasErrors = 1;
+        const p = await E.page({ storage: { shenma_player_key: "k_lb" } });
+        check("讀到存檔", (await loadShared(p)) === "player");
+        await closeModal(p);
+        check(
+          "第一關的結果不明、重新整理後讀到存檔",
+          await pendingThenReload(p, E)
+        );
+        check(
+          "說明顯示待確認的是第一關：黃巾起義（chapter1_1）",
+          await until(
+            async () =>
+              (await stageLabel(p)) === "待確認的結算：黃巾起義（chapter1_1）",
+            15000
+          ),
+          await stageLabel(p)
+        );
+        // 切到第二關（目前選的關卡和待確認的那一關不同）
+        await p.locator('button[title="切換關卡"]').click();
+        await modal(p)
+          .locator(".card", { hasText: "桃園結義" })
+          .locator("button", { hasText: "點擊切換" })
+          .click();
+        await until(
+          async () => (await p.locator(".modal").count()) === 0,
+          5000
+        );
+        check(
+          "目前的關卡是第二關（桃園結義）",
+          await until(
+            async () => (await text(p, '[class*="hudMapName"]')) === "桃園結義",
+            5000
+          ),
+          await text(p, '[class*="hudMapName"]')
+        );
+        check(
+          "說明仍是原本的第一關、只是文字（沒有按鈕或連結），「重新確認」還在原本的位置",
+          (await stageLabel(p)) === "待確認的結算：黃巾起義（chapter1_1）" &&
+            (await labelInert(p)) &&
+            (await p.locator('[data-testid="settle-retry"]').count()) === 1,
+          await stageLabel(p)
+        );
+        check(
+          "只有那一次 save_result",
+          E.gas.count("save_result") === 1,
+          E.gas.count("save_result")
+        );
+        await shot(p, `settle-stage-${vp.width}x${vp.height}`);
+        return E;
+      }
+    );
+  }
+  await scenario(
+    "待確認結算的關卡：要人工確認時只顯示資訊、不能重送",
+    async (mk) => {
+      const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+      // 後端的關卡名稱（測試第1關）和正式、內建的都不同：顯示的是讀到的這份設定
+      const E = await mk({
+        seed: [{ key: "k_lr", data, rev: 6 }],
+        maps: MAPS,
+        enemies: ENEMIES,
+      });
+      E.gas.rule("save_result", "reply", {
+        fn: () => ({ status: 409, error: "RESULT_UNKNOWN" }),
+      });
+      const p = await E.page({ storage: { shenma_player_key: "k_lr" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      check("開戰", await startBattle(p));
+      await endWith(p, {});
+      check(
+        "結算畫面：要人工確認",
+        await until(
+          () => p.locator('[data-testid="result-settle-review"]').isVisible(),
+          10000
+        )
+      );
+      await p.reload();
+      check("重新整理後讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      check(
+        "說明：要人工確認的是測試第1關（chapter1_1）",
+        await until(
+          async () =>
+            (await stageLabel(p)) ===
+            "要人工確認的結算：測試第1關（chapter1_1）",
+          15000
+        ),
+        await stageLabel(p)
+      );
+      check(
+        "只是資訊：沒有「重新確認」、說明裡沒有按鈕或連結、只有一次 save_result",
+        (await p.locator('[data-testid="settle-retry"]').count()) === 0 &&
+          (await p.locator('[data-testid="result-settle-retry"]').count()) ===
+            0 &&
+          (await labelInert(p)) &&
+          E.gas.count("save_result") === 1,
+        E.gas.count("save_result")
+      );
+      return E;
+    }
+  );
+  await scenario(
+    "待確認結算的關卡：關卡設定讀不到時不猜名稱，讀到後才顯示",
+    async (mk) => {
+      const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+      const E = await mk({
+        seed: [{ key: "k_lf", data, rev: 6 }],
+        maps: FMAPS,
+        enemies: ENEMIES,
+      });
+      E.gas.rule("save_result", "lost");
+      E.allowGasErrors = 2;
+      const p = await E.page({ storage: { shenma_player_key: "k_lf" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      check("開戰", await startBattle(p));
+      await endWith(p, {});
+      check(
+        "結果不明：待確認",
+        await until(
+          () => p.locator('[data-testid="result-settle-retry"]').isVisible(),
+          10000
+        )
+      );
+      // 下一次讀關卡設定失敗，而且沒有本機快取：頁面用內建的代用資料
+      await p.evaluate(() => {
+        localStorage.removeItem("shenma_static_config");
+        localStorage.removeItem("shenma_static_ts");
+      });
+      E.gas.rule("get_all_maps", "http500");
+      const before = E.gas.count("get_all_maps");
+      await p.reload();
+      check("重新整理後讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await until(() => E.gas.count("get_all_maps") > before, 10000);
+      await sleep(1500);
+      const fallback = await stageLabel(p);
+      check(
+        "設定讀不到：只顯示 ID、名稱未確認，不拿內建名稱（涿郡初陣）或正式名稱猜",
+        fallback === "待確認的結算：chapter1_1（關卡名稱未確認）" &&
+          !/涿郡|黃巾/.test(fallback || ""),
+        fallback
+      );
+      // 再重新整理：這次讀到後端的關卡設定
+      await p.reload();
+      check("再次重新整理後讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      check(
+        "設定讀到後顯示名稱：黃巾起義（chapter1_1）",
+        await until(
+          async () =>
+            (await stageLabel(p)) === "待確認的結算：黃巾起義（chapter1_1）",
+          15000
+        ),
+        await stageLabel(p)
+      );
+      return E;
+    }
+  );
+  await scenario("待確認結算的關卡：暫存讀不到時不說是哪一關", async (mk) => {
+    const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+    const E = await mk({
+      seed: [{ key: "k_lu", data, rev: 6 }],
+      maps: FMAPS,
+      enemies: ENEMIES,
+    });
+    E.gas.rule("save_result", "lost");
+    E.allowGasErrors = 1;
+    const p = await E.page({ storage: { shenma_player_key: "k_lu" } });
+    check("讀到存檔", (await loadShared(p)) === "player");
+    await closeModal(p);
+    await waitRemoteStage(p, E);
+    check("開戰", await startBattle(p));
+    await endWith(p, {});
+    check(
+      "結果不明：待確認",
+      await until(
+        () => p.locator('[data-testid="result-settle-retry"]').isVisible(),
+        10000
+      )
+    );
+    // 重新整理後 sessionStorage 讀取一律丟 SecurityError
+    await p.addInitScript(() => {
+      const orig = Storage.prototype.getItem;
+      Storage.prototype.getItem = function (k) {
+        if (this === window.sessionStorage)
+          throw new DOMException("blocked", "SecurityError");
+        return orig.call(this, k);
+      };
+    });
+    await p.reload();
+    check("重新整理後讀到存檔", (await loadShared(p)) === "player");
+    await closeModal(p);
+    check(
+      "說明：暫存讀不到、無法確認是哪一關（不顯示關卡 ID 或名稱）",
+      await until(
+        async () =>
+          (await stageLabel(p)) === "這個分頁的暫存讀不到，無法確認是哪一關。",
+        10000
+      ),
+      await stageLabel(p)
+    );
+    return E;
+  });
+  await scenario(
+    "待確認結算的關卡：換帳號不留下原帳號的關卡，訪客不顯示",
+    async (mk) => {
+      const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+      const E = await mk({
+        seed: [
+          { key: "k_la", data, rev: 6 },
+          { key: "k_lz", data: NEW({ nickname: "乙" }), rev: 2 },
+        ],
+        maps: FMAPS,
+        enemies: ENEMIES,
+      });
+      E.gas.rule("save_result", "lost");
+      E.allowGasErrors = 1;
+      const p = await E.page({ storage: { shenma_player_key: "k_la" } });
+      check("讀到甲", (await loadShared(p)) === "player");
+      await closeModal(p);
+      check("甲的結果不明、重新整理後讀到存檔", await pendingThenReload(p, E));
+      check(
+        "甲：說明待確認的是黃巾起義（chapter1_1）",
+        await until(
+          async () =>
+            (await stageLabel(p)) === "待確認的結算：黃巾起義（chapter1_1）",
+          15000
+        ),
+        await stageLabel(p)
+      );
+      await openInfo(p);
+      await p.locator("button", { hasText: "切換金鑰" }).click();
+      await modal(p).locator('input[placeholder^="例"]').fill("k_lz");
+      await modal(p).locator("button", { hasText: "確認切換" }).click();
+      check(
+        "切換到乙",
+        await until(
+          async () =>
+            (await text(p, '[data-testid="player-info-nickname"]')) === "乙",
+          10000
+        )
+      );
+      await sleep(1000);
+      check(
+        "乙：說明區還在（乙還沒有隊伍），但沒有待確認結算的關卡說明",
+        (await p.locator('[data-testid="shared-account-notice"]').count()) ===
+          1 && (await p.locator('[data-testid="settle-stage"]').count()) === 0,
+        await stageLabel(p)
+      );
+      // 登出後改用訪客
+      await p.locator("button", { hasText: "登出" }).first().click();
+      await p.locator("button", { hasText: "確認登出" }).click();
+      await until(
+        () => p.locator('[data-testid="key-setup-guest"]').isVisible(),
+        10000
+      );
+      await p.locator('[data-testid="key-setup-guest"]').click();
+      await sleep(1500);
+      check(
+        "訪客：沒有待確認結算的關卡說明",
+        (await p.locator('[data-testid="settle-stage"]').count()) === 0,
+        await stageLabel(p)
+      );
+      check(
+        "只有甲的那一次 save_result",
+        E.gas.count("save_result") === 1,
+        E.gas.count("save_result")
+      );
+      return E;
+    }
+  );
+
+  // ═══ 關卡名稱的來源：空的設定回應與舊快取都不算確認 ═══
+  /** 清掉頁面的關卡設定快取 */
+  const clearStageCache = (p) =>
+    p.evaluate(() => {
+      localStorage.removeItem("shenma_static_config");
+      localStorage.removeItem("shenma_static_ts");
+    });
+  await scenario(
+    "待確認結算的關卡：關卡設定回空清單時，重新整理後也不猜內建名稱",
+    async (mk) => {
+      const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+      const E = await mk({
+        seed: [{ key: "k_le", data, rev: 6 }],
+        maps: FMAPS,
+        enemies: ENEMIES,
+      });
+      E.gas.rule("save_result", "lost");
+      E.allowGasErrors = 1;
+      const p = await E.page({ storage: { shenma_player_key: "k_le" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      check("開戰", await startBattle(p));
+      await endWith(p, {});
+      check(
+        "結果不明：待確認",
+        await until(
+          () => p.locator('[data-testid="result-settle-retry"]').isVisible(),
+          10000
+        )
+      );
+      // 下一次的關卡設定：HTTP 200、內容是空清單（頁面退回內建資料，並把它存成快取）
+      await clearStageCache(p);
+      E.gas.rule("get_all_maps", "reply", {
+        fn: () => ({ status: 200, maps: [] }),
+      });
+      const before = E.gas.count("get_all_maps");
+      await p.reload();
+      check("重新整理後讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await until(() => E.gas.count("get_all_maps") > before, 10000);
+      await sleep(1500);
+      const first = await stageLabel(p);
+      check(
+        "空清單：只顯示 ID、名稱未確認",
+        first === "待確認的結算：chapter1_1（關卡名稱未確認）",
+        first
+      );
+      // 真正重新整理：這次讀的是剛才存下的內建資料快取
+      const cached = await p.evaluate(() => {
+        const c = JSON.parse(
+          localStorage.getItem("shenma_static_config") || "null"
+        );
+        return c
+          ? { first: c.maps && c.maps[0] && c.maps[0].name, src: c.mapsSource }
+          : null;
+      });
+      await p.reload();
+      check("再次重新整理後讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await sleep(1500);
+      const second = await stageLabel(p);
+      check(
+        "空清單的快取重新載入後：仍只顯示 ID、名稱未確認，不猜內建名稱（涿郡初陣）",
+        second === "待確認的結算：chapter1_1（關卡名稱未確認）" &&
+          !/涿郡/.test(second || ""),
+        { second, cached }
+      );
+      return E;
+    }
+  );
+  await scenario(
+    "待確認結算的關卡：沒有來源資料的舊快取只顯示 ID，正常讀到設定後才有名稱",
+    async (mk) => {
+      const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+      const E = await mk({
+        seed: [{ key: "k_lo", data, rev: 6 }],
+        maps: FMAPS,
+        enemies: ENEMIES,
+      });
+      E.gas.rule("save_result", "lost");
+      E.allowGasErrors = 1;
+      const p = await E.page({ storage: { shenma_player_key: "k_lo" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      check("結果不明、重新整理後讀到存檔", await pendingThenReload(p, E));
+      check(
+        "正常讀到設定：說明顯示黃巾起義（chapter1_1）",
+        await until(
+          async () =>
+            (await stageLabel(p)) === "待確認的結算：黃巾起義（chapter1_1）",
+          15000
+        ),
+        await stageLabel(p)
+      );
+      // 把快取改成舊格式（maps 一樣是正式名稱，但沒有來源資料），而且是新鮮的
+      const hadSource = await p.evaluate(() => {
+        const c = JSON.parse(localStorage.getItem("shenma_static_config"));
+        const had = !!c.mapsSource;
+        delete c.mapsSource;
+        localStorage.setItem("shenma_static_config", JSON.stringify(c));
+        localStorage.setItem("shenma_static_ts", String(Date.now()));
+        return had;
+      });
+      const before = E.gas.count("get_all_maps");
+      await p.reload();
+      check("重新整理後讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await sleep(1500);
+      const old = await stageLabel(p);
+      check(
+        "舊快取（原本有來源資料、拿掉後）：沿用快取不讀後端，說明只顯示 ID、名稱未確認",
+        hadSource &&
+          E.gas.count("get_all_maps") === before &&
+          old === "待確認的結算：chapter1_1（關卡名稱未確認）",
+        { hadSource, old, calls: E.gas.count("get_all_maps") - before }
+      );
+      // 清掉快取再重新整理：正常讀到正式設定後才有名稱
+      await clearStageCache(p);
+      await p.reload();
+      check("再次重新整理後讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      check(
+        "正常讀到設定後：說明顯示黃巾起義（chapter1_1）",
+        await until(
+          async () =>
+            (await stageLabel(p)) === "待確認的結算：黃巾起義（chapter1_1）",
+          15000
+        ),
+        await stageLabel(p)
+      );
+      return E;
+    }
+  );
+
   // ═══ 19. 伺服器錯誤 SERVER_ERROR：可能在寫入之後才發生，一律當結果不明（提交前／提交後兩種控制組） ═══
   const SERVER_ERROR = () => ({
     status: 500,
