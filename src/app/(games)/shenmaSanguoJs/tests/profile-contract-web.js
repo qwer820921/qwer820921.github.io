@@ -2825,6 +2825,291 @@ module.exports = async function profileContractWeb(page) {
     }
   );
 
+  // ═══ 共用帳號說明區的版面：窄畫面不被全站聊天按鈕遮住、整段讀得到、「重新確認」點得到也能用鍵盤 ═══
+  /**
+   * 說明區每一個字（用 Range 取字的矩形中心）都在視窗內，而且 elementFromPoint 是說明區自己的後代（不排除聊天按鈕）；
+   * 「重新確認」左中右三點都點得到它自己、可以用鍵盤聚焦
+   */
+  const noticeOcclusion = (p) =>
+    p.evaluate(() => {
+      const n = document.querySelector('[data-testid="shared-account-notice"]');
+      const chat = !!document.querySelector(
+        'button[aria-label="切換聊天視窗"]'
+      );
+      if (!n) return { notice: false, chat };
+      const blocked = [];
+      const offscreen = [];
+      let chars = 0;
+      const walker = document.createTreeWalker(n, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        for (let i = 0; i < node.textContent.length; i++) {
+          if (!node.textContent[i].trim()) continue;
+          const r = document.createRange();
+          r.setStart(node, i);
+          r.setEnd(node, i + 1);
+          const b = r.getBoundingClientRect();
+          if (!(b.width > 0 && b.height > 0)) continue;
+          chars++;
+          const x = b.left + b.width / 2;
+          const y = b.top + b.height / 2;
+          if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) {
+            offscreen.push(node.textContent[i]);
+            continue;
+          }
+          const el = document.elementFromPoint(x, y);
+          if (!el || !n.contains(el)) {
+            const btn = el && el.closest("button");
+            blocked.push({
+              ch: node.textContent[i],
+              by: el
+                ? (btn && btn.getAttribute("aria-label")) || el.tagName
+                : null,
+            });
+          }
+        }
+      }
+      const retry = document.querySelector('[data-testid="settle-retry"]');
+      let retryOk = null;
+      let retryKeyboard = null;
+      if (retry) {
+        const b = retry.getBoundingClientRect();
+        retryOk = [0.1, 0.5, 0.9].every((fx) => {
+          const x = b.left + b.width * fx;
+          const y = b.top + b.height / 2;
+          if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight)
+            return false;
+          const el = document.elementFromPoint(x, y);
+          return !!el && retry.contains(el);
+        });
+        retry.focus();
+        retryKeyboard =
+          retry.tabIndex >= 0 &&
+          !retry.disabled &&
+          document.activeElement === retry;
+        retry.blur();
+      }
+      return {
+        notice: true,
+        chat,
+        chars,
+        blocked,
+        offscreen,
+        retry: !!retry,
+        retryOk,
+        retryKeyboard,
+      };
+    });
+  /** 版面的檢查：有聊天按鈕、說明區有字、沒有字被遮住或在視窗外；有「重新確認」時三點都點得到也能用鍵盤 */
+  const layoutOk = (o, wantRetry) =>
+    o.notice &&
+    o.chat &&
+    o.chars > 0 &&
+    o.blocked.length === 0 &&
+    o.offscreen.length === 0 &&
+    o.retry === wantRetry &&
+    (!wantRetry || (o.retryOk && o.retryKeyboard));
+  const LONG_MAPS = [
+    { ...MAP("chapter1_1", 1), name: "黃巾起義・涿郡義勇軍初陣之戰（長名稱）" },
+    { ...MAP("chapter1_2", 2), name: "桃園結義" },
+    { ...MAP("chapter1_3", 3), name: "討伐黃巾" },
+  ];
+  for (const vp of [
+    { width: 390, height: 600 },
+    { width: 390, height: 844 },
+    { width: 1280, height: 800 },
+  ]) {
+    await scenario(
+      `說明區的版面：待確認（長名稱）與重新確認後的回饋 ${vp.width}×${vp.height}`,
+      async (mk) => {
+        const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+        const E = await mk({
+          seed: [{ key: "k_ly", data, rev: 6 }],
+          maps: LONG_MAPS,
+          enemies: ENEMIES,
+          viewport: vp,
+        });
+        E.gas.rule("save_result", "lost");
+        E.allowGasErrors = 1;
+        const p = await E.page({ storage: { shenma_player_key: "k_ly" } });
+        check("讀到存檔", (await loadShared(p)) === "player");
+        await closeModal(p);
+        check("結果不明、重新整理後讀到存檔", await pendingThenReload(p, E));
+        check(
+          "說明顯示長名稱的關卡",
+          await until(
+            async () =>
+              (await stageLabel(p)) ===
+              "待確認的結算：黃巾起義・涿郡義勇軍初陣之戰（長名稱）（chapter1_1）",
+            15000
+          ),
+          await stageLabel(p)
+        );
+        const o = await noticeOcclusion(p);
+        check(
+          "待確認：說明區每個字都在視窗內、沒有被聊天按鈕或其他東西遮住；「重新確認」點得到、可以用鍵盤聚焦",
+          layoutOk(o, true),
+          o
+        );
+        await shot(p, `notice-layout-pending-${vp.width}x${vp.height}`);
+        // 用鍵盤按「重新確認」：只原樣送那一場
+        const first = E.gas.log.find((e) => e.action === "save_result");
+        await p.focus('[data-testid="settle-retry"]');
+        await p.keyboard.press("Enter");
+        check(
+          "鍵盤按「重新確認」後已保存",
+          await until(
+            () => p.locator('[data-testid="settle-confirmed"]').isVisible(),
+            10000
+          )
+        );
+        const all = E.gas.log.filter((e) => e.action === "save_result");
+        check(
+          "重新確認只原樣送原本那一場（第二次的內容等於第一次）",
+          all.length === 2 && sameJson(all[1].payload, first.payload),
+          all.length
+        );
+        const o2 = await noticeOcclusion(p);
+        check(
+          "已保存的回饋：說明區每個字都在視窗內、沒有被遮住",
+          layoutOk(o2, false),
+          o2
+        );
+        return E;
+      }
+    );
+  }
+  for (const state of ["ID", "review", "unavailable", "readonly", "conflict"]) {
+    await scenario(`說明區的版面：${state} 390×600`, async (mk) => {
+      const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+      const E = await mk({
+        seed: [{ key: "k_ls", data, rev: 6 }],
+        maps: FMAPS,
+        enemies: ENEMIES,
+        viewport: { width: 390, height: 600 },
+      });
+      E.allowGasErrors = 2;
+      if (state === "readonly")
+        E.gas.rule("get_profile", "transform", {
+          times: 99,
+          fn: (res) => ({ ...res, rev: undefined }),
+        });
+      const p = await E.page({ storage: { shenma_player_key: "k_ls" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      if (state === "conflict") {
+        // 另一處先保存（版本 7），這裡再改暱稱 → 衝突、改用雲端的資料
+        E.fx.handle({
+          action: "save_profile",
+          key: "k_ls",
+          payload: { data: { ...data, nickname: "別處改" }, base_rev: 6 },
+        });
+        const fb = await saveNickname(p, "我改");
+        check("衝突：說明有較新的存檔", /較新的存檔/.test(fb || ""), fb);
+      }
+      await closeModal(p);
+      if (["ID", "review", "unavailable"].includes(state)) {
+        if (state === "review")
+          E.gas.rule("save_result", "reply", {
+            fn: () => ({ status: 409, error: "RESULT_UNKNOWN" }),
+          });
+        else E.gas.rule("save_result", "lost");
+        await waitRemoteStage(p, E);
+        check("開戰", await startBattle(p));
+        await endWith(p, {});
+        await until(
+          () =>
+            p
+              .locator(
+                '[data-testid="result-settle-retry"], [data-testid="result-settle-review"]'
+              )
+              .first()
+              .isVisible(),
+          10000
+        );
+        if (state === "ID") {
+          await clearStageCache(p);
+          E.gas.rule("get_all_maps", "http500");
+        }
+        if (state === "unavailable")
+          await p.addInitScript(() => {
+            const orig = Storage.prototype.getItem;
+            Storage.prototype.getItem = function (k) {
+              if (this === window.sessionStorage)
+                throw new DOMException("blocked", "SecurityError");
+              return orig.call(this, k);
+            };
+          });
+        await p.reload();
+        check("重新整理後讀到存檔", (await loadShared(p)) === "player");
+        await closeModal(p);
+      }
+      const want = {
+        ID: /chapter1_1（關卡名稱未確認）/,
+        review: /要人工確認的結算/,
+        unavailable: /暫存讀不到/,
+        readonly: /版本不明|只能查看/,
+        conflict: /較新的存檔/,
+      }[state];
+      check(
+        "說明區出現這個狀態的說明",
+        await until(
+          async () =>
+            want.test(
+              (await text(p, '[data-testid="shared-account-notice"]')) || ""
+            ),
+          15000
+        ),
+        await text(p, '[data-testid="shared-account-notice"]')
+      );
+      await sleep(500);
+      const o = await noticeOcclusion(p);
+      check(
+        `${state}：說明區每個字都在視窗內、沒有被聊天按鈕或其他東西遮住；${state === "ID" ? "「重新確認」點得到、可以用鍵盤聚焦" : "沒有「重新確認」"}`,
+        layoutOk(o, state === "ID"),
+        o
+      );
+      await shot(p, `notice-layout-${state}-390x600`);
+      return E;
+    });
+  }
+  await scenario("說明區的版面：讀取中 390×600", async (mk) => {
+    const data = NEW({ team: [{ hero_id: "guan_yu", slot: 1 }] });
+    const E = await mk({
+      seed: [{ key: "k_ll", data, rev: 6 }],
+      maps: FMAPS,
+      enemies: ENEMIES,
+      viewport: { width: 390, height: 600 },
+    });
+    E.gas.rule("save_result", "lost");
+    E.allowGasErrors = 1;
+    const p = await E.page({ storage: { shenma_player_key: "k_ll" } });
+    check("讀到存檔", (await loadShared(p)) === "player");
+    await closeModal(p);
+    check("結果不明、重新整理後讀到存檔", await pendingThenReload(p, E));
+    // 重新整理而且讀取存檔暫停：讀取中的畫面
+    const hold = E.gas.rule("get_profile", "hold");
+    await p.reload();
+    await until(() => hold.waiting.length > 0, 10000);
+    await sleep(500);
+    const o = await noticeOcclusion(p);
+    check(
+      "讀取中：有說明區時每個字都在視窗內、沒有被遮住（沒有說明區也記下來）",
+      o.chat &&
+        (!o.notice || (o.blocked.length === 0 && o.offscreen.length === 0)),
+      o
+    );
+    hold.release("ok");
+    check("讀取完成", (await loadShared(p)) === "player");
+    await closeModal(p);
+    const o2 = await noticeOcclusion(p);
+    check(
+      "讀取完成後：待確認的說明每個字都沒有被遮住、「重新確認」點得到",
+      layoutOk(o2, true),
+      o2
+    );
+    return E;
+  });
+
   // ═══ 19. 伺服器錯誤 SERVER_ERROR：可能在寫入之後才發生，一律當結果不明（提交前／提交後兩種控制組） ═══
   const SERVER_ERROR = () => ({
     status: 500,

@@ -7,6 +7,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
+import { Row, Col } from "react-bootstrap";
 import { LocalGameBridge, PlacementMenuData } from "../engine/LocalGameBridge";
 import {
   StatsSyncData,
@@ -808,50 +809,56 @@ const ShenmaSanguoJsPage: React.FC = () => {
           pendingSettle ||
           (settleView?.phase === "confirmed" && !battleResult)) && (
           <div
-            className="small text-warning px-2 py-1"
+            className="small text-warning bg-dark bg-opacity-75 px-2 py-1"
             data-testid="shared-account-notice"
           >
-            {sortieBlockReason && (
-              <div data-testid="sortie-blocked">{sortieBlockReason}</div>
-            )}
-            {sortieNote && (
-              <div data-testid="sortie-settle-note">{sortieNote}</div>
-            )}
-            {notice && <div>{notice}</div>}
-            {/* 待確認的這一場是哪一關（只是資訊，沒有操作） */}
-            {pendingStageLabel && (
-              <div data-testid="settle-stage">{pendingStageLabel.text}</div>
-            )}
-            {/* 重新確認後的結果（結算視窗關掉之後） */}
-            {!pendingSettle &&
-              !battleResult &&
-              settleView &&
-              settleView.phase === "confirmed" && (
-                <div data-testid="settle-confirmed">{settleView.text}</div>
-              )}
-            {pendingSettle?.status === "pending" && !battleResult && (
-              <div data-testid="settle-pending">
-                {settleView && settleView.phase !== "saving" && (
-                  <span data-testid="settle-pending-status">
-                    {settleView.text}
-                  </span>
+            {/* 窄畫面右下角是全站的聊天按鈕：內容放左側，右側留一欄空白（寬畫面不需要） */}
+            <Row className="g-0">
+              <Col xs={9} lg={12}>
+                {sortieBlockReason && (
+                  <div data-testid="sortie-blocked">{sortieBlockReason}</div>
                 )}
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-warning ms-2"
-                  onClick={() => void handleRetrySettle()}
-                  disabled={busy}
-                  data-testid="settle-retry"
-                >
-                  重新確認
-                </button>
-                {settleRetryMsg && (
-                  <div data-testid="settle-retry-feedback">
-                    {settleRetryMsg}
+                {sortieNote && (
+                  <div data-testid="sortie-settle-note">{sortieNote}</div>
+                )}
+                {notice && <div>{notice}</div>}
+                {/* 待確認的這一場是哪一關（只是資訊，沒有操作） */}
+                {pendingStageLabel && (
+                  <div data-testid="settle-stage">{pendingStageLabel.text}</div>
+                )}
+                {/* 重新確認後的結果（結算視窗關掉之後） */}
+                {!pendingSettle &&
+                  !battleResult &&
+                  settleView &&
+                  settleView.phase === "confirmed" && (
+                    <div data-testid="settle-confirmed">{settleView.text}</div>
+                  )}
+                {pendingSettle?.status === "pending" && !battleResult && (
+                  <div data-testid="settle-pending">
+                    {settleView && settleView.phase !== "saving" && (
+                      <span data-testid="settle-pending-status">
+                        {settleView.text}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-warning ms-2"
+                      onClick={() => void handleRetrySettle()}
+                      disabled={busy}
+                      data-testid="settle-retry"
+                    >
+                      重新確認
+                    </button>
+                    {settleRetryMsg && (
+                      <div data-testid="settle-retry-feedback">
+                        {settleRetryMsg}
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
+              </Col>
+              <Col xs={3} className="d-lg-none" aria-hidden="true" />
+            </Row>
           </div>
         )}
 
