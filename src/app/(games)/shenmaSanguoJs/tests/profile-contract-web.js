@@ -4515,10 +4515,10 @@ module.exports = async function profileContractWeb(page) {
     return E;
   });
 
-  // ═══ 24. 備戰重新載入清「已在場上」的名單；部署費用的提示與扣款；武將名冊的技能說明 ═══
+  // ═══ 24. 備戰重新載入清「已在場上」的名單；部署費用（派武將免費、建塔照原價）；武將名冊的技能說明 ═══
   // 備戰中每次重新載入（改隊伍、換帳號、後端設定較晚到、選關、重新挑戰）場上的武將都換新，部署選單的名單要一起清掉；
   // 戰鬥中改隊伍、升級這類不相關的更新不重新載入，已部署的武將仍是原本的實例、選單上仍是「已在場上」。
-  // 部署費用只核目前 Canvas 的規則（每次 100 戰場金幣，世界金幣不變），不驗收戰鬥。
+  // 部署費用：派武將不花戰場金幣（和 Godot 版相同），建塔與升級照原價，世界金幣不變；不驗收戰鬥。
   // 名冊的 13 段技能名稱與完整說明寫死（照正式技能表 describeHeroSkill 不帶目前射程與攻擊力的原文手寫），不由頁面或技能表產生。
   /** 畫布上某一格的螢幕座標（玩法提示擋住時先收起） */
   async function cellPoint(p, [col, row]) {
@@ -5098,8 +5098,76 @@ module.exports = async function profileContractWeb(page) {
     return E;
   });
 
+  // 部署費用：派武將不花戰場金幣（和 Godot 版 Main._place_hero 相同）；建塔與升級照原價、金幣不足仍不能建或升級。
+  // 前置條件用引擎自己的 spendGold／earnGold 調整這一場的戰場金幣（不是自然實戰，也不改世界存檔）
+  const fieldGold = (p, guest) =>
+    p.evaluate((g) => {
+      const b = window.__testBridge.engine.battleManager;
+      const hud = document.querySelector('[class*="hudRight"]');
+      const s = hud && hud.querySelector('[class*="hudStat"]');
+      return {
+        battle: b.battleGold,
+        hud: s ? s.innerText.replace(/\s+/g, "") : null,
+        world: g
+          ? JSON.parse(localStorage.getItem("shenma_js_guest_state")).gold
+          : null,
+      };
+    }, guest);
+  const goldText = (n) => `🪙${n.toLocaleString("en-US")}`;
+  const setFieldGold = (p, target) =>
+    p.evaluate((t) => {
+      const b = window.__testBridge.engine.battleManager;
+      const d = t - b.battleGold;
+      if (d < 0) b.spendGold(-d);
+      else if (d > 0) b.earnGold(d);
+      return b.battleGold;
+    }, target);
+  /** 點建築位打開部署選單，建某一種塔（卡片停用時回報 card-disabled，不點） */
+  async function buildTower(p, cell, name) {
+    const pt = await cellPoint(p, cell);
+    if (!pt.onCanvas || !pt.canPlace) return { ok: false, step: "cell", pt };
+    await p.mouse.click(pt.x, pt.y);
+    const menu = p.locator(PLACEMENT_MENU);
+    if (!(await until(() => menu.isVisible(), 5000)))
+      return { ok: false, step: "menu" };
+    const cards = menu.locator("button", { hasText: "💰" });
+    const allDisabled = await cards.evaluateAll((bs) =>
+      bs.map((b) => b.disabled)
+    );
+    const card = menu.locator("button", { hasText: name });
+    if ((await card.count()) === 0) {
+      const t = await menu.innerText();
+      await closePlacementMenu(p);
+      return { ok: false, step: "card", menu: t };
+    }
+    if (await card.first().isDisabled()) {
+      await closePlacementMenu(p);
+      return { ok: false, step: "card-disabled", allDisabled };
+    }
+    await card.first().click();
+    const closed = await until(async () => (await menu.count()) === 0, 5000);
+    return { ok: !!closed, step: closed ? "built" : "menu-open", allDisabled };
+  }
+  /** 點已建的塔打開升級面板 */
+  async function towerPanel(p, cell) {
+    const pt = await cellPoint(p, cell);
+    if (!pt.onCanvas) return null;
+    await p.mouse.click(pt.x, pt.y);
+    const panel = p.locator('[data-testid="upgrade-panel"]');
+    return (await until(() => panel.isVisible(), 5000)) ? panel : null;
+  }
+  const towersOf = (p) =>
+    p.evaluate(() =>
+      window.__testBridge.engine.towers.map((t) => ({
+        type: t.towerTypeKey,
+        level: t.towerLevel,
+        cell: [t.gridCell.col, t.gridCell.row],
+      }))
+    );
+  const BUILD_CELL = [2, 1];
+
   await scenario(
-    "部署費用：提示寫每次 100 戰場金幣；不足 100 時不部署不扣、足夠時扣 100，世界金幣不變",
+    "部署費用（免費）：派武將不花戰場金幣，5000／100／99／0 都能派不同武將；建塔與升級照原價；提示和 Godot 版相同",
     async (mk) => {
       const E = await mk({ maps: SKILL_MAPS, enemies: ENEMIES });
       const p = await E.page({ storage: guestStorage(GUEST_13, []) });
@@ -5113,10 +5181,10 @@ module.exports = async function profileContractWeb(page) {
       );
       const tipNote = (await tips.locator("p").first().innerText()).trim();
       check(
-        "部署那一句寫目前的費用（每次派出要花 100 戰場金幣），整份提示沒有「不花金幣」",
+        "部署那一句寫派武將不花金幣（和 Godot 版的提示同一句），整份提示沒有「100」",
         items[0] ===
-          "點地圖上的道路或建築位，從選單派出隊伍裡的武將；每次派出要花 100 戰場金幣。" &&
-          !/不花金幣/.test(await tips.innerText()),
+          "點地圖上的道路或建築位，從選單派出隊伍裡的武將（不花金幣）。" &&
+          !/100/.test(await tips.innerText()),
         items
       );
       check(
@@ -5131,92 +5199,241 @@ module.exports = async function profileContractWeb(page) {
         { items, tipNote }
       );
       await p.locator('button[aria-label="收起玩法提示"]').click();
+      // 武將升級的世界金幣與費用（部署前）
+      await openRoster(p);
+      const roster0 = await modal(p).innerText();
+      await closeModal(p);
       check("可以觀測部署資料", await watchPlacements(p));
-      const gold = () =>
-        p.evaluate(() => {
-          const b = window.__testBridge.engine.battleManager;
-          const hud = document.querySelector('[class*="hudRight"]');
-          const s = hud && hud.querySelector('[class*="hudStat"]');
-          return {
-            battle: b.battleGold,
-            hud: s ? s.innerText.replace(/\s+/g, "") : null,
-            world: JSON.parse(localStorage.getItem("shenma_js_guest_state"))
-              .gold,
-          };
-        });
-      const fmt = (n) => `🪙${n.toLocaleString("en-US")}`;
-      const g0 = await gold();
+      const g0 = await fieldGold(p, true);
       check(
-        "開始時：畫面上的戰場金幣等於引擎的戰場金幣，世界金幣是存檔的 1500",
-        g0.hud === fmt(g0.battle) && g0.world === 1500,
+        "開始時：戰場金幣 5000（畫面同步），世界金幣是存檔的 1500",
+        g0.battle === 5000 && g0.hud === goldText(5000) && g0.world === 1500,
         g0
       );
       const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
-      const g1 = await gold();
+      const g1 = await fieldGold(p, true);
       check(
-        "部署馬超成功：戰場金幣少 100（畫面同步），世界金幣不變",
+        "戰場金幣 5000 時派馬超：成功，戰場金幣仍是 5000（畫面同步），世界金幣不變",
         d1.ok &&
           (await fieldOf(p)).heroes.length === 1 &&
-          g1.battle === g0.battle - 100 &&
-          g1.hud === fmt(g1.battle) &&
+          g1.battle === 5000 &&
+          g1.hud === goldText(5000) &&
           g1.world === 1500,
-        { d1, g0, g1 }
+        { d1, g1 }
       );
-      // 前置條件：用引擎自己的 spendGold 把這一場的戰場金幣花到剩 99（最後補回）
-      const pre = g1.battle - 99;
+      // 引擎層：占用與無效的格子派不出去，也不扣
+      const bad = await p.evaluate(
+        ({ occ }) => {
+          const e = window.__testBridge.engine;
+          const st = {
+            hero_id: "hero_zhou_yu",
+            level: 1,
+            star: 1,
+            atk: 135,
+            def: 55,
+            hp: 1000,
+          };
+          const a = e.placeHero(occ[0], occ[1], st);
+          const b = e.placeHero(0, 0, st);
+          return {
+            occupied: a,
+            invalid: b,
+            gold: e.battleManager.battleGold,
+            heroes: e.heroes.length,
+          };
+        },
+        { occ: ROAD_CELLS[2] }
+      );
       check(
-        "前置條件：戰場金幣剩 99",
-        (await p.evaluate(
-          (n) => window.__testBridge.engine.battleManager.spendGold(n),
-          pre
-        )) && (await gold()).battle === 99
+        "引擎層：已占用的格子與不能放的格子都派不出去，戰場金幣不變",
+        bad.occupied === false &&
+          bad.invalid === false &&
+          bad.gold === 5000 &&
+          bad.heroes === 1,
+        bad
       );
+      const steps = [];
+      let placed = 1;
+      for (const [gold, cell, name, id, lv, st, a, d, h] of [
+        [100, ROAD_CELLS[4], "趙雲", "hero_zhao_yun", 3, 1, 110, 65, 1150],
+        [99, ROAD_CELLS[6], "關羽", "hero_guan_yu", 4, 2, 150, 75, 1500],
+        [0, ROAD_CELLS[8], "張飛", "hero_zhang_fei", 3, 1, 140, 70, 1450],
+      ]) {
+        const set = await setFieldGold(p, gold);
+        const r = await deployHero(p, cell, name);
+        const s = await fieldOf(p);
+        const g = await fieldGold(p, true);
+        placed += 1;
+        steps.push({ gold, set, r, g, last: lastState(s) });
+        check(
+          `戰場金幣 ${gold} 時派${name}：成功，戰場金幣仍是 ${gold}（畫面同步），部署資料是訪客預設的${name}與正式技能`,
+          set === gold &&
+            r.ok &&
+            s.heroes.length === placed &&
+            s.heroes.some((x) => x.heroId === id) &&
+            g.battle === gold &&
+            g.hud === goldText(gold) &&
+            g.world === 1500 &&
+            sameJson(lastState(s), wantPayload(id, lv, st, a, d, h)),
+          { set, r, g, last: lastState(s) }
+        );
+      }
+      check(
+        "四位都在場上（部署紀錄 6 筆：4 次成功、2 次引擎層的無效嘗試）",
+        (await fieldOf(p)).heroes.length === 4 &&
+          (await fieldOf(p)).log.length === 6,
+        await fieldOf(p)
+      );
+      // 建塔仍照原價：0 金幣時塔都不能建；補到 50 剛好建弓兵塔，扣 50
+      const t0 = await buildTower(p, BUILD_CELL, "弓兵塔");
+      check(
+        "戰場金幣 0：建築位的五種防禦塔都不能建（卡片停用）",
+        !t0.ok &&
+          t0.step === "card-disabled" &&
+          Array.isArray(t0.allDisabled) &&
+          t0.allDisabled.length === 5 &&
+          t0.allDisabled.every(Boolean),
+        t0
+      );
+      await setFieldGold(p, 50);
+      const t1 = await buildTower(p, BUILD_CELL, "弓兵塔");
+      const g2 = await fieldGold(p, true);
+      check(
+        "戰場金幣 50：建弓兵塔成功，扣 50 變 0",
+        t1.ok &&
+          g2.battle === 0 &&
+          g2.hud === goldText(0) &&
+          sameJson(await towersOf(p), [
+            { type: "archer", level: 1, cell: BUILD_CELL },
+          ]),
+        { t1, g2, towers: await towersOf(p) }
+      );
+      // 升級仍照原價：49 不能升（按鈕停用），補到 50 升級成功、扣 50
+      await setFieldGold(p, 49);
+      let panel = await towerPanel(p, BUILD_CELL);
+      const up0 = panel
+        ? await panel.locator("button", { hasText: "升級" }).first()
+        : null;
+      const up0State = up0
+        ? { disabled: await up0.isDisabled(), text: await up0.innerText() }
+        : null;
+      check(
+        "戰場金幣 49：升級弓兵塔的按鈕停用（升級費 50）",
+        !!up0State && up0State.disabled && /50/.test(up0State.text),
+        up0State
+      );
+      if (panel)
+        await panel
+          .locator("button", { hasText: "×" })
+          .first()
+          .click()
+          .catch(() => {});
+      await setFieldGold(p, 50);
+      panel = await towerPanel(p, BUILD_CELL);
+      if (panel)
+        await panel.locator("button", { hasText: "升級" }).first().click();
+      await sleep(300);
+      const g3 = await fieldGold(p, true);
+      check(
+        "戰場金幣 50：升級弓兵塔成功，扣 50 變 0、塔 Lv.2",
+        !!panel &&
+          g3.battle === 0 &&
+          sameJson(await towersOf(p), [
+            { type: "archer", level: 2, cell: BUILD_CELL },
+          ]),
+        { g3, towers: await towersOf(p) }
+      );
+      if (panel)
+        await panel
+          .locator("button", { hasText: "×" })
+          .first()
+          .click()
+          .catch(() => {});
+      // 武將升級的世界金幣與費用不變
+      await openRoster(p);
+      const roster1 = await modal(p).innerText();
+      await closeModal(p);
+      const costOf = (t) => (t.match(/升級需耗費:\s*🪙\s*(\d+)/) || [])[1];
+      check(
+        "部署之後：名冊的世界金幣仍是 1,500、馬超的升級費不變",
+        /當前世界金幣:\s*🪙\s*1,500/.test(roster1) &&
+          !!costOf(roster0) &&
+          costOf(roster0) === costOf(roster1),
+        { before: costOf(roster0), after: costOf(roster1) }
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "部署費用（免費）：共用帳號派武將不扣戰場金幣、不寫存檔，世界金幣與隊伍 Cost 不變",
+    async (mk) => {
+      const data = NEW({
+        capacity: 20,
+        gold: 500,
+        team: [
+          { hero_id: "ma_chao", slot: 1 },
+          { hero_id: "zhao_yun", slot: 2 },
+        ],
+      });
+      const E = await mk({
+        seed: [{ key: "k_free", data, rev: 3 }],
+        maps: SKILL_MAPS,
+        enemies: ENEMIES,
+      });
+      const p = await E.page({ storage: { shenma_player_key: "k_free" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      await openTeam(p);
+      const cost0 = await text(p, '[data-testid="team-edit-cost"]');
+      await closeModal(p);
+      check("可以觀測部署資料", await watchPlacements(p));
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      const g1 = await fieldGold(p, false);
+      check(
+        "戰場金幣 5000 時派馬超：成功，戰場金幣仍是 5000（畫面同步）",
+        d1.ok &&
+          (await fieldOf(p)).heroes.length === 1 &&
+          g1.battle === 5000 &&
+          g1.hud === goldText(5000),
+        { d1, g1 }
+      );
+      await setFieldGold(p, 0);
       const d2 = await deployHero(p, ROAD_CELLS[4], "趙雲");
       const s2 = await fieldOf(p);
-      const g2 = await gold();
-      const c2 = await menuCard(p, ROAD_CELLS[8], "趙雲");
+      const g2 = await fieldGold(p, false);
       check(
-        "只有 99 時派趙雲：引擎收到部署但沒有放，場上仍只有馬超、戰場金幣仍是 99、趙雲沒有變成「已在場上」",
+        "戰場金幣 0 時派趙雲：成功，戰場金幣仍是 0，部署資料是存檔的趙雲（後端基礎值）與正式技能",
         d2.ok &&
-          s2.log.length === 2 &&
-          s2.heroes.length === 1 &&
-          g2.battle === 99 &&
-          g2.hud === fmt(99) &&
-          g2.world === 1500 &&
-          c2.ok &&
-          !c2.disabled,
-        { d2, s2: { log: s2.log.length, heroes: s2.heroes.length }, g2, c2 }
-      );
-      await p.evaluate(() =>
-        window.__testBridge.engine.battleManager.earnGold(1)
-      );
-      const d3 = await deployHero(p, ROAD_CELLS[4], "趙雲");
-      const s3 = await fieldOf(p);
-      const g3 = await gold();
-      check(
-        "剛好 100 時派趙雲成功：戰場金幣變 0，部署資料是訪客預設的趙雲與正式技能",
-        d3.ok &&
-          s3.heroes.length === 2 &&
-          g3.battle === 0 &&
-          g3.hud === fmt(0) &&
+          s2.heroes.length === 2 &&
+          s2.heroes.some((x) => x.heroId === "hero_zhao_yun") &&
+          g2.battle === 0 &&
+          g2.hud === goldText(0) &&
           sameJson(
-            lastState(s3),
-            wantPayload("hero_zhao_yun", 3, 1, 110, 65, 1150)
+            lastState(s2),
+            wantPayload("hero_zhao_yun", 1, 0, 120, 60, 1300)
           ),
-        { d3, g3 }
+        { d2, g2, last: lastState(s2) }
       );
-      // 補回前置條件花掉的金幣：最後只少兩次部署的 200
-      await p.evaluate(
-        (n) => window.__testBridge.engine.battleManager.earnGold(n),
-        pre - 1
-      );
-      const g4 = await gold();
+      await openTeam(p);
+      const cost1 = await text(p, '[data-testid="team-edit-cost"]');
+      await closeModal(p);
       check(
-        "補回後戰場金幣＝開始時少 200（兩次部署各 100），世界金幣仍是 1500，沒有任何存檔請求",
-        g4.battle === g0.battle - 200 &&
-          g4.world === 1500 &&
-          E.gas.players().length === 0,
-        { g0, g4 }
+        "隊伍 Cost 不變（9 / 20）",
+        !!cost0 && cost0 === cost1 && /^9 \/ 20/.test(cost0),
+        { cost0, cost1 }
+      );
+      const back = readBack(E, "k_free");
+      check(
+        "沒有任何寫入；雲端存檔的世界金幣 500 與隊伍原樣、版本仍是 3",
+        E.gas.writes().length === 0 &&
+          !!back &&
+          back.rev === 3 &&
+          back.data.gold === 500 &&
+          sameJson(back.data.team, data.team),
+        { writes: E.gas.writes(), back }
       );
       return E;
     }
@@ -5723,6 +5940,336 @@ module.exports = async function profileContractWeb(page) {
       }
     );
   }
+
+  // ═══ 25. 清波回到備戰：同一場的延續，不重開整場 ═══
+  // 第 1 波清完回到備戰（手動出波）不是新的一場：battleId、關卡、波次（1）、場上的武將與塔、戰場金幣、城防與首擊紀錄都保留，
+  // 不送結算或存檔；之後照常按「迎戰」進第 2 波。自動出波時清波直接排下一波。
+  // 清波用引擎既有的 onWaveAllEnemiesDead 受控觸發（敵人是測試用的不倒木樁）：這裡驗的是生命週期，不是自然通關。
+  // 只有還沒開打（第 0 波）的備戰改隊伍／換帳號才重新載入（第 24 段已驗）；清波後的備戰改隊伍也不重開（動態同步隊伍是之後的範圍）
+  const DUMMY = {
+    enemy_id: "dummy_test",
+    name: "測試木樁",
+    hp: 1000000,
+    speed: 60,
+    atk: 1,
+    movement_type: "ground",
+    image: "enemy_grunt1.webp",
+    attack_image: "enemy_grunt1_atk.webp",
+  };
+  const DUMMY_WAVE = (wave) => ({
+    wave,
+    enemies: [
+      { enemy_id: "dummy_test", count: 1, interval: 1, path: "path_a" },
+    ],
+  });
+  const TWO_WAVE_MAPS = SKILL_MAPS.map((m) => ({
+    ...m,
+    waves: [DUMMY_WAVE(1), DUMMY_WAVE(2)],
+  }));
+  /** 這一場的生命週期快照：battleId、關卡、狀態、波次、金幣、城防、首擊紀錄、場上武將與塔的標記 */
+  const lifecycle = (p) =>
+    p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      const b = e.battleManager;
+      const fs = b.firstStrikeUsed;
+      return {
+        battleId: b.battleId,
+        stage: b.stageId,
+        state: b.gameState,
+        wave: b.currentWave,
+        total: b.totalWaves,
+        gold: b.battleGold,
+        baseHp: b.baseHp,
+        firstStrike: fs instanceof Map ? [...fs.entries()] : null,
+        heroes: e.heroes.map((h) => [h.heroId, h.__mark || null]),
+        towers: e.towers.map((t) => [t.towerTypeKey, t.__mark || null]),
+        hudWave: (
+          document.querySelector('[class*="hudWave"]') || { innerText: "" }
+        ).innerText.trim(),
+      };
+    });
+  const markField = (p) =>
+    p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      e.heroes.forEach((h) => (h.__mark = `hero:${h.heroId}`));
+      e.towers.forEach((t) => (t.__mark = `tower:${t.towerUid}`));
+      return e.heroes.length + e.towers.length;
+    });
+  /** 受控的清波回呼（引擎既有的方法；不是自然清波） */
+  const forceWaveClear = (p) =>
+    p.evaluate(() =>
+      window.__testBridge.engine.battleManager.onWaveAllEnemiesDead()
+    );
+  const waitFirstStrike = (p) =>
+    until(
+      () =>
+        p.evaluate(() => {
+          const fs = window.__testBridge.engine.battleManager.firstStrikeUsed;
+          return fs instanceof Map && fs.has("hero_ma_chao");
+        }),
+      20000
+    );
+
+  await scenario(
+    "清波回到備戰（手動出波）：共用帳號同一場延續，不重開、不寫入；之後照常進第 2 波",
+    async (mk) => {
+      const data = NEW({
+        capacity: 20,
+        team: [
+          { hero_id: "ma_chao", slot: 1 },
+          { hero_id: "zhao_yun", slot: 2 },
+        ],
+      });
+      const E = await mk({
+        seed: [{ key: "k_wave", data, rev: 2 }],
+        maps: TWO_WAVE_MAPS,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({ storage: { shenma_player_key: "k_wave" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      check("可以觀測部署資料", await watchPlacements(p));
+      const d1 = await deployHero(p, ROAD_CELLS[0], "馬超");
+      const t1 = await buildTower(p, BUILD_CELL, "弓兵塔");
+      check(
+        "備戰中從選單部署馬超、建弓兵塔，並標記實例",
+        d1.ok && t1.ok && (await markField(p)) === 2,
+        { d1, t1 }
+      );
+      const s0 = await lifecycle(p);
+      check(
+        "按進入戰場開第 1 波（共 2 波）",
+        (await startBattle(p)) && (await bm(p, "state")) === 2,
+        s0
+      );
+      check(
+        "馬超打到木樁、首擊紀錄寫下（這一場第一次命中）",
+        await waitFirstStrike(p),
+        await lifecycle(p)
+      );
+      const s1 = await lifecycle(p);
+      const writes1 = E.gas.writes().length;
+      await forceWaveClear(p);
+      await sleep(1200);
+      const s2 = await lifecycle(p);
+      check(
+        "清波後回到備戰：同一個 battleId、同一關、波次仍是 1（畫面 1/2），不是新的一場",
+        s2.state === 1 &&
+          s2.battleId === s1.battleId &&
+          s2.battleId === s0.battleId &&
+          s2.stage === s1.stage &&
+          s2.wave === 1 &&
+          s2.total === 2 &&
+          s2.hudWave === "1/2",
+        { s1, s2 }
+      );
+      check(
+        "場上的武將與塔是原本的實例，戰場金幣與城防不變",
+        sameJson(s2.heroes, s1.heroes) &&
+          sameJson(s2.heroes, [["hero_ma_chao", "hero:hero_ma_chao"]]) &&
+          sameJson(s2.towers, s1.towers) &&
+          s2.towers.length === 1 &&
+          s2.towers[0][1] !== null &&
+          s2.gold === s1.gold &&
+          s2.baseHp === s1.baseHp,
+        { s1, s2 }
+      );
+      check(
+        "首擊紀錄保留（馬超這一場已用過）",
+        !!s1.firstStrike &&
+          s1.firstStrike.length === 1 &&
+          sameJson(s2.firstStrike, s1.firstStrike),
+        { before: s1.firstStrike, after: s2.firstStrike }
+      );
+      const c2 = await menuCard(p, ROAD_CELLS[8], "馬超");
+      check(
+        "部署選單上馬超仍是「已在場上」",
+        c2.ok && c2.disabled && /已在場上/.test(c2.text),
+        c2
+      );
+      check(
+        "清波沒有送任何結算或存檔",
+        E.gas.writes().length === writes1 && writes1 === 0,
+        E.gas.writes()
+      );
+      // 共用帳號：這一場仍是出征中（結算前不能改共用存檔）；清波沒有解除，也沒有換成新的一場
+      await openTeam(p);
+      const blocked = await text(p, '[data-testid="team-edit-blocked"]');
+      const saveDisabled = await isDisabled(
+        p,
+        '[data-testid="team-edit-save"]'
+      );
+      await closeModal(p);
+      check(
+        "清波後仍是出征中：隊伍視窗說明結算前不能修改共用存檔、儲存鈕停用",
+        /出征中/.test(blocked || "") && saveDisabled === true,
+        { blocked, saveDisabled }
+      );
+      // 照常按「迎戰」進第 2 波
+      await p.locator('[data-testid="hud-start-battle"]').click();
+      const ok4 = await until(async () => (await bm(p, "state")) === 2, 5000);
+      await sleep(2500);
+      const s4 = await lifecycle(p);
+      check(
+        "按迎戰進第 2 波：同一個 battleId、波次 2（畫面 2/2）、原本的實例都在",
+        !!ok4 &&
+          s4.state === 2 &&
+          s4.battleId === s1.battleId &&
+          s4.wave === 2 &&
+          s4.hudWave === "2/2" &&
+          sameJson(s4.heroes, s1.heroes) &&
+          sameJson(s4.towers, s1.towers),
+        { s4 }
+      );
+      check(
+        "第 2 波馬超照常攻擊，首擊紀錄不變（同一場只觸發一次）",
+        sameJson(s4.firstStrike, s1.firstStrike),
+        { before: s1.firstStrike, after: s4.firstStrike }
+      );
+      check(
+        "到第 2 波為止沒有任何寫入（沒有結算、沒有存檔）",
+        E.gas.writes().length === 0,
+        E.gas.writes().map((e) => e.action)
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "清波回到備戰（手動出波）：訪客清波後在備戰改隊伍，不重開整場",
+    async (mk) => {
+      const E = await mk({
+        maps: TWO_WAVE_MAPS,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({
+        storage: guestStorage(
+          [
+            {
+              hero_id: "hero_ma_chao",
+              level: 2,
+              star: 1,
+              atk: 115,
+              def: 58,
+              hp: 1120,
+            },
+            {
+              hero_id: "hero_zhou_yu",
+              level: 1,
+              star: 1,
+              atk: 105,
+              def: 55,
+              hp: 1080,
+            },
+          ],
+          [{ slot: 0, hero_id: "hero_ma_chao" }]
+        ),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[0], "馬超");
+      check("部署馬超並標記實例", d1.ok && (await markField(p)) === 1, d1);
+      check("按進入戰場開第 1 波", await startBattle(p));
+      check("馬超打到木樁、首擊紀錄寫下", await waitFirstStrike(p));
+      const s1 = await lifecycle(p);
+      await forceWaveClear(p);
+      await sleep(1200);
+      const s2 = await lifecycle(p);
+      check(
+        "清波後回到備戰：同一個 battleId、波次 1",
+        s2.state === 1 && s2.battleId === s1.battleId && s2.wave === 1,
+        { s1, s2 }
+      );
+      await openTeam(p);
+      check("備戰中選得到周瑜", await pickTeamHero(p, "周瑜"));
+      await p.locator('[data-testid="team-edit-save"]').click();
+      await until(async () => (await modal(p).count()) === 0, 10000);
+      await sleep(1200);
+      const s3 = await lifecycle(p);
+      const saved = await p.evaluate(() =>
+        JSON.parse(localStorage.getItem("shenma_js_guest_state")).team.map(
+          (t) => t.hero_id
+        )
+      );
+      check(
+        "清波後改隊伍：本機存檔的隊伍更新（馬超、周瑜），但同一個 battleId、波次仍是 1、馬超是原本的實例、首擊紀錄不變",
+        sameJson(saved.slice().sort(), ["hero_ma_chao", "hero_zhou_yu"]) &&
+          s3.state === 1 &&
+          s3.battleId === s1.battleId &&
+          s3.wave === 1 &&
+          sameJson(s3.heroes, [["hero_ma_chao", "hero:hero_ma_chao"]]) &&
+          sameJson(s3.firstStrike, s1.firstStrike),
+        { saved, s3 }
+      );
+      const cm = await menuCard(p, ROAD_CELLS[8], "馬超");
+      const cz = await menuCard(p, ROAD_CELLS[8], "周瑜");
+      check(
+        "部署選單：馬超仍是「已在場上」，新加的周瑜可以點",
+        cm.ok && cm.disabled && cz.ok && !cz.disabled,
+        { cm, cz }
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "清波回到備戰（自動出波）：清波後直接進第 2 波，同一場",
+    async (mk) => {
+      const E = await mk({
+        maps: TWO_WAVE_MAPS,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const saveBefore = await p.evaluate(() =>
+        localStorage.getItem("shenma_js_guest_state")
+      );
+      const d1 = await deployHero(p, ROAD_CELLS[0], "馬超");
+      check("部署馬超並標記實例", d1.ok && (await markField(p)) === 1, d1);
+      const s0 = await lifecycle(p);
+      await p.locator("button", { hasText: /^自動$/ }).click();
+      check(
+        "按自動：直接開第 1 波（自動出波）",
+        await until(
+          async () =>
+            (await bm(p, "state")) === 2 &&
+            (await p.evaluate(
+              () => window.__testBridge.engine.battleManager.autoMode
+            )),
+          5000
+        )
+      );
+      check("馬超打到木樁、首擊紀錄寫下", await waitFirstStrike(p));
+      const s1 = await lifecycle(p);
+      await forceWaveClear(p);
+      const ok2 = await until(
+        async () =>
+          (await bm(p, "state")) === 2 && (await lifecycle(p)).wave === 2,
+        8000
+      );
+      const s2 = await lifecycle(p);
+      check(
+        "清波後自動進第 2 波：同一個 battleId、波次 2、原本的武將實例、首擊紀錄不變",
+        !!ok2 &&
+          s2.battleId === s0.battleId &&
+          s2.battleId === s1.battleId &&
+          s2.wave === 2 &&
+          sameJson(s2.heroes, [["hero_ma_chao", "hero:hero_ma_chao"]]) &&
+          sameJson(s2.firstStrike, s1.firstStrike),
+        { s1, s2 }
+      );
+      check(
+        "訪客的本機存檔沒有變（沒有結算），也沒有任何存檔請求",
+        (await p.evaluate(() =>
+          localStorage.getItem("shenma_js_guest_state")
+        )) === saveBefore && E.gas.players().length === 0
+      );
+      return E;
+    }
+  );
 
   // ═══ 18. 入口版面：1280 桌面、390×600、390×844 ═══
   for (const vp of [

@@ -22,10 +22,7 @@ export const BattleTips: React.FC<BattleTipsProps> = ({ onClose }) => {
         </button>
       </div>
       <ol className={styles.battleTipsList}>
-        <li>
-          點地圖上的道路或建築位，從選單派出隊伍裡的武將；每次派出要花 100
-          戰場金幣。
-        </li>
+        <li>點地圖上的道路或建築位，從選單派出隊伍裡的武將（不花金幣）。</li>
         <li>
           在建築位用這一場的戰場金幣建造防禦塔，點選已建的塔可以升級；擊倒敵人會再得到金幣。
         </li>

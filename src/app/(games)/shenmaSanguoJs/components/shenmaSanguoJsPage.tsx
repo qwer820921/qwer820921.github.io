@@ -430,12 +430,17 @@ const ShenmaSanguoJsPage: React.FC = () => {
     };
   }, [settleBattle, loadBattle]);
 
-  // 當隊伍陣容變更且處於備戰階段時，平滑更新戰場武將陣容
+  // 當隊伍陣容變更且處於備戰階段時，平滑更新戰場武將陣容。
+  // 只在這一場還沒開打（第 0 波）時重新載入：清完一波回到備戰是同一場的延續，不能因此重開一場（波次、場上武將與首擊紀錄都要保留）
   useEffect(() => {
-    if (bridgeRef.current && stats.game_state === GameState.PREP) {
+    if (
+      bridgeRef.current &&
+      stats.game_state === GameState.PREP &&
+      stats.wave === 0
+    ) {
       loadBattle(currentStageRef.current, activeTeamHeroes);
     }
-  }, [activeTeamHeroes, stats.game_state, loadBattle]);
+  }, [activeTeamHeroes, stats.game_state, stats.wave, loadBattle]);
 
   // 畫布回調
   const handleCanvasReady = useCallback((canvas: HTMLCanvasElement) => {

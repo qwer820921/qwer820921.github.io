@@ -8,14 +8,28 @@
  */
 
 import { GameMap, TileType } from "./GameMap";
-import { BattleManager, GameState, StatsSyncData, BattleResultData } from "./BattleManager";
+import {
+  BattleManager,
+  GameState,
+  StatsSyncData,
+  BattleResultData,
+} from "./BattleManager";
 import { WaveManager, WaveConfigData } from "./WaveManager";
 import { FloatingTextManager } from "./FloatingTextManager";
 import { SoundManager } from "./SoundManager";
-import { IBattleRenderer, BattleSnapshot, UnitRenderData, VisualFxData } from "../types/render";
+import {
+  IBattleRenderer,
+  BattleSnapshot,
+  UnitRenderData,
+  VisualFxData,
+} from "../types/render";
 import { CanvasRenderer } from "../render/CanvasRenderer";
 import { AssetLoader } from "./AssetLoader";
-import { HeroEntity, HeroConfigData, HeroStateData } from "./entities/HeroEntity";
+import {
+  HeroEntity,
+  HeroConfigData,
+  HeroStateData,
+} from "./entities/HeroEntity";
 import { TowerEntity, TOWER_CONFIGS } from "./entities/TowerEntity";
 import { EnemyConfigData } from "./entities/EnemyEntity";
 
@@ -50,8 +64,14 @@ export class BattleEngine {
   private enemiesConfig: EnemyConfigData[] = [];
 
   // 選中與高亮狀態
-  public selectedUnit: { type: "hero" | "tower"; id: string; col: number; row: number } | null = null;
-  public highlightCell: { col: number; row: number; valid: boolean } | null = null;
+  public selectedUnit: {
+    type: "hero" | "tower";
+    id: string;
+    col: number;
+    row: number;
+  } | null = null;
+  public highlightCell: { col: number; row: number; valid: boolean } | null =
+    null;
   public dragGhost: {
     type: "hero" | "tower";
     name: string;
@@ -69,7 +89,12 @@ export class BattleEngine {
 
   // UI 事件回調
   public onStatsUpdated?: (stats: StatsSyncData) => void;
-  public onShowPlacementMenu?: (col: number, row: number, isRoad: boolean, isBuild: boolean) => void;
+  public onShowPlacementMenu?: (
+    col: number,
+    row: number,
+    isRoad: boolean,
+    isBuild: boolean
+  ) => void;
   public onShowUpgradePanel?: (tower: TowerEntity) => void;
   public onShowHeroInfo?: (hero: HeroEntity) => void;
   public onBattleEnded?: (result: BattleResultData) => void;
@@ -125,7 +150,9 @@ export class BattleEngine {
       const plans = this.waveManager.planWave(waveNum);
       const rep = this.waveManager.getLastPlanReport();
       if (rep.missing || (plans.length === 0 && rep.skipped.length > 0)) {
-        const reason = rep.skipped[0]?.reason || (rep.missing ? "wave_missing" : "wave_empty");
+        const reason =
+          rep.skipped[0]?.reason ||
+          (rep.missing ? "wave_missing" : "wave_empty");
         this.battleManager.rejectWave(waveNum, reason);
         return;
       }
@@ -164,7 +191,11 @@ export class BattleEngine {
 
     this.gameMap.setup(payload.pathJson, vpW, vpH);
     this.waveManager.setup(payload.waves, this.enemiesConfig, this.gameMap);
-    this.battleManager.initialize(payload.totalWaves, payload.stageId, payload.battleId);
+    this.battleManager.initialize(
+      payload.totalWaves,
+      payload.stageId,
+      payload.battleId
+    );
 
     // 預載貼圖資源以避免首次召喚延遲
     const assetLoader = AssetLoader.getInstance();
@@ -180,7 +211,12 @@ export class BattleEngine {
     const enemyKeys = this.enemiesConfig.map(
       (e) => e.image || `enemy_${e.enemy_id}.webp`
     );
-    assetLoader.preloadBatch([...heroKeys, ...playerHeroKeys, ...towerKeys, ...enemyKeys]);
+    assetLoader.preloadBatch([
+      ...heroKeys,
+      ...playerHeroKeys,
+      ...towerKeys,
+      ...enemyKeys,
+    ]);
   }
 
   /**
@@ -196,10 +232,15 @@ export class BattleEngine {
     if (delta < 0) delta = 0.016;
 
     const timeScale = this.battleManager.effectiveTimeScale();
-    const effectiveDelta = this.battleManager.manualPaused ? 0 : delta * timeScale;
+    const effectiveDelta = this.battleManager.manualPaused
+      ? 0
+      : delta * timeScale;
 
     // 狀態機為 BATTLE 時更新遊戲邏輯
-    if (this.battleManager.gameState === GameState.BATTLE && effectiveDelta > 0) {
+    if (
+      this.battleManager.gameState === GameState.BATTLE &&
+      effectiveDelta > 0
+    ) {
       this.battleManager.update(effectiveDelta);
       this.waveManager.update(effectiveDelta);
 
@@ -213,21 +254,35 @@ export class BattleEngine {
         if (!enemy.isFlying && !enemy.blocker) {
           const grid = this.gameMap.worldToGrid(enemy.x, enemy.y);
           const hero = this.heroes.find(
-            (h) => h.isOnRoad && !h.isDead && h.gridCell.col === grid.col && h.gridCell.row === grid.row
+            (h) =>
+              h.isOnRoad &&
+              !h.isDead &&
+              h.gridCell.col === grid.col &&
+              h.gridCell.row === grid.row
           );
           if (hero) {
             enemy.blocker = hero;
           }
         }
 
-        enemy.update(effectiveDelta, this.gameMap, this.floatingTexts, this.soundManager);
+        enemy.update(
+          effectiveDelta,
+          this.gameMap,
+          this.floatingTexts,
+          this.soundManager
+        );
       }
 
       // 2. 更新防禦塔攻擊
       for (let i = 0; i < this.towers.length; i++) {
         const tower = this.towers[i];
         if (!tower.sold) {
-          tower.update(effectiveDelta, enemies, this.floatingTexts, this.soundManager);
+          tower.update(
+            effectiveDelta,
+            enemies,
+            this.floatingTexts,
+            this.soundManager
+          );
         }
       }
 
@@ -239,7 +294,14 @@ export class BattleEngine {
           this.heroes.splice(i, 1);
           continue;
         }
-        hero.update(effectiveDelta, enemies, this.heroes, this.battleManager, this.floatingTexts, this.soundManager);
+        hero.update(
+          effectiveDelta,
+          enemies,
+          this.heroes,
+          this.battleManager,
+          this.floatingTexts,
+          this.soundManager
+        );
       }
 
       // 4. 更新視覺特效 (橫掃光環)
@@ -274,7 +336,8 @@ export class BattleEngine {
     }));
 
     const heroesRender: UnitRenderData[] = this.heroes.map((h) => {
-      const isSel = this.selectedUnit?.type === "hero" && this.selectedUnit.id === h.heroId;
+      const isSel =
+        this.selectedUnit?.type === "hero" && this.selectedUnit.id === h.heroId;
       return {
         id: h.heroId,
         type: "hero",
@@ -283,7 +346,10 @@ export class BattleEngine {
         radius: h.heroHalf,
         currentHp: h.currentHp,
         maxHp: h.maxHp,
-        textureKey: h.isAttacking && h.attackTextureKey ? h.attackTextureKey : h.textureKey,
+        textureKey:
+          h.isAttacking && h.attackTextureKey
+            ? h.attackTextureKey
+            : h.textureKey,
         isAttacking: h.isAttacking,
         isSelected: isSel,
         color: h.bodyColor,
@@ -302,7 +368,9 @@ export class BattleEngine {
     });
 
     const towersRender: UnitRenderData[] = this.towers.map((tw) => {
-      const isSel = this.selectedUnit?.type === "tower" && this.selectedUnit.id === tw.towerUid;
+      const isSel =
+        this.selectedUnit?.type === "tower" &&
+        this.selectedUnit.id === tw.towerUid;
       return {
         id: tw.towerUid,
         type: "tower",
@@ -311,7 +379,10 @@ export class BattleEngine {
         radius: tw.tileSize * 0.42,
         currentHp: 1,
         maxHp: 1,
-        textureKey: tw.isAttacking && tw.attackTextureKey ? tw.attackTextureKey : tw.textureKey,
+        textureKey:
+          tw.isAttacking && tw.attackTextureKey
+            ? tw.attackTextureKey
+            : tw.textureKey,
         isAttacking: tw.isAttacking,
         isSelected: isSel,
         color: tw.bodyColor,
@@ -325,25 +396,30 @@ export class BattleEngine {
       };
     });
 
-    const enemiesRender: UnitRenderData[] = this.waveManager.activeEnemies.map((e) => ({
-      id: e.enemyId,
-      type: "enemy",
-      x: e.x,
-      y: e.y,
-      radius: e.radius,
-      currentHp: e.currentHp,
-      maxHp: e.maxHp,
-      textureKey: e.isFighting && e.attackTextureKey ? e.attackTextureKey : e.textureKey,
-      isAttacking: e.isFighting,
-      color: e.bodyColor,
-      label: e.enemyName,
-      isFlying: e.isFlying(),
-      isFighting: e.isFighting,
-      isBurning: e.isBurning(),
-      isStunned: e.isStunned(),
-      isSlowed: e.isSlowed(),
-      stunAngle: e.stunAngle,
-    }));
+    const enemiesRender: UnitRenderData[] = this.waveManager.activeEnemies.map(
+      (e) => ({
+        id: e.enemyId,
+        type: "enemy",
+        x: e.x,
+        y: e.y,
+        radius: e.radius,
+        currentHp: e.currentHp,
+        maxHp: e.maxHp,
+        textureKey:
+          e.isFighting && e.attackTextureKey
+            ? e.attackTextureKey
+            : e.textureKey,
+        isAttacking: e.isFighting,
+        color: e.bodyColor,
+        label: e.enemyName,
+        isFlying: e.isFlying(),
+        isFighting: e.isFighting,
+        isBurning: e.isBurning(),
+        isStunned: e.isStunned(),
+        isSlowed: e.isSlowed(),
+        stunAngle: e.stunAngle,
+      })
+    );
 
     return {
       timestamp: performance.now(),
@@ -418,20 +494,32 @@ export class BattleEngine {
 
     // 檢查是否有防禦塔
     const tower = this.towers.find(
-      (tw) => !tw.sold && tw.gridCell.col === grid.col && tw.gridCell.row === grid.row
+      (tw) =>
+        !tw.sold && tw.gridCell.col === grid.col && tw.gridCell.row === grid.row
     );
     if (tower) {
-      this.selectedUnit = { type: "tower", id: tower.towerUid, col: grid.col, row: grid.row };
+      this.selectedUnit = {
+        type: "tower",
+        id: tower.towerUid,
+        col: grid.col,
+        row: grid.row,
+      };
       this.onShowUpgradePanel?.(tower);
       return;
     }
 
     // 檢查是否有武將
     const hero = this.heroes.find(
-      (h) => !h.isDead && h.gridCell.col === grid.col && h.gridCell.row === grid.row
+      (h) =>
+        !h.isDead && h.gridCell.col === grid.col && h.gridCell.row === grid.row
     );
     if (hero) {
-      this.selectedUnit = { type: "hero", id: hero.heroId, col: grid.col, row: grid.row };
+      this.selectedUnit = {
+        type: "hero",
+        id: hero.heroId,
+        col: grid.col,
+        row: grid.row,
+      };
       this.onShowHeroInfo?.(hero);
       return;
     }
@@ -450,16 +538,14 @@ export class BattleEngine {
   /**
    * 放置武將
    */
-  public placeHero(col: number, row: number, heroState: HeroStateData): boolean {
+  public placeHero(
+    col: number,
+    row: number,
+    heroState: HeroStateData
+  ): boolean {
     if (!this.gameMap.canPlaceHero(col, row)) return false;
 
-    // 武將召喚花費 (預設 100 金幣)
-    const cost = 100;
-    if (!this.battleManager.spendGold(cost)) {
-      this.floatingTexts.spawn("金幣不足", "#ff5252", this.gameMap.gridToWorld(col, row).x, this.gameMap.gridToWorld(col, row).y);
-      return false;
-    }
-
+    // 派出武將不花戰場金幣（和 Godot 版相同）；建塔與升級照原價
     const pos = this.gameMap.gridToWorld(col, row);
     const isOnRoad = this.gameMap.getTileType(col, row) === TileType.ROAD;
 
@@ -488,13 +574,24 @@ export class BattleEngine {
     if (!cfg) return false;
 
     if (!this.battleManager.spendGold(cfg.cost)) {
-      this.floatingTexts.spawn("金幣不足", "#ff5252", this.gameMap.gridToWorld(col, row).x, this.gameMap.gridToWorld(col, row).y);
+      this.floatingTexts.spawn(
+        "金幣不足",
+        "#ff5252",
+        this.gameMap.gridToWorld(col, row).x,
+        this.gameMap.gridToWorld(col, row).y
+      );
       return false;
     }
 
     const pos = this.gameMap.gridToWorld(col, row);
     const uid = `tower_${++this.towerSeq}`;
-    const tower = new TowerEntity(uid, towerTypeKey, { col, row }, pos, this.gameMap.tileSize);
+    const tower = new TowerEntity(
+      uid,
+      towerTypeKey,
+      { col, row },
+      pos,
+      this.gameMap.tileSize
+    );
 
     this.gameMap.setOccupied(col, row, tower);
     this.towers.push(tower);
@@ -519,7 +616,13 @@ export class BattleEngine {
 
     tower.upgrade();
     this.soundManager.play("upgrade");
-    this.floatingTexts.spawn(`Lv.${tower.towerLevel}`, "#ffca28", tower.x, tower.y - 20, 1.3);
+    this.floatingTexts.spawn(
+      `Lv.${tower.towerLevel}`,
+      "#ffca28",
+      tower.x,
+      tower.y - 20,
+      1.3
+    );
     return true;
   }
 
@@ -561,7 +664,12 @@ export class BattleEngine {
   /**
    * 觸發視覺衝擊特效
    */
-  public spawnVisualFx(x: number, y: number, radius = 50, duration = 0.3): void {
+  public spawnVisualFx(
+    x: number,
+    y: number,
+    radius = 50,
+    duration = 0.3
+  ): void {
     this.visualFxs.push({
       id: ++this.fxSeq,
       type: "sweep",
@@ -578,8 +686,8 @@ export class BattleEngine {
    */
   public resize(width: number, height: number): void {
     if (!this.canvas) return;
-    const finalW = width > 0 ? width : (this.canvas.clientWidth || 800);
-    const finalH = height > 0 ? height : (this.canvas.clientHeight || 580);
+    const finalW = width > 0 ? width : this.canvas.clientWidth || 800;
+    const finalH = height > 0 ? height : this.canvas.clientHeight || 580;
     this.renderer.resize(finalW, finalH);
     this.gameMap.updateLayout(finalW, finalH);
 
