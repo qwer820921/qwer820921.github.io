@@ -276,6 +276,9 @@ const ShenmaSanguoJsPage: React.FC = () => {
           : mgr.getEnemiesConfig(),
         playerHeroes,
       });
+      // 換成新的一場（場上沒有武將）：部署選單的「已在場上」名單與還開著的部署選單（指向上一場的格子）一起清掉
+      setPlacedHeroIds([]);
+      setPlacementMenu(null);
     },
     []
   );
