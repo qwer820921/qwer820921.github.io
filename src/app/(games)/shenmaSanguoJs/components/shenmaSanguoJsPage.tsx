@@ -30,6 +30,7 @@ import {
   isStageUnlocked,
 } from "../utils/stagePlayability";
 import { describePendingStage } from "../utils/sharedSettleDisplay";
+import { canvasHeroSkill } from "../utils/heroSkillBinding";
 import { useJsPlayerStore } from "../store/useJsPlayerStore";
 import { BattleRewardResult, TeamSlot } from "../types/player";
 import { KeySetupModal } from "./KeySetupModal";
@@ -52,6 +53,11 @@ const isRemoteConfig = (mgr: StageDataManager) =>
   mgr.getStages() !== BUILTIN_STAGES &&
   mgr.getHeroesConfig() !== BUILTIN_HEROES_CONFIG &&
   mgr.getEnemiesConfig() !== BUILTIN_ENEMIES_CONFIG;
+
+/** 訪客或尚未登入時的預設出征武將（附正式技能表的技能）。只建立一次：不相關的存檔更新不會換掉它、不會讓備戰中的戰場重新載入 */
+const DEFAULT_SORTIE_HEROES: HeroStateData[] = DEFAULT_PLAYER_HEROES.map(
+  (h) => ({ ...h, ...canvasHeroSkill(h.hero_id) })
+);
 
 const DEFAULT_STATS: StatsSyncData = {
   battle_id: "",
@@ -190,7 +196,8 @@ const ShenmaSanguoJsPage: React.FC = () => {
   }, [initPlayer]);
 
   // 當前出征隊伍武將名單（嚴格取自 player.team 與 player.heroes；數值 0 照樣是 0）。
-  // 共用帳號沒有隊伍或隊伍不支援時是空的（不自動換成預設隊伍）；訪客或尚未登入時照原本的預設展示
+  // 共用帳號沒有隊伍或隊伍不支援時是空的（不自動換成預設隊伍）；訪客或尚未登入時照原本的預設展示。
+  // 技能只照武將是誰從正式技能表帶入（canvasHeroSkill），不來自存檔或後端設定，也不寫回存檔
   const activeTeamHeroes: HeroStateData[] = useMemo(() => {
     if (
       !player ||
@@ -198,7 +205,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
       player.team.length === 0 ||
       (mode === "shared" && !teamEditable)
     ) {
-      return mode === "shared" ? [] : DEFAULT_PLAYER_HEROES;
+      return mode === "shared" ? [] : DEFAULT_SORTIE_HEROES;
     }
     return player.team.map((slot) => {
       const heroState = player.heroes.find((h) => h.hero_id === slot.hero_id);
@@ -209,6 +216,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
         atk: heroState?.atk ?? 100,
         def: heroState?.def ?? 50,
         hp: heroState?.hp ?? 1000,
+        ...canvasHeroSkill(slot.hero_id),
       };
     });
   }, [player, mode, teamEditable]);

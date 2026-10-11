@@ -3676,6 +3676,845 @@ module.exports = async function profileContractWeb(page) {
     return E;
   });
 
+  // ═══ 23. 武將技能接線：正常頁面從部署選單放置，技能取自正式技能表；不寫進存檔、暫存與結算 ═══
+  // 期待值寫死（正式技能表 shenmaSanguo/utils/heroSkills 的參數名與數值），不由頁面或技能表產生。每次部署都比兩處：
+  //   - 引擎建立武將之前收到的部署資料：測試側包住既有的 engine.placeHero 記下參數，再原樣呼叫（不直接呼叫 placeHero、不注入技能）
+  //   - 引擎武將實例的 16 個技能欄位（沒有技能時是初始值）
+  // 首擊與射程在引擎裡缺值會補預設倍率，只看實例抓不到參數名寫錯，所以部署資料也要逐欄比。
+  // 關卡是只給接線用的合成關（道路格夠多），不是正式代表關；這裡不驗收技能在戰鬥中的實際效果
+  const SKILL_PAYLOAD = {
+    hero_ma_chao: { id: "first_strike", first_attack_multiplier: 2 },
+    hero_zhao_yun: { id: "dodge", dodge_chance: 0.15 },
+    hero_huang_zhong: { id: "long_range", range_multiplier: 1.5 },
+    hero_zhou_yu: {
+      id: "burn",
+      burn_ratio: 0.2,
+      burn_ticks: 3,
+      burn_interval: 1,
+    },
+    hero_guan_yu: { id: "slow_aura", slow_mult: 0.9 },
+    hero_liu_bei: { id: "def_aura", def_mult: 1.2 },
+    hero_zhang_fei: { id: "stun", stun_sec: 0.5 },
+    hero_wei_yan: { id: "lifesteal", lifesteal_ratio: 0.15 },
+    hero_cao_cao: { id: "atk_speed_aura", atk_speed_mult: 1.15 },
+    hero_xia_hou_dun: { id: "counter", counter_ratio: 0.2 },
+    hero_liao_hua: { id: "tenacity", low_hp_ratio: 0.3, damage_mult: 0.8 },
+    hero_yan_liang: { id: "atk_down_aura", atk_mult: 0.9 },
+    hero_sun_shang_xiang: { id: "double_shot", double_shot_chance: 0.2 },
+  };
+  const NO_SKILL = {
+    firstStrikeMultiplier: 1,
+    rangeMultiplier: 1,
+    burnRatio: 0,
+    burnTicks: 0,
+    burnInterval: 1,
+    slowAuraMult: 1,
+    dodgeChance: 0,
+    defAuraMult: 1,
+    stunDuration: 0,
+    lifestealRatio: 0,
+    atkSpeedAuraMult: 1,
+    counterRatio: 0,
+    tenacityHpRatio: 0,
+    tenacityDamageMult: 1,
+    atkDownAuraMult: 1,
+    doubleShotChance: 0,
+  };
+  const SKILL_FIELDS = {
+    hero_ma_chao: { firstStrikeMultiplier: 2 },
+    hero_zhao_yun: { dodgeChance: 0.15 },
+    hero_huang_zhong: { rangeMultiplier: 1.5 },
+    hero_zhou_yu: { burnRatio: 0.2, burnTicks: 3, burnInterval: 1 },
+    hero_guan_yu: { slowAuraMult: 0.9 },
+    hero_liu_bei: { defAuraMult: 1.2 },
+    hero_zhang_fei: { stunDuration: 0.5 },
+    hero_wei_yan: { lifestealRatio: 0.15 },
+    hero_cao_cao: { atkSpeedAuraMult: 1.15 },
+    hero_xia_hou_dun: { counterRatio: 0.2 },
+    hero_liao_hua: { tenacityHpRatio: 0.3, tenacityDamageMult: 0.8 },
+    hero_yan_liang: { atkDownAuraMult: 0.9 },
+    hero_sun_shang_xiang: { doubleShotChance: 0.2 },
+  };
+  // 訪客沒有隊伍時的 13 位預設武將（engine/builtinData.ts 的 DEFAULT_PLAYER_HEROES，照原文抄寫）與部署選單上的名稱
+  const DEFAULT_SORTIE = [
+    ["hero_ma_chao", "馬超", 3, 1, 120, 60, 1200],
+    ["hero_zhao_yun", "趙雲", 3, 1, 110, 65, 1150],
+    ["hero_guan_yu", "關羽", 4, 2, 150, 75, 1500],
+    ["hero_zhang_fei", "張飛", 3, 1, 140, 70, 1450],
+    ["hero_zhou_yu", "周瑜", 3, 1, 135, 55, 1000],
+    ["hero_huang_zhong", "黃忠", 3, 1, 130, 50, 950],
+    ["hero_liu_bei", "劉備", 3, 1, 105, 80, 1600],
+    ["hero_wei_yan", "魏延", 2, 1, 115, 58, 1250],
+    ["hero_cao_cao", "曹操", 3, 1, 125, 72, 1400],
+    ["hero_xia_hou_dun", "夏侯惇", 2, 1, 120, 68, 1350],
+    ["hero_liao_hua", "廖化", 2, 1, 100, 62, 1200],
+    ["hero_yan_liang", "顏良", 2, 1, 130, 60, 1300],
+    ["hero_sun_shang_xiang", "孫尚香", 2, 1, 125, 52, 1050],
+  ];
+  const wantPayload = (hero_id, level, star, atk, def, hp) => ({
+    hero_id,
+    level,
+    star,
+    atk,
+    def,
+    hp,
+    skill: SKILL_PAYLOAD[hero_id],
+  });
+  const wantFields = (hero_id) => ({ ...NO_SKILL, ...SKILL_FIELDS[hero_id] });
+  // 接線用的合成關：兩條道路（第 3 列、第 6 列）都通到城池，出生點與城池以外的道路格都能放武將
+  const SKILL_MAP = (id, n) => ({
+    map_id: id,
+    chapter: 1,
+    name: `接線測試第${n}關`,
+    unlock_stage: id,
+    path_json: JSON.stringify({
+      cols: 14,
+      rows: 10,
+      paths: {
+        path_a: [
+          [0, 3],
+          [13, 3],
+        ],
+        path_b: [
+          [0, 6],
+          [13, 6],
+          [13, 3],
+        ],
+      },
+      base: [13, 3],
+      build_zones: [[2, 1]],
+    }),
+    waves: [
+      {
+        wave: 1,
+        enemies: [
+          { enemy_id: "grunt_lv1", count: 2, interval: 1.5, path: "path_a" },
+        ],
+      },
+    ],
+  });
+  const SKILL_MAPS = [
+    SKILL_MAP("chapter1_1", 1),
+    SKILL_MAP("chapter1_2", 2),
+    SKILL_MAP("chapter1_3", 3),
+  ];
+  const ROAD_CELLS = [
+    ...[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((c) => [c, 3]),
+    ...[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((c) => [c, 6]),
+  ];
+  /** 所有名為 skill 的鍵的路徑（深度走訪） */
+  const skillPaths = (v, path = "") =>
+    Array.isArray(v)
+      ? v.flatMap((x, i) => skillPaths(x, `${path}[${i}]`))
+      : v && typeof v === "object"
+        ? Object.entries(v).flatMap(([k, x]) => [
+            ...(k === "skill" ? [`${path}.${k}`] : []),
+            ...skillPaths(x, `${path}.${k}`),
+          ])
+        : [];
+  /** 瀏覽器儲存裡出現 skill 的位置（值能解析成 JSON 就走訪，否則找字樣） */
+  async function storageSkill(p) {
+    const st = await storageOf(p);
+    const found = [];
+    for (const [area, kv] of [
+      ["localStorage", st.ls],
+      ["sessionStorage", st.ss],
+    ])
+      for (const [k, v] of Object.entries(kv)) {
+        let parsed;
+        try {
+          parsed = JSON.parse(v);
+        } catch {
+          parsed = undefined;
+        }
+        const paths =
+          parsed !== undefined
+            ? skillPaths(parsed)
+            : /"skill"\s*:/.test(v)
+              ? ["(文字)"]
+              : [];
+        for (const x of paths) found.push(`${area}.${k}${x}`);
+      }
+    return found;
+  }
+  /** 在測試側包住既有的 engine.placeHero：記下引擎建立武將前收到的部署資料，再原樣呼叫 */
+  async function watchPlacements(p) {
+    return p.evaluate(() => {
+      const e = window.__testBridge && window.__testBridge.engine;
+      if (!e || typeof e.placeHero !== "function") return false;
+      if (!e.__placeLog) {
+        e.__placeLog = [];
+        const orig = e.placeHero;
+        e.placeHero = function (col, row, heroState) {
+          e.__placeLog.push({
+            col,
+            row,
+            state: JSON.parse(JSON.stringify(heroState)),
+          });
+          return orig.call(this, col, row, heroState);
+        };
+      }
+      return true;
+    });
+  }
+  /** 照玩家的操作部署：點畫布上的格子 → 部署選單 → 點武將卡 */
+  async function deployHero(p, [col, row], name) {
+    const at = () =>
+      p.evaluate(
+        ({ c, r }) => {
+          const e = window.__testBridge.engine;
+          const w = e.gameMap.gridToWorld(c, r);
+          const rect = e.canvas.getBoundingClientRect();
+          const x = rect.left + w.x;
+          const y = rect.top + w.y;
+          const el = document.elementFromPoint(x, y);
+          return {
+            x,
+            y,
+            onCanvas: el === e.canvas,
+            canPlace: e.gameMap.canPlaceHero(c, r),
+            hit: el ? `${el.tagName}.${el.className}` : null,
+          };
+        },
+        { c: col, r: row }
+      );
+    let pt = await at();
+    const tips = p.locator('button[aria-label="收起玩法提示"]');
+    if (!pt.onCanvas && (await tips.count())) {
+      await tips.first().click();
+      await sleep(300);
+      pt = await at();
+    }
+    if (!pt.onCanvas || !pt.canPlace) return { ok: false, step: "cell", pt };
+    await p.mouse.click(pt.x, pt.y);
+    const menu = p.locator('[data-testid="placement-menu"]');
+    if (!(await until(() => menu.isVisible(), 5000)))
+      return { ok: false, step: "menu", pt };
+    const card = menu.locator("button", { hasText: name });
+    if ((await card.count()) === 0)
+      return { ok: false, step: "card", menu: await menu.innerText() };
+    if (await card.first().isDisabled())
+      return { ok: false, step: "card-disabled", menu: await menu.innerText() };
+    await card.first().click();
+    const closed = await until(async () => (await menu.count()) === 0, 5000);
+    return { ok: !!closed, step: closed ? "placed" : "menu-open" };
+  }
+  /** 引擎目前的這一場：部署紀錄、battleId、場上武將與它們的 16 個技能欄位 */
+  async function fieldOf(p) {
+    return p.evaluate((fields) => {
+      const e = window.__testBridge.engine;
+      return {
+        log: e.__placeLog || [],
+        battleId: e.battleManager.battleId,
+        heroes: e.heroes.map((h) => ({
+          heroId: h.heroId,
+          mark: h.__mark || null,
+          f: Object.fromEntries(fields.map((k) => [k, h[k]])),
+        })),
+      };
+    }, Object.keys(NO_SKILL));
+  }
+  /** 等 battleId 穩定（重新載入後一段時間不再變） */
+  async function stableBattle(p) {
+    let last = null;
+    let stable = 0;
+    await until(async () => {
+      const id = await bm(p, "battleId");
+      stable = id && id === last ? stable + 1 : 0;
+      last = id;
+      return stable >= 8;
+    }, 15000);
+    return last;
+  }
+  const lastState = (s) =>
+    s.log.length ? s.log[s.log.length - 1].state : null;
+  /** 只記錄、不當作斷言的觀察（附在這個情境的結果裡） */
+  const note = (name, detail) => {
+    if (current) (current.notes = current.notes || []).push({ name, detail });
+  };
+  const heroVec = (s) => s.heroes.map((h) => [h.heroId, h.f]);
+  // 訪客的本機存檔（只在這個瀏覽器）
+  const GUEST_SAVE = (heroes, team) =>
+    JSON.stringify({
+      key: "guest_skill",
+      nickname: "遊俠主公",
+      level: 1,
+      exp: 0,
+      gold: 1500,
+      capacity: 65,
+      max_stage: "chapter1_1",
+      cleared_stages: {},
+      heroes,
+      team,
+      serverRev: 1,
+      updatedAt: 1,
+    });
+  const DECOY_SCENARIO = "技能接線：設定與存檔夾帶的 skill 不採用";
+
+  await scenario("技能接線：共用帳號從部署選單放置", async (mk) => {
+    const data = NEW({
+      capacity: 20,
+      heroes: [
+        { hero_id: "ma_chao", level: 3, star: 0, atk: 0, def: 0, hp: 0 },
+      ],
+      team: [
+        { hero_id: "ma_chao", slot: 1 },
+        { hero_id: "zhao_yun", slot: 2 },
+      ],
+    });
+    const E = await mk({
+      seed: [{ key: "k_skill", data, rev: 4 }],
+      maps: SKILL_MAPS,
+      enemies: ENEMIES,
+    });
+    const p = await E.page({ storage: { shenma_player_key: "k_skill" } });
+    check("讀到存檔", (await loadShared(p)) === "player");
+    await closeModal(p);
+    await waitRemoteStage(p, E);
+    check("可以觀測部署資料", await watchPlacements(p));
+    const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+    const d2 = await deployHero(p, ROAD_CELLS[4], "趙雲");
+    check("從部署選單放置馬超與趙雲", d1.ok && d2.ok, { d1, d2 });
+    const s1 = await fieldOf(p);
+    check(
+      "引擎建立武將前收到的部署資料逐欄等於寫死的值（馬超的 0 照樣是 0；趙雲用後端基礎值；技能是正式表的參數）",
+      sameJson(
+        s1.log.map((x) => x.state),
+        [
+          wantPayload("hero_ma_chao", 3, 0, 0, 0, 0),
+          wantPayload("hero_zhao_yun", 1, 0, 120, 60, 1300),
+        ]
+      ),
+      s1.log
+    );
+    check(
+      "兩位武將實例的 16 個技能欄位：只有自己的技能，其他是初始值（不串用）",
+      sameJson(heroVec(s1), [
+        ["hero_ma_chao", wantFields("hero_ma_chao")],
+        ["hero_zhao_yun", wantFields("hero_zhao_yun")],
+      ]),
+      s1.heroes
+    );
+    // 備戰中改隊伍：存檔只送 team（沒有 skill），戰場重新載入，之後部署用新隊伍的資料
+    await openTeam(p);
+    check(
+      "選得到黃忠與周瑜",
+      (await pickTeamHero(p, "黃忠")) && (await pickTeamHero(p, "周瑜"))
+    );
+    await p.locator('[data-testid="team-edit-save"]').click();
+    await until(async () => (await modal(p).count()) === 0, 10000);
+    const saves = E.gas.log.filter((e) => e.action === "save_profile");
+    const sent = saves[0] && saves[0].payload;
+    check(
+      "改隊伍：一次 save_profile、body 沒有 skill、除了 team 其他原樣、隊伍是馬超／趙雲／黃忠／周瑜",
+      saves.length === 1 &&
+        skillPaths(sent).length === 0 &&
+        sameJson({ ...sent.data, team: null }, { ...data, team: null }) &&
+        sameJson(sent.data.team.map((t) => t.hero_id).sort(), [
+          "huang_zhong",
+          "ma_chao",
+          "zhao_yun",
+          "zhou_yu",
+        ]),
+      sent
+    );
+    const bid1 = await until(async () => {
+      const b = await bm(p, "battleId");
+      return b && b !== s1.battleId ? b : null;
+    }, 10000);
+    await stableBattle(p);
+    const s2 = await fieldOf(p);
+    check(
+      "備戰中改隊伍後戰場重新載入：新的 battleId、場上沒有武將",
+      !!bid1 && s2.battleId !== s1.battleId && s2.heroes.length === 0,
+      { bid1, s2: { battleId: s2.battleId, heroes: s2.heroes.length } }
+    );
+    const d3 = await deployHero(p, ROAD_CELLS[6], "黃忠");
+    const s3 = await fieldOf(p);
+    check(
+      "重新載入後部署黃忠：部署資料帶長射程 1.5，實例只有射程倍率 1.5",
+      d3.ok &&
+        sameJson(
+          lastState(s3),
+          wantPayload("hero_huang_zhong", 1, 0, 125, 50, 1000)
+        ) &&
+        sameJson(heroVec(s3), [
+          ["hero_huang_zhong", wantFields("hero_huang_zhong")],
+        ]),
+      { d3, s3 }
+    );
+    // 只記錄：備戰中重新載入不清「已在場上」的名單（頁面的既有行為，不在這次的修改範圍）
+    {
+      const pt = await p.evaluate(
+        ({ c, r }) => {
+          const e = window.__testBridge.engine;
+          const w = e.gameMap.gridToWorld(c, r);
+          const rect = e.canvas.getBoundingClientRect();
+          return { x: rect.left + w.x, y: rect.top + w.y };
+        },
+        { c: ROAD_CELLS[8][0], r: ROAD_CELLS[8][1] }
+      );
+      await p.mouse.click(pt.x, pt.y);
+      const menu = p.locator('[data-testid="placement-menu"]');
+      await until(() => menu.isVisible(), 5000);
+      const card = menu.locator("button", { hasText: "馬超" });
+      note("備戰中改隊伍重新載入後，部署選單上馬超的卡片", {
+        disabled: (await card.count()) ? await card.first().isDisabled() : null,
+        text: (await card.count()) ? await card.first().innerText() : null,
+        engineHeroes: (await fieldOf(p)).heroes.length,
+      });
+      await menu
+        .locator("button", { hasText: "×" })
+        .first()
+        .click()
+        .catch(() => {});
+      await until(async () => (await menu.count()) === 0, 5000);
+    }
+    // 開戰後再部署：已在場上的實例不變，新部署照樣帶技能
+    check("按進入戰場開戰", await startBattle(p));
+    await p.evaluate(() => {
+      const h = window.__testBridge.engine.heroes[0];
+      if (h) h.__mark = "before";
+    });
+    const d4 = await deployHero(p, ROAD_CELLS[13], "周瑜");
+    const s4 = await fieldOf(p);
+    check(
+      "戰鬥中部署周瑜：部署資料與實例都是火攻 0.2／3 跳／1 秒；黃忠是原本的實例、技能欄位不變",
+      d4.ok &&
+        sameJson(
+          lastState(s4),
+          wantPayload("hero_zhou_yu", 1, 0, 135, 55, 1000)
+        ) &&
+        s4.heroes[0].mark === "before" &&
+        sameJson(heroVec(s4), [
+          ["hero_huang_zhong", wantFields("hero_huang_zhong")],
+          ["hero_zhou_yu", wantFields("hero_zhou_yu")],
+        ]),
+      { d4, s4 }
+    );
+    check("受控的勝利結束", (await endWith(p, {})) === "ok");
+    check(
+      "結算畫面：已保存到共用進度",
+      await until(
+        () => p.locator('[data-testid="result-settle-confirmed"]').isVisible(),
+        10000
+      )
+    );
+    const sv = E.gas.log.filter((e) => e.action === "save_result");
+    check(
+      "save_result 一次、body 沒有 skill",
+      sv.length === 1 && skillPaths(sv[0].payload).length === 0,
+      sv.map((e) => e.payload)
+    );
+    const back = readBack(E, "k_skill");
+    check(
+      "雲端讀回的存檔沒有 skill",
+      !!back && skillPaths(back.data).length === 0,
+      back
+    );
+    check("暫存已刪除", (await pendingKeys(p)).length === 0);
+    const st = await storageSkill(p);
+    check("瀏覽器儲存（含設定快取）沒有 skill", st.length === 0, st);
+    return E;
+  });
+
+  await scenario(DECOY_SCENARIO, async (mk) => {
+    // 存檔裡趙雲夾帶 0.9 的閃避（和一個未知欄位）；後端武將設定夾帶 skill 與 passive 文字：都不能控制引擎，存檔原有的欄位原樣保留
+    const decoy = {
+      hero_id: "zhao_yun",
+      level: 2,
+      star: 1,
+      atk: 111,
+      def: 22,
+      hp: 333,
+      skill: { id: "dodge", dodge_chance: 0.9 },
+      x_note: "keep",
+    };
+    const data = NEW({
+      capacity: 20,
+      heroes: [decoy],
+      team: [
+        { hero_id: "zhao_yun", slot: 1 },
+        { hero_id: "ma_chao", slot: 2 },
+      ],
+    });
+    const E = await mk({
+      seed: [{ key: "k_decoy", data, rev: 2 }],
+      maps: SKILL_MAPS,
+      enemies: ENEMIES,
+    });
+    E.gas.rule("get_heroes_config", "transform", {
+      times: 50,
+      fn: (res) => ({
+        ...res,
+        heroes: res.heroes.map((h) =>
+          h.hero_id === "ma_chao"
+            ? {
+                ...h,
+                passive: "衝鋒：首擊傷害翻倍",
+                skill: { id: "stun", stun_sec: 9 },
+              }
+            : h.hero_id === "zhao_yun"
+              ? {
+                  ...h,
+                  skill: { id: "first_strike", first_attack_multiplier: 5 },
+                }
+              : h
+        ),
+      }),
+    });
+    const p = await E.page({ storage: { shenma_player_key: "k_decoy" } });
+    check("讀到存檔", (await loadShared(p)) === "player");
+    await closeModal(p);
+    await waitRemoteStage(p, E);
+    const cfgSkill = async () =>
+      p.evaluate(() => {
+        try {
+          const c = JSON.parse(localStorage.getItem("shenma_static_config"));
+          const m = (c.heroesConfig || []).find(
+            (h) => h.hero_id === "hero_ma_chao"
+          );
+          return m ? m.skill || null : null;
+        } catch {
+          return null;
+        }
+      });
+    check(
+      "誘餌確實送到頁面：設定快取裡馬超帶著 stun 9 的 skill",
+      sameJson(await cfgSkill(), { id: "stun", stun_sec: 9 }),
+      await cfgSkill()
+    );
+    const deployBoth = async (label) => {
+      check(`${label}：可以觀測部署資料`, await watchPlacements(p));
+      const a = await deployHero(p, ROAD_CELLS[3], "趙雲");
+      const b = await deployHero(p, ROAD_CELLS[5], "馬超");
+      const s = await fieldOf(p);
+      const tail = s.log.slice(-2).map((x) => x.state);
+      check(
+        `${label}：部署資料是正式表的技能（趙雲閃避 0.15、馬超首擊 2），不是存檔或設定夾帶的 skill；趙雲其他數值照存檔`,
+        a.ok &&
+          b.ok &&
+          sameJson(tail, [
+            wantPayload("hero_zhao_yun", 2, 1, 111, 22, 333),
+            wantPayload("hero_ma_chao", 1, 0, 130, 60, 1300),
+          ]),
+        { a, b, tail }
+      );
+      check(
+        `${label}：實例欄位也是正式表的值（沒有 0.9 閃避、5 倍首擊或 9 秒暈眩）`,
+        sameJson(heroVec(s), [
+          ["hero_zhao_yun", wantFields("hero_zhao_yun")],
+          ["hero_ma_chao", wantFields("hero_ma_chao")],
+        ]),
+        s.heroes
+      );
+    };
+    await deployBoth("第一次載入");
+    await openInfo(p);
+    const fb = await saveNickname(p, "誘餌主公");
+    check("改暱稱已保存", /已保存/.test(fb || ""), fb);
+    await closeModal(p);
+    const sv = E.gas.log.filter((e) => e.action === "save_profile");
+    check(
+      "save_profile body：存檔原有的趙雲紀錄（含夾帶的 skill 與未知欄位）原樣保留，沒有其他 skill",
+      sv.length === 1 &&
+        sameJson(sv[0].payload.data.heroes, [decoy]) &&
+        sameJson(skillPaths(sv[0].payload), [".data.heroes[0].skill"]),
+      sv.map((e) => e.payload)
+    );
+    // 真正重新整理：設定改從快取讀，技能照樣只來自正式表
+    const cfgBefore = E.gas.count("get_heroes_config");
+    await p.reload();
+    check("重新整理後讀到存檔", (await loadShared(p)) === "player");
+    await closeModal(p);
+    check(
+      "重新整理後戰場換成接線測試關（城池在第 13 欄第 3 列，不是內建關卡的位置）",
+      !!(await until(
+        () =>
+          p.evaluate(() => {
+            const m = window.__testBridge && window.__testBridge.engine.gameMap;
+            return !!m && m.basePos.col === 13 && m.basePos.row === 3;
+          }),
+        15000
+      ))
+    );
+    await stableBattle(p);
+    check(
+      "重新整理後設定快取仍帶著誘餌",
+      sameJson(await cfgSkill(), { id: "stun", stun_sec: 9 })
+    );
+    await deployBoth("重新整理後");
+    note("重新整理前後 get_heroes_config 的請求數（快取命中時不增加）", {
+      before: cfgBefore,
+      after: E.gas.count("get_heroes_config"),
+    });
+    return E;
+  });
+
+  await scenario("技能接線：訪客的 13 位預設武將", async (mk) => {
+    const E = await mk({ maps: SKILL_MAPS, enemies: ENEMIES });
+    const p = await E.page({
+      storage: {
+        shenma_js_guest_active: "1",
+        shenma_js_guest_state: GUEST_SAVE(
+          DEFAULT_SORTIE.map(([id]) => ({
+            hero_id: id,
+            level: 1,
+            star: 1,
+            atk: 100,
+            def: 50,
+            hp: 1000,
+          })),
+          []
+        ),
+      },
+    });
+    check(
+      "以訪客進入（沒有金鑰視窗）",
+      await until(
+        async () =>
+          (await p.locator('button[aria-label="主公資訊"]').count()) > 0 &&
+          (await p.locator('[data-testid="key-setup"]').count()) === 0,
+        20000
+      )
+    );
+    await waitRemoteStage(p, E);
+    check("可以觀測部署資料", await watchPlacements(p));
+    const results = [];
+    for (const [i, row] of DEFAULT_SORTIE.entries())
+      results.push(await deployHero(p, ROAD_CELLS[i], row[1]));
+    check(
+      "13 位都從部署選單放置",
+      results.every((r) => r.ok),
+      results.map((r, i) => ({ hero: DEFAULT_SORTIE[i][0], ...r }))
+    );
+    const s = await fieldOf(p);
+    check(
+      "13 筆部署資料逐欄等於寫死的值（訪客沒有隊伍時的預設武將＋各自的正式技能）",
+      sameJson(
+        s.log.map((x) => x.state),
+        DEFAULT_SORTIE.map(([id, , lv, st, a, d, h]) =>
+          wantPayload(id, lv, st, a, d, h)
+        )
+      ),
+      s.log.map((x) => x.state)
+    );
+    for (const [id, name] of DEFAULT_SORTIE) {
+      const h = s.heroes.find((x) => x.heroId === id);
+      check(
+        `${name}的實例只有自己的技能欄位`,
+        !!h && sameJson(h.f, wantFields(id)),
+        h
+      );
+    }
+    // 不相關的存檔更新（訪客在本機升級一位武將）：預設武將清單不換，備戰中的戰場不重新載入
+    const bidBefore = s.battleId;
+    await openRoster(p);
+    await p.locator('[data-testid="hero-upgrade"]').click();
+    await sleep(1500);
+    await closeModal(p);
+    await sleep(1000);
+    const after = await fieldOf(p);
+    check(
+      "訪客升級後：同一個 battleId、場上仍是 13 位（沒有額外重新載入）",
+      after.battleId === bidBefore && after.heroes.length === 13,
+      { bidBefore, battleId: after.battleId, heroes: after.heroes.length }
+    );
+    const st = await storageSkill(p);
+    check("訪客的本機存檔與其他儲存沒有 skill", st.length === 0, st);
+    check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+    return E;
+  });
+
+  await scenario("技能接線：訪客戰鬥中改隊伍", async (mk) => {
+    const E = await mk({ maps: SKILL_MAPS, enemies: ENEMIES });
+    const p = await E.page({
+      storage: {
+        shenma_js_guest_active: "1",
+        shenma_js_guest_state: GUEST_SAVE(
+          [
+            {
+              hero_id: "hero_ma_chao",
+              level: 2,
+              star: 1,
+              atk: 115,
+              def: 58,
+              hp: 1120,
+            },
+            {
+              hero_id: "hero_zhou_yu",
+              level: 1,
+              star: 1,
+              atk: 105,
+              def: 55,
+              hp: 1080,
+            },
+            {
+              hero_id: "hero_guan_yu",
+              level: 1,
+              star: 1,
+              atk: 116,
+              def: 58,
+              hp: 1120,
+            },
+          ],
+          [{ slot: 0, hero_id: "hero_ma_chao" }]
+        ),
+      },
+    });
+    check(
+      "以訪客進入",
+      await until(
+        async () =>
+          (await p.locator('button[aria-label="主公資訊"]').count()) > 0 &&
+          (await p.locator('[data-testid="key-setup"]').count()) === 0,
+        20000
+      )
+    );
+    await waitRemoteStage(p, E);
+    check("可以觀測部署資料", await watchPlacements(p));
+    const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+    check("開戰前部署馬超", d1.ok, d1);
+    check("按進入戰場開戰", await startBattle(p));
+    await p.evaluate(() => {
+      const h = window.__testBridge.engine.heroes[0];
+      if (h) h.__mark = "before";
+    });
+    const bidBattle = await bm(p, "battleId");
+    await openTeam(p);
+    check("戰鬥中選得到周瑜", await pickTeamHero(p, "周瑜"));
+    await p.locator('[data-testid="team-edit-save"]').click();
+    await until(async () => (await modal(p).count()) === 0, 10000);
+    await sleep(800);
+    const d2 = await deployHero(p, ROAD_CELLS[4], "周瑜");
+    const s = await fieldOf(p);
+    check(
+      "戰鬥中改隊伍：同一場（battleId 不變）、馬超是原本的實例且技能不變",
+      s.battleId === bidBattle &&
+        s.heroes[0] &&
+        s.heroes[0].mark === "before" &&
+        sameJson(s.heroes[0].f, wantFields("hero_ma_chao")),
+      s
+    );
+    check(
+      "改隊伍後部署周瑜：部署資料與實例都是火攻 0.2／3 跳／1 秒，數值照訪客存檔",
+      d2.ok &&
+        sameJson(
+          lastState(s),
+          wantPayload("hero_zhou_yu", 1, 1, 105, 55, 1080)
+        ) &&
+        sameJson(heroVec(s)[1], ["hero_zhou_yu", wantFields("hero_zhou_yu")]),
+      { d2, s }
+    );
+    const st = await storageSkill(p);
+    check("改隊伍後訪客的本機存檔沒有 skill", st.length === 0, st);
+    return E;
+  });
+
+  await scenario("技能接線：換帳號後部署用新帳號的武將", async (mk) => {
+    const E = await mk({
+      seed: [
+        {
+          key: "k_sa",
+          data: NEW({
+            nickname: "甲",
+            team: [{ hero_id: "ma_chao", slot: 1 }],
+          }),
+          rev: 1,
+        },
+        {
+          key: "k_sb",
+          data: NEW({
+            nickname: "乙",
+            team: [{ hero_id: "liu_bei", slot: 1 }],
+          }),
+          rev: 5,
+        },
+      ],
+      maps: SKILL_MAPS,
+      enemies: ENEMIES,
+    });
+    const p = await E.page({ storage: { shenma_player_key: "k_sa" } });
+    check("讀到甲", (await loadShared(p)) === "player");
+    await closeModal(p);
+    await waitRemoteStage(p, E);
+    check("可以觀測部署資料", await watchPlacements(p));
+    const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+    const s1 = await fieldOf(p);
+    check(
+      "甲部署馬超：首擊 2 倍",
+      d1.ok &&
+        sameJson(
+          lastState(s1),
+          wantPayload("hero_ma_chao", 1, 0, 130, 60, 1300)
+        ),
+      { d1, s1 }
+    );
+    await openInfo(p);
+    await p.locator("button", { hasText: "切換金鑰" }).click();
+    await modal(p).locator('input[placeholder^="例"]').fill("k_sb");
+    await modal(p).locator("button", { hasText: "確認切換" }).click();
+    check(
+      "切換到乙",
+      await until(
+        async () =>
+          (await text(p, '[data-testid="player-info-nickname"]')) === "乙",
+        10000
+      )
+    );
+    await closeModal(p);
+    await stableBattle(p);
+    const s2 = await fieldOf(p);
+    check(
+      "換帳號後備戰中的戰場重新載入：新的 battleId、場上沒有甲的武將",
+      s2.battleId !== s1.battleId && s2.heroes.length === 0,
+      { before: s1.battleId, after: s2.battleId, heroes: s2.heroes }
+    );
+    const menuNames = async () => {
+      const pt = await p.evaluate(
+        ({ c, r }) => {
+          const e = window.__testBridge.engine;
+          const w = e.gameMap.gridToWorld(c, r);
+          const rect = e.canvas.getBoundingClientRect();
+          return { x: rect.left + w.x, y: rect.top + w.y };
+        },
+        { c: ROAD_CELLS[8][0], r: ROAD_CELLS[8][1] }
+      );
+      await p.mouse.click(pt.x, pt.y);
+      const menu = p.locator('[data-testid="placement-menu"]');
+      await until(() => menu.isVisible(), 5000);
+      const t = (await menu.count()) ? await menu.innerText() : "";
+      await p.keyboard.press("Escape");
+      await menu
+        .locator("button", { hasText: "×" })
+        .first()
+        .click()
+        .catch(() => {});
+      await until(async () => (await menu.count()) === 0, 5000);
+      return t;
+    };
+    const names = await menuNames();
+    check(
+      "乙的部署選單只有劉備（沒有甲的馬超）",
+      /劉備/.test(names) && !/馬超/.test(names),
+      names
+    );
+    const d2 = await deployHero(p, ROAD_CELLS[4], "劉備");
+    const s3 = await fieldOf(p);
+    check(
+      "乙部署劉備：部署資料與實例都是防禦光環 1.2",
+      d2.ok &&
+        sameJson(
+          lastState(s3),
+          wantPayload("hero_liu_bei", 1, 0, 105, 80, 1600)
+        ) &&
+        sameJson(heroVec(s3), [["hero_liu_bei", wantFields("hero_liu_bei")]]),
+      { d2, s3 }
+    );
+    check("沒有任何寫入", E.gas.writes().length === 0, E.gas.writes());
+    return E;
+  });
+
   // ═══ 18. 入口版面：1280 桌面、390×600、390×844 ═══
   for (const vp of [
     { width: 1280, height: 800 },
@@ -3771,6 +4610,29 @@ module.exports = async function profileContractWeb(page) {
     });
   }
 
+  // ═══ 技能接線：所有情境送出的寫入 body 都沒有派生的 skill（誘餌情境存檔原有的那一筆原樣保留） ═══
+  {
+    current = { name: "技能接線：全部情境的寫入" };
+    const found = [];
+    for (const sc of scenarios)
+      for (const e of sc.gas || [])
+        if (WRITE_ACTIONS.has(e.action))
+          for (const path of skillPaths(e.payload))
+            found.push({ scenario: sc.name, action: e.action, path });
+    const allowed = found.filter(
+      (f) =>
+        f.scenario === DECOY_SCENARIO &&
+        f.action === "save_profile" &&
+        f.path === ".data.heroes[0].skill"
+    );
+    check(
+      "create／save／upgrade／result 的 body 沒有派生的 skill（只有誘餌情境存檔原有的 heroes[0].skill）",
+      found.length === allowed.length && allowed.length === 1,
+      found
+    );
+    current = null;
+  }
+
   const failures = assertions.filter((a) => !a.pass).map((a) => a.name);
   return {
     allPass: assertions.length > 0 && failures.length === 0,
@@ -3782,6 +4644,7 @@ module.exports = async function profileContractWeb(page) {
       error: s.error,
       gas: s.gas,
       errors: s.errors,
+      ...(s.notes ? { notes: s.notes } : {}),
     })),
   };
 };
