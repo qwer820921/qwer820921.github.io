@@ -10652,6 +10652,628 @@ module.exports = async function profileContractWeb(page) {
     }
   );
 
+  // ═══ 34. 窄畫面 HUD 操作列 ═══
+  // 寬度小於 576px 時操作列縮小內距、間距與字級（高度 30px、不換行）：八顆按鈕整顆在視窗內、文字不被裁切、彼此不交疊、中心與內部點得到；
+  // 正常 Tab 走過所有可聚焦的 HUD 按鈕時，HUD 到 document 的每一層與 window 都沒有橫向捲動；部署選單、遮罩與其他視窗的層次照第 31 段。
+  // 只在本機 Chromium 驗證（沒有觸控實機、其他瀏覽器或字型）；斷點兩側（575／576）的 computed 樣式另核
+  const NARROW_SIZES = [
+    ...[360, 375, 390, 420, 421, 480, 575, 576].map((w) => [
+      `${w}×600`,
+      { width: w, height: 600 },
+    ]),
+    ["390×844", { width: 390, height: 844 }],
+    ["1280×800", { width: 1280, height: 800 }],
+  ];
+  const NARROW_LABELS = {
+    PREP: ["迎戰", "自動", "1x", "2x", "⏸ 暫停", "⏳ 下一波", "武將", "隊伍"],
+    BATTLE: [
+      "戰鬥中",
+      "自動",
+      "1x",
+      "2x",
+      "⏸ 暫停",
+      "⏳ 下一波",
+      "武將",
+      "隊伍",
+    ],
+  };
+  /** 頁面內量測 HUD 操作列（DOMRect 不四捨五入）：按鈕矩形、逐字 Range、內部格點命中、兩兩交疊、computed 樣式、各層捲動 */
+  const narrowHud = (p) =>
+    p.evaluate(() => {
+      const bar = document.querySelector('[class*="hudActionBar"]');
+      const rr = (b) => ({ x: b.left, y: b.top, w: b.width, h: b.height });
+      const vw = innerWidth;
+      const vh = innerHeight;
+      const btns = [...bar.querySelectorAll("button")];
+      const rows = btns.map((b) => {
+        const r = rr(b.getBoundingClientRect());
+        const chars = [];
+        const walker = document.createTreeWalker(b, NodeFilter.SHOW_TEXT);
+        let n;
+        while ((n = walker.nextNode()))
+          for (let i = 0; i < n.length; i++) {
+            if (!n.data[i].trim()) continue;
+            const rg = document.createRange();
+            rg.setStart(n, i);
+            rg.setEnd(n, i + 1);
+            for (const q of rg.getClientRects())
+              if (q.width > 0 && q.height > 0) chars.push(rr(q));
+          }
+        const charsIn = chars.every(
+          (c) =>
+            c.x >= r.x - 0.5 &&
+            c.x + c.w <= r.x + r.w + 0.5 &&
+            c.y >= r.y - 0.5 &&
+            c.y + c.h <= r.y + r.h + 0.5 &&
+            c.x >= -0.5 &&
+            c.x + c.w <= vw + 0.5
+        );
+        const grid = [];
+        for (const fx of [0.25, 0.5, 0.75])
+          for (const fy of [0.25, 0.5, 0.75]) {
+            const x = r.x + r.w * fx;
+            const y = r.y + r.h * fy;
+            const el =
+              x >= 0 && x < vw && y >= 0 && y < vh
+                ? document.elementFromPoint(x, y)
+                : null;
+            grid.push(!!el && b.contains(el));
+          }
+        return {
+          text: (b.innerText || "").replace(/\s+/g, " ").trim(),
+          disabled: b.disabled,
+          rect: r,
+          fullyIn: r.x >= -0.01 && r.x + r.w <= vw + 0.01,
+          chars: chars.length,
+          charsIn,
+          notClipped: b.scrollWidth <= b.clientWidth + 0.5,
+          gridHit: grid.every(Boolean),
+        };
+      });
+      const overlaps = [];
+      for (let i = 0; i < rows.length; i++)
+        for (let j = i + 1; j < rows.length; j++) {
+          const a = rows[i].rect;
+          const c = rows[j].rect;
+          const w = Math.min(a.x + a.w, c.x + c.w) - Math.max(a.x, c.x);
+          const h = Math.min(a.y + a.h, c.y + c.h) - Math.max(a.y, c.y);
+          if (w > 0.01 && h > 0.01)
+            overlaps.push([rows[i].text, rows[j].text, w * h]);
+        }
+      const scrolled = [];
+      for (let el = bar; el; el = el.parentElement)
+        if (el.scrollLeft !== 0)
+          scrolled.push([String(el.className).slice(0, 30), el.scrollLeft]);
+      const cs = (el) => getComputedStyle(el);
+      const left = bar.querySelector('[class*="hudActionBarLeft"]');
+      const auto = btns.find((b) => /自動/.test(b.innerText || ""));
+      return {
+        viewport: [vw, vh],
+        bar: rr(bar.getBoundingClientRect()),
+        rows,
+        overlaps,
+        scrolled,
+        docScroll: [document.scrollingElement.scrollLeft, scrollX],
+        style: {
+          barPad: [cs(bar).paddingLeft, cs(bar).paddingRight],
+          groupGap: cs(left).columnGap,
+          groupPad: [cs(left).paddingLeft, cs(left).paddingRight],
+          btnPad: auto ? [cs(auto).paddingLeft, cs(auto).paddingRight] : null,
+          btnFont: auto ? cs(auto).fontSize : null,
+          btnMinW: auto ? cs(auto).minWidth : null,
+          btnH: auto ? cs(auto).height : null,
+        },
+      };
+    });
+  const narrowFits = (H) =>
+    H.rows.length === 8 &&
+    H.rows.every(
+      (r) =>
+        r.fullyIn &&
+        r.rect.w >= 24 - 0.01 &&
+        Math.abs(r.rect.h - 30) < 0.01 &&
+        r.chars > 0 &&
+        r.charsIn &&
+        r.notClipped &&
+        r.gridHit
+    ) &&
+    H.overlaps.length === 0;
+  const narrowNoScroll = (H) =>
+    H.scrolled.length === 0 && H.docScroll.every((v) => v === 0);
+  const narrowRows = (H) =>
+    H.rows.map((r) => [
+      r.text,
+      r.disabled,
+      r.rect.x,
+      r.rect.x + r.rect.w,
+      r.rect.w,
+      r.rect.h,
+      r.fullyIn,
+      r.charsIn,
+      r.notClipped,
+      r.gridHit,
+    ]);
+  /** 正常 Tab 往後走，記每一步的焦點與 HUD 到 document 每一層、window 的橫向捲動；離開 HUD 後停 */
+  async function narrowTab(p) {
+    const steps = [];
+    let seen = false;
+    for (let i = 1; i <= 50; i++) {
+      await p.keyboard.press("Tab");
+      await sleep(60);
+      const s = await p.evaluate(() => {
+        const bar = document.querySelector('[class*="hudActionBar"]');
+        const a = document.activeElement;
+        const scrolled = [];
+        for (let el = bar; el; el = el.parentElement)
+          if (el.scrollLeft !== 0)
+            scrolled.push([String(el.className).slice(0, 30), el.scrollLeft]);
+        const inBar = !!a && bar.contains(a);
+        const r = inBar ? a.getBoundingClientRect() : null;
+        return {
+          inBar,
+          text: inBar ? (a.innerText || "").replace(/\s+/g, " ").trim() : null,
+          disabled: inBar ? a.disabled : null,
+          fullyIn: r ? r.left >= -0.01 && r.right <= innerWidth + 0.01 : null,
+          scrolled,
+          doc: [document.scrollingElement.scrollLeft, scrollX],
+        };
+      });
+      steps.push({ i, ...s });
+      if (s.inBar) seen = true;
+      else if (seen) break;
+    }
+    return steps;
+  }
+  const narrowState = async (p, E) => ({
+    s: await ctl(p),
+    writes: E.gas.writes().length,
+    key: (await storageOf(p)).ls.shenma_player_key ?? null,
+  });
+  /** 倍率按鈕 1x／2x 的 computed 樣式與 DOMRect：按鈕有 0.15s transition，每 150ms 取一次、連續兩次相同才回（量測前置，不是重試斷言） */
+  async function narrowSpeed(p) {
+    const once = () =>
+      p.evaluate(() => {
+        const bar = document.querySelector('[class*="hudActionBar"]');
+        return [...bar.querySelectorAll("button")]
+          .filter((b) => /^[12]x$/.test((b.innerText || "").trim()))
+          .map((b) => {
+            const cs = getComputedStyle(b);
+            const r = b.getBoundingClientRect();
+            return {
+              text: b.innerText.trim(),
+              active: /hudActionBtnActive/.test(String(b.className)),
+              padding: [
+                cs.paddingLeft,
+                cs.paddingRight,
+                cs.paddingTop,
+                cs.paddingBottom,
+              ],
+              font: [cs.fontSize, cs.fontWeight, cs.letterSpacing],
+              borderLeft: [
+                cs.borderLeftWidth,
+                cs.borderLeftStyle,
+                cs.borderLeftColor,
+              ],
+              height: cs.height,
+              w: r.width,
+              h: r.height,
+            };
+          });
+      });
+    let prev = await once();
+    for (let i = 0; i < 20; i++) {
+      await sleep(150);
+      const cur = await once();
+      if (sameJson(cur, prev)) return cur;
+      prev = cur;
+    }
+    return prev;
+  }
+  // 寬畫面（≥ 576px）時倍率按鈕和頁面還用 inline 內距時量到的相同（同一個本機 Chromium 環境，速度 1、1x 亮起）
+  const SPEED_WIDE = {
+    "1x": {
+      w: 31.703125,
+      font: ["12.8px", "700", "0.64px"],
+      border: ["0px", "none"],
+    },
+    "2x": {
+      w: 32.703125,
+      font: ["12.8px", "700", "0.64px"],
+      border: ["1px", "solid", "rgba(255, 255, 255, 0.18)"],
+    },
+  };
+  for (const [label, viewport] of NARROW_SIZES)
+    for (const mode of ["guest", "shared"])
+      for (const phase of ["PREP", "BATTLE"]) {
+        if (mode === "shared" && label !== "360×600" && label !== "390×844")
+          continue;
+        const tag = `${label} ${mode === "guest" ? "訪客" : "共用帳號"} ${phase === "PREP" ? "備戰" : "戰鬥中"}`;
+        const narrow = viewport.width <= 575;
+        const sizeKey = label.replace("×", "x");
+        await scenario(
+          `窄畫面 HUD：${tag}：八顆按鈕整顆在視窗內、文字不裁切、不交疊；正常 Tab 不捲動；選單與遮罩層次不變`,
+          async (mk) => {
+            const { E, p } = await maskEnter(
+              mk,
+              mode,
+              viewport,
+              `k_hud_${sizeKey}_${phase}`
+            );
+            if (phase === "BATTLE")
+              check("按進入戰場開第 1 波", await startBattle(p));
+            await sleep(300);
+            const H = await narrowHud(p);
+            check(
+              `${tag}：操作列 top 44、高 40（底 84），八顆按鈕的文字與停用照原樣`,
+              Math.abs(H.bar.y - 44) < 0.01 &&
+                Math.abs(H.bar.h - 40) < 0.01 &&
+                sameJson(
+                  H.rows.map((r) => r.text),
+                  NARROW_LABELS[phase]
+                ),
+              {
+                bar: H.bar,
+                labels: H.rows.map((r) => [r.text, r.disabled]),
+              }
+            );
+            check(
+              `${tag}：八顆按鈕整顆在視窗內、寬至少 24、高 30，逐字都在按鈕內沒有裁切，內部 3×3 點都點得到按鈕本身，彼此沒有交疊`,
+              narrowFits(H),
+              { rows: narrowRows(H), overlaps: H.overlaps }
+            );
+            const want = narrow
+              ? {
+                  barPad: ["3px", "3px"],
+                  groupGap: "3px",
+                  groupPad: ["3px", "3px"],
+                  btnPad: ["4px", "4px"],
+                  btnFont: "12px",
+                  btnMinW: "24px",
+                  btnH: "30px",
+                }
+              : {
+                  barPad: ["6px", "6px"],
+                  groupGap: "5px",
+                  groupPad: ["0px", "0px"],
+                  btnPad: ["11px", "11px"],
+                  btnFont: "12.8px",
+                  btnMinW: "auto",
+                  btnH: "30px",
+                };
+            check(
+              `${tag}：computed 樣式是${narrow ? "窄畫面（< 576px）" : "原本（≥ 576px）"}的內距、間距、字級與最小寬`,
+              sameJson(H.style, want),
+              { style: H.style, want }
+            );
+            // 倍率按鈕：內距由 CSS Module 決定（窄畫面 4px、寬畫面 8px），寬畫面時和改頁面前量到的寬、字型、邊框相同
+            await p.mouse.move(2, viewport.height - 2);
+            const sp = await narrowSpeed(p);
+            check(
+              `${tag}：倍率按鈕 1x／2x：computed 左右內距 ${narrow ? "4px（窄畫面）" : "8px（原本）"}、字級 ${narrow ? "12px" : "12.8px"}、高 30、寬至少 24${narrow ? "" : "；寬、字型與左邊框和頁面還用 inline 內距時量到的相同"}`,
+              sp.length === 2 &&
+                sp.every(
+                  (b) =>
+                    sameJson(
+                      b.padding,
+                      narrow
+                        ? ["4px", "4px", "0px", "0px"]
+                        : ["8px", "8px", "0px", "0px"]
+                    ) &&
+                    b.font[0] === (narrow ? "12px" : "12.8px") &&
+                    b.height === "30px" &&
+                    Math.abs(b.h - 30) < 0.01 &&
+                    b.w >= 24 - 0.01 &&
+                    (narrow ||
+                      (Math.abs(b.w - SPEED_WIDE[b.text].w) < 0.001 &&
+                        sameJson(b.font, SPEED_WIDE[b.text].font) &&
+                        sameJson(
+                          b.borderLeft.slice(
+                            0,
+                            SPEED_WIDE[b.text].border.length
+                          ),
+                          SPEED_WIDE[b.text].border
+                        )))
+                ),
+              { sp, wide: narrow ? null : SPEED_WIDE }
+            );
+            check(
+              `${tag}：一開始 HUD 到 document 的每一層與 window 都沒有橫向捲動`,
+              narrowNoScroll(H),
+              { scrolled: H.scrolled, doc: H.docScroll }
+            );
+            // 滑鼠移到每顆可用按鈕上（hover）：矩形與文字不變
+            const hov = [];
+            for (const r of H.rows.filter((x) => !x.disabled)) {
+              await p.mouse.move(
+                r.rect.x + r.rect.w / 2,
+                r.rect.y + r.rect.h / 2
+              );
+              await sleep(200);
+              const H2 = await narrowHud(p);
+              const r2 = H2.rows.find((x) => x.text === r.text);
+              hov.push({
+                text: r.text,
+                same:
+                  !!r2 &&
+                  Math.abs(r2.rect.x - r.rect.x) < 0.5 &&
+                  Math.abs(r2.rect.w - r.rect.w) < 0.5 &&
+                  r2.fullyIn &&
+                  r2.notClipped,
+              });
+            }
+            await p.mouse.move(2, viewport.height - 2);
+            check(
+              `${tag}：滑鼠移到每顆可用按鈕上，矩形與文字不變、仍整顆在視窗內`,
+              hov.length > 0 && hov.every((h) => h.same),
+              hov
+            );
+            // 正常 Tab 走過 HUD：每一步都沒有任何一層橫向捲動，可用的按鈕都走到、停用的走不到
+            const st0 = await narrowState(p, E);
+            const steps = await narrowTab(p);
+            const st1 = await narrowState(p, E);
+            const hudSteps = steps.filter((s) => s.inBar);
+            const enabled = H.rows
+              .filter((r) => !r.disabled)
+              .map((r) => r.text);
+            check(
+              `${tag}：正常 Tab 走過 HUD：每一步 HUD 到 document 的每一層與 window 都沒有橫向捲動，可用的按鈕都走到且整顆在視窗內、停用的走不到`,
+              steps.every(
+                (s) => s.scrolled.length === 0 && s.doc.every((v) => v === 0)
+              ) &&
+                sameJson(
+                  hudSteps.map((s) => s.text),
+                  enabled
+                ) &&
+                hudSteps.every((s) => s.fullyIn && !s.disabled),
+              { steps, enabled }
+            );
+            check(
+              `${tag}：只按 Tab 沒有改變這一場、金幣與塔、武將、選單、寫入與金鑰`,
+              sameJson(st1, st0),
+              { st0, st1 }
+            );
+            if (
+              mode === "guest" &&
+              (label === "360×600" ||
+                label === "576×600" ||
+                label === "1280×800")
+            ) {
+              // 倍率切換：滑鼠點 2x，再用鍵盤 Shift+Tab 回到 1x 按 Enter；引擎的速度設定、亮起的按鈕與尺寸跟著變，其他狀態不變
+              const before = await narrowState(p, E);
+              const two = H.rows.find((r) => r.text === "2x");
+              if (two)
+                await p.mouse.click(
+                  two.rect.x + two.rect.w / 2,
+                  two.rect.y + two.rect.h / 2
+                );
+              await until(async () => (await ctl(p)).speed === 2, 3000);
+              const s2 = await ctl(p);
+              const sp2 = await narrowSpeed(p);
+              const H2 = await narrowHud(p);
+              let k = -1;
+              for (let i = 1; i <= 5; i++) {
+                await p.keyboard.press("Shift+Tab");
+                const t = await p.evaluate(
+                  () =>
+                    (document.activeElement &&
+                      document.activeElement.innerText) ||
+                    ""
+                );
+                if (t.trim() === "1x") {
+                  k = i;
+                  break;
+                }
+              }
+              if (k > 0) await p.keyboard.press("Enter");
+              await until(async () => (await ctl(p)).speed === 1, 3000);
+              const sp3 = await narrowSpeed(p);
+              const H3 = await narrowHud(p);
+              const after = await narrowState(p, E);
+              const lit = (sp) =>
+                sp
+                  .filter((b) => b.active)
+                  .map((b) => b.text)
+                  .join(",");
+              check(
+                `${tag}：滑鼠點 2x、再用鍵盤 Shift+Tab／Enter 切回 1x：引擎的速度設定與亮起的按鈕跟著變，倍率按鈕內距不變，八顆按鈕仍整顆在視窗內不交疊；金幣、塔、武將、場次、寫入與金鑰不變`,
+                !!two &&
+                  s2.speed === 2 &&
+                  lit(sp2) === "2x" &&
+                  k > 0 &&
+                  lit(sp3) === "1x" &&
+                  sp2.every((b) => b.padding[0] === (narrow ? "4px" : "8px")) &&
+                  sp3.every((b) => b.padding[0] === (narrow ? "4px" : "8px")) &&
+                  narrowFits(H2) &&
+                  narrowFits(H3) &&
+                  sameJson(after, before),
+                {
+                  s2,
+                  lit2: lit(sp2),
+                  k,
+                  lit3: lit(sp3),
+                  before,
+                  after,
+                  rows2: narrowRows(H2),
+                }
+              );
+            }
+            // 部署選單（13 位武將）：HUD 位置不變、在遮罩之上，選單各部位不被蓋、高度上限照舊，遮罩其餘區擋畫布
+            const o = await openMaskMenu(p, ROAD_CELLS, true);
+            const L = o.L;
+            const Hm = await narrowHud(p);
+            const cap = L
+              ? Math.min(0.8 * viewport.height, L.overlayRect.h - 168)
+              : null;
+            check(
+              `${tag}：打開道路部署選單：HUD 仍是 top 44、高 40，在遮罩之上；選單標題、×、分頁與可見卡片不被 HUD 蓋；高度不超過 min(80vh, 遮罩高 − 168)；遮罩取樣沒有一點是畫布`,
+              !!L &&
+                Math.abs(Hm.bar.y - 44) < 0.01 &&
+                Math.abs(Hm.bar.h - 40) < 0.01 &&
+                hudInViewOnTop(L) &&
+                menuPartsClear(L) &&
+                visibleCardsClear(L) &&
+                L.menuRect.h <= cap + 0.5 &&
+                L.maskProbe.canvas === 0 &&
+                narrowFits(Hm),
+              {
+                tried: o.tried,
+                menuRect: L && L.menuRect,
+                cap,
+                parts: L && {
+                  title: L.title,
+                  close: L.close,
+                  overlaps: L.overlaps,
+                },
+                probe: L && L.maskProbe,
+                hud: L && L.hud.map((b) => [b.text, b.inView, b.onTop]),
+              }
+            );
+            if (
+              L &&
+              phase === "BATTLE" &&
+              mode === "guest" &&
+              (label === "360×600" || label === "575×600")
+            ) {
+              // 選單開著：滑鼠暫停（看「▶ 繼續」）→ 繼續 → 鍵盤到最後一張 → 滑鼠派出可見的一張
+              const s0 = await ctl(p);
+              const pause = Hm.rows.find((r) => /⏸ 暫停/.test(r.text));
+              if (pause)
+                await p.mouse.click(
+                  pause.rect.x + pause.rect.w / 2,
+                  pause.rect.y + pause.rect.h / 2
+                );
+              await until(async () => (await ctl(p)).paused, 3000);
+              const Hp = await narrowHud(p);
+              const resume = Hp.rows.find((r) => /▶ 繼續/.test(r.text));
+              check(
+                `${tag}：選單開著時滑鼠點暫停：「▶ 繼續」整顆在視窗內、不裁切，八顆仍不交疊，同一個選單`,
+                !!pause &&
+                  !!resume &&
+                  Hp.rows.length === 8 &&
+                  Hp.rows.every((r) => r.fullyIn && r.notClipped) &&
+                  Hp.overlaps.length === 0 &&
+                  (await ctl(p)).menuId === s0.menuId,
+                { rows: narrowRows(Hp) }
+              );
+              if (resume)
+                await p.mouse.click(
+                  resume.rect.x + resume.rect.w / 2,
+                  resume.rect.y + resume.rect.h / 2
+                );
+              await until(async () => !(await ctl(p)).paused, 3000);
+              const s1 = await ctl(p);
+              const t = await tabToLastCard(p);
+              const last = t.L && t.L.cards[t.L.cards.length - 1];
+              check(
+                `${tag}：繼續後同一個選單、慢速 0.1；正常 Tab 到最後一張卡片時它整張可見、點得到`,
+                !s1.paused &&
+                  s1.menuId === s0.menuId &&
+                  Math.abs(s1.scale - 0.1) < 1e-9 &&
+                  t.steps > 0 &&
+                  lastCardOk(t.L),
+                { s1, steps: t.steps, last }
+              );
+              const L5 = await maskLayout(p);
+              const card = L5.cards.find(
+                (c) => c.visibleArea > 0 && !c.disabled && c.onTop
+              );
+              const h0 = (await ctl(p)).heroes;
+              if (card) await p.mouse.click(card.center[0], card.center[1]);
+              const closed = await until(
+                async () => !(await menuShown(p)),
+                5000
+              );
+              check(
+                `${tag}：滑鼠點一張可見的武將卡：派出成功、選單關閉`,
+                !!card && !!closed && (await ctl(p)).heroes === h0 + 1,
+                { card, h0 }
+              );
+            } else if (L) {
+              await closeMenuX(p);
+              check(
+                `${tag}：按選單 × 取消：選單關閉`,
+                !!(await until(async () => !(await menuShown(p)), 3000))
+              );
+            }
+            if (label === "360×600" && mode === "guest" && phase === "PREP") {
+              // 設定視窗、聊天視窗開著時背景 HUD 不穿透
+              await p.locator("button", { hasText: "⚙️" }).first().click();
+              const shown = await until(
+                async () => (await p.locator(".modal.show").count()) > 0,
+                5000
+              );
+              await sleep(400);
+              const rows = await hudUnder(p, ".modal.show");
+              check(
+                `${tag}：設定視窗開著：背景 HUD 按鈕中心都被視窗蓋住`,
+                !!shown && noHudPierce(rows),
+                rows
+              );
+              await p.keyboard.press("Escape");
+              check(
+                `${tag}：設定視窗用 Escape 關掉`,
+                !!(await until(
+                  async () => (await p.locator(".modal").count()) === 0,
+                  5000
+                ))
+              );
+              await shot(p, `narrow-${sizeKey}-prep`);
+            }
+            if (label === "360×600" && mode === "guest" && phase === "BATTLE") {
+              // 結算畫面開著時背景 HUD 不穿透
+              await endWith(p, { win: false });
+              const res = await until(
+                async () =>
+                  (await p.locator('[class*="resultOverlay"]').count()) > 0,
+                5000
+              );
+              await sleep(500);
+              const rowsR = await hudUnder(p, '[class*="resultOverlay"]');
+              check(
+                `${tag}：結算畫面開著：落在結算畫面上的 HUD 按鈕中心都被蓋住`,
+                !!res && noHudPierce(rowsR),
+                rowsR
+              );
+            }
+            if (mode === "guest")
+              check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+            else
+              check(
+                "共用帳號：沒有任何寫入請求",
+                E.gas.writes().length === 0,
+                E.gas.writes()
+              );
+            return E;
+          }
+        );
+      }
+  await scenario(
+    "窄畫面 HUD：360×600 沒有金鑰：金鑰視窗開著時背景 HUD 不穿透",
+    async (mk) => {
+      const E = await mk({
+        maps: TOWER_MAPS,
+        enemies: TOWER_ENEMIES,
+        viewport: { width: 360, height: 600 },
+      });
+      const p = await E.page({ storage: {} });
+      const shown = await until(
+        async () => (await p.locator('[data-testid="key-setup"]').count()) > 0,
+        20000
+      );
+      await sleep(400);
+      const rows = await hudUnder(p, '[data-testid="key-setup"]');
+      check(
+        `360×600 金鑰視窗開著：落在金鑰視窗上的 HUD 按鈕中心都被蓋住${rows && rows.filter((r) => r.inView && r.inDlg).length === 0 ? "（HUD 沒有在金鑰視窗範圍內，另列）" : ""}`,
+        !!shown &&
+          (!rows ||
+            rows.filter((r) => r.inView && r.inDlg).every((r) => !r.hud)),
+        { shown, rows }
+      );
+      check("沒有任何寫入請求", E.gas.writes().length === 0, E.gas.writes());
+      return E;
+    }
+  );
+
   // ═══ 18. 入口版面：1280 桌面、390×600、390×844 ═══
   for (const vp of [
     { width: 1280, height: 800 },

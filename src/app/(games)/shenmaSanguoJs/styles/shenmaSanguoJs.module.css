@@ -327,6 +327,38 @@
   border-color: rgba(239, 68, 68, 0.9) !important;
 }
 
+/* 倍率按鈕（1x／2x）的左右內距 */
+.hudSpeedBtn {
+  padding: 0 8px;
+}
+
+/* 窄畫面（< 576px）：縮小 HUD 操作列的內距、間距與字級，讓八顆按鈕都留在視窗內（高度 30px、不換行） */
+@media (max-width: 575.98px) {
+  .hudActionBar {
+    padding-left: 3px;
+    padding-right: 3px;
+  }
+
+  .hudActionBarLeft,
+  .hudActionBarRight {
+    gap: 3px;
+    padding-left: 3px;
+    padding-right: 3px;
+  }
+
+  .hudBarBtn {
+    padding-left: 4px;
+    padding-right: 4px;
+    font-size: 12px;
+    min-width: 24px;
+  }
+
+  .hudSpeedBtn {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+}
+
 /* ── 暫停徽章 (PauseBadge) ─────────────────────────────────── */
 .pauseBadge {
   position: absolute;

@@ -840,8 +840,8 @@ const ShenmaSanguoJsPage: React.FC = () => {
           >
             <button
               type="button"
-              className={`${styles.hudBarBtn} ${stats.speed === 1 ? styles.hudActionBtnActive : ""}`}
-              style={{ borderRadius: 0, border: "none", padding: "0 8px" }}
+              className={`${styles.hudBarBtn} ${styles.hudSpeedBtn} ${stats.speed === 1 ? styles.hudActionBtnActive : ""}`}
+              style={{ borderRadius: 0, border: "none" }}
               onClick={() => handleSetSpeed(1)}
               disabled={stats.paused}
             >
@@ -849,12 +849,11 @@ const ShenmaSanguoJsPage: React.FC = () => {
             </button>
             <button
               type="button"
-              className={`${styles.hudBarBtn} ${stats.speed === 2 ? styles.hudActionBtnActive : ""}`}
+              className={`${styles.hudBarBtn} ${styles.hudSpeedBtn} ${stats.speed === 2 ? styles.hudActionBtnActive : ""}`}
               style={{
                 borderRadius: 0,
                 border: "none",
                 borderLeft: "1px solid rgba(255, 255, 255, 0.18)",
-                padding: "0 8px",
               }}
               onClick={() => handleSetSpeed(2)}
               disabled={stats.paused}
