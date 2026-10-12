@@ -8129,6 +8129,414 @@ module.exports = async function profileContractWeb(page) {
     }
   );
 
+  // ═══ 29. 武將身份比較（別名兩個方向）、生命 0 時的光環、改目標的暫停守門 ═══
+  // 同一位武將的完整 ID（hero_ma_chao）與去掉前綴的寫法（ma_chao）在引擎入口與部署選單都視為同一位；只比較，不改 ID、不升成正式技能。
+  // 生命 0（存檔數值、沒有陣亡）的武將在戰鬥中不發也不收光環；改目標在暫停或結算時引擎入口拒絕、面板按鈕停用並說明。
+  // 陣亡用受控的 takeDamage；光環狀態只讀實體欄位（不是自然戰鬥，也不是 13 技能的實際效果驗收）
+  const TARGET_HINT = "暫停中或不在備戰、戰鬥時不能改目標。";
+  const maCards = (p) =>
+    p.locator(PLACEMENT_MENU).locator("button", { hasText: "馬超" });
+  async function openMenuAt(p, cell) {
+    const ok = await clickCell(p, cell);
+    const opened = await until(() => menuShown(p), 5000);
+    // 選單有約 0.15 秒的放大動畫
+    await sleep(400);
+    return ok && !!opened;
+  }
+  const cardStates = (p) =>
+    maCards(p).evaluateAll((bs) =>
+      bs.map((b) => ({
+        disabled: b.disabled,
+        text: b.innerText.replace(/\s+/g, " ").trim(),
+      }))
+    );
+  const guestRaw = (p) =>
+    p.evaluate(() => localStorage.getItem("shenma_js_guest_state"));
+  /** 訪客隊伍：同一位馬超的兩種寫法（完整 ID Lv.2 在前、去掉前綴 Lv.5 在後） */
+  const ALIAS_GUEST = () =>
+    guestStorage(
+      [
+        {
+          hero_id: "hero_ma_chao",
+          level: 2,
+          star: 1,
+          atk: 115,
+          def: 58,
+          hp: 1120,
+        },
+        { hero_id: "ma_chao", level: 5, star: 1, atk: 130, def: 60, hp: 1300 },
+      ],
+      [
+        { slot: 0, hero_id: "hero_ma_chao" },
+        { slot: 1, hero_id: "ma_chao" },
+      ]
+    );
+  const firstStrikeMult = (p) =>
+    p.evaluate(() =>
+      window.__testBridge.engine.heroes.map((h) => [
+        h.heroId,
+        h.firstStrikeMultiplier,
+      ])
+    );
+
+  for (const [label, firstIdx, firstId, otherId] of [
+    ["先派完整 ID", 0, "hero_ma_chao", "ma_chao"],
+    ["先派去掉前綴的寫法", 1, "ma_chao", "hero_ma_chao"],
+  ]) {
+    await scenario(
+      `武將身份比較：訪客隊伍有兩種寫法的馬超，${label}後兩張卡都是「已在場上」，入口也拒另一種寫法`,
+      async (mk) => {
+        const E = await mk({ maps: SKILL_MAPS, enemies: ENEMIES });
+        const p = await E.page({ storage: ALIAS_GUEST() });
+        check("以訪客進入", await enterGuest(p));
+        await waitRemoteStage(p, E);
+        const raw0 = await guestRaw(p);
+        const opened = await openMenuAt(p, ROAD_CELLS[0]);
+        const c0 = await cardStates(p);
+        check(
+          "選單上有兩張馬超卡（Lv.2、Lv.5），都可以點",
+          opened &&
+            c0.length === 2 &&
+            c0.every((c) => c.disabled === false) &&
+            /Lv\.2/.test(c0[0].text) &&
+            /Lv\.5/.test(c0[1].text),
+          c0
+        );
+        await maCards(p).nth(firstIdx).click();
+        await until(async () => !(await menuShown(p)), 5000);
+        const s1 = await heroField(p);
+        check(
+          `${label}（${firstId}）：場上一位，ID 照原樣`,
+          s1.heroes.length === 1 && s1.heroes[0].id === firstId,
+          s1.heroes
+        );
+        await openMenuAt(p, ROAD_CELLS[2]);
+        const c1 = await cardStates(p);
+        await closeMenuX(p);
+        await until(async () => !(await menuShown(p)), 5000);
+        check(
+          "兩張馬超卡都顯示「已在場上」且不能點",
+          c1.length === 2 &&
+            c1.every((c) => c.disabled === true && /已在場上/.test(c.text)),
+          c1
+        );
+        const r = await p.evaluate(
+          (id) =>
+            window.__testBridge.placeHero(4, 3, {
+              hero_id: id,
+              level: 1,
+              atk: 100,
+              def: 50,
+              hp: 1000,
+            }),
+          otherId
+        );
+        const s2 = await heroField(p);
+        check(
+          `頁面的派出入口送另一種寫法（${otherId}）到 (4,3)：被拒，場上仍只有一位、(4,3) 沒有占用`,
+          r === false &&
+            s2.heroes.length === 1 &&
+            (await occupantAt(p, ROAD_CELLS[2])) === null,
+          { r, s2 }
+        );
+        const fm = await firstStrikeMult(p);
+        check(
+          "正式技能只認完整 ID：完整 ID 的馬超首擊倍率 2，去掉前綴的是 1（沒有升成正式技能）",
+          sameJson(fm, [[firstId, firstId === "hero_ma_chao" ? 2 : 1]]),
+          fm
+        );
+        check("標記這位馬超", await markHero(p, firstId, "ma1"));
+        const k = await killHero(p, "ma1");
+        await sleep(300);
+        await openMenuAt(p, ROAD_CELLS[2]);
+        const c2 = await cardStates(p);
+        check(
+          "受控陣亡後兩張卡都可以點",
+          !!k && k.isDead === true && c2.every((c) => c.disabled === false),
+          { k, c2 }
+        );
+        await maCards(p)
+          .nth(1 - firstIdx)
+          .click();
+        await until(async () => !(await menuShown(p)), 5000);
+        const s3 = await heroField(p);
+        await openMenuAt(p, ROAD_CELLS[4]);
+        const c3 = await cardStates(p);
+        await closeMenuX(p);
+        check(
+          `陣亡後改派另一種寫法（${otherId}）成功，兩張卡又都是「已在場上」；場上仍只有一位`,
+          s3.heroes.length === 1 &&
+            s3.heroes[0].id === otherId &&
+            c3.every((c) => c.disabled === true),
+          { s3, c3 }
+        );
+        check(
+          "本機存檔原樣（不合併、不改寫兩種寫法），沒有任何存檔請求",
+          (await guestRaw(p)) === raw0 && E.gas.players().length === 0,
+          { same: (await guestRaw(p)) === raw0 }
+        );
+        return E;
+      }
+    );
+  }
+
+  await scenario(
+    "生命 0 的光環：共用帳號存檔裡生命 0 的劉備在戰鬥中不發防禦光環、生命 0 的周瑜不收攻速光環；曹操照常給趙雲攻速",
+    async (mk) => {
+      const H = (id, hp) => ({
+        hero_id: id,
+        level: 1,
+        star: 0,
+        atk: 100,
+        def: 50,
+        hp,
+      });
+      const data = NEW({
+        capacity: 30,
+        heroes: [
+          H("liu_bei", 0),
+          H("zhao_yun", 1200),
+          H("cao_cao", 1200),
+          H("zhou_yu", 0),
+        ],
+        team: [
+          { hero_id: "liu_bei", slot: 1 },
+          { hero_id: "zhao_yun", slot: 2 },
+          { hero_id: "cao_cao", slot: 3 },
+          { hero_id: "zhou_yu", slot: 4 },
+        ],
+      });
+      const E = await mk({
+        seed: [{ key: "k_zeroaura", data, rev: 6 }],
+        maps: TWO_WAVE_MAPS,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({ storage: { shenma_player_key: "k_zeroaura" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      const d = [];
+      for (const [cell, name] of [
+        [ROAD_CELLS[1], "劉備"],
+        [ROAD_CELLS[2], "趙雲"],
+        [ROAD_CELLS[3], "曹操"],
+        [ROAD_CELLS[4], "周瑜"],
+      ])
+        d.push(await deployHero(p, cell, name));
+      const hp = await p.evaluate(() =>
+        window.__testBridge.engine.heroes.map((h) => [h.heroId, h.currentHp])
+      );
+      check(
+        "派出劉備 (3,3)、趙雲 (4,3)、曹操 (5,3)、周瑜 (6,3)；劉備與周瑜的生命是 0（存檔數值）",
+        d.every((x) => x.ok) &&
+          sameJson(hp, [
+            ["hero_liu_bei", 0],
+            ["hero_zhao_yun", 1200],
+            ["hero_cao_cao", 1200],
+            ["hero_zhou_yu", 0],
+          ]),
+        { d, hp }
+      );
+      check("按進入戰場開第 1 波", await startBattle(p));
+      await sleep(1500);
+      const a = await p.evaluate(() => {
+        const hs = window.__testBridge.engine.heroes;
+        const by = (id) => hs.find((h) => h.heroId === id);
+        const liu = by("hero_liu_bei");
+        const zy = by("hero_zhao_yun");
+        const cao = by("hero_cao_cao");
+        const zhou = by("hero_zhou_yu");
+        return {
+          state: window.__testBridge.engine.battleManager.gameState,
+          zyHasLiuDef: zy.defSources.has(liu.defAuraSource),
+          zyDefMult: zy.defBonusMult,
+          liuBuffed: liu.defBuffed.size,
+          zyHasCaoSpeed: zy.atkSpeedSources.has(cao.atkSpeedAuraSource),
+          zySpeedMult: zy.atkSpeedBonusMult,
+          zhouHasCaoSpeed: zhou.atkSpeedSources.has(cao.atkSpeedAuraSource),
+          zhouSpeedMult: zhou.atkSpeedBonusMult,
+          liuDead: liu.isDead,
+          zhouDead: zhou.isDead,
+        };
+      });
+      check(
+        "戰鬥中：趙雲沒有劉備的防禦加成（劉備生命 0）、曹操給趙雲攻速 1.15、生命 0 的周瑜沒有攻速加成；兩位生命 0 的都沒有陣亡",
+        a.state === 2 &&
+          a.zyHasLiuDef === false &&
+          a.zyDefMult === 1 &&
+          a.liuBuffed === 0 &&
+          a.zyHasCaoSpeed === true &&
+          a.zySpeedMult === 1.15 &&
+          a.zhouHasCaoSpeed === false &&
+          a.zhouSpeedMult === 1 &&
+          a.liuDead === false &&
+          a.zhouDead === false,
+        a
+      );
+      const back = readBack(E, "k_zeroaura");
+      check(
+        "沒有任何寫入；雲端存檔版本 6 不變",
+        E.gas.writes().length === 0 && !!back && back.rev === 6,
+        { writes: E.gas.writes(), back }
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "改目標守門：訪客暫停或結算時目標按鈕停用並說明，入口也拒；繼續後新的點擊才改",
+    async (mk) => {
+      const E = await mk({ maps: TOWER_MAPS, enemies: TOWER_ENEMIES });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const b1 = await buildTower(p, TOWER_CELLS[0], "弓兵塔");
+      const targetInfo = () =>
+        p.evaluate(() => {
+          const el = document.querySelector('[data-testid="upgrade-panel"]');
+          if (!el) return null;
+          const btns = [...el.querySelectorAll("button")].filter((b) =>
+            ["第一", "殘血", "威脅", "對空"].includes(b.innerText.trim())
+          );
+          const h = el.querySelector('[data-testid="tower-target-hint"]');
+          return {
+            disabled: btns.map((b) => b.disabled),
+            hint: h ? h.innerText.trim() : null,
+          };
+        });
+      const modeOf = () =>
+        p.evaluate(() => window.__testBridge.engine.towers[0].targetMode);
+      await towerPanel(p, TOWER_CELLS[0]);
+      const t0 = await targetInfo();
+      await closePanel(p);
+      check(
+        "前置：備戰中建弓兵塔，目標按鈕都可以按、沒有說明，目前是「第一」",
+        b1.ok &&
+          !!t0 &&
+          t0.disabled.length >= 3 &&
+          t0.disabled.every((x) => x === false) &&
+          t0.hint === null &&
+          (await modeOf()) === "first",
+        { b1, t0 }
+      );
+      check("按暫停", await pauseHud(p));
+      await towerPanel(p, TOWER_CELLS[0]);
+      const t1 = await targetInfo();
+      await p.evaluate(() =>
+        window.__testBridge.setTowerTargetMode(2, 1, "weakest")
+      );
+      const m1 = await modeOf();
+      await closePanel(p);
+      check(
+        "暫停中：目標按鈕都停用並說明；頁面的入口改成殘血也被拒（仍是第一）",
+        !!t1 &&
+          t1.disabled.every((x) => x === true) &&
+          t1.hint === TARGET_HINT &&
+          m1 === "first",
+        { t1, m1 }
+      );
+      check("按繼續", await resumeHud(p));
+      const m2 = await modeOf();
+      await towerPanel(p, TOWER_CELLS[0]);
+      await p
+        .locator('[data-testid="upgrade-panel"] button', { hasText: "殘血" })
+        .first()
+        .click();
+      await sleep(300);
+      const m3 = await modeOf();
+      await closePanel(p);
+      check(
+        "繼續本身不補送；新的點擊才改成殘血",
+        m2 === "first" && m3 === "weakest",
+        { m2, m3 }
+      );
+      check("開戰", await startBattle(p));
+      await endWith(p, { win: false });
+      await until(async () => (await bm(p, "state")) === 3, 5000);
+      await p.evaluate(() => {
+        const e = window.__testBridge.engine;
+        const w = e.gameMap.gridToWorld(2, 1);
+        e.handleCellClick(w.x, w.y);
+      });
+      await until(
+        async () =>
+          (await p.locator('[data-testid="upgrade-panel"]').count()) > 0,
+        5000
+      );
+      const t4 = await targetInfo();
+      await p.evaluate(() =>
+        window.__testBridge.setTowerTargetMode(2, 1, "strongest")
+      );
+      check(
+        "結算中：目標按鈕停用並說明，入口改成威脅也被拒（仍是殘血）",
+        !!t4 &&
+          t4.disabled.every((x) => x === true) &&
+          t4.hint === TARGET_HINT &&
+          (await modeOf()) === "weakest",
+        { t4, mode: await modeOf() }
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "改目標守門：390×600 用鍵盤改目標；暫停中說明看得到",
+    async (mk) => {
+      const E = await mk({
+        maps: TOWER_MAPS,
+        enemies: TOWER_ENEMIES,
+        viewport: { width: 390, height: 600 },
+      });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const b1 = await buildTower(p, TOWER_CELLS[0], "弓兵塔");
+      await towerPanel(p, TOWER_CELLS[0]);
+      await sleep(400);
+      const btn = p
+        .locator('[data-testid="upgrade-panel"] button', { hasText: "威脅" })
+        .first();
+      await btn.focus();
+      await p.keyboard.press("Enter");
+      await sleep(300);
+      const m1 = await p.evaluate(
+        () => window.__testBridge.engine.towers[0].targetMode
+      );
+      await closePanel(p);
+      check(
+        "390×600：在「威脅」按 Enter 改成威脅",
+        b1.ok && m1 === "strongest",
+        { b1, m1 }
+      );
+      check("按暫停", await pauseHud(p));
+      await towerPanel(p, TOWER_CELLS[0]);
+      await sleep(400);
+      const v = await p.evaluate(() => {
+        const h = document.querySelector('[data-testid="tower-target-hint"]');
+        if (!h) return null;
+        h.scrollIntoView({ block: "nearest" });
+        const r = h.getBoundingClientRect();
+        return {
+          text: h.innerText.trim(),
+          inView:
+            r.top >= 0 &&
+            r.bottom <= innerHeight &&
+            r.left >= 0 &&
+            r.right <= innerWidth,
+          noHScroll: document.documentElement.scrollWidth <= innerWidth + 1,
+        };
+      });
+      check(
+        "390×600 暫停中：目標說明在視窗內、沒有橫向捲動",
+        !!v && v.text === TARGET_HINT && v.inView && v.noHScroll,
+        v
+      );
+      await shot(p, "target-pause-390x600");
+      return E;
+    }
+  );
+
   // ═══ 18. 入口版面：1280 桌面、390×600、390×844 ═══
   for (const vp of [
     { width: 1280, height: 800 },

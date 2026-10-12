@@ -79,6 +79,8 @@ export const UpgradePanelModal: React.FC<UpgradePanelModalProps> = ({
   const canAfford = currentGold >= upgradeCost;
   // 升級只在備戰或戰鬥中、沒有暫停時可以按
   const canUpgradeNow = isActivePhase && !isPaused;
+  // 改目標也只在備戰或戰鬥中、沒有暫停時可以按
+  const canChangeTarget = isActivePhase && !isPaused;
   // 拆除返還投入的一半；只有備戰中、沒有暫停時可以拆
   const sellRefund = tower.getSellRefund();
   const canSell = isPrepPhase && !isPaused && battleId !== null;
@@ -160,6 +162,7 @@ export const UpgradePanelModal: React.FC<UpgradePanelModalProps> = ({
                 key={m.key}
                 type="button"
                 className={`${styles.targetModeBtn} ${targetMode === m.key ? styles.targetModeBtnActive : ""}`}
+                disabled={!canChangeTarget}
                 onClick={() =>
                   onTargetModeChange(gridCell.col, gridCell.row, m.key)
                 }
@@ -168,6 +171,14 @@ export const UpgradePanelModal: React.FC<UpgradePanelModalProps> = ({
               </button>
             ))}
           </div>
+          {!canChangeTarget && (
+            <div
+              className="small text-secondary mt-1"
+              data-testid="tower-target-hint"
+            >
+              暫停中或不在備戰、戰鬥時不能改目標。
+            </div>
+          )}
         </div>
 
         {/* 升級與拆除動作 */}

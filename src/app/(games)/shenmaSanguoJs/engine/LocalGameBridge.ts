@@ -140,14 +140,6 @@ export class LocalGameBridge {
     this.engine.battleManager.syncStats();
   }
 
-  public setDeploySlow(slow: boolean): void {
-    if (slow) {
-      this.engine.battleManager.beginDeploySlow();
-    } else {
-      this.engine.battleManager.endDeploySlow();
-    }
-  }
-
   /** 這個部署選單（打開時記下的這一場與編號）是不是還開著（純查詢） */
   public isDeployMenuOpen(ctx: unknown): boolean {
     return (

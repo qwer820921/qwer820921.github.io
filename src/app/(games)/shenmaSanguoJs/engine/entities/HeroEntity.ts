@@ -731,13 +731,22 @@ export class HeroEntity {
     }
   }
 
+  /**
+   * 正要離場：已陣亡，或生命已 ≤ 0（和 Godot 版 Hero.gd 各光環更新的 leaving 條件相同）。
+   * 離場時不再發光環，並在每次更新時撤除自己既有的減速、防禦、攻速、威壓來源；普通攻擊與命中附加的效果照原本的路徑
+   */
+  private isLeaving(): boolean {
+    return this.isDead || this.currentHp <= 0;
+  }
+
   private updateSlows(enemies: EnemyEntity[]): void {
+    const leaving = this.isLeaving();
     const rangePx = this.attackRange * this.tileSize;
 
     // 道路阻擋緩速
     for (const e of Array.from(this.roadSlowed)) {
       if (
-        this.isDead ||
+        leaving ||
         !this.isOnRoad ||
         e.isDead ||
         Math.hypot(e.x - this.x, e.y - this.y) > rangePx
@@ -749,9 +758,9 @@ export class HeroEntity {
       }
     }
 
-    // 關羽減速光環
-    if (this.slowAuraMult < 1.0 && !this.isDead) {
-      const keep = new Set<EnemyEntity>();
+    // 關羽減速光環（離場時不發，並撤除自己既有的光環減速）
+    const keep = new Set<EnemyEntity>();
+    if (this.slowAuraMult < 1.0 && !leaving) {
       for (const e of enemies) {
         if (
           !e.isDead &&
@@ -764,23 +773,24 @@ export class HeroEntity {
           }
         }
       }
-      for (const e of this.auraSlowed) {
-        if (!keep.has(e)) e.removeSlowFrom(this.auraSource);
-      }
-      this.auraSlowed = keep;
     }
+    for (const e of this.auraSlowed) {
+      if (!keep.has(e)) e.removeSlowFrom(this.auraSource);
+    }
+    this.auraSlowed = keep;
   }
 
   private updateDefAura(allHeroes: HeroEntity[]): void {
-    if (this.defAuraMult <= 1.0 || this.isDead) return;
-    const rangePx = this.attackRange * this.tileSize;
     const keep = new Set<HeroEntity>();
-
-    for (const h of allHeroes) {
-      if (h === this || h.isDead) continue;
-      if (Math.hypot(h.x - this.x, h.y - this.y) <= rangePx) {
-        h.applyDefFrom(this.defAuraSource, this.defAuraMult, 0.5);
-        keep.add(h);
+    if (this.defAuraMult > 1.0 && !this.isLeaving()) {
+      const rangePx = this.attackRange * this.tileSize;
+      for (const h of allHeroes) {
+        // 生命 ≤ 0 的武將不接收（和 Godot 版 _hero_alive 相同）
+        if (h === this || h.isDead || h.currentHp <= 0) continue;
+        if (Math.hypot(h.x - this.x, h.y - this.y) <= rangePx) {
+          h.applyDefFrom(this.defAuraSource, this.defAuraMult, 0.5);
+          keep.add(h);
+        }
       }
     }
     for (const h of this.defBuffed) {
@@ -790,19 +800,20 @@ export class HeroEntity {
   }
 
   private updateAtkSpeedAura(allHeroes: HeroEntity[]): void {
-    if (this.atkSpeedAuraMult <= 1.0 || this.isDead) return;
-    const rangePx = this.attackRange * this.tileSize;
     const keep = new Set<HeroEntity>();
-
-    for (const h of allHeroes) {
-      if (h === this || h.isDead) continue;
-      if (Math.hypot(h.x - this.x, h.y - this.y) <= rangePx) {
-        h.applyAtkSpeedFrom(
-          this.atkSpeedAuraSource,
-          this.atkSpeedAuraMult,
-          0.5
-        );
-        keep.add(h);
+    if (this.atkSpeedAuraMult > 1.0 && !this.isLeaving()) {
+      const rangePx = this.attackRange * this.tileSize;
+      for (const h of allHeroes) {
+        // 生命 ≤ 0 的武將不接收（和 Godot 版 _hero_alive 相同）
+        if (h === this || h.isDead || h.currentHp <= 0) continue;
+        if (Math.hypot(h.x - this.x, h.y - this.y) <= rangePx) {
+          h.applyAtkSpeedFrom(
+            this.atkSpeedAuraSource,
+            this.atkSpeedAuraMult,
+            0.5
+          );
+          keep.add(h);
+        }
       }
     }
     for (const h of this.atkSpeedBuffed) {
@@ -812,15 +823,15 @@ export class HeroEntity {
   }
 
   private updateAtkDownAura(enemies: EnemyEntity[]): void {
-    if (this.atkDownAuraMult >= 1.0 || this.isDead) return;
-    const rangePx = this.attackRange * this.tileSize;
     const keep = new Set<EnemyEntity>();
-
-    for (const e of enemies) {
-      if (e.isDead) continue;
-      if (Math.hypot(e.x - this.x, e.y - this.y) <= rangePx) {
-        e.applyAtkDownFrom(this.atkDownAuraSource, this.atkDownAuraMult, 0.5);
-        keep.add(e);
+    if (this.atkDownAuraMult < 1.0 && !this.isLeaving()) {
+      const rangePx = this.attackRange * this.tileSize;
+      for (const e of enemies) {
+        if (e.isDead) continue;
+        if (Math.hypot(e.x - this.x, e.y - this.y) <= rangePx) {
+          e.applyAtkDownFrom(this.atkDownAuraSource, this.atkDownAuraMult, 0.5);
+          keep.add(e);
+        }
       }
     }
     for (const e of this.atkDowned) {
@@ -830,7 +841,8 @@ export class HeroEntity {
   }
 
   public applyDefFrom(source: string, mult: number, duration: number): void {
-    if (this.isDead || mult <= 1.0) return;
+    // 已陣亡或生命 ≤ 0 不接收（和 Godot 版 apply_def_from 相同）
+    if (this.isDead || this.currentHp <= 0 || mult <= 1.0) return;
     this.defSources.set(source, { mult, left: duration });
     let m = 1.0;
     for (const s of this.defSources.values()) m = Math.max(m, s.mult);
@@ -850,7 +862,8 @@ export class HeroEntity {
     mult: number,
     duration: number
   ): void {
-    if (this.isDead || mult <= 1.0) return;
+    // 已陣亡或生命 ≤ 0 不接收（和 Godot 版 apply_atk_speed_from 相同）
+    if (this.isDead || this.currentHp <= 0 || mult <= 1.0) return;
     this.atkSpeedSources.set(source, { mult, left: duration });
     let m = 1.0;
     for (const s of this.atkSpeedSources.values()) m = Math.max(m, s.mult);

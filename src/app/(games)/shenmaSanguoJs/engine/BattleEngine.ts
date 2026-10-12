@@ -32,6 +32,7 @@ import {
 } from "./entities/HeroEntity";
 import { TowerEntity, TOWER_CONFIGS } from "./entities/TowerEntity";
 import { EnemyConfigData } from "./entities/EnemyEntity";
+import { heroIdentityKey, isSameHero } from "../utils/heroIdentity";
 
 /** 拆塔請求（只在本機的畫面與引擎之間使用，不進存檔或後端） */
 export interface TowerSellRequest {
@@ -608,10 +609,12 @@ export class BattleEngine {
     heroState: HeroStateData
   ): boolean {
     if (this.actionsBlocked()) return false;
-    // 武將識別碼要是非空字串；同一位武將還在場上（沒有陣亡）時不能再派（和 Godot 版 _placed_heroes 相同），陣亡後可以重派
+    // 武將要有身份（非空字串，不是只有 hero_ 前綴）；同一位武將還在場上（沒有陣亡）時不能再派，陣亡後可以重派。
+    // 同一位用身份比較：完整 ID 與去掉 hero_ 前綴的寫法視為同一位（Godot 版 _placed_heroes 是原字串比對；這裡只比較，不改 heroId）
     const heroId: unknown = heroState?.hero_id;
-    if (typeof heroId !== "string" || heroId.trim() === "") return false;
-    if (this.heroes.some((h) => !h.isDead && h.heroId === heroId)) return false;
+    if (heroIdentityKey(heroId) === null) return false;
+    if (this.heroes.some((h) => !h.isDead && isSameHero(h.heroId, heroId)))
+      return false;
     if (!this.gameMap.canPlaceHero(col, row)) return false;
 
     // 派出武將不花戰場金幣（和 Godot 版相同）；建塔與升級照原價
@@ -801,6 +804,8 @@ export class BattleEngine {
    * 設定防禦塔索敵目標優先級
    */
   public setTowerTargetMode(col: number, row: number, mode: string): void {
+    // 和派人、建塔、升級相同：暫停中或不在備戰、戰鬥中都不能改目標（Godot 版的 Web 改目標也會在暫停時拒絕）
+    if (this.actionsBlocked()) return;
     const tower = this.towers.find(
       (tw) => !tw.sold && tw.gridCell.col === col && tw.gridCell.row === row
     );

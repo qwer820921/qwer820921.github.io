@@ -5,6 +5,7 @@ import { PlacementMenuData } from "../types";
 import { DeployMenuContext } from "../engine/LocalGameBridge";
 import { HeroStateData } from "../engine/entities/HeroEntity";
 import { BUILTIN_HEROES_CONFIG } from "../engine/builtinData";
+import { isSameHero } from "../utils/heroIdentity";
 import styles from "../styles/shenmaSanguoJs.module.css";
 
 interface PlacementMenuModalProps {
@@ -154,9 +155,10 @@ export const PlacementMenuModal: React.FC<PlacementMenuModalProps> = ({
                 const config = BUILTIN_HEROES_CONFIG.find(
                   (c) => c.hero_id.replace(/^hero_/, "") === norm
                 );
-                const isPlaced =
-                  placedHeroIds.includes(hero.hero_id) ||
-                  placedHeroIds.includes(norm);
+                // 已在場上：用身份比較，完整 ID 與去掉 hero_ 前綴的寫法互相視為同一位（兩個方向都擋）
+                const isPlaced = placedHeroIds.some((p) =>
+                  isSameHero(p, hero.hero_id)
+                );
                 const canHitAir =
                   config?.job === "archer" ||
                   config?.job === "mage" ||
