@@ -10,8 +10,10 @@ interface UpgradePanelModalProps {
   tower: TowerEntity | null;
   currentGold: number;
   isPrepPhase: boolean;
-  /** 手動暫停中（暫停時不能拆除） */
+  /** 手動暫停中（暫停時不能升級、拆除） */
   isPaused: boolean;
+  /** 備戰或戰鬥中（其他階段不能升級） */
+  isActivePhase: boolean;
   /** 打開面板時這座塔所屬的那一場；拆除請求帶回這一場 */
   battleId: string | null;
   onUpgrade: (col: number, row: number) => void;
@@ -48,6 +50,7 @@ export const UpgradePanelModal: React.FC<UpgradePanelModalProps> = ({
   currentGold,
   isPrepPhase,
   isPaused,
+  isActivePhase,
   battleId,
   onUpgrade,
   onSell,
@@ -74,6 +77,8 @@ export const UpgradePanelModal: React.FC<UpgradePanelModalProps> = ({
   const antiAir = TOWER_CONFIGS[towerTypeKey]?.antiAir ?? false;
   const upgradeCost = tower.getUpgradeCost();
   const canAfford = currentGold >= upgradeCost;
+  // 升級只在備戰或戰鬥中、沒有暫停時可以按
+  const canUpgradeNow = isActivePhase && !isPaused;
   // 拆除返還投入的一半；只有備戰中、沒有暫停時可以拆
   const sellRefund = tower.getSellRefund();
   const canSell = isPrepPhase && !isPaused && battleId !== null;
@@ -170,10 +175,11 @@ export const UpgradePanelModal: React.FC<UpgradePanelModalProps> = ({
           <button
             type="button"
             className={`${styles.actionBtn} ${styles.upgradeBtn}`}
-            disabled={!canAfford}
+            disabled={!canAfford || !canUpgradeNow}
             onClick={() => {
               onUpgrade(gridCell.col, gridCell.row);
             }}
+            data-testid="tower-upgrade"
           >
             升級 💰{upgradeCost}
           </button>
@@ -187,6 +193,14 @@ export const UpgradePanelModal: React.FC<UpgradePanelModalProps> = ({
             拆除 +{sellRefund}
           </button>
         </div>
+        {!canUpgradeNow && (
+          <div
+            className="small text-secondary mt-2"
+            data-testid="tower-upgrade-hint"
+          >
+            暫停中或不在備戰、戰鬥時不能升級。
+          </div>
+        )}
         {!canSell && (
           <div
             className="small text-secondary mt-2"

@@ -8,7 +8,11 @@ import React, {
   useMemo,
 } from "react";
 import { Row, Col } from "react-bootstrap";
-import { LocalGameBridge, PlacementMenuData } from "../engine/LocalGameBridge";
+import {
+  DeployMenuContext,
+  LocalGameBridge,
+  PlacementMenuData,
+} from "../engine/LocalGameBridge";
 import {
   StatsSyncData,
   BattleResultData,
@@ -228,6 +232,8 @@ const ShenmaSanguoJsPage: React.FC = () => {
 
   const currentStageRef = useRef<StageData>(BUILTIN_STAGES[0]);
   const statsRef = useRef<StatsSyncData>(stats);
+  // 畫面上開著的部署選單（引擎派出成功通知關閉時，用它打開時的這一場與編號關閉慢速）
+  const placementMenuRef = useRef<PlacementMenuData | null>(null);
   const activeTeamHeroesRef = useRef<HeroStateData[]>(activeTeamHeroes);
   // 目前載入的這一場：每次 loadStage 產生一個 battleId，開戰與結算都用同一個（共用帳號在第一次進入戰鬥時固定）
   const battleCtxRef = useRef<{
@@ -284,6 +290,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
       // 換成新的一場（場上沒有武將）：部署選單的「已在場上」名單與還開著的部署選單（指向上一場的格子）一起清掉
       setPlacedHeroIds([]);
       setPlacementMenu(null);
+      placementMenuRef.current = null;
     },
     []
   );
@@ -357,7 +364,18 @@ const ShenmaSanguoJsPage: React.FC = () => {
         });
       }
     };
-    bridge.onPlacementMenuOpen = (m) => setPlacementMenu(m);
+    bridge.onPlacementMenuOpen = (m) => {
+      if (m) {
+        placementMenuRef.current = m;
+        setPlacementMenu(m);
+        return;
+      }
+      // 引擎派出成功時要求關閉：用畫面上那個選單打開時的這一場與編號關閉（恢復玩家選的速度）
+      const cur = placementMenuRef.current;
+      placementMenuRef.current = null;
+      if (cur) bridge.closeDeployMenu(cur);
+      setPlacementMenu(null);
+    };
     bridge.onUpgradePanelOpen = (tw, context) => {
       setUpgradeTower(tw);
       setTowerPanelBattleId(tw && context ? context.battleId : null);
@@ -517,20 +535,42 @@ const ShenmaSanguoJsPage: React.FC = () => {
     setIsSfxMuted(nextMuted);
   };
 
-  // 建造與放置操作
-  const handlePlaceTower = (col: number, row: number, typeKey: string) => {
-    bridgeRef.current?.placeTower(col, row, typeKey);
+  // 部署選單：關閉時帶這個選單打開時的這一場與編號（只關這一個；舊的關閉不影響新的選單）
+  const sameMenu = (a: DeployMenuContext, b: DeployMenuContext) =>
+    a.battleId === b.battleId && a.menuId === b.menuId;
+  const closePlacementMenu = (ctx: DeployMenuContext) => {
+    bridgeRef.current?.closeDeployMenu(ctx);
+    if (placementMenuRef.current && sameMenu(placementMenuRef.current, ctx)) {
+      placementMenuRef.current = null;
+    }
+    setPlacementMenu((cur) => (cur && sameMenu(cur, ctx) ? null : cur));
+  };
+
+  // 建造與放置操作：只用所屬選單（這一場、還開著）派出；過期的選單不派，回傳是否成功
+  const handlePlaceTower = (
+    ctx: DeployMenuContext,
+    col: number,
+    row: number,
+    typeKey: string
+  ): boolean => {
+    const bridge = bridgeRef.current;
+    if (!bridge || !bridge.isDeployMenuOpen(ctx)) return false;
+    return bridge.placeTower(col, row, typeKey);
   };
 
   const handlePlaceHero = (
+    ctx: DeployMenuContext,
     col: number,
     row: number,
     heroState: HeroStateData
-  ) => {
-    const success = bridgeRef.current?.placeHero(col, row, heroState);
+  ): boolean => {
+    const bridge = bridgeRef.current;
+    if (!bridge || !bridge.isDeployMenuOpen(ctx)) return false;
+    const success = bridge.placeHero(col, row, heroState);
     if (success) {
       setPlacedHeroIds((prev) => [...prev, heroState.hero_id]);
     }
+    return success;
   };
 
   const handleUpgradeTower = (col: number, row: number) => {
@@ -588,6 +628,12 @@ const ShenmaSanguoJsPage: React.FC = () => {
     const res = await retrySharedSettle();
     if (!res.success) setSettleRetryMsg(res.error ?? "這次沒有確認");
   };
+  // 派武將、建塔、升級的畫面可操作狀態：備戰或戰鬥中、而且這一場還沒有結算結果
+  // （引擎結算時只改階段、不送狀態同步，stats 的階段可能仍是戰鬥中，所以另看結算結果）
+  const isActionPhase =
+    (stats.game_state === GameState.PREP ||
+      stats.game_state === GameState.BATTLE) &&
+    battleResult === null;
   const resultSettleView =
     mode === "shared" &&
     battleResult &&
@@ -646,9 +692,11 @@ const ShenmaSanguoJsPage: React.FC = () => {
               currentGold={stats.gold}
               playerHeroes={activeTeamHeroes}
               placedHeroIds={placedHeroIds}
+              isPaused={stats.paused}
+              isActivePhase={isActionPhase}
               onPlaceTower={handlePlaceTower}
               onPlaceHero={handlePlaceHero}
-              onClose={() => setPlacementMenu(null)}
+              onClose={closePlacementMenu}
             />
           )}
 
@@ -660,6 +708,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
               currentGold={stats.gold}
               isPrepPhase={stats.game_state === GameState.PREP}
               isPaused={stats.paused}
+              isActivePhase={isActionPhase}
               battleId={towerPanelBattleId}
               onUpgrade={handleUpgradeTower}
               onSell={handleSellTower}

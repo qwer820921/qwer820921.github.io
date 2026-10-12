@@ -5009,7 +5009,31 @@ module.exports = async function profileContractWeb(page) {
   );
 
   await scenario("不相關的更新不清名單：戰鬥中升級與改隊伍", async (mk) => {
-    const E = await mk({ maps: SKILL_MAPS, enemies: ENEMIES });
+    // 敵人是被馬超擋住、打不倒的木樁：之後為了打開部署選單按「繼續」，戰鬥也不會因敵人被打完而結束
+    const HOLD = {
+      enemy_id: "dummy_hold",
+      name: "測試木樁",
+      hp: 1000000,
+      speed: 60,
+      atk: 1,
+      movement_type: "ground",
+      image: "enemy_grunt1.webp",
+      attack_image: "enemy_grunt1_atk.webp",
+    };
+    const E = await mk({
+      maps: SKILL_MAPS.map((m) => ({
+        ...m,
+        waves: [
+          {
+            wave: 1,
+            enemies: [
+              { enemy_id: "dummy_hold", count: 1, interval: 1, path: "path_a" },
+            ],
+          },
+        ],
+      })),
+      enemies: [...ENEMIES, HOLD],
+    });
     const p = await E.page({
       storage: guestStorage(
         [
@@ -5065,6 +5089,13 @@ module.exports = async function profileContractWeb(page) {
     await closeModal(p);
     await sleep(800);
     const s1 = await fieldOf(p);
+    // 暫停中不能打開新的部署選單：先按「繼續」再看選單
+    await p.locator("button", { hasText: "▶ 繼續" }).first().click();
+    await until(
+      async () =>
+        (await p.locator("button", { hasText: "⏸ 暫停" }).count()) > 0,
+      5000
+    );
     const c1 = await menuCard(p, ROAD_CELLS[8], "馬超");
     check(
       "升級後：同一個 battleId、馬超是原本的實例，選單上仍是「已在場上」",
@@ -7463,6 +7494,637 @@ module.exports = async function profileContractWeb(page) {
         { d1, d2, s }
       );
       check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  // ═══ 28. 暫停時的操作守門與部署選單慢速 ═══
+  // 派武將、建塔、升級只在備戰或戰鬥中、沒有暫停時執行：暫停中不能打開新的部署選單，選單與升級面板停用並說明，
+  // 頁面用的同一個入口（window.__testBridge 的 placeHero／placeTower／upgradeTower）也拒絕。部署選單開著時是 0.1 倍慢速（不乘 1 或 2 倍），
+  // 關閉要帶打開時的這一場與選單編號。階段與結束用既有的操作或受控回呼（不是自然通關）；慢速量測有固定時間窗與容差
+  /** 引擎目前的這一場：階段、暫停、速度、選單編號、實際倍率、戰場金幣、武將數、塔（識別碼、等級、投入） */
+  const ctl = (p) =>
+    p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      const b = e.battleManager;
+      return {
+        battleId: b.battleId,
+        state: b.gameState,
+        paused: b.manualPaused,
+        speed: b.speedPref,
+        menuId: b.deployMenuId,
+        scale: b.effectiveTimeScale(),
+        gold: b.battleGold,
+        heroes: e.heroes.length,
+        towers: e.towers.map((t) => [t.towerUid, t.towerLevel, t.investedGold]),
+      };
+    });
+  const menuShown = async (p) => (await p.locator(PLACEMENT_MENU).count()) > 0;
+  /** 點畫布上的一格（玩法提示擋住時先收起），回傳是否點到畫布 */
+  async function clickCell(p, cell) {
+    const pt = await cellPoint(p, cell);
+    if (pt.onCanvas) await p.mouse.click(pt.x, pt.y);
+    return pt.onCanvas;
+  }
+  async function pauseHud(p) {
+    await p.locator("button", { hasText: "⏸ 暫停" }).first().click();
+    return until(
+      async () =>
+        (await p.locator("button", { hasText: "▶ 繼續" }).count()) > 0,
+      5000
+    );
+  }
+  async function resumeHud(p) {
+    await p.locator("button", { hasText: "▶ 繼續" }).first().click();
+    return until(
+      async () =>
+        (await p.locator("button", { hasText: "⏸ 暫停" }).count()) > 0,
+      5000
+    );
+  }
+  const closeMenuX = (p) =>
+    p
+      .locator(PLACEMENT_MENU)
+      .locator("button", { hasText: "×" })
+      .first()
+      .click()
+      .catch(() => {});
+  /** 選單上某張卡片：是否停用 */
+  const cardDisabled = (p, name) =>
+    p
+      .locator(PLACEMENT_MENU)
+      .locator("button", { hasText: name })
+      .first()
+      .isDisabled()
+      .catch(() => null);
+  const blockedHint = async (p) => {
+    const x = p.locator('[data-testid="placement-blocked-hint"]');
+    return (await x.count()) ? (await x.innerText()).trim() : null;
+  };
+  const upgradeInfo = (p) =>
+    p.evaluate(() => {
+      const b = document.querySelector('[data-testid="tower-upgrade"]');
+      const h = document.querySelector('[data-testid="tower-upgrade-hint"]');
+      return b
+        ? { disabled: b.disabled, hint: h ? h.innerText.trim() : null }
+        : null;
+    });
+  const UPGRADE_HINT = "暫停中或不在備戰、戰鬥時不能升級。";
+  const PAUSE_HINT = "暫停中不能派武將或建塔，可以先關閉選單。";
+
+  await scenario(
+    "暫停守門：訪客備戰中暫停時不能開部署選單，派人、建塔、升級的入口也拒；繼續後新的點擊才成功",
+    async (mk) => {
+      const E = await mk({ maps: TOWER_MAPS, enemies: TOWER_ENEMIES });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      check("可以觀測部署資料", await watchPlacements(p));
+      const b1 = await buildTower(p, TOWER_CELLS[0], "弓兵塔");
+      await towerPanel(p, TOWER_CELLS[0]);
+      const u0 = await upgradeInfo(p);
+      await closePanel(p);
+      check(
+        "前置：備戰中建弓兵塔 A（4950），升級按鈕可以按、沒有說明",
+        b1.ok && !!u0 && u0.disabled === false && u0.hint === null,
+        { b1, u0 }
+      );
+      check("按暫停", await pauseHud(p));
+      const s0 = await ctl(p);
+      const clicked = await clickCell(p, ROAD_CELLS[0]);
+      await sleep(800);
+      const s1 = await ctl(p);
+      check(
+        "暫停中點空的道路格：不打開部署選單、選單編號 0、倍率不變",
+        clicked && !(await menuShown(p)) && s1.menuId === 0 && sameJson(s1, s0),
+        { clicked, s0, s1 }
+      );
+      const heroState = DEFAULT_SORTIE.find((x) => x[0] === "hero_ma_chao");
+      const r = await p.evaluate(
+        ({ hs }) => {
+          const b = window.__testBridge;
+          return {
+            hero: b.placeHero(2, 3, {
+              hero_id: hs[0],
+              level: hs[2],
+              star: hs[3],
+              atk: hs[4],
+              def: hs[5],
+              hp: hs[6],
+            }),
+            tower: b.placeTower(4, 1, "archer"),
+            upgrade: b.upgradeTower(2, 1),
+          };
+        },
+        { hs: heroState }
+      );
+      const s2 = await ctl(p);
+      check(
+        "暫停中：頁面用的派武將、建塔、升級入口都被拒，金幣、武將、塔都不變",
+        r.hero === false &&
+          r.tower === false &&
+          r.upgrade === false &&
+          sameJson(s2, s0),
+        { r, s0, s2 }
+      );
+      await towerPanel(p, TOWER_CELLS[0]);
+      const u1 = await upgradeInfo(p);
+      check(
+        "暫停中仍可以點塔看資訊；升級按鈕停用並說明",
+        !!u1 && u1.disabled === true && u1.hint === UPGRADE_HINT,
+        u1
+      );
+      await closePanel(p);
+      check("按繼續", await resumeHud(p));
+      const s3 = await ctl(p);
+      check(
+        "繼續本身不補送暫停時的操作（金幣、武將、塔都和暫停時一樣）",
+        s3.paused === false &&
+          s3.gold === s0.gold &&
+          s3.heroes === s0.heroes &&
+          sameJson(s3.towers, s0.towers),
+        { s0, s3 }
+      );
+      const d = await deployHero(p, ROAD_CELLS[0], "馬超");
+      const b2 = await buildTower(p, TOWER_CELLS[1], "弓兵塔");
+      await towerPanel(p, TOWER_CELLS[0]);
+      await p.locator('[data-testid="tower-upgrade"]').click();
+      await sleep(300);
+      await closePanel(p);
+      const s4 = await ctl(p);
+      check(
+        "繼續後新的點擊：派馬超、建弓兵塔 B（4950 → 4900）、升級 A（4900 → 4850、Lv.2）都成功，選單關閉後倍率回到 1",
+        d.ok &&
+          b2.ok &&
+          s4.heroes === 1 &&
+          s4.gold === 4850 &&
+          s4.towers.length === 2 &&
+          s4.towers[0][1] === 2 &&
+          s4.menuId === 0 &&
+          s4.scale === 1,
+        { d, b2, s4 }
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "暫停守門：部署選單開著時暫停，卡片停用並說明，入口也拒；取消只關選單、仍在暫停",
+    async (mk) => {
+      const E = await mk({ maps: TOWER_MAPS, enemies: TOWER_ENEMIES });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const clicked = await clickCell(p, ROAD_CELLS[0]);
+      const opened = await until(() => menuShown(p), 5000);
+      const s0 = await ctl(p);
+      const d0 = await cardDisabled(p, "馬超");
+      check(
+        "備戰中點空的道路格：打開部署選單（編號大於 0、倍率 0.1），馬超可以點、沒有說明",
+        clicked &&
+          !!opened &&
+          s0.menuId > 0 &&
+          s0.scale === 0.1 &&
+          d0 === false &&
+          (await blockedHint(p)) === null,
+        { clicked, opened, s0, d0 }
+      );
+      // HUD 的暫停按鈕在部署選單的遮罩底下按不到：用頁面同一個橋接入口受控暫停
+      await p.evaluate(() => window.__testBridge.setPaused(true));
+      check(
+        "選單開著時受控暫停",
+        await until(
+          async () =>
+            (await p.locator("button", { hasText: "▶ 繼續" }).count()) > 0,
+          5000
+        )
+      );
+      const d1 = await cardDisabled(p, "馬超");
+      const h1 = await blockedHint(p);
+      const s1 = await ctl(p);
+      check(
+        "暫停後選單仍開著：馬超卡片停用並說明「暫停中不能派武將或建塔，可以先關閉選單。」，選單編號不變",
+        (await menuShown(p)) &&
+          d1 === true &&
+          h1 === PAUSE_HINT &&
+          s1.paused === true &&
+          s1.menuId === s0.menuId,
+        { d1, h1, s1 }
+      );
+      const ms = DEFAULT_SORTIE.find((x) => x[0] === "hero_ma_chao");
+      const r = await p.evaluate(
+        (hs) =>
+          window.__testBridge.placeHero(2, 3, {
+            hero_id: hs[0],
+            level: hs[2],
+            star: hs[3],
+            atk: hs[4],
+            def: hs[5],
+            hp: hs[6],
+          }),
+        ms
+      );
+      const s2 = await ctl(p);
+      check(
+        "暫停中從頁面的入口派馬超：被拒，場上沒有武將，選單仍開著",
+        r === false && s2.heroes === 0 && (await menuShown(p)),
+        { r, s2 }
+      );
+      await closeMenuX(p);
+      await until(async () => !(await menuShown(p)), 5000);
+      const s3 = await ctl(p);
+      check(
+        "按 × 取消：選單關閉、選單編號 0，但仍在暫停（取消不解除暫停）",
+        !(await menuShown(p)) &&
+          s3.menuId === 0 &&
+          s3.paused === true &&
+          (await p.locator("button", { hasText: "▶ 繼續" }).count()) > 0,
+        s3
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "部署慢速：戰鬥中 1 倍、2 倍、選單開著（2 倍時仍 0.1）、暫停的戰鬥時間與木樁移動",
+    async (mk) => {
+      const E = await mk({ maps: TOWER_MAPS, enemies: TOWER_ENEMIES });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      check("按進入戰場開戰", await startBattle(p));
+      check(
+        "木樁出現",
+        await until(
+          () =>
+            p.evaluate(
+              () =>
+                window.__testBridge.engine.waveManager.activeEnemies.length > 0
+            ),
+          10000
+        )
+      );
+      /** 量一個時間窗：戰鬥時間與木樁位置的變化，以頁面的 performance.now() 算實際經過的秒數 */
+      const read = () =>
+        p.evaluate(() => {
+          const e = window.__testBridge.engine;
+          const en = e.waveManager.activeEnemies.find((x) => !x.isDead);
+          return {
+            bt: e.battleManager.battleTime,
+            now: performance.now(),
+            x: en ? en.x : null,
+            y: en ? en.y : null,
+          };
+        });
+      const sample = async (ms) => {
+        const a = await read();
+        await sleep(ms);
+        const b = await read();
+        const wall = (b.now - a.now) / 1000;
+        const dx =
+          a.x === null || b.x === null
+            ? null
+            : Math.hypot(b.x - a.x, b.y - a.y);
+        return {
+          wall,
+          dt: b.bt - a.bt,
+          rate: (b.bt - a.bt) / wall,
+          move: dx === null ? null : dx / wall,
+        };
+      };
+      const w1 = await sample(1500);
+      await p.locator("button", { hasText: "2x" }).first().click();
+      await sleep(200);
+      const w2 = await sample(1500);
+      const clicked = await clickCell(p, ROAD_CELLS[10]);
+      const opened = await until(() => menuShown(p), 5000);
+      const c3 = await ctl(p);
+      const w3 = await sample(1500);
+      await closeMenuX(p);
+      await until(async () => !(await menuShown(p)), 5000);
+      const c4 = await ctl(p);
+      const w4 = await sample(1500);
+      check("按暫停", await pauseHud(p));
+      const w5 = await sample(1000);
+      check("按繼續", await resumeHud(p));
+      const ratio = (a, b) => (b ? a / b : null);
+      const m = {
+        r1: w1.rate,
+        r2: ratio(w2.rate, w1.rate),
+        rMenu: ratio(w3.rate, w1.rate),
+        r2back: ratio(w4.rate, w1.rate),
+        move1: w1.move,
+        moveMenu: ratio(w3.move, w1.move),
+      };
+      check(
+        "1 倍時戰鬥時間約等於實際時間（0.75～1.1）",
+        m.r1 >= 0.75 && m.r1 <= 1.1,
+        { m, w1 }
+      );
+      check(
+        "選 2 倍後約是 1 倍的 2 倍（1.7～2.3）",
+        m.r2 >= 1.7 && m.r2 <= 2.3,
+        { m, w2 }
+      );
+      check(
+        "2 倍時打開部署選單：速度仍是 2、實際倍率 0.1，戰鬥時間與木樁移動約是 1 倍的 0.1（0.06～0.14）",
+        clicked &&
+          !!opened &&
+          c3.speed === 2 &&
+          c3.scale === 0.1 &&
+          m.rMenu >= 0.06 &&
+          m.rMenu <= 0.14 &&
+          m.moveMenu !== null &&
+          m.moveMenu >= 0.05 &&
+          m.moveMenu <= 0.15,
+        { m, c3, w3 }
+      );
+      check(
+        "按 × 關閉選單：恢復 2 倍（1.7～2.3），選單編號 0",
+        c4.menuId === 0 && c4.scale === 2 && m.r2back >= 1.7 && m.r2back <= 2.3,
+        { m, c4, w4 }
+      );
+      check("暫停時戰鬥時間完全不增加", w5.dt === 0, w5);
+      return E;
+    }
+  );
+
+  await scenario(
+    "部署選單編號：關閉帶打開時的那一組；舊的一組關不掉新選單，過期的選單也不能派",
+    async (mk) => {
+      const E = await mk({ maps: TOWER_MAPS, enemies: TOWER_ENEMIES });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      await clickCell(p, ROAD_CELLS[0]);
+      await until(() => menuShown(p), 5000);
+      const a = await ctl(p);
+      await closeMenuX(p);
+      await until(async () => !(await menuShown(p)), 5000);
+      const a2 = await ctl(p);
+      await clickCell(p, ROAD_CELLS[0]);
+      await until(() => menuShown(p), 5000);
+      const b = await ctl(p);
+      check(
+        "先開 A 再按 × 關閉（倍率回到 1），再開 B：B 的編號比 A 大、倍率 0.1",
+        a.menuId > 0 &&
+          a2.menuId === 0 &&
+          a2.scale === 1 &&
+          b.menuId > a.menuId &&
+          b.scale === 0.1,
+        { a, a2, b }
+      );
+      const oldClose = await p.evaluate(
+        (ctx) => window.__testBridge.closeDeployMenu(ctx),
+        { battleId: a.battleId, menuId: a.menuId }
+      );
+      const b2 = await ctl(p);
+      check(
+        "用 A 的那一組關閉：無效，B 的選單仍開著、倍率仍 0.1",
+        oldClose === false &&
+          (await menuShown(p)) &&
+          b2.menuId === b.menuId &&
+          b2.scale === 0.1,
+        { oldClose, b2 }
+      );
+      // 受控：B 的編號在頁面不知道的情況下被關掉，畫面上 B 還在（模擬過期的選單）
+      const sneak = await p.evaluate(
+        (ctx) => window.__testBridge.closeDeployMenu(ctx),
+        { battleId: b.battleId, menuId: b.menuId }
+      );
+      await p
+        .locator(PLACEMENT_MENU)
+        .locator("button", { hasText: "馬超" })
+        .first()
+        .click();
+      await sleep(500);
+      const b3 = await ctl(p);
+      check(
+        "B 已經不是開著的選單：在畫面上的 B 點馬超不會派出，選單留著",
+        sneak === true && b3.heroes === 0 && (await menuShown(p)),
+        { sneak, b3 }
+      );
+      await closeMenuX(p);
+      await until(async () => !(await menuShown(p)), 5000);
+      const again = await p.evaluate(
+        (ctx) => window.__testBridge.closeDeployMenu(ctx),
+        { battleId: b.battleId, menuId: b.menuId }
+      );
+      check(
+        "按 × 關掉畫面上的 B；同一組再送一次也無效，倍率 1",
+        !(await menuShown(p)) && again === false && (await ctl(p)).scale === 1,
+        { again, s: await ctl(p) }
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "部署選單編號：後端設定到達重新載入後，上一場的選單關不掉新場的選單",
+    async (mk) => {
+      const E = await mk({ maps: TOWER_MAPS, enemies: TOWER_ENEMIES });
+      const hold = E.gas.rule("get_all_maps", "hold");
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      check(
+        "後端關卡設定還沒回應（暫停中）",
+        await until(() => hold.waiting.length > 0, 15000)
+      );
+      const bid0 = await stableBattle(p);
+      const roads = await roadCellsOf(p);
+      if (roads.length) await clickCell(p, roads[0]);
+      const opened = await until(() => menuShown(p), 5000);
+      const old = await ctl(p);
+      check(
+        "內建關卡上打開部署選單（倍率 0.1）",
+        roads.length > 0 && !!opened && old.menuId > 0 && old.scale === 0.1,
+        { roads: roads.length, old }
+      );
+      check("放行後端關卡設定", hold.release("ok") === 1);
+      const bid1 = await nextBattle(p, bid0);
+      const n0 = await ctl(p);
+      check(
+        "重新載入成新的一場：舊選單從畫面上關掉、選單編號 0、倍率 1",
+        !!bid1 &&
+          bid1 !== bid0 &&
+          !(await menuShown(p)) &&
+          n0.menuId === 0 &&
+          n0.scale === 1,
+        { bid0, bid1, n0 }
+      );
+      await clickCell(p, ROAD_CELLS[0]);
+      await until(() => menuShown(p), 5000);
+      const n1 = await ctl(p);
+      const r = await p.evaluate(
+        (ctx) => window.__testBridge.closeDeployMenu(ctx),
+        { battleId: old.battleId, menuId: old.menuId }
+      );
+      const n2 = await ctl(p);
+      check(
+        "新場打開選單後，用上一場的那一組關閉：無效，新選單仍開著、倍率 0.1",
+        r === false &&
+          (await menuShown(p)) &&
+          n2.menuId === n1.menuId &&
+          n2.scale === 0.1,
+        { r, n1, n2 }
+      );
+      await closeMenuX(p);
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "暫停守門：結算後不開部署選單，入口也拒，升級按鈕停用並說明",
+    async (mk) => {
+      const E = await mk({ maps: TOWER_MAPS, enemies: TOWER_ENEMIES });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const b1 = await buildTower(p, TOWER_CELLS[0], "弓兵塔");
+      check("前置：建弓兵塔 A", b1.ok, b1);
+      check("開戰", await startBattle(p));
+      await endWith(p, { win: false });
+      await until(async () => (await bm(p, "state")) === 3, 5000);
+      const s0 = await ctl(p);
+      // 結算視窗蓋住戰場：用引擎的點擊入口（和點畫布相同）受控點空格與塔
+      const r = await p.evaluate(() => {
+        const e = window.__testBridge.engine;
+        const w = e.gameMap.gridToWorld(2, 3);
+        e.handleCellClick(w.x, w.y);
+        const hs = {
+          hero_id: "hero_ma_chao",
+          level: 3,
+          atk: 120,
+          def: 60,
+          hp: 1200,
+        };
+        return {
+          hero: window.__testBridge.placeHero(2, 3, hs),
+          tower: window.__testBridge.placeTower(4, 1, "archer"),
+          upgrade: window.__testBridge.upgradeTower(2, 1),
+        };
+      });
+      await sleep(500);
+      const s1 = await ctl(p);
+      check(
+        "結算中：點空格不打開部署選單（編號 0），派武將、建塔、升級的入口都被拒，金幣、武將、塔都不變",
+        s0.state === 3 &&
+          !(await menuShown(p)) &&
+          s1.menuId === 0 &&
+          r.hero === false &&
+          r.tower === false &&
+          r.upgrade === false &&
+          sameJson(s1, s0),
+        { r, s0, s1 }
+      );
+      await p.evaluate(() => {
+        const e = window.__testBridge.engine;
+        const w = e.gameMap.gridToWorld(2, 1);
+        e.handleCellClick(w.x, w.y);
+      });
+      await until(
+        async () =>
+          (await p.locator('[data-testid="upgrade-panel"]').count()) > 0,
+        5000
+      );
+      const u = await upgradeInfo(p);
+      check(
+        "結算中點塔：升級按鈕停用並說明",
+        !!u && u.disabled === true && u.hint === UPGRADE_HINT,
+        u
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "暫停守門與部署慢速：共用帳號 390×600 用鍵盤派出、暫停中不能開選單，沒有寫入",
+    async (mk) => {
+      const data = NEW({
+        capacity: 20,
+        team: [
+          { hero_id: "ma_chao", slot: 1 },
+          { hero_id: "zhao_yun", slot: 2 },
+        ],
+      });
+      const E = await mk({
+        seed: [{ key: "k_pausegate", data, rev: 5 }],
+        maps: TOWER_MAPS,
+        enemies: TOWER_ENEMIES,
+        viewport: { width: 390, height: 600 },
+      });
+      const p = await E.page({ storage: { shenma_player_key: "k_pausegate" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      const clicked = await clickCell(p, ROAD_CELLS[0]);
+      const opened = await until(() => menuShown(p), 5000);
+      // 選單有約 0.15 秒的放大動畫：等它結束再操作
+      await sleep(400);
+      const s0 = await ctl(p);
+      const card = p
+        .locator(PLACEMENT_MENU)
+        .locator("button", { hasText: "馬超" })
+        .first();
+      await card.focus();
+      await p.keyboard.press("Enter");
+      const closed = await until(async () => !(await menuShown(p)), 5000);
+      const s1 = await ctl(p);
+      check(
+        "390×600：打開選單（倍率 0.1），鍵盤在馬超卡片按 Enter：派出、選單關閉、倍率回到 1",
+        clicked &&
+          !!opened &&
+          s0.scale === 0.1 &&
+          !!closed &&
+          s1.heroes === 1 &&
+          s1.menuId === 0 &&
+          s1.scale === 1,
+        { clicked, opened, s0, s1 }
+      );
+      check("按暫停", await pauseHud(p));
+      const clicked2 = await clickCell(p, ROAD_CELLS[2]);
+      await sleep(800);
+      const s2 = await ctl(p);
+      check(
+        "390×600 暫停中點空格：不打開選單，選單編號 0",
+        clicked2 &&
+          !(await menuShown(p)) &&
+          s2.menuId === 0 &&
+          s2.paused === true,
+        { clicked2, s2 }
+      );
+      await shot(p, "pause-gate-390x600");
+      check("按繼續", await resumeHud(p));
+      await clickCell(p, ROAD_CELLS[2]);
+      await until(() => menuShown(p), 5000);
+      await sleep(400);
+      const x = p
+        .locator(PLACEMENT_MENU)
+        .locator("button", { hasText: "×" })
+        .first();
+      await x.focus();
+      await p.keyboard.press("Enter");
+      const closed2 = await until(async () => !(await menuShown(p)), 5000);
+      const s3 = await ctl(p);
+      check(
+        "繼續後新的點擊才打開選單；鍵盤在 × 按 Enter 取消：選單關閉、倍率回到 1",
+        !!closed2 && s3.menuId === 0 && s3.scale === 1 && s3.heroes === 1,
+        { closed2, s3 }
+      );
+      const back = readBack(E, "k_pausegate");
+      check(
+        "沒有任何寫入；雲端存檔的世界金幣 500、版本 5 不變",
+        E.gas.writes().length === 0 &&
+          !!back &&
+          back.rev === 5 &&
+          back.data.gold === 500,
+        { writes: E.gas.writes(), back }
+      );
       return E;
     }
   );

@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { PlacementMenuData } from "../types";
+import { DeployMenuContext } from "../engine/LocalGameBridge";
 import { HeroStateData } from "../engine/entities/HeroEntity";
 import { BUILTIN_HEROES_CONFIG } from "../engine/builtinData";
 import styles from "../styles/shenmaSanguoJs.module.css";
@@ -12,9 +13,25 @@ interface PlacementMenuModalProps {
   currentGold: number;
   playerHeroes: HeroStateData[];
   placedHeroIds?: string[];
-  onPlaceTower: (col: number, row: number, typeKey: string) => void;
-  onPlaceHero: (col: number, row: number, heroState: HeroStateData) => void;
-  onClose: () => void;
+  /** 手動暫停中（不能派武將或建塔，可以關閉選單） */
+  isPaused: boolean;
+  /** 備戰或戰鬥中（其他階段不能派武將或建塔） */
+  isActivePhase: boolean;
+  /** 派武將、建塔：帶這個選單打開時的這一場與編號，回傳是否成功（成功才關閉選單） */
+  onPlaceTower: (
+    ctx: DeployMenuContext,
+    col: number,
+    row: number,
+    typeKey: string
+  ) => boolean;
+  onPlaceHero: (
+    ctx: DeployMenuContext,
+    col: number,
+    row: number,
+    heroState: HeroStateData
+  ) => boolean;
+  /** 關閉：帶這個選單打開時的這一場與編號 */
+  onClose: (ctx: DeployMenuContext) => void;
 }
 
 export const PlacementMenuModal: React.FC<PlacementMenuModalProps> = ({
@@ -23,6 +40,8 @@ export const PlacementMenuModal: React.FC<PlacementMenuModalProps> = ({
   currentGold,
   playerHeroes,
   placedHeroIds = [],
+  isPaused,
+  isActivePhase,
   onPlaceTower,
   onPlaceHero,
   onClose,
@@ -35,17 +54,54 @@ export const PlacementMenuModal: React.FC<PlacementMenuModalProps> = ({
   if (!show || !data) return null;
 
   const { col, row, isBuild } = data;
+  // 這個選單打開時的這一場與編號（關閉、派武將、建塔都帶回這一組，不換成之後的新選單）
+  const ctx: DeployMenuContext = {
+    battleId: data.battleId,
+    menuId: data.menuId,
+  };
+  const operable = isActivePhase && !isPaused;
+  const close = () => onClose(ctx);
 
   const towerList = [
-    { id: "archer", name: "弓兵塔", cost: 50, image: "tower_archer.webp", air: "可對空" },
-    { id: "infantry", name: "步兵塔", cost: 70, image: "tower_infantry.webp", air: "只打地面" },
-    { id: "artillery", name: "砲兵塔", cost: 100, image: "tower_artillery.webp", air: "只打地面" },
-    { id: "cavalry", name: "騎兵塔", cost: 120, image: "tower_cavalry.webp", air: "只打地面" },
-    { id: "scholar", name: "文士塔", cost: 80, image: "tower_scholar.webp", air: "可減速" },
+    {
+      id: "archer",
+      name: "弓兵塔",
+      cost: 50,
+      image: "tower_archer.webp",
+      air: "可對空",
+    },
+    {
+      id: "infantry",
+      name: "步兵塔",
+      cost: 70,
+      image: "tower_infantry.webp",
+      air: "只打地面",
+    },
+    {
+      id: "artillery",
+      name: "砲兵塔",
+      cost: 100,
+      image: "tower_artillery.webp",
+      air: "只打地面",
+    },
+    {
+      id: "cavalry",
+      name: "騎兵塔",
+      cost: 120,
+      image: "tower_cavalry.webp",
+      air: "只打地面",
+    },
+    {
+      id: "scholar",
+      name: "文士塔",
+      cost: 80,
+      image: "tower_scholar.webp",
+      air: "可減速",
+    },
   ];
 
   return (
-    <div className={styles.placementOverlay} onClick={onClose}>
+    <div className={styles.placementOverlay} onClick={close}>
       <div
         className={styles.placementMenu}
         data-testid="placement-menu"
@@ -54,10 +110,20 @@ export const PlacementMenuModal: React.FC<PlacementMenuModalProps> = ({
         {/* 選單標題列 */}
         <div className={styles.placementHeader}>
           <span>{isRoad ? "路徑部署" : "建築位部署"}</span>
-          <button type="button" className={styles.closeBtn} onClick={onClose}>
+          <button type="button" className={styles.closeBtn} onClick={close}>
             ×
           </button>
         </div>
+        {!operable && (
+          <div
+            className="small text-warning px-3 pt-2"
+            data-testid="placement-blocked-hint"
+          >
+            {isPaused
+              ? "暫停中不能派武將或建塔，可以先關閉選單。"
+              : "現在不能派武將或建塔。"}
+          </div>
+        )}
 
         {/* 高台位切換標籤 */}
         {isBuild && (
@@ -88,35 +154,50 @@ export const PlacementMenuModal: React.FC<PlacementMenuModalProps> = ({
                 const config = BUILTIN_HEROES_CONFIG.find(
                   (c) => c.hero_id.replace(/^hero_/, "") === norm
                 );
-                const isPlaced = placedHeroIds.includes(hero.hero_id) || placedHeroIds.includes(norm);
-                const canHitAir = config?.job === "archer" || config?.job === "mage" || norm === "sun_shang_xiang" || norm === "huang_zhong" || norm === "zhou_yu";
+                const isPlaced =
+                  placedHeroIds.includes(hero.hero_id) ||
+                  placedHeroIds.includes(norm);
+                const canHitAir =
+                  config?.job === "archer" ||
+                  config?.job === "mage" ||
+                  norm === "sun_shang_xiang" ||
+                  norm === "huang_zhong" ||
+                  norm === "zhou_yu";
 
                 return (
                   <button
                     key={hero.hero_id}
                     type="button"
-                    className={`${styles.menuCard} ${isPlaced ? styles.cardDisabled : ""}`}
-                    disabled={isPlaced}
+                    className={`${styles.menuCard} ${isPlaced || !operable ? styles.cardDisabled : ""}`}
+                    disabled={isPlaced || !operable}
                     onClick={() => {
-                      onPlaceHero(col, row, hero);
-                      onClose();
+                      if (onPlaceHero(ctx, col, row, hero)) close();
                     }}
                   >
                     <div className={styles.cardIcon}>
                       <img
                         src={`/images/shenmaSanguo/units/hero_${norm}.webp`}
                         alt={config?.name || norm}
-                        style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "contain",
+                        }}
                         onError={(e) => {
-                          (e.currentTarget as HTMLElement).style.display = "none";
+                          (e.currentTarget as HTMLElement).style.display =
+                            "none";
                         }}
                       />
                     </div>
-                    <div className={styles.cardName}>{config?.name || norm}</div>
+                    <div className={styles.cardName}>
+                      {config?.name || norm}
+                    </div>
                     <div className={styles.cardStatus}>
                       {isPlaced ? "已在場上" : `Lv.${hero.level || 1}`}
                     </div>
-                    <div className={`${styles.cardAir} ${canHitAir ? styles.cardAirYes : ""}`}>
+                    <div
+                      className={`${styles.cardAir} ${canHitAir ? styles.cardAirYes : ""}`}
+                    >
                       {canHitAir ? "可對空" : "只打地面"}
                     </div>
                   </button>
@@ -136,18 +217,21 @@ export const PlacementMenuModal: React.FC<PlacementMenuModalProps> = ({
                   <button
                     key={t.id}
                     type="button"
-                    className={`${styles.menuCard} ${!canAfford ? styles.cardDisabled : ""}`}
-                    disabled={!canAfford}
+                    className={`${styles.menuCard} ${!canAfford || !operable ? styles.cardDisabled : ""}`}
+                    disabled={!canAfford || !operable}
                     onClick={() => {
-                      onPlaceTower(col, row, t.id);
-                      onClose();
+                      if (onPlaceTower(ctx, col, row, t.id)) close();
                     }}
                   >
                     <div className={styles.cardIcon}>
                       <img
                         src={`/images/shenmaSanguo/units/${t.image}`}
                         alt={t.name}
-                        style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "contain",
+                        }}
                       />
                     </div>
                     <div className={styles.cardName}>{t.name}</div>
@@ -157,7 +241,9 @@ export const PlacementMenuModal: React.FC<PlacementMenuModalProps> = ({
                     >
                       💰 {t.cost}G
                     </div>
-                    <div className={`${styles.cardAir} ${isAir ? styles.cardAirYes : ""}`}>
+                    <div
+                      className={`${styles.cardAir} ${isAir ? styles.cardAirYes : ""}`}
+                    >
                       {t.air}
                     </div>
                   </button>

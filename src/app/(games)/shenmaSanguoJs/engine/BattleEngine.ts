@@ -587,6 +587,19 @@ export class BattleEngine {
   }
 
   /**
+   * 派武將、建塔、升級的共同守門：手動暫停中，或不在備戰、戰鬥中（例如結算）都不能操作。
+   * 在任何扣款、建立單位、占用格子或成功效果之前檢查（Godot 版的 Web 派人／建塔／升級只檢查暫停；
+   * 這裡另擋非備戰、戰鬥的階段，防止過期的選單或面板在結算後操作）
+   */
+  private actionsBlocked(): boolean {
+    const bm = this.battleManager;
+    return (
+      bm.manualPaused ||
+      (bm.gameState !== GameState.PREP && bm.gameState !== GameState.BATTLE)
+    );
+  }
+
+  /**
    * 放置武將
    */
   public placeHero(
@@ -594,6 +607,7 @@ export class BattleEngine {
     row: number,
     heroState: HeroStateData
   ): boolean {
+    if (this.actionsBlocked()) return false;
     // 武將識別碼要是非空字串；同一位武將還在場上（沒有陣亡）時不能再派（和 Godot 版 _placed_heroes 相同），陣亡後可以重派
     const heroId: unknown = heroState?.hero_id;
     if (typeof heroId !== "string" || heroId.trim() === "") return false;
@@ -670,6 +684,7 @@ export class BattleEngine {
    * 放置防禦塔
    */
   public placeTower(col: number, row: number, towerTypeKey: string): boolean {
+    if (this.actionsBlocked()) return false;
     if (!this.gameMap.canPlaceTower(col, row)) return false;
 
     const cfg = TOWER_CONFIGS[towerTypeKey];
@@ -707,6 +722,7 @@ export class BattleEngine {
    * 升級防禦塔
    */
   public upgradeTower(col: number, row: number): boolean {
+    if (this.actionsBlocked()) return false;
     const tower = this.towers.find(
       (tw) => !tw.sold && tw.gridCell.col === col && tw.gridCell.row === row
     );

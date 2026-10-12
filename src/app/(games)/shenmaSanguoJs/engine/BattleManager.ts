@@ -82,7 +82,11 @@ export class BattleManager {
   public onStatsChanged?: (stats: StatsSyncData) => void;
   public onRequestSpawnWave?: (waveNum: number) => void;
 
-  public initialize(totalWaves: number, stageId: string, battleId: string): void {
+  public initialize(
+    totalWaves: number,
+    stageId: string,
+    battleId: string
+  ): void {
     this.lifecycle++;
     this.cancelAutoWave();
     this.totalWaves = totalWaves;
@@ -198,15 +202,22 @@ export class BattleManager {
     const fromWave = this.currentWave;
     this.syncStats();
 
-    setTimeout(() => {
-      if (token !== this.autoWaveToken || life !== this.lifecycle) return;
-      this.autoWavePending = false;
-      if (!this.autoMode || this.gameState !== GameState.BATTLE || this.currentWave !== fromWave) {
-        this.syncStats();
-        return;
-      }
-      this.spawnNextWave();
-    }, (BattleManager.AUTO_NEXT_WAVE_DELAY / this.effectiveTimeScale()) * 1000);
+    setTimeout(
+      () => {
+        if (token !== this.autoWaveToken || life !== this.lifecycle) return;
+        this.autoWavePending = false;
+        if (
+          !this.autoMode ||
+          this.gameState !== GameState.BATTLE ||
+          this.currentWave !== fromWave
+        ) {
+          this.syncStats();
+          return;
+        }
+        this.spawnNextWave();
+      },
+      (BattleManager.AUTO_NEXT_WAVE_DELAY / this.effectiveTimeScale()) * 1000
+    );
   }
 
   private cancelAutoWave(): void {
@@ -262,7 +273,9 @@ export class BattleManager {
       stars_earned: isWin ? this.calcStars() : 0,
       kills: this.kills,
       time_seconds: Math.floor(this.battleTime),
-      loots: [{ item: "battle_points", count: isWin ? this.calcBattlePoints() : 10 }],
+      loots: [
+        { item: "battle_points", count: isWin ? this.calcBattlePoints() : 10 },
+      ],
     };
 
     this.cancelAutoWave();
@@ -279,7 +292,9 @@ export class BattleManager {
   }
 
   public effectiveTimeScale(): number {
-    return this.deployMenuId !== 0 ? BattleManager.DEPLOY_TIME_SCALE : Number(this.speedPref);
+    return this.deployMenuId !== 0
+      ? BattleManager.DEPLOY_TIME_SCALE
+      : Number(this.speedPref);
   }
 
   public resetSpeed(): void {
@@ -292,7 +307,10 @@ export class BattleManager {
   }
 
   public openDeployMenu(): number {
-    if (this.gameState !== GameState.PREP && this.gameState !== GameState.BATTLE) {
+    if (
+      this.gameState !== GameState.PREP &&
+      this.gameState !== GameState.BATTLE
+    ) {
       return 0;
     }
     if (this.manualPaused) return 0;
@@ -311,13 +329,20 @@ export class BattleManager {
     this.syncStats();
   }
 
+  /** 這個選單（這一場、這個編號）目前是不是開著：別場、較早的選單、已經關閉、缺值或型別不對都是 false（純查詢，不改狀態） */
+  public isDeployMenuOpen(pBattleId: unknown, menuId: unknown): boolean {
+    return (
+      typeof pBattleId === "string" &&
+      pBattleId !== "" &&
+      pBattleId === this.battleId &&
+      Number.isSafeInteger(menuId) &&
+      (menuId as number) > 0 &&
+      menuId === this.deployMenuId
+    );
+  }
+
   public closeDeployMenu(pBattleId: string, menuId: number): boolean {
-    if (
-      !pBattleId ||
-      pBattleId !== this.battleId ||
-      menuId <= 0 ||
-      menuId !== this.deployMenuId
-    ) {
+    if (!this.isDeployMenuOpen(pBattleId, menuId)) {
       return false;
     }
     this.deployMenuId = 0;
@@ -327,7 +352,10 @@ export class BattleManager {
 
   public setSpeed(pBattleId: string, speedRaw: unknown): string {
     if (!pBattleId || pBattleId !== this.battleId) return "stale_battle";
-    if (this.gameState !== GameState.PREP && this.gameState !== GameState.BATTLE) {
+    if (
+      this.gameState !== GameState.PREP &&
+      this.gameState !== GameState.BATTLE
+    ) {
       return "not_active";
     }
     const s = Number(speedRaw);
@@ -339,7 +367,10 @@ export class BattleManager {
 
   public setPaused(pBattleId: string, pausedRaw: unknown): string {
     if (!pBattleId || pBattleId !== this.battleId) return "stale_battle";
-    if (this.gameState !== GameState.PREP && this.gameState !== GameState.BATTLE) {
+    if (
+      this.gameState !== GameState.PREP &&
+      this.gameState !== GameState.BATTLE
+    ) {
       return "not_active";
     }
     if (typeof pausedRaw !== "boolean") return "invalid_paused";

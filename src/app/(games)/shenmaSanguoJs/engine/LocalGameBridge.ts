@@ -15,12 +15,24 @@ import { StatsSyncData, BattleResultData, GameState } from "./BattleManager";
 import { HeroStateData, HeroEntity } from "./entities/HeroEntity";
 import { TowerEntity } from "./entities/TowerEntity";
 
-export interface PlacementMenuData {
+/** 部署選單打開時記下的這一場與選單編號：關閉、派武將、建塔都帶回這一組，只有同一場、目前開著的那個選單有效 */
+export interface DeployMenuContext {
+  battleId: string;
+  menuId: number;
+}
+
+export interface PlacementMenuData extends DeployMenuContext {
   col: number;
   row: number;
   isRoad: boolean;
   isBuild: boolean;
 }
+
+const isDeployMenuContext = (v: unknown): v is DeployMenuContext =>
+  !!v &&
+  typeof v === "object" &&
+  typeof (v as Record<string, unknown>).battleId === "string" &&
+  Number.isSafeInteger((v as Record<string, unknown>).menuId);
 
 /** 打開防禦塔面板時記下的資訊：這座塔屬於哪一場（拆除請求要帶回這一場，不能換成之後的新場次） */
 export interface TowerPanelContext {
@@ -53,8 +65,19 @@ export class LocalGameBridge {
       this.onStatsChanged?.(stats);
     };
 
+    // 點了可部署的空格：先打開部署選單（進入 0.1 倍慢速並取得選單編號），只有備戰或戰鬥中、沒有暫停時才開，否則不顯示選單
     this.engine.onShowPlacementMenu = (col, row, isRoad, isBuild) => {
-      this.onPlacementMenuOpen?.({ col, row, isRoad, isBuild });
+      const bm = this.engine.battleManager;
+      const menuId = bm.openDeployMenu();
+      if (menuId === 0) return;
+      this.onPlacementMenuOpen?.({
+        col,
+        row,
+        isRoad,
+        isBuild,
+        battleId: bm.battleId,
+        menuId,
+      });
     };
 
     this.engine.onShowUpgradePanel = (tower) => {
@@ -123,6 +146,22 @@ export class LocalGameBridge {
     } else {
       this.engine.battleManager.endDeploySlow();
     }
+  }
+
+  /** 這個部署選單（打開時記下的這一場與編號）是不是還開著（純查詢） */
+  public isDeployMenuOpen(ctx: unknown): boolean {
+    return (
+      isDeployMenuContext(ctx) &&
+      this.engine.battleManager.isDeployMenuOpen(ctx.battleId, ctx.menuId)
+    );
+  }
+
+  /** 關閉部署選單：帶打開時記下的這一場與編號；只有目前開著的那個選單會關閉並恢復玩家選的速度，回傳是否有效 */
+  public closeDeployMenu(ctx: unknown): boolean {
+    return (
+      isDeployMenuContext(ctx) &&
+      this.engine.battleManager.closeDeployMenu(ctx.battleId, ctx.menuId)
+    );
   }
 
   // 部署與操作
