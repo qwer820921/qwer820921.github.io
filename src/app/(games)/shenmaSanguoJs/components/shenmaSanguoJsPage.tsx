@@ -398,6 +398,9 @@ const ShenmaSanguoJsPage: React.FC = () => {
       // 只處理目前載入的這一場（舊場次晚到的回呼不改畫面、不結算）
       const ctx = battleCtxRef.current;
       if (!ctx || !r || r.battle_id !== ctx.battleId) return;
+      // 這一場結束：清掉頁面上還開著的部署選單（引擎已經關閉這一場的選單；不清的話關掉結算或地圖後舊選單會再出現）
+      placementMenuRef.current = null;
+      setPlacementMenu(null);
       setBattleResult(r);
       setSettleRetryMsg(null);
       const store = useJsPlayerStore.getState();

@@ -9630,7 +9630,7 @@ module.exports = async function profileContractWeb(page) {
                   }
                 );
                 if (mode === "guest") {
-                  // 結算畫面按「選擇關卡」再關掉地圖：舊選單的畫面是否又出現；出現時點它的卡片也不能派出
+                  // 結算畫面按「選擇關卡」再關掉地圖：結算時已清掉部署選單，舊選單不再出現
                   await p
                     .locator('[data-testid="result-overlay"] button', {
                       hasText: "選擇關卡",
@@ -9649,37 +9649,29 @@ module.exports = async function profileContractWeb(page) {
                   );
                   await sleep(400);
                   const Lr2 = await maskLayout(p);
-                  const back =
-                    Lr2.menu && Lr2.title.n > 0 && Lr2.title.bad.length === 0;
-                  const card = back
-                    ? Lr2.cards.find(
-                        (c) => c.visibleArea > 0 && !c.disabled && c.onTop
-                      )
-                    : null;
-                  const h0 = (await ctl(p)).heroes;
-                  if (card) await p.mouse.click(card.center[0], card.center[1]);
-                  await sleep(500);
                   const s12 = await ctl(p);
                   check(
-                    `${tag}：結算後按「選擇關卡」再關掉地圖：舊選單的卡片點了也不派出（引擎編號 0、武將數與金幣不變）`,
+                    `${tag}：結算後按「選擇關卡」再關掉地圖：部署選單不再出現（頁面上沒有選單、引擎編號 0、武將數與金幣不變）`,
                     !!map &&
+                      !Lr2.menu &&
                       s12.state === 3 &&
                       s12.menuId === 0 &&
-                      s12.heroes === h0 &&
+                      s12.heroes === s11.heroes &&
                       s12.gold === s11.gold,
-                    { map, back, card, h0, s12 }
+                    { map, staleMenuInPage: Lr2.menu, s11, s12 }
                   );
-                  note(
-                    `${tag}：既有限制（另列）：結算時頁面沒有清掉部署選單；關掉地圖後舊選單的畫面${back ? "又出現在最上層" : "沒有出現"}`,
-                    {
-                      staleMenuInPage: Lr2.menu,
-                      title: Lr2.menu ? Lr2.title : null,
-                      cards: Lr2.menu
-                        ? Lr2.cards.map((c) => [c.name, c.disabled, c.onTop])
-                        : null,
-                    }
-                  );
-                  if (back) await shot(p, `mask-${sizeKey}-stale-menu`);
+                  // 意外殘留時另記失敗紀錄與截圖（正常不會有）
+                  if (Lr2.menu) {
+                    note(`${tag}：關掉地圖後仍有舊部署選單（失敗紀錄）`, {
+                      title: Lr2.title,
+                      cards: Lr2.cards.map((c) => [
+                        c.name,
+                        c.disabled,
+                        c.onTop,
+                      ]),
+                    });
+                    await shot(p, `mask-${sizeKey}-stale-menu`);
+                  }
                 } else {
                   // 共用帳號：先等結算畫面顯示已保存到共用進度（寫入另在最後核）
                   settleShown = await until(
@@ -10007,6 +9999,337 @@ module.exports = async function profileContractWeb(page) {
       }
     );
   }
+
+  // ═══ 32. 結算時清掉部署選單 ═══
+  // 這一場的結束回呼通過場次守門之後，頁面清掉還開著的部署選單：結算畫面、關掉地圖、重新挑戰、下一關之後都不會再出現舊選單，新的一場仍能照常開新選單。
+  // 從正常的備戰、開戰與部署選單開始；結算用既有的受控 endWith（不是自然通關）。舊場次晚到的結果是直接呼叫頁面掛在 bridge 上的結束回呼（受控），核場次守門。
+  // 限制：頁面內部的選單 ref 在真頁面上沒辦法單獨觀察，只從之後的選單流程（新選單照常開、晚到的結果不清新選單）間接核
+  const menuGone = (p) =>
+    p.evaluate(
+      () =>
+        !document.querySelector('[data-testid="placement-menu"]') &&
+        !document.querySelector('[class*="placementOverlay"]')
+    );
+  const resultShown = async (p) =>
+    (await p.locator('[data-testid="result-overlay"]').count()) > 0;
+  /** 選單開著時這一場受控結算：結算畫面出現，部署選單與遮罩都不在頁面上、引擎選單編號 0 */
+  async function endAndCheck(p, tag, win) {
+    const s0 = await ctl(p);
+    await endWith(p, { win });
+    const shown = await until(() => resultShown(p), 5000);
+    await sleep(400);
+    const s1 = await ctl(p);
+    const gone = await menuGone(p);
+    check(
+      `${tag}：選單開著時這一場結算（受控，${win ? "勝" : "敗"}）：結算畫面出現，部署選單與遮罩都不在頁面上、引擎選單編號 0`,
+      s0.menuId > 0 &&
+        !!shown &&
+        gone &&
+        s1.state === 3 &&
+        s1.menuId === 0 &&
+        s1.battleId === s0.battleId,
+      { s0, s1, shown, gone }
+    );
+    return { s0, s1 };
+  }
+  /** 新的一場（備戰）用正常滑鼠打開部署選單 */
+  async function newMenu(p, tag, prevBattleId) {
+    const o = await openMaskMenu(p, ROAD_CELLS, true);
+    const s = await ctl(p);
+    check(
+      `${tag}：新的一場可以照常打開新的部署選單（新場次、編號大於 0、選單在頁面上）`,
+      !!o.L &&
+        s.battleId !== prevBattleId &&
+        s.state === 1 &&
+        s.menuId > 0 &&
+        (await menuShown(p)),
+      { s, tried: o.tried, prevBattleId }
+    );
+    return s;
+  }
+  /** 上一場的結果晚到（受控：直接呼叫頁面掛在 bridge 上的結束回呼）：新場的選單、編號、金幣、武將、金鑰與寫入都不變 */
+  async function lateOldResult(p, E, tag, old) {
+    const before = await ctl(p);
+    const w0 = E.gas.writes().length;
+    const key0 = (await storageOf(p)).ls.shenma_player_key ?? null;
+    await p.evaluate((r) => window.__testBridge.onBattleEnded(r), old);
+    await sleep(600);
+    const after = await ctl(p);
+    const key1 = (await storageOf(p)).ls.shenma_player_key ?? null;
+    check(
+      `${tag}：上一場的結果晚到：場次守門擋下，新場的部署選單仍開著、編號與金幣武將不變，沒有結算畫面、沒有新的寫入、金鑰不變`,
+      (await menuShown(p)) &&
+        sameJson(after, before) &&
+        !(await resultShown(p)) &&
+        E.gas.writes().length === w0 &&
+        key1 === key0,
+      { before, after, w0, w1: E.gas.writes().length, key0, key1 }
+    );
+  }
+  const loseOf = (battleId) => ({
+    result: "LOSE",
+    stage_id: "chapter1_1",
+    battle_id: battleId,
+    stars_earned: 0,
+    kills: 12,
+    time_seconds: 95,
+    loots: [{ item: "battle_points", count: 10 }],
+  });
+  for (const [label, viewport] of MASK_SIZES)
+    for (const mode of ["guest", "shared"]) {
+      const tag = `${label} ${mode === "guest" ? "訪客" : "共用帳號"}`;
+      const sizeKey = label.replace("×", "x");
+      await scenario(
+        `結算清選單：${tag}：選單開著時結算，之後不再出現舊選單，新的一場照常開新選單、上一場的結果晚到不清新選單`,
+        async (mk) => {
+          const { E, p } = await maskEnter(
+            mk,
+            mode,
+            viewport,
+            `k_end_${sizeKey}`
+          );
+          check("按進入戰場開第 1 波", await startBattle(p));
+          const o = await openMaskMenu(p, ROAD_CELLS, true);
+          check(`${tag}：戰鬥中用正常滑鼠打開部署選單`, !!o.L, o.tried);
+          const { s1 } = await endAndCheck(p, tag, false);
+          let settleShown = null;
+          if (mode === "guest") {
+            // 結算畫面按「選擇關卡」打開地圖再關掉（390×600 用鍵盤 Tab／Enter／Escape，其餘用滑鼠按地圖的 ×）
+            const kb = label === "390×600";
+            let steps = -1;
+            if (kb) {
+              for (let i = 1; i <= 40; i++) {
+                await p.keyboard.press("Tab");
+                const t = await p.evaluate(
+                  () =>
+                    (document.activeElement &&
+                      document.activeElement.innerText) ||
+                    ""
+                );
+                if (/選擇關卡/.test(t)) {
+                  steps = i;
+                  break;
+                }
+              }
+              if (steps > 0) await p.keyboard.press("Enter");
+            } else {
+              await p
+                .locator('[data-testid="result-overlay"] button', {
+                  hasText: "選擇關卡",
+                })
+                .first()
+                .click();
+            }
+            const map = await until(
+              async () => (await p.locator(".modal.show").count()) > 0,
+              5000
+            );
+            await sleep(400);
+            if (kb) await p.keyboard.press("Escape");
+            else
+              await p
+                .locator(".modal.show .btn-close")
+                .first()
+                .click()
+                .catch(() => {});
+            await until(
+              async () => (await p.locator(".modal").count()) === 0,
+              5000
+            );
+            await sleep(400);
+            const s2 = await ctl(p);
+            check(
+              `${tag}：結算後${kb ? "用鍵盤" : "用滑鼠"}按「選擇關卡」再關掉地圖：沒有舊部署選單與遮罩、沒有結算畫面，仍是這一場的結算（編號 0、金幣與武將不變）`,
+              !!map &&
+                (!kb || steps > 0) &&
+                (await menuGone(p)) &&
+                !(await resultShown(p)) &&
+                s2.state === 3 &&
+                s2.menuId === 0 &&
+                s2.battleId === s1.battleId &&
+                s2.gold === s1.gold &&
+                s2.heroes === s1.heroes,
+              { map, steps, s1, s2 }
+            );
+            // 舊部署選單仍在（上面的具名檢查已失敗）就不再點後面的按鈕
+            if (!(await menuGone(p))) {
+              note(
+                `${tag}：舊部署選單仍在頁面上，之後的選關、新選單與晚到結果步驟沒有執行`,
+                s2
+              );
+              return E;
+            }
+            // 從 HUD 的地圖按鈕真正選一關（第一關），換成新的一場
+            await p.locator('button[title="切換關卡"]').first().click();
+            await until(
+              async () => (await p.locator(".modal.show").count()) > 0,
+              5000
+            );
+            await sleep(400);
+            await p
+              .locator(".modal.show .card", { hasText: "chapter1_1" })
+              .first()
+              .click();
+          } else {
+            // 共用帳號：先等結算畫面顯示已保存，再按「重新挑戰」換成新的一場
+            settleShown = await until(
+              () =>
+                p
+                  .locator('[data-testid="result-settle-confirmed"]')
+                  .isVisible(),
+              10000
+            );
+            await p
+              .locator('[data-testid="result-overlay"] button', {
+                hasText: "重新挑戰",
+              })
+              .first()
+              .click();
+          }
+          await until(
+            async () => (await ctl(p)).battleId !== s1.battleId,
+            5000
+          );
+          await until(
+            async () => (await p.locator(".modal").count()) === 0,
+            5000
+          );
+          await sleep(600);
+          check(
+            `${tag}：換成新的一場之後沒有結算畫面、沒有舊部署選單`,
+            !(await resultShown(p)) && (await menuGone(p)),
+            await ctl(p)
+          );
+          await newMenu(p, tag, s1.battleId);
+          if (label === "390×844" && mode === "guest")
+            await shot(p, `end-${sizeKey}-new-menu`);
+          await lateOldResult(p, E, tag, loseOf(s1.battleId));
+          if (mode === "guest")
+            check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+          else {
+            const sv = E.gas.log.filter((e) => e.action === "save_result");
+            const rid = sv[0] && sv[0].payload && sv[0].payload.request_id;
+            check(
+              "共用帳號：受控結算剛好一次 save_result（敗、0 星、10 點、base_rev 2、契約 2，結算畫面顯示已保存），重新挑戰與晚到的結果都沒有再寫入",
+              !!settleShown &&
+                sv.length === 1 &&
+                typeof rid === "string" &&
+                sameJson(sv[0].payload, {
+                  stage_id: "chapter1_1",
+                  result: "LOSE",
+                  stars_earned: 0,
+                  kills: 12,
+                  time_seconds: 95,
+                  loots: [{ item: "battle_points", count: 10 }],
+                  request_id: rid,
+                  base_rev: 2,
+                  settle_contract: 2,
+                }) &&
+                E.gas.writes().length === 1,
+              E.gas.writes().map((e) => [e.action, e.payload])
+            );
+          }
+          return E;
+        }
+      );
+    }
+  await scenario(
+    "結算清選單：1280×800 訪客 勝利：結算時清掉選單，按「下一關」到第二關後照常開新選單",
+    async (mk) => {
+      const tag = "1280×800 訪客 勝利";
+      const { E, p } = await maskEnter(mk, "guest", {
+        width: 1280,
+        height: 800,
+      });
+      check("按進入戰場開第 1 波", await startBattle(p));
+      const o = await openMaskMenu(p, ROAD_CELLS, true);
+      check(`${tag}：戰鬥中用正常滑鼠打開部署選單`, !!o.L, o.tried);
+      const { s1 } = await endAndCheck(p, tag, true);
+      const next =
+        (await p.locator('[data-testid="result-next-stage"]').count()) === 1;
+      if (next) await p.locator('[data-testid="result-next-stage"]').click();
+      const moved = await until(
+        async () => (await stageOf(p)) === "chapter1_2",
+        5000
+      );
+      await sleep(600);
+      check(
+        `${tag}：按「下一關」（已解鎖）到第二關：新的一場、沒有結算畫面、沒有舊部署選單`,
+        next &&
+          !!moved &&
+          (await ctl(p)).battleId !== s1.battleId &&
+          !(await resultShown(p)) &&
+          (await menuGone(p)),
+        { next, moved, stage: await stageOf(p) }
+      );
+      const s2 = await newMenu(p, tag, s1.battleId);
+      // 關掉這個選單，從 HUD 的地圖按鈕真正選另一關（第一關），新的一場仍能開新選單
+      await closeMenuX(p);
+      await until(async () => !(await menuShown(p)), 3000);
+      await p.locator('button[title="切換關卡"]').first().click();
+      await until(
+        async () => (await p.locator(".modal.show").count()) > 0,
+        5000
+      );
+      await sleep(400);
+      await p
+        .locator(".modal.show .card", { hasText: "chapter1_1" })
+        .first()
+        .click();
+      const back1 = await until(
+        async () =>
+          (await stageOf(p)) === "chapter1_1" &&
+          (await ctl(p)).battleId !== s2.battleId,
+        5000
+      );
+      await until(async () => (await p.locator(".modal").count()) === 0, 5000);
+      await sleep(600);
+      check(
+        `${tag}：從地圖選另一關（第一關）：新的一場、沒有結算畫面、沒有舊部署選單`,
+        !!back1 && !(await resultShown(p)) && (await menuGone(p)),
+        { stage: await stageOf(p), s: await ctl(p) }
+      );
+      await newMenu(p, `${tag} 選另一關後`, s2.battleId);
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+  await scenario(
+    "結算清選單：390×844 共用帳號 結算結果不明：清掉選單、保留待確認的結算與「重新確認」，不自動重送",
+    async (mk) => {
+      const tag = "390×844 共用帳號 結果不明";
+      const { E, p } = await maskEnter(
+        mk,
+        "shared",
+        { width: 390, height: 844 },
+        "k_end_unknown"
+      );
+      // 後端回 SERVER_ERROR（結果不明）
+      E.gas.rule("save_result", "transform", {
+        fn: () => ({ status: 500, error: "SERVER_ERROR" }),
+      });
+      E.allowGasErrors = 1;
+      check("按進入戰場開第 1 波", await startBattle(p));
+      const o = await openMaskMenu(p, ROAD_CELLS, true);
+      check(`${tag}：戰鬥中用正常滑鼠打開部署選單`, !!o.L, o.tried);
+      await endAndCheck(p, tag, false);
+      const retry = await until(
+        () => p.locator('[data-testid="result-settle-retry"]').isVisible(),
+        10000
+      );
+      await sleep(1500);
+      const pend = await pendingKeys(p);
+      check(
+        `${tag}：結算畫面保留待確認與「重新確認」，只送過一次 save_result（沒有自動重送），暫存的待確認結算還在，部署選單仍不在頁面上`,
+        !!retry &&
+          E.gas.count("save_result") === 1 &&
+          pend.length === 1 &&
+          (await menuGone(p)),
+        { retry, n: E.gas.count("save_result"), pend }
+      );
+      return E;
+    }
+  );
 
   // ═══ 18. 入口版面：1280 桌面、390×600、390×844 ═══
   for (const vp of [
