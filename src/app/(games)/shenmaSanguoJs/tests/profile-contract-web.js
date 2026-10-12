@@ -8537,6 +8537,333 @@ module.exports = async function profileContractWeb(page) {
     }
   );
 
+  // ═══ 30. 開波拒絕與出兵、自動下一波的遊戲時間 ═══
+  // 這一波沒有可生成的組時拒絕開戰：波次不前進、頁面收到的同步沒有戰鬥中、共用帳號不固定這一場，可以再按；有效組照常出兵。
+  // 出兵間隔 0 時第一隻在開戰當下、之後每一幀一隻；自動下一波等 1.5 秒戰鬥時間（暫停不算、換倍率照新倍率），等待中取消自動就不開。
+  // 清波用引擎既有的 onWaveAllEnemiesDead 受控觸發、敵人是測試木樁（不是自然通關）；時間量測有容差
+  const WAVE_MAPS = (waves) => SKILL_MAPS.map((m) => ({ ...m, waves }));
+  const DUMMY_WAVES = (n) =>
+    Array.from({ length: n }, (_, i) => DUMMY_WAVE(i + 1));
+  /** 包住頁面自己的同步與拒絕回呼，記下頁面收到的 game_state 與拒絕（照樣交給頁面原本的處理）；出兵另記畫面幀與戰鬥時間 */
+  const watchWaves = (p) =>
+    p.evaluate(() => {
+      const b = window.__testBridge;
+      if (!b) return false;
+      if (b.__wavesWatched) return true;
+      window.__seenStates = [];
+      window.__rejects = [];
+      window.__spawns = [];
+      window.__raf = 0;
+      const tick = () => {
+        window.__raf++;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      const orig = b.onStatsChanged;
+      b.onStatsChanged = (s) => {
+        window.__seenStates.push([s.battle_id, s.game_state, s.wave]);
+        if (orig) orig(s);
+      };
+      b.onWaveRejected = (w, r) => window.__rejects.push([w, r]);
+      const e = b.engine;
+      e.waveManager.onEnemySpawned = (en) =>
+        window.__spawns.push({
+          seq: en.spawnSeq,
+          id: en.enemyId,
+          raf: window.__raf,
+          wave: e.battleManager.currentWave,
+          bt: e.battleManager.battleTime,
+          t: performance.now(),
+        });
+      b.__wavesWatched = true;
+      return true;
+    });
+  const waveObs = (p) =>
+    p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      const b = e.battleManager;
+      return {
+        battleId: b.battleId,
+        state: b.gameState,
+        wave: b.currentWave,
+        auto: b.autoMode,
+        pending: b.autoWavePending,
+        bt: b.battleTime,
+        t: performance.now(),
+        enemies: e.waveManager.activeEnemies.length,
+        states: window.__seenStates.slice(),
+        rejects: window.__rejects.slice(),
+        spawns: window.__spawns.slice(),
+        report: e.waveManager.getLastPlanReport(),
+      };
+    });
+  const nickEdit = async (p) => {
+    await openInfo(p);
+    const v = await p.evaluate(() => {
+      const b = document.querySelector('[data-testid="player-info-nick-edit"]');
+      return b ? { disabled: b.disabled, title: b.title || "" } : null;
+    });
+    await closeModal(p);
+    return v;
+  };
+  const pressEnter = async (p, locator) => {
+    await locator.first().focus();
+    await p.keyboard.press("Enter");
+  };
+
+  await scenario(
+    "開波拒絕：共用帳號第 1 波全部無效：按進入戰場被拒，波次 0、仍是備戰、頁面沒收到戰鬥中、這一場沒有固定；再按迎戰仍拒絕第 1 波",
+    async (mk) => {
+      const data = NEW({
+        capacity: 20,
+        team: [{ hero_id: "ma_chao", slot: 1 }],
+      });
+      const E = await mk({
+        seed: [{ key: "k_reject", data, rev: 2 }],
+        maps: WAVE_MAPS([
+          {
+            wave: 1,
+            enemies: [
+              { enemy_id: "nope", count: 1, interval: 1, path: "path_a" },
+              { enemy_id: "dummy_test", count: 0, interval: 1, path: "path_a" },
+            ],
+          },
+        ]),
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({ storage: { shenma_player_key: "k_reject" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      check("可以觀測頁面收到的同步與出兵", await watchWaves(p));
+      const bid = await bm(p, "battleId");
+      await p.locator('[data-testid="enter-battle"]').click();
+      await sleep(800);
+      const r1 = await waveObs(p);
+      check(
+        "按進入戰場：第 1 波被拒（兩組都略過：找不到敵人、數量 0），仍是備戰、波次 0、沒有敵人",
+        sameJson(r1.rejects, [[1, "enemy_not_found"]]) &&
+          r1.state === 1 &&
+          r1.wave === 0 &&
+          r1.enemies === 0 &&
+          sameJson(
+            r1.report.skipped.map((s) => s.reason),
+            ["enemy_not_found", "count_invalid"]
+          ),
+        r1
+      );
+      check(
+        "頁面收到的同步沒有任何一筆戰鬥中",
+        r1.states.length > 0 && r1.states.every((s) => s[1] !== 2),
+        r1.states
+      );
+      const n1 = await nickEdit(p);
+      check(
+        "這一場沒有固定出征：主公資訊的「改暱稱」仍可按、沒有「出征中」說明",
+        !!n1 && n1.disabled === false && !/出征中/.test(n1.title),
+        n1
+      );
+      await p.locator('[data-testid="hud-start-battle"]').click();
+      await sleep(800);
+      const r2 = await waveObs(p);
+      check(
+        "再按迎戰：仍是第 1 波、再被拒一次，波次不前進、battleId 不變、頁面仍沒收到戰鬥中",
+        sameJson(r2.rejects, [
+          [1, "enemy_not_found"],
+          [1, "enemy_not_found"],
+        ]) &&
+          r2.wave === 0 &&
+          r2.state === 1 &&
+          r2.battleId === bid &&
+          r2.states.every((s) => s[1] !== 2),
+        r2
+      );
+      check("沒有任何寫入請求", E.gas.writes().length === 0, E.gas.writes());
+      return E;
+    }
+  );
+
+  await scenario(
+    "出兵時點：訪客第 1 波有一組無效、一組間隔 0 的 4 隻：照常開戰，第一隻在開戰當下、之後每一幀一隻",
+    async (mk) => {
+      const E = await mk({
+        maps: WAVE_MAPS([
+          {
+            wave: 1,
+            enemies: [
+              { enemy_id: "nope", count: 2, interval: 1, path: "path_a" },
+              { enemy_id: "dummy_test", count: 4, interval: 0, path: "path_a" },
+            ],
+          },
+        ]),
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      check("可以觀測頁面收到的同步與出兵", await watchWaves(p));
+      check("按進入戰場開第 1 波", await startBattle(p));
+      await until(async () => (await waveObs(p)).spawns.length >= 4, 5000);
+      await sleep(500);
+      const o = await waveObs(p);
+      const f = o.spawns.map((s) => s.raf);
+      check(
+        "略過找不到的那一組（照實記原因），另一組照常出兵：共 4 隻、生成序號 0～3",
+        sameJson(
+          o.report.skipped.map((s) => [s.index, s.enemy_id, s.reason]),
+          [[1, "nope", "enemy_not_found"]]
+        ) &&
+          sameJson(
+            o.spawns.map((s) => s.seq),
+            [0, 1, 2, 3]
+          ),
+        o
+      );
+      check(
+        "間隔 0：第二隻在開戰後的第一個畫面幀，之後每一幀一隻（不在同一幀補發，也不是隔 1 秒或 0.05 秒）",
+        f.length === 4 &&
+          f[1] - f[0] <= 1 &&
+          f[2] - f[1] === 1 &&
+          f[3] - f[2] === 1,
+        o.spawns
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "自動下一波：共用帳號 390×600 用鍵盤按自動；受控清波後等待中暫停 2.5 秒不開下一波，繼續後照剩下的戰鬥時間開第 2 波，同一場",
+    async (mk) => {
+      const data = NEW({
+        capacity: 20,
+        team: [{ hero_id: "ma_chao", slot: 1 }],
+      });
+      const E = await mk({
+        seed: [{ key: "k_autowave", data, rev: 2 }],
+        maps: WAVE_MAPS(DUMMY_WAVES(3)),
+        enemies: [...ENEMIES, DUMMY],
+        viewport: { width: 390, height: 600 },
+      });
+      const p = await E.page({ storage: { shenma_player_key: "k_autowave" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      check("可以觀測頁面收到的同步與出兵", await watchWaves(p));
+      await pressEnter(p, p.locator("button", { hasText: /^自動$/ }));
+      const started = await until(async () => {
+        const o = await waveObs(p);
+        return o.state === 2 && o.wave === 1 && o.auto && o.spawns.length >= 1;
+      }, 5000);
+      const s0 = await waveObs(p);
+      check("390×600：在「自動」按 Enter 開第 1 波（自動出波）", !!started, s0);
+      await forceWaveClear(p);
+      const c = await waveObs(p);
+      await pressEnter(p, p.locator("button", { hasText: "⏸ 暫停" }));
+      const paused = await until(
+        async () =>
+          (await p.locator("button", { hasText: "▶ 繼續" }).count()) > 0,
+        3000
+      );
+      const pz = await waveObs(p);
+      await sleep(2500);
+      const pz2 = await waveObs(p);
+      check(
+        "受控清波後等待中按 Enter 暫停：2.5 秒內仍是第 1 波、仍在等待，戰鬥時間不動",
+        !!paused &&
+          c.pending === true &&
+          pz2.wave === 1 &&
+          pz2.pending === true &&
+          pz2.bt === pz.bt,
+        { c, pz, pz2 }
+      );
+      await pressEnter(p, p.locator("button", { hasText: "▶ 繼續" }));
+      const ok2 = await until(async () => (await waveObs(p)).wave === 2, 5000);
+      const o = await waveObs(p);
+      const w2 = o.spawns.find((s) => s.wave === 2);
+      const btWait = w2 ? w2.bt - c.bt : null;
+      check(
+        "繼續後開第 2 波：從清波起算的戰鬥時間約 1.5 秒（1.45～1.65），同一個 battleId",
+        !!ok2 &&
+          !!w2 &&
+          btWait >= 1.45 &&
+          btWait <= 1.65 &&
+          o.battleId === s0.battleId &&
+          o.states.every((s) => s[0] === s0.battleId),
+        { btWait, w2, c, battleId: o.battleId }
+      );
+      const n = await nickEdit(p);
+      check(
+        "這一場固定出征（主公資訊的「改暱稱」停用並說明出征中），沒有任何寫入請求",
+        !!n &&
+          n.disabled === true &&
+          /出征中/.test(n.title) &&
+          E.gas.writes().length === 0,
+        { n, writes: E.gas.writes() }
+      );
+      await shot(p, "auto-wave-pause-390x600");
+      return E;
+    }
+  );
+
+  await scenario(
+    "自動下一波：訪客等待中換 2 倍，照新倍率扣剩下的戰鬥時間；下一次等待中按自動取消，回到備戰、不再開下一波",
+    async (mk) => {
+      const E = await mk({
+        maps: WAVE_MAPS(DUMMY_WAVES(3)),
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      check("可以觀測頁面收到的同步與出兵", await watchWaves(p));
+      await p.locator("button", { hasText: /^自動$/ }).click();
+      check(
+        "按自動開第 1 波",
+        await until(async () => {
+          const o = await waveObs(p);
+          return o.state === 2 && o.wave === 1 && o.auto;
+        }, 5000)
+      );
+      await forceWaveClear(p);
+      const c = await waveObs(p);
+      await sleep(300);
+      await p.locator("button", { hasText: /^2x$/ }).click();
+      const ok2 = await until(async () => (await waveObs(p)).wave === 2, 5000);
+      const o = await waveObs(p);
+      const w2 = o.spawns.find((s) => s.wave === 2);
+      const btWait = w2 ? w2.bt - c.bt : null;
+      const realWait = w2 ? (w2.t - c.t) / 1000 : null;
+      check(
+        "等待中換 2 倍：開第 2 波時從清波起算的戰鬥時間約 1.5 秒（1.45～1.75），真實時間比 1.5 秒短（0.6～1.35 秒）",
+        !!ok2 &&
+          !!w2 &&
+          btWait >= 1.45 &&
+          btWait <= 1.75 &&
+          realWait >= 0.6 &&
+          realWait <= 1.35,
+        { btWait, realWait, c, w2 }
+      );
+      await forceWaveClear(p);
+      const c2 = await waveObs(p);
+      await p.locator("button", { hasText: /^自動$/ }).click();
+      await sleep(2500);
+      const o2 = await waveObs(p);
+      check(
+        "第 2 波受控清波後的等待中按自動（關閉）：回到備戰、不再等待，2.5 秒後仍是第 2 波、沒有新的出兵",
+        c2.pending === true &&
+          o2.state === 1 &&
+          o2.pending === false &&
+          o2.auto === false &&
+          o2.wave === 2 &&
+          o2.spawns.length === c2.spawns.length,
+        { c2, o2 }
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
   // ═══ 18. 入口版面：1280 桌面、390×600、390×844 ═══
   for (const vp of [
     { width: 1280, height: 800 },

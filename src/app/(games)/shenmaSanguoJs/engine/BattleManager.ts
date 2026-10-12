@@ -39,6 +39,14 @@ export interface StatsSyncData {
   paused: boolean;
 }
 
+/**
+ * 開波前向引擎要的這一波一次性開波資料（BattleEngine 接 WaveManager.prepareWave）：
+ * 有可生成的組回 { ok: true, start }（start 只能成功一次，換場後不開始），沒有回 { ok: false, reason }
+ */
+export type PreparedWaveStart =
+  | { ok: true; start: () => boolean }
+  | { ok: false; reason: string };
+
 export class BattleManager {
   public static readonly MAX_BASE_HP = 20;
   public static readonly INITIAL_GOLD = 5000;
@@ -68,6 +76,18 @@ export class BattleManager {
   private lifecycle = 0;
   private autoWaveToken = 0;
   public autoWavePending = false;
+  // 自動下一波的遊戲時間倒數（和 Godot 版掛在 BattleManager 底下的遊戲計時器相同：暫停不扣、照目前倍率扣、小於 0 才觸發）
+  private autoWaveRemaining = 0;
+  private autoWaveFromWave = 0;
+  private autoWaveScheduledToken = 0;
+  private autoWaveScheduledLife = 0;
+  /**
+   * 這一幀可以扣的倒數：一幀開始處理時（beginFrame）已經在等的才可以扣；在這一幀處理中才排的（例如出兵或敵人更新時清波）下一幀才扣
+   * （和 Godot 版在處理中建立的計時器下一幀才開始倒數、處理前建立的同一幀就扣相同）
+   */
+  private autoWaveEligible = false;
+  /** 引擎是否正在一幀的處理中（beginFrame～endFrame）；沒有引擎的幀界線時，每次 update 自成一幀 */
+  private frameOpen = false;
 
   // 馬超首擊記錄
   private firstStrikeUsed = new Map<string, number>();
@@ -80,7 +100,7 @@ export class BattleManager {
   public onBattleEnded?: (result: BattleResultData) => void;
   public onWaveStartRejected?: (waveNum: number, reason: string) => void;
   public onStatsChanged?: (stats: StatsSyncData) => void;
-  public onRequestSpawnWave?: (waveNum: number) => void;
+  public onPrepareWave?: (waveNum: number) => PreparedWaveStart;
 
   public initialize(
     totalWaves: number,
@@ -113,6 +133,19 @@ export class BattleManager {
       return;
     }
     this.battleTime += delta;
+    if (!this.frameOpen) this.autoWaveEligible = this.autoWavePending;
+    this.advanceAutoWave(delta);
+  }
+
+  /** 引擎一幀的處理開始：記下這時已經在等的自動下一波（這一幀可以扣） */
+  public beginFrame(): void {
+    this.frameOpen = true;
+    this.autoWaveEligible = this.autoWavePending;
+  }
+
+  /** 引擎一幀的處理結束 */
+  public endFrame(): void {
+    this.frameOpen = false;
   }
 
   public playerStartBattle(): void {
@@ -193,31 +226,45 @@ export class BattleManager {
     }
   }
 
+  /**
+   * 清波後排自動下一波：AUTO_NEXT_WAVE_DELAY 秒的遊戲時間倒數（由 update 扣，不用牆鐘計時器）。
+   * 記下這一次排程的 token、場次與排程時的波次；取消、換場、結算都讓它失效
+   */
   private scheduleAutoWave(): void {
     if (this.autoWavePending) return;
     this.autoWavePending = true;
     this.autoWaveToken++;
-    const token = this.autoWaveToken;
-    const life = this.lifecycle;
-    const fromWave = this.currentWave;
+    this.autoWaveScheduledToken = this.autoWaveToken;
+    this.autoWaveScheduledLife = this.lifecycle;
+    this.autoWaveFromWave = this.currentWave;
+    this.autoWaveRemaining = BattleManager.AUTO_NEXT_WAVE_DELAY;
+    // 剛排的倒數：引擎一幀處理中排的要到下一幀（beginFrame）才可以扣
+    this.autoWaveEligible = false;
     this.syncStats();
+  }
 
-    setTimeout(
-      () => {
-        if (token !== this.autoWaveToken || life !== this.lifecycle) return;
-        this.autoWavePending = false;
-        if (
-          !this.autoMode ||
-          this.gameState !== GameState.BATTLE ||
-          this.currentWave !== fromWave
-        ) {
-          this.syncStats();
-          return;
-        }
-        this.spawnNextWave();
-      },
-      (BattleManager.AUTO_NEXT_WAVE_DELAY / this.effectiveTimeScale()) * 1000
-    );
+  /** 扣自動下一波的倒數；小於 0 時照 Godot 版計時器回呼的條件決定是否開下一波 */
+  private advanceAutoWave(delta: number): void {
+    if (!this.autoWavePending) return;
+    if (
+      this.autoWaveScheduledToken !== this.autoWaveToken ||
+      this.autoWaveScheduledLife !== this.lifecycle
+    ) {
+      return;
+    }
+    if (!this.autoWaveEligible) return;
+    this.autoWaveRemaining -= delta;
+    if (!(this.autoWaveRemaining < 0)) return;
+    this.autoWavePending = false;
+    if (
+      !this.autoMode ||
+      this.gameState !== GameState.BATTLE ||
+      this.currentWave !== this.autoWaveFromWave
+    ) {
+      this.syncStats();
+      return;
+    }
+    this.spawnNextWave();
   }
 
   private cancelAutoWave(): void {
@@ -225,14 +272,41 @@ export class BattleManager {
     this.autoWavePending = false;
   }
 
+  /**
+   * 開下一波（和 Godot 版 _spawn_next_wave 相同）：先取得這一波的一次性開波資料，
+   * 沒有可生成的組就拒絕（波次不前進、不進戰鬥）；有才前進波次、進入戰鬥、同步，再開始那份資料。
+   * 同步的通知可能已經換場、結算或改了波次：這些情況舊的資料不開始，也不把結算或新場改回備戰。
+   * 同一場、仍是這一波卻開始不了（資料已用過或世代不符）時退回上一波並拒絕，不留在沒有出兵的戰鬥中
+   */
   public spawnNextWave(): void {
     const nextWave = this.currentWave + 1;
     if (nextWave > this.totalWaves && this.totalWaves > 0) return;
 
+    const life = this.lifecycle;
+    const prepared: PreparedWaveStart = this.onPrepareWave?.(nextWave) ?? {
+      ok: false,
+      reason: "wave_missing",
+    };
+    if (life !== this.lifecycle) return;
+    if (!prepared.ok) {
+      this.rejectWave(nextWave, prepared.reason);
+      return;
+    }
+
     this.currentWave = nextWave;
     this.gameState = GameState.BATTLE;
     this.emitAll();
-    this.onRequestSpawnWave?.(nextWave);
+    if (
+      life !== this.lifecycle ||
+      this.gameState !== GameState.BATTLE ||
+      this.currentWave !== nextWave
+    ) {
+      return;
+    }
+    if (!prepared.start()) {
+      this.currentWave = nextWave - 1;
+      this.rejectWave(nextWave, "wave_start_failed");
+    }
   }
 
   public rejectWave(waveNum: number, reason: string): void {

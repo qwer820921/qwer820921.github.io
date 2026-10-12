@@ -198,17 +198,24 @@ export class BattleEngine {
     this.battleManager.onWaveStartRejected = (wave, reason) => {
       this.onWaveRejected?.(wave, reason);
     };
-    this.battleManager.onRequestSpawnWave = (waveNum) => {
-      const plans = this.waveManager.planWave(waveNum);
-      const rep = this.waveManager.getLastPlanReport();
-      if (rep.missing || (plans.length === 0 && rep.skipped.length > 0)) {
+    // 開波：這一波的一次性開波資料只算一次；沒有可生成的組（缺波、全部無效、全空白、enemies 不是陣列）都拒絕。
+    // start 只在同一場（battleId）與同一個世代時成功一次
+    this.battleManager.onPrepareWave = (waveNum) => {
+      const prepared = this.waveManager.prepareWave(waveNum);
+      if (prepared.groups.length === 0) {
+        const rep = this.waveManager.getLastPlanReport();
         const reason =
           rep.skipped[0]?.reason ||
           (rep.missing ? "wave_missing" : "wave_empty");
-        this.battleManager.rejectWave(waveNum, reason);
-        return;
+        return { ok: false, reason };
       }
-      this.waveManager.startWave(waveNum, plans);
+      const battleId = this.battleManager.battleId;
+      return {
+        ok: true,
+        start: () =>
+          this.battleManager.battleId === battleId &&
+          this.waveManager.startPreparedWave(prepared),
+      };
     };
 
     // 綁定 WaveManager 事件
@@ -293,8 +300,13 @@ export class BattleEngine {
       this.battleManager.gameState === GameState.BATTLE &&
       effectiveDelta > 0
     ) {
-      this.battleManager.update(effectiveDelta);
+      // 一幀的處理界線：開始時已經存在的出兵與自動下一波倒數這一幀就扣，這一幀處理中才排的（出兵、敵人更新、自動開波時）
+      // 下一幀才扣（和 Godot 版處理前建立的計時器同一幀就扣、處理中建立的下一幀才開始倒數相同）
+      this.waveManager.beginFrame();
+      this.battleManager.beginFrame();
+      // 出兵先、BattleManager 後：自動下一波在 BattleManager.update 裡觸發時，新一波的出兵不會在同一幀再扣
       this.waveManager.update(effectiveDelta);
+      this.battleManager.update(effectiveDelta);
 
       // 1. 更新敵人阻擋與位移
       const enemies = this.waveManager.activeEnemies;
@@ -364,6 +376,9 @@ export class BattleEngine {
           this.visualFxs.splice(i, 1);
         }
       }
+
+      this.waveManager.endFrame();
+      this.battleManager.endFrame();
     }
 
     // 飄字始終平滑上升
