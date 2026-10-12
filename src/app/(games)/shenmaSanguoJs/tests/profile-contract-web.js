@@ -10331,6 +10331,327 @@ module.exports = async function profileContractWeb(page) {
     }
   );
 
+  // ═══ 33. 結算時清掉升級面板與武將資訊 ═══
+  // 這一場的結束回呼通過場次守門之後，頁面也清掉升級面板與武將資訊：結算畫面、關掉地圖、重新挑戰、下一關、選另一關之後都不會再出現舊面板，新的一場仍能照常打開。
+  // 面板都用正常滑鼠點畫布上的塔或武將打開；結算用既有的受控 endWith（不是自然通關）；上一場晚到的結果直接呼叫頁面掛在 bridge 上的結束回呼（受控）
+  const PANEL_SEL = {
+    upgrade: '[data-testid="upgrade-panel"]',
+    hero: '[data-testid="hero-info-panel"]',
+  };
+  const PANEL_NAME = { upgrade: "升級面板", hero: "武將資訊" };
+  const panelsGone = (p) =>
+    p.evaluate(
+      (sels) => sels.every((s) => !document.querySelector(s)),
+      Object.values(PANEL_SEL)
+    );
+  const panelText = (p, kind) =>
+    p.evaluate((s) => {
+      const el = document.querySelector(s);
+      return el ? el.innerText : null;
+    }, PANEL_SEL[kind]);
+  /** 備戰中準備面板的對象：升級面板建一座弓兵塔；武將資訊從部署選單派一位武將（正常滑鼠） */
+  async function preparePanel(p, kind, tag) {
+    if (kind === "upgrade") {
+      const b = await buildTower(p, TOWER_CELLS[1], "弓兵塔");
+      check(`${tag}：備戰中建一座弓兵塔`, b.ok, b);
+      return b.ok;
+    }
+    const h0 = (await ctl(p)).heroes;
+    const o = await openMaskMenu(p, ROAD_CELLS, true);
+    const card =
+      o.L && o.L.cards.find((c) => c.visibleArea > 0 && !c.disabled && c.onTop);
+    if (card) await p.mouse.click(card.center[0], card.center[1]);
+    const ok =
+      !!card &&
+      (await until(async () => (await ctl(p)).heroes === h0 + 1, 5000));
+    check(`${tag}：備戰中從部署選單派一位武將`, !!ok, {
+      tried: o.tried,
+      card,
+    });
+    return !!ok;
+  }
+  /** 正常滑鼠打開面板：升級面板點已建的塔；武將資訊點場上的第一位武將 */
+  async function openPanel(p, kind) {
+    if (kind === "upgrade") return !!(await towerPanel(p, TOWER_CELLS[1]));
+    const hp = await p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      const h = e.heroes[0];
+      const r = e.canvas.getBoundingClientRect();
+      return h ? { x: r.left + h.x, y: r.top + h.y } : null;
+    });
+    if (!hp) return false;
+    await p.mouse.click(hp.x, hp.y);
+    return !!(await until(
+      async () => (await p.locator(PANEL_SEL.hero).count()) > 0,
+      3000
+    ));
+  }
+  for (const [label, viewport] of MASK_SIZES)
+    for (const mode of ["guest", "shared"])
+      for (const kind of ["upgrade", "hero"]) {
+        const win = label === "1280×800" && mode === "guest";
+        const name = PANEL_NAME[kind];
+        const tag = `${label} ${mode === "guest" ? "訪客" : "共用帳號"} ${name}`;
+        const sizeKey = label.replace("×", "x");
+        await scenario(
+          `結算清面板：${tag}：${name}開著時結算（${win ? "勝" : "敗"}），之後不再出現舊面板，新的一場照常打開、上一場的結果晚到不清新面板`,
+          async (mk) => {
+            const { E, p } = await maskEnter(
+              mk,
+              mode,
+              viewport,
+              `k_pan_${sizeKey}_${kind}`
+            );
+            if (!(await preparePanel(p, kind, tag))) return E;
+            check("按進入戰場開第 1 波", await startBattle(p));
+            const opened = await openPanel(p, kind);
+            const s0 = await ctl(p);
+            check(`${tag}：戰鬥中用正常滑鼠打開${name}`, opened, s0);
+            if (!opened) return E;
+            await endWith(p, { win });
+            const shown = await until(() => resultShown(p), 5000);
+            await sleep(400);
+            const s1 = await ctl(p);
+            const gone = await panelsGone(p);
+            check(
+              `${tag}：${name}開著時這一場結算（受控，${win ? "勝" : "敗"}）：結算畫面出現，升級面板與武將資訊都不在頁面上，同一場、金幣與塔、武將不變`,
+              !!shown &&
+                gone &&
+                s1.state === 3 &&
+                s1.battleId === s0.battleId &&
+                s1.gold === s0.gold &&
+                sameJson(s1.towers, s0.towers) &&
+                s1.heroes === s0.heroes,
+              { s0, s1, shown, gone }
+            );
+            let settleShown = null;
+            if (mode === "guest") {
+              // 結算畫面按「選擇關卡」打開地圖再關掉（390×600 用鍵盤 Tab／Enter／Escape，其餘用滑鼠按地圖的 ×）
+              const kb = label === "390×600";
+              let steps = -1;
+              if (kb) {
+                for (let i = 1; i <= 40; i++) {
+                  await p.keyboard.press("Tab");
+                  const t = await p.evaluate(
+                    () =>
+                      (document.activeElement &&
+                        document.activeElement.innerText) ||
+                      ""
+                  );
+                  if (/選擇關卡/.test(t)) {
+                    steps = i;
+                    break;
+                  }
+                }
+                if (steps > 0) await p.keyboard.press("Enter");
+              } else {
+                await p
+                  .locator('[data-testid="result-overlay"] button', {
+                    hasText: "選擇關卡",
+                  })
+                  .first()
+                  .click();
+              }
+              const map = await until(
+                async () => (await p.locator(".modal.show").count()) > 0,
+                5000
+              );
+              await sleep(400);
+              if (kb) await p.keyboard.press("Escape");
+              else
+                await p
+                  .locator(".modal.show .btn-close")
+                  .first()
+                  .click()
+                  .catch(() => {});
+              await until(
+                async () => (await p.locator(".modal").count()) === 0,
+                5000
+              );
+              await sleep(400);
+              const s2 = await ctl(p);
+              check(
+                `${tag}：結算後${kb ? "用鍵盤" : "用滑鼠"}按「選擇關卡」再關掉地圖：沒有舊的升級面板與武將資訊、沒有結算畫面，仍是這一場的結算（金幣與塔、武將不變）`,
+                !!map &&
+                  (!kb || steps > 0) &&
+                  (await panelsGone(p)) &&
+                  !(await resultShown(p)) &&
+                  s2.state === 3 &&
+                  s2.battleId === s1.battleId &&
+                  s2.gold === s1.gold &&
+                  sameJson(s2.towers, s1.towers) &&
+                  s2.heroes === s1.heroes,
+                { map, steps, s1, s2 }
+              );
+              // 舊面板仍在（上面的具名檢查已失敗）就不再點後面的按鈕
+              if (!(await panelsGone(p))) {
+                note(
+                  `${tag}：舊面板仍在頁面上，之後的換場、新面板與晚到結果步驟沒有執行`,
+                  s2
+                );
+                return E;
+              }
+              if (win) {
+                // 勝：從 HUD 的地圖按鈕選已解鎖的第二關
+                await p.locator('button[title="切換關卡"]').first().click();
+                await until(
+                  async () => (await p.locator(".modal.show").count()) > 0,
+                  5000
+                );
+                await sleep(400);
+                await p
+                  .locator(".modal.show .card", { hasText: "chapter1_2" })
+                  .first()
+                  .click();
+              } else {
+                // 敗：從 HUD 的地圖按鈕真正選一關（第一關）
+                await p.locator('button[title="切換關卡"]').first().click();
+                await until(
+                  async () => (await p.locator(".modal.show").count()) > 0,
+                  5000
+                );
+                await sleep(400);
+                await p
+                  .locator(".modal.show .card", { hasText: "chapter1_1" })
+                  .first()
+                  .click();
+              }
+            } else {
+              // 共用帳號：先等結算畫面顯示已保存，再按「重新挑戰」換成新的一場
+              settleShown = await until(
+                () =>
+                  p
+                    .locator('[data-testid="result-settle-confirmed"]')
+                    .isVisible(),
+                10000
+              );
+              await p
+                .locator('[data-testid="result-overlay"] button', {
+                  hasText: "重新挑戰",
+                })
+                .first()
+                .click();
+            }
+            await until(
+              async () => (await ctl(p)).battleId !== s1.battleId,
+              5000
+            );
+            await until(
+              async () => (await p.locator(".modal").count()) === 0,
+              5000
+            );
+            await sleep(600);
+            const s3 = await ctl(p);
+            check(
+              `${tag}：換成新的一場${win ? "（第二關）" : ""}之後沒有結算畫面、沒有舊的升級面板與武將資訊`,
+              s3.battleId !== s1.battleId &&
+                (!win || (await stageOf(p)) === "chapter1_2") &&
+                !(await resultShown(p)) &&
+                (await panelsGone(p)),
+              { s3, stage: await stageOf(p) }
+            );
+            const prep2 = await preparePanel(p, kind, `${tag} 新的一場`);
+            const opened2 = prep2 && (await openPanel(p, kind));
+            check(
+              `${tag}：新的一場可以照常用正常滑鼠打開${name}`,
+              !!opened2,
+              await ctl(p)
+            );
+            if (opened2) {
+              // 上一場的結果晚到（受控）：新場的面板、內容、場次、金幣與塔、武將、寫入與金鑰都不變
+              const before = await ctl(p);
+              const txt0 = await panelText(p, kind);
+              const w0 = E.gas.writes().length;
+              const key0 = (await storageOf(p)).ls.shenma_player_key ?? null;
+              await p.evaluate(
+                (r) => window.__testBridge.onBattleEnded(r),
+                loseOf(s1.battleId)
+              );
+              await sleep(600);
+              const after = await ctl(p);
+              const txt1 = await panelText(p, kind);
+              const key1 = (await storageOf(p)).ls.shenma_player_key ?? null;
+              check(
+                `${tag}：上一場的結果晚到：場次守門擋下，新場的${name}仍開著、內容與場次、金幣與塔、武將不變，沒有結算畫面、沒有新的寫入、金鑰不變`,
+                txt1 !== null &&
+                  txt1 === txt0 &&
+                  sameJson(after, before) &&
+                  !(await resultShown(p)) &&
+                  E.gas.writes().length === w0 &&
+                  key1 === key0,
+                { before, after, same: txt1 === txt0, w0, key0, key1 }
+              );
+            }
+            if (label === "390×844" && mode === "guest")
+              await shot(p, `panel-${sizeKey}-${kind}-new`);
+            if (mode === "guest")
+              check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+            else {
+              const sv = E.gas.log.filter((e) => e.action === "save_result");
+              const rid = sv[0] && sv[0].payload && sv[0].payload.request_id;
+              check(
+                "共用帳號：受控結算剛好一次 save_result（敗、0 星、10 點、base_rev 2、契約 2，結算畫面顯示已保存），重新挑戰與晚到的結果都沒有再寫入",
+                !!settleShown &&
+                  sv.length === 1 &&
+                  typeof rid === "string" &&
+                  sameJson(sv[0].payload, {
+                    stage_id: "chapter1_1",
+                    result: "LOSE",
+                    stars_earned: 0,
+                    kills: 12,
+                    time_seconds: 95,
+                    loots: [{ item: "battle_points", count: 10 }],
+                    request_id: rid,
+                    base_rev: 2,
+                    settle_contract: 2,
+                  }) &&
+                  E.gas.writes().length === 1,
+                E.gas.writes().map((e) => [e.action, e.payload])
+              );
+            }
+            return E;
+          }
+        );
+      }
+  await scenario(
+    "結算清面板：390×844 共用帳號 升級面板 結算結果不明：清掉面板、保留待確認的結算與「重新確認」，不自動重送",
+    async (mk) => {
+      const tag = "390×844 共用帳號 升級面板 結果不明";
+      const { E, p } = await maskEnter(
+        mk,
+        "shared",
+        { width: 390, height: 844 },
+        "k_pan_unknown"
+      );
+      // 後端回 SERVER_ERROR（結果不明）
+      E.gas.rule("save_result", "transform", {
+        fn: () => ({ status: 500, error: "SERVER_ERROR" }),
+      });
+      E.allowGasErrors = 1;
+      if (!(await preparePanel(p, "upgrade", tag))) return E;
+      check("按進入戰場開第 1 波", await startBattle(p));
+      const opened = await openPanel(p, "upgrade");
+      check(`${tag}：戰鬥中用正常滑鼠打開升級面板`, opened);
+      if (!opened) return E;
+      await endWith(p, { win: false });
+      const retry = await until(
+        () => p.locator('[data-testid="result-settle-retry"]').isVisible(),
+        10000
+      );
+      await sleep(1500);
+      const pend = await pendingKeys(p);
+      check(
+        `${tag}：結算畫面保留待確認與「重新確認」，只送過一次 save_result（沒有自動重送），暫存的待確認結算還在，升級面板與武將資訊都不在頁面上`,
+        !!retry &&
+          E.gas.count("save_result") === 1 &&
+          pend.length === 1 &&
+          (await panelsGone(p)),
+        { retry, n: E.gas.count("save_result"), pend }
+      );
+      return E;
+    }
+  );
+
   // ═══ 18. 入口版面：1280 桌面、390×600、390×844 ═══
   for (const vp of [
     { width: 1280, height: 800 },

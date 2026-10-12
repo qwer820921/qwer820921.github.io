@@ -401,6 +401,9 @@ const ShenmaSanguoJsPage: React.FC = () => {
       // 這一場結束：清掉頁面上還開著的部署選單（引擎已經關閉這一場的選單；不清的話關掉結算或地圖後舊選單會再出現）
       placementMenuRef.current = null;
       setPlacementMenu(null);
+      // 這一場的升級面板與武將資訊也一起關掉（否則關掉結算或地圖後舊面板會回到最上層）
+      setUpgradeTower(null);
+      setHeroInfo(null);
       setBattleResult(r);
       setSettleRetryMsg(null);
       const store = useJsPlayerStore.getState();
