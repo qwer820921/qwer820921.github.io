@@ -8864,6 +8864,1150 @@ module.exports = async function profileContractWeb(page) {
     }
   );
 
+  // ═══ 31. 部署遮罩開著時的 HUD 操作列與選單高度 ═══
+  // HUD 操作列在部署遮罩之上（選單開著也能直接用滑鼠按暫停等），選單高度上限是 min(80vh, 遮罩高度 − 168px)，讓置中的選單不被 HUD 蓋到。
+  // 測最終的正常建置、正常滑鼠與鍵盤（不注入樣式、不 force 點擊、不直接改暫停）。量測用未四捨五入的 DOMRect 與 elementFromPoint：
+  // 標題與暫停說明逐字（Range）取點，卡片只量內容區剪裁後的可見部分。捲動只驗滑鼠滾輪與鍵盤，沒有測觸控滑動；結算用受控回呼（不是自然通關）。
+  // 390 寬時 HUD「隊伍」按鈕中心本來就在視窗外，另列為既有限制，不算進「最上層」
+  const MASK_SIZES = [
+    ["1280×800", { width: 1280, height: 800 }],
+    ["390×600", { width: 390, height: 600 }],
+    ["390×844", { width: 390, height: 844 }],
+  ];
+  const MASK_TEAM = DEFAULT_SORTIE.slice(0, 5).map(([id], i) => ({
+    hero_id: id.replace(/^hero_/, ""),
+    slot: i + 1,
+  }));
+  /** 頁面內量測（DOMRect 不四捨五入）：HUD 按鈕、選單標題逐字、×、分頁、暫停說明逐字、內容可見區與卡片可見部分、遮罩取樣點 */
+  const maskLayout = (p) =>
+    p.evaluate(() => {
+      const rr = (b) => ({ x: b.left, y: b.top, w: b.width, h: b.height });
+      const inter = (a, b) => {
+        if (!a || !b) return null;
+        const x = Math.max(a.x, b.x);
+        const y = Math.max(a.y, b.y);
+        const w = Math.min(a.x + a.w, b.x + b.w) - x;
+        const h = Math.min(a.y + a.h, b.y + b.h) - y;
+        return w > 0 && h > 0 ? { x, y, w, h } : null;
+      };
+      const inRect = (x, y, r) =>
+        !!r && x >= r.x && y >= r.y && x <= r.x + r.w && y <= r.y + r.h;
+      const view = { x: 0, y: 0, w: innerWidth, h: innerHeight };
+      const inView = (x, y) =>
+        x >= 0 && y >= 0 && x < innerWidth && y < innerHeight;
+      const bar = document.querySelector('[class*="hudActionBar"]');
+      const menu = document.querySelector('[data-testid="placement-menu"]');
+      const overlay = menu ? menu.parentElement : null;
+      const who = (el) =>
+        !el
+          ? "none"
+          : bar && bar.contains(el)
+            ? "hud"
+            : menu && menu.contains(el)
+              ? "menu"
+              : overlay && el === overlay
+                ? "mask"
+                : el.closest(".modal")
+                  ? "modal"
+                  : "other";
+      const hitIn = (x, y, target) => {
+        if (!inView(x, y)) return { ok: false, who: "out" };
+        const el = document.elementFromPoint(x, y);
+        return {
+          ok: !!el && (el === target || target.contains(el)),
+          who: who(el),
+        };
+      };
+      const hud = bar
+        ? [...bar.querySelectorAll("button")].map((b) => {
+            const r = rr(b.getBoundingClientRect());
+            const cx = r.x + r.w / 2;
+            const cy = r.y + r.h / 2;
+            const h = hitIn(cx, cy, b);
+            return {
+              text: (b.innerText || "").replace(/\s+/g, " ").trim(),
+              rect: r,
+              inView: inView(cx, cy),
+              onTop: h.ok,
+              who: h.who,
+            };
+          })
+        : [];
+      const out = {
+        viewport: [innerWidth, innerHeight],
+        noHScroll: document.documentElement.scrollWidth <= innerWidth + 1,
+        hud,
+        menu: !!menu,
+      };
+      if (!menu) return out;
+      const charPoints = (el) => {
+        const pts = [];
+        if (!el) return pts;
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let n;
+        while ((n = walker.nextNode())) {
+          for (let i = 0; i < n.length; i++) {
+            if (!n.data[i].trim()) continue;
+            const rg = document.createRange();
+            rg.setStart(n, i);
+            rg.setEnd(n, i + 1);
+            for (const b of rg.getClientRects())
+              if (b.width > 0 && b.height > 0)
+                pts.push([b.left + b.width / 2, b.top + b.height / 2]);
+          }
+        }
+        return pts;
+      };
+      const pointsCheck = (el, pts) => {
+        const res = pts.map(([x, y]) => hitIn(x, y, el));
+        return {
+          n: res.length,
+          bad: res.filter((r) => !r.ok).map((r) => r.who),
+        };
+      };
+      const five = (r) => [
+        [r.x + r.w / 2, r.y + r.h / 2],
+        [r.x + 3, r.y + 3],
+        [r.x + r.w - 3, r.y + 3],
+        [r.x + 3, r.y + r.h - 3],
+        [r.x + r.w - 3, r.y + r.h - 3],
+      ];
+      const header = menu.querySelector('[class*="placementHeader"]');
+      const title = header && header.querySelector("span");
+      const close = header && header.querySelector("button");
+      const hint = menu.querySelector('[data-testid="placement-blocked-hint"]');
+      const tabs = [...menu.querySelectorAll('[class*="tabSwitcher"] button')];
+      const content = menu.querySelector('[class*="placementContent"]');
+      const mRect = rr(menu.getBoundingClientRect());
+      const cRect = content ? rr(content.getBoundingClientRect()) : null;
+      const visible = inter(inter(cRect, mRect), view);
+      const cards = content
+        ? [...content.querySelectorAll("button")].map((b) => {
+            const r = rr(b.getBoundingClientRect());
+            const vr = inter(r, visible);
+            const name = (
+              (b.querySelector('[class*="cardName"]') || b).innerText || ""
+            )
+              .replace(/\s+/g, " ")
+              .trim();
+            if (!vr)
+              return {
+                name,
+                disabled: b.disabled,
+                visibleArea: 0,
+                full: false,
+                onTop: false,
+              };
+            const h = hitIn(vr.x + vr.w / 2, vr.y + vr.h / 2, b);
+            return {
+              name,
+              disabled: b.disabled,
+              visibleArea: vr.w * vr.h,
+              full: vr.w * vr.h >= r.w * r.h - 1,
+              onTop: h.ok,
+              who: h.who,
+              center: [vr.x + vr.w / 2, vr.y + vr.h / 2],
+            };
+          })
+        : [];
+      const parts = [
+        ["header", header ? rr(header.getBoundingClientRect()) : null],
+        ["hint", hint ? rr(hint.getBoundingClientRect()) : null],
+        ...tabs.map((t, i) => ["tab" + i, rr(t.getBoundingClientRect())]),
+        ["visibleContent", visible],
+      ];
+      const overlaps = [];
+      for (const b of hud.filter((x) => x.inView))
+        for (const [part, r] of parts) {
+          const a = inter(b.rect, r);
+          if (a) overlaps.push({ hud: b.text, part, area: a.w * a.h });
+        }
+      // 遮罩取樣：遮罩矩形內 5×5 個點（去掉選單與 HUD 範圍），記下每點最上層是誰；畫布不能是任何一點的最上層
+      const oRect = rr(overlay.getBoundingClientRect());
+      const barRect = bar ? rr(bar.getBoundingClientRect()) : null;
+      const tagOf = (el) => {
+        if (!el) return "none";
+        const fe = el.closest("[data-floating-entry]");
+        const al = el.getAttribute("aria-label");
+        return `${el.tagName.toLowerCase()}${al ? `[${al}]` : ""}${fe ? `{${fe.getAttribute("data-floating-entry")}}` : ""}`;
+      };
+      const samples = [];
+      for (const fy of [0.02, 0.25, 0.5, 0.75, 0.98])
+        for (const fx of [0.02, 0.25, 0.5, 0.75, 0.98]) {
+          const x = oRect.x + oRect.w * fx;
+          const y = oRect.y + oRect.h * fy;
+          if (!inView(x, y) || inRect(x, y, mRect) || inRect(x, y, barRect))
+            continue;
+          const el = document.elementFromPoint(x, y);
+          samples.push({
+            x,
+            y,
+            who: who(el),
+            canvas: !!el && el.tagName === "CANVAS",
+            tag: tagOf(el),
+          });
+        }
+      const pick = samples.find((s) => s.who === "mask") || null;
+      return {
+        ...out,
+        menuRect: mRect,
+        overlayRect: oRect,
+        title: {
+          text: title ? title.innerText : null,
+          ...pointsCheck(title, charPoints(title)),
+        },
+        close: close
+          ? pointsCheck(close, five(rr(close.getBoundingClientRect())))
+          : { n: 0, bad: ["none"] },
+        hint: hint
+          ? { text: hint.innerText, ...pointsCheck(hint, charPoints(hint)) }
+          : null,
+        tabs: tabs.map((t) => {
+          const r = rr(t.getBoundingClientRect());
+          return {
+            text: t.innerText,
+            onTop: hitIn(r.x + r.w / 2, r.y + r.h / 2, t).ok,
+          };
+        }),
+        content: content
+          ? {
+              rect: cRect,
+              visible,
+              scrollTop: content.scrollTop,
+              scrollHeight: content.scrollHeight,
+              clientHeight: content.clientHeight,
+            }
+          : null,
+        cards,
+        overlaps,
+        maskProbe: {
+          n: samples.length,
+          mask: samples.filter((s) => s.who === "mask").length,
+          canvas: samples.filter((s) => s.canvas).length,
+          others: [
+            ...new Set(
+              samples.filter((s) => s.who !== "mask").map((s) => s.tag)
+            ),
+          ],
+          pick: pick ? [pick.x, pick.y] : null,
+        },
+      };
+    });
+  const hudInViewOnTop = (L) =>
+    L.hud.filter((b) => b.inView).length > 0 &&
+    L.hud.filter((b) => b.inView).every((b) => b.onTop);
+  const hudOutside = (L) => L.hud.filter((b) => !b.inView).map((b) => b.text);
+  const menuPartsClear = (L) =>
+    L.menu &&
+    L.title.n > 0 &&
+    L.title.bad.length === 0 &&
+    L.close.n > 0 &&
+    L.close.bad.length === 0 &&
+    L.tabs.every((t) => t.onTop) &&
+    (!L.hint || (L.hint.n > 0 && L.hint.bad.length === 0)) &&
+    L.overlaps.length === 0;
+  const visibleCardsClear = (L) => {
+    const v = L.cards.filter((c) => c.visibleArea > 0);
+    return v.length > 0 && v.every((c) => c.onTop);
+  };
+  const hudRects = (L) => L.hud.map((b) => [b.text, b.rect]);
+  const lastCardOk = (L) => {
+    const last = L.cards[L.cards.length - 1];
+    return !!last && last.full && last.onTop;
+  };
+  /** 正常滑鼠滾輪在內容區往下捲，直到最後一張卡片整張可見且點得到（最多 30 次） */
+  async function wheelToLastCard(p) {
+    let L = await maskLayout(p);
+    let steps = 0;
+    while (steps < 30 && !lastCardOk(L) && L.content && L.content.visible) {
+      const v = L.content.visible;
+      await p.mouse.move(v.x + v.w / 2, v.y + v.h / 2);
+      await p.mouse.wheel(0, 120);
+      await sleep(150);
+      steps++;
+      L = await maskLayout(p);
+    }
+    return { L, steps };
+  }
+  /** 正常 Tab 往後移，直到焦點落在選單內容區的最後一張卡片（最多 80 次） */
+  async function tabToLastCard(p) {
+    for (let i = 1; i <= 80; i++) {
+      await p.keyboard.press("Tab");
+      const isLast = await p.evaluate(() => {
+        const m = document.querySelector('[data-testid="placement-menu"]');
+        const cs = m
+          ? [...m.querySelectorAll('[class*="placementContent"] button')]
+          : [];
+        return cs.length > 0 && document.activeElement === cs[cs.length - 1];
+      });
+      if (isLast) {
+        await sleep(250);
+        return { steps: i, L: await maskLayout(p) };
+      }
+    }
+    return { steps: -1, L: await maskLayout(p) };
+  }
+  async function maskEnter(mk, mode, viewport, key) {
+    if (mode === "guest") {
+      const E = await mk({
+        maps: TOWER_MAPS,
+        enemies: TOWER_ENEMIES,
+        viewport,
+      });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      return { E, p };
+    }
+    const data = NEW({ capacity: 50, team: MASK_TEAM });
+    const E = await mk({
+      seed: [{ key, data, rev: 2 }],
+      maps: TOWER_MAPS,
+      enemies: TOWER_ENEMIES,
+      viewport,
+    });
+    const p = await E.page({ storage: { shenma_player_key: key } });
+    check("讀到存檔", (await loadShared(p)) === "player");
+    await closeModal(p);
+    await waitRemoteStage(p, E);
+    return { E, p };
+  }
+  /**
+   * 打開部署選單（正常滑鼠）：依序試候選格，回傳量測、用到的格子與試過沒用的格子。
+   * 還有選單開著就先按 × 關掉（記下來）；格子中心不在畫布可見區、或要放武將但這格不能放時跳過
+   */
+  async function openMaskMenu(p, cells, needPlace) {
+    const tried = [];
+    for (const cell of cells) {
+      if (await menuShown(p)) {
+        await closeMenuX(p);
+        await until(async () => !(await menuShown(p)), 3000);
+        tried.push({ cell, closedLeftoverMenu: true });
+      }
+      const pt = await cellPoint(p, cell);
+      if (!pt.onCanvas || (needPlace && !pt.canPlace)) {
+        tried.push({ cell, onCanvas: pt.onCanvas, canPlace: pt.canPlace });
+        continue;
+      }
+      await p.mouse.click(pt.x, pt.y);
+      const opened = await until(() => menuShown(p), 5000);
+      if (opened) {
+        await sleep(400);
+        return { L: await maskLayout(p), cell, tried };
+      }
+      tried.push({ cell, opened: false });
+    }
+    return { L: null, cell: null, tried };
+  }
+  const clickCenter = (p, r) => p.mouse.click(r.x + r.w / 2, r.y + r.h / 2);
+  const freezeProbe = (p) =>
+    p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      return {
+        bt: e.battleManager.battleTime,
+        enemies: e.waveManager.activeEnemies.map((x) => [x.x, x.y]),
+      };
+    });
+
+  for (const [label, viewport] of MASK_SIZES)
+    for (const mode of ["guest", "shared"])
+      for (const phase of ["PREP", "BATTLE"]) {
+        const tag = `${label} ${mode === "guest" ? "訪客" : "共用帳號"} ${phase === "PREP" ? "備戰" : "戰鬥中"}`;
+        const sizeKey = label.replace("×", "x");
+        await scenario(
+          `遮罩與 HUD：${tag}：選單各部位不被 HUD 蓋、HUD 在遮罩之上、遮罩照舊擋畫布`,
+          async (mk) => {
+            const { E, p } = await maskEnter(
+              mk,
+              mode,
+              viewport,
+              `k_mask_${sizeKey}_${phase}`
+            );
+            let settleShown = null;
+            if (phase === "BATTLE") {
+              const b1 = await buildTower(p, TOWER_CELLS[1], "弓兵塔");
+              check(
+                "前置：備戰中建一座弓兵塔（之後核暫停中的升級、拆除、改目標入口）",
+                b1.ok,
+                b1
+              );
+              check(
+                "按進入戰場開第 1 波（很慢、打不倒的測試木樁）",
+                await startBattle(p)
+              );
+            }
+            const base = await maskLayout(p);
+            const off = [];
+            for (const [kind, cells] of [
+              ["建築位", [TOWER_CELLS[0], TOWER_CELLS[2]]],
+              ["道路", ROAD_CELLS],
+            ]) {
+              const o = await openMaskMenu(p, cells, kind === "道路");
+              if (o.tried.length) off.push({ kind, tried: o.tried });
+              const L = o.L;
+              const cell = o.cell;
+              if (!L) {
+                check(
+                  `${tag} ${kind}：正常滑鼠點畫布上的格子打得開選單`,
+                  false,
+                  o
+                );
+                continue;
+              }
+              check(
+                `${tag} ${kind}：選單標題（逐字）、×、分頁${L.hint ? "、說明（逐字）" : ""}都不被 HUD 蓋住，也沒有幾何交疊`,
+                menuPartsClear(L),
+                {
+                  title: L.title,
+                  close: L.close,
+                  tabs: L.tabs,
+                  hint: L.hint,
+                  overlaps: L.overlaps,
+                  menuRect: L.menuRect,
+                }
+              );
+              check(
+                `${tag} ${kind}：內容區剪裁後可見的每張卡片，可見部分的中心都點得到（不被 HUD 或遮罩蓋）`,
+                visibleCardsClear(L),
+                L.cards
+              );
+              check(
+                `${tag} ${kind}：視窗內的 HUD 按鈕中心都是最上層${hudOutside(L).length ? `（視窗外：${hudOutside(L).join("、")}，既有限制另列）` : ""}`,
+                hudInViewOnTop(L),
+                L.hud.map((b) => [b.text, b.inView, b.onTop, b.who])
+              );
+              check(
+                `${tag} ${kind}：HUD 位置與內容和選單打開前相同，沒有橫向捲動`,
+                sameJson(hudRects(L), hudRects(base)) && L.noHScroll,
+                {
+                  before: hudRects(base),
+                  now: hudRects(L),
+                  noHScroll: L.noHScroll,
+                }
+              );
+              if (mode === "guest" && phase === "PREP")
+                await shot(
+                  p,
+                  `mask-${sizeKey}-${kind === "道路" ? "road13" : "build"}`
+                );
+              // 長列表最後一張：滾輪與鍵盤（訪客備戰的道路選單有 13 位武將）
+              if (mode === "guest" && phase === "PREP") {
+                const w = await wheelToLastCard(p);
+                const lastW = w.L.cards[w.L.cards.length - 1];
+                check(
+                  `${tag} ${kind}：滑鼠滾輪在內容區往下捲，最後一張（${lastW ? lastW.name : "?"}）整張可見、可見中心點得到`,
+                  lastCardOk(w.L) && !lastW.disabled,
+                  { steps: w.steps, last: lastW, content: w.L.content }
+                );
+                if (kind === "道路" && label === "390×600") {
+                  await shot(p, `mask-${sizeKey}-last-card`);
+                  const h0 = (await ctl(p)).heroes;
+                  // 最後一張沒有整張可見、點得到就不點（前面的具名檢查已失敗）
+                  const can = lastCardOk(w.L) && !lastW.disabled;
+                  if (can)
+                    await p.mouse.click(lastW.center[0], lastW.center[1]);
+                  const closed =
+                    can &&
+                    (await until(async () => !(await menuShown(p)), 5000));
+                  const h1 = (await ctl(p)).heroes;
+                  check(
+                    `${tag} ${kind}：滑鼠點最後一張武將卡（${lastW ? lastW.name : "?"}）派出成功，選單關閉`,
+                    can && !!closed && h1 === h0 + 1,
+                    { can, h0, h1, closed }
+                  );
+                  continue;
+                }
+                await closeMenuX(p);
+                await until(async () => !(await menuShown(p)), 3000);
+                const L2 = (await openMaskMenu(p, [cell], kind === "道路")).L;
+                const t = L2 ? await tabToLastCard(p) : { steps: -1, L: null };
+                const lastT = t.L && t.L.cards[t.L.cards.length - 1];
+                check(
+                  `${tag} ${kind}：正常 Tab 到最後一張（${lastT ? lastT.name : "?"}）時它整張可見、可見中心點得到`,
+                  t.steps > 0 && lastCardOk(t.L) && !lastT.disabled,
+                  { steps: t.steps, last: lastT, content: t.L && t.L.content }
+                );
+              }
+              // 遮罩其餘區：取樣點沒有一點是畫布在最上層；點其中一個遮罩點只關閉選單，畫布沒有收到點擊
+              const L3 = await maskLayout(p);
+              const s0 = await ctl(p);
+              const probe = L3.maskProbe;
+              if (probe.pick) await p.mouse.click(probe.pick[0], probe.pick[1]);
+              const closed = await until(
+                async () => !(await menuShown(p)),
+                3000
+              );
+              await sleep(300);
+              const s1 = await ctl(p);
+              check(
+                `${tag} ${kind}：遮罩其餘區仍蓋著畫布（取樣點沒有一點是畫布），點遮罩只關閉選單，沒有新的塔或武將`,
+                probe.n > 0 &&
+                  probe.canvas === 0 &&
+                  !!probe.pick &&
+                  !!closed &&
+                  s1.menuId === 0 &&
+                  sameJson(s1.towers, s0.towers) &&
+                  s1.heroes === s0.heroes &&
+                  s1.gold === s0.gold,
+                { probe, s0, s1 }
+              );
+              if (!closed) {
+                await closeMenuX(p);
+                await until(async () => !(await menuShown(p)), 3000);
+              }
+            }
+            note(
+              `${tag}：試過沒用的格子（中心不在畫布可見區、不能放武將，或還有選單要先關）`,
+              off
+            );
+            if (phase === "BATTLE") {
+              // 選單開著時用滑鼠點 HUD 暫停／繼續
+              const o1 = await openMaskMenu(p, ROAD_CELLS, true);
+              const L = o1.L;
+              const s0 = await ctl(p);
+              const pause = L && L.hud.find((b) => /⏸ 暫停/.test(b.text));
+              check(
+                `${tag}：選單開著時 HUD「⏸ 暫停」是最上層（中心點 elementFromPoint 是按鈕本身）`,
+                !!pause && pause.onTop && s0.menuId > 0,
+                { pause, s0, cell: o1.cell, tried: o1.tried }
+              );
+              if (pause && pause.onTop) {
+                await clickCenter(p, pause.rect);
+                await until(async () => (await ctl(p)).paused, 3000);
+                const s1 = await ctl(p);
+                const f1 = await freezeProbe(p);
+                await sleep(800);
+                const f2 = await freezeProbe(p);
+                check(
+                  `${tag}：滑鼠點 HUD 暫停：同一場、同一個選單編號仍開著，戰鬥時間與敵人位置停住`,
+                  s1.paused &&
+                    s1.battleId === s0.battleId &&
+                    s1.menuId === s0.menuId &&
+                    (await menuShown(p)) &&
+                    sameJson(f1, f2),
+                  { s0, s1, f1, f2 }
+                );
+                const Lp = await maskLayout(p);
+                check(
+                  `${tag}：暫停中：選單標題、×、暫停說明（逐字）不被 HUD 蓋住，卡片都停用`,
+                  menuPartsClear(Lp) &&
+                    !!Lp.hint &&
+                    Lp.cards.length > 0 &&
+                    Lp.cards.every((c) => c.disabled),
+                  {
+                    title: Lp.title,
+                    close: Lp.close,
+                    hint: Lp.hint,
+                    overlaps: Lp.overlaps,
+                    cards: Lp.cards.map((c) => [c.name, c.disabled]),
+                  }
+                );
+                if (label === "390×600")
+                  await shot(p, `mask-${sizeKey}-${mode}-paused`);
+                const w = await wheelToLastCard(p);
+                const lastW = w.L.cards[w.L.cards.length - 1];
+                const h0 = (await ctl(p)).heroes;
+                if (lastW && lastW.center)
+                  await p.mouse.click(lastW.center[0], lastW.center[1]);
+                await sleep(400);
+                check(
+                  `${tag}：暫停中捲到最後一張武將卡：可見但停用，滑鼠點了不派出、選單仍開著`,
+                  !!lastW &&
+                    lastW.visibleArea > 0 &&
+                    lastW.disabled &&
+                    (await ctl(p)).heroes === h0 &&
+                    (await menuShown(p)),
+                  { last: lastW, h0 }
+                );
+                const tw0 = await p.evaluate(() => {
+                  const t = window.__testBridge.engine.towers[0];
+                  return t
+                    ? [t.towerUid, t.towerLevel, t.investedGold, t.targetMode]
+                    : null;
+                });
+                const r = await p.evaluate(() => {
+                  const b = window.__testBridge;
+                  const e = b.engine;
+                  const t = e.towers[0];
+                  const hs = {
+                    hero_id: "hero_zhao_yun",
+                    level: 1,
+                    atk: 110,
+                    def: 65,
+                    hp: 1150,
+                  };
+                  const c = t ? [t.gridCell.col, t.gridCell.row] : [0, 0];
+                  b.setTowerTargetMode(c[0], c[1], "weakest");
+                  return {
+                    hero: b.placeHero(3, 3, hs),
+                    tower: b.placeTower(6, 1, "archer"),
+                    upgrade: t ? b.upgradeTower(c[0], c[1]) : null,
+                    sell: t
+                      ? b.sellTower({
+                          battleId: e.battleManager.battleId,
+                          towerUid: t.towerUid,
+                          col: c[0],
+                          row: c[1],
+                          expectedRefund: t.getSellRefund(),
+                        })
+                      : null,
+                  };
+                });
+                const tw1 = await p.evaluate(() => {
+                  const t = window.__testBridge.engine.towers[0];
+                  return t
+                    ? [t.towerUid, t.towerLevel, t.investedGold, t.targetMode]
+                    : null;
+                });
+                const s2 = await ctl(p);
+                check(
+                  `${tag}：暫停中頁面的派武將、建塔、升級、拆除、改目標入口都照既有守門拒絕，塔與金幣、武將都不變`,
+                  r.hero === false &&
+                    r.tower === false &&
+                    r.upgrade === false &&
+                    !!r.sell &&
+                    r.sell.ok === false &&
+                    sameJson(tw0, tw1) &&
+                    !!tw0 &&
+                    s2.gold === s1.gold &&
+                    s2.heroes === s1.heroes,
+                  { r, tw0, tw1, s1, s2 }
+                );
+                const Lr = await maskLayout(p);
+                const resume = Lr.hud.find((b) => /▶ 繼續/.test(b.text));
+                check(
+                  `${tag}：暫停中 HUD「▶ 繼續」是最上層`,
+                  !!resume && resume.onTop,
+                  resume
+                );
+                if (resume && resume.onTop) {
+                  await clickCenter(p, resume.rect);
+                  await until(async () => !(await ctl(p)).paused, 3000);
+                  const s3 = await ctl(p);
+                  check(
+                    `${tag}：滑鼠點繼續：同一個選單仍開著、恢復部署慢速 0.1`,
+                    !s3.paused &&
+                      s3.menuId === s0.menuId &&
+                      Math.abs(s3.scale - 0.1) < 1e-9 &&
+                      (await menuShown(p)),
+                    s3
+                  );
+                  const L4 = await maskLayout(p);
+                  const card = L4.cards.find(
+                    (c) => c.visibleArea > 0 && !c.disabled && c.onTop
+                  );
+                  const h1 = (await ctl(p)).heroes;
+                  if (card) await p.mouse.click(card.center[0], card.center[1]);
+                  const closed = await until(
+                    async () => !(await menuShown(p)),
+                    5000
+                  );
+                  check(
+                    `${tag}：繼續後滑鼠點一張可見的武將卡：派出成功才關閉選單`,
+                    !!card && !!closed && (await ctl(p)).heroes === h1 + 1,
+                    { card, h1, closed }
+                  );
+                }
+              }
+              // 暫停時按 × 關選單，不會自動繼續
+              const o5 = await openMaskMenu(p, ROAD_CELLS, true);
+              const L5 = o5.L;
+              const pause2 = L5 && L5.hud.find((b) => /⏸ 暫停/.test(b.text));
+              if (pause2 && pause2.onTop) {
+                await clickCenter(p, pause2.rect);
+                await until(async () => (await ctl(p)).paused, 3000);
+                const L6 = await maskLayout(p);
+                const xr = await p.evaluate(() => {
+                  const b = document.querySelector(
+                    '[data-testid="placement-menu"] [class*="placementHeader"] button'
+                  );
+                  const r = b && b.getBoundingClientRect();
+                  return r
+                    ? { x: r.left, y: r.top, w: r.width, h: r.height }
+                    : null;
+                });
+                if (xr && L6.menu && L6.close.bad.length === 0)
+                  await clickCenter(p, xr);
+                const closed = await until(
+                  async () => !(await menuShown(p)),
+                  3000
+                );
+                await sleep(300);
+                const s6 = await ctl(p);
+                check(
+                  `${tag}：暫停時滑鼠按選單 ×：選單關閉、仍是暫停（不會自動繼續）`,
+                  !!xr && !!closed && s6.paused === true && s6.menuId === 0,
+                  { xr, s6 }
+                );
+                const L7 = await maskLayout(p);
+                const resume2 = L7.hud.find((b) => /▶ 繼續/.test(b.text));
+                if (resume2 && resume2.onTop)
+                  await clickCenter(p, resume2.rect);
+                await until(async () => !(await ctl(p)).paused, 3000);
+              } else {
+                check(
+                  `${tag}：（暫停時按 ×）第二格的選單打開且 HUD 暫停是最上層`,
+                  false,
+                  { L5: !!L5, pause2, tried: o5.tried }
+                );
+              }
+              if (label === "390×600") {
+                // 鍵盤：選單開著時正常 Tab 到 HUD 暫停按 Enter，再按 Enter 繼續
+                const o8 = await openMaskMenu(p, ROAD_CELLS, true);
+                const L8 = o8.L;
+                const s8 = await ctl(p);
+                let steps = -1;
+                for (let i = 1; i <= 60; i++) {
+                  await p.keyboard.press("Tab");
+                  const t = await p.evaluate(
+                    () =>
+                      (document.activeElement &&
+                        document.activeElement.innerText) ||
+                      ""
+                  );
+                  if (/⏸ 暫停/.test(t)) {
+                    steps = i;
+                    break;
+                  }
+                }
+                if (steps > 0) await p.keyboard.press("Enter");
+                await until(async () => (await ctl(p)).paused, 3000);
+                const s9 = await ctl(p);
+                if (steps > 0) await p.keyboard.press("Enter");
+                await until(async () => !(await ctl(p)).paused, 3000);
+                const s10 = await ctl(p);
+                check(
+                  `${tag}：鍵盤正常 Tab 到 HUD「⏸ 暫停」按 Enter 暫停、再按 Enter 繼續，選單一直開著（同一個編號）`,
+                  !!L8 &&
+                    steps > 0 &&
+                    s9.paused &&
+                    !s10.paused &&
+                    s9.menuId === s8.menuId &&
+                    s10.menuId === s8.menuId &&
+                    (await menuShown(p)),
+                  { L8: !!L8, tried: o8.tried, steps, s8, s9, s10 }
+                );
+                await closeMenuX(p);
+                await until(async () => !(await menuShown(p)), 3000);
+              }
+              if (label === "390×844") {
+                // 結算（受控）後舊選單不復活
+                const o9 = await openMaskMenu(p, ROAD_CELLS, true);
+                const L9 = o9.L;
+                const before = { menuId: (await ctl(p)).menuId };
+                await endWith(p, { win: false });
+                await until(async () => (await ctl(p)).state === 3, 5000);
+                await until(
+                  async () =>
+                    (await p
+                      .locator('[data-testid="result-overlay"]')
+                      .count()) > 0,
+                  5000
+                );
+                await sleep(600);
+                const s11 = await ctl(p);
+                const Lr1 = await maskLayout(p);
+                // 舊選單若還在頁面上：標題每個字與每張卡片可見部分的中心都不是選單在最上層（被結算畫面蓋住）
+                const covered = (L) =>
+                  !L.menu ||
+                  (L.title.n > 0 &&
+                    L.title.bad.length === L.title.n &&
+                    L.cards.every((c) => !c.onTop));
+                check(
+                  `${tag}：選單開著時受控結算：引擎的選單編號歸 0，結算畫面蓋住，舊選單沒有一點在最上層`,
+                  !!L9 &&
+                    before.menuId > 0 &&
+                    s11.state === 3 &&
+                    s11.menuId === 0 &&
+                    covered(Lr1),
+                  {
+                    L9: !!L9,
+                    tried: o9.tried,
+                    before,
+                    s11,
+                    staleMenuInPage: Lr1.menu,
+                    title: Lr1.title,
+                  }
+                );
+                if (mode === "guest") {
+                  // 結算畫面按「選擇關卡」再關掉地圖：舊選單的畫面是否又出現；出現時點它的卡片也不能派出
+                  await p
+                    .locator('[data-testid="result-overlay"] button', {
+                      hasText: "選擇關卡",
+                    })
+                    .first()
+                    .click();
+                  const map = await until(
+                    async () => (await p.locator(".modal.show").count()) > 0,
+                    5000
+                  );
+                  await sleep(400);
+                  await p.keyboard.press("Escape");
+                  await until(
+                    async () => (await p.locator(".modal").count()) === 0,
+                    5000
+                  );
+                  await sleep(400);
+                  const Lr2 = await maskLayout(p);
+                  const back =
+                    Lr2.menu && Lr2.title.n > 0 && Lr2.title.bad.length === 0;
+                  const card = back
+                    ? Lr2.cards.find(
+                        (c) => c.visibleArea > 0 && !c.disabled && c.onTop
+                      )
+                    : null;
+                  const h0 = (await ctl(p)).heroes;
+                  if (card) await p.mouse.click(card.center[0], card.center[1]);
+                  await sleep(500);
+                  const s12 = await ctl(p);
+                  check(
+                    `${tag}：結算後按「選擇關卡」再關掉地圖：舊選單的卡片點了也不派出（引擎編號 0、武將數與金幣不變）`,
+                    !!map &&
+                      s12.state === 3 &&
+                      s12.menuId === 0 &&
+                      s12.heroes === h0 &&
+                      s12.gold === s11.gold,
+                    { map, back, card, h0, s12 }
+                  );
+                  note(
+                    `${tag}：既有限制（另列）：結算時頁面沒有清掉部署選單；關掉地圖後舊選單的畫面${back ? "又出現在最上層" : "沒有出現"}`,
+                    {
+                      staleMenuInPage: Lr2.menu,
+                      title: Lr2.menu ? Lr2.title : null,
+                      cards: Lr2.menu
+                        ? Lr2.cards.map((c) => [c.name, c.disabled, c.onTop])
+                        : null,
+                    }
+                  );
+                  if (back) await shot(p, `mask-${sizeKey}-stale-menu`);
+                } else {
+                  // 共用帳號：先等結算畫面顯示已保存到共用進度（寫入另在最後核）
+                  settleShown = await until(
+                    () =>
+                      p
+                        .locator('[data-testid="result-settle-confirmed"]')
+                        .isVisible(),
+                    10000
+                  );
+                  // 換場：結算畫面按「重新挑戰」載入新的一場，舊選單不再出現
+                  await p
+                    .locator('[data-testid="result-overlay"] button', {
+                      hasText: "重新挑戰",
+                    })
+                    .first()
+                    .click();
+                  await until(
+                    async () => (await ctl(p)).battleId !== s11.battleId,
+                    5000
+                  );
+                  await sleep(600);
+                  const s13 = await ctl(p);
+                  check(
+                    `${tag}：結算後按「重新挑戰」換成新的一場：舊選單不在頁面上、選單編號 0、回到備戰`,
+                    s13.battleId !== s11.battleId &&
+                      s13.state === 1 &&
+                      s13.menuId === 0 &&
+                      !(await menuShown(p)),
+                    s13
+                  );
+                }
+              }
+            }
+            if (mode === "guest")
+              check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+            else if (phase === "BATTLE" && label === "390×844") {
+              // 共用帳號的受控結算照原 strict 契約送出一次 save_result（敗、0 星）；重新挑戰後沒有再寫入
+              const sv = E.gas.log.filter((e) => e.action === "save_result");
+              const rid = sv[0] && sv[0].payload && sv[0].payload.request_id;
+              check(
+                "共用帳號：受控結算剛好一次 save_result（敗、0 星、10 點、base_rev 2、契約 2，結算畫面顯示已保存），沒有其他寫入",
+                !!settleShown &&
+                  sv.length === 1 &&
+                  typeof rid === "string" &&
+                  sameJson(sv[0].payload, {
+                    stage_id: "chapter1_1",
+                    result: "LOSE",
+                    stars_earned: 0,
+                    kills: 12,
+                    time_seconds: 95,
+                    loots: [{ item: "battle_points", count: 10 }],
+                    request_id: rid,
+                    base_rev: 2,
+                    settle_contract: 2,
+                  }) &&
+                  E.gas.writes().length === 1,
+                E.gas.writes().map((e) => [e.action, e.payload])
+              );
+            } else
+              check(
+                "共用帳號：沒有任何寫入請求",
+                E.gas.writes().length === 0,
+                E.gas.writes()
+              );
+            return E;
+          }
+        );
+      }
+
+  /** HUD 按鈕中心落在某個視窗（元素）矩形裡的，都不能是 HUD 在最上層 */
+  const hudUnder = (p, sel) =>
+    p.evaluate((s) => {
+      const bar = document.querySelector('[class*="hudActionBar"]');
+      const dlg = document.querySelector(s);
+      if (!bar || !dlg) return null;
+      const d = dlg.getBoundingClientRect();
+      return [...bar.querySelectorAll("button")].map((b) => {
+        const r = b.getBoundingClientRect();
+        const x = r.left + r.width / 2;
+        const y = r.top + r.height / 2;
+        const inView = x >= 0 && y >= 0 && x < innerWidth && y < innerHeight;
+        const inDlg =
+          x >= d.left && x <= d.right && y >= d.top && y <= d.bottom;
+        const el = inView ? document.elementFromPoint(x, y) : null;
+        return {
+          text: (b.innerText || "").trim(),
+          inView,
+          inDlg,
+          hud: !!el && bar.contains(el),
+        };
+      });
+    }, sel);
+  const noHudPierce = (rows) =>
+    !!rows &&
+    rows.filter((r) => r.inView && r.inDlg).length > 0 &&
+    rows.filter((r) => r.inView && r.inDlg).every((r) => !r.hud);
+  for (const [label, viewport] of MASK_SIZES) {
+    const sizeKey = label.replace("×", "x");
+    await scenario(
+      `遮罩與 HUD：${label} 訪客：設定、武將、主公資訊、升級面板、聊天、結算視窗真正開著時，背景 HUD 不穿透、點不到`,
+      async (mk) => {
+        const { E, p } = await maskEnter(mk, "guest", viewport);
+        const b1 = await buildTower(p, TOWER_CELLS[1], "弓兵塔");
+        check("前置：建一座弓兵塔", b1.ok, b1);
+        const tryPause = async () => {
+          const rows = await p.evaluate(() => {
+            const bar = document.querySelector('[class*="hudActionBar"]');
+            const b =
+              bar &&
+              [...bar.querySelectorAll("button")].find((x) =>
+                /⏸ 暫停/.test(x.innerText || "")
+              );
+            const r = b && b.getBoundingClientRect();
+            if (!r) return null;
+            const x = r.left + r.width / 2;
+            const y = r.top + r.height / 2;
+            const el = document.elementFromPoint(x, y);
+            return {
+              x,
+              y,
+              hit: el
+                ? `${el.tagName.toLowerCase()}.${String(el.className).slice(0, 60)}`
+                : "none",
+            };
+          });
+          if (rows) await p.mouse.click(rows.x, rows.y);
+          await sleep(300);
+          return { paused: (await ctl(p)).paused, at: rows };
+        };
+        for (const [name, open, sel, closeFn] of [
+          [
+            "設定",
+            () => p.locator("button", { hasText: "⚙️" }).first().click(),
+            ".modal.show",
+            () => p.keyboard.press("Escape"),
+          ],
+          [
+            "武將",
+            () =>
+              p
+                .locator("button", { hasText: /^武將$/ })
+                .first()
+                .click(),
+            ".modal.show",
+            () => p.keyboard.press("Escape"),
+          ],
+          [
+            "主公資訊",
+            () => p.locator('button[aria-label="主公資訊"]').first().click(),
+            ".modal.show",
+            () => p.keyboard.press("Escape"),
+          ],
+        ]) {
+          await open();
+          const shown = await until(
+            async () => (await p.locator(".modal.show").count()) > 0,
+            5000
+          );
+          await sleep(400);
+          // .modal.show 是蓋滿畫面的視窗層：視窗內所有 HUD 按鈕中心都不能是 HUD 在最上層
+          const rows = await hudUnder(p, sel);
+          check(
+            `${label} ${name}視窗開著：背景 HUD 按鈕中心都被視窗蓋住（不是 HUD 在最上層）`,
+            !!shown && noHudPierce(rows),
+            rows
+          );
+          if (name === "設定") await shot(p, `mask-${sizeKey}-settings`);
+          await closeFn();
+          // 等淡出結束、視窗元素整個移除
+          await until(
+            async () => (await p.locator(".modal").count()) === 0,
+            5000
+          );
+          await sleep(300);
+        }
+        // 升級面板（點已建的塔）
+        const panel = await towerPanel(p, TOWER_CELLS[1]);
+        await sleep(400);
+        const rowsP = await hudUnder(p, '[data-testid="upgrade-panel"]');
+        const overlapP = rowsP
+          ? rowsP.filter((r) => r.inView && r.inDlg).length
+          : 0;
+        check(
+          `${label} 升級面板開著：落在面板上的 HUD 按鈕中心都被面板蓋住${overlapP === 0 ? "（這個尺寸面板沒有蓋到 HUD 按鈕中心，另列）" : ""}`,
+          !!panel &&
+            !!rowsP &&
+            rowsP.filter((r) => r.inView && r.inDlg).every((r) => !r.hud),
+          rowsP
+        );
+        await closePanel(p);
+        // 聊天視窗
+        const chatBtn = p.locator('button[aria-label="切換聊天視窗"]');
+        if (await chatBtn.count()) {
+          await chatBtn.first().click();
+          await sleep(800);
+          const chatRows = await p.evaluate(() => {
+            const bar = document.querySelector('[class*="hudActionBar"]');
+            const closeBtn = document.querySelector(
+              'button[aria-label="關閉聊天視窗"]'
+            );
+            const panelEl = closeBtn && closeBtn.closest(".card");
+            if (!panelEl) return { panel: null };
+            const d = panelEl.getBoundingClientRect();
+            const rows = [...bar.querySelectorAll("button")].map((b) => {
+              const r = b.getBoundingClientRect();
+              const x = r.left + r.width / 2;
+              const y = r.top + r.height / 2;
+              const inView =
+                x >= 0 && y >= 0 && x < innerWidth && y < innerHeight;
+              const inDlg =
+                x >= d.left && x <= d.right && y >= d.top && y <= d.bottom;
+              const el = inView ? document.elementFromPoint(x, y) : null;
+              return {
+                text: (b.innerText || "").trim(),
+                inView,
+                inDlg,
+                hud: !!el && bar.contains(el),
+              };
+            });
+            return {
+              panel: { x: d.left, y: d.top, w: d.width, h: d.height },
+              rows,
+            };
+          });
+          check(
+            `${label} 聊天視窗開著：落在聊天視窗上的 HUD 按鈕中心都被聊天視窗蓋住${chatRows.rows && chatRows.rows.filter((r) => r.inView && r.inDlg).length === 0 ? "（這個尺寸沒有蓋到 HUD 按鈕中心，另列）" : ""}`,
+            !!chatRows.panel &&
+              chatRows.rows
+                .filter((r) => r.inView && r.inDlg)
+                .every((r) => !r.hud),
+            chatRows
+          );
+          // 用聊天視窗自己的關閉鈕關（窄螢幕時聊天視窗可能蓋住切換鈕）
+          await p
+            .locator('button[aria-label="關閉聊天視窗"]')
+            .first()
+            .click()
+            .catch(() => {});
+          const chatClosed = await until(
+            async () =>
+              (await p.locator('button[aria-label="關閉聊天視窗"]').count()) ===
+              0,
+            5000
+          );
+          check(`${label} 聊天視窗用關閉鈕關得起來`, !!chatClosed);
+          await sleep(300);
+        } else {
+          check(`${label} 聊天按鈕存在`, false);
+        }
+        // 設定視窗開著時在 HUD 暫停的位置點一下：不能暫停（背景 HUD 點不到）
+        await p.locator("button", { hasText: "⚙️" }).first().click();
+        await until(
+          async () => (await p.locator(".modal.show").count()) > 0,
+          5000
+        );
+        await sleep(400);
+        const pausedBehind = await tryPause();
+        check(
+          `${label} 設定視窗開著時點 HUD 暫停的位置：沒有暫停（背景 HUD 點不到）`,
+          !!pausedBehind.at && pausedBehind.paused === false,
+          pausedBehind
+        );
+        await p.keyboard.press("Escape");
+        await until(
+          async () => (await p.locator(".modal").count()) === 0,
+          5000
+        );
+        await sleep(300);
+        // 若背景 HUD 被點穿而暫停了（上面的具名檢查已失敗），關掉設定後照常按 HUD 繼續，讓後面的結算檢查仍會執行
+        if ((await ctl(p)).paused) {
+          await p
+            .locator("button", { hasText: "▶ 繼續" })
+            .first()
+            .click()
+            .catch(() => {});
+          await until(async () => !(await ctl(p)).paused, 3000);
+        }
+        // 結算畫面（受控）
+        check("按進入戰場開第 1 波", await startBattle(p));
+        await endWith(p, { win: false });
+        const res = await until(
+          async () => (await p.locator('[class*="resultOverlay"]').count()) > 0,
+          5000
+        );
+        await sleep(500);
+        const rowsR = await hudUnder(p, '[class*="resultOverlay"]');
+        check(
+          `${label} 結算畫面開著：落在結算畫面上的 HUD 按鈕中心都被蓋住`,
+          !!res &&
+            !!rowsR &&
+            rowsR.filter((r) => r.inView && r.inDlg).length > 0 &&
+            rowsR.filter((r) => r.inView && r.inDlg).every((r) => !r.hud),
+          rowsR
+        );
+        await shot(p, `mask-${sizeKey}-result`);
+        check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+        return E;
+      }
+    );
+    await scenario(
+      `遮罩與 HUD：${label} 沒有金鑰：金鑰視窗開著時背景 HUD 不穿透`,
+      async (mk) => {
+        const E = await mk({
+          maps: TOWER_MAPS,
+          enemies: TOWER_ENEMIES,
+          viewport,
+        });
+        const p = await E.page({ storage: {} });
+        const shown = await until(
+          async () =>
+            (await p.locator('[data-testid="key-setup"]').count()) > 0,
+          20000
+        );
+        await sleep(400);
+        const rows = await hudUnder(p, '[data-testid="key-setup"]');
+        check(
+          `${label} 金鑰視窗開著：落在金鑰視窗上的 HUD 按鈕中心都被蓋住${rows && rows.filter((r) => r.inView && r.inDlg).length === 0 ? "（HUD 沒有在金鑰視窗範圍內，另列）" : ""}`,
+          !!shown &&
+            (!rows ||
+              rows.filter((r) => r.inView && r.inDlg).every((r) => !r.hud)),
+          { shown, rows }
+        );
+        check("沒有任何寫入請求", E.gas.writes().length === 0, E.gas.writes());
+        return E;
+      }
+    );
+  }
+
   // ═══ 18. 入口版面：1280 桌面、390×600、390×844 ═══
   for (const vp of [
     { width: 1280, height: 800 },
