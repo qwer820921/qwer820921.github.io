@@ -33,6 +33,49 @@ import {
 import { TowerEntity, TOWER_CONFIGS } from "./entities/TowerEntity";
 import { EnemyConfigData } from "./entities/EnemyEntity";
 
+/** 拆塔請求（只在本機的畫面與引擎之間使用，不進存檔或後端） */
+export interface TowerSellRequest {
+  /** 開升級面板時的這一場 */
+  battleId: string;
+  towerUid: string;
+  col: number;
+  row: number;
+  /** 玩家確認時看到的返還金額 */
+  expectedRefund: number;
+}
+export type TowerSellRejectReason =
+  | "invalid_request"
+  | "stale_battle"
+  | "not_selected"
+  | "already_sold"
+  | "paused"
+  | "not_prep"
+  | "refund_changed";
+export type TowerSellResult =
+  | { ok: true; refund: number }
+  | {
+      ok: false;
+      reason: TowerSellRejectReason;
+      /** 這座塔現在的返還金額（找不到這座塔時是 null） */
+      refund: number | null;
+      /** 現在能不能拆（備戰中、沒有暫停） */
+      canSell: boolean;
+    };
+const isTowerSellRequest = (v: unknown): v is TowerSellRequest => {
+  if (!v || typeof v !== "object") return false;
+  const r = v as Record<string, unknown>;
+  return (
+    typeof r.battleId === "string" &&
+    r.battleId !== "" &&
+    typeof r.towerUid === "string" &&
+    r.towerUid !== "" &&
+    Number.isSafeInteger(r.col) &&
+    Number.isSafeInteger(r.row) &&
+    Number.isSafeInteger(r.expectedRefund) &&
+    (r.expectedRefund as number) >= 0
+  );
+};
+
 export interface StagePayload {
   stageId: string;
   battleId: string;
@@ -592,6 +635,8 @@ export class BattleEngine {
       pos,
       this.gameMap.tileSize
     );
+    // 建造費已扣款成功：計入這座塔的投入（拆除時依此返還一半，和 Godot 版相同）
+    tower.addInvestment(cfg.cost);
 
     this.gameMap.setOccupied(col, row, tower);
     this.towers.push(tower);
@@ -627,26 +672,54 @@ export class BattleEngine {
   }
 
   /**
-   * 拆除/出售防禦塔 (退款 50% 或準備階段 100%)
+   * 拆除防禦塔（和 Godot 版的拆除相同）：請求要帶開面板時的這一場、這座塔的識別碼與格子，以及玩家看到的返還金額。
+   * 每次都重新檢查：這一場、目前選取中的同一座塔、還沒拆、沒有暫停、備戰中、返還金額等於現在的 floor(投入 × 0.5)；
+   * 任何一項不符就拒絕，金幣、塔、格子與選取都不變。成功時只拆一次、返還一次，釋放格子並取消選取。
+   * 只給格子的舊呼叫方式沒有這一場與預期返還，一律拒絕
    */
-  public sellTower(col: number, row: number): boolean {
-    const idx = this.towers.findIndex(
-      (tw) => !tw.sold && tw.gridCell.col === col && tw.gridCell.row === row
-    );
-    if (idx < 0) return false;
-
-    const tower = this.towers[idx];
-    const isPrep = this.battleManager.gameState === GameState.PREP;
-    const refund = tower.getSellRefund(isPrep);
+  public sellTower(request: TowerSellRequest): TowerSellResult;
+  public sellTower(col: number, row: number): TowerSellResult;
+  public sellTower(request: unknown, _row?: number): TowerSellResult {
+    const bm = this.battleManager;
+    const reject = (
+      reason: TowerSellRejectReason,
+      tower: TowerEntity | null
+    ): TowerSellResult => ({
+      ok: false,
+      reason,
+      refund: tower ? tower.getSellRefund() : null,
+      canSell: bm.gameState === GameState.PREP && !bm.manualPaused,
+    });
+    if (!isTowerSellRequest(request)) return reject("invalid_request", null);
+    if (request.battleId !== bm.battleId) return reject("stale_battle", null);
+    const sel = this.selectedUnit;
+    const tower =
+      this.towers.find((tw) => tw.towerUid === request.towerUid) ?? null;
+    const selected =
+      !!tower &&
+      !!sel &&
+      sel.type === "tower" &&
+      sel.id === request.towerUid &&
+      sel.col === request.col &&
+      sel.row === request.row &&
+      tower.gridCell.col === request.col &&
+      tower.gridCell.row === request.row;
+    if (!tower || !selected) return reject("not_selected", null);
+    if (tower.sold) return reject("already_sold", tower);
+    if (bm.manualPaused) return reject("paused", tower);
+    if (bm.gameState !== GameState.PREP) return reject("not_prep", tower);
+    const refund = tower.getSellRefund();
+    if (request.expectedRefund !== refund)
+      return reject("refund_changed", tower);
 
     tower.sell();
-    this.gameMap.clearOccupied(col, row);
-    this.towers.splice(idx, 1);
+    this.gameMap.clearOccupied(request.col, request.row);
+    this.towers.splice(this.towers.indexOf(tower), 1);
     this.selectedUnit = null;
 
-    this.battleManager.refundGold(refund);
+    bm.refundGold(refund);
     this.floatingTexts.spawn(`+${refund} 金幣`, "#ffeb3b", tower.x, tower.y);
-    return true;
+    return { ok: true, refund };
   }
 
   /**

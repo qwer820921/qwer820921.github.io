@@ -105,6 +105,9 @@ export const TOWER_CONFIGS: Record<string, TowerConfigInfo> = {
 };
 
 export class TowerEntity {
+  /** 拆除時返還投入的比例 */
+  public static readonly SELL_REFUND_RATIO = 0.5;
+
   public towerUid: string;
   public towerTypeKey: string;
   public towerName: string;
@@ -208,8 +211,9 @@ export class TowerEntity {
     }
   }
 
-  public getSellRefund(isPrep = false): number {
-    return isPrep ? this.investedGold : Math.floor(this.investedGold * 0.5);
+  /** 拆除時返還的戰鬥金幣：floor(已實際支付的建造與升級費 × 0.5)，不分階段、不依等級推算（和 Godot 版相同）。參數只為相容舊的呼叫端，不影響金額 */
+  public getSellRefund(_legacyIsPrep?: boolean): number {
+    return Math.floor(this.investedGold * TowerEntity.SELL_REFUND_RATIO);
   }
 
   public upgrade(): void {
@@ -290,7 +294,10 @@ export class TowerEntity {
     soundMgr.play("tower_shoot");
   }
 
-  private findTarget(enemies: EnemyEntity[], rangePx: number): EnemyEntity | null {
+  private findTarget(
+    enemies: EnemyEntity[],
+    rangePx: number
+  ): EnemyEntity | null {
     let best: EnemyEntity | null = null;
     for (const e of enemies) {
       if (e.isDead || !this.canTarget(e)) continue;

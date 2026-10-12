@@ -4,7 +4,12 @@
  * 100% 相容 Protocol 7 介面合約
  */
 
-import { BattleEngine, StagePayload } from "./BattleEngine";
+import {
+  BattleEngine,
+  StagePayload,
+  TowerSellRequest,
+  TowerSellResult,
+} from "./BattleEngine";
 import { StatsSyncData, BattleResultData, GameState } from "./BattleManager";
 import { HeroStateData, HeroEntity } from "./entities/HeroEntity";
 import { TowerEntity } from "./entities/TowerEntity";
@@ -16,13 +21,21 @@ export interface PlacementMenuData {
   isBuild: boolean;
 }
 
+/** 打開防禦塔面板時記下的資訊：這座塔屬於哪一場（拆除請求要帶回這一場，不能換成之後的新場次） */
+export interface TowerPanelContext {
+  battleId: string;
+}
+
 export class LocalGameBridge {
   private engine: BattleEngine;
 
   // React 訂閱回調
   public onStatsChanged?: (stats: StatsSyncData) => void;
   public onPlacementMenuOpen?: (data: PlacementMenuData | null) => void;
-  public onUpgradePanelOpen?: (tower: TowerEntity | null) => void;
+  public onUpgradePanelOpen?: (
+    tower: TowerEntity | null,
+    context?: TowerPanelContext
+  ) => void;
   public onHeroInfoOpen?: (hero: HeroEntity | null) => void;
   public onBattleEnded?: (result: BattleResultData) => void;
   public onWaveRejected?: (wave: number, reason: string) => void;
@@ -42,7 +55,9 @@ export class LocalGameBridge {
     };
 
     this.engine.onShowUpgradePanel = (tower) => {
-      this.onUpgradePanelOpen?.(tower);
+      this.onUpgradePanelOpen?.(tower, {
+        battleId: this.engine.battleManager.battleId,
+      });
     };
 
     this.engine.onShowHeroInfo = (hero) => {
@@ -85,7 +100,8 @@ export class LocalGameBridge {
   }
 
   public togglePause(): void {
-    this.engine.battleManager.manualPaused = !this.engine.battleManager.manualPaused;
+    this.engine.battleManager.manualPaused =
+      !this.engine.battleManager.manualPaused;
     this.engine.battleManager.syncStats();
   }
 
@@ -103,7 +119,11 @@ export class LocalGameBridge {
   }
 
   // 部署與操作
-  public placeHero(col: number, row: number, heroState: HeroStateData): boolean {
+  public placeHero(
+    col: number,
+    row: number,
+    heroState: HeroStateData
+  ): boolean {
     const success = this.engine.placeHero(col, row, heroState);
     if (success) {
       this.onPlacementMenuOpen?.(null);
@@ -123,12 +143,12 @@ export class LocalGameBridge {
     return this.engine.upgradeTower(col, row);
   }
 
-  public sellTower(col: number, row: number): boolean {
-    const success = this.engine.sellTower(col, row);
-    if (success) {
+  public sellTower(request: TowerSellRequest): TowerSellResult {
+    const result = this.engine.sellTower(request);
+    if (result.ok) {
       this.onUpgradePanelOpen?.(null);
     }
-    return success;
+    return result;
   }
 
   public setTowerTargetMode(col: number, row: number, mode: string): void {

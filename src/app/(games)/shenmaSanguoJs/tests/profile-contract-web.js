@@ -6123,7 +6123,7 @@ module.exports = async function profileContractWeb(page) {
         { s4 }
       );
       check(
-        "第 2 波馬超照常攻擊，首擊紀錄不變（同一場只觸發一次）",
+        "第 2 波時首擊紀錄不變（同一場只觸發一次；只核紀錄，不驗傷害）",
         sameJson(s4.firstStrike, s1.firstStrike),
         { before: s1.firstStrike, after: s4.firstStrike }
       );
@@ -6266,6 +6266,644 @@ module.exports = async function profileContractWeb(page) {
         (await p.evaluate(() =>
           localStorage.getItem("shenma_js_guest_state")
         )) === saveBefore && E.gas.players().length === 0
+      );
+      return E;
+    }
+  );
+
+  // ═══ 26. 防禦塔的投入與拆除：返還投入的一半；拆除只在備戰、沒有暫停、選取中的同一座塔、帶這一場與看到的返還金額 ═══
+  // 建造與升級從正常的部署選單與升級面板操作；拒絕的情況從面板（停用與說明）與頁面用的同一個入口（window.__testBridge.sellTower）送出，
+  // 前置條件用既有的操作或引擎方法（受控，不是自然實戰）。期待值照 Godot 版的建造費、升級費與 floor(投入 × 0.5) 手寫
+  const TOWER_CELLS = [
+    [2, 1],
+    [4, 1],
+    [6, 1],
+  ];
+  // 敵人是很慢、打不倒的測試木樁：開戰後一段時間內都還在戰鬥中（不會被塔打完而結算）
+  const SLOW_DUMMY = { ...DUMMY, enemy_id: "dummy_slow", speed: 10 };
+  const TOWER_ENEMIES = [...ENEMIES, SLOW_DUMMY];
+  const TOWER_MAPS = SKILL_MAPS.map((m) => {
+    const pj = JSON.parse(m.path_json);
+    return {
+      ...m,
+      path_json: JSON.stringify({ ...pj, build_zones: TOWER_CELLS }),
+      waves: [
+        {
+          wave: 1,
+          enemies: [
+            { enemy_id: "dummy_slow", count: 1, interval: 1, path: "path_a" },
+          ],
+        },
+      ],
+    };
+  });
+  /** 引擎目前的這一場：battleId、金幣、塔（識別碼、種類、等級、投入、格子）、三個建築位的占用、選取 */
+  const towerState = (p) =>
+    p.evaluate((cells) => {
+      const e = window.__testBridge.engine;
+      return {
+        battleId: e.battleManager.battleId,
+        state: e.battleManager.gameState,
+        gold: e.battleManager.battleGold,
+        towers: e.towers.map((t) => [
+          t.towerUid,
+          t.towerTypeKey,
+          t.towerLevel,
+          t.investedGold,
+          t.gridCell.col,
+          t.gridCell.row,
+        ]),
+        occupied: cells.map(([c, r]) => e.gameMap.isOccupied(c, r)),
+        selected: e.selectedUnit ? { ...e.selectedUnit } : null,
+      };
+    }, TOWER_CELLS);
+  /** 升級面板上顯示的投入、等級、拆除按鈕與說明 */
+  const panelInfo = (p) =>
+    p.evaluate(() => {
+      const el = document.querySelector('[data-testid="upgrade-panel"]');
+      if (!el) return null;
+      const sell = el.querySelector('[data-testid="tower-sell"]');
+      const t = el.innerText;
+      const inv = t.match(/累計軍資\s*💰\s*(\d+)/);
+      const lv = t.match(/Lv\.(\d+)/);
+      const pick = (sel) => {
+        const x = el.querySelector(sel);
+        return x ? x.innerText.trim() : null;
+      };
+      return {
+        invested: inv ? Number(inv[1]) : null,
+        level: lv ? Number(lv[1]) : null,
+        sellText: sell ? sell.innerText.trim() : null,
+        sellDisabled: sell ? sell.disabled : null,
+        hint: pick('[data-testid="tower-sell-hint"]'),
+        note: pick('[data-testid="tower-sell-note"]'),
+      };
+    });
+  const closePanel = async (p) => {
+    const panel = p.locator('[data-testid="upgrade-panel"]');
+    if (await panel.count())
+      await panel
+        .locator("button", { hasText: "×" })
+        .first()
+        .click()
+        .catch(() => {});
+    return until(async () => (await panel.count()) === 0, 5000);
+  };
+  /** 用頁面同一個入口送拆除請求（不經過面板的停用） */
+  const bridgeSell = (p, req) =>
+    p.evaluate((r) => window.__testBridge.sellTower(r), req);
+  /** 面板打開時記下的請求：這一場、選取中的塔、格子、按鈕上顯示的返還金額 */
+  const panelReceipt = (p) =>
+    p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      const s = e.selectedUnit;
+      const btn = document.querySelector('[data-testid="tower-sell"]');
+      const m = btn && btn.innerText.match(/\+(\d+)/);
+      return s && m
+        ? {
+            battleId: e.battleManager.battleId,
+            towerUid: s.id,
+            col: s.col,
+            row: s.row,
+            expectedRefund: Number(m[1]),
+          }
+        : null;
+    });
+
+  await scenario(
+    "防禦塔投入與拆除：共用帳號備戰中建造、升級、拆除（滑鼠與鍵盤），返還投入的一半，拆後可再建、沒有寫入",
+    async (mk) => {
+      const data = NEW({
+        capacity: 20,
+        gold: 500,
+        team: [{ hero_id: "ma_chao", slot: 1 }],
+      });
+      const E = await mk({
+        seed: [{ key: "k_tower", data, rev: 4 }],
+        maps: TOWER_MAPS,
+        enemies: TOWER_ENEMIES,
+      });
+      const p = await E.page({ storage: { shenma_player_key: "k_tower" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      const g0 = await fieldGold(p, false);
+      const b1 = await buildTower(p, TOWER_CELLS[0], "弓兵塔");
+      await towerPanel(p, TOWER_CELLS[0]);
+      const i1 = await panelInfo(p);
+      const s1 = await towerState(p);
+      check(
+        "建弓兵塔：扣 50（畫面同步），面板顯示投入 50、拆除 +25、可以拆",
+        b1.ok &&
+          g0.battle === 5000 &&
+          s1.gold === 4950 &&
+          (await fieldGold(p, false)).hud === goldText(4950) &&
+          !!i1 &&
+          i1.invested === 50 &&
+          i1.level === 1 &&
+          i1.sellText === "拆除 +25" &&
+          i1.sellDisabled === false &&
+          i1.hint === null &&
+          sameJson(
+            s1.towers.map((t) => t.slice(1)),
+            [["archer", 1, 50, 2, 1]]
+          ),
+        { b1, i1, s1 }
+      );
+      await p
+        .locator('[data-testid="upgrade-panel"] button', { hasText: "升級" })
+        .first()
+        .click();
+      await sleep(300);
+      const i2 = await panelInfo(p);
+      const s2 = await towerState(p);
+      check(
+        "面板升級：扣 50、Lv.2、投入 100、拆除 +50",
+        s2.gold === 4900 &&
+          !!i2 &&
+          i2.level === 2 &&
+          i2.invested === 100 &&
+          i2.sellText === "拆除 +50",
+        { i2, s2 }
+      );
+      await p.locator('[data-testid="tower-sell"]').click();
+      const closed = await until(
+        async () =>
+          (await p.locator('[data-testid="upgrade-panel"]').count()) === 0,
+        5000
+      );
+      const s3 = await towerState(p);
+      check(
+        "滑鼠按拆除：面板關閉、返還 50（4900 → 4950）、塔移除、格子釋放、取消選取",
+        !!closed &&
+          s3.gold === 4950 &&
+          s3.towers.length === 0 &&
+          s3.occupied[0] === false &&
+          s3.selected === null,
+        { closed, s3 }
+      );
+      const b2 = await buildTower(p, TOWER_CELLS[0], "弓兵塔");
+      const b3 = await buildTower(p, TOWER_CELLS[1], "文士塔");
+      await towerPanel(p, TOWER_CELLS[1]);
+      await p
+        .locator('[data-testid="upgrade-panel"] button', { hasText: "升級" })
+        .first()
+        .click();
+      await sleep(300);
+      const i4 = await panelInfo(p);
+      const s4 = await towerState(p);
+      check(
+        "拆後同一格可以再建；文士塔建 80＋升 75：投入 155、拆除 +77（無條件捨去）",
+        b2.ok &&
+          b3.ok &&
+          s4.gold === 4950 - 50 - 80 - 75 &&
+          !!i4 &&
+          i4.invested === 155 &&
+          i4.sellText === "拆除 +77",
+        { b2, b3, i4, s4 }
+      );
+      await p.locator('[data-testid="tower-sell"]').focus();
+      await p.keyboard.press("Enter");
+      const closed2 = await until(
+        async () =>
+          (await p.locator('[data-testid="upgrade-panel"]').count()) === 0,
+        5000
+      );
+      const s5 = await towerState(p);
+      check(
+        "鍵盤（在拆除按 Enter）：返還 77、文士塔移除，弓兵塔還在",
+        !!closed2 &&
+          s5.gold === s4.gold + 77 &&
+          sameJson(
+            s5.towers.map((t) => t.slice(1)),
+            [["archer", 1, 50, 2, 1]]
+          ) &&
+          s5.occupied[1] === false,
+        { closed2, s5 }
+      );
+      const back = readBack(E, "k_tower");
+      check(
+        "沒有任何寫入；雲端存檔的世界金幣 500、版本 4 不變",
+        E.gas.writes().length === 0 &&
+          !!back &&
+          back.rev === 4 &&
+          back.data.gold === 500,
+        { writes: E.gas.writes(), back }
+      );
+      return E;
+    }
+  );
+
+  // 拒絕的情況各自用新的頁面與相同前置（兩座弓兵塔 A、B），一個情況錯誤地拆掉塔，不會影響其他情況的判定
+  /** 前置：建弓兵塔 A（2,1）、B（4,1），打開 A 的面板並記下請求 */
+  async function towerGuardSetup(mk) {
+    const E = await mk({ maps: TOWER_MAPS, enemies: TOWER_ENEMIES });
+    const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+    check("以訪客進入", await enterGuest(p));
+    await waitRemoteStage(p, E);
+    const bA = await buildTower(p, TOWER_CELLS[0], "弓兵塔");
+    const bB = await buildTower(p, TOWER_CELLS[1], "弓兵塔");
+    await towerPanel(p, TOWER_CELLS[0]);
+    const rA = await panelReceipt(p);
+    check(
+      "前置：建兩座弓兵塔 A、B，A 的面板記下請求（返還 25）",
+      bA.ok && bB.ok && !!rA && rA.expectedRefund === 25,
+      { bA, bB, rA }
+    );
+    return { E, p, rA: rA || {} };
+  }
+
+  await scenario(
+    "防禦塔拆除守門：暫停中按鈕停用並說明，入口也拒絕",
+    async (mk) => {
+      const { E, p, rA } = await towerGuardSetup(mk);
+      await closePanel(p);
+      await p.locator("button", { hasText: "⏸ 暫停" }).first().click();
+      await until(
+        async () =>
+          (await p.locator("button", { hasText: "▶ 繼續" }).count()) > 0,
+        5000
+      );
+      await towerPanel(p, TOWER_CELLS[0]);
+      const ip = await panelInfo(p);
+      check(
+        "暫停中：拆除按鈕停用，說明只有備戰中、沒有暫停時可以拆",
+        !!ip &&
+          ip.sellDisabled === true &&
+          ip.hint === "只有備戰中、沒有暫停時可以拆除（返還投入的一半）。",
+        ip
+      );
+      const before = await towerState(p);
+      const rp = await bridgeSell(p, rA);
+      check(
+        "暫停中從入口送請求：拒絕 paused，狀態不變",
+        rp &&
+          rp.ok === false &&
+          rp.reason === "paused" &&
+          sameJson(await towerState(p), before),
+        { rp, before, after: await towerState(p) }
+      );
+      return E;
+    }
+  );
+
+  for (const [label, prep, makeReq, reason] of [
+    [
+      "選了 B 卻送 A",
+      async (p) => {
+        await closePanel(p);
+        await towerPanel(p, TOWER_CELLS[1]);
+        const sel = (await towerState(p)).selected;
+        check(
+          "前置：關掉 A 的面板再點 B，選取的是 B",
+          !!sel && sel.type === "tower" && sel.col === 4 && sel.row === 1,
+          sel
+        );
+      },
+      (rA) => rA,
+      "not_selected",
+    ],
+    [
+      "A 的識別碼配 B 的格子",
+      null,
+      (rA) => ({ ...rA, col: 4 }),
+      "not_selected",
+    ],
+    [
+      "不存在的識別碼",
+      null,
+      (rA) => ({ ...rA, towerUid: "tower_999" }),
+      "not_selected",
+    ],
+    [
+      "別的場次",
+      null,
+      (rA) => ({ ...rA, battleId: "battle_old" }),
+      "stale_battle",
+    ],
+    [
+      "缺 expectedRefund",
+      null,
+      (rA) => ({
+        battleId: rA.battleId,
+        towerUid: rA.towerUid,
+        col: 2,
+        row: 1,
+      }),
+      "invalid_request",
+    ],
+    [
+      "expectedRefund 是字串",
+      null,
+      (rA) => ({ ...rA, expectedRefund: "25" }),
+      "invalid_request",
+    ],
+    ["空的請求", null, () => null, "invalid_request"],
+    [
+      "返還金額不對（24，實際 25）",
+      null,
+      (rA) => ({ ...rA, expectedRefund: 24 }),
+      "refund_changed",
+    ],
+  ]) {
+    await scenario(`防禦塔拆除守門（入口）：${label}`, async (mk) => {
+      const { E, p, rA } = await towerGuardSetup(mk);
+      if (prep) await prep(p);
+      const before = await towerState(p);
+      const r = await bridgeSell(p, makeReq(rA));
+      const after = await towerState(p);
+      check(
+        `拒絕 ${reason}，金幣、塔、格子與選取都不變`,
+        r && r.ok === false && r.reason === reason && sameJson(after, before),
+        { r, before, after }
+      );
+      if (reason === "refund_changed")
+        check("拒絕結果帶現在的返還 25", !!r && r.refund === 25, r);
+      return E;
+    });
+  }
+
+  await scenario(
+    "防禦塔拆除守門：戰鬥中按鈕停用並說明，入口也拒絕",
+    async (mk) => {
+      const { E, p, rA } = await towerGuardSetup(mk);
+      await closePanel(p);
+      check("開戰", await startBattle(p));
+      await towerPanel(p, TOWER_CELLS[0]);
+      const ib = await panelInfo(p);
+      const bb = await towerState(p);
+      const rb = await bridgeSell(p, rA);
+      const ab = await towerState(p);
+      check(
+        "戰鬥中：拆除按鈕停用並說明；入口拒絕 not_prep，塔與格子不變",
+        !!ib &&
+          ib.sellDisabled === true &&
+          !!ib.hint &&
+          rb &&
+          rb.ok === false &&
+          rb.reason === "not_prep" &&
+          sameJson(ab.towers, bb.towers) &&
+          sameJson(ab.occupied, bb.occupied),
+        { ib, rb, bb, ab }
+      );
+      return E;
+    }
+  );
+
+  await scenario("防禦塔拆除守門：結算中入口也拒絕", async (mk) => {
+    const { E, p, rA } = await towerGuardSetup(mk);
+    await closePanel(p);
+    check("開戰", await startBattle(p));
+    await endWith(p, { win: false });
+    await until(async () => (await bm(p, "state")) === 3, 5000);
+    const br = await towerState(p);
+    const rr = await bridgeSell(p, rA);
+    const ar = await towerState(p);
+    check(
+      "結算中：入口拒絕 not_prep，塔、格子與金幣不變",
+      rr &&
+        rr.ok === false &&
+        rr.reason === "not_prep" &&
+        sameJson(ar.towers, br.towers) &&
+        sameJson(ar.occupied, br.occupied) &&
+        ar.gold === br.gold,
+      { rr, br, ar }
+    );
+    check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+    return E;
+  });
+
+  await scenario(
+    "防禦塔拆除守門：升級前記下的請求被拒，面板顯示新金額後再按一次才拆；同一份請求不能拆兩次",
+    async (mk) => {
+      const E = await mk({ maps: TOWER_MAPS, enemies: TOWER_ENEMIES });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      await buildTower(p, TOWER_CELLS[0], "弓兵塔");
+      await towerPanel(p, TOWER_CELLS[0]);
+      const old = await panelReceipt(p);
+      check(
+        "面板記下的請求：這一場、這座塔、格子、返還 25",
+        !!old &&
+          old.expectedRefund === 25 &&
+          old.col === 2 &&
+          old.row === 1 &&
+          old.battleId === (await bm(p, "battleId")),
+        old
+      );
+      await p
+        .locator('[data-testid="upgrade-panel"] button', { hasText: "升級" })
+        .first()
+        .click();
+      await sleep(300);
+      const s0 = await towerState(p);
+      const r1 = await bridgeSell(p, old);
+      check(
+        "升級後送舊的請求（25）：拒絕 refund_changed（現在 50），塔、投入、金幣不變",
+        r1 &&
+          r1.ok === false &&
+          r1.reason === "refund_changed" &&
+          r1.refund === 50 &&
+          sameJson(await towerState(p), s0),
+        { r1, s0 }
+      );
+      const i1 = await panelInfo(p);
+      check(
+        "面板顯示新的返還（拆除 +50），按鈕仍可以按",
+        !!i1 && i1.sellText === "拆除 +50" && i1.sellDisabled === false,
+        i1
+      );
+      const fresh = await panelReceipt(p);
+      await p.locator('[data-testid="tower-sell"]').click();
+      await until(
+        async () =>
+          (await p.locator('[data-testid="upgrade-panel"]').count()) === 0,
+        5000
+      );
+      const s1 = await towerState(p);
+      check(
+        "再按一次拆除：返還 50、塔移除",
+        s1.gold === s0.gold + 50 && s1.towers.length === 0,
+        { s0, s1 }
+      );
+      const r2 = await bridgeSell(p, fresh);
+      check(
+        "同一份請求再送一次：拒絕，金幣不變（只返還一次）",
+        r2 && r2.ok === false && (await towerState(p)).gold === s1.gold,
+        { r2 }
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "防禦塔拆除守門：後端設定到達重新載入後，舊場次的面板按拆除被拒絕並說明",
+    async (mk) => {
+      const E = await mk({ maps: TOWER_MAPS, enemies: TOWER_ENEMIES });
+      const hold = E.gas.rule("get_all_maps", "hold");
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      check(
+        "後端關卡設定還沒回應（暫停中）",
+        await until(() => hold.waiting.length > 0, 15000)
+      );
+      const bid0 = await stableBattle(p);
+      const buildCells = await p.evaluate(() => {
+        const e = window.__testBridge.engine;
+        const m = e.gameMap;
+        const rect = e.canvas.getBoundingClientRect();
+        const out = [];
+        for (let r = 0; r < m.rows; r++)
+          for (let c = 0; c < m.cols; c++) {
+            if (!m.canPlaceTower(c, r)) continue;
+            const w = m.gridToWorld(c, r);
+            if (
+              document.elementFromPoint(rect.left + w.x, rect.top + w.y) ===
+              e.canvas
+            )
+              out.push([c, r]);
+          }
+        return out;
+      });
+      const b0 = buildCells.length
+        ? await buildTower(p, buildCells[0], "弓兵塔")
+        : { ok: false, step: "no-build-cell" };
+      await towerPanel(p, buildCells[0] || [0, 0]);
+      const i0 = await panelInfo(p);
+      check(
+        "內建關卡上建弓兵塔並打開面板（拆除 +25）",
+        b0.ok && !!i0 && i0.sellText === "拆除 +25",
+        { b0, i0, cells: buildCells.length }
+      );
+      check("放行後端關卡設定", hold.release("ok") === 1);
+      const bid1 = await nextBattle(p, bid0);
+      const s1 = await towerState(p);
+      const stillOpen =
+        (await p.locator('[data-testid="upgrade-panel"]').count()) > 0;
+      check(
+        "重新載入成新的一場（場上沒有塔），舊的面板還開著",
+        !!bid1 && s1.towers.length === 0 && stillOpen,
+        { bid0, bid1, s1, stillOpen }
+      );
+      if (stillOpen) await p.locator('[data-testid="tower-sell"]').click();
+      await sleep(300);
+      const i1 = await panelInfo(p);
+      const s2 = await towerState(p);
+      check(
+        "舊面板按拆除：不拆、不退錢（新的一場仍 5000），說明這座塔不在目前這一場",
+        !!i1 &&
+          i1.note === "這座塔不在目前這一場，請重新點選。" &&
+          s2.gold === 5000 &&
+          s2.battleId === bid1,
+        { i1, s2 }
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "防禦塔拆除守門：重新整理後同一格的新塔也叫 tower_1，舊場次的請求仍被拒",
+    async (mk) => {
+      const E = await mk({ maps: TOWER_MAPS, enemies: TOWER_ENEMIES });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      await buildTower(p, TOWER_CELLS[0], "弓兵塔");
+      await towerPanel(p, TOWER_CELLS[0]);
+      const old = await panelReceipt(p);
+      await closePanel(p);
+      await p.reload();
+      check("重新整理後以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      await buildTower(p, TOWER_CELLS[0], "弓兵塔");
+      await towerPanel(p, TOWER_CELLS[0]);
+      const now = await panelReceipt(p);
+      const before = await towerState(p);
+      const r = await bridgeSell(p, old);
+      check(
+        "新的一場同一個識別碼、同一格、同樣的返還：舊請求拒絕 stale_battle，狀態不變",
+        !!old &&
+          !!now &&
+          old.towerUid === now.towerUid &&
+          old.battleId !== now.battleId &&
+          old.col === now.col &&
+          old.expectedRefund === now.expectedRefund &&
+          r &&
+          r.ok === false &&
+          r.reason === "stale_battle" &&
+          sameJson(await towerState(p), before),
+        { old, now, r }
+      );
+      const ok = await bridgeSell(p, now);
+      check(
+        "這一場的請求才成功（返還 25）",
+        ok && ok.ok === true && ok.refund === 25,
+        ok
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "防禦塔面板的版面：390×600 拆除按鈕看得到、點得到",
+    async (mk) => {
+      const E = await mk({
+        maps: TOWER_MAPS,
+        enemies: TOWER_ENEMIES,
+        viewport: { width: 390, height: 600 },
+      });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const b = await buildTower(p, TOWER_CELLS[0], "弓兵塔");
+      const panel = await towerPanel(p, TOWER_CELLS[0]);
+      // 面板有約 0.15 秒的放大動畫：等它結束再取點與截圖
+      await sleep(400);
+      const o = await p.evaluate(() => {
+        const btn = document.querySelector('[data-testid="tower-sell"]');
+        if (!btn) return null;
+        btn.scrollIntoView({ block: "nearest" });
+        const r = btn.getBoundingClientRect();
+        const pts = [0.1, 0.5, 0.9].map((fx) => {
+          const x = r.left + r.width * fx;
+          const y = r.top + r.height / 2;
+          const hit = document.elementFromPoint(x, y);
+          return !!hit && btn.contains(hit);
+        });
+        return {
+          inView:
+            r.top >= 0 &&
+            r.bottom <= innerHeight &&
+            r.left >= 0 &&
+            r.right <= innerWidth,
+          pts,
+          text: btn.innerText.trim(),
+          chat: !!document.querySelector('button[aria-label="切換聊天視窗"]'),
+          noHScroll: document.documentElement.scrollWidth <= innerWidth + 1,
+        };
+      });
+      check(
+        "390×600：拆除按鈕在視窗內、左中右三點點得到它自己（不排除聊天按鈕）、沒有橫向捲動",
+        b.ok &&
+          !!panel &&
+          !!o &&
+          o.inView &&
+          o.pts.every(Boolean) &&
+          o.chat &&
+          o.noHScroll &&
+          o.text === "拆除 +25",
+        { b, o }
+      );
+      await shot(p, "tower-panel-390x600");
+      await p.locator('[data-testid="tower-sell"]').click();
+      const s = await towerState(p);
+      check(
+        "390×600：按拆除後返還 25（5000 − 50 ＋ 25 ＝ 4975）、塔移除",
+        s.gold === 4975 && s.towers.length === 0,
+        s
       );
       return E;
     }

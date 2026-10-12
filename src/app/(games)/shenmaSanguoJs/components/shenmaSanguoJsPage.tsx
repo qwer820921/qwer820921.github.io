@@ -15,6 +15,7 @@ import {
   GameState,
 } from "../engine/BattleManager";
 import { TowerEntity } from "../engine/entities/TowerEntity";
+import { TowerSellRequest, TowerSellResult } from "../engine/BattleEngine";
 import { HeroEntity, HeroStateData } from "../engine/entities/HeroEntity";
 import {
   BUILTIN_STAGES,
@@ -167,6 +168,10 @@ const ShenmaSanguoJsPage: React.FC = () => {
     null
   );
   const [upgradeTower, setUpgradeTower] = useState<TowerEntity | null>(null);
+  // 防禦塔面板打開時這座塔所屬的那一場（拆除請求帶回這一場，不換成之後的新場次）
+  const [towerPanelBattleId, setTowerPanelBattleId] = useState<string | null>(
+    null
+  );
   const [heroInfo, setHeroInfo] = useState<HeroEntity | null>(null);
   const [battleResult, setBattleResult] = useState<BattleResultData | null>(
     null
@@ -353,7 +358,10 @@ const ShenmaSanguoJsPage: React.FC = () => {
       }
     };
     bridge.onPlacementMenuOpen = (m) => setPlacementMenu(m);
-    bridge.onUpgradePanelOpen = (tw) => setUpgradeTower(tw);
+    bridge.onUpgradePanelOpen = (tw, context) => {
+      setUpgradeTower(tw);
+      setTowerPanelBattleId(tw && context ? context.battleId : null);
+    };
     bridge.onHeroInfoOpen = (h) => setHeroInfo(h);
 
     bridge.onBattleEnded = (r) => {
@@ -517,9 +525,10 @@ const ShenmaSanguoJsPage: React.FC = () => {
     bridgeRef.current?.upgradeTower(col, row);
   };
 
-  const handleSellTower = (col: number, row: number) => {
-    bridgeRef.current?.sellTower(col, row);
-  };
+  const handleSellTower = (request: TowerSellRequest): TowerSellResult =>
+    bridgeRef.current
+      ? bridgeRef.current.sellTower(request)
+      : { ok: false, reason: "stale_battle", refund: null, canSell: false };
 
   const handleTargetModeChange = (col: number, row: number, mode: string) => {
     bridgeRef.current?.setTowerTargetMode(col, row, mode);
@@ -638,6 +647,8 @@ const ShenmaSanguoJsPage: React.FC = () => {
               tower={upgradeTower}
               currentGold={stats.gold}
               isPrepPhase={stats.game_state === GameState.PREP}
+              isPaused={stats.paused}
+              battleId={towerPanelBattleId}
               onUpgrade={handleUpgradeTower}
               onSell={handleSellTower}
               onTargetModeChange={handleTargetModeChange}
