@@ -363,6 +363,18 @@ const ShenmaSanguoJsPage: React.FC = () => {
       setTowerPanelBattleId(tw && context ? context.battleId : null);
     };
     bridge.onHeroInfoOpen = (h) => setHeroInfo(h);
+    // 武將陣亡：只處理目前這個 bridge 與這一場（舊場次晚到的通知不改新場的名單）；部署選單的「已在場上」換成這一場還活著的武將，
+    // 陣亡的那一位就能再派；武將資訊只在顯示的正是陣亡的那個實例時關閉
+    bridge.onHeroRosterChanged = (info) => {
+      if (
+        bridgeRef.current !== bridge ||
+        info.battleId !== battleCtxRef.current?.battleId
+      ) {
+        return;
+      }
+      setPlacedHeroIds([...info.aliveHeroIds]);
+      setHeroInfo((cur) => (cur === info.died ? null : cur));
+    };
 
     bridge.onBattleEnded = (r) => {
       // 只處理目前載入的這一場（舊場次晚到的回呼不改畫面、不結算）

@@ -6,7 +6,7 @@
  * 2. 5 席出征隊伍編排與 Cost 容量上限檢核
  * 3. 13 大名將養成升級、數值成長、金幣防呆
  * 4. 關卡解鎖推進、波次情報、勝負星級結算、主公晉升
- * 5. 防禦塔 5 大兵種建造、升級、索敵切換、全額退費
+ * 5. 防禦塔 5 大兵種建造、升級、索敵切換、拆除返還一半
  * 6. 武將道路阻擋、波次前進、飄字與戰鬥狀態機
  * 7. 存檔 JSON 匯出與還原
  * 8. 本地 HTTP 伺服器響應驗證 (200 OK)
@@ -80,7 +80,9 @@ async function runComprehensiveVerification() {
   if (localStorage.getItem(COMPAT_PLAYER_KEY) !== "lord_account_A") {
     throw new Error("COMPAT_PLAYER_KEY 未正確同步帳號 A");
   }
-  console.log("  ✔ 1.1 帳號 A (lord_account_A) 登入成功，LOCAL & COMPAT 金鑰完全寫入");
+  console.log(
+    "  ✔ 1.1 帳號 A (lord_account_A) 登入成功，LOCAL & COMPAT 金鑰完全寫入"
+  );
 
   // 1.2 主公暱稱修改
   store.updateNickname("常山趙子龍");
@@ -102,7 +104,9 @@ async function runComprehensiveVerification() {
   if (localStorage.getItem(COMPAT_PLAYER_KEY) !== "lord_account_B") {
     throw new Error("切換後 COMPAT_PLAYER_KEY 未更新至帳號 B");
   }
-  console.log("  ✔ 1.3 成功切換至帳號 B (lord_account_B)，全快取與金鑰無縫遷移");
+  console.log(
+    "  ✔ 1.3 成功切換至帳號 B (lord_account_B)，全快取與金鑰無縫遷移"
+  );
 
   // 1.4 登出當前帳號
   store.logout();
@@ -113,9 +117,13 @@ async function runComprehensiveVerification() {
     throw new Error("登出後 LOCAL_PLAYER_KEY 仍殘留");
   }
   if (localStorage.getItem(COMPAT_PLAYER_KEY) !== null) {
-    throw new Error("登出後 COMPAT_PLAYER_KEY 仍殘留（導致舊帳號復活的元凶已被剷除）");
+    throw new Error(
+      "登出後 COMPAT_PLAYER_KEY 仍殘留（導致舊帳號復活的元凶已被剷除）"
+    );
   }
-  console.log("  ✔ 1.4 登出成功：LOCAL_PLAYER_KEY 與 COMPAT_PLAYER_KEY 完全清空，絕不殘留！");
+  console.log(
+    "  ✔ 1.4 登出成功：LOCAL_PLAYER_KEY 與 COMPAT_PLAYER_KEY 完全清空，絕不殘留！"
+  );
 
   // 1.5 訪客模式一鍵啟動
   await store.startGuestMode();
@@ -126,11 +134,16 @@ async function runComprehensiveVerification() {
   if (guestPlayer.nickname !== "遊俠主公") {
     throw new Error("訪客暱稱錯誤");
   }
-  console.log(`  ✔ 1.5 訪客一鍵試玩成功：金鑰 ${guestPlayer.key}，主公稱謂「${guestPlayer.nickname}」`);
+  console.log(
+    `  ✔ 1.5 訪客一鍵試玩成功：金鑰 ${guestPlayer.key}，主公稱謂「${guestPlayer.nickname}」`
+  );
 
   // 1.6 訪客狀態下登出
   store.logout();
-  if (useJsPlayerStore.getState().player !== null || localStorage.getItem(LOCAL_PLAYER_KEY) !== null) {
+  if (
+    useJsPlayerStore.getState().player !== null ||
+    localStorage.getItem(LOCAL_PLAYER_KEY) !== null
+  ) {
     throw new Error("訪客登出清理異常");
   }
   console.log("  ✔ 1.6 訪客狀態登出成功，乾淨還原為未登入首頁\n");
@@ -153,33 +166,48 @@ async function runComprehensiveVerification() {
   ];
   store.updateTeam(customTeam);
   const verifyTeam = useJsPlayerStore.getState().player!.team;
-  if (verifyTeam[0].hero_id !== "hero_guan_yu" || verifyTeam[4].hero_id !== "hero_huang_zhong") {
+  if (
+    verifyTeam[0].hero_id !== "hero_guan_yu" ||
+    verifyTeam[4].hero_id !== "hero_huang_zhong"
+  ) {
     throw new Error("出征陣容更新失敗");
   }
-  console.log("  ✔ 蜀漢五虎大將軍 (關羽、張飛、趙雲、馬超、黃忠) 陣容已編排入伍\n");
+  console.log(
+    "  ✔ 蜀漢五虎大將軍 (關羽、張飛、趙雲、馬超、黃忠) 陣容已編排入伍\n"
+  );
 
   // ── [模組 3] 武將名錄 13 大名將與修為升級 ──────────────────
   console.log("【檢查項目 3】武將名錄與修為升級（消耗世界金幣）...");
   if (curPlayer.heroes.length !== 13) {
     throw new Error(`武將總數應為 13 位，實際為 ${curPlayer.heroes.length}`);
   }
-  const guanyuBefore = curPlayer.heroes.find((h) => h.hero_id === "hero_guan_yu")!;
+  const guanyuBefore = curPlayer.heroes.find(
+    (h) => h.hero_id === "hero_guan_yu"
+  )!;
   const goldBefore = curPlayer.gold;
   const upResult = store.upgradeHero("hero_guan_yu");
   if (!upResult.success) throw new Error("升級關羽失敗");
 
-  const guanyuAfter = useJsPlayerStore.getState().player!.heroes.find((h) => h.hero_id === "hero_guan_yu")!;
+  const guanyuAfter = useJsPlayerStore
+    .getState()
+    .player!.heroes.find((h) => h.hero_id === "hero_guan_yu")!;
   const goldAfter = useJsPlayerStore.getState().player!.gold;
-  if (guanyuAfter.level !== guanyuBefore.level + 1) throw new Error("關羽等級未晉升");
-  if (goldAfter !== goldBefore - upResult.cost!) throw new Error("世界金幣扣除錯誤");
-  console.log(`  ✔ 關羽升級至 Lv.${guanyuAfter.level} (ATK: ${guanyuBefore.atk} -> ${guanyuAfter.atk})，扣除金幣 ${upResult.cost}，剩餘金幣 ${goldAfter}\n`);
+  if (guanyuAfter.level !== guanyuBefore.level + 1)
+    throw new Error("關羽等級未晉升");
+  if (goldAfter !== goldBefore - upResult.cost!)
+    throw new Error("世界金幣扣除錯誤");
+  console.log(
+    `  ✔ 關羽升級至 Lv.${guanyuAfter.level} (ATK: ${guanyuBefore.atk} -> ${guanyuAfter.atk})，扣除金幣 ${upResult.cost}，剩餘金幣 ${goldAfter}\n`
+  );
 
   // ── [模組 4] 關卡地圖與解鎖進度 ───────────────────────────
   console.log("【檢查項目 4】關卡地圖、通關星級與章節推進...");
   if (BUILTIN_STAGES.length < 3) {
     throw new Error("內建關卡數量不足");
   }
-  console.log(`  ✔ 已載入 ${BUILTIN_STAGES.length} 個戰略關卡 (涵蓋第1章至第2章)`);
+  console.log(
+    `  ✔ 已載入 ${BUILTIN_STAGES.length} 個戰略關卡 (涵蓋第1章至第2章)`
+  );
 
   const settle1 = store.settleBattle("chapter1_1", 20, 20);
   if (settle1.stars !== 3) throw new Error("滿血結算應為 3 星");
@@ -187,14 +215,18 @@ async function runComprehensiveVerification() {
   if (playerAfterSettle.max_stage !== "chapter1_2") {
     throw new Error("通關 chapter1_1 後未解鎖 chapter1_2");
   }
-  console.log(`  ✔ 第一關滿血通關獲 3 星評級，成功解鎖下一關【${playerAfterSettle.max_stage}】`);
+  console.log(
+    `  ✔ 第一關滿血通關獲 3 星評級，成功解鎖下一關【${playerAfterSettle.max_stage}】`
+  );
 
   // 4.2 驗證關卡切換
   const stage2 = BUILTIN_STAGES[1];
-  console.log(`  ✔ 戰略關卡切換：成功載入【${stage2.name}】(${stage2.map_id})，總波次 ${stage2.waves.length} 波\n`);
+  console.log(
+    `  ✔ 戰略關卡切換：成功載入【${stage2.name}】(${stage2.map_id})，總波次 ${stage2.waves.length} 波\n`
+  );
 
   // ── [模組 5] 核心戰鬥引擎與防禦塔機制 ─────────────────────
-  console.log("【檢查項目 5】戰鬥引擎、5大防禦塔、索敵模式與全額退費...");
+  console.log("【檢查項目 5】戰鬥引擎、5大防禦塔、索敵模式與拆除返還一半...");
   class DummyRenderer {
     public init(): void {}
     public resize(): void {}
@@ -226,17 +258,45 @@ async function runComprehensiveVerification() {
   // 索敵模式切換
   const [firstC, firstR] = stage.path_json.build_zones[0];
   engine.setTowerTargetMode(firstC, firstR, "weakest");
-  if (engine.towers[0].targetMode !== "weakest") throw new Error("索敵切換失敗");
+  if (engine.towers[0].targetMode !== "weakest")
+    throw new Error("索敵切換失敗");
   console.log("  ✔ 索敵模式切換為 'weakest' (殘血敵軍優先狙殺)");
 
-  // 準備階段 100% 全額拆除退費
+  // 準備階段拆除：返還投入的一半（和 Godot 版相同）
   const goldPriorSell = engine.battleManager.battleGold;
-  const refundExpected = engine.towers[0].getSellRefund(true);
-  engine.sellTower(firstC, firstR);
-  if (engine.battleManager.battleGold !== goldPriorSell + refundExpected) {
-    throw new Error("準備階段退款未達 100%");
+  const sellTarget = engine.towers[0];
+  // 弓兵塔建造 50＝投入 50，返還一半 25
+  const refundExpected = 25;
+  if (sellTarget.getSellRefund() !== refundExpected) {
+    throw new Error(
+      `拆除返還應為 ${refundExpected}，實際 ${sellTarget.getSellRefund()}`
+    );
   }
-  console.log(`  ✔ 備戰階段拆除防禦塔全額退款 ${refundExpected} 金幣 (100% 原價返還)\n`);
+  // 先點選這座塔，再用這一場、這座塔、格子與看到的返還金額送出拆除請求
+  const sellPos = engine.gameMap.gridToWorld(firstC, firstR);
+  engine.handleCellClick(sellPos.x, sellPos.y);
+  const sellResult = engine.sellTower({
+    battleId: engine.battleManager.battleId,
+    towerUid: sellTarget.towerUid,
+    col: firstC,
+    row: firstR,
+    expectedRefund: sellTarget.getSellRefund(),
+  });
+  if (!sellResult.ok || sellResult.refund !== refundExpected) {
+    throw new Error(`拆除被拒或返還不符：${JSON.stringify(sellResult)}`);
+  }
+  if (engine.towers.includes(sellTarget)) {
+    throw new Error("防禦塔拆除後未被清除");
+  }
+  if (engine.gameMap.isOccupied(firstC, firstR)) {
+    throw new Error("防禦塔拆除後格子沒有釋放");
+  }
+  if (engine.battleManager.battleGold !== goldPriorSell + refundExpected) {
+    throw new Error("準備階段退款金額不符");
+  }
+  console.log(
+    `  ✔ 備戰階段拆除防禦塔退款 ${refundExpected} 金幣 (投入的一半)\n`
+  );
 
   // ── [模組 6] 武將道路駐守與波次交鋒 ───────────────────────
   console.log("【檢查項目 6】武將道路駐守肉盾、迎戰開打與倍速/暫停控制...");
@@ -255,7 +315,8 @@ async function runComprehensiveVerification() {
 
   // 倍速與暫停
   engine.battleManager.setSpeed(engine.battleManager.battleId, 2);
-  if (engine.battleManager.effectiveTimeScale() !== 2) throw new Error("2x 倍速設定失敗");
+  if (engine.battleManager.effectiveTimeScale() !== 2)
+    throw new Error("2x 倍速設定失敗");
   console.log("  ✔ 2x 倍速暢快切換生效");
 
   engine.battleManager.setPaused(engine.battleManager.battleId, true);
@@ -269,7 +330,10 @@ async function runComprehensiveVerification() {
   // ── [模組 7] 存檔 JSON 匯出與還原 ─────────────────────────
   console.log("【檢查項目 7】存檔資料備份匯出與無損還原...");
   const exported = store.exportBackup();
-  if (!exported.includes("master_tester_2026") || !exported.includes("heroes")) {
+  if (
+    !exported.includes("master_tester_2026") ||
+    !exported.includes("heroes")
+  ) {
     throw new Error("匯出備份 JSON 格式異常");
   }
   const importResult = store.importBackup(exported);
@@ -281,7 +345,9 @@ async function runComprehensiveVerification() {
   try {
     const res = await fetch("http://localhost:3000/shenmaSanguoJs");
     if (res.status === 200) {
-      console.log(`  ✔ http://localhost:3000/shenmaSanguoJs 回應 200 OK (Content-Type: ${res.headers.get("content-type")})`);
+      console.log(
+        `  ✔ http://localhost:3000/shenmaSanguoJs 回應 200 OK (Content-Type: ${res.headers.get("content-type")})`
+      );
     } else {
       console.warn(`  ⚠️ 伺服器狀態碼: ${res.status}`);
     }

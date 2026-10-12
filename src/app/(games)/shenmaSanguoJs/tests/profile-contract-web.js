@@ -6909,6 +6909,564 @@ module.exports = async function profileContractWeb(page) {
     }
   );
 
+  // ═══ 27. 武將的部署唯一性、陣亡後重派與合法的 0 數值 ═══
+  // 同一位武將還在場上時，頁面用的派出入口（window.__testBridge.placeHero）也拒絕，不只靠部署選單停用；
+  // 陣亡用受控的 takeDamage（真正的死亡流程，不是自然戰鬥），之後部署選單恢復、同一場可以再派，首擊紀錄不變（只核紀錄，不驗傷害）；
+  // 上一場晚到的陣亡與舊場次的通知不改新場的名單。期待值照 Godot 版 _place_hero／_on_hero_died 與 Hero.setup 手寫
+  const HERO_INFO = '[data-testid="hero-info-panel"]';
+  /** 引擎目前的這一場：battleId、戰場金幣、場上武將（識別碼、格子、標記、生命／攻擊／防禦）、選取、首擊紀錄 */
+  const heroField = (p) =>
+    p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      const fs = e.battleManager.firstStrikeUsed;
+      return {
+        battleId: e.battleManager.battleId,
+        gold: e.battleManager.battleGold,
+        heroes: e.heroes.map((h) => ({
+          id: h.heroId,
+          cell: [h.gridCell.col, h.gridCell.row],
+          mark: h.__mark || null,
+          hp: h.currentHp,
+          maxHp: h.maxHp,
+          atk: h.atk,
+          def: h.defStat,
+        })),
+        selected: e.selectedUnit ? { ...e.selectedUnit } : null,
+        firstStrike: fs instanceof Map ? [...fs.entries()] : null,
+      };
+    });
+  const heroMarks = (s) => s.heroes.map((h) => [h.id, h.mark]);
+  /** 某一格的占用者（武將識別碼、塔識別碼或 null） */
+  const occupantAt = (p, [col, row]) =>
+    p.evaluate(
+      ({ c, r }) => {
+        const o = window.__testBridge.engine.gameMap.getOccupant(c, r);
+        if (!o) return null;
+        return o.isHero
+          ? `hero:${o.heroId}`
+          : o.towerUid
+            ? `tower:${o.towerUid}`
+            : "other";
+      },
+      { c: col, r: row }
+    );
+  /** 標記某位武將目前的實例並記下參照（之後判斷是不是同一個實例、受控陣亡用） */
+  const markHero = (p, heroId, mark) =>
+    p.evaluate(
+      ({ id, m }) => {
+        const h = window.__testBridge.engine.heroes.find(
+          (x) => x.heroId === id
+        );
+        if (!h) return false;
+        h.__mark = m;
+        window.__heroRef = window.__heroRef || {};
+        window.__heroRef[m] = h;
+        return true;
+      },
+      { id: heroId, m: mark }
+    );
+  /** 受控的真正陣亡：對記下的武將實例一次給足以打倒的傷害（走 HeroEntity.takeDamage 的死亡流程） */
+  const killHero = (p, mark) =>
+    p.evaluate((m) => {
+      const e = window.__testBridge.engine;
+      const h = window.__heroRef && window.__heroRef[m];
+      if (!h) return null;
+      h.takeDamage(1e9, null, e.floatingTexts, e.soundManager);
+      return { isDead: h.isDead, hp: h.currentHp };
+    }, mark);
+  /** 用頁面同一個入口派武將（不經過部署選單的停用） */
+  const bridgePlace = (p, [col, row], state) =>
+    p.evaluate(({ c, r, s }) => window.__testBridge.placeHero(c, r, s), {
+      c: col,
+      r: row,
+      s: state,
+    });
+  /** 點畫布上武將所在的格子打開武將資訊，回傳面板文字 */
+  async function openHeroInfo(p, cell) {
+    const pt = await cellPoint(p, cell);
+    if (!pt.onCanvas) return null;
+    await p.mouse.click(pt.x, pt.y);
+    const panel = p.locator(HERO_INFO);
+    if (!(await until(() => panel.isVisible(), 5000))) return null;
+    return (await panel.innerText()).replace(/\s+/g, " ").trim();
+  }
+  /** 在測試側包住既有的 battleManager.consumeFirstStrike：記下每次判定的武將與結果，再原樣回傳（不改判定） */
+  const watchFirstStrike = (p) =>
+    p.evaluate(() => {
+      const b = window.__testBridge && window.__testBridge.engine.battleManager;
+      if (!b || typeof b.consumeFirstStrike !== "function") return false;
+      if (!b.__fsLog) {
+        b.__fsLog = [];
+        const orig = b.consumeFirstStrike;
+        b.consumeFirstStrike = function (heroId, damage) {
+          const ok = orig.call(this, heroId, damage);
+          b.__fsLog.push({ id: heroId, ok });
+          return ok;
+        };
+      }
+      return true;
+    });
+  const firstStrikeLog = (p) =>
+    p.evaluate(() => window.__testBridge.engine.battleManager.__fsLog || []);
+  const heroInfoText = async (p) =>
+    (await p.locator(HERO_INFO).count())
+      ? (await p.locator(HERO_INFO).innerText()).replace(/\s+/g, " ").trim()
+      : null;
+
+  await scenario(
+    "武將派出與陣亡：訪客備戰中派出後入口拒絕同一位，受控陣亡後選單恢復、同一場再派",
+    async (mk) => {
+      const E = await mk({ maps: SKILL_MAPS, enemies: ENEMIES });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      check("可以觀測部署資料", await watchPlacements(p));
+      const d1 = await deployHero(p, ROAD_CELLS[0], "馬超");
+      const c1 = await menuCard(p, ROAD_CELLS[8], "馬超");
+      const s1 = await heroField(p);
+      check(
+        "從部署選單派出馬超到 (2,3)：場上一位馬超、免費（5000），選單上的馬超是「已在場上」且不能點",
+        d1.ok &&
+          s1.heroes.length === 1 &&
+          s1.heroes[0].id === "hero_ma_chao" &&
+          sameJson(s1.heroes[0].cell, [2, 3]) &&
+          s1.gold === 5000 &&
+          c1.ok &&
+          c1.disabled &&
+          /已在場上/.test(c1.text),
+        { d1, c1, s1 }
+      );
+      const st = lastState(await fieldOf(p));
+      const r1 = await bridgePlace(p, ROAD_CELLS[2], st);
+      const r2 = await bridgePlace(p, ROAD_CELLS[0], st);
+      const s2 = await heroField(p);
+      check(
+        "馬超還在場上：頁面的派出入口送同一位到別格 (4,3) 與同一格都被拒，場上不變、(4,3) 沒有占用",
+        !!st &&
+          r1 === false &&
+          r2 === false &&
+          sameJson(s2, s1) &&
+          (await occupantAt(p, ROAD_CELLS[2])) === null,
+        { st, r1, r2, s1, s2 }
+      );
+      const d2 = await deployHero(p, ROAD_CELLS[2], "趙雲");
+      check(
+        "另一位武將（趙雲）照常派到 (4,3)，標記兩位的實例",
+        d2.ok &&
+          (await markHero(p, "hero_ma_chao", "ma1")) &&
+          (await markHero(p, "hero_zhao_yun", "zy1")),
+        d2
+      );
+      const info1 = await openHeroInfo(p, ROAD_CELLS[0]);
+      check("點馬超打開武將資訊", !!info1 && /馬超/.test(info1), info1);
+      const k1 = await killHero(p, "ma1");
+      await sleep(300);
+      const s3 = await heroField(p);
+      const info2 = await heroInfoText(p);
+      check(
+        "馬超受控陣亡：從場上移除、(2,3) 釋放、取消選取、馬超的資訊視窗關閉；趙雲還在 (4,3)",
+        !!k1 &&
+          k1.isDead === true &&
+          k1.hp === 0 &&
+          sameJson(heroMarks(s3), [["hero_zhao_yun", "zy1"]]) &&
+          (await occupantAt(p, ROAD_CELLS[0])) === null &&
+          (await occupantAt(p, ROAD_CELLS[2])) === "hero:hero_zhao_yun" &&
+          s3.selected === null &&
+          info2 === null,
+        { k1, s3, info2 }
+      );
+      const c2 = await menuCard(p, ROAD_CELLS[8], "馬超");
+      const c2b = await menuCard(p, ROAD_CELLS[8], "趙雲");
+      check(
+        "部署選單：馬超不再是「已在場上」、可以點；趙雲仍是「已在場上」",
+        c2.ok &&
+          !c2.disabled &&
+          !/已在場上/.test(c2.text) &&
+          c2b.ok &&
+          c2b.disabled &&
+          /已在場上/.test(c2b.text),
+        { c2, c2b }
+      );
+      const d3 = await deployHero(p, ROAD_CELLS[0], "馬超");
+      const s4 = await heroField(p);
+      const c3 = await menuCard(p, ROAD_CELLS[8], "馬超");
+      check(
+        "同一場再派馬超到同一格 (2,3)：新的實例、同一個 battleId、免費（仍 5000）；選單又是「已在場上」",
+        d3.ok &&
+          s4.battleId === s1.battleId &&
+          s4.gold === 5000 &&
+          sameJson(heroMarks(s4), [
+            ["hero_zhao_yun", "zy1"],
+            ["hero_ma_chao", null],
+          ]) &&
+          (await occupantAt(p, ROAD_CELLS[0])) === "hero:hero_ma_chao" &&
+          c3.ok &&
+          c3.disabled,
+        { d3, s4, c3 }
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "武將派出與陣亡：共用帳號戰鬥中用過首擊的馬超受控陣亡，同一場再派，首擊紀錄不變；趙雲的資訊視窗不受影響；沒有寫入",
+    async (mk) => {
+      const data = NEW({
+        capacity: 20,
+        team: [
+          { hero_id: "ma_chao", slot: 1 },
+          { hero_id: "zhao_yun", slot: 2 },
+        ],
+      });
+      const E = await mk({
+        seed: [{ key: "k_herodie", data, rev: 3 }],
+        maps: TWO_WAVE_MAPS,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({ storage: { shenma_player_key: "k_herodie" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[0], "馬超");
+      const d2 = await deployHero(p, ROAD_CELLS[11], "趙雲");
+      check(
+        "備戰中派出馬超 (2,3)、趙雲 (2,6)，標記實例",
+        d1.ok &&
+          d2.ok &&
+          (await markHero(p, "hero_ma_chao", "ma1")) &&
+          (await markHero(p, "hero_zhao_yun", "zy1")),
+        { d1, d2 }
+      );
+      check("可以觀測首擊判定", await watchFirstStrike(p));
+      check("按進入戰場開第 1 波", await startBattle(p));
+      check("馬超打到木樁、首擊紀錄寫下", await waitFirstStrike(p));
+      const s1 = await heroField(p);
+      const info = await openHeroInfo(p, ROAD_CELLS[11]);
+      check("點趙雲打開武將資訊", !!info && /趙雲/.test(info), info);
+      const k = await killHero(p, "ma1");
+      await sleep(300);
+      const s2 = await heroField(p);
+      const infoText = await heroInfoText(p);
+      check(
+        "馬超受控陣亡：移除、(2,3) 釋放；趙雲的資訊視窗仍開著、仍選著趙雲；首擊紀錄不變",
+        !!k &&
+          k.isDead === true &&
+          sameJson(heroMarks(s2), [["hero_zhao_yun", "zy1"]]) &&
+          (await occupantAt(p, ROAD_CELLS[0])) === null &&
+          !!infoText &&
+          /趙雲/.test(infoText) &&
+          sameJson(s2.selected, {
+            type: "hero",
+            id: "hero_zhao_yun",
+            col: 2,
+            row: 6,
+          }) &&
+          sameJson(s2.firstStrike, s1.firstStrike),
+        { k, s1, s2, infoText }
+      );
+      await p
+        .locator(HERO_INFO)
+        .locator("button", { hasText: "×" })
+        .first()
+        .click()
+        .catch(() => {});
+      await until(async () => (await p.locator(HERO_INFO).count()) === 0, 5000);
+      // 再派到木樁前方的道路，讓新的馬超一定會攻擊到它
+      const ahead = await p.evaluate(() => {
+        const e = window.__testBridge.engine;
+        const en = e.waveManager.activeEnemies.find((x) => !x.isDead);
+        if (!en) return null;
+        const g = e.gameMap.worldToGrid(en.x, en.y);
+        for (let c = Math.max(3, g.col + 1); c <= 12; c++)
+          if (e.gameMap.canPlaceHero(c, 3)) return [c, 3];
+        return null;
+      });
+      const n0 = (await firstStrikeLog(p)).length;
+      const d3 = ahead
+        ? await deployHero(p, ahead, "馬超")
+        : { ok: false, step: "no-enemy-ahead" };
+      const attacked = await until(
+        async () =>
+          (await firstStrikeLog(p))
+            .slice(n0)
+            .some((x) => x.id === "hero_ma_chao"),
+        15000
+      );
+      const post = (await firstStrikeLog(p)).slice(n0);
+      const s3 = await heroField(p);
+      check(
+        "同一場再派馬超到木樁前方：新的實例攻擊時不再觸發首擊（同一場只觸發一次），同一個 battleId、首擊紀錄逐字不變（只核紀錄，不驗傷害）",
+        d3.ok &&
+          !!attacked &&
+          post.length > 0 &&
+          post.every((x) => x.ok === false) &&
+          s3.battleId === s1.battleId &&
+          sameJson(heroMarks(s3), [
+            ["hero_zhao_yun", "zy1"],
+            ["hero_ma_chao", null],
+          ]) &&
+          !!s1.firstStrike &&
+          s1.firstStrike.length === 1 &&
+          sameJson(s3.firstStrike, s1.firstStrike),
+        { ahead, d3, attacked, post: post.slice(0, 5), s1, s3 }
+      );
+      const back = readBack(E, "k_herodie");
+      check(
+        "沒有任何寫入；雲端存檔的世界金幣 500、版本 3 不變",
+        E.gas.writes().length === 0 &&
+          !!back &&
+          back.rev === 3 &&
+          back.data.gold === 500,
+        { writes: E.gas.writes(), back }
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "武將派出與陣亡：後端設定到達重新載入後，上一場武將晚到的陣亡與舊場次的通知都不改新場的部署名單",
+    async (mk) => {
+      const E = await mk({ maps: SKILL_MAPS, enemies: ENEMIES });
+      const hold = E.gas.rule("get_all_maps", "hold");
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      check(
+        "後端關卡設定還沒回應（暫停中）",
+        await until(() => hold.waiting.length > 0, 15000)
+      );
+      const bid0 = await stableBattle(p);
+      const roads = await roadCellsOf(p);
+      const d0 = roads.length
+        ? await deployHero(p, roads[0], "馬超")
+        : { ok: false, step: "no-road-cell" };
+      check(
+        "內建關卡上派出馬超並記下這個實例",
+        d0.ok && (await markHero(p, "hero_ma_chao", "old")),
+        { d0, roads: roads.length }
+      );
+      check("放行後端關卡設定", hold.release("ok") === 1);
+      const bid1 = await nextBattle(p, bid0);
+      const s0 = await heroField(p);
+      const c0 = await menuCard(p, ROAD_CELLS[8], "馬超");
+      check(
+        "重新載入成新的一場：場上沒有武將，選單上的馬超可以點",
+        !!bid1 &&
+          bid1 !== bid0 &&
+          s0.heroes.length === 0 &&
+          c0.ok &&
+          !c0.disabled,
+        { bid0, bid1, s0, c0 }
+      );
+      const d1 = await deployHero(p, ROAD_CELLS[0], "馬超");
+      check("新的一場派出馬超到 (2,3)", d1.ok, d1);
+      const s1 = await heroField(p);
+      const k = await killHero(p, "old");
+      await sleep(300);
+      const s2 = await heroField(p);
+      const c1 = await menuCard(p, ROAD_CELLS[8], "馬超");
+      check(
+        "上一場的馬超晚到陣亡：新場的馬超、(2,3) 與選單上的「已在場上」都不變",
+        !!k &&
+          k.isDead === true &&
+          sameJson(s2, s1) &&
+          (await occupantAt(p, ROAD_CELLS[0])) === "hero:hero_ma_chao" &&
+          c1.ok &&
+          c1.disabled &&
+          /已在場上/.test(c1.text),
+        { k, s1, s2, c1 }
+      );
+      const injected = await p.evaluate((oldBid) => {
+        const b = window.__testBridge;
+        if (typeof b.onHeroRosterChanged !== "function") return "no-handler";
+        b.onHeroRosterChanged({
+          battleId: oldBid,
+          aliveHeroIds: Object.freeze([]),
+          died: window.__heroRef.old,
+        });
+        return "sent";
+      }, bid0);
+      await sleep(300);
+      const c2 = await menuCard(p, ROAD_CELLS[8], "馬超");
+      check(
+        "受控送出上一場的陣亡通知（舊 battleId、存活名單是空的）：頁面不採用，選單上的馬超仍是「已在場上」",
+        injected === "sent" && c2.ok && c2.disabled && /已在場上/.test(c2.text),
+        { injected, c2 }
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "武將派出與陣亡：390×600 受控陣亡後，部署選單的馬超看得到、可以用鍵盤再派",
+    async (mk) => {
+      const E = await mk({
+        maps: SKILL_MAPS,
+        enemies: ENEMIES,
+        viewport: { width: 390, height: 600 },
+      });
+      const p = await E.page({ storage: guestStorage(GUEST_13, []) });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[0], "馬超");
+      check(
+        "派出馬超並標記實例",
+        d1.ok && (await markHero(p, "hero_ma_chao", "ma1")),
+        d1
+      );
+      const k = await killHero(p, "ma1");
+      await sleep(300);
+      const pt = await cellPoint(p, ROAD_CELLS[0]);
+      if (pt.onCanvas) await p.mouse.click(pt.x, pt.y);
+      const menu = p.locator(PLACEMENT_MENU);
+      const opened = await until(() => menu.isVisible(), 5000);
+      // 選單有約 0.15 秒的放大動畫：等它結束再取點與截圖
+      await sleep(400);
+      const card = menu.locator("button", { hasText: "馬超" }).first();
+      const o = await card
+        .evaluate((btn) => {
+          btn.scrollIntoView({ block: "nearest" });
+          const r = btn.getBoundingClientRect();
+          const hit = document.elementFromPoint(
+            r.left + r.width / 2,
+            r.top + r.height / 2
+          );
+          return {
+            inView:
+              r.top >= 0 &&
+              r.bottom <= innerHeight &&
+              r.left >= 0 &&
+              r.right <= innerWidth,
+            hit: !!hit && btn.contains(hit),
+            disabled: btn.disabled,
+            text: btn.innerText.replace(/\s+/g, " ").trim(),
+            noHScroll: document.documentElement.scrollWidth <= innerWidth + 1,
+          };
+        })
+        .catch((err) => ({ error: String(err) }));
+      check(
+        "390×600：馬超陣亡後，(2,3) 的部署選單上馬超可以點、在視窗內、點得到，沒有橫向捲動",
+        !!k &&
+          k.isDead === true &&
+          pt.onCanvas &&
+          !!opened &&
+          o.inView === true &&
+          o.hit === true &&
+          o.disabled === false &&
+          !/已在場上/.test(o.text || "") &&
+          o.noHScroll === true,
+        { k, pt, opened, o }
+      );
+      await shot(p, "hero-redeploy-390x600");
+      await card.focus();
+      await p.keyboard.press("Enter");
+      const closed = await until(async () => (await menu.count()) === 0, 5000);
+      const s = await heroField(p);
+      check(
+        "鍵盤（在馬超卡片按 Enter）：選單關閉，馬超再派到 (2,3)（新的實例）",
+        !!closed &&
+          sameJson(heroMarks(s), [["hero_ma_chao", null]]) &&
+          (await occupantAt(p, ROAD_CELLS[0])) === "hero:hero_ma_chao",
+        { closed, s }
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "武將派出與陣亡：共用帳號存檔裡 0 生命／0 攻擊／0 防禦的馬超，戰場實例也是 0（不換成預設值）",
+    async (mk) => {
+      const data = NEW({
+        capacity: 20,
+        heroes: [
+          { hero_id: "ma_chao", level: 3, star: 0, atk: 0, def: 0, hp: 0 },
+        ],
+        team: [{ hero_id: "ma_chao", slot: 1 }],
+      });
+      const E = await mk({
+        seed: [{ key: "k_zero", data, rev: 2 }],
+        maps: SKILL_MAPS,
+        enemies: ENEMIES,
+      });
+      const p = await E.page({ storage: { shenma_player_key: "k_zero" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      check("可以觀測部署資料", await watchPlacements(p));
+      const d = await deployHero(p, ROAD_CELLS[0], "馬超");
+      const st = lastState(await fieldOf(p));
+      const s = await heroField(p);
+      const h = s.heroes[0];
+      check(
+        "部署資料照存檔（0 照樣是 0），戰場實例：生命 0／最大 0、攻擊 0、防禦 0",
+        d.ok &&
+          !!st &&
+          st.hp === 0 &&
+          st.atk === 0 &&
+          st.def === 0 &&
+          s.heroes.length === 1 &&
+          !!h &&
+          sameJson([h.hp, h.maxHp, h.atk, h.def], [0, 0, 0, 0]),
+        { d, st, s }
+      );
+      check("沒有任何寫入", E.gas.writes().length === 0, E.gas.writes());
+      return E;
+    }
+  );
+
+  await scenario(
+    "武將派出與陣亡：訪客隊伍裡 0 攻擊／0 防禦的馬超與一般數值的周瑜，戰場實例照存檔",
+    async (mk) => {
+      const E = await mk({ maps: SKILL_MAPS, enemies: ENEMIES });
+      const p = await E.page({
+        storage: guestStorage(
+          [
+            {
+              hero_id: "hero_ma_chao",
+              level: 1,
+              star: 1,
+              atk: 0,
+              def: 0,
+              hp: 500,
+            },
+            {
+              hero_id: "hero_zhou_yu",
+              level: 1,
+              star: 1,
+              atk: 135,
+              def: 55,
+              hp: 1000,
+            },
+          ],
+          [
+            { slot: 0, hero_id: "hero_ma_chao" },
+            { slot: 1, hero_id: "hero_zhou_yu" },
+          ]
+        ),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[0], "馬超");
+      const d2 = await deployHero(p, ROAD_CELLS[2], "周瑜");
+      const s = await heroField(p);
+      const v = (id) => {
+        const h = s.heroes.find((x) => x.id === id);
+        return h ? [h.hp, h.maxHp, h.atk, h.def] : null;
+      };
+      check(
+        "馬超：生命 500／最大 500、攻擊 0、防禦 0；周瑜：生命 1000／最大 1000、攻擊 135、防禦 55",
+        d1.ok &&
+          d2.ok &&
+          sameJson(v("hero_ma_chao"), [500, 500, 0, 0]) &&
+          sameJson(v("hero_zhou_yu"), [1000, 1000, 135, 55]),
+        { d1, d2, s }
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
   // ═══ 18. 入口版面：1280 桌面、390×600、390×844 ═══
   for (const vp of [
     { width: 1280, height: 800 },

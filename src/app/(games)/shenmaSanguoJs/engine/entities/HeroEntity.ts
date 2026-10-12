@@ -40,30 +40,159 @@ export const HERO_FALLBACK_INFO: Record<
   string,
   { name: string; job: string; image: string; attackImage: string }
 > = {
-  ma_chao: { name: "馬超", job: "cavalry", image: "hero_ma_chao.webp", attackImage: "hero_ma_chao_atk.webp" },
-  zhao_yun: { name: "趙雲", job: "infantry", image: "hero_zhao_yun.webp", attackImage: "hero_zhao_yun_atk.webp" },
-  huang_zhong: { name: "黃忠", job: "archer", image: "hero_huang_zhong.webp", attackImage: "hero_huang_zhong_atk.webp" },
-  zhou_yu: { name: "周瑜", job: "mage", image: "hero_zhou_yu.webp", attackImage: "hero_zhou_yu_atk.webp" },
-  guan_yu: { name: "關羽", job: "cavalry", image: "hero_guan_yu.webp", attackImage: "hero_guan_yu_atk.webp" },
-  liu_bei: { name: "劉備", job: "infantry", image: "hero_liu_bei.webp", attackImage: "hero_liu_bei_atk.webp" },
-  zhang_fei: { name: "張飛", job: "infantry", image: "hero_zhang_fei.webp", attackImage: "hero_zhang_fei_atk.webp" },
-  wei_yan: { name: "魏延", job: "infantry", image: "hero_wei_yan.webp", attackImage: "hero_wei_yan_atk.webp" },
-  cao_cao: { name: "曹操", job: "cavalry", image: "hero_cao_cao.webp", attackImage: "hero_cao_cao_atk.webp" },
-  xia_hou_dun: { name: "夏侯惇", job: "infantry", image: "hero_xia_hou_dun.webp", attackImage: "hero_xia_hou_dun_atk.webp" },
-  liao_hua: { name: "廖化", job: "infantry", image: "hero_liao_hua.webp", attackImage: "hero_liao_hua_atk.webp" },
-  yan_liang: { name: "顏良", job: "cavalry", image: "hero_yan_liang.webp", attackImage: "hero_yan_liang_atk.webp" },
-  sun_shang_xiang: { name: "孫尚香", job: "archer", image: "hero_sun_shang_xiang.webp", attackImage: "hero_sun_shang_xiang_atk.webp" },
-  lv_bu: { name: "呂布", job: "cavalry", image: "hero_lv_bu.webp", attackImage: "hero_lv_bu_atk.webp" },
-  diao_chan: { name: "貂蟬", job: "mage", image: "hero_diao_chan.webp", attackImage: "hero_diao_chan_atk.webp" },
-  zhu_ge_liang: { name: "諸葛亮", job: "mage", image: "hero_zhu_ge_liang.webp", attackImage: "hero_zhu_ge_liang_atk.webp" },
-  dian_wei: { name: "典韋", job: "infantry", image: "hero_dian_wei.webp", attackImage: "hero_dian_wei_atk.webp" },
-  sun_quan: { name: "孫權", job: "cavalry", image: "hero_sun_quan.webp", attackImage: "hero_sun_quan_atk.webp" },
-  gan_ning: { name: "甘寧", job: "cavalry", image: "hero_gan_ning.webp", attackImage: "hero_gan_ning_atk.webp" },
-  xu_chu: { name: "許褚", job: "infantry", image: "hero_xu_chu.webp", attackImage: "hero_xu_chu_atk.webp" },
-  pang_tong: { name: "龐統", job: "mage", image: "hero_pang_tong.webp", attackImage: "hero_pang_tong_atk.webp" },
-  lu_su: { name: "魯肅", job: "mage", image: "hero_lu_su.webp", attackImage: "hero_lu_su_atk.webp" },
-  zhou_cang: { name: "周倉", job: "infantry", image: "hero_zhou_cang.webp", attackImage: "hero_zhou_cang_atk.webp" },
+  ma_chao: {
+    name: "馬超",
+    job: "cavalry",
+    image: "hero_ma_chao.webp",
+    attackImage: "hero_ma_chao_atk.webp",
+  },
+  zhao_yun: {
+    name: "趙雲",
+    job: "infantry",
+    image: "hero_zhao_yun.webp",
+    attackImage: "hero_zhao_yun_atk.webp",
+  },
+  huang_zhong: {
+    name: "黃忠",
+    job: "archer",
+    image: "hero_huang_zhong.webp",
+    attackImage: "hero_huang_zhong_atk.webp",
+  },
+  zhou_yu: {
+    name: "周瑜",
+    job: "mage",
+    image: "hero_zhou_yu.webp",
+    attackImage: "hero_zhou_yu_atk.webp",
+  },
+  guan_yu: {
+    name: "關羽",
+    job: "cavalry",
+    image: "hero_guan_yu.webp",
+    attackImage: "hero_guan_yu_atk.webp",
+  },
+  liu_bei: {
+    name: "劉備",
+    job: "infantry",
+    image: "hero_liu_bei.webp",
+    attackImage: "hero_liu_bei_atk.webp",
+  },
+  zhang_fei: {
+    name: "張飛",
+    job: "infantry",
+    image: "hero_zhang_fei.webp",
+    attackImage: "hero_zhang_fei_atk.webp",
+  },
+  wei_yan: {
+    name: "魏延",
+    job: "infantry",
+    image: "hero_wei_yan.webp",
+    attackImage: "hero_wei_yan_atk.webp",
+  },
+  cao_cao: {
+    name: "曹操",
+    job: "cavalry",
+    image: "hero_cao_cao.webp",
+    attackImage: "hero_cao_cao_atk.webp",
+  },
+  xia_hou_dun: {
+    name: "夏侯惇",
+    job: "infantry",
+    image: "hero_xia_hou_dun.webp",
+    attackImage: "hero_xia_hou_dun_atk.webp",
+  },
+  liao_hua: {
+    name: "廖化",
+    job: "infantry",
+    image: "hero_liao_hua.webp",
+    attackImage: "hero_liao_hua_atk.webp",
+  },
+  yan_liang: {
+    name: "顏良",
+    job: "cavalry",
+    image: "hero_yan_liang.webp",
+    attackImage: "hero_yan_liang_atk.webp",
+  },
+  sun_shang_xiang: {
+    name: "孫尚香",
+    job: "archer",
+    image: "hero_sun_shang_xiang.webp",
+    attackImage: "hero_sun_shang_xiang_atk.webp",
+  },
+  lv_bu: {
+    name: "呂布",
+    job: "cavalry",
+    image: "hero_lv_bu.webp",
+    attackImage: "hero_lv_bu_atk.webp",
+  },
+  diao_chan: {
+    name: "貂蟬",
+    job: "mage",
+    image: "hero_diao_chan.webp",
+    attackImage: "hero_diao_chan_atk.webp",
+  },
+  zhu_ge_liang: {
+    name: "諸葛亮",
+    job: "mage",
+    image: "hero_zhu_ge_liang.webp",
+    attackImage: "hero_zhu_ge_liang_atk.webp",
+  },
+  dian_wei: {
+    name: "典韋",
+    job: "infantry",
+    image: "hero_dian_wei.webp",
+    attackImage: "hero_dian_wei_atk.webp",
+  },
+  sun_quan: {
+    name: "孫權",
+    job: "cavalry",
+    image: "hero_sun_quan.webp",
+    attackImage: "hero_sun_quan_atk.webp",
+  },
+  gan_ning: {
+    name: "甘寧",
+    job: "cavalry",
+    image: "hero_gan_ning.webp",
+    attackImage: "hero_gan_ning_atk.webp",
+  },
+  xu_chu: {
+    name: "許褚",
+    job: "infantry",
+    image: "hero_xu_chu.webp",
+    attackImage: "hero_xu_chu_atk.webp",
+  },
+  pang_tong: {
+    name: "龐統",
+    job: "mage",
+    image: "hero_pang_tong.webp",
+    attackImage: "hero_pang_tong_atk.webp",
+  },
+  lu_su: {
+    name: "魯肅",
+    job: "mage",
+    image: "hero_lu_su.webp",
+    attackImage: "hero_lu_su_atk.webp",
+  },
+  zhou_cang: {
+    name: "周倉",
+    job: "infantry",
+    image: "hero_zhou_cang.webp",
+    attackImage: "hero_zhou_cang_atk.webp",
+  },
 };
+
+/**
+ * 武將的生命、攻擊、防禦：合法的數值（有限、不小於 0 的數字，或可轉成這種數字的非空字串）照用，0 也照用；
+ * 缺值、null、空字串、非數字、負數或非有限都用預設值（和 Godot 版 Hero.setup 缺值時相同：生命 1000、攻擊 100、防禦 50）
+ */
+function heroStatOr(value: unknown, fallback: number): number {
+  const n =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim() !== ""
+        ? Number(value)
+        : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
 
 export class HeroEntity {
   public isHero = true;
@@ -166,17 +295,20 @@ export class HeroEntity {
     this.atkSpeedAuraSource = `hero_atk_speed_aura#${instanceId}`;
     this.atkDownAuraSource = `hero_atk_down_aura#${instanceId}`;
 
-    this.currentHp = Number(state.hp) > 0 ? Number(state.hp) : 1000;
+    this.currentHp = heroStatOr(state.hp, 1000);
     this.maxHp = this.currentHp;
-    this.atk = Number(state.atk) > 0 ? Number(state.atk) : 100;
-    this.defStat = Number(state.def) >= 0 ? Number(state.def) : 50;
+    this.atk = heroStatOr(state.atk, 100);
+    this.defStat = heroStatOr(state.def, 50);
 
     this.readSkill(state);
 
     // 正規化英雄 ID 匹配（兼顧 'ma_chao' 與 'hero_ma_chao'）
-    const normalizeHeroId = (id: string) => String(id || "").replace(/^hero_/, "");
+    const normalizeHeroId = (id: string) =>
+      String(id || "").replace(/^hero_/, "");
     const targetKey = normalizeHeroId(this.heroId);
-    const cfg = heroesConfig.find((c) => normalizeHeroId(c.hero_id) === targetKey);
+    const cfg = heroesConfig.find(
+      (c) => normalizeHeroId(c.hero_id) === targetKey
+    );
     const fallback = HERO_FALLBACK_INFO[targetKey];
 
     if (cfg) {
@@ -186,14 +318,22 @@ export class HeroEntity {
 
       const baseRange = Number(cfg.attack_range) || 2.0;
       const rangeGrowth = Number(cfg.range_growth) || 0.0;
-      this.attackRange = (baseRange + (this.heroLevel - 1) * rangeGrowth) * this.rangeMultiplier;
+      this.attackRange =
+        (baseRange + (this.heroLevel - 1) * rangeGrowth) * this.rangeMultiplier;
 
       const baseSpd = Number(cfg.attack_speed) || 1.0;
       const spdGrowth = Number(cfg.atk_spd_growth ?? cfg.speed_growth ?? 0);
-      this.attackSpeed = Math.max(0.1, baseSpd * (1.0 - (this.heroLevel - 1) * spdGrowth));
+      this.attackSpeed = Math.max(
+        0.1,
+        baseSpd * (1.0 - (this.heroLevel - 1) * spdGrowth)
+      );
 
-      this.textureKey = cfg.image || fallback?.image || `hero_${targetKey}.webp`;
-      this.attackTextureKey = cfg.attack_image || fallback?.attackImage || `hero_${targetKey}_atk.webp`;
+      this.textureKey =
+        cfg.image || fallback?.image || `hero_${targetKey}.webp`;
+      this.attackTextureKey =
+        cfg.attack_image ||
+        fallback?.attackImage ||
+        `hero_${targetKey}_atk.webp`;
     } else if (fallback) {
       this.heroName = fallback.name;
       this.job = fallback.job;
@@ -241,7 +381,10 @@ export class HeroEntity {
 
     switch (String(s.id)) {
       case "first_strike":
-        this.firstStrikeMultiplier = Math.max(1.0, Number(s.first_attack_multiplier) || 2.0);
+        this.firstStrikeMultiplier = Math.max(
+          1.0,
+          Number(s.first_attack_multiplier) || 2.0
+        );
         break;
       case "long_range":
         this.rangeMultiplier = Math.max(1.0, Number(s.range_multiplier) || 1.5);
@@ -305,7 +448,10 @@ export class HeroEntity {
         }
         break;
       case "double_shot":
-        if (Number(s.double_shot_chance) > 0 && Number(s.double_shot_chance) < 1.0) {
+        if (
+          Number(s.double_shot_chance) > 0 &&
+          Number(s.double_shot_chance) < 1.0
+        ) {
           this.doubleShotChance = Number(s.double_shot_chance);
         }
         break;
@@ -321,7 +467,8 @@ export class HeroEntity {
   }
 
   public tenacityActive(): boolean {
-    if (this.tenacityHpRatio <= 0 || this.maxHp <= 0 || this.currentHp <= 0) return false;
+    if (this.tenacityHpRatio <= 0 || this.maxHp <= 0 || this.currentHp <= 0)
+      return false;
     return this.currentHp / this.maxHp <= this.tenacityHpRatio;
   }
 
@@ -385,7 +532,13 @@ export class HeroEntity {
     }
 
     // 結算命中傷害
-    const dealt = target.takeDamage(damage, false, false, floatingTexts, soundMgr);
+    const dealt = target.takeDamage(
+      damage,
+      false,
+      false,
+      floatingTexts,
+      soundMgr
+    );
 
     // 魏延吸血
     if (this.lifestealRatio > 0 && dealt > 0) {
@@ -394,7 +547,11 @@ export class HeroEntity {
 
     // 周瑜火攻
     if (this.burnRatio > 0 && !target.isDead) {
-      target.applyBurn(this.atk * this.burnRatio, this.burnTicks, this.burnInterval);
+      target.applyBurn(
+        this.atk * this.burnRatio,
+        this.burnTicks,
+        this.burnInterval
+      );
     }
 
     // 張飛暈眩
@@ -433,7 +590,10 @@ export class HeroEntity {
     this.atkTimer = interval - (late < interval ? late : 0.0);
   }
 
-  private findTarget(enemies: EnemyEntity[], rangePx: number): EnemyEntity | null {
+  private findTarget(
+    enemies: EnemyEntity[],
+    rangePx: number
+  ): EnemyEntity | null {
     let best: EnemyEntity | null = null;
     let bestProgress = -1.0;
 
@@ -451,13 +611,22 @@ export class HeroEntity {
     return best;
   }
 
-  private applyLifesteal(dealt: number, floatingTexts: FloatingTextManager): void {
+  private applyLifesteal(
+    dealt: number,
+    floatingTexts: FloatingTextManager
+  ): void {
     if (this.isDead || this.currentHp <= 0) return;
-    const gain = Math.min(dealt * this.lifestealRatio, this.maxHp - this.currentHp);
+    const gain = Math.min(
+      dealt * this.lifestealRatio,
+      this.maxHp - this.currentHp
+    );
     if (gain <= 0) return;
 
     this.currentHp += gain;
-    const shown = (gain >= 0.1 ? gain.toFixed(1) : gain.toFixed(2)).replace(/\.?0+$/, "");
+    const shown = (gain >= 0.1 ? gain.toFixed(1) : gain.toFixed(2)).replace(
+      /\.?0+$/,
+      ""
+    );
     floatingTexts.spawn(
       `+${shown}`,
       FloatingTextManager.COLOR_HEAL,
@@ -472,14 +641,24 @@ export class HeroEntity {
     floatingTexts: FloatingTextManager,
     soundMgr: SoundManager
   ): void {
-    if (this.isDead || this.currentHp <= 0 || !Number.isFinite(amount) || amount <= 0) {
+    if (
+      this.isDead ||
+      this.currentHp <= 0 ||
+      !Number.isFinite(amount) ||
+      amount <= 0
+    ) {
       return;
     }
 
     // 趙雲閃避
     if (this.dodgeChance > 0) {
       if (Math.random() < this.dodgeChance) {
-        floatingTexts.spawn("MISS", FloatingTextManager.COLOR_DODGE, this.x, this.y - this.heroHalf - 4);
+        floatingTexts.spawn(
+          "MISS",
+          FloatingTextManager.COLOR_DODGE,
+          this.x,
+          this.y - this.heroHalf - 4
+        );
         return;
       }
     }
@@ -495,7 +674,12 @@ export class HeroEntity {
     }
 
     this.currentHp -= actualDmg;
-    floatingTexts.spawn(Math.round(actualDmg).toString(), FloatingTextManager.COLOR_DAMAGE_HERO, this.x, this.y);
+    floatingTexts.spawn(
+      Math.round(actualDmg).toString(),
+      FloatingTextManager.COLOR_DAMAGE_HERO,
+      this.x,
+      this.y
+    );
 
     if (this.currentHp <= 0) {
       this.currentHp = 0;
@@ -569,7 +753,11 @@ export class HeroEntity {
     if (this.slowAuraMult < 1.0 && !this.isDead) {
       const keep = new Set<EnemyEntity>();
       for (const e of enemies) {
-        if (!e.isDead && !e.isFlying() && Math.hypot(e.x - this.x, e.y - this.y) <= rangePx) {
+        if (
+          !e.isDead &&
+          !e.isFlying() &&
+          Math.hypot(e.x - this.x, e.y - this.y) <= rangePx
+        ) {
           e.applySlowFrom(this.auraSource, this.slowAuraMult, 0.5);
           if (e.hasSlowFrom(this.auraSource)) {
             keep.add(e);
@@ -609,7 +797,11 @@ export class HeroEntity {
     for (const h of allHeroes) {
       if (h === this || h.isDead) continue;
       if (Math.hypot(h.x - this.x, h.y - this.y) <= rangePx) {
-        h.applyAtkSpeedFrom(this.atkSpeedAuraSource, this.atkSpeedAuraMult, 0.5);
+        h.applyAtkSpeedFrom(
+          this.atkSpeedAuraSource,
+          this.atkSpeedAuraMult,
+          0.5
+        );
         keep.add(h);
       }
     }
@@ -653,7 +845,11 @@ export class HeroEntity {
     }
   }
 
-  public applyAtkSpeedFrom(source: string, mult: number, duration: number): void {
+  public applyAtkSpeedFrom(
+    source: string,
+    mult: number,
+    duration: number
+  ): void {
     if (this.isDead || mult <= 1.0) return;
     this.atkSpeedSources.set(source, { mult, left: duration });
     let m = 1.0;
@@ -673,7 +869,8 @@ export class HeroEntity {
     for (const e of this.roadSlowed) e.removeSlowFrom(this.slowSource);
     for (const e of this.auraSlowed) e.removeSlowFrom(this.auraSource);
     for (const h of this.defBuffed) h.removeDefFrom(this.defAuraSource);
-    for (const h of this.atkSpeedBuffed) h.removeAtkSpeedFrom(this.atkSpeedAuraSource);
+    for (const h of this.atkSpeedBuffed)
+      h.removeAtkSpeedFrom(this.atkSpeedAuraSource);
     for (const e of this.atkDowned) e.removeAtkDownFrom(this.atkDownAuraSource);
 
     this.roadSlowed.clear();
@@ -683,7 +880,11 @@ export class HeroEntity {
     this.atkDowned.clear();
   }
 
-  public reposition(cell: GridCoord, worldPos: { x: number; y: number }, onRoad: boolean): void {
+  public reposition(
+    cell: GridCoord,
+    worldPos: { x: number; y: number },
+    onRoad: boolean
+  ): void {
     this.gridCell = { ...cell };
     this.x = worldPos.x;
     this.y = worldPos.y;

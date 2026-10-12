@@ -6,6 +6,7 @@
 
 import {
   BattleEngine,
+  HeroRosterInfo,
   StagePayload,
   TowerSellRequest,
   TowerSellResult,
@@ -37,6 +38,8 @@ export class LocalGameBridge {
     context?: TowerPanelContext
   ) => void;
   public onHeroInfoOpen?: (hero: HeroEntity | null) => void;
+  /** 武將陣亡：這一場與還活著的武將識別碼（凍結的複本） */
+  public onHeroRosterChanged?: (info: HeroRosterInfo) => void;
   public onBattleEnded?: (result: BattleResultData) => void;
   public onWaveRejected?: (wave: number, reason: string) => void;
 
@@ -62,6 +65,10 @@ export class LocalGameBridge {
 
     this.engine.onShowHeroInfo = (hero) => {
       this.onHeroInfoOpen?.(hero);
+    };
+
+    this.engine.onHeroRosterChanged = (info) => {
+      this.onHeroRosterChanged?.(info);
     };
 
     this.engine.onBattleEnded = (result) => {

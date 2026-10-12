@@ -76,6 +76,13 @@ const isTowerSellRequest = (v: unknown): v is TowerSellRequest => {
   );
 };
 
+/** 武將陣亡的通知（只在本機的畫面與引擎之間使用）：這一場、還活著的武將識別碼（凍結的複本），以及剛陣亡的那一個實例 */
+export interface HeroRosterInfo {
+  battleId: string;
+  aliveHeroIds: readonly string[];
+  died: HeroEntity;
+}
+
 export interface StagePayload {
   stageId: string;
   battleId: string;
@@ -140,6 +147,7 @@ export class BattleEngine {
   ) => void;
   public onShowUpgradePanel?: (tower: TowerEntity) => void;
   public onShowHeroInfo?: (hero: HeroEntity) => void;
+  public onHeroRosterChanged?: (info: HeroRosterInfo) => void;
   public onBattleEnded?: (result: BattleResultData) => void;
   public onWaveRejected?: (wave: number, reason: string) => void;
   public onCellClicked?: (col: number, row: number) => void;
@@ -333,8 +341,8 @@ export class BattleEngine {
       for (let i = this.heroes.length - 1; i >= 0; i--) {
         const hero = this.heroes[i];
         if (hero.isDead) {
-          this.gameMap.clearOccupied(hero.gridCell.col, hero.gridCell.row);
-          this.heroes.splice(i, 1);
+          // 陣亡時通常已由 handleHeroDied 移除；這裡只是保底，同樣只釋放它自己占的格子
+          this.removeHeroInstance(hero);
           continue;
         }
         hero.update(
@@ -586,6 +594,10 @@ export class BattleEngine {
     row: number,
     heroState: HeroStateData
   ): boolean {
+    // 武將識別碼要是非空字串；同一位武將還在場上（沒有陣亡）時不能再派（和 Godot 版 _placed_heroes 相同），陣亡後可以重派
+    const heroId: unknown = heroState?.hero_id;
+    if (typeof heroId !== "string" || heroId.trim() === "") return false;
+    if (this.heroes.some((h) => !h.isDead && h.heroId === heroId)) return false;
     if (!this.gameMap.canPlaceHero(col, row)) return false;
 
     // 派出武將不花戰場金幣（和 Godot 版相同）；建塔與升級照原價
@@ -600,10 +612,57 @@ export class BattleEngine {
       isOnRoad,
       this.gameMap.tileSize
     );
+    // 陣亡通知帶著派出時的這一場：換場後舊實例晚到的通知不會動到新的一場
+    const battleId = this.battleManager.battleId;
+    hero.onHeroDied = (h) => this.handleHeroDied(h, battleId);
 
     this.gameMap.setOccupied(col, row, hero);
     this.heroes.push(hero);
     this.soundManager.play("hero_place");
+    return true;
+  }
+
+  /** 這一場還活著的武將識別碼（凍結的複本，不能用來改戰場） */
+  public getAliveHeroIds(): readonly string[] {
+    return Object.freeze(
+      this.heroes.filter((h) => !h.isDead).map((h) => h.heroId)
+    );
+  }
+
+  /**
+   * 武將陣亡：HeroEntity.takeDamage 把生命扣到 0、標記 isDead 之後同步呼叫（自然流程是敵人攻擊阻路武將，發生在遊戲迴圈更新敵人的那一段，
+   * 不在逐一更新武將的迴圈裡）。只處理這一場、仍在場上的同一個實例：釋放它自己占的格子、從場上移除、取消只屬於它的選取，
+   * 再通知頁面這一場還活著的武將。舊場次或已經移除的實例（重複或晚到的通知）不做任何事，不會動到同一位武將重派的新實例
+   */
+  private handleHeroDied(hero: HeroEntity, battleId: string): void {
+    if (battleId !== this.battleManager.battleId) return;
+    if (!this.removeHeroInstance(hero)) return;
+    this.onHeroRosterChanged?.({
+      battleId,
+      aliveHeroIds: this.getAliveHeroIds(),
+      died: hero,
+    });
+  }
+
+  /** 從場上移除這個武將實例：格子的占用者是它自己才釋放、選取的是它自己才取消；它不在場上就什麼都不做並回傳 false */
+  private removeHeroInstance(hero: HeroEntity): boolean {
+    const idx = this.heroes.indexOf(hero);
+    if (idx < 0) return false;
+    const { col, row } = hero.gridCell;
+    if (this.gameMap.getOccupant(col, row) === hero) {
+      this.gameMap.clearOccupied(col, row);
+    }
+    this.heroes.splice(idx, 1);
+    const sel = this.selectedUnit;
+    if (
+      sel &&
+      sel.type === "hero" &&
+      sel.id === hero.heroId &&
+      sel.col === col &&
+      sel.row === row
+    ) {
+      this.selectedUnit = null;
+    }
     return true;
   }
 

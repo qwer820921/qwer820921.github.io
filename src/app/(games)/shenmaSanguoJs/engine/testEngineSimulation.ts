@@ -3,7 +3,7 @@
  * 自動化全功能閉環整合測試腳本
  * 覆蓋：
  * 1. 關卡與地圖載入 (GameMap, builtinData)
- * 2. 5大防禦塔建造、升級、索敵、拆除退款 (50% / PREP 100%)
+ * 2. 5大防禦塔建造、升級、索敵、拆除退款 (返還投入的 50%)
  * 3. 13大名將部署、技能特技判定 (馬超衝鋒、趙雲反擊、關羽緩速等)
  * 4. 敵人波次生成、飛行直線、地面道路、阻擋近戰交鋒、血量扣減
  * 5. 戰鬥狀態機流轉 (PREP -> BATTLE -> RESULT)、勝負結算、星級計算、戰功獎勵
@@ -12,7 +12,12 @@
 
 import { BattleEngine } from "./BattleEngine";
 import { GameState } from "./BattleManager";
-import { BUILTIN_STAGES, BUILTIN_HEROES_CONFIG, BUILTIN_ENEMIES_CONFIG, DEFAULT_PLAYER_HEROES } from "./builtinData";
+import {
+  BUILTIN_STAGES,
+  BUILTIN_HEROES_CONFIG,
+  BUILTIN_ENEMIES_CONFIG,
+  DEFAULT_PLAYER_HEROES,
+} from "./builtinData";
 import { TOWER_CONFIGS } from "./entities/TowerEntity";
 
 // 假 Mock 渲染器以在 Node 環境下接收每幀快照
@@ -54,7 +59,9 @@ async function runSimulationTests() {
     throw new Error(`狀態機初始狀態錯誤：${engine.battleManager.gameState}`);
   }
   console.log("  ✔ 初始狀態為 PREP 佈防階段");
-  console.log(`  ✔ 地圖網格：${engine.gameMap.cols}x${engine.gameMap.rows} 格`);
+  console.log(
+    `  ✔ 地圖網格：${engine.gameMap.cols}x${engine.gameMap.rows} 格`
+  );
   console.log(`  ✔ 初始金幣：${engine.battleManager.battleGold} 金幣\n`);
 
   // 2. 測試防禦塔建造與升級
@@ -64,7 +71,9 @@ async function runSimulationTests() {
 
   const buildSuccess = engine.placeTower(bCol, bRow, "artillery"); // 砲兵塔
   if (!buildSuccess) throw new Error("建造砲兵塔失敗！");
-  console.log(`  ✔ 在 (${bCol}, ${bRow}) 成功建造砲兵塔，扣除 100 金幣，剩餘：${engine.battleManager.battleGold}`);
+  console.log(
+    `  ✔ 在 (${bCol}, ${bRow}) 成功建造砲兵塔，扣除 100 金幣，剩餘：${engine.battleManager.battleGold}`
+  );
 
   const placedTower = engine.towers[0];
   if (placedTower.towerLevel !== 1) throw new Error("砲兵塔初始等級錯誤");
@@ -72,33 +81,64 @@ async function runSimulationTests() {
   // 升級砲兵塔
   const upCost = placedTower.getUpgradeCost();
   const upSuccess = engine.upgradeTower(bCol, bRow);
-  if (!upSuccess || (placedTower.towerLevel as number) !== 2) throw new Error("砲兵塔升級失敗！");
-  console.log(`  ✔ 成功升級砲兵塔至 Lv.2 (花費 ${upCost} 金幣，ATK: ${placedTower.atk})`);
+  if (!upSuccess || (placedTower.towerLevel as number) !== 2)
+    throw new Error("砲兵塔升級失敗！");
+  console.log(
+    `  ✔ 成功升級砲兵塔至 Lv.2 (花費 ${upCost} 金幣，ATK: ${placedTower.atk})`
+  );
 
   // 測試索敵模式設定
   engine.setTowerTargetMode(bCol, bRow, "strongest");
-  if (placedTower.targetMode !== "strongest") throw new Error("索敵模式設定失敗！");
+  if (placedTower.targetMode !== "strongest")
+    throw new Error("索敵模式設定失敗！");
   console.log("  ✔ 索敵模式成功切換為 'strongest' (最高血量優先)\n");
 
-  // 3. 測試準備階段 100% 拆除全額退費
-  console.log("測試 3：準備階段拆除全額退費...");
+  // 3. 測試準備階段拆除：返還投入的一半（和 Godot 版相同）
+  console.log("測試 3：準備階段拆除返還投入的一半...");
   const goldBeforeSell = engine.battleManager.battleGold;
-  const sellRefund = placedTower.getSellRefund(true);
-  engine.sellTower(bCol, bRow);
+  // 砲兵塔建造 100＋升級 80＝投入 180，返還一半 90
+  const sellRefund = 90;
+  if (placedTower.getSellRefund() !== sellRefund) {
+    throw new Error(
+      `拆除返還應為 ${sellRefund}，實際 ${placedTower.getSellRefund()}`
+    );
+  }
+  // 先點選這座塔，再用這一場、這座塔、格子與看到的返還金額送出拆除請求
+  const sellPos = engine.gameMap.gridToWorld(bCol, bRow);
+  engine.handleCellClick(sellPos.x, sellPos.y);
+  const sellResult = engine.sellTower({
+    battleId: engine.battleManager.battleId,
+    towerUid: placedTower.towerUid,
+    col: bCol,
+    row: bRow,
+    expectedRefund: placedTower.getSellRefund(),
+  });
+  if (!sellResult.ok || sellResult.refund !== sellRefund) {
+    throw new Error(`拆除被拒或返還不符：${JSON.stringify(sellResult)}`);
+  }
   if (engine.towers.length !== 0) throw new Error("防禦塔拆除後未被清除");
+  if (engine.gameMap.isOccupied(bCol, bRow)) {
+    throw new Error("防禦塔拆除後格子沒有釋放");
+  }
   if (engine.battleManager.battleGold !== goldBeforeSell + sellRefund) {
     throw new Error("準備階段退款金額不符！");
   }
-  console.log(`  ✔ 拆除防禦塔成功退回 ${sellRefund} 金幣 (100% 全額返還)\n`);
+  console.log(`  ✔ 拆除防禦塔成功退回 ${sellRefund} 金幣 (投入的一半)\n`);
 
   // 4. 測試多座防禦塔組合建造 (5種塔)
   console.log("測試 4：5 大防禦塔全陣容部署...");
   const towerTypes = ["archer", "infantry", "artillery", "cavalry", "scholar"];
-  for (let i = 0; i < Math.min(towerTypes.length, stage1.path_json.build_zones.length); i++) {
+  for (
+    let i = 0;
+    i < Math.min(towerTypes.length, stage1.path_json.build_zones.length);
+    i++
+  ) {
     const [c, r] = stage1.path_json.build_zones[i];
     const ok = engine.placeTower(c, r, towerTypes[i]);
     if (!ok) throw new Error(`建造 ${towerTypes[i]} 失敗`);
-    console.log(`  ✔ 成功建造 ${TOWER_CONFIGS[towerTypes[i]].name} 於 (${c}, ${r})`);
+    console.log(
+      `  ✔ 成功建造 ${TOWER_CONFIGS[towerTypes[i]].name} 於 (${c}, ${r})`
+    );
   }
   console.log(`  ✔ 當前防禦塔數量：${engine.towers.length} 座\n`);
 
@@ -108,15 +148,23 @@ async function runSimulationTests() {
   const roadCell1 = roadWps[2]; // (3, 7)
   const roadCell2 = roadWps[3]; // (8, 7)
 
-  const heroMaChao = DEFAULT_PLAYER_HEROES.find((h) => h.hero_id === "hero_ma_chao")!;
-  const heroZhaoYun = DEFAULT_PLAYER_HEROES.find((h) => h.hero_id === "hero_zhao_yun")!;
+  const heroMaChao = DEFAULT_PLAYER_HEROES.find(
+    (h) => h.hero_id === "hero_ma_chao"
+  )!;
+  const heroZhaoYun = DEFAULT_PLAYER_HEROES.find(
+    (h) => h.hero_id === "hero_zhao_yun"
+  )!;
 
   const h1Ok = engine.placeHero(roadCell1[0], roadCell1[1], heroMaChao);
   const h2Ok = engine.placeHero(roadCell2[0], roadCell2[1], heroZhaoYun);
 
   if (!h1Ok || !h2Ok) throw new Error("部署道路肉盾武將失敗！");
-  console.log(`  ✔ 馬超成功駐守道路 (${roadCell1[0]}, ${roadCell1[1]})，肉盾阻擋已啟用`);
-  console.log(`  ✔ 趙雲成功駐守道路 (${roadCell2[0]}, ${roadCell2[1]})，肉盾阻擋已啟用\n`);
+  console.log(
+    `  ✔ 馬超成功駐守道路 (${roadCell1[0]}, ${roadCell1[1]})，肉盾阻擋已啟用`
+  );
+  console.log(
+    `  ✔ 趙雲成功駐守道路 (${roadCell2[0]}, ${roadCell2[1]})，肉盾阻擋已啟用\n`
+  );
 
   // 6. 測試戰鬥狀態推進與波次交鋒
   console.log("測試 6：啟動戰鬥與波次交鋒模擬...");
@@ -132,7 +180,9 @@ async function runSimulationTests() {
   if ((engine.battleManager.gameState as GameState) !== GameState.BATTLE) {
     throw new Error("啟動戰鬥後狀態機未進入 BATTLE 狀態！");
   }
-  console.log(`  ✔ 成功開戰！波次：${engine.battleManager.currentWave} / ${engine.battleManager.totalWaves}`);
+  console.log(
+    `  ✔ 成功開戰！波次：${engine.battleManager.currentWave} / ${engine.battleManager.totalWaves}`
+  );
 
   // 步進推進模擬 120 幀 (約 2 秒)
   console.log("  >>> 步進推進模擬交鋒中...");
@@ -149,7 +199,11 @@ async function runSimulationTests() {
       if (!e.isFlying() && !e.blocker) {
         const grid = engine.gameMap.worldToGrid(e.x, e.y);
         const hero = engine.heroes.find(
-          (h) => h.isOnRoad && !h.isDead && h.gridCell.col === grid.col && h.gridCell.row === grid.row
+          (h) =>
+            h.isOnRoad &&
+            !h.isDead &&
+            h.gridCell.col === grid.col &&
+            h.gridCell.row === grid.row
         );
         if (hero) e.blocker = hero;
       }
@@ -161,26 +215,40 @@ async function runSimulationTests() {
     }
 
     for (const h of engine.heroes) {
-      h.update(dt, enemies, engine.heroes, engine.battleManager, engine.floatingTexts, engine.soundManager);
+      h.update(
+        dt,
+        enemies,
+        engine.heroes,
+        engine.battleManager,
+        engine.floatingTexts,
+        engine.soundManager
+      );
     }
   }
 
-  console.log(`  ✔ 戰場活躍敵兵數：${engine.waveManager.activeEnemies.length}`);
+  console.log(
+    `  ✔ 戰場活躍敵兵數：${engine.waveManager.activeEnemies.length}`
+  );
   console.log(`  ✔ 累計擊殺敵兵數：${engine.battleManager.kills}`);
-  console.log(`  ✔ 戰鬥產生之飄字數：${engine.floatingTexts.getSnapshot().length}\n`);
+  console.log(
+    `  ✔ 戰鬥產生之飄字數：${engine.floatingTexts.getSnapshot().length}\n`
+  );
 
   // 7. 測試倍速切換與部屬減速
   console.log("測試 7：倍速切換與暫停驗證...");
   engine.battleManager.speedPref = 2;
-  if (engine.battleManager.effectiveTimeScale() !== 2) throw new Error("2x 倍速設置無效");
+  if (engine.battleManager.effectiveTimeScale() !== 2)
+    throw new Error("2x 倍速設置無效");
   console.log("  ✔ 2x 倍速生效 (effectiveTimeScale = 2.0)");
 
   engine.battleManager.beginDeploySlow();
-  if (Math.abs(engine.battleManager.effectiveTimeScale() - 0.1) > 0.01) throw new Error("部屬減速無效");
+  if (Math.abs(engine.battleManager.effectiveTimeScale() - 0.1) > 0.01)
+    throw new Error("部屬減速無效");
   console.log("  ✔ 部屬減速生效 (effectiveTimeScale = 0.1)");
 
   engine.battleManager.endDeploySlow();
-  if (engine.battleManager.effectiveTimeScale() !== 2) throw new Error("部屬減速結束恢復倍速失敗");
+  if (engine.battleManager.effectiveTimeScale() !== 2)
+    throw new Error("部屬減速結束恢復倍速失敗");
   console.log("  ✔ 部屬結束恢復 2x 倍速");
 
   engine.battleManager.manualPaused = true;
@@ -208,7 +276,9 @@ async function runSimulationTests() {
   if (!battleEnded || !battleResultData || battleResultData.result !== "WIN") {
     throw new Error("勝利結算流程未完成！");
   }
-  console.log(`  ✔ 結算完成：結果=${battleResultData.result}, 星級=${battleResultData.stars_earned}, 戰功物資=${battleResultData.loots[0].count}`);
+  console.log(
+    `  ✔ 結算完成：結果=${battleResultData.result}, 星級=${battleResultData.stars_earned}, 戰功物資=${battleResultData.loots[0].count}`
+  );
 
   // 清理
   engine.destroy();
