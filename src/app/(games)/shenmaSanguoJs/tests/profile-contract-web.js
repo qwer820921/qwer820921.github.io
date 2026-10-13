@@ -12717,6 +12717,694 @@ module.exports = async function profileContractWeb(page) {
     }
   );
 
+  // ═══ 36. 換帳號後沒有重新載入的舊場：不派新帳號的武將、訪客的本機結算只給出征來源本人 ═══
+  // 戰鬥中或清完一波回到備戰時換帳號，照原本的政策不重開這一場（第 24、35 段）；這時部署選單的武將卡停用並說明（塔照常），
+  // 真正的派出入口另用 store 當下的帳號再核一次；訪客的本機結算只給這一場的出征來源本人（模式、金鑰、帳號世代都相同）。
+  // 結束用受控的 endBattle 回呼、清波用受控的 onWaveAllEnemiesDead，不是自然通關。「受控呼叫派出入口」是直接呼叫武將卡的 React onClick
+  // （等同畫面晚一拍、卡片還能按的情況），不是一般操作
+  const BLOCK36 = "這一場是換帳號前的出征，請重新選關再派武將。";
+  const NOTSAVED36 =
+    "這場沒有寫入本機進度：出征後帳號來源已變更，請重新選關再出征。";
+  const guestRaw36 = (p) =>
+    p.evaluate(() => localStorage.getItem("shenma_js_guest_state"));
+  const guestGold36 = (p) =>
+    p.evaluate(() => {
+      const g = JSON.parse(
+        localStorage.getItem("shenma_js_guest_state") || "null"
+      );
+      return g ? g.gold : null;
+    });
+  const heroCount36 = (p) =>
+    p.evaluate(() => window.__testBridge.engine.heroes.length);
+  /**
+   * 打開部署選單讀某位武將卡（停用、說明）；keyboard：試著把焦點移到卡片按 Enter；
+   * force：受控呼叫卡片的 React onClick（直接走頁面真正的派出入口），回報前後場上武將數與選單是否還開著
+   */
+  async function heroCard36(
+    p,
+    cell,
+    name,
+    { force = false, keyboard = false } = {}
+  ) {
+    const pt = await cellPoint(p, cell);
+    if (!pt.onCanvas || !pt.canPlace) return { ok: false, step: "cell", pt };
+    await p.mouse.click(pt.x, pt.y);
+    const menu = p.locator(PLACEMENT_MENU);
+    if (!(await until(() => menu.isVisible(), 5000)))
+      return { ok: false, step: "menu" };
+    const card = menu.locator("button", { hasText: name });
+    if ((await card.count()) === 0) {
+      const t = await menu.innerText();
+      await closePlacementMenu(p);
+      return { ok: false, step: "card", menu: t };
+    }
+    const hint = menu.locator('[data-testid="placement-hero-blocked"]');
+    const out = {
+      ok: true,
+      disabled: await card.first().isDisabled(),
+      reason: (await hint.count()) ? (await hint.innerText()).trim() : null,
+    };
+    if (keyboard) {
+      const before = await heroCount36(p);
+      await card
+        .first()
+        .focus()
+        .catch(() => {});
+      const focused = await card
+        .first()
+        .evaluate((b) => document.activeElement === b);
+      await p.keyboard.press("Enter");
+      await sleep(500);
+      out.keyboard = {
+        focused,
+        before,
+        after: await heroCount36(p),
+        menuOpen: await menu.isVisible(),
+      };
+    }
+    if (force) {
+      const before = await heroCount36(p);
+      const called = await card.first().evaluate((b) => {
+        const k = Object.keys(b).find((x) => x.startsWith("__reactProps$"));
+        if (!k || typeof b[k].onClick !== "function") return false;
+        b[k].onClick();
+        return true;
+      });
+      await sleep(500);
+      out.forced = {
+        called,
+        before,
+        after: await heroCount36(p),
+        menuOpen: await menu.isVisible(),
+      };
+    }
+    if (await menu.isVisible()) await closePlacementMenu(p);
+    return out;
+  }
+  const blocked36 = (c) =>
+    !!c && c.ok && c.disabled === true && c.reason === BLOCK36;
+  const forcedRefused36 = (c) =>
+    !!c &&
+    !!c.forced &&
+    c.forced.called === true &&
+    c.forced.after === c.forced.before &&
+    c.forced.menuOpen === true;
+  const resultOf36 = async (p) => ({
+    card: (await text(p, '[data-testid="result-card"]')) || "",
+    notSaved: await text(p, '[data-testid="result-not-saved"]'),
+  });
+
+  await scenario(
+    "換帳號舊場守門：共用帳號甲戰鬥中登出改用訪客，訪客的武將不能派進舊場、塔照常，受控勝利後訪客存檔不變",
+    async (mk) => {
+      const A = "k_g36_a";
+      const E = await mk({
+        seed: [
+          {
+            key: A,
+            data: NEW({
+              nickname: "甲",
+              capacity: 20,
+              team: [{ hero_id: "ma_chao", slot: 1 }],
+            }),
+            rev: 2,
+          },
+        ],
+        maps: HOLD_MAPS35,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({
+        storage: {
+          shenma_player_key: A,
+          shenma_js_guest_state: GUEST_SAVE(
+            [ZY35],
+            [{ slot: 0, hero_id: "hero_zhao_yun" }]
+          ),
+        },
+      });
+      check("讀到甲", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      check("部署甲的馬超並標記", d1.ok && (await markField(p)) === 1, d1);
+      check("開始旁錄載入", await watchLoads35(p));
+      check("按進入戰場開戰", await startBattle(p));
+      const s0 = await field35(p);
+      check("戰鬥中一般 UI 登出", await logout35(p));
+      await p.locator('[data-testid="key-setup-guest"]').click();
+      check("在金鑰視窗選訪客", await enterGuest(p));
+      await sleep(1500);
+      const s1 = await field35(p);
+      const l1 = await loads35(p);
+      check(
+        "改用訪客後舊場不重開：沒有任何載入、同一個 battleId、仍在戰鬥、場上是甲的馬超（原本的實例）",
+        Array.isArray(l1) &&
+          l1.length === 0 &&
+          s1.battleId === s0.battleId &&
+          s1.state === 2 &&
+          s1.heroes.length === 1 &&
+          s1.heroes[0].mark === "hero:hero_ma_chao",
+        { l1, s0, s1 }
+      );
+      const raw0 = await guestRaw36(p);
+      const c1 = await heroCard36(p, ROAD_CELLS[6], "趙雲", { force: true });
+      check(
+        "部署選單上訪客的趙雲停用，說明「這一場是換帳號前的出征，請重新選關再派武將。」",
+        blocked36(c1),
+        c1
+      );
+      check(
+        "受控呼叫趙雲卡的派出入口：不派（場上武將數不變、選單沒有關）",
+        forcedRefused36(c1),
+        c1
+      );
+      const t1 = await buildTower(p, BUILD_CELL, "弓兵塔");
+      const s2 = await field35(p);
+      check(
+        "塔照常：在建築位建弓兵塔成功（塔不屬於帳號）",
+        t1.ok && s2.towers.length === 1,
+        { t1, towers: s2.towers }
+      );
+      check("受控勝利結束", (await endWith(p, { win: true })) === "ok");
+      await sleep(1500);
+      const raw1 = await guestRaw36(p);
+      const r1 = await resultOf36(p);
+      check(
+        "訪客的本機存檔逐字不變（沒有金幣、經驗、解鎖、通關紀錄）",
+        raw0 !== null && raw1 === raw0,
+        { raw0, raw1 }
+      );
+      check(
+        "結算畫面沒有獎勵與解鎖，說明「這場沒有寫入本機進度：出征後帳號來源已變更，請重新選關再出征。」",
+        r1.notSaved === NOTSAVED36 &&
+          !/主公金幣|主公經驗|解鎖新戰役|已通關/.test(r1.card),
+        r1
+      );
+      check(
+        "沒有任何 GAS 寫入",
+        E.gas.writes().length === 0,
+        E.gas.writes().map((w) => w.action)
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "換帳號舊場守門：共用帳號甲清完第 1 波後切換到乙、再切回甲（新的世代），兩次都不能派武將（390×600、鍵盤），舊場保留、結束不寫入",
+    async (mk) => {
+      const A = "k_g36_c";
+      const B = "k_g36_d";
+      const E = await mk({
+        seed: [
+          {
+            key: A,
+            data: NEW({
+              nickname: "甲",
+              capacity: 20,
+              team: [
+                { hero_id: "ma_chao", slot: 1 },
+                { hero_id: "zhao_yun", slot: 2 },
+              ],
+            }),
+            rev: 2,
+          },
+          {
+            key: B,
+            data: NEW({
+              nickname: "乙",
+              capacity: 20,
+              team: [{ hero_id: "huang_zhong", slot: 1 }],
+            }),
+            rev: 5,
+          },
+        ],
+        maps: TWO_WAVE_MAPS,
+        enemies: [...ENEMIES, DUMMY],
+        viewport: { width: 390, height: 600 },
+      });
+      const p = await E.page({ storage: { shenma_player_key: A } });
+      check("讀到甲", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      check("部署甲的馬超並標記", d1.ok && (await markField(p)) === 1, d1);
+      check("開始旁錄載入", await watchLoads35(p));
+      check("開第 1 波", await startBattle(p));
+      await forceWaveClear(p);
+      await sleep(1200);
+      const s0 = await field35(p);
+      check(
+        "受控清波回到備戰（第 1 波之後）",
+        s0.state === 1 && s0.wave === 1,
+        s0
+      );
+      check("一般 UI 切換金鑰到乙", await switchKey(p, B, "乙"));
+      await sleep(1500);
+      const c1 = await heroCard36(p, ROAD_CELLS[6], "黃忠", {
+        keyboard: true,
+        force: true,
+      });
+      check("乙的黃忠卡停用並說明", blocked36(c1), c1);
+      check(
+        "鍵盤：停用的黃忠卡拿不到焦點、按 Enter 不派",
+        !!c1.keyboard &&
+          c1.keyboard.focused === false &&
+          c1.keyboard.after === c1.keyboard.before,
+        c1
+      );
+      check("受控呼叫黃忠卡的派出入口：不派", forcedRefused36(c1), c1);
+      check(
+        "一般 UI 切回甲（同一把金鑰、新的世代）",
+        await switchKey(p, A, "甲")
+      );
+      await sleep(1500);
+      const c2 = await heroCard36(p, ROAD_CELLS[6], "趙雲", { force: true });
+      check(
+        "切回甲之後：甲的趙雲卡也停用並說明（新的世代不算這一場的來源）",
+        blocked36(c2),
+        c2
+      );
+      check("受控呼叫趙雲卡的派出入口：不派", forcedRefused36(c2), c2);
+      const s1 = await field35(p);
+      const l1 = await loads35(p);
+      check(
+        "舊場保留：沒有任何載入、同一個 battleId、波次 1、塔金幣城防首擊不變、場上只有甲的馬超（原本的實例）",
+        Array.isArray(l1) &&
+          l1.length === 0 &&
+          sameJson(keep35(s1), keep35(s0)) &&
+          sameJson(s1.heroes, s0.heroes),
+        { l1, s0, s1 }
+      );
+      await p.locator('[data-testid="hud-start-battle"]').click();
+      check(
+        "按迎戰進第 2 波",
+        await until(async () => (await bm(p, "state")) === 2, 5000)
+      );
+      check("受控勝利結束", (await endWith(p, { win: true })) === "ok");
+      await sleep(2000);
+      const r1 = await resultOf36(p);
+      check(
+        "結算照原本的共用帳號規則：沒有送出（出征時沒有固定這一場），沒有本機進度的說明",
+        E.gas.count("save_result") === 0 &&
+          /出征時沒有固定這一場/.test(r1.card) &&
+          !r1.card.includes(NOTSAVED36),
+        { saveResult: E.gas.count("save_result"), r1 }
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "換帳號舊場守門：訪客戰鬥中登出再選回同一個訪客（同一把金鑰、新的世代），舊場不給本機獎勵、武將卡停用",
+    async (mk) => {
+      const E = await mk({
+        maps: HOLD_MAPS35,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({
+        storage: guestStorage(
+          [MA35, ZY35],
+          [
+            { slot: 0, hero_id: "hero_ma_chao" },
+            { slot: 1, hero_id: "hero_zhao_yun" },
+          ]
+        ),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      check("部署馬超並標記", d1.ok && (await markField(p)) === 1, d1);
+      check("開始旁錄載入", await watchLoads35(p));
+      check("按進入戰場開戰", await startBattle(p));
+      const s0 = await field35(p);
+      check("戰鬥中一般 UI 登出", await logout35(p));
+      await p.locator('[data-testid="key-setup-guest"]').click();
+      check("在金鑰視窗選回訪客", await enterGuest(p));
+      await sleep(1500);
+      const s1 = await field35(p);
+      check(
+        "舊場不重開：沒有任何載入、同一個 battleId、仍在戰鬥",
+        sameJson(await loads35(p), []) &&
+          s1.battleId === s0.battleId &&
+          s1.state === 2,
+        { s0, s1 }
+      );
+      const raw0 = await guestRaw36(p);
+      const c1 = await heroCard36(p, ROAD_CELLS[6], "趙雲", { force: true });
+      check("同一個訪客的趙雲卡也停用並說明", blocked36(c1), c1);
+      check("受控呼叫趙雲卡的派出入口：不派", forcedRefused36(c1), c1);
+      check("受控勝利結束", (await endWith(p, { win: true })) === "ok");
+      await sleep(1500);
+      const raw1 = await guestRaw36(p);
+      const r1 = await resultOf36(p);
+      check(
+        "訪客的本機存檔逐字不變，結算畫面說明沒有寫入本機進度、沒有獎勵",
+        raw0 !== null &&
+          raw1 === raw0 &&
+          r1.notSaved === NOTSAVED36 &&
+          !/主公金幣|解鎖新戰役/.test(r1.card),
+        { raw0, raw1, r1 }
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "換帳號舊場守門：訪客戰鬥中登出改登入共用帳號甲，舊場不給訪客獎勵、也不寫共用進度",
+    async (mk) => {
+      const A = "k_g36_e";
+      const E = await mk({
+        seed: [
+          {
+            key: A,
+            data: NEW({
+              nickname: "甲",
+              capacity: 20,
+              team: [{ hero_id: "huang_zhong", slot: 1 }],
+            }),
+            rev: 2,
+          },
+        ],
+        maps: HOLD_MAPS35,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({
+        storage: guestStorage(
+          [MA35, ZY35],
+          [
+            { slot: 0, hero_id: "hero_ma_chao" },
+            { slot: 1, hero_id: "hero_zhao_yun" },
+          ]
+        ),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      check("部署馬超並標記", d1.ok && (await markField(p)) === 1, d1);
+      check("按進入戰場開戰", await startBattle(p));
+      const raw0 = await guestRaw36(p);
+      check("戰鬥中一般 UI 登出", await logout35(p));
+      await p.locator('[data-testid="key-setup-input"]').fill(A);
+      await p.locator('[data-testid="key-setup-login"]').click();
+      check(
+        "在金鑰視窗登入甲",
+        await until(
+          async () =>
+            (await p.locator('[data-testid="key-setup"]').count()) === 0,
+          15000
+        )
+      );
+      await sleep(1500);
+      const c1 = await heroCard36(p, ROAD_CELLS[6], "黃忠", { force: true });
+      check("甲的黃忠卡停用並說明", blocked36(c1), c1);
+      check("受控呼叫黃忠卡的派出入口：不派", forcedRefused36(c1), c1);
+      check("受控勝利結束", (await endWith(p, { win: true })) === "ok");
+      await sleep(2000);
+      const raw1 = await guestRaw36(p);
+      const r1 = await resultOf36(p);
+      check(
+        "訪客的本機存檔逐字不變；共用帳號照原本的規則沒有送出（出征時沒有固定這一場）",
+        raw0 !== null &&
+          raw1 === raw0 &&
+          E.gas.count("save_result") === 0 &&
+          /出征時沒有固定這一場/.test(r1.card),
+        { raw0, raw1, saveResult: E.gas.count("save_result"), r1 }
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "換帳號舊場守門：訪客同一個世代清波後續戰勝利，派武將與本機獎勵照原本的訪客規則",
+    async (mk) => {
+      const E = await mk({
+        maps: TWO_WAVE_MAPS,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({
+        storage: guestStorage(
+          [MA35, ZY35],
+          [
+            { slot: 0, hero_id: "hero_ma_chao" },
+            { slot: 1, hero_id: "hero_zhao_yun" },
+          ]
+        ),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      check("部署馬超", d1.ok, d1);
+      check("開第 1 波", await startBattle(p));
+      await forceWaveClear(p);
+      await sleep(1200);
+      const c1 = await heroCard36(p, ROAD_CELLS[6], "趙雲");
+      check(
+        "清波後同一個訪客：趙雲卡可以按、沒有換帳號的說明",
+        c1.ok && c1.disabled === false && c1.reason === null,
+        c1
+      );
+      const d2 = await deployHero(p, ROAD_CELLS[6], "趙雲");
+      check("清波後照常部署趙雲", d2.ok, d2);
+      await p.locator('[data-testid="hud-start-battle"]').click();
+      check(
+        "按迎戰進第 2 波",
+        await until(async () => (await bm(p, "state")) === 2, 5000)
+      );
+      const gold0 = await guestGold36(p);
+      check("受控勝利結束", (await endWith(p, { win: true })) === "ok");
+      await sleep(1500);
+      const gold1 = await guestGold36(p);
+      const r1 = await resultOf36(p);
+      check(
+        "照原本的訪客規則給本機獎勵：存檔的金幣增加、結算畫面列出主公金幣，沒有換帳號的說明",
+        typeof gold0 === "number" &&
+          typeof gold1 === "number" &&
+          gold1 > gold0 &&
+          /主公金幣/.test(r1.card) &&
+          r1.notSaved === null,
+        { gold0, gold1, r1 }
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "換帳號舊場守門：訪客第 0 波登出再選回同一個訪客，建立新的一場，可以部署並照常結算",
+    async (mk) => {
+      const E = await mk({
+        maps: HOLD_MAPS35,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({
+        storage: guestStorage(
+          [MA35, ZY35],
+          [
+            { slot: 0, hero_id: "hero_ma_chao" },
+            { slot: 1, hero_id: "hero_zhao_yun" },
+          ]
+        ),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      check("部署馬超", d1.ok, d1);
+      check("開始旁錄載入", await watchLoads35(p));
+      const b0 = await bm(p, "battleId");
+      check("第 0 波一般 UI 登出", await logout35(p));
+      await p.locator('[data-testid="key-setup-guest"]').click();
+      check("在金鑰視窗選回訪客", await enterGuest(p));
+      await sleep(1500);
+      const l1 = await loads35(p);
+      const b1 = await bm(p, "battleId");
+      check(
+        "第 0 波換成合法的新來源（同一個訪客、新的世代）：建立新的一場（載入一次）",
+        Array.isArray(l1) &&
+          l1.length === 1 &&
+          b1 === l1[0].battleId &&
+          b1 !== b0,
+        { l1, b0, b1 }
+      );
+      const d2 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      check("新的一場可以照常部署馬超", d2.ok, d2);
+      check("按進入戰場開戰", await startBattle(p));
+      const gold0 = await guestGold36(p);
+      check("受控勝利結束", (await endWith(p, { win: true })) === "ok");
+      await sleep(1500);
+      const gold1 = await guestGold36(p);
+      const r1 = await resultOf36(p);
+      check(
+        "新的一場照常給本機獎勵（金幣增加、列出主公金幣），沒有換帳號的說明",
+        typeof gold0 === "number" &&
+          gold1 > gold0 &&
+          /主公金幣/.test(r1.card) &&
+          r1.notSaved === null,
+        { gold0, gold1, r1 }
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "換帳號舊場守門：共用帳號甲第 0 波登入乙失敗（甲的資料還在、世代已換），武將卡停用；手動同步後建立新的一場、可以部署",
+    async (mk) => {
+      const A = "k_g36_f";
+      const B = "k_g36_g";
+      const E = await mk({
+        seed: [
+          {
+            key: A,
+            data: NEW({
+              nickname: "甲",
+              capacity: 20,
+              team: [
+                { hero_id: "ma_chao", slot: 1 },
+                { hero_id: "zhao_yun", slot: 2 },
+              ],
+            }),
+            rev: 3,
+          },
+          {
+            key: B,
+            data: NEW({
+              nickname: "乙",
+              team: [{ hero_id: "huang_zhong", slot: 1 }],
+            }),
+            rev: 4,
+          },
+        ],
+        maps: HOLD_MAPS35,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({ storage: { shenma_player_key: A } });
+      check("讀到甲", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      check("部署甲的馬超並標記", d1.ok && (await markField(p)) === 1, d1);
+      check("開始旁錄載入", await watchLoads35(p));
+      const hits = await failSwitch35(p, E, B);
+      await openInfo(p);
+      const nick = await text(p, '[data-testid="player-info-nickname"]');
+      await closeModal(p);
+      check("登入乙失敗：畫面仍是甲", hits > 0 && nick === "甲", {
+        hits,
+        nick,
+      });
+      const c1 = await heroCard36(p, ROAD_CELLS[6], "趙雲", { force: true });
+      check(
+        "登入失敗後（甲的資料、新的世代）：趙雲卡停用並說明",
+        blocked36(c1),
+        c1
+      );
+      check("受控呼叫趙雲卡的派出入口：不派", forcedRefused36(c1), c1);
+      check(
+        "登入失敗後沒有載入新的一場",
+        sameJson(await loads35(p), []),
+        await loads35(p)
+      );
+      const synced = await sync35(p, async () => {
+        const l = await loads35(p);
+        return Array.isArray(l) && l.length === 1;
+      });
+      const l2 = await loads35(p);
+      check(
+        "手動同步讀回甲（新的世代）：第 0 波建立新的一場（載入一次，甲的隊伍）",
+        !!synced &&
+          Array.isArray(l2) &&
+          l2.length === 1 &&
+          sameJson(l2[0].heroes, ["hero_ma_chao", "hero_zhao_yun"]),
+        { l2 }
+      );
+      const c2 = await heroCard36(p, ROAD_CELLS[6], "趙雲");
+      check(
+        "新的一場：趙雲卡可以按、沒有換帳號的說明",
+        c2.ok && c2.disabled === false && c2.reason === null,
+        c2
+      );
+      const d2 = await deployHero(p, ROAD_CELLS[6], "趙雲");
+      check("新的一場可以照常部署趙雲", d2.ok, d2);
+      return E;
+    }
+  );
+
+  await scenario(
+    "換帳號舊場守門：共用帳號甲第 0 波切換到隊伍不支援的乙後按「自動」（觀測第一次自動開波），結束不寫入",
+    async (mk) => {
+      const A = "k_g36_h";
+      const B = "k_g36_i";
+      const E = await mk({
+        seed: [
+          {
+            key: A,
+            data: NEW({
+              nickname: "甲",
+              capacity: 20,
+              team: [{ hero_id: "ma_chao", slot: 1 }],
+            }),
+            rev: 2,
+          },
+          {
+            key: B,
+            data: NEW({
+              nickname: "乙",
+              team: [{ hero_id: "gan_ning", slot: 1 }],
+              heroes: [
+                {
+                  hero_id: "gan_ning",
+                  level: 4,
+                  star: 1,
+                  atk: 160,
+                  def: 120,
+                  hp: 1500,
+                },
+              ],
+            }),
+            rev: 3,
+          },
+        ],
+        maps: HOLD_MAPS35,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({ storage: { shenma_player_key: A } });
+      check("讀到甲", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      check("部署甲的馬超並標記", d1.ok && (await markField(p)) === 1, d1);
+      check("開始旁錄載入", await watchLoads35(p));
+      check("一般 UI 切換金鑰到乙（隊伍不支援）", await switchKey(p, B, "乙"));
+      await sleep(1500);
+      const auto = p.locator("button", { hasText: /^自動$/ });
+      const autoState = {
+        count: await auto.count(),
+        disabled: (await auto.count()) ? await auto.first().isDisabled() : null,
+      };
+      if (autoState.count && !autoState.disabled) await auto.first().click();
+      await sleep(1500);
+      const st = await bm(p, "state");
+      note("觀測：隊伍不支援的乙按「自動」", {
+        autoState,
+        state: st,
+        loads: await loads35(p),
+        sortieBlocked: await text(p, '[data-testid="sortie-blocked"]'),
+        sortieNote: await text(p, '[data-testid="sortie-settle-note"]'),
+      });
+      if (st === 2) {
+        check(
+          "（自動開了波）受控結束",
+          (await endWith(p, { win: true })) === "ok"
+        );
+        await sleep(2000);
+      }
+      check(
+        "不論有沒有開波：沒有任何結算或存檔寫入",
+        E.gas.writes().length === 0,
+        E.gas.writes().map((w) => w.action)
+      );
+      return E;
+    }
+  );
+
   // ═══ 18. 入口版面：1280 桌面、390×600、390×844 ═══
   for (const vp of [
     { width: 1280, height: 800 },

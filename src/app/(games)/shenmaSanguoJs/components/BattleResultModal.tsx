@@ -10,6 +10,8 @@ interface BattleResultModalProps {
   show: boolean;
   result: BattleResultData | null;
   rewardResult?: BattleRewardResult | null;
+  /** 訪客這場沒有寫入本機進度的原因（出征後帳號來源已變更）；有值時顯示說明、不列獎勵 */
+  localNotSavedReason?: string | null;
   /** 共用帳號這場的結算狀態（保存中、已保存、待確認、沒有送出、要人工確認）；訪客不傳 */
   sharedSettle?: SharedSettleView | null;
   /** 待確認時的「重新確認」（使用者明確按才原樣再送） */
@@ -29,6 +31,7 @@ export const BattleResultModal: React.FC<BattleResultModalProps> = ({
   show,
   result,
   rewardResult,
+  localNotSavedReason = null,
   sharedSettle = null,
   onRetrySettle,
   retryDisabled = false,
@@ -108,6 +111,17 @@ export const BattleResultModal: React.FC<BattleResultModalProps> = ({
                 </span>
               </div>
             )}
+          </div>
+        )}
+
+        {/* 訪客：這場沒有寫入本機進度（出征後帳號來源已變更） */}
+        {localNotSavedReason && (
+          <div className={styles.resultLoots} data-testid="result-not-saved">
+            <div className={styles.resultLootItem}>
+              <span className={styles.resultLootName}>
+                {localNotSavedReason}
+              </span>
+            </div>
           </div>
         )}
 
@@ -218,7 +232,7 @@ export const BattleResultModal: React.FC<BattleResultModalProps> = ({
             !nextLocked &&
             (sharedSettle
               ? sharedSettle.phase === "confirmed"
-              : !rewardResult?.notSaved) && (
+              : !rewardResult?.notSaved && !localNotSavedReason) && (
               <div
                 style={{
                   background: "rgba(245, 158, 11, 0.15)",

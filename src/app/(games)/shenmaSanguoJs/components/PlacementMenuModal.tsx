@@ -18,6 +18,8 @@ interface PlacementMenuModalProps {
   isPaused: boolean;
   /** 備戰或戰鬥中（其他階段不能派武將或建塔） */
   isActivePhase: boolean;
+  /** 武將卡不能派的原因（換帳號前的出征）：有值時只停用武將卡並顯示這段說明，塔不受影響 */
+  heroBlockedReason?: string | null;
   /** 派武將、建塔：帶這個選單打開時的這一場與編號，回傳是否成功（成功才關閉選單） */
   onPlaceTower: (
     ctx: DeployMenuContext,
@@ -43,6 +45,7 @@ export const PlacementMenuModal: React.FC<PlacementMenuModalProps> = ({
   placedHeroIds = [],
   isPaused,
   isActivePhase,
+  heroBlockedReason = null,
   onPlaceTower,
   onPlaceHero,
   onClose,
@@ -61,6 +64,7 @@ export const PlacementMenuModal: React.FC<PlacementMenuModalProps> = ({
     menuId: data.menuId,
   };
   const operable = isActivePhase && !isPaused;
+  const showHeroes = activeTab === "hero" || isRoad;
   const close = () => onClose(ctx);
 
   const towerList = [
@@ -146,9 +150,18 @@ export const PlacementMenuModal: React.FC<PlacementMenuModalProps> = ({
           </div>
         )}
 
+        {showHeroes && heroBlockedReason && (
+          <div
+            className="small text-warning px-3 pt-2"
+            data-testid="placement-hero-blocked"
+          >
+            {heroBlockedReason}
+          </div>
+        )}
+
         {/* 選單主體 */}
         <div className={styles.placementContent}>
-          {activeTab === "hero" || isRoad ? (
+          {showHeroes ? (
             <div className={styles.heroGrid}>
               {playerHeroes.map((hero) => {
                 const norm = hero.hero_id.replace(/^hero_/, "");
@@ -170,8 +183,8 @@ export const PlacementMenuModal: React.FC<PlacementMenuModalProps> = ({
                   <button
                     key={hero.hero_id}
                     type="button"
-                    className={`${styles.menuCard} ${isPlaced || !operable ? styles.cardDisabled : ""}`}
-                    disabled={isPlaced || !operable}
+                    className={`${styles.menuCard} ${isPlaced || !operable || heroBlockedReason ? styles.cardDisabled : ""}`}
+                    disabled={isPlaced || !operable || !!heroBlockedReason}
                     onClick={() => {
                       if (onPlaceHero(ctx, col, row, hero)) close();
                     }}

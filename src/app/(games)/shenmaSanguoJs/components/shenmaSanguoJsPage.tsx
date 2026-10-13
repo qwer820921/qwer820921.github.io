@@ -36,6 +36,13 @@ import {
 } from "../utils/stagePlayability";
 import { describePendingStage } from "../utils/sharedSettleDisplay";
 import { canvasHeroSkill } from "../utils/heroSkillBinding";
+import {
+  CurrentAccount,
+  guestRewardAllowed,
+  heroDeployAllowed,
+  HERO_DEPLOY_BLOCKED_TEXT,
+  LOCAL_NOT_SAVED_TEXT,
+} from "../utils/battleAccountBoundary";
 import { useJsPlayerStore } from "../store/useJsPlayerStore";
 import { BattleRewardResult, TeamSlot } from "../types/player";
 import { KeySetupModal } from "./KeySetupModal";
@@ -134,6 +141,14 @@ const teamSourceUsable = (
     owner.key === null &&
     s.mode === "none" &&
     s.player === null);
+
+/** 從 store 讀到的目前帳號（模式、玩家資料的金鑰、帳號世代、是否載入中），交給 battleAccountBoundary 的純函式 */
+const currentAccountOf = (s: TeamSourceState): CurrentAccount => ({
+  mode: s.mode,
+  key: s.player?.key ?? null,
+  epoch: s.getAccountEpoch(),
+  isLoading: s.isLoading,
+});
 
 const ShenmaSanguoJsPage: React.FC = () => {
   const bridgeRef = useRef<LocalGameBridge | null>(null);
@@ -238,6 +253,12 @@ const ShenmaSanguoJsPage: React.FC = () => {
   const [battleReward, setBattleReward] = useState<BattleRewardResult | null>(
     null
   );
+  // 訪客這場勝利沒有寫入本機進度的原因（出征後帳號來源已變更）；沒有就是 null
+  const [localNotSavedReason, setLocalNotSavedReason] = useState<string | null>(
+    null
+  );
+  // 目前這一場的出征來源（battleCtxRef 的 owner 給畫面用的副本：部署選單的武將卡據此判斷能不能派）
+  const [battleOwner, setBattleOwner] = useState<TeamOwner | null>(null);
   const [placedHeroIds, setPlacedHeroIds] = useState<string[]>([]);
 
   // 視窗 Modal 顯示狀態
@@ -406,6 +427,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
       setPlacedHeroIds([]);
       setPlacementMenu(null);
       placementMenuRef.current = null;
+      setBattleOwner(team.owner);
       return true;
     },
     []
@@ -445,6 +467,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
       setHeroInfo(null);
       setBattleResult(null);
       setBattleReward(null);
+      setLocalNotSavedReason(null);
       setPlacedHeroIds([]);
 
       return loadBattle(stage, team);
@@ -534,18 +557,26 @@ const ShenmaSanguoJsPage: React.FC = () => {
       setHeroInfo(null);
       setBattleResult(r);
       setSettleRetryMsg(null);
+      setLocalNotSavedReason(null);
       const store = useJsPlayerStore.getState();
       if (store.mode === "shared") {
         // 共用帳號：只用引擎回呼的凍結結果（星數、點數、擊殺、時間）結算，獎勵由後端計算
         setBattleReward(null);
         void store.settleSharedBattle(r);
       } else if (r.result === "WIN") {
-        const reward = settleBattle(
-          currentStageRef.current.map_id,
-          statsRef.current.hp,
-          statsRef.current.max_hp
-        );
-        setBattleReward(reward);
+        // 訪客的本機結算只給這一場的出征來源本人（模式、金鑰、帳號世代都和這時的 store 相同、不在載入中）；
+        // 出征後換過帳號（含同一個訪客登出再選回、還沒選帳號）就不結算、不寫本機進度，結算畫面說明原因
+        if (guestRewardAllowed(ctx.owner, currentAccountOf(store))) {
+          const reward = settleBattle(
+            currentStageRef.current.map_id,
+            statsRef.current.hp,
+            statsRef.current.max_hp
+          );
+          setBattleReward(reward);
+        } else {
+          setBattleReward(null);
+          setLocalNotSavedReason(LOCAL_NOT_SAVED_TEXT);
+        }
       } else {
         setBattleReward(null);
       }
@@ -601,6 +632,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
       bridgeRef.current = null;
       // 這個 bridge 的場次跟著結束：之後新建的 bridge 還沒有任何一場（首次內建展示照常判斷）
       battleCtxRef.current = null;
+      setBattleOwner(null);
     };
   }, [settleBattle, loadBattle]);
 
@@ -728,6 +760,18 @@ const ShenmaSanguoJsPage: React.FC = () => {
   ): boolean => {
     const bridge = bridgeRef.current;
     if (!bridge || !bridge.isDeployMenuOpen(ctx)) return false;
+    // 換帳號後的舊場不派武將：這一場的出征來源與部署選單的隊伍來源，都要是 store 這時的帳號（模式、金鑰、世代、不在載入中）；
+    // 用 store 當下的值核對，不用可能還沒更新的頁面快照代替。擋下時什麼都不改（不派、不改名單、不關選單）
+    const battle = battleCtxRef.current;
+    if (
+      !battle ||
+      !heroDeployAllowed(
+        battle.owner,
+        activeTeamRef.current.owner,
+        currentAccountOf(useJsPlayerStore.getState())
+      )
+    )
+      return false;
     const success = bridge.placeHero(col, row, heroState);
     if (success) {
       setPlacedHeroIds((prev) => [...prev, heroState.hero_id]);
@@ -796,6 +840,17 @@ const ShenmaSanguoJsPage: React.FC = () => {
     (stats.game_state === GameState.PREP ||
       stats.game_state === GameState.BATTLE) &&
     battleResult === null;
+  // 部署選單的武將卡：這一場的出征來源或選單的隊伍來源不是目前的帳號時停用並說明（塔不受影響；
+  // 畫面可能晚一拍，真正派出時 handlePlaceHero 會再用 store 當下的值核一次）
+  const heroDeployBlockedReason =
+    battleOwner &&
+    heroDeployAllowed(
+      battleOwner,
+      activeTeam.owner,
+      currentAccountOf(useJsPlayerStore.getState())
+    )
+      ? null
+      : HERO_DEPLOY_BLOCKED_TEXT;
   const resultSettleView =
     mode === "shared" &&
     battleResult &&
@@ -856,6 +911,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
               placedHeroIds={placedHeroIds}
               isPaused={stats.paused}
               isActivePhase={isActionPhase}
+              heroBlockedReason={heroDeployBlockedReason}
               onPlaceTower={handlePlaceTower}
               onPlaceHero={handlePlaceHero}
               onClose={closePlacementMenu}
@@ -1231,6 +1287,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
         show={battleResult !== null}
         result={battleResult}
         rewardResult={battleReward}
+        localNotSavedReason={localNotSavedReason}
         sharedSettle={resultSettleView}
         onRetrySettle={() => void handleRetrySettle()}
         retryDisabled={busy}
@@ -1242,6 +1299,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
         onOpenStageSelector={() => {
           setBattleResult(null);
           setBattleReward(null);
+          setLocalNotSavedReason(null);
           setIsStageSelectorOpen(true);
         }}
       />
