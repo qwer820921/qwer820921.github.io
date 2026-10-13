@@ -185,10 +185,22 @@ async (page) => {
     await page.evaluate(() => window.__shenmaMock.hold("upgrade_hero"));
     await startUpgrade();
     await waitHeld("upgrade_hero");
+    // C-4 的基準用 mock 的完成紀錄（被攔住的升級放行時會寫一筆）；放行前的頁面只拿來比對，輸出只留指紋
+    const c4fp = (s) => { if (s == null) return null; let h = 2166136261; for (const ch of String(s)) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619) >>> 0; } return h.toString(16).padStart(8, "0"); };
+    const c4Page = await pageId();
     await page.evaluate(() => window.__shenmaMock.release("upgrade_hero", "network")); // 網路錯誤：後端沒有處理
     const tAfter = Date.now();
     const notice = page.locator(NOTICE);
     await notice.waitFor({ timeout: 30000 });
+    // 這時被攔住的請求已經拋錯、畫面顯示待確認，它的完成紀錄一定已寫入：取全部 upgrade_hero 完成紀錄當基準（不只看 KEY），
+    // 並讀 mock 的在途佇列（已放行的不在佇列裡）
+    const c4Base = (await log()).filter((e) => e.action === "upgrade_hero");
+    const c4PendingBase = await page.evaluate(() => window.__shenmaMock.pending("upgrade_hero").length);
+    const c4aOk = c4Base.length === 1 && c4Base[0].key === KEY && c4Base[0].mode === "mock" && c4Base[0].status === "network-error" &&
+      c4Base[0].page === c4Page && c4PendingBase === 0;
+    run.check("C-4a 被攔住的升級只留下一筆網路錯誤的完成紀錄（同一把假金鑰、放行前的頁面），而且沒有在途的升級", c4aOk,
+      { count: c4Base.length, entries: c4Base.map((e) => ({ key: c4fp(e.key), mode: e.mode, status: e.status, page: c4fp(e.page), initialPage: e.page === c4Page })), pending: c4PendingBase });
+    if (!c4aOk) return; // 前提不成立：C 段後面的判斷沒有意義，只結束 C 段（已記 FAIL），其他段照跑
     const modalText = (await page.locator('div[class*="modalPanel"]').last().innerText()).replace(/\s+/g, " ");
     await closeModals();
     // 待確認期間 HUD 仍要能操作：提示在畫面底部，不能蓋住上方的「武將」「隊伍」等按鈕
@@ -235,7 +247,11 @@ async (page) => {
       heroLv(d2.profiles[KEY]) === 2 && d2.profiles[KEY].gold === 900 && same(teamOf(d2.profiles[KEY]), teamOf(before)) &&
         heroLv(sess2) === 2 && sess2.gold === 900 && !sess2?.pendingUpgrade && (await page.locator(NOTICE).count()) === 0,
       { lv: heroLv(d2.profiles[KEY]), gold: d2.profiles[KEY].gold, team: teamOf(d2.profiles[KEY]) });
-    run.check("C-4 整段沒有重播 upgrade_hero", (await since(tAfter, "upgrade_hero")).length === 0);
+    // 完成紀錄的總數要等於基準、結尾沒有在途的升級（兩個邊界都不等於全程送出次數：重新整理時被取消、沒有留下紀錄的嘗試看不到）
+    const c4End = (await log()).filter((e) => e.action === "upgrade_hero");
+    const c4PendingEnd = await page.evaluate(() => window.__shenmaMock.pending("upgrade_hero").length);
+    run.check("C-4 整段沒有重播 upgrade_hero", c4End.length === c4Base.length && c4PendingEnd === 0,
+      { base: c4Base.length, total: c4End.length, pending: c4PendingEnd });
     out.C = { shots: [shotWait, await H.shot(page, "r6-c3-confirmed-after-late-upgrade")] };
   });
 
