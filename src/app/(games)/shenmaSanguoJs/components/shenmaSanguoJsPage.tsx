@@ -49,6 +49,7 @@ import {
   HERO_DEPLOY_BLOCKED_TEXT,
   isCurrentAccount,
   LOCAL_NOT_SAVED_TEXT,
+  sortieBlockReasonOf,
 } from "../utils/battleAccountBoundary";
 import { useJsPlayerStore } from "../store/useJsPlayerStore";
 import { BattleRewardResult, TeamSlot } from "../types/player";
@@ -270,14 +271,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
       ? "雲端的出征隊伍這裡還不支援：原樣保留，暫時不能在這裡修改"
       : null);
   // 共用帳號不能出征的原因：雲端隊伍不支援，或還沒有隊伍（不自動換成預設隊伍）
-  const sortieBlockReason =
-    mode !== "shared" || !player
-      ? null
-      : !teamEditable
-        ? "雲端的出征隊伍這裡還不支援：暫時不能出征"
-        : player.team.length === 0
-          ? "還沒有出征隊伍：請先到「隊伍」編排並保存"
-          : null;
+  const sortieBlockReason = sortieBlockReasonOf({ mode, player, teamEditable });
 
   // 戰鬥狀態管理
   const [stats, setStats] = useState<StatsSyncData>(DEFAULT_STATS);
@@ -886,8 +880,20 @@ const ShenmaSanguoJsPage: React.FC = () => {
     bridgeRef.current?.startBattle();
   };
 
+  // 自動：開或關都用當下的實際狀態（Bridge 唯讀查詢）與 store 當下的帳號判斷，不用畫面的 stats 或這次 render 的出征原因。
+  // 暫停中開關都不動；新開（實際沒開）在備戰或戰鬥中要出征原因是 null（和「迎戰」相同的兩項）；關（實際已開）不看出征原因
   const handleToggleAuto = () => {
-    bridgeRef.current?.toggleAuto();
+    const bridge = bridgeRef.current;
+    if (!bridge) return;
+    const now = bridge.getControlState();
+    if (now.paused) return;
+    if (
+      !now.auto &&
+      (now.phase === GameState.PREP || now.phase === GameState.BATTLE) &&
+      sortieBlockReasonOf(useJsPlayerStore.getState()) !== null
+    )
+      return;
+    bridge.toggleAuto();
   };
 
   const handleSetSpeed = (speed: number) => {
@@ -1139,6 +1145,14 @@ const ShenmaSanguoJsPage: React.FC = () => {
     )
       ? null
       : HERO_DEPLOY_BLOCKED_TEXT;
+  // 「自動」按鈕：還沒開時在備戰或戰鬥中，出征原因（和「迎戰」相同的兩項）有值就停用並在 title 顯示同一句；已開時（要關）不看出征原因
+  // （畫面可能晚一拍，真正按下時 handleToggleAuto 會用當下的實際狀態與 store 再核一次）
+  const autoOpenBlockedReason =
+    !stats.auto_mode &&
+    (stats.game_state === GameState.PREP ||
+      stats.game_state === GameState.BATTLE)
+      ? sortieBlockReason
+      : null;
   // 「移動」按鈕：只有這一場的備戰（第 0 波或清波後）、沒有暫停、還沒結算時可以按；武將另外要這一場的來源是目前的帳號
   // （畫面可能晚一拍，真正開始與提交時引擎與 store 會再核一次）
   const moveBlockedReasonFor = (kind: MoveUnitKind): string | null => {
@@ -1355,7 +1369,9 @@ const ShenmaSanguoJsPage: React.FC = () => {
             type="button"
             className={`${styles.hudBarBtn} ${stats.auto_mode ? styles.hudActionBtnActive : ""}`}
             onClick={handleToggleAuto}
-            disabled={stats.paused}
+            disabled={stats.paused || autoOpenBlockedReason !== null}
+            title={autoOpenBlockedReason ?? undefined}
+            data-testid="hud-auto"
           >
             自動
           </button>

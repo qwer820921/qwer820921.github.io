@@ -83,3 +83,22 @@ export function heroDeployAllowed(
     isCurrentAccount(menuTeamOwner, current)
   );
 }
+
+/** 出征原因只看的帳號狀態：模式、玩家資料的出征隊伍、雲端隊伍能不能在這裡編輯（頁面傳 store 當下的值） */
+export interface SortieSourceState {
+  mode: string;
+  player: { team: readonly unknown[] } | null;
+  teamEditable: boolean;
+}
+
+/**
+ * 共用帳號不能出征的原因（「進入戰場」「迎戰」與新開「自動」共用）：不是共用帳號或沒有玩家資料是 null；
+ * 雲端隊伍不支援優先，其次沒有隊伍；其他都是 null（唯讀、保存中、待確認、設定、練習、載入中、換帳號後的舊場都不在這裡判斷）
+ */
+export function sortieBlockReasonOf(state: SortieSourceState): string | null {
+  if (state.mode !== "shared" || !state.player) return null;
+  if (!state.teamEditable) return "雲端的出征隊伍這裡還不支援：暫時不能出征";
+  if (state.player.team.length === 0)
+    return "還沒有出征隊伍：請先到「隊伍」編排並保存";
+  return null;
+}

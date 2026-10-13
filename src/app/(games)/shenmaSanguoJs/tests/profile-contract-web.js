@@ -13328,7 +13328,7 @@ module.exports = async function profileContractWeb(page) {
   );
 
   await scenario(
-    "換帳號舊場守門：共用帳號甲第 0 波切換到隊伍不支援的乙後按「自動」（觀測第一次自動開波），結束不寫入",
+    "換帳號舊場守門：共用帳號甲第 0 波切換到隊伍不支援的乙後，「自動」和「迎戰」一樣停用、按不下去也不開波，沒有寫入",
     async (mk) => {
       const A = "k_g36_h";
       const B = "k_g36_i";
@@ -13375,27 +13375,50 @@ module.exports = async function profileContractWeb(page) {
       check("一般 UI 切換金鑰到乙（隊伍不支援）", await switchKey(p, B, "乙"));
       await sleep(1500);
       const auto = p.locator("button", { hasText: /^自動$/ });
+      const start = p.locator('[data-testid="hud-start-battle"]');
       const autoState = {
         count: await auto.count(),
         disabled: (await auto.count()) ? await auto.first().isDisabled() : null,
+        title: (await auto.count())
+          ? await auto.first().getAttribute("title")
+          : null,
+        startDisabled: await start.first().isDisabled(),
+        startTitle: await start.first().getAttribute("title"),
       };
-      if (autoState.count && !autoState.disabled) await auto.first().click();
+      check(
+        "「自動」按鈕停用，說明和迎戰相同",
+        autoState.count === 1 &&
+          autoState.disabled === true &&
+          autoState.startDisabled === true &&
+          !!autoState.title &&
+          autoState.title === autoState.startTitle,
+        autoState
+      );
+      const b0 = await bm(p, "battleId");
+      const called = await auto
+        .first()
+        .evaluate((b) => {
+          const k = Object.keys(b).find((x) => x.startsWith("__reactProps$"));
+          if (!k || typeof b[k].onClick !== "function") return false;
+          b[k].onClick();
+          return true;
+        })
+        .catch(() => false);
       await sleep(1500);
-      const st = await bm(p, "state");
-      note("觀測：隊伍不支援的乙按「自動」", {
-        autoState,
-        state: st,
+      const after = {
+        called,
+        state: await bm(p, "state"),
+        battleId: await bm(p, "battleId"),
         loads: await loads35(p),
-        sortieBlocked: await text(p, '[data-testid="sortie-blocked"]'),
-        sortieNote: await text(p, '[data-testid="sortie-settle-note"]'),
-      });
-      if (st === 2) {
-        check(
-          "（自動開了波）受控結束",
-          (await endWith(p, { win: true })) === "ok"
-        );
-        await sleep(2000);
-      }
+      };
+      check(
+        "受控呼叫「自動」的 onClick：不開波（仍是備戰、battleId 不變、載入 0）",
+        after.called &&
+          after.state === 1 &&
+          after.battleId === b0 &&
+          sameJson(after.loads, []),
+        { b0, ...after }
+      );
       check(
         "不論有沒有開波：沒有任何結算或存檔寫入",
         E.gas.writes().length === 0,
@@ -14567,6 +14590,417 @@ module.exports = async function profileContractWeb(page) {
         "整段前後：瀏覽器儲存逐字不變，沒有任何寫入",
         sameJson(st1, st0) && sameJson(writes37(E), NO_WRITES37),
         { st0, st1, writes: writes37(E) }
+      );
+      return E;
+    }
+  );
+
+  // ═══ 38. 「自動」的出征原因守門：新開和「迎戰」一樣受共用帳號的兩項出征原因限制（備戰與戰鬥中都是），關不受限；暫停中開關都不動 ═══
+  // 一般 UI（滑鼠、鍵盤）按「自動」；按鈕停用時不硬點。清波用受控的 onWaveAllEnemiesDead（不是自然通關）；「受控呼叫」是保留按鈕的 React onClick 後直接呼叫
+  // （等同畫面晚一拍、舊的按鈕還能按），只用在負向或驗證按下時用的是當下的實際狀態與帳號
+  // 敵人是很慢、打不倒的測試木樁（第 26 段的 SLOW_DUMMY）：測試期間不會自己走到城池而自然清波
+  const SLOW_WAVE38 = (wave) => ({
+    wave,
+    enemies: [
+      { enemy_id: "dummy_slow", count: 1, interval: 1, path: "path_a" },
+    ],
+  });
+  const AUTO_MAPS38 = SKILL_MAPS.map((m) => ({
+    ...m,
+    waves: [SLOW_WAVE38(1), SLOW_WAVE38(2), SLOW_WAVE38(3)],
+  }));
+  const R_UNSUP38 = "雲端的出征隊伍這裡還不支援：暫時不能出征";
+  const AUTO38 = '[data-testid="hud-auto"]';
+  /** 引擎目前的這一場：battleId、階段、波次、自動、已排下一波、暫停 */
+  const ctl38 = (p) =>
+    p.evaluate(() => {
+      const b = window.__testBridge.engine.battleManager;
+      return {
+        battleId: b.battleId,
+        state: b.gameState,
+        wave: b.currentWave,
+        auto: b.autoMode,
+        pending: b.autoWavePending,
+        paused: b.manualPaused,
+      };
+    });
+  /** 「自動」按鈕：是否停用、title；「迎戰」的 title（對照） */
+  const autoBtn38 = async (p) => {
+    const a = p.locator(AUTO38).first();
+    return {
+      disabled: await a.isDisabled(),
+      title: await a.getAttribute("title"),
+      startTitle: await p
+        .locator('[data-testid="hud-start-battle"]')
+        .first()
+        .getAttribute("title"),
+    };
+  };
+  /** 一般 UI 按「自動」（keyboard：焦點移到按鈕按 Enter）；停用時不按，回報 false */
+  async function pressAuto38(p, { keyboard = false } = {}) {
+    const a = p.locator(AUTO38).first();
+    if (await a.isDisabled()) return false;
+    if (keyboard) {
+      await a.focus();
+      await p.keyboard.press("Enter");
+    } else {
+      await a.click();
+    }
+    await sleep(600);
+    return true;
+  }
+
+  await scenario(
+    "自動的出征原因守門：訪客（1280 桌面）備戰按「自動」立刻開波；戰鬥中關掉再開不立刻開下一波；清波後已排下一波按「自動」取消並回備戰；暫停中開關都不動",
+    async (mk) => {
+      const E = await mk({
+        maps: AUTO_MAPS38,
+        enemies: [...ENEMIES, SLOW_DUMMY],
+      });
+      const p = await E.page({
+        storage: guestStorage([MA35, ZY35], GUEST_TEAM37),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      check("開始旁錄載入", await watchLoads35(p));
+      const st0 = await storageOf(p);
+      const c0 = await ctl38(p);
+      const b0 = await autoBtn38(p);
+      check(
+        "備戰第 0 波：「自動」可以按、沒有說明",
+        c0.state === 1 &&
+          c0.auto === false &&
+          !b0.disabled &&
+          b0.title === null,
+        { c0, b0 }
+      );
+      const k1 = await pressAuto38(p);
+      const c1 = await ctl38(p);
+      check(
+        "一般 UI 按「自動」：開，立刻開第 1 波（同一場、戰鬥中）",
+        k1 &&
+          c1.auto === true &&
+          c1.state === 2 &&
+          c1.wave === 1 &&
+          c1.battleId === c0.battleId,
+        { c0, c1 }
+      );
+      const k2 = await pressAuto38(p);
+      const c2 = await ctl38(p);
+      check(
+        "戰鬥中按「自動」：關（仍在第 1 波戰鬥中）",
+        k2 && c2.auto === false && c2.state === 2 && c2.wave === 1,
+        c2
+      );
+      const k3 = await pressAuto38(p);
+      const c3 = await ctl38(p);
+      check(
+        "戰鬥中再按「自動」：開，但不立刻開下一波（仍是第 1 波）",
+        k3 && c3.auto === true && c3.state === 2 && c3.wave === 1,
+        c3
+      );
+      await forceWaveClear(p);
+      await sleep(200);
+      const c4 = await ctl38(p);
+      const k4 = await pressAuto38(p);
+      const c5 = await ctl38(p);
+      check(
+        "受控清波後已排下一波（仍在戰鬥中）→ 按「自動」關：取消排程、回備戰（第 1 波之後）",
+        c4.state === 2 &&
+          c4.pending === true &&
+          k4 &&
+          c5.auto === false &&
+          c5.pending === false &&
+          c5.state === 1 &&
+          c5.wave === 1,
+        { c4, c5 }
+      );
+      check("一般 UI 暫停", await pauseHud(p));
+      const b6 = await autoBtn38(p);
+      const kept6 = await keepHandler37(p, AUTO38, "auto6");
+      const called6 = kept6 && (await callKept37(p, "auto6"));
+      await sleep(400);
+      const c6 = await ctl38(p);
+      check(
+        "暫停中（實際沒開）：「自動」停用；受控呼叫 onClick 也不開",
+        b6.disabled &&
+          called6 &&
+          c6.auto === false &&
+          c6.state === 1 &&
+          c6.paused === true,
+        { b6, called6, c6 }
+      );
+      check("一般 UI 繼續", await resumeHud(p));
+      const k7 = await pressAuto38(p);
+      const c7 = await ctl38(p);
+      check(
+        "清波後的備戰按「自動」：開，立刻開第 2 波",
+        k7 && c7.auto === true && c7.state === 2 && c7.wave === 2,
+        c7
+      );
+      check("一般 UI 暫停（自動已開）", await pauseHud(p));
+      const kept8 = await keepHandler37(p, AUTO38, "auto8");
+      const called8 = kept8 && (await callKept37(p, "auto8"));
+      await sleep(400);
+      const c8 = await ctl38(p);
+      check(
+        "暫停中（實際已開）：受控呼叫 onClick 也不關",
+        called8 && c8.auto === true && c8.paused === true && c8.wave === 2,
+        { called8, c8 }
+      );
+      check("一般 UI 繼續", await resumeHud(p));
+      const st1 = await storageOf(p);
+      check(
+        "整段：同一場（沒有任何載入），瀏覽器儲存逐字不變、沒有任何寫入",
+        sameJson(await loads35(p), []) &&
+          (await ctl38(p)).battleId === c0.battleId &&
+          sameJson(st1, st0) &&
+          E.gas.writes().length === 0,
+        {
+          loads: await loads35(p),
+          st0,
+          st1,
+          writes: E.gas.writes().map((w) => w.action),
+        }
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "自動的出征原因守門：共用帳號甲（390×600 鍵盤）Enter 開「自動」後切換到隊伍不支援的乙，自動不中斷、已排的下一波照時程開；關照常；乙在戰鬥中不能新開（按鈕停用、說明同迎戰，受控呼叫也不開）",
+    async (mk) => {
+      const A = "k_a38_a";
+      const Bk = "k_a38_b";
+      const E = await mk({
+        seed: [
+          {
+            key: A,
+            data: NEW({
+              nickname: "甲",
+              capacity: 20,
+              team: [{ hero_id: "ma_chao", slot: 1 }],
+            }),
+            rev: 2,
+          },
+          {
+            key: Bk,
+            data: NEW({
+              nickname: "乙",
+              team: [{ hero_id: "gan_ning", slot: 1 }],
+              heroes: [
+                {
+                  hero_id: "gan_ning",
+                  level: 4,
+                  star: 1,
+                  atk: 160,
+                  def: 120,
+                  hp: 1500,
+                },
+              ],
+            }),
+            rev: 3,
+          },
+        ],
+        maps: AUTO_MAPS38,
+        enemies: [...ENEMIES, SLOW_DUMMY],
+        viewport: { width: 390, height: 600 },
+      });
+      const p = await E.page({ storage: { shenma_player_key: A } });
+      check("讀到甲", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      check("開始旁錄載入", await watchLoads35(p));
+      const c0 = await ctl38(p);
+      const k1 = await pressAuto38(p, { keyboard: true });
+      const c1 = await ctl38(p);
+      check(
+        "鍵盤：焦點移到「自動」按 Enter → 開，立刻開第 1 波",
+        k1 && c1.auto === true && c1.state === 2 && c1.wave === 1,
+        c1
+      );
+      check(
+        "戰鬥中一般 UI 切換金鑰到乙（隊伍不支援）",
+        await switchKey(p, Bk, "乙")
+      );
+      await sleep(1200);
+      const c2 = await ctl38(p);
+      check(
+        "切換到乙：自動仍開、同一場、仍是第 1 波戰鬥中（沒有任何載入）",
+        c2.auto === true &&
+          c2.state === 2 &&
+          c2.wave === 1 &&
+          c2.battleId === c0.battleId &&
+          sameJson(await loads35(p), []),
+        { c2, loads: await loads35(p) }
+      );
+      await forceWaveClear(p);
+      const nextOk = await until(
+        async () => (await ctl38(p)).wave === 2,
+        15000
+      );
+      const c3 = await ctl38(p);
+      check(
+        "受控清波後：已排的下一波照時程開（第 2 波、自動仍開、同一場）",
+        !!nextOk &&
+          c3.wave === 2 &&
+          c3.state === 2 &&
+          c3.auto === true &&
+          c3.battleId === c0.battleId,
+        c3
+      );
+      const k4 = await pressAuto38(p, { keyboard: true });
+      const c4 = await ctl38(p);
+      check(
+        "鍵盤：乙（隊伍不支援）按 Enter 關「自動」→ 關照常（不看出征原因）",
+        k4 && c4.auto === false && c4.state === 2,
+        c4
+      );
+      await sleep(400);
+      const b5 = await autoBtn38(p);
+      const kept5 = await keepHandler37(p, AUTO38, "auto5");
+      const called5 = kept5 && (await callKept37(p, "auto5"));
+      await sleep(400);
+      const c5 = await ctl38(p);
+      check(
+        "乙在戰鬥中、自動沒開：「自動」停用，title 和「迎戰」的說明同一句；受控呼叫 onClick 也不開",
+        b5.disabled &&
+          b5.title === R_UNSUP38 &&
+          called5 &&
+          c5.auto === false &&
+          c5.state === 2,
+        { b5, called5, c5 }
+      );
+      check(
+        "整段：同一場（沒有任何載入），沒有任何存檔、升級、結算的寫入",
+        sameJson(await loads35(p), []) &&
+          (await ctl38(p)).battleId === c0.battleId &&
+          E.gas.count("save_profile") === 0 &&
+          E.gas.count("upgrade_hero") === 0 &&
+          E.gas.count("save_result") === 0,
+        { loads: await loads35(p), writes: E.gas.writes().map((w) => w.action) }
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "自動的出征原因守門：按下時用當下的實際狀態與 store（受控保留舊畫面的 onClick）——舊畫面正常而 store 已不支援不開；舊畫面停用而 store 已恢復照開；舊畫面沒開而實際已開照關；舊畫面沒暫停而實際暫停不動",
+    async (mk) => {
+      const A = "k_a38_c";
+      const Bk = "k_a38_d";
+      const E = await mk({
+        seed: [
+          {
+            key: A,
+            data: NEW({
+              nickname: "甲",
+              capacity: 20,
+              team: [{ hero_id: "ma_chao", slot: 1 }],
+            }),
+            rev: 2,
+          },
+          {
+            key: Bk,
+            data: NEW({
+              nickname: "乙",
+              team: [{ hero_id: "gan_ning", slot: 1 }],
+              heroes: [
+                {
+                  hero_id: "gan_ning",
+                  level: 4,
+                  star: 1,
+                  atk: 160,
+                  def: 120,
+                  hp: 1500,
+                },
+              ],
+            }),
+            rev: 3,
+          },
+        ],
+        maps: AUTO_MAPS38,
+        enemies: [...ENEMIES, SLOW_DUMMY],
+      });
+      const p = await E.page({ storage: { shenma_player_key: A } });
+      check("讀到甲", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      check("開始旁錄載入", await watchLoads35(p));
+      const c0 = await ctl38(p);
+      const keptA = await keepHandler37(p, AUTO38, "autoA");
+      check("一般 UI 切換金鑰到乙（隊伍不支援）", await switchKey(p, Bk, "乙"));
+      await sleep(1200);
+      const calledA = keptA && (await callKept37(p, "autoA"));
+      await sleep(600);
+      const c1 = await ctl38(p);
+      check(
+        "受控呼叫甲的畫面時保留的「自動」onClick（store 已是隊伍不支援的乙）→ 不開、不開波、同一場（沒有載入）",
+        calledA &&
+          c1.auto === false &&
+          c1.state === 1 &&
+          c1.battleId === c0.battleId &&
+          sameJson(await loads35(p), []),
+        { calledA, c1, loads: await loads35(p) }
+      );
+      const b1 = await autoBtn38(p);
+      const keptB = await keepHandler37(p, AUTO38, "autoB");
+      check(
+        "乙的畫面：「自動」停用、說明同迎戰；保留這個（停用的）onClick",
+        b1.disabled &&
+          b1.title === R_UNSUP38 &&
+          b1.startTitle === R_UNSUP38 &&
+          keptB,
+        b1
+      );
+      check(
+        "一般 UI 切回甲（隊伍正常、新的世代）",
+        await switchKey(p, A, "甲")
+      );
+      await sleep(1500);
+      const c2 = await ctl38(p);
+      const calledB = await callKept37(p, "autoB");
+      await sleep(600);
+      const c3 = await ctl38(p);
+      check(
+        "受控呼叫乙的畫面時保留的「自動」onClick（store 已恢復成甲）→ 照常開、立刻開第 1 波",
+        calledB &&
+          c2.auto === false &&
+          c3.auto === true &&
+          c3.state === 2 &&
+          c3.wave === 1,
+        { c2, c3 }
+      );
+      // 舊畫面沒開而實際已開：保留「沒開」時的 onClick 需要畫面是沒開——用一般 UI 關掉、保留、再用一般 UI 開，之後呼叫保留的舊 onClick
+      await pressAuto38(p);
+      const keptD = await keepHandler37(p, AUTO38, "autoD");
+      await pressAuto38(p);
+      const c4 = await ctl38(p);
+      const calledD = keptD && (await callKept37(p, "autoD"));
+      await sleep(600);
+      const c5 = await ctl38(p);
+      check(
+        "受控呼叫「自動」沒開時保留的 onClick（實際已開）→ 關",
+        calledD && c4.auto === true && c5.auto === false,
+        { c4, c5 }
+      );
+      const keptE = await keepHandler37(p, AUTO38, "autoE");
+      check("一般 UI 暫停", await pauseHud(p));
+      const calledE = keptE && (await callKept37(p, "autoE"));
+      await sleep(400);
+      const c6 = await ctl38(p);
+      check(
+        "受控呼叫沒暫停時保留的「自動」onClick（實際已暫停）→ 不動",
+        calledE && c6.auto === false && c6.paused === true,
+        c6
+      );
+      check("一般 UI 繼續", await resumeHud(p));
+      check(
+        "整段：沒有任何存檔、升級、結算的寫入",
+        E.gas.count("save_profile") === 0 &&
+          E.gas.count("upgrade_hero") === 0 &&
+          E.gas.count("save_result") === 0,
+        { writes: E.gas.writes().map((w) => w.action) }
       );
       return E;
     }

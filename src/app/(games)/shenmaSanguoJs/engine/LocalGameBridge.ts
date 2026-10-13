@@ -287,6 +287,22 @@ export class LocalGameBridge {
     return this.engine.battleManager.gameState;
   }
 
+  /** 目前這一場的控制狀態（唯讀：每次回傳新的純值；不給 BattleManager 或引擎物件、不改任何狀態） */
+  public getControlState(): {
+    battleId: string;
+    phase: GameState;
+    auto: boolean;
+    paused: boolean;
+  } {
+    const bm = this.engine.battleManager;
+    return {
+      battleId: bm.battleId,
+      phase: bm.gameState,
+      auto: bm.autoMode,
+      paused: bm.manualPaused,
+    };
+  }
+
   public destroy(): void {
     this.engine.destroy();
   }
