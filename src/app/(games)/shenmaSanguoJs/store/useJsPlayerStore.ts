@@ -263,6 +263,8 @@ interface JsPlayerStoreState {
   // 雲端同步與備份
   /** 共用帳號：唯讀讀回雲端存檔（確認結果不明的寫入、取得最新版本）；不寫入 */
   forceSync: () => Promise<Result>;
+  /** 目前的帳號世代（初始化、登入、建立、訪客、登出時換新）：只讀，給畫面核對資料與戰場屬於哪個世代；不能用它改世代 */
+  getAccountEpoch: () => number;
   exportBackup: () => string;
   importBackup: (jsonStr: string) => Result;
 }
@@ -1733,6 +1735,8 @@ export const useJsPlayerStore = create<JsPlayerStoreState>((set, get) => {
       });
       return { success: false, error: message };
     },
+
+    getAccountEpoch: () => epoch.current(),
 
     // 匯出：共用帳號匯出雲端存檔原樣（canonical 與版本）；訪客匯出本機存檔
     exportBackup: () => {

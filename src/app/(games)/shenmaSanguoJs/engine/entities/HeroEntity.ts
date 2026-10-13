@@ -316,17 +316,7 @@ export class HeroEntity {
       this.job = String(cfg.job || fallback?.job || "infantry");
       this.canHitAir = HeroEntity.AIR_JOBS.includes(this.job);
 
-      const baseRange = Number(cfg.attack_range) || 2.0;
-      const rangeGrowth = Number(cfg.range_growth) || 0.0;
-      this.attackRange =
-        (baseRange + (this.heroLevel - 1) * rangeGrowth) * this.rangeMultiplier;
-
-      const baseSpd = Number(cfg.attack_speed) || 1.0;
-      const spdGrowth = Number(cfg.atk_spd_growth ?? cfg.speed_growth ?? 0);
-      this.attackSpeed = Math.max(
-        0.1,
-        baseSpd * (1.0 - (this.heroLevel - 1) * spdGrowth)
-      );
+      this.applyGrowth(cfg);
 
       this.textureKey =
         cfg.image || fallback?.image || `hero_${targetKey}.webp`;
@@ -375,7 +365,43 @@ export class HeroEntity {
     }
   }
 
+  /**
+   * 依武將設定與目前等級計算射程（格；乘技能倍率，每次從設定重算、不疊乘）與攻擊間隔（秒，最快 0.1）。
+   * 建構與隊伍更新共用同一個公式
+   */
+  private applyGrowth(cfg: HeroConfigData): void {
+    const baseRange = Number(cfg.attack_range) || 2.0;
+    const rangeGrowth = Number(cfg.range_growth) || 0.0;
+    this.attackRange =
+      (baseRange + (this.heroLevel - 1) * rangeGrowth) * this.rangeMultiplier;
+
+    const baseSpd = Number(cfg.attack_speed) || 1.0;
+    const spdGrowth = Number(cfg.atk_spd_growth ?? cfg.speed_growth ?? 0);
+    this.attackSpeed = Math.max(
+      0.1,
+      baseSpd * (1.0 - (this.heroLevel - 1) * spdGrowth)
+    );
+  }
+
   private readSkill(state: HeroStateData): void {
+    // 先把 13 種技能的參數重設成沒有技能（欄位的初始值）：建構時本來就是這些值；隊伍更新換掉或拿掉技能時不殘留舊參數
+    this.firstStrikeMultiplier = 1.0;
+    this.rangeMultiplier = 1.0;
+    this.burnRatio = 0.0;
+    this.burnTicks = 0;
+    this.burnInterval = 1.0;
+    this.slowAuraMult = 1.0;
+    this.dodgeChance = 0.0;
+    this.defAuraMult = 1.0;
+    this.stunDuration = 0.0;
+    this.lifestealRatio = 0.0;
+    this.atkSpeedAuraMult = 1.0;
+    this.counterRatio = 0.0;
+    this.tenacityHpRatio = 0.0;
+    this.tenacityDamageMult = 1.0;
+    this.atkDownAuraMult = 1.0;
+    this.doubleShotChance = 0.0;
+
     const s = state.skill;
     if (!s || typeof s !== "object") return;
 
@@ -906,5 +932,92 @@ export class HeroEntity {
       for (const e of this.roadSlowed) e.removeSlowFrom(this.slowSource);
       this.roadSlowed.clear();
     }
+  }
+
+  /**
+   * 同一場的隊伍資料更新（動態隊伍同步；順序和 Godot 版 Hero.apply_stat_update 相同）：原地更新這個實例，
+   * 不重建、不移位，不重設攻擊冷卻、動畫、受到的光環，也不碰這一場的首擊紀錄（記在 BattleManager）。
+   * - 已陣亡或生命已是 0 的實例不更新（不會因此復活），回傳 false
+   * - 等級是有效的安全正整數才換；生命、攻擊、防禦是合法數值（有限、不小於 0 的數字或可轉成這種數字的非空字串，0 照用）才換，
+   *   壞值各自保留目前的值（不套建構時的預設）
+   * - 生命照更新前的比例（目前生命 ÷ 最大生命）換算，不補滿；由正生命更新成合法的 0 時撤除自己發出的光環，但不當成陣亡（不通知）
+   * - 技能：資料的武將 ID 和這個實例完全相同時，沒有 skill 欄位就保留原技能，有（含 null、空物件）就重設後重讀；
+   *   只是別名相同（hero_ 前綴寫法不同）時不碰技能，不把別名的技能套到這個實例
+   * - 射程與攻擊間隔用這一場載入時的武將設定依新等級重算（同 applyGrowth）；找不到設定時維持原值（和建構時相同）
+   * - 自己發出的光環倍率改變（技能換掉或拿掉）時立即撤除既有的來源，不等下一次更新（暫停中也一樣）
+   * 回傳有沒有任何數值或技能參數改變
+   */
+  public applyStatUpdate(
+    state: HeroStateData,
+    heroesConfig: HeroConfigData[]
+  ): boolean {
+    if (this.isDead || !(this.currentHp > 0) || !(this.maxHp > 0)) return false;
+    const before = this.statSignature();
+    const auraBefore = this.emittedAuraSignature();
+    const ratio = this.currentHp / this.maxHp;
+
+    const level = state.level;
+    if (typeof level === "number" && Number.isSafeInteger(level) && level >= 1)
+      this.heroLevel = level;
+    this.atk = heroStatOr(state.atk, this.atk);
+    if (state.hero_id === this.heroId && state.skill !== undefined)
+      this.readSkill(state);
+    this.defStat = heroStatOr(state.def, this.defStat);
+    // 最大生命沒變時不重算目前生命（重複同一份資料不會讓生命因浮點換算漂移）
+    const newMaxHp = heroStatOr(state.hp, this.maxHp);
+    if (newMaxHp !== this.maxHp) {
+      this.maxHp = newMaxHp;
+      this.currentHp = newMaxHp * ratio;
+    }
+
+    const key = String(this.heroId || "").replace(/^hero_/, "");
+    const cfg = heroesConfig.find(
+      (c) => String(c.hero_id || "").replace(/^hero_/, "") === key
+    );
+    if (cfg) this.applyGrowth(cfg);
+
+    if (this.emittedAuraSignature() !== auraBefore || !(this.currentHp > 0)) {
+      this.releaseAllAuras();
+    }
+    return this.statSignature() !== before;
+  }
+
+  /** 自己發出的四種光環倍率（減速、防禦、攻速、威壓） */
+  private emittedAuraSignature(): string {
+    return [
+      this.slowAuraMult,
+      this.defAuraMult,
+      this.atkSpeedAuraMult,
+      this.atkDownAuraMult,
+    ].join("|");
+  }
+
+  /** 隊伍更新會改的數值與 13 種技能參數（比較有沒有改變用） */
+  private statSignature(): string {
+    return [
+      this.heroLevel,
+      this.atk,
+      this.defStat,
+      this.maxHp,
+      this.currentHp,
+      this.attackRange,
+      this.attackSpeed,
+      this.firstStrikeMultiplier,
+      this.rangeMultiplier,
+      this.burnRatio,
+      this.burnTicks,
+      this.burnInterval,
+      this.slowAuraMult,
+      this.dodgeChance,
+      this.defAuraMult,
+      this.stunDuration,
+      this.lifestealRatio,
+      this.atkSpeedAuraMult,
+      this.counterRatio,
+      this.tenacityHpRatio,
+      this.tenacityDamageMult,
+      this.atkDownAuraMult,
+      this.doubleShotChance,
+    ].join("|");
   }
 }

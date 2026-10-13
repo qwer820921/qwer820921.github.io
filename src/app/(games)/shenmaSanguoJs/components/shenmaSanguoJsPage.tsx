@@ -80,6 +80,61 @@ const DEFAULT_STATS: StatsSyncData = {
   paused: false,
 };
 
+/** 出征隊伍資料的來源：帳號模式、金鑰與帳號世代（世代是 store 換上這份玩家資料當下的世代；不知道時是 null） */
+interface TeamOwner {
+  mode: string;
+  key: string | null;
+  epoch: number | null;
+}
+
+/** 同一次計算得到的出征隊伍與它的來源（載入與同步都整份傳，不分開取） */
+interface TeamSource {
+  heroes: HeroStateData[];
+  owner: TeamOwner;
+}
+
+const sameOwner = (a: TeamOwner, b: TeamOwner) =>
+  a.mode === b.mode && a.key === b.key && a.epoch === b.epoch;
+
+/** 判斷隊伍來源時讀的 store 欄位（只讀） */
+interface TeamSourceState {
+  isLoading: boolean;
+  mode: string;
+  player: { key: string } | null;
+  teamEditable: boolean;
+  readOnly: boolean;
+  getAccountEpoch: () => number;
+}
+
+/**
+ * 這份隊伍來源現在能不能用（建立新的一場或同步到場上之前檢查，在任何副作用之前）：
+ * - 一般：只接受已選的帳號（訪客或共用帳號）：store 有玩家資料、來源的金鑰是非空字串而且等於玩家的金鑰、
+ *   模式與帳號世代都等於 store 現在（世代要已知；金鑰相同但世代不同不算）、不在載入中；
+ *   共用帳號另外要隊伍可編輯、不是唯讀。還沒選帳號（mode none）不論世代都不由這裡放行
+ * - 首次內建展示（bootstrap 為 true：還沒有任何一場、這次用內建設定）：來源和 store 都還沒選帳號
+ *   （兩邊 mode none、store 沒有玩家資料、來源沒有金鑰）時可以載入；這一場用內建設定（configReady false），不寫入共用進度
+ */
+const teamSourceUsable = (
+  owner: TeamOwner,
+  s: TeamSourceState,
+  bootstrap: boolean
+): boolean =>
+  ((owner.mode === "guest" || owner.mode === "shared") &&
+    s.mode === owner.mode &&
+    s.player !== null &&
+    owner.key !== null &&
+    owner.key.trim() !== "" &&
+    s.player.key === owner.key &&
+    owner.epoch !== null &&
+    s.getAccountEpoch() === owner.epoch &&
+    !s.isLoading &&
+    (owner.mode !== "shared" || (s.teamEditable && !s.readOnly))) ||
+  (bootstrap &&
+    owner.mode === "none" &&
+    owner.key === null &&
+    s.mode === "none" &&
+    s.player === null);
+
 const ShenmaSanguoJsPage: React.FC = () => {
   const bridgeRef = useRef<LocalGameBridge | null>(null);
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
@@ -199,6 +254,34 @@ const ShenmaSanguoJsPage: React.FC = () => {
   const [isBgmMuted, setIsBgmMuted] = useState(false);
   const [isSfxMuted, setIsSfxMuted] = useState(false);
 
+  // 玩家資料是在哪個帳號世代換上的：store 換 player／mode／teamEditable 的當下記下世代（訂閱回呼和 store 的 set 同步執行）。
+  // 出征隊伍的來源只用這裡記下的世代，不在之後用當下的世代替舊資料補上身份（登入失敗時資料不變、世代已換，就對不上）。
+  // 要在初始化玩家存檔之前訂閱
+  const [playerEpoch, setPlayerEpoch] = useState<{
+    player: typeof player;
+    mode: string;
+    teamEditable: boolean;
+    epoch: number;
+  } | null>(null);
+  useEffect(
+    () =>
+      useJsPlayerStore.subscribe((s, prev) => {
+        if (
+          s.player !== prev.player ||
+          s.mode !== prev.mode ||
+          s.teamEditable !== prev.teamEditable
+        ) {
+          setPlayerEpoch({
+            player: s.player,
+            mode: s.mode,
+            teamEditable: s.teamEditable,
+            epoch: s.getAccountEpoch(),
+          });
+        }
+      }),
+    []
+  );
+
   // 初始化玩家存檔
   useEffect(() => {
     void initPlayer();
@@ -206,35 +289,51 @@ const ShenmaSanguoJsPage: React.FC = () => {
 
   // 當前出征隊伍武將名單（嚴格取自 player.team 與 player.heroes；數值 0 照樣是 0）。
   // 共用帳號沒有隊伍或隊伍不支援時是空的（不自動換成預設隊伍）；訪客或尚未登入時照原本的預設展示。
-  // 技能只照武將是誰從正式技能表帶入（canvasHeroSkill），不來自存檔或後端設定，也不寫回存檔
-  const activeTeamHeroes: HeroStateData[] = useMemo(() => {
+  // 技能只照武將是誰從正式技能表帶入（canvasHeroSkill），不來自存檔或後端設定，也不寫回存檔。
+  // 和隊伍一起記下來源（模式、金鑰、這份資料換上時的世代；記下的資料不是畫面上這一份時世代是 null）
+  const activeTeam: TeamSource = useMemo(() => {
+    const owner: TeamOwner = {
+      mode,
+      key: player?.key ?? null,
+      epoch:
+        playerEpoch &&
+        playerEpoch.player === player &&
+        playerEpoch.mode === mode &&
+        playerEpoch.teamEditable === teamEditable
+          ? playerEpoch.epoch
+          : null,
+    };
     if (
       !player ||
       !player.team ||
       player.team.length === 0 ||
       (mode === "shared" && !teamEditable)
     ) {
-      return mode === "shared" ? [] : DEFAULT_SORTIE_HEROES;
+      return { heroes: mode === "shared" ? [] : DEFAULT_SORTIE_HEROES, owner };
     }
-    return player.team.map((slot) => {
-      const heroState = player.heroes.find((h) => h.hero_id === slot.hero_id);
-      return {
-        hero_id: slot.hero_id,
-        level: heroState?.level ?? 1,
-        star: heroState?.star ?? 1,
-        atk: heroState?.atk ?? 100,
-        def: heroState?.def ?? 50,
-        hp: heroState?.hp ?? 1000,
-        ...canvasHeroSkill(slot.hero_id),
-      };
-    });
-  }, [player, mode, teamEditable]);
+    return {
+      heroes: player.team.map((slot) => {
+        const heroState = player.heroes.find((h) => h.hero_id === slot.hero_id);
+        return {
+          hero_id: slot.hero_id,
+          level: heroState?.level ?? 1,
+          star: heroState?.star ?? 1,
+          atk: heroState?.atk ?? 100,
+          def: heroState?.def ?? 50,
+          hp: heroState?.hp ?? 1000,
+          ...canvasHeroSkill(slot.hero_id),
+        };
+      }),
+      owner,
+    };
+  }, [player, mode, teamEditable, playerEpoch]);
+  const activeTeamHeroes = activeTeam.heroes;
 
   const currentStageRef = useRef<StageData>(BUILTIN_STAGES[0]);
   const statsRef = useRef<StatsSyncData>(stats);
   // 畫面上開著的部署選單（引擎派出成功通知關閉時，用它打開時的這一場與編號關閉慢速）
   const placementMenuRef = useRef<PlacementMenuData | null>(null);
-  const activeTeamHeroesRef = useRef<HeroStateData[]>(activeTeamHeroes);
+  const activeTeamRef = useRef<TeamSource>(activeTeam);
   // 目前載入的這一場：每次 loadStage 產生一個 battleId，開戰與結算都用同一個（共用帳號在第一次進入戰鬥時固定）
   const battleCtxRef = useRef<{
     battleId: string;
@@ -244,18 +343,32 @@ const ShenmaSanguoJsPage: React.FC = () => {
     /** 載入時這一關還沒解鎖（只能從自由演練進來） */
     practice: boolean;
     armTried: boolean;
+    /** 這一場的出征隊伍來自哪個帳號（模式、金鑰、世代）：同一個來源的隊伍改變才同步到場上 */
+    owner: TeamOwner;
+    /** 已經套到場上的隊伍資料（載入時的隊伍，或最後一次成功同步的；同一份不重複同步） */
+    syncedTeam: string;
   } | null>(null);
   const battleSeqRef = useRef(0);
   const [settleRetryMsg, setSettleRetryMsg] = useState<string | null>(null);
 
   /**
-   * 載入一場（初始、遠端設定就緒、換關、調隊備戰、下一關、重新挑戰都經過這裡）：產生新的 battleId、
-   * 記下這場是否用後端設定與是否為自由演練，放下上一場還沒結束的固定
+   * 載入一場（初始、遠端設定就緒、換關、換帳號時的第 0 波備戰、下一關、重新挑戰都經過這裡）：產生新的 battleId、
+   * 記下這場是否用後端設定與是否為自由演練，以及出征隊伍與它的來源（同一份快照），放下上一場還沒結束的固定。
+   * 來源不是 store 目前的帳號（見 teamSourceUsable）就不載入、回傳 false：battleId、這一場、場上、名單、選單與固定都不動
    */
   const loadBattle = useCallback(
-    (stage: StageData, playerHeroes: HeroStateData[], builtin = false) => {
+    (stage: StageData, team: TeamSource, builtin = false): boolean => {
+      const playerHeroes = team.heroes;
       const bridge = bridgeRef.current;
-      if (!bridge) return;
+      if (!bridge) return false;
+      if (
+        !teamSourceUsable(
+          team.owner,
+          useJsPlayerStore.getState(),
+          builtin && battleCtxRef.current === null
+        )
+      )
+        return false;
       const mgr = StageDataManager.getInstance();
       const battleId = `battle_${Date.now()}_${++battleSeqRef.current}`;
       const st = useJsPlayerStore.getState();
@@ -273,6 +386,8 @@ const ShenmaSanguoJsPage: React.FC = () => {
             c?.cleared_stages as Record<string, number> | undefined
           ),
         armTried: false,
+        owner: team.owner,
+        syncedTeam: JSON.stringify(playerHeroes),
       };
       st.disarmSharedSettle();
       bridge.loadStage({
@@ -291,6 +406,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
       setPlacedHeroIds([]);
       setPlacementMenu(null);
       placementMenuRef.current = null;
+      return true;
     },
     []
   );
@@ -304,17 +420,23 @@ const ShenmaSanguoJsPage: React.FC = () => {
   }, [stats]);
 
   useEffect(() => {
-    activeTeamHeroesRef.current = activeTeamHeroes;
-  }, [activeTeamHeroes]);
+    activeTeamRef.current = activeTeam;
+  }, [activeTeam]);
 
-  // 載入關卡（由關卡選擇視窗、結算下一關或重新挑戰觸發）
+  // 載入關卡（由關卡選擇視窗、結算下一關或重新挑戰觸發）。出征隊伍的來源不是目前的帳號時不載入、什麼都不清（回傳 false）
   const loadStageData = useCallback(
-    (stage: StageData) => {
+    (stage: StageData): boolean => {
       if (getStageDataProblem(stage)) {
         console.warn("[ShenmaSanguoJs] 嘗試載入未開放關卡:", stage.map_id);
         setIsStageSelectorOpen(true);
-        return;
+        return false;
       }
+      const team = activeTeamRef.current;
+      if (
+        !bridgeRef.current ||
+        !teamSourceUsable(team.owner, useJsPlayerStore.getState(), false)
+      )
+        return false;
 
       setCurrentStage(stage);
       currentStageRef.current = stage;
@@ -325,7 +447,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
       setBattleReward(null);
       setPlacedHeroIds([]);
 
-      loadBattle(stage, activeTeamHeroesRef.current);
+      return loadBattle(stage, team);
     },
     [loadBattle]
   );
@@ -382,7 +504,9 @@ const ShenmaSanguoJsPage: React.FC = () => {
     };
     bridge.onHeroInfoOpen = (h) => setHeroInfo(h);
     // 武將陣亡：只處理目前這個 bridge 與這一場（舊場次晚到的通知不改新場的名單）；部署選單的「已在場上」換成這一場還活著的武將，
-    // 陣亡的那一位就能再派；武將資訊只在顯示的正是陣亡的那個實例時關閉
+    // 陣亡的那一位就能再派；武將資訊只在顯示的正是陣亡的那個實例時關閉。
+    // 隊伍同步（數值更新或不在隊伍裡而離場）同樣只處理這一場：名單換新（也讓開著的武將資訊重新顯示更新後的數值），
+    // 武將資訊只在顯示的正是離場的那個實例時關閉
     bridge.onHeroRosterChanged = (info) => {
       if (
         bridgeRef.current !== bridge ||
@@ -391,7 +515,11 @@ const ShenmaSanguoJsPage: React.FC = () => {
         return;
       }
       setPlacedHeroIds([...info.aliveHeroIds]);
-      setHeroInfo((cur) => (cur === info.died ? null : cur));
+      if ("died" in info) {
+        setHeroInfo((cur) => (cur === info.died ? null : cur));
+      } else {
+        setHeroInfo((cur) => (cur && info.removed.includes(cur) ? null : cur));
+      }
     };
 
     bridge.onBattleEnded = (r) => {
@@ -432,7 +560,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
     }
 
     // 初始載入當前關卡（內建的代用設定：這場不寫入共用進度）
-    loadBattle(currentStageRef.current, activeTeamHeroesRef.current, true);
+    loadBattle(currentStageRef.current, activeTeamRef.current, true);
 
     if (typeof window !== "undefined") {
       (window as unknown as { __testBridge?: LocalGameBridge }).__testBridge =
@@ -458,7 +586,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
             !cur.paused
           ) {
             currentStageRef.current = match;
-            loadBattle(match, activeTeamHeroesRef.current);
+            loadBattle(match, activeTeamRef.current);
           }
         }
       }
@@ -471,20 +599,48 @@ const ShenmaSanguoJsPage: React.FC = () => {
       }
       bridge.destroy();
       bridgeRef.current = null;
+      // 這個 bridge 的場次跟著結束：之後新建的 bridge 還沒有任何一場（首次內建展示照常判斷）
+      battleCtxRef.current = null;
     };
   }, [settleBattle, loadBattle]);
 
-  // 當隊伍陣容變更且處於備戰階段時，平滑更新戰場武將陣容。
-  // 只在這一場還沒開打（第 0 波）時重新載入：清完一波回到備戰是同一場的延續，不能因此重開一場（波次、場上武將與首擊紀錄都要保留）
+  // 出征隊伍改變時（改隊伍、升級、手動同步讀回、換帳號），只看目前載入的這一場：
+  // - 還沒有任何一場（首次內建展示沒有載入，例如一開始就已經選了帳號）：來源可用時照原流程載入第一場
+  // - 同一個來源（模式、金鑰、帳號世代都相同），備戰（任何波次）或戰鬥中（暫停中也一樣）：同步到場上，不重新載入
+  //   （battleId、波次、塔、金幣、城防、首擊紀錄、暫停都保留）。只在來源可用（teamSourceUsable）、有選帳號時同步；
+  //   同一份隊伍不重複同步，不被接受時不記成已同步
+  // - 來源不同（換了帳號或帳號世代）：只在這一場還沒開打（第 0 波備戰）時照原本的流程用新的來源重新載入一場
+  //   （loadBattle 同樣先核來源）；清完一波回到備戰或戰鬥中不動（換帳號後舊戰場的處理另案）
   useEffect(() => {
-    if (
-      bridgeRef.current &&
-      stats.game_state === GameState.PREP &&
-      stats.wave === 0
-    ) {
-      loadBattle(currentStageRef.current, activeTeamHeroes);
+    const bridge = bridgeRef.current;
+    const ctx = battleCtxRef.current;
+    if (!bridge) return;
+    if (!ctx) {
+      loadBattle(currentStageRef.current, activeTeam);
+      return;
     }
-  }, [activeTeamHeroes, stats.game_state, stats.wave, loadBattle]);
+    if (stats.battle_id !== ctx.battleId) return;
+    if (
+      stats.game_state !== GameState.PREP &&
+      stats.game_state !== GameState.BATTLE
+    )
+      return;
+    if (!sameOwner(activeTeam.owner, ctx.owner)) {
+      if (stats.game_state === GameState.PREP && stats.wave === 0) {
+        loadBattle(currentStageRef.current, activeTeam);
+      }
+      return;
+    }
+    if (
+      activeTeam.owner.mode === "none" ||
+      !teamSourceUsable(activeTeam.owner, useJsPlayerStore.getState(), false)
+    )
+      return;
+    const team = JSON.stringify(activeTeam.heroes);
+    if (team === ctx.syncedTeam) return;
+    if (bridge.syncTeam(ctx.battleId, activeTeam.heroes).ok)
+      ctx.syncedTeam = team;
+  }, [activeTeam, stats.battle_id, stats.game_state, stats.wave, loadBattle]);
 
   // 畫布回調
   const handleCanvasReady = useCallback((canvas: HTMLCanvasElement) => {
@@ -593,9 +749,8 @@ const ShenmaSanguoJsPage: React.FC = () => {
   };
 
   // 結算後操作
+  // 重新挑戰：結算畫面與獎勵由 loadStageData 在確定載入時才清掉（來源不是目前的帳號時不載入、結算畫面留著）
   const handleRetry = () => {
-    setBattleResult(null);
-    setBattleReward(null);
     loadStageData(currentStage);
   };
 
@@ -615,12 +770,13 @@ const ShenmaSanguoJsPage: React.FC = () => {
       ));
   const hasNextPlayableStage = !!nextStageCandidate && nextStageUnlocked;
 
+  // 下一關：載入時由 loadStageData 清掉結算畫面與獎勵（來源不是目前的帳號時不載入、結算畫面留著）；沒有可玩的下一關時照原本關掉結算、打開關卡選擇
   const handleNextStage = () => {
-    setBattleResult(null);
-    setBattleReward(null);
     if (nextStageCandidate && nextStageUnlocked) {
       loadStageData(nextStageCandidate);
     } else {
+      setBattleResult(null);
+      setBattleReward(null);
       setIsStageSelectorOpen(true);
     }
   };

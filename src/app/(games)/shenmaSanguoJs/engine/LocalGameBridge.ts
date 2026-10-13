@@ -8,6 +8,7 @@ import {
   BattleEngine,
   HeroRosterInfo,
   StagePayload,
+  TeamSyncResult,
   TowerSellRequest,
   TowerSellResult,
 } from "./BattleEngine";
@@ -50,7 +51,7 @@ export class LocalGameBridge {
     context?: TowerPanelContext
   ) => void;
   public onHeroInfoOpen?: (hero: HeroEntity | null) => void;
-  /** 武將陣亡：這一場與還活著的武將識別碼（凍結的複本） */
+  /** 武將陣亡（died）或隊伍同步更新／離場（removed）：這一場與還活著的武將識別碼（凍結的複本） */
   public onHeroRosterChanged?: (info: HeroRosterInfo) => void;
   public onBattleEnded?: (result: BattleResultData) => void;
   public onWaveRejected?: (wave: number, reason: string) => void;
@@ -167,6 +168,11 @@ export class LocalGameBridge {
       this.onPlacementMenuOpen?.(null);
     }
     return success;
+  }
+
+  /** 同一場的隊伍同步（改隊伍或升級後）：只接受這一場、備戰或戰鬥中；不重新載入（見 BattleEngine.syncTeam） */
+  public syncTeam(battleId: string, team: unknown): TeamSyncResult {
+    return this.engine.syncTeam(battleId, team);
   }
 
   public placeTower(col: number, row: number, towerTypeKey: string): boolean {

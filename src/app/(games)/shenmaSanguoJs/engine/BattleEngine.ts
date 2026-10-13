@@ -77,12 +77,27 @@ const isTowerSellRequest = (v: unknown): v is TowerSellRequest => {
   );
 };
 
-/** 武將陣亡的通知（只在本機的畫面與引擎之間使用）：這一場、還活著的武將識別碼（凍結的複本），以及剛陣亡的那一個實例 */
-export interface HeroRosterInfo {
-  battleId: string;
-  aliveHeroIds: readonly string[];
-  died: HeroEntity;
-}
+/**
+ * 場上武將名單改變的通知（只在本機的畫面與引擎之間使用）：這一場、還活著的武將識別碼（凍結的複本），以及
+ * - 陣亡：剛陣亡的那一個實例（died）
+ * - 隊伍同步：這次因為不在隊伍裡而離場的實例（removed，凍結的複本；只有數值更新時是空的）。離場不是陣亡，不用 died 表示
+ */
+export type HeroRosterInfo =
+  | {
+      battleId: string;
+      aliveHeroIds: readonly string[];
+      died: HeroEntity;
+    }
+  | {
+      battleId: string;
+      aliveHeroIds: readonly string[];
+      removed: readonly HeroEntity[];
+    };
+
+/** 隊伍同步的結果：成功時是更新了數值與離場的武將識別碼；不接受時是原因（什麼都沒改） */
+export type TeamSyncResult =
+  | { ok: true; updated: readonly string[]; removed: readonly string[] }
+  | { ok: false; reason: "stale_battle" | "not_active" | "bad_team" };
 
 export interface StagePayload {
   stageId: string;
@@ -696,6 +711,70 @@ export class BattleEngine {
       this.selectedUnit = null;
     }
     return true;
+  }
+
+  /**
+   * 隊伍同步（同一場的動態隊伍；和 Godot 版 update_team 相同：先更新留在隊伍裡的武將，再移除不在隊伍裡的），不重新載入這一場：
+   * battleId、塔、金幣、城防、波次、時間、自動、倍率、暫停、部署選單與這一場的首擊紀錄都不動。
+   * - 只接受目前這一場、備戰或戰鬥中（暫停中也接受，暫停維持；同步不是派出或建塔）；結算、還沒載入或別場都不接受
+   * - 先驗整個隊伍再動手：每一筆要是物件、武將要有身份，同一位不能出現兩次（hero_ 前綴兩種寫法也算同一位）；
+   *   任何一筆不合法就整筆不接受、什麼都不改。合法的空陣列代表隊伍清空
+   * - 場上的實例用 isSameHero 對到隊伍裡的資料就原地更新（HeroEntity.applyStatUpdate，用這一場載入時的武將設定）；
+   *   對不到的（包含生命 0 但還沒陣亡的）離場：撤除它發出的光環、只放開被它阻擋的敵人、再用 removeHeroInstance 移除（只清它自己占的格子與選取）
+   * - 有數值更新或有武將離場時通知一次名單（removed 是離場實例的凍結複本）；什麼都沒變時不通知
+   */
+  public syncTeam(battleId: string, team: unknown): TeamSyncResult {
+    const bm = this.battleManager;
+    if (battleId !== bm.battleId) return { ok: false, reason: "stale_battle" };
+    if (bm.gameState !== GameState.PREP && bm.gameState !== GameState.BATTLE)
+      return { ok: false, reason: "not_active" };
+    if (!Array.isArray(team)) return { ok: false, reason: "bad_team" };
+    const entries: HeroStateData[] = [];
+    for (const t of team) {
+      if (!t || typeof t !== "object") return { ok: false, reason: "bad_team" };
+      const id: unknown = (t as HeroStateData).hero_id;
+      if (heroIdentityKey(id) === null)
+        return { ok: false, reason: "bad_team" };
+      if (entries.some((e) => isSameHero(e.hero_id, id)))
+        return { ok: false, reason: "bad_team" };
+      entries.push(t as HeroStateData);
+    }
+
+    // 先排好計畫（不在處理中途才發現問題），再更新、再移除
+    const toUpdate: [HeroEntity, HeroStateData][] = [];
+    const toRemove: HeroEntity[] = [];
+    for (const h of this.heroes) {
+      const entry = entries.find((e) => isSameHero(h.heroId, e.hero_id));
+      if (entry) toUpdate.push([h, entry]);
+      else toRemove.push(h);
+    }
+    const updated: string[] = [];
+    for (const [h, entry] of toUpdate) {
+      if (h.applyStatUpdate(entry, this.heroesConfig)) updated.push(h.heroId);
+    }
+    const removed: HeroEntity[] = [];
+    for (const h of toRemove) {
+      h.releaseAllAuras();
+      for (const e of this.waveManager.activeEnemies) {
+        if (e.blocker === h) {
+          e.blocker = null;
+          e.isFighting = false;
+        }
+      }
+      if (this.removeHeroInstance(h)) removed.push(h);
+    }
+    if (updated.length > 0 || removed.length > 0) {
+      this.onHeroRosterChanged?.({
+        battleId,
+        aliveHeroIds: this.getAliveHeroIds(),
+        removed: Object.freeze([...removed]),
+      });
+    }
+    return {
+      ok: true,
+      updated: Object.freeze(updated),
+      removed: Object.freeze(removed.map((h) => h.heroId)),
+    };
   }
 
   /**

@@ -3995,7 +3995,15 @@ module.exports = async function profileContractWeb(page) {
       ]),
       s1.heroes
     );
-    // 備戰中改隊伍：存檔只送 team（沒有 skill），戰場重新載入，之後部署用新隊伍的資料
+    // 備戰中同帳號改隊伍：存檔只送 team（沒有 skill），同一場同步、不重新載入（馬超、趙雲是原本的實例），之後部署用新隊伍的資料
+    // 改隊伍前在測試側記下馬超、趙雲這兩個實例（之後比對是不是同一個物件）
+    await p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      window.__keep22 = {
+        ma: e.heroes.find((h) => h.heroId === "hero_ma_chao"),
+        zy: e.heroes.find((h) => h.heroId === "hero_zhao_yun"),
+      };
+    });
     await openTeam(p);
     check(
       "選得到黃忠與周瑜",
@@ -4018,32 +4026,66 @@ module.exports = async function profileContractWeb(page) {
         ]),
       sent
     );
-    const bid1 = await until(async () => {
-      const b = await bm(p, "battleId");
-      return b && b !== s1.battleId ? b : null;
-    }, 10000);
-    await stableBattle(p);
+    const bidStable = await stableBattle(p);
     const s2 = await fieldOf(p);
+    const kept2 = await p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      const k = window.__keep22 || {};
+      const ma = e.heroes.find((h) => h.heroId === "hero_ma_chao");
+      const zy = e.heroes.find((h) => h.heroId === "hero_zhao_yun");
+      return {
+        count: e.heroes.length,
+        sameMa: !!ma && ma === k.ma,
+        sameZy: !!zy && zy === k.zy,
+        ma: ma ? [ma.currentHp, ma.maxHp, ma.isDead] : null,
+      };
+    });
     check(
-      "備戰中改隊伍後戰場重新載入：新的 battleId、場上沒有武將",
-      !!bid1 && s2.battleId !== s1.battleId && s2.heroes.length === 0,
-      { bid1, s2: { battleId: s2.battleId, heroes: s2.heroes.length } }
+      "備戰中同帳號改隊伍不重新載入：同一個 battleId，馬超與趙雲是原本的實例、技能欄位不變",
+      bidStable === s1.battleId &&
+        s2.battleId === s1.battleId &&
+        kept2.count === 2 &&
+        kept2.sameMa &&
+        kept2.sameZy &&
+        sameJson(kept2.ma, [0, 0, false]) &&
+        sameJson(heroVec(s2), [
+          ["hero_ma_chao", wantFields("hero_ma_chao")],
+          ["hero_zhao_yun", wantFields("hero_zhao_yun")],
+        ]),
+      { bidStable, before: s1.battleId, s2, kept2 }
     );
     const d3 = await deployHero(p, ROAD_CELLS[6], "黃忠");
     const s3 = await fieldOf(p);
+    const kept3 = await p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      const k = window.__keep22 || {};
+      k.hz = e.heroes.find((h) => h.heroId === "hero_huang_zhong");
+      return {
+        count: e.heroes.length,
+        sameMa: !!k.ma && e.heroes.includes(k.ma),
+        sameZy: !!k.zy && e.heroes.includes(k.zy),
+        hz: !!k.hz,
+      };
+    });
     check(
-      "重新載入後部署黃忠：部署資料帶長射程 1.5，實例只有射程倍率 1.5",
+      "改隊伍後部署黃忠：部署資料帶長射程 1.5，黃忠的實例只有射程倍率 1.5，馬超與趙雲的技能欄位不變",
       d3.ok &&
         sameJson(
           lastState(s3),
           wantPayload("hero_huang_zhong", 1, 0, 125, 50, 1000)
         ) &&
+        kept3.count === 3 &&
+        kept3.sameMa &&
+        kept3.sameZy &&
+        kept3.hz &&
         sameJson(heroVec(s3), [
+          ["hero_ma_chao", wantFields("hero_ma_chao")],
+          ["hero_zhao_yun", wantFields("hero_zhao_yun")],
           ["hero_huang_zhong", wantFields("hero_huang_zhong")],
         ]),
-      { d3, s3 }
+      { d3, s3, kept3 }
     );
-    // 只記錄：備戰中重新載入後部署選單上馬超的卡片（之前沒有清「已在場上」的名單；現在由第 24 段「備戰重新載入」的情境具名檢查）
+    // 只記錄：備戰中同帳號改隊伍後（同一場、馬超仍在場上）部署選單上馬超的卡片（「已在場上」由第 24 段的情境具名檢查）
     {
       const pt = await p.evaluate(
         ({ c, r }) => {
@@ -4058,7 +4100,7 @@ module.exports = async function profileContractWeb(page) {
       const menu = p.locator('[data-testid="placement-menu"]');
       await until(() => menu.isVisible(), 5000);
       const card = menu.locator("button", { hasText: "馬超" });
-      note("備戰中改隊伍重新載入後，部署選單上馬超的卡片", {
+      note("備戰中同帳號改隊伍後（同一場），部署選單上馬超的卡片", {
         disabled: (await card.count()) ? await card.first().isDisabled() : null,
         text: (await card.count()) ? await card.first().innerText() : null,
         engineHeroes: (await fieldOf(p)).heroes.length,
@@ -4072,25 +4114,32 @@ module.exports = async function profileContractWeb(page) {
     }
     // 開戰後再部署：已在場上的實例不變，新部署照樣帶技能
     check("按進入戰場開戰", await startBattle(p));
-    await p.evaluate(() => {
-      const h = window.__testBridge.engine.heroes[0];
-      if (h) h.__mark = "before";
-    });
     const d4 = await deployHero(p, ROAD_CELLS[13], "周瑜");
     const s4 = await fieldOf(p);
+    const kept4 = await p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      const k = window.__keep22 || {};
+      return {
+        count: e.heroes.length,
+        same: [k.ma, k.zy, k.hz].map((x) => !!x && e.heroes.includes(x)),
+      };
+    });
     check(
-      "戰鬥中部署周瑜：部署資料與實例都是火攻 0.2／3 跳／1 秒；黃忠是原本的實例、技能欄位不變",
+      "戰鬥中部署周瑜：部署資料與實例都是火攻 0.2／3 跳／1 秒；先前的實例（馬超、趙雲、黃忠）不變、技能欄位不變",
       d4.ok &&
         sameJson(
           lastState(s4),
           wantPayload("hero_zhou_yu", 1, 0, 135, 55, 1000)
         ) &&
-        s4.heroes[0].mark === "before" &&
+        kept4.count === 4 &&
+        kept4.same.every(Boolean) &&
         sameJson(heroVec(s4), [
+          ["hero_ma_chao", wantFields("hero_ma_chao")],
+          ["hero_zhao_yun", wantFields("hero_zhao_yun")],
           ["hero_huang_zhong", wantFields("hero_huang_zhong")],
           ["hero_zhou_yu", wantFields("hero_zhou_yu")],
         ]),
-      { d4, s4 }
+      { d4, s4, kept4 }
     );
     check("受控的勝利結束", (await endWith(p, {})) === "ok");
     check(
@@ -4516,8 +4565,8 @@ module.exports = async function profileContractWeb(page) {
   });
 
   // ═══ 24. 備戰重新載入清「已在場上」的名單；部署費用（派武將免費、建塔照原價）；武將名冊的技能說明 ═══
-  // 備戰中每次重新載入（改隊伍、換帳號、後端設定較晚到、選關、重新挑戰）場上的武將都換新，部署選單的名單要一起清掉；
-  // 戰鬥中改隊伍、升級這類不相關的更新不重新載入，已部署的武將仍是原本的實例、選單上仍是「已在場上」。
+  // 備戰中每次重新載入（換帳號、後端設定較晚到、選關、重新挑戰）場上的武將都換新，部署選單的名單要一起清掉；
+  // 同一個帳號改隊伍、升級不重新載入（同一場同步到場上），已部署的武將仍是原本的實例、選單上仍是「已在場上」。
   // 部署費用：派武將不花戰場金幣（和 Godot 版相同），建塔與升級照原價，世界金幣不變；不驗收戰鬥。
   // 名冊的 13 段技能名稱與完整說明寫死（照正式技能表 describeHeroSkill 不帶目前射程與攻擊力的原文手寫），不由頁面或技能表產生。
   /** 畫布上某一格的螢幕座標（玩法提示擋住時先收起） */
@@ -4655,7 +4704,7 @@ module.exports = async function profileContractWeb(page) {
   }
 
   await scenario(
-    "備戰重新載入：改隊伍保留馬超後，名單清掉、馬超可以再部署",
+    "備戰中同帳號改隊伍：保留馬超時不重新載入，同一場、生命 0 的馬超仍是原本的實例，仍「已在場上」不能重複派",
     async (mk) => {
       const data = NEW({
         capacity: 20,
@@ -4689,48 +4738,74 @@ module.exports = async function profileContractWeb(page) {
           /已在場上/.test(c1.text),
         { d1, c1 }
       );
+      check(
+        "部署資料照存檔（0 照樣是 0）與正式技能，實例只有馬超的技能欄位",
+        sameJson(lastState(s1), wantPayload("hero_ma_chao", 3, 0, 0, 0, 0)) &&
+          sameJson(heroVec(s1), [["hero_ma_chao", wantFields("hero_ma_chao")]]),
+        s1
+      );
+      check("標記馬超的實例", await markFirstHero(p));
+      const heroNums = () =>
+        p.evaluate(() =>
+          window.__testBridge.engine.heroes.map((h) => [
+            h.heroId,
+            h.__mark || null,
+            h.isDead,
+            h.heroLevel,
+            h.atk,
+            h.defStat,
+            h.currentHp,
+            h.maxHp,
+          ])
+        );
+      const n1 = await heroNums();
       await openTeam(p);
       check("選得到黃忠", await pickTeamHero(p, "黃忠"));
       await p.locator('[data-testid="team-edit-save"]').click();
       await until(async () => (await modal(p).count()) === 0, 10000);
       const saves = E.gas.log.filter((e) => e.action === "save_profile");
+      const sent = saves[0] && saves[0].payload;
       check(
-        "改隊伍保存一次，隊伍仍有馬超（馬超／趙雲／黃忠）",
+        "改隊伍保存一次，body 沒有 skill、除了 team 其他原樣，隊伍仍有馬超（馬超／趙雲／黃忠）",
         saves.length === 1 &&
-          sameJson(saves[0].payload.data.team.map((t) => t.hero_id).sort(), [
+          skillPaths(sent).length === 0 &&
+          sameJson({ ...sent.data, team: null }, { ...data, team: null }) &&
+          sameJson(sent.data.team.map((t) => t.hero_id).sort(), [
             "huang_zhong",
             "ma_chao",
             "zhao_yun",
           ]),
         saves.map((e) => e.payload)
       );
-      const bid = await nextBattle(p, s1.battleId);
+      const bidStable = await stableBattle(p);
       const s2 = await fieldOf(p);
+      const n2 = await heroNums();
       check(
-        "改隊伍後重新載入：新的 battleId，原本的馬超實例已不在場上",
-        !!bid && s2.battleId !== s1.battleId && s2.heroes.length === 0,
-        { before: s1.battleId, after: s2.battleId, heroes: s2.heroes }
+        "同帳號改隊伍後不重新載入：同一個 battleId、場上仍只有原本的馬超實例（生命 0、等級 3、攻防 0，沒有復活）",
+        bidStable === s1.battleId &&
+          s2.battleId === s1.battleId &&
+          sameJson(n2, [["hero_ma_chao", "before", false, 3, 0, 0, 0, 0]]) &&
+          sameJson(n2, n1),
+        { before: s1.battleId, after: s2.battleId, n1, n2 }
+      );
+      check(
+        "馬超的技能欄位不變（正式技能），沒有新的部署（不自動重派）",
+        sameJson(heroVec(s2), [["hero_ma_chao", wantFields("hero_ma_chao")]]) &&
+          s2.log.length === s1.log.length,
+        { s1: s1.log.length, s2 }
       );
       const c2 = await menuCard(p, ROAD_CELLS[8], "馬超");
       check(
-        "重新載入後選單上的馬超不是「已在場上」、可以點（Lv.3）",
-        c2.ok &&
-          !c2.disabled &&
-          !/已在場上/.test(c2.text) &&
-          /Lv\.3/.test(c2.text),
+        "改隊伍後選單上的馬超仍是「已在場上」、不能點（不能重複派）",
+        c2.ok && c2.disabled && /已在場上/.test(c2.text),
         c2
       );
-      const d2 = await deployHero(p, ROAD_CELLS[6], "馬超");
-      const s3 = await fieldOf(p);
+      const c3 = await menuCard(p, ROAD_CELLS[8], "黃忠");
       check(
-        "馬超可以再部署：部署資料照存檔（0 照樣是 0）與正式技能，場上只有這一位馬超",
-        d2.ok &&
-          sameJson(lastState(s3), wantPayload("hero_ma_chao", 3, 0, 0, 0, 0)) &&
-          sameJson(heroVec(s3), [["hero_ma_chao", wantFields("hero_ma_chao")]]),
-        { d2, s3 }
+        "新加的黃忠在選單上、可以點",
+        c3.ok && !c3.disabled && !/已在場上/.test(c3.text),
+        c3
       );
-      const c3 = await menuCard(p, ROAD_CELLS[8], "馬超");
-      check("再部署後馬超又是「已在場上」", c3.ok && c3.disabled, c3);
       return E;
     }
   );
@@ -5976,7 +6051,7 @@ module.exports = async function profileContractWeb(page) {
   // 第 1 波清完回到備戰（手動出波）不是新的一場：battleId、關卡、波次（1）、場上的武將與塔、戰場金幣、城防與首擊紀錄都保留，
   // 不送結算或存檔；之後照常按「迎戰」進第 2 波。自動出波時清波直接排下一波。
   // 清波用引擎既有的 onWaveAllEnemiesDead 受控觸發（敵人是測試用的不倒木樁）：這裡驗的是生命週期，不是自然通關。
-  // 只有還沒開打（第 0 波）的備戰改隊伍／換帳號才重新載入（第 24 段已驗）；清波後的備戰改隊伍也不重開（動態同步隊伍是之後的範圍）
+  // 只有還沒開打（第 0 波）時換帳號才重新載入（第 24 段已驗）；同一個帳號改隊伍不論波次都不重開，同一場同步到場上（第 35 段）
   const DUMMY = {
     enemy_id: "dummy_test",
     name: "測試木樁",
@@ -11270,6 +11345,1374 @@ module.exports = async function profileContractWeb(page) {
         { shown, rows }
       );
       check("沒有任何寫入請求", E.gas.writes().length === 0, E.gas.writes());
+      return E;
+    }
+  );
+
+  // ═══ 35. 同一場的動態隊伍同步：同一個帳號改隊伍、升級或手動同步讀回時，場上武將原地更新或離場，不重開整場 ═══
+  // 留在隊伍裡的武將是原本的實例（生命照舊比例換算，等級、攻擊、防禦照新資料）；不在隊伍裡的離場（格子、部署名單、資訊視窗、敵人的阻擋都清掉，
+  // 之後同一場可以再派）。battleId、波次、塔、戰場金幣、城防、倍率、自動、暫停、部署選單編號與這一場的首擊紀錄都不變。
+  // 來源不是這一場的帳號（換帳號、同一把金鑰重新登入、登入失敗之後）或資料不能用（較舊的讀取、不支援的隊伍、唯讀）時不同步，也不清空場上。
+  // 清波、結束、另一台裝置改存檔、生命調值都是受控的，不是自然實戰
+  const HOLD_MAPS35 = SKILL_MAPS.map((m) => ({ ...m, waves: [DUMMY_WAVE(1)] }));
+  /** 這一場與場上武將的快照 */
+  const field35 = (p) =>
+    p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      const b = e.battleManager;
+      const fs = b.firstStrikeUsed;
+      return {
+        battleId: b.battleId,
+        state: b.gameState,
+        wave: b.currentWave,
+        paused: b.manualPaused,
+        speed: b.speedPref,
+        auto: b.autoMode,
+        menuId: b.deployMenuId,
+        gold: b.battleGold,
+        baseHp: b.baseHp,
+        firstStrike: fs instanceof Map ? [...fs.entries()] : null,
+        towers: e.towers.map((t) => [
+          t.towerTypeKey,
+          t.__mark || null,
+          t.gridCell.col,
+          t.gridCell.row,
+        ]),
+        heroes: e.heroes.map((h) => ({
+          id: h.heroId,
+          mark: h.__mark || null,
+          dead: h.isDead,
+          lv: h.heroLevel,
+          atk: h.atk,
+          def: h.defStat,
+          hp: h.currentHp,
+          max: h.maxHp,
+          cell: [h.gridCell.col, h.gridCell.row],
+          occ: e.gameMap.getOccupant(h.gridCell.col, h.gridCell.row) === h,
+        })),
+      };
+    });
+  const hero35 = (s, id) => s.heroes.find((h) => h.id === id) || null;
+  /** 同步前後要相同的部分 */
+  const keep35 = (s) => ({
+    battleId: s.battleId,
+    state: s.state,
+    wave: s.wave,
+    paused: s.paused,
+    speed: s.speed,
+    auto: s.auto,
+    menuId: s.menuId,
+    gold: s.gold,
+    baseHp: s.baseHp,
+    firstStrike: s.firstStrike,
+    towers: s.towers,
+  });
+  const occupant35 = (p, [c, r]) =>
+    p.evaluate(
+      ({ c, r }) => {
+        const o = window.__testBridge.engine.gameMap.getOccupant(c, r);
+        return o ? (o.isHero ? `hero:${o.heroId}` : "tower") : null;
+      },
+      { c, r }
+    );
+  /** 活著的敵人：是否被這位武將擋住、是否在戰鬥、位置 */
+  const enemies35 = (p, heroId) =>
+    p.evaluate(
+      (hid) =>
+        window.__testBridge.engine.waveManager.activeEnemies
+          .filter((en) => !en.isDead)
+          .map((en) => ({
+            blocked: !!en.blocker && en.blocker.heroId === hid,
+            blocker: en.blocker ? en.blocker.heroId : null,
+            fighting: en.isFighting,
+            x: en.x,
+          })),
+      heroId
+    );
+  /** 武將視窗升級一位武將（名冊選這位 → 按升級），等名冊上的等級變成 lv */
+  async function upgrade35(p, name, lv) {
+    await openRoster(p);
+    await pickRosterHero(p, name);
+    await p.locator('[data-testid="hero-upgrade"]').click();
+    const ok = await until(
+      async () =>
+        new RegExp(`Lv\\.${lv}(?!\\d)`).test((await rosterCard(p, name)) || ""),
+      8000
+    );
+    await closeModal(p);
+    return !!ok;
+  }
+  /** 隊伍視窗：移出席位上的武將、加入池子裡的武將，再保存（keyboard：用鍵盤打開視窗與按保存） */
+  async function editTeam35(p, { remove = [], add = [], keyboard = false }) {
+    if (keyboard) {
+      await p.locator("button", { hasText: /^隊伍$/ }).focus();
+      await p.keyboard.press("Enter");
+      await until(() => modal(p).isVisible(), 10000);
+    } else await openTeam(p);
+    for (const name of remove) {
+      const slot = modal(p).locator('[class*="teamSlotFilled"]', {
+        hasText: name,
+      });
+      if ((await slot.count()) === 0)
+        return { ok: false, step: `remove:${name}` };
+      await slot.first().locator('button[title="移出隊伍"]').click();
+    }
+    for (const name of add)
+      if (!(await pickTeamHero(p, name)))
+        return { ok: false, step: `add:${name}` };
+    const save = p.locator('[data-testid="team-edit-save"]');
+    if (keyboard) {
+      await save.focus();
+      await p.keyboard.press("Enter");
+    } else await save.click();
+    const closed = await until(
+      async () => (await modal(p).count()) === 0,
+      10000
+    );
+    return { ok: !!closed, step: closed ? "saved" : "still-open" };
+  }
+  /** 主公資訊的「手動同步」：按下後等 until 成立（或逾時），關掉視窗 */
+  async function sync35(p, done) {
+    await openInfo(p);
+    await p.locator('[data-testid="player-info-sync-btn"]').click();
+    const ok = await until(done, 10000);
+    await closeModal(p);
+    return ok;
+  }
+  const MA35 = {
+    hero_id: "hero_ma_chao",
+    level: 2,
+    star: 1,
+    atk: 115,
+    def: 58,
+    hp: 1120,
+  };
+  const ZY35 = {
+    hero_id: "hero_zhao_yun",
+    level: 1,
+    star: 1,
+    atk: 110,
+    def: 65,
+    hp: 1150,
+  };
+  const ZHOU35 = {
+    hero_id: "hero_zhou_yu",
+    level: 1,
+    star: 1,
+    atk: 105,
+    def: 55,
+    hp: 1080,
+  };
+
+  await scenario(
+    "動態隊伍同步：訪客第 0 波備戰已放武將與塔，升級與增減隊伍都同步到場上、不重開整場（1280，滑鼠）",
+    async (mk) => {
+      const E = await mk({ maps: SKILL_MAPS, enemies: ENEMIES });
+      const p = await E.page({
+        storage: guestStorage(
+          [MA35, ZY35, ZHOU35],
+          [
+            { slot: 0, hero_id: "hero_ma_chao" },
+            { slot: 1, hero_id: "hero_zhao_yun" },
+          ]
+        ),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      const d2 = await deployHero(p, ROAD_CELLS[4], "趙雲");
+      const t1 = await buildTower(p, BUILD_CELL, "弓兵塔");
+      check(
+        "第 0 波備戰：部署馬超、趙雲並建弓兵塔，標記實例",
+        d1.ok && d2.ok && t1.ok && (await markField(p)) === 3,
+        { d1, d2, t1 }
+      );
+      // 受控：馬超的生命調成 560／1120（一半），驗證升級時照舊比例換算、不補滿
+      await p.evaluate(() => {
+        const h = window.__testBridge.engine.heroes.find(
+          (x) => x.heroId === "hero_ma_chao"
+        );
+        h.currentHp = 560;
+      });
+      const info1 = await openHeroInfo(p, ROAD_CELLS[2]);
+      const s0 = await field35(p);
+      check(
+        "資訊視窗顯示馬超 Lv.2、攻擊 115、生命 560/1120",
+        !!info1 &&
+          /Lv\.2(?!\d)/.test(info1) &&
+          /115/.test(info1) &&
+          /560\/1120/.test(info1) &&
+          s0.wave === 0 &&
+          s0.state === 1,
+        { info1, s0 }
+      );
+      const up = await upgrade35(p, "馬超", 3);
+      await sleep(600);
+      const s1 = await field35(p);
+      const m1 = hero35(s1, "hero_ma_chao");
+      check(
+        "升級馬超（Lv.2 → Lv.3）：同一個 battleId、原本的實例，等級 3、攻擊 130、防禦 66、最大生命 1240、生命照舊比例 620（不補滿）；塔、金幣、波次、暫停、倍率、選單編號不變",
+        up &&
+          sameJson(keep35(s1), keep35(s0)) &&
+          !!m1 &&
+          m1.mark === "hero:hero_ma_chao" &&
+          m1.lv === 3 &&
+          m1.atk === 130 &&
+          m1.def === 66 &&
+          m1.max === 1240 &&
+          m1.hp === 620 &&
+          m1.dead === false &&
+          m1.occ === true,
+        { up, s0, s1 }
+      );
+      const info2 = await heroInfoText(p);
+      check(
+        "資訊視窗仍開著同一位馬超，數值換成 Lv.3、攻擊 130、防禦 66、生命 620/1240",
+        !!info2 &&
+          /Lv\.3(?!\d)/.test(info2) &&
+          /130/.test(info2) &&
+          /66/.test(info2) &&
+          /620\/1240/.test(info2),
+        info2
+      );
+      // 關掉武將資訊（面板蓋在畫布上，之後要點道路格）
+      await p
+        .locator(HERO_INFO)
+        .locator("button", { hasText: "×" })
+        .first()
+        .click()
+        .catch(() => {});
+      await until(async () => (await p.locator(HERO_INFO).count()) === 0, 5000);
+      const ed = await editTeam35(p, { remove: ["趙雲"], add: ["周瑜"] });
+      await sleep(600);
+      const s2 = await field35(p);
+      check(
+        "隊伍移出趙雲、加入周瑜並保存：同一場，趙雲離場（格子空出來），馬超是原本的實例且數值不變；塔、金幣、波次不變",
+        ed.ok &&
+          sameJson(keep35(s2), keep35(s0)) &&
+          sameJson(
+            s2.heroes.map((h) => [h.id, h.mark]),
+            [["hero_ma_chao", "hero:hero_ma_chao"]]
+          ) &&
+          sameJson(hero35(s2, "hero_ma_chao"), m1) &&
+          (await occupant35(p, ROAD_CELLS[4])) === null,
+        { ed, s2 }
+      );
+      const cz = await menuCard(p, ROAD_CELLS[4], "周瑜");
+      const cy = await menuCard(p, ROAD_CELLS[4], "趙雲");
+      const cm = await menuCard(p, ROAD_CELLS[4], "馬超");
+      check(
+        "部署選單：周瑜可以點，趙雲已不在隊伍裡（沒有卡片），馬超仍「已在場上」",
+        cz.ok &&
+          !cz.disabled &&
+          !cy.ok &&
+          cy.step === "card" &&
+          cm.ok &&
+          cm.disabled,
+        { cz, cy, cm }
+      );
+      const d3 = await deployHero(p, ROAD_CELLS[4], "周瑜");
+      check(
+        "周瑜部署到趙雲空出來的格子",
+        d3.ok && (await occupant35(p, ROAD_CELLS[4])) === "hero:hero_zhou_yu",
+        d3
+      );
+      const ed2 = await editTeam35(p, { add: ["趙雲"] });
+      await sleep(400);
+      const d4 = await deployHero(p, ROAD_CELLS[6], "趙雲");
+      const s3 = await field35(p);
+      const z3 = hero35(s3, "hero_zhao_yun");
+      check(
+        "趙雲加回隊伍後同一場可以再派（新的實例），battleId、塔、金幣、波次不變",
+        ed2.ok &&
+          d4.ok &&
+          sameJson(keep35(s3), keep35(s0)) &&
+          !!z3 &&
+          z3.mark === null &&
+          z3.occ === true,
+        { ed2, d4, s3 }
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "動態隊伍同步：訪客清波後的備戰（第 1 波之後）暫停中升級與移出，暫停維持、同一場延續，之後照常進第 2 波",
+    async (mk) => {
+      const E = await mk({
+        maps: TWO_WAVE_MAPS,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({
+        storage: guestStorage(
+          [MA35, ZY35],
+          [
+            { slot: 0, hero_id: "hero_ma_chao" },
+            { slot: 1, hero_id: "hero_zhao_yun" },
+          ]
+        ),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[0], "馬超");
+      const d2 = await deployHero(p, ROAD_CELLS[13], "趙雲");
+      check(
+        "部署馬超（第 3 列）與趙雲（第 6 列）並標記",
+        d1.ok && d2.ok && (await markField(p)) === 2,
+        { d1, d2 }
+      );
+      check("按進入戰場開第 1 波", await startBattle(p));
+      check("馬超打到木樁、首擊紀錄寫下", await waitFirstStrike(p));
+      await forceWaveClear(p);
+      await sleep(1200);
+      check("清波後回到備戰（受控）", (await bm(p, "state")) === 1);
+      check("備戰中按暫停", await pauseHud(p));
+      const s0 = await field35(p);
+      const m0 = hero35(s0, "hero_ma_chao");
+      const up = await upgrade35(p, "馬超", 3);
+      await sleep(600);
+      const s1 = await field35(p);
+      const m1 = hero35(s1, "hero_ma_chao");
+      check(
+        "暫停中升級馬超：同步到原本的實例（Lv.3、攻擊 130、防禦 66、最大生命 1240、生命照舊比例），暫停維持，同一場、波次 1、首擊紀錄不變",
+        up &&
+          s0.wave === 1 &&
+          s0.paused === true &&
+          sameJson(keep35(s1), keep35(s0)) &&
+          !!m1 &&
+          m1.mark === "hero:hero_ma_chao" &&
+          m1.lv === 3 &&
+          m1.atk === 130 &&
+          m1.def === 66 &&
+          m1.max === 1240 &&
+          Math.abs(m1.hp - (m0.hp / m0.max) * 1240) < 1e-6,
+        { s0, s1 }
+      );
+      const ed = await editTeam35(p, { remove: ["趙雲"] });
+      await sleep(600);
+      const s2 = await field35(p);
+      check(
+        "暫停中移出趙雲：趙雲離場、格子空出來，暫停維持，馬超與這一場其他狀態不變",
+        ed.ok &&
+          sameJson(keep35(s2), keep35(s0)) &&
+          sameJson(
+            s2.heroes.map((h) => [h.id, h.mark]),
+            [["hero_ma_chao", "hero:hero_ma_chao"]]
+          ) &&
+          (await occupant35(p, ROAD_CELLS[13])) === null,
+        { ed, s2 }
+      );
+      check("按繼續", await resumeHud(p));
+      await p.locator('[data-testid="hud-start-battle"]').click();
+      const ok2 = await until(async () => (await bm(p, "state")) === 2, 5000);
+      await sleep(800);
+      const s3 = await field35(p);
+      check(
+        "照常進第 2 波：同一個 battleId、波次 2、馬超仍是原本的實例",
+        !!ok2 &&
+          s3.battleId === s0.battleId &&
+          s3.wave === 2 &&
+          s3.heroes.length === 1 &&
+          s3.heroes[0].mark === "hero:hero_ma_chao",
+        s3
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "動態隊伍同步：訪客戰鬥中暫停，移出正在擋敵人的馬超：敵人放開、資訊視窗關閉、可以再派（390×600，鍵盤）",
+    async (mk) => {
+      const E = await mk({
+        viewport: { width: 390, height: 600 },
+        maps: HOLD_MAPS35,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({
+        storage: guestStorage(
+          [MA35, ZY35],
+          [
+            { slot: 0, hero_id: "hero_ma_chao" },
+            { slot: 1, hero_id: "hero_zhao_yun" },
+          ]
+        ),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      check("部署馬超並標記", d1.ok && (await markField(p)) === 1, d1);
+      check("按進入戰場開戰", await startBattle(p));
+      const blocked = await until(async () => {
+        const en = await enemies35(p, "hero_ma_chao");
+        return en.some((x) => x.blocked) ? en : null;
+      }, 20000);
+      check(
+        "木樁被馬超擋住、首擊紀錄寫下",
+        !!blocked && (await waitFirstStrike(p)),
+        blocked
+      );
+      const info = await openHeroInfo(p, ROAD_CELLS[2]);
+      check("打開馬超的資訊視窗", !!info && /馬超/.test(info), info);
+      const pb = p.locator("button", { hasText: "⏸ 暫停" }).first();
+      await pb.focus();
+      await p.keyboard.press("Enter");
+      check(
+        "用鍵盤按暫停",
+        await until(
+          async () =>
+            (await p.locator("button", { hasText: "▶ 繼續" }).count()) > 0,
+          5000
+        )
+      );
+      const s0 = await field35(p);
+      const ed = await editTeam35(p, { remove: ["馬超"], keyboard: true });
+      await sleep(600);
+      const s1 = await field35(p);
+      const en1 = await enemies35(p, "hero_ma_chao");
+      check(
+        "暫停中移出馬超（鍵盤打開隊伍視窗與保存）：馬超離場、格子空出來；同一個 battleId、仍是戰鬥中、暫停維持、首擊紀錄不變",
+        ed.ok &&
+          s1.heroes.length === 0 &&
+          (await occupant35(p, ROAD_CELLS[2])) === null &&
+          sameJson(keep35(s1), keep35(s0)) &&
+          s1.state === 2 &&
+          s1.paused === true,
+        { ed, s0, s1 }
+      );
+      check(
+        "擋住的木樁立即放開（沒有阻擋者、不在戰鬥），不等暫停結束",
+        en1.length > 0 && en1.every((x) => x.blocker === null && !x.fighting),
+        en1
+      );
+      check(
+        "顯示的正是離場的馬超：資訊視窗關閉",
+        (await p.locator(HERO_INFO).count()) === 0
+      );
+      const rb = p.locator("button", { hasText: "▶ 繼續" }).first();
+      await rb.focus();
+      await p.keyboard.press("Enter");
+      await until(
+        async () =>
+          (await p.locator("button", { hasText: "⏸ 暫停" }).count()) > 0,
+        5000
+      );
+      await sleep(1500);
+      const en2 = await enemies35(p, "hero_ma_chao");
+      check(
+        "繼續後木樁往前走（x 變大），不再被已離場的馬超擋住",
+        en2.length > 0 && en1.length > 0 && en2[0].x > en1[0].x,
+        { en1, en2 }
+      );
+      const ed2 = await editTeam35(p, { add: ["馬超"] });
+      await sleep(400);
+      const d2 = await deployHero(p, ROAD_CELLS[8], "馬超");
+      const s2 = await field35(p);
+      check(
+        "馬超加回隊伍後同一場再派（新的實例）：首擊紀錄仍是這一場已用過的那一筆",
+        ed2.ok &&
+          d2.ok &&
+          s2.battleId === s0.battleId &&
+          s2.heroes.length === 1 &&
+          s2.heroes[0].mark === null &&
+          sameJson(s2.firstStrike, s0.firstStrike) &&
+          !!s0.firstStrike &&
+          s0.firstStrike.length === 1,
+        { ed2, d2, s2 }
+      );
+      check("訪客：沒有任何存檔請求", E.gas.players().length === 0);
+      return E;
+    }
+  );
+
+  await scenario(
+    "動態隊伍同步：共用帳號出征後改隊伍與升級被拒（沒有寫入、場上不變）；手動同步讀回另一台裝置較新的存檔才同步，固定的結算照原本送一次",
+    async (mk) => {
+      const data = NEW({
+        capacity: 20,
+        heroes: [
+          {
+            hero_id: "ma_chao",
+            level: 2,
+            star: 0,
+            atk: 140,
+            def: 65,
+            hp: 1400,
+          },
+        ],
+        team: [
+          { hero_id: "ma_chao", slot: 1 },
+          { hero_id: "zhao_yun", slot: 2 },
+        ],
+      });
+      const E = await mk({
+        seed: [{ key: "k_sync35", data, rev: 7 }],
+        maps: HOLD_MAPS35,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({ storage: { shenma_player_key: "k_sync35" } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      check("部署馬超並標記", d1.ok && (await markField(p)) === 1, d1);
+      check("按進入戰場開戰（這一場固定）", await startBattle(p));
+      check("戰鬥中按暫停", await pauseHud(p));
+      const s0 = await field35(p);
+      await openTeam(p);
+      const blocked = await text(p, '[data-testid="team-edit-blocked"]');
+      const saveOff = await isDisabled(p, '[data-testid="team-edit-save"]');
+      await closeModal(p);
+      await openRoster(p);
+      await pickRosterHero(p, "馬超");
+      const upOff = await isDisabled(p, '[data-testid="hero-upgrade"]');
+      if (upOff === false)
+        await p.locator('[data-testid="hero-upgrade"]').click();
+      await sleep(800);
+      await closeModal(p);
+      const s1 = await field35(p);
+      check(
+        "出征中：隊伍視窗說明結算前不能修改、儲存鈕停用；升級沒有送出；沒有任何寫入、場上不變",
+        /出征中/.test(blocked || "") &&
+          saveOff === true &&
+          E.gas.writes().length === 0 &&
+          sameJson(s1, s0),
+        { blocked, saveOff, upOff, writes: E.gas.writes(), s0, s1 }
+      );
+      // 另一台裝置把馬超升到 Lv.3（受控：直接改模擬後端的存檔，版本 9）
+      E.fx.seed(
+        "k_sync35",
+        {
+          ...data,
+          heroes: [
+            {
+              hero_id: "ma_chao",
+              level: 3,
+              star: 0,
+              atk: 150,
+              def: 70,
+              hp: 1500,
+            },
+          ],
+        },
+        9
+      );
+      const synced = await sync35(p, async () => {
+        const s = await field35(p);
+        const m = hero35(s, "hero_ma_chao");
+        return m && m.lv === 3 ? s : null;
+      });
+      const s2 = await field35(p);
+      const m0 = hero35(s0, "hero_ma_chao");
+      const m2 = hero35(s2, "hero_ma_chao");
+      check(
+        "手動同步讀回較新的同帳號存檔（已確認、同一個世代）：原本的馬超實例同步成 Lv.3、攻擊 150、防禦 70、最大生命 1500、生命照舊比例；這一場其他狀態不變",
+        !!synced &&
+          sameJson(keep35(s2), keep35(s0)) &&
+          !!m2 &&
+          m2.mark === "hero:hero_ma_chao" &&
+          m2.lv === 3 &&
+          m2.atk === 150 &&
+          m2.def === 70 &&
+          m2.max === 1500 &&
+          Math.abs(m2.hp - (m0.hp / m0.max) * 1500) < 1e-6,
+        { s0, s2 }
+      );
+      await openTeam(p);
+      const blocked2 = await text(p, '[data-testid="team-edit-blocked"]');
+      await closeModal(p);
+      check(
+        "同步後仍是出征中（固定沒有解除）、沒有寫入",
+        /出征中/.test(blocked2 || "") && E.gas.writes().length === 0,
+        blocked2
+      );
+      check("受控結束（勝利）", (await endWith(p, {})) === "ok");
+      const shown = await until(
+        () =>
+          p
+            .locator(
+              '[data-testid="result-settle-confirmed"], [data-testid="result-settle-pending"], [data-testid="result-not-saved"], [data-testid="result-settle-review"]'
+            )
+            .first()
+            .isVisible(),
+        10000
+      );
+      await sleep(3000);
+      const sv = E.gas.log.filter((e) => e.action === "save_result");
+      check(
+        "save_result 只送一次：用出征時固定的 base_rev 7、契約 2（不換成讀回的版本 9、不自動重送）",
+        !!shown &&
+          sv.length === 1 &&
+          sv[0].payload.base_rev === 7 &&
+          sv[0].payload.settle_contract === 2 &&
+          typeof sv[0].payload.request_id === "string",
+        sv.map((e) => ({
+          payload: e.payload,
+          status: e.status,
+          error: e.error,
+        }))
+      );
+      note("版本衝突後的結算畫面", {
+        confirmed: await p
+          .locator('[data-testid="result-settle-confirmed"]')
+          .count(),
+        pendingView: await p
+          .locator('[data-testid="result-settle-pending"]')
+          .count(),
+        notSaved: await p.locator('[data-testid="result-not-saved"]').count(),
+        retry: await p.locator('[data-testid="result-settle-retry"]').count(),
+        review: await p.locator('[data-testid="result-settle-review"]').count(),
+        pending: await pendingKeys(p),
+        response: sv.map((e) => [e.status, e.error]),
+      });
+      return E;
+    }
+  );
+
+  await scenario(
+    "動態隊伍同步：來源不是這一場的帳號或資料不能用時不同步、不清空場上（較舊的讀取、不支援的隊伍、唯讀、換帳號、同金鑰重新登入、登入失敗）",
+    async (mk) => {
+      const A = "k_sync35_a";
+      const B = "k_sync35_b";
+      const dataA = NEW({
+        nickname: "甲",
+        capacity: 20,
+        heroes: [
+          {
+            hero_id: "ma_chao",
+            level: 2,
+            star: 0,
+            atk: 140,
+            def: 65,
+            hp: 1400,
+          },
+        ],
+        team: [
+          { hero_id: "ma_chao", slot: 1 },
+          { hero_id: "zhao_yun", slot: 2 },
+        ],
+      });
+      const maLv = (level) => ({
+        ...dataA,
+        heroes: [
+          {
+            hero_id: "ma_chao",
+            level,
+            star: 0,
+            atk: 140 + level,
+            def: 65,
+            hp: 1400,
+          },
+        ],
+      });
+      const dataB = NEW({
+        nickname: "乙",
+        capacity: 20,
+        team: [{ hero_id: "huang_zhong", slot: 1 }],
+      });
+      const E = await mk({
+        seed: [
+          { key: A, data: dataA, rev: 3 },
+          { key: B, data: dataB, rev: 4 },
+        ],
+        maps: HOLD_MAPS35,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({ storage: { shenma_player_key: A } });
+      check("讀到甲的存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      const d2 = await deployHero(p, ROAD_CELLS[4], "趙雲");
+      check(
+        "部署馬超、趙雲並標記",
+        d1.ok && d2.ok && (await markField(p)) === 2,
+        { d1, d2 }
+      );
+      check("按進入戰場開戰", await startBattle(p));
+      check("戰鬥中按暫停", await pauseHud(p));
+      const s0 = await field35(p);
+      const same0 = async () => sameJson(await field35(p), s0);
+      // 1. 較舊的讀取：模擬後端放回比畫面舊的版本（rev 2、馬超 Lv.9）→ 不套用
+      E.fx.seed(A, maLv(9), 2);
+      await sync35(p, () => sleep(1200).then(() => true));
+      check(
+        "手動同步讀到比畫面舊的版本：不套用，場上不變",
+        await same0(),
+        await field35(p)
+      );
+      // 2. 不支援的隊伍（隊伍裡有這裡沒有的甘寧）：出征隊伍是空的，但不清空場上
+      E.fx.seed(A, { ...maLv(9), team: [{ hero_id: "gan_ning", slot: 1 }] }, 5);
+      await sync35(p, () => sleep(1200).then(() => true));
+      check(
+        "讀回不支援的隊伍：不同步，場上的馬超與趙雲都還在、數值不變",
+        await same0(),
+        await field35(p)
+      );
+      // 3. 唯讀（讀回的版本不明）：不同步
+      E.fx.seed(A, maLv(9), 6);
+      E.gas.rule("get_profile", "transform", {
+        key: A,
+        fn: (res) => ({ ...res, rev: null }),
+      });
+      await sync35(p, () => sleep(1200).then(() => true));
+      check(
+        "讀回唯讀的存檔（版本不明）：不同步，場上不變",
+        await same0(),
+        await field35(p)
+      );
+      // 4. 對照：同一個帳號、同一個世代讀回已確認可用的存檔 → 同步（馬超 Lv.4）
+      E.fx.seed(A, maLv(4), 7);
+      const ok4 = await sync35(p, async () => {
+        const m = hero35(await field35(p), "hero_ma_chao");
+        return m && m.lv === 4;
+      });
+      const s4 = await field35(p);
+      check(
+        "對照：同一個帳號讀回可用的存檔才同步（馬超 Lv.4、攻擊 144，原本的實例）",
+        !!ok4 &&
+          hero35(s4, "hero_ma_chao")?.mark === "hero:hero_ma_chao" &&
+          hero35(s4, "hero_ma_chao")?.atk === 144 &&
+          sameJson(keep35(s4), keep35(s0)),
+        s4
+      );
+      // 5. 換帳號 A → B：不把乙的隊伍（只有黃忠）套到這一場
+      check("切換到乙", await switchKey(p, B, "乙"));
+      await sleep(1000);
+      check(
+        "換成乙之後：場上仍是甲的馬超與趙雲（沒有離場、數值不變），同一個 battleId",
+        sameJson(await field35(p), s4),
+        await field35(p)
+      );
+      // 6. 換回甲（同一把金鑰、新的世代）：甲的存檔已是馬超 Lv.6，也不套到這一場
+      E.fx.seed(A, maLv(6), 8);
+      check("切換回甲", await switchKey(p, A, "甲"));
+      await sleep(1000);
+      check(
+        "同一把金鑰重新登入（新的世代）：不把甲新讀到的資料（Lv.6）套到這一場",
+        sameJson(await field35(p), s4),
+        await field35(p)
+      );
+      const ed = await editTeam35(p, { remove: ["趙雲"] });
+      await sleep(800);
+      check(
+        "新的世代改隊伍（移出趙雲）：存檔照常保存一次，但這一場不同步（趙雲還在）",
+        ed.ok &&
+          E.gas.count("save_profile") === 1 &&
+          sameJson(await field35(p), s4),
+        { ed, field: await field35(p) }
+      );
+      // 7. 登入失敗（讀取一律斷線）：畫面仍是甲；之後手動同步讀到的甲也不套到這一場
+      const failHits = await failSwitch35(p, E, B);
+      await openInfo(p);
+      const nickAfter = await text(p, '[data-testid="player-info-nickname"]');
+      await closeModal(p);
+      E.fx.seed(A, maLv(8), 10);
+      await sync35(p, () => sleep(1200).then(() => true));
+      check(
+        "登入乙失敗後畫面仍是甲；之後手動同步讀到的甲（Lv.8）也不套到這一場",
+        failHits > 0 && nickAfter === "甲" && sameJson(await field35(p), s4),
+        { hits: failHits, nickAfter, field: await field35(p) }
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "動態隊伍同步：結算後才保存的隊伍不改這一場，結算畫面不變",
+    async (mk) => {
+      const E = await mk({ maps: HOLD_MAPS35, enemies: [...ENEMIES, DUMMY] });
+      const p = await E.page({
+        storage: guestStorage(
+          [MA35, ZY35],
+          [
+            { slot: 0, hero_id: "hero_ma_chao" },
+            { slot: 1, hero_id: "hero_zhao_yun" },
+          ]
+        ),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      const d2 = await deployHero(p, ROAD_CELLS[4], "趙雲");
+      check(
+        "部署馬超、趙雲並標記",
+        d1.ok && d2.ok && (await markField(p)) === 2,
+        { d1, d2 }
+      );
+      check("按進入戰場開戰", await startBattle(p));
+      await openTeam(p);
+      const slot = modal(p).locator('[class*="teamSlotFilled"]', {
+        hasText: "趙雲",
+      });
+      await slot.first().locator('button[title="移出隊伍"]').click();
+      check(
+        "受控結束（落敗；隊伍視窗還開著）",
+        (await endWith(p, { win: false })) === "ok"
+      );
+      await sleep(800);
+      const s0 = await field35(p);
+      const result0 = await text(p, '[data-testid="result-card"]');
+      await p.locator('[data-testid="team-edit-save"]').click();
+      await until(
+        async () =>
+          (await p.locator('[data-testid="team-edit-save"]').count()) === 0,
+        10000
+      );
+      await sleep(800);
+      const s1 = await field35(p);
+      const saved = await p.evaluate(() =>
+        JSON.parse(localStorage.getItem("shenma_js_guest_state")).team.map(
+          (t) => t.hero_id
+        )
+      );
+      check(
+        "結算後保存隊伍（本機存檔只剩馬超）：這一場不同步，趙雲仍在、仍是結算狀態",
+        sameJson(saved, ["hero_ma_chao"]) &&
+          s0.state === 3 &&
+          sameJson(s1, s0) &&
+          !!hero35(s1, "hero_zhao_yun"),
+        { saved, s0, s1 }
+      );
+      const result1 = await text(p, '[data-testid="result-card"]');
+      check("結算畫面的內容不變", !!result0 && result1 === result0, {
+        result0,
+        result1,
+      });
+      return E;
+    }
+  );
+
+  await scenario(
+    "動態隊伍同步：初始流程不卡（沒有帳號 → 訪客、沒有帳號 → 共用帳號登入），之後同一個帳號改隊伍才同步",
+    async (mk) => {
+      const data = NEW({
+        nickname: "初",
+        capacity: 20,
+        team: [{ hero_id: "huang_zhong", slot: 1 }],
+      });
+      const E = await mk({
+        seed: [{ key: "k_sync35_init", data, rev: 2 }],
+        maps: SKILL_MAPS,
+        enemies: ENEMIES,
+      });
+      const p = await E.page({ storage: {} });
+      check("沒有金鑰：出現金鑰視窗", (await waitLoaded(p)) === "key-setup");
+      await p.locator('[data-testid="key-setup-input"]').fill("k_sync35_init");
+      await p.locator('[data-testid="key-setup-login"]').click();
+      check(
+        "登入共用帳號",
+        await until(
+          async () =>
+            (await p.locator('[data-testid="key-setup"]').count()) === 0,
+          15000
+        )
+      );
+      await waitRemoteStage(p, E);
+      const c1 = await menuCard(p, ROAD_CELLS[8], "黃忠");
+      const c2 = await menuCard(p, ROAD_CELLS[8], "馬超");
+      check(
+        "沒有帳號 → 共用帳號：這一場用這個帳號的隊伍（黃忠可以派，預設隊伍的馬超不在）",
+        c1.ok && !c1.disabled && !c2.ok,
+        { c1, c2 }
+      );
+      const d1 = await deployHero(p, ROAD_CELLS[2], "黃忠");
+      const bid = await bm(p, "battleId");
+      const ed = await editTeam35(p, { add: ["趙雲"] });
+      await sleep(800);
+      const s1 = await field35(p);
+      const c3 = await menuCard(p, ROAD_CELLS[8], "趙雲");
+      check(
+        "之後同一個帳號改隊伍（加入趙雲）：存檔一次、同一場同步（不重開），黃忠仍在，趙雲可以派",
+        d1.ok &&
+          ed.ok &&
+          E.gas.count("save_profile") === 1 &&
+          s1.battleId === bid &&
+          s1.heroes.length === 1 &&
+          s1.heroes[0].id === "hero_huang_zhong" &&
+          c3.ok &&
+          !c3.disabled,
+        { d1, ed, s1, c3 }
+      );
+      // 另一個分頁：沒有帳號 → 訪客
+      const p2 = await E.page({ storage: {} });
+      check(
+        "另一個分頁沒有金鑰：出現金鑰視窗",
+        (await waitLoaded(p2)) === "key-setup"
+      );
+      await p2.locator('[data-testid="key-setup-guest"]').click();
+      check("訪客一鍵試玩", await enterGuest(p2));
+      await waitRemoteStage(p2, E);
+      const g1 = await deployHero(p2, ROAD_CELLS[2], "馬超");
+      check("沒有帳號 → 訪客：這一場用訪客的預設隊伍，可以派馬超", g1.ok, g1);
+      return E;
+    }
+  );
+
+  // 載入的來源守門：載入前也核出征隊伍的來源（模式、金鑰、帳號世代、載入中、共用帳號可投影）。
+  // 載入次數用測試側包住既有的 bridge.loadStage 旁錄（不是產品的計數器）；設定回應用這個頁面自己的 GAS 規則延後（受控）
+  const watchLoads35 = (p) =>
+    p.evaluate(() => {
+      const b = window.__testBridge;
+      if (!b || typeof b.loadStage !== "function") return false;
+      if (!b.__loadLog) {
+        b.__loadLog = [];
+        const orig = b.loadStage.bind(b);
+        b.loadStage = (payload) => {
+          b.__loadLog.push({
+            battleId: payload.battleId,
+            stage: payload.stageId,
+            heroes: (payload.playerHeroes || []).map((h) => h.hero_id),
+          });
+          return orig(payload);
+        };
+      }
+      return true;
+    });
+  const loads35 = (p) =>
+    p.evaluate(
+      () => (window.__testBridge && window.__testBridge.__loadLog) || null
+    );
+  /** 切換金鑰但這次讀取一律斷線（登入失敗）：回傳斷線的次數 */
+  async function failSwitch35(p, E, key) {
+    const rule = E.gas.rule("get_profile", "abort", { key, times: 20 });
+    await openInfo(p);
+    await p.locator("button", { hasText: "切換金鑰" }).click();
+    await modal(p).locator('input[placeholder^="例"]').fill(key);
+    await modal(p).locator("button", { hasText: "確認切換" }).click();
+    // 等這次登入真的結束（store 的讀取會自動重試）：斷線次數連續 3 秒不再增加，才關掉視窗，並確認沒有留下視窗
+    let last = -1;
+    await until(
+      () => {
+        const h = rule.hits;
+        const done = h > 0 && h === last;
+        last = h;
+        return done;
+      },
+      30000,
+      3000
+    );
+    await closeModal(p);
+    await until(async () => (await p.locator(".modal").count()) === 0, 10000);
+    E.allowGasErrors += rule.hits;
+    return rule.hits;
+  }
+
+  await scenario(
+    "動態隊伍同步：設定回應延後到登入失敗之後，不用舊世代的隊伍重新載入或清場",
+    async (mk) => {
+      const A = "k_src35_a";
+      const B = "k_src35_b";
+      const E = await mk({
+        seed: [
+          {
+            key: A,
+            data: NEW({
+              nickname: "甲",
+              capacity: 20,
+              team: [
+                { hero_id: "ma_chao", slot: 1 },
+                { hero_id: "zhao_yun", slot: 2 },
+              ],
+            }),
+            rev: 3,
+          },
+          {
+            key: B,
+            data: NEW({
+              nickname: "乙",
+              team: [{ hero_id: "huang_zhong", slot: 1 }],
+            }),
+            rev: 4,
+          },
+        ],
+        maps: SKILL_MAPS,
+        enemies: ENEMIES,
+      });
+      const hold = E.gas.rule("get_all_maps", "hold");
+      const p = await E.page({ storage: { shenma_player_key: A } });
+      check("讀到甲的存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await sleep(1500);
+      const roads = await roadCellsOf(p);
+      const d1 = roads.length
+        ? await deployHero(p, roads[0], "馬超")
+        : { ok: false, step: "no-road" };
+      check(
+        "設定還沒到（內建關卡）：這一場用甲的隊伍，部署馬超並標記",
+        d1.ok && (await markField(p)) === 1,
+        { d1, roads: roads.length }
+      );
+      check("開始旁錄載入", await watchLoads35(p));
+      const s0 = await field35(p);
+      const hits = await failSwitch35(p, E, B);
+      await openInfo(p);
+      const nick = await text(p, '[data-testid="player-info-nickname"]');
+      await closeModal(p);
+      check("登入乙失敗：畫面仍是甲", hits > 0 && nick === "甲", {
+        hits,
+        nick,
+      });
+      check("放行延後的設定回應", hold.release() === 1);
+      await until(() => E.gas.count("get_all_maps") > 0, 5000);
+      await sleep(3000);
+      const s1 = await field35(p);
+      const l1 = await loads35(p);
+      check(
+        "設定在登入失敗後才到：不用甲的舊世代隊伍重新載入（沒有任何載入），同一個 battleId、場上的馬超與狀態不變",
+        Array.isArray(l1) && l1.length === 0 && sameJson(s1, s0),
+        { l1, s0, s1 }
+      );
+      const c1 = await menuCard(p, roads[1], "馬超");
+      check(
+        "部署選單：馬超仍是「已在場上」（名單沒有被清掉）",
+        c1.ok && c1.disabled,
+        c1
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "動態隊伍同步：設定回應延後、其間合法登入新帳號：新帳號照常建立新的一場，設定到達後照常用後端設定重新載入（不卡）",
+    async (mk) => {
+      const A = "k_src35_c";
+      const B = "k_src35_d";
+      const E = await mk({
+        seed: [
+          {
+            key: A,
+            data: NEW({
+              nickname: "丙",
+              capacity: 20,
+              team: [{ hero_id: "ma_chao", slot: 1 }],
+            }),
+            rev: 3,
+          },
+          {
+            key: B,
+            data: NEW({
+              nickname: "丁",
+              team: [{ hero_id: "huang_zhong", slot: 1 }],
+            }),
+            rev: 4,
+          },
+        ],
+        maps: SKILL_MAPS,
+        enemies: ENEMIES,
+      });
+      const hold = E.gas.rule("get_all_maps", "hold");
+      const p = await E.page({ storage: { shenma_player_key: A } });
+      check("讀到丙的存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await sleep(1500);
+      check("開始旁錄載入", await watchLoads35(p));
+      const b0 = await bm(p, "battleId");
+      check("切換到丁（合法登入）", await switchKey(p, B, "丁"));
+      await sleep(1500);
+      const l1 = await loads35(p);
+      const b1 = await bm(p, "battleId");
+      check(
+        "合法的新帳號在第 0 波建立新的一場：載入一次，用丁的隊伍（黃忠）",
+        Array.isArray(l1) &&
+          l1.length === 1 &&
+          sameJson(l1[0].heroes, ["hero_huang_zhong"]) &&
+          b1 !== b0 &&
+          b1 === l1[0].battleId,
+        { l1, b0, b1 }
+      );
+      check("放行延後的設定回應", hold.release() === 1);
+      const remote = await until(async () => {
+        const l = await loads35(p);
+        return l && l.length === 2 ? l : null;
+      }, 10000);
+      await sleep(1000);
+      const l2 = await loads35(p);
+      check(
+        "設定到達後照常重新載入一次（丁的隊伍、接線測試關），之後不再多載入",
+        !!remote &&
+          l2.length === 2 &&
+          sameJson(l2[1].heroes, ["hero_huang_zhong"]) &&
+          (await bm(p, "battleId")) === l2[1].battleId,
+        { l2 }
+      );
+      const d1 = await deployHero(p, ROAD_CELLS[2], "黃忠");
+      check("新的一場可以照常部署丁的黃忠", d1.ok, d1);
+      return E;
+    }
+  );
+
+  await scenario(
+    "動態隊伍同步：載入次數（同帳號同資料的階段變化不另建新場、重新挑戰只載入一次、同一把金鑰重新登入成功是新的一場）",
+    async (mk) => {
+      const K = "k_src35_e";
+      const E = await mk({
+        seed: [
+          {
+            key: K,
+            data: NEW({
+              nickname: "戊",
+              capacity: 20,
+              team: [{ hero_id: "ma_chao", slot: 1 }],
+            }),
+            rev: 2,
+          },
+        ],
+        maps: HOLD_MAPS35,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({ storage: { shenma_player_key: K } });
+      check("讀到存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      check("開始旁錄載入", await watchLoads35(p));
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      check("部署馬超並標記", d1.ok && (await markField(p)) === 1, d1);
+      check("按進入戰場開戰", await startBattle(p));
+      check("馬超打到木樁、首擊紀錄寫下", await waitFirstStrike(p));
+      check("戰鬥中按暫停", await pauseHud(p));
+      check("按繼續", await resumeHud(p));
+      await sleep(800);
+      const s1 = await field35(p);
+      const l1 = await loads35(p);
+      check(
+        "部署、開戰、暫停、繼續：沒有任何載入，同一場、馬超是原本的實例、首擊紀錄還在",
+        Array.isArray(l1) &&
+          l1.length === 0 &&
+          s1.heroes.length === 1 &&
+          s1.heroes[0].mark === "hero:hero_ma_chao" &&
+          !!s1.firstStrike &&
+          s1.firstStrike.length === 1,
+        { l1, s1 }
+      );
+      check("受控的落敗結束", (await endWith(p, { win: false })) === "ok");
+      const retry = p.locator('[data-testid="result-overlay"] button', {
+        hasText: "重新挑戰",
+      });
+      check(
+        "結算畫面有「重新挑戰」",
+        await until(() => retry.isVisible(), 10000)
+      );
+      await retry.click();
+      await until(async () => (await bm(p, "state")) === 1, 5000);
+      await sleep(1500);
+      const l2 = await loads35(p);
+      const b2 = await bm(p, "battleId");
+      check(
+        "重新挑戰只載入一次（新的一場），之後不再因為進入第 0 波備戰多載入",
+        l2.length === 1 && b2 === l2[0].battleId && b2 !== s1.battleId,
+        { l2, b2 }
+      );
+      check("同一把金鑰重新登入成功", await switchKey(p, K, "戊"));
+      await sleep(1500);
+      const l3 = await loads35(p);
+      const b3 = await bm(p, "battleId");
+      check(
+        "同一把金鑰重新登入成功（新的世代）：第 0 波備戰照帳號選取建立新的一場（多載入一次）",
+        l3.length === 2 && b3 === l3[1].battleId && b3 !== b2,
+        { l3, b3 }
+      );
+      return E;
+    }
+  );
+
+  /** 畫布上看得到的空建築位 */
+  const towerCellsOf35 = (p) =>
+    p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      const m = e.gameMap;
+      const rect = e.canvas.getBoundingClientRect();
+      const out = [];
+      for (let r = 0; r < m.rows; r++)
+        for (let c = 0; c < m.cols; c++) {
+          if (!m.canPlaceTower(c, r)) continue;
+          const w = m.gridToWorld(c, r);
+          if (
+            document.elementFromPoint(rect.left + w.x, rect.top + w.y) ===
+            e.canvas
+          )
+            out.push([c, r]);
+        }
+      return out;
+    });
+  /** 一般操作登出：主公資訊 →「登出當前帳號」→「確認登出」，等金鑰視窗出現（還沒選帳號） */
+  async function logout35(p) {
+    if (!(await openInfo(p))) return false;
+    await modal(p).locator("button", { hasText: "登出當前帳號" }).click();
+    await modal(p).locator("button", { hasText: "確認登出" }).click();
+    return !!(await until(
+      () => p.locator('[data-testid="key-setup-guest"]').isVisible(),
+      10000
+    ));
+  }
+  const keySetupShown35 = (p) =>
+    p.locator('[data-testid="key-setup"]').isVisible();
+
+  await scenario(
+    "動態隊伍同步：訪客第 0 波登出後還沒選帳號，不重新載入、不清場；設定回應晚於登出也不載入；之後選訪客才建立新的一場（可以部署）",
+    async (mk) => {
+      const E = await mk({ maps: SKILL_MAPS, enemies: ENEMIES });
+      const hold = E.gas.rule("get_all_maps", "hold");
+      const p = await E.page({
+        storage: guestStorage(
+          [MA35, ZY35],
+          [
+            { slot: 0, hero_id: "hero_ma_chao" },
+            { slot: 1, hero_id: "hero_zhao_yun" },
+          ]
+        ),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await sleep(1500);
+      const roads = await roadCellsOf(p);
+      const zones = await towerCellsOf35(p);
+      const d1 = roads.length
+        ? await deployHero(p, roads[0], "馬超")
+        : { ok: false, step: "no-road" };
+      const t1 = zones.length
+        ? await buildTower(p, zones[0], "弓兵塔")
+        : { ok: false, step: "no-zone" };
+      check(
+        "設定還沒到（內建關卡）：部署馬超、建弓兵塔並標記",
+        d1.ok && t1.ok && (await markField(p)) === 2,
+        { d1, t1, roads: roads.length, zones: zones.length }
+      );
+      check("開始旁錄載入", await watchLoads35(p));
+      const s0 = await field35(p);
+      const out = await logout35(p);
+      await sleep(1500);
+      const s1 = await field35(p);
+      const l1 = await loads35(p);
+      check(
+        "登出（主公資訊 → 登出當前帳號 → 確認登出）：出現金鑰視窗，還沒選帳號",
+        out
+      );
+      check(
+        "訪客登出後還沒選帳號：沒有任何載入，同一個 battleId、場上的馬超與弓兵塔、波次、金幣、城防與狀態都不變",
+        Array.isArray(l1) && l1.length === 0 && sameJson(s1, s0),
+        { l1, s0, s1 }
+      );
+      check("放行延後的設定回應", hold.release() === 1);
+      await until(() => E.gas.count("get_all_maps") > 0, 5000);
+      await sleep(3000);
+      const s2 = await field35(p);
+      const l2 = await loads35(p);
+      const shown2 = await keySetupShown35(p);
+      check(
+        "設定在登出之後才到、仍然還沒選帳號：沒有任何載入，場上不變，金鑰視窗還在",
+        Array.isArray(l2) && l2.length === 0 && sameJson(s2, s0) && shown2,
+        { l2, s2, shown2 }
+      );
+      await p.locator('[data-testid="key-setup-guest"]').click();
+      check("在金鑰視窗選訪客一鍵試玩", await enterGuest(p));
+      await sleep(1500);
+      const l3 = await loads35(p);
+      const s3 = await field35(p);
+      check(
+        "選訪客：建立新的一場（載入一次，用訪客的隊伍馬超、趙雲），場上清空、第 0 波備戰",
+        Array.isArray(l3) &&
+          l3.length === 1 &&
+          sameJson(l3[0].heroes, ["hero_ma_chao", "hero_zhao_yun"]) &&
+          s3.battleId === l3[0].battleId &&
+          s3.battleId !== s0.battleId &&
+          s3.heroes.length === 0 &&
+          s3.towers.length === 0 &&
+          s3.state === 1 &&
+          s3.wave === 0,
+        { l3, s3, skillMap: await isSkillMap(p) }
+      );
+      const roads3 = await roadCellsOf(p);
+      const d2 = roads3.length
+        ? await deployHero(p, roads3[0], "馬超")
+        : { ok: false, step: "no-road" };
+      check("新的一場可以照常部署馬超", d2.ok, d2);
+      return E;
+    }
+  );
+
+  await scenario(
+    "動態隊伍同步：共用帳號第 0 波登出後還沒選帳號，不重新載入、不清場；之後在金鑰視窗登入另一個共用帳號才建立新的一場（可以部署）",
+    async (mk) => {
+      const A = "k_src35_f";
+      const B = "k_src35_g";
+      const E = await mk({
+        seed: [
+          {
+            key: A,
+            data: NEW({
+              nickname: "己",
+              capacity: 20,
+              team: [{ hero_id: "ma_chao", slot: 1 }],
+            }),
+            rev: 2,
+          },
+          {
+            key: B,
+            data: NEW({
+              nickname: "庚",
+              team: [{ hero_id: "huang_zhong", slot: 1 }],
+            }),
+            rev: 3,
+          },
+        ],
+        maps: SKILL_MAPS,
+        enemies: ENEMIES,
+      });
+      const p = await E.page({ storage: { shenma_player_key: A } });
+      check("讀到己的存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, ROAD_CELLS[2], "馬超");
+      const t1 = await buildTower(p, BUILD_CELL, "弓兵塔");
+      check(
+        "部署馬超、建弓兵塔並標記",
+        d1.ok && t1.ok && (await markField(p)) === 2,
+        { d1, t1 }
+      );
+      check("開始旁錄載入", await watchLoads35(p));
+      const s0 = await field35(p);
+      const out = await logout35(p);
+      await sleep(1500);
+      const s1 = await field35(p);
+      const l1 = await loads35(p);
+      check(
+        "登出（主公資訊 → 登出當前帳號 → 確認登出）：出現金鑰視窗，還沒選帳號",
+        out
+      );
+      check(
+        "共用帳號登出後還沒選帳號：沒有任何載入，同一個 battleId、場上的馬超與弓兵塔、波次、金幣、城防與狀態都不變",
+        Array.isArray(l1) && l1.length === 0 && sameJson(s1, s0),
+        { l1, s0, s1 }
+      );
+      await p.locator('[data-testid="key-setup-input"]').fill(B);
+      await p.locator('[data-testid="key-setup-login"]').click();
+      check(
+        "在金鑰視窗登入庚",
+        await until(
+          async () =>
+            (await p.locator('[data-testid="key-setup"]').count()) === 0,
+          15000
+        )
+      );
+      await sleep(1500);
+      const l2 = await loads35(p);
+      const s2 = await field35(p);
+      check(
+        "登入庚：建立新的一場（載入一次，用庚的隊伍黃忠），場上清空、第 0 波備戰",
+        Array.isArray(l2) &&
+          l2.length === 1 &&
+          sameJson(l2[0].heroes, ["hero_huang_zhong"]) &&
+          s2.battleId === l2[0].battleId &&
+          s2.battleId !== s0.battleId &&
+          s2.heroes.length === 0 &&
+          s2.towers.length === 0 &&
+          s2.state === 1 &&
+          s2.wave === 0,
+        { l2, s2 }
+      );
+      const d2 = await deployHero(p, ROAD_CELLS[2], "黃忠");
+      check("新的一場可以照常部署庚的黃忠", d2.ok, d2);
       return E;
     }
   );
