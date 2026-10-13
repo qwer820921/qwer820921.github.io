@@ -919,6 +919,25 @@ export class HeroEntity {
     this.atkDowned.clear();
   }
 
+  /**
+   * 撤除這位武將加在另一位武將身上的防禦光環與攻速光環（移位時用：別的武將對移動者的加成，下一次戰鬥中更新再依新位置重算）。
+   * 只動這兩個來源與自己的來源集合；其他來源、有效期與倍率公式都不碰
+   */
+  public releaseAurasOn(target: HeroEntity): void {
+    this.defBuffed.delete(target);
+    target.removeDefFrom(this.defAuraSource);
+    this.atkSpeedBuffed.delete(target);
+    target.removeAtkSpeedFrom(this.atkSpeedAuraSource);
+  }
+
+  /** 這位武將目前加在 target 身上的光環來源（移位與測試核對用，唯讀） */
+  public aurasOn(target: HeroEntity): { def: boolean; atkSpeed: boolean } {
+    return {
+      def: this.defBuffed.has(target),
+      atkSpeed: this.atkSpeedBuffed.has(target),
+    };
+  }
+
   public reposition(
     cell: GridCoord,
     worldPos: { x: number; y: number },

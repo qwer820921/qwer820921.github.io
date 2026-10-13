@@ -21,6 +21,10 @@ interface UpgradePanelModalProps {
   onSell: (request: TowerSellRequest) => TowerSellResult;
   onTargetModeChange: (col: number, row: number, mode: string) => void;
   onClose: () => void;
+  /** 移動這座塔（備戰、沒有暫停時）；不傳就不顯示移動按鈕 */
+  onMove?: () => void;
+  /** 現在不能移動的原因；有值時按鈕停用並顯示這段說明 */
+  moveBlockedReason?: string | null;
 }
 
 /** 拆除沒有成功時給玩家看的簡短說明 */
@@ -56,6 +60,8 @@ export const UpgradePanelModal: React.FC<UpgradePanelModalProps> = ({
   onSell,
   onTargetModeChange,
   onClose,
+  onMove,
+  moveBlockedReason = null,
 }) => {
   // 拆除沒有成功時的說明（只顯示在同一座塔）
   const [sellNote, setSellNote] = useState<{
@@ -227,6 +233,27 @@ export const UpgradePanelModal: React.FC<UpgradePanelModalProps> = ({
           >
             {note}
           </div>
+        )}
+        {onMove && (
+          <>
+            <button
+              type="button"
+              className={`${styles.actionBtn} ${styles.upgradeBtn} mt-2`}
+              disabled={!!moveBlockedReason}
+              onClick={onMove}
+              data-testid="tower-move"
+            >
+              移動
+            </button>
+            {moveBlockedReason && (
+              <div
+                className="small text-secondary mt-2"
+                data-testid="tower-move-blocked"
+              >
+                {moveBlockedReason}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

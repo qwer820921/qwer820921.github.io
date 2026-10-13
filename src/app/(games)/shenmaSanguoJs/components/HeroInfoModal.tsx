@@ -8,12 +8,18 @@ interface HeroInfoModalProps {
   show: boolean;
   hero: HeroEntity | null;
   onClose: () => void;
+  /** 移動這位武將（備戰、沒有暫停時）；不傳就不顯示移動按鈕 */
+  onMove?: () => void;
+  /** 現在不能移動的原因；有值時按鈕停用並顯示這段說明 */
+  moveBlockedReason?: string | null;
 }
 
 export const HeroInfoModal: React.FC<HeroInfoModalProps> = ({
   show,
   hero,
   onClose,
+  onMove,
+  moveBlockedReason = null,
 }) => {
   if (!show || !hero) return null;
 
@@ -33,7 +39,12 @@ export const HeroInfoModal: React.FC<HeroInfoModalProps> = ({
             <img
               src={heroImg}
               alt={hero.heroName}
-              style={{ width: 28, height: 28, objectFit: "contain", borderRadius: 4 }}
+              style={{
+                width: 28,
+                height: 28,
+                objectFit: "contain",
+                borderRadius: 4,
+              }}
               onError={(e) => {
                 (e.currentTarget as HTMLElement).style.display = "none";
               }}
@@ -56,7 +67,9 @@ export const HeroInfoModal: React.FC<HeroInfoModalProps> = ({
           </div>
           <div className={styles.upgStatItem}>
             <span className={styles.upgStatLabel}>護甲防禦</span>
-            <span className={styles.upgStatValue}>{Math.round(hero.defStat)}</span>
+            <span className={styles.upgStatValue}>
+              {Math.round(hero.defStat)}
+            </span>
           </div>
           <div className={styles.upgStatItem}>
             <span className={styles.upgStatLabel}>生命值</span>
@@ -71,27 +84,81 @@ export const HeroInfoModal: React.FC<HeroInfoModalProps> = ({
         </div>
 
         {/* 專屬武將技能 */}
-        <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: 6, padding: "6px 8px", marginBottom: 10 }}>
-          <div style={{ color: "#f59e0b", fontSize: "0.74rem", fontWeight: 700, marginBottom: 2 }}>
+        <div
+          style={{
+            background: "rgba(255,255,255,0.06)",
+            borderRadius: 6,
+            padding: "6px 8px",
+            marginBottom: 10,
+          }}
+        >
+          <div
+            style={{
+              color: "#f59e0b",
+              fontSize: "0.74rem",
+              fontWeight: 700,
+              marginBottom: 2,
+            }}
+          >
             🌟 專屬戰技
           </div>
-          <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.8)", lineHeight: 1.4 }}>
-            {baseId === "ma_chao" && "【西涼鐵騎】初次交戰發動首擊衝鋒，造成 2.5x 致命傷害！"}
-            {baseId === "zhao_yun" && "【一身是膽】擁有 25% 機率閃避攻擊，並以 100% 力量致命反擊！"}
-            {baseId === "guan_yu" && "【義薄雲天】青龍偃月光環，周遭敵軍移動速度降低 40%！"}
-            {baseId === "zhang_fei" && "【萬夫莫敵】咆哮長坂坡，周圍友軍攻擊速度提升 30%！"}
-            {baseId === "zhou_yu" && "【赤壁烈焰】每次普攻點燃敵軍，造成 4 秒持續灼燒！"}
-            {baseId === "huang_zhong" && "【神弓破軍】攻擊範圍大幅擴大，且有 20% 機率雙箭齊發！"}
-            {baseId === "liu_bei" && "【仁德昭烈】大德仁心，提升周圍友方武將 35% 防禦力！"}
-            {baseId === "wei_yan" && "【狂骨飲血】每次命中敵軍將 25% 傷害化作自身生命回復！"}
-            {baseId === "cao_cao" && "【亂世霸業】奸雄威壓四方，周圍敵軍攻擊力降低 25%！"}
-            {baseId === "xia_hou_dun" && "【剛烈不屈】拔矢啖睛，生命值越低所受傷害越少！"}
-            {baseId === "liao_hua" && "【百戰先鋒】意志堅定，即使瀕臨死線依然能屹立不倒！"}
-            {baseId === "yan_liang" && "【勇冠三軍】狂暴攻擊有 20% 機率直接將敵人擊暈 1 秒！"}
-            {baseId === "sun_shang_xiang" && "【弓腰飛箭】身法敏捷，35% 機率發動連續雙重齊射！"}
+          <div
+            style={{
+              fontSize: "0.7rem",
+              color: "rgba(255,255,255,0.8)",
+              lineHeight: 1.4,
+            }}
+          >
+            {baseId === "ma_chao" &&
+              "【西涼鐵騎】初次交戰發動首擊衝鋒，造成 2.5x 致命傷害！"}
+            {baseId === "zhao_yun" &&
+              "【一身是膽】擁有 25% 機率閃避攻擊，並以 100% 力量致命反擊！"}
+            {baseId === "guan_yu" &&
+              "【義薄雲天】青龍偃月光環，周遭敵軍移動速度降低 40%！"}
+            {baseId === "zhang_fei" &&
+              "【萬夫莫敵】咆哮長坂坡，周圍友軍攻擊速度提升 30%！"}
+            {baseId === "zhou_yu" &&
+              "【赤壁烈焰】每次普攻點燃敵軍，造成 4 秒持續灼燒！"}
+            {baseId === "huang_zhong" &&
+              "【神弓破軍】攻擊範圍大幅擴大，且有 20% 機率雙箭齊發！"}
+            {baseId === "liu_bei" &&
+              "【仁德昭烈】大德仁心，提升周圍友方武將 35% 防禦力！"}
+            {baseId === "wei_yan" &&
+              "【狂骨飲血】每次命中敵軍將 25% 傷害化作自身生命回復！"}
+            {baseId === "cao_cao" &&
+              "【亂世霸業】奸雄威壓四方，周圍敵軍攻擊力降低 25%！"}
+            {baseId === "xia_hou_dun" &&
+              "【剛烈不屈】拔矢啖睛，生命值越低所受傷害越少！"}
+            {baseId === "liao_hua" &&
+              "【百戰先鋒】意志堅定，即使瀕臨死線依然能屹立不倒！"}
+            {baseId === "yan_liang" &&
+              "【勇冠三軍】狂暴攻擊有 20% 機率直接將敵人擊暈 1 秒！"}
+            {baseId === "sun_shang_xiang" &&
+              "【弓腰飛箭】身法敏捷，35% 機率發動連續雙重齊射！"}
           </div>
         </div>
 
+        {onMove && (
+          <>
+            <button
+              type="button"
+              className={`${styles.actionBtn} ${styles.sellBtn} mb-2`}
+              disabled={!!moveBlockedReason}
+              onClick={onMove}
+              data-testid="hero-move"
+            >
+              移動
+            </button>
+            {moveBlockedReason && (
+              <div
+                className="small text-secondary mb-2"
+                data-testid="hero-move-blocked"
+              >
+                {moveBlockedReason}
+              </div>
+            )}
+          </>
+        )}
         <button
           type="button"
           className={`${styles.actionBtn} ${styles.upgradeBtn}`}

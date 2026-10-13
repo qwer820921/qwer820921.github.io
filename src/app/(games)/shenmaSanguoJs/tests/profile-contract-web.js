@@ -13405,6 +13405,1173 @@ module.exports = async function profileContractWeb(page) {
     }
   );
 
+  // ═══ 37. 備戰時移動武將與塔：點選單位 →「移動」→ 點畫布上的合法格（或用鍵盤選目的格）；同一個實例、免費、舊格放開新格占用 ═══
+  // 和 Godot 版的拖曳移位相同，只在這一場的備戰（第 0 波或清波後）、沒有暫停、還沒結算時可以移動；武將放空的道路格或建築位，塔只放空的建築位。
+  // 換帳號後沒有重新載入的舊場不能移動武將（塔照常）。清波用受控的 onWaveAllEnemiesDead、結束用受控的 endBattle 回呼（不是自然通關）。
+  // 「受控呼叫」是直接呼叫按鈕的 React onClick（等同畫面晚一拍、舊面板的按鈕還能按），只用在過期、晚到的負向檢查，和一般操作分開
+  const MOVE_MAPS37 = SKILL_MAPS.map((m) => ({
+    ...m,
+    path_json: JSON.stringify({
+      ...JSON.parse(m.path_json),
+      build_zones: TOWER_CELLS,
+    }),
+    waves: [DUMMY_WAVE(1), DUMMY_WAVE(2)],
+  }));
+  const HERO_MOVE_BLOCKED37 = "這一場是換帳號前的出征，不能移動武將。";
+  const INVALIDATED37 = "移動已取消：不在備戰、暫停了，或場上已經改變。";
+  const RESELECT37 = "請重新點選要移動的單位。";
+  const MOVE_PANEL37 = '[data-testid="move-unit-panel"]';
+  const UPGRADE_PANEL37 = '[data-testid="upgrade-panel"]';
+  const MOVE_NOTICE37 = '[data-testid="move-notice"]';
+  const GUEST_TEAM37 = [
+    { slot: 0, hero_id: "hero_ma_chao" },
+    { slot: 1, hero_id: "hero_zhao_yun" },
+  ];
+  /** 這一場、場上的武將與塔（標記、格子、數值、是否占用自己的格子）、進行中的移動、虛影與高亮 */
+  const units37 = (p) =>
+    p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      const b = e.battleManager;
+      const m = e.gameMap;
+      const fs = b.firstStrikeUsed;
+      return {
+        battleId: b.battleId,
+        state: b.gameState,
+        wave: b.currentWave,
+        paused: b.manualPaused,
+        gold: b.battleGold,
+        baseHp: b.baseHp,
+        firstStrike:
+          fs instanceof Map ? [...fs.entries()] : fs ? [...fs] : null,
+        heroes: e.heroes.map((h) => ({
+          id: h.heroId,
+          mark: h.__mark || null,
+          cell: [h.gridCell.col, h.gridCell.row],
+          lv: h.heroLevel,
+          atk: h.atk,
+          def: h.defStat,
+          hp: h.currentHp,
+          max: h.maxHp,
+          atkTimer: h.atkTimer,
+          occ: m.getOccupant(h.gridCell.col, h.gridCell.row) === h,
+        })),
+        towers: e.towers.map((t) => ({
+          uid: t.towerUid,
+          mark: t.__mark || null,
+          cell: [t.gridCell.col, t.gridCell.row],
+          lv: t.towerLevel,
+          invested: t.investedGold,
+          refund: t.getSellRefund(),
+          occ: m.getOccupant(t.gridCell.col, t.gridCell.row) === t,
+        })),
+        move: e.getMoveState(),
+        ghost: !!e.dragGhost,
+        highlight: e.highlightCell ? { ...e.highlightCell } : null,
+      };
+    });
+  /** 某一格的占用者（標記）與能不能放武將、塔 */
+  const cell37 = (p, [c, r]) =>
+    p.evaluate(
+      ({ c, r }) => {
+        const m = window.__testBridge.engine.gameMap;
+        const o = m.getOccupant(c, r);
+        return {
+          occupant: o ? o.__mark || "unmarked" : null,
+          canHero: m.canPlaceHero(c, r),
+          canTower: m.canPlaceTower(c, r),
+        };
+      },
+      { c, r }
+    );
+  /** 場上的武將與塔標上「<tag>:<識別>」（分辨同 ID 的新實例） */
+  const mark37 = (p, tag) =>
+    p.evaluate((tg) => {
+      const e = window.__testBridge.engine;
+      e.heroes.forEach((h) => (h.__mark = `${tg}:${h.heroId}`));
+      e.towers.forEach((t) => (t.__mark = `${tg}:${t.towerUid}`));
+      return e.heroes.length + e.towers.length;
+    }, tag);
+  const panelSel37 = (kind) => (kind === "hero" ? HERO_INFO : UPGRADE_PANEL37);
+  /** 面板上的「移動」按鈕：有沒有、是否停用、停用的說明 */
+  async function moveBtn37(p, kind) {
+    const b = p.locator(`[data-testid="${kind}-move"]`);
+    const r = p.locator(`[data-testid="${kind}-move-blocked"]`);
+    const n = await b.count();
+    return {
+      count: n,
+      disabled: n ? await b.first().isDisabled() : null,
+      reason: (await r.count()) ? (await r.innerText()).trim() : null,
+    };
+  }
+  /** 點畫布上單位所在的格子，打開武將資訊或塔的升級面板，回報「移動」按鈕的狀態 */
+  async function unitPanel37(p, kind, cell) {
+    await settle37(p);
+    const pt = await cellPoint(p, cell);
+    if (!pt.onCanvas) return { ok: false, step: "cell", pt };
+    await p.mouse.click(pt.x, pt.y);
+    if (!(await until(() => p.locator(panelSel37(kind)).isVisible(), 5000)))
+      return { ok: false, step: "panel" };
+    return { ok: true, ...(await moveBtn37(p, kind)) };
+  }
+  async function closeUnitPanel37(p, kind) {
+    const panel = p.locator(panelSel37(kind));
+    if ((await panel.count()) === 0) return true;
+    await panel
+      .locator("button", { hasText: "×" })
+      .first()
+      .click()
+      .catch(() => {});
+    return !!(await until(async () => (await panel.count()) === 0, 5000));
+  }
+  const panelShown37 = async (p) => (await p.locator(MOVE_PANEL37).count()) > 0;
+  /** 點單位 → 面板的「移動」（keyboard：焦點移到按鈕按 Enter）→ 等移位面板出現；回報標題、原面板是否關閉、目的格清單 */
+  async function startMove37(p, kind, cell, { keyboard = false } = {}) {
+    const btn = await unitPanel37(p, kind, cell);
+    if (!btn.ok || btn.disabled !== false)
+      return { ok: false, step: btn.ok ? "button" : btn.step, btn };
+    const b = p.locator(`[data-testid="${kind}-move"]`).first();
+    if (keyboard) {
+      await b.focus();
+      await p.keyboard.press("Enter");
+    } else {
+      await b.click();
+    }
+    if (!(await until(() => p.locator(MOVE_PANEL37).isVisible(), 5000)))
+      return {
+        ok: false,
+        step: "move-panel",
+        btn,
+        notice: await text(p, MOVE_NOTICE37),
+      };
+    return {
+      ok: true,
+      btn,
+      title: await text(p, '[data-testid="move-unit-title"]'),
+      unitPanelClosed:
+        (await p.locator(panelSel37(kind)).count()) === 0 &&
+        (await p.locator(PLACEMENT_MENU).count()) === 0,
+      options: await p
+        .locator('[data-testid="move-target-select"] option')
+        .evaluateAll((os) => os.map((o) => [o.value, o.textContent.trim()])),
+    };
+  }
+  const option37 = (m, v) =>
+    ((m && m.options) || []).find((o) => o[0] === v) || null;
+  /** 移位中點畫布上的一格，等移位面板結束（移動或拒絕都會結束這次移動），回報說明 */
+  async function dropAt37(p, cell) {
+    await settle37(p);
+    const pt = await cellPoint(p, cell);
+    if (!pt.onCanvas) return { ok: false, step: "cell", pt };
+    await p.mouse.click(pt.x, pt.y);
+    const gone = await until(async () => !(await panelShown37(p)), 5000);
+    return {
+      ok: !!gone,
+      notice: await text(p, MOVE_NOTICE37),
+      menu: (await p.locator(PLACEMENT_MENU).count()) > 0,
+      panels:
+        (await p.locator(HERO_INFO).count()) +
+        (await p.locator(UPGRADE_PANEL37).count()),
+    };
+  }
+  /** 記下某個按鈕目前的 React onClick（之後受控呼叫，等同舊面板的按鈕晚一拍還能按） */
+  const keepHandler37 = (p, sel, slot) =>
+    p
+      .locator(sel)
+      .first()
+      .evaluate((b, s) => {
+        const k = Object.keys(b).find((x) => x.startsWith("__reactProps$"));
+        if (!k || typeof b[k].onClick !== "function") return false;
+        window.__kept37 = window.__kept37 || {};
+        window.__kept37[s] = b[k].onClick;
+        return true;
+      }, slot)
+      .catch(() => false);
+  const callKept37 = (p, slot) =>
+    p.evaluate((s) => {
+      const f = window.__kept37 && window.__kept37[s];
+      if (typeof f !== "function") return false;
+      f();
+      return true;
+    }, slot);
+  const writes37 = (E) => ({
+    all: E.gas.writes().length,
+    save: E.gas.count("save_profile"),
+    upgrade: E.gas.count("upgrade_hero"),
+    settle: E.gas.count("save_result"),
+  });
+  const NO_WRITES37 = { all: 0, save: 0, upgrade: 0, settle: 0 };
+
+  await scenario(
+    "移動武將與塔：訪客第 0 波（1280 桌面）點馬超 →「移動」→ 點道路格，同一個實例、免費，舊格可以再部署、新格不行；來回移動；塔移到另一個建築位；不合法的格子取消並說明；取消與 Esc",
+    async (mk) => {
+      const E = await mk({ maps: MOVE_MAPS37, enemies: [...ENEMIES, DUMMY] });
+      const p = await E.page({
+        storage: guestStorage([MA35, ZY35], GUEST_TEAM37),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, [4, 3], "馬超");
+      const t1 = await buildTower(p, [2, 1], "弓兵塔");
+      check(
+        "部署馬超到 (4,3)、在建築位 (2,1) 建弓兵塔並標記",
+        d1.ok && t1.ok && (await mark37(p, "m")) === 2,
+        { d1, t1 }
+      );
+      const u0 = await units37(p);
+      const st0 = await storageOf(p);
+      const m1 = await startMove37(p, "hero", [4, 3]);
+      check(
+        "點馬超打開武將資訊：「移動」可以按、沒有說明；按下後武將資訊關閉，出現「移動武將：馬超」",
+        m1.ok &&
+          m1.btn.disabled === false &&
+          m1.btn.reason === null &&
+          m1.title === "移動武將：馬超" &&
+          m1.unitPanelClosed,
+        m1
+      );
+      check(
+        "目的格清單：第一格是「第 2 列、第 5 欄（建築位）」，有「第 4 列、第 9 欄（道路）」；沒有原格 (4,3)、塔占的 (2,1) 與一般地形 (0,0)",
+        sameJson(m1.options[1], ["4,1", "第 2 列、第 5 欄（建築位）"]) &&
+          sameJson(option37(m1, "8,3"), ["8,3", "第 4 列、第 9 欄（道路）"]) &&
+          !option37(m1, "4,3") &&
+          !option37(m1, "2,1") &&
+          !option37(m1, "0,0"),
+        m1.options
+      );
+      const r1 = await dropAt37(p, [8, 3]);
+      const u1 = await units37(p);
+      const strip = (h) => h && { ...h, cell: null };
+      check(
+        "點畫布上的 (8,3)：移位結束、沒有說明、沒有打開部署選單或面板；同一個馬超（標記不變）在 (8,3) 並占用，等級、攻防、生命與攻擊冷卻不變",
+        r1.ok &&
+          r1.notice === null &&
+          !r1.menu &&
+          r1.panels === 0 &&
+          u1.heroes.length === 1 &&
+          u1.heroes[0].mark === "m:hero_ma_chao" &&
+          sameJson(u1.heroes[0].cell, [8, 3]) &&
+          u1.heroes[0].occ &&
+          sameJson(strip(u1.heroes[0]), strip(u0.heroes[0])),
+        { r1, before: u0.heroes, after: u1.heroes }
+      );
+      check(
+        "免費：戰場金幣、城防、首擊紀錄、battleId、備戰第 0 波與塔都不變；沒有進行中的移動與虛影",
+        u1.gold === u0.gold &&
+          u1.baseHp === u0.baseHp &&
+          sameJson(u1.firstStrike, u0.firstStrike) &&
+          u1.battleId === u0.battleId &&
+          u1.state === 1 &&
+          u1.wave === 0 &&
+          sameJson(u1.towers, u0.towers) &&
+          u1.move === null &&
+          u1.ghost === false,
+        { u0, u1 }
+      );
+      const c1 = await menuCard(p, [4, 3], "趙雲");
+      check(
+        "舊格 (4,3) 已放開：點它打開部署選單，趙雲可以派",
+        c1.ok && c1.disabled === false,
+        c1
+      );
+      const c0 = await menuCard(p, [4, 3], "馬超");
+      check(
+        "移動後部署選單上的馬超仍是「已在場上」（停用，名單沒有重設）",
+        c0.ok && c0.disabled === true,
+        c0
+      );
+      const n1 = await cell37(p, [8, 3]);
+      const i1 = await unitPanel37(p, "hero", [8, 3]);
+      check(
+        "新格 (8,3) 不能部署：占用者是馬超，點它打開的是馬超的武將資訊，不是部署選單",
+        n1.occupant === "m:hero_ma_chao" &&
+          n1.canHero === false &&
+          i1.ok &&
+          (await p.locator(PLACEMENT_MENU).count()) === 0 &&
+          /馬超/.test((await text(p, HERO_INFO)) || ""),
+        { n1, i1 }
+      );
+      await closeUnitPanel37(p, "hero");
+      const m2 = await startMove37(p, "hero", [8, 3]);
+      const r2 = m2.ok ? await dropAt37(p, [4, 3]) : null;
+      const u2 = await units37(p);
+      check(
+        "再移回 (4,3)：同一個馬超回到原格並占用，(8,3) 放開",
+        m2.ok &&
+          !!r2 &&
+          r2.ok &&
+          r2.notice === null &&
+          u2.heroes[0].mark === "m:hero_ma_chao" &&
+          sameJson(u2.heroes[0].cell, [4, 3]) &&
+          u2.heroes[0].occ &&
+          (await cell37(p, [8, 3])).occupant === null,
+        { m2, r2, heroes: u2.heroes }
+      );
+      const m3 = await startMove37(p, "tower", [2, 1]);
+      check(
+        "點弓兵塔打開升級面板：「移動」可以按；按下後升級面板關閉，出現「移動防禦塔：弓兵塔」，目的格只有空的建築位 (4,1)、(6,1)",
+        m3.ok &&
+          m3.btn.disabled === false &&
+          m3.btn.reason === null &&
+          m3.title === "移動防禦塔：弓兵塔" &&
+          m3.unitPanelClosed &&
+          sameJson(
+            m3.options.slice(1).map((o) => o[0]),
+            ["4,1", "6,1"]
+          ),
+        m3
+      );
+      const r3 = m3.ok ? await dropAt37(p, [6, 1]) : null;
+      const u3 = await units37(p);
+      check(
+        "點 (6,1)：同一座塔（標記、識別碼、等級、投入、拆除返還不變）移到 (6,1) 並占用，(2,1) 放開可以再建塔；戰場金幣不變",
+        !!r3 &&
+          r3.ok &&
+          r3.notice === null &&
+          u3.towers.length === 1 &&
+          sameJson(u3.towers[0].cell, [6, 1]) &&
+          u3.towers[0].occ &&
+          sameJson(strip(u3.towers[0]), strip(u0.towers[0])) &&
+          (await cell37(p, [2, 1])).canTower === true &&
+          u3.gold === u0.gold,
+        { r3, before: u0.towers, after: u3.towers }
+      );
+      const m4 = await startMove37(p, "tower", [6, 1]);
+      const r4 = m4.ok ? await dropAt37(p, [8, 3]) : null;
+      check(
+        "塔點道路格 (8,3)：不移動、結束這次移動，說明「那一格不能放，已取消移動。」",
+        m4.ok &&
+          !!r4 &&
+          r4.ok &&
+          r4.notice === "那一格不能放，已取消移動。" &&
+          sameJson((await units37(p)).towers[0].cell, [6, 1]),
+        { m4, r4 }
+      );
+      const m5 = await startMove37(p, "hero", [4, 3]);
+      const r5 = m5.ok ? await dropAt37(p, [6, 1]) : null;
+      check(
+        "武將點塔占的建築位 (6,1)：不移動，說明「那一格已經有單位，已取消移動。」",
+        m5.ok &&
+          !!r5 &&
+          r5.ok &&
+          r5.notice === "那一格已經有單位，已取消移動。" &&
+          sameJson((await units37(p)).heroes[0].cell, [4, 3]),
+        { m5, r5 }
+      );
+      const m6 = await startMove37(p, "hero", [4, 3]);
+      const r6 = m6.ok ? await dropAt37(p, [4, 3]) : null;
+      check(
+        "點原格 (4,3)：不移動，說明「那是原本的格子，已取消移動。」",
+        m6.ok &&
+          !!r6 &&
+          r6.ok &&
+          r6.notice === "那是原本的格子，已取消移動。" &&
+          sameJson((await units37(p)).heroes[0].cell, [4, 3]),
+        { m6, r6 }
+      );
+      const m7 = await startMove37(p, "hero", [4, 3]);
+      await p.locator('[data-testid="move-cancel"]').click();
+      const g7 = await until(async () => !(await panelShown37(p)), 5000);
+      const u7 = await units37(p);
+      check(
+        "按「取消」：移位面板關閉、沒有說明、沒有移動、引擎沒有進行中的移動與虛影",
+        m7.ok &&
+          !!g7 &&
+          (await text(p, MOVE_NOTICE37)) === null &&
+          sameJson(u7.heroes[0].cell, [4, 3]) &&
+          u7.move === null &&
+          u7.ghost === false,
+        { m7, u7 }
+      );
+      const m8 = await startMove37(p, "tower", [6, 1]);
+      await p.keyboard.press("Escape");
+      const g8 = await until(async () => !(await panelShown37(p)), 5000);
+      const u8 = await units37(p);
+      check(
+        "按 Esc：移位面板關閉、沒有移動、引擎沒有進行中的移動",
+        m8.ok &&
+          !!g8 &&
+          sameJson(u8.towers[0].cell, [6, 1]) &&
+          u8.move === null &&
+          u8.ghost === false,
+        { m8, u8 }
+      );
+      const st1 = await storageOf(p);
+      check(
+        "整段移動前後：localStorage／sessionStorage 逐字不變，沒有任何存檔、升級、結算的寫入",
+        sameJson(st1, st0) && sameJson(writes37(E), NO_WRITES37),
+        { st0, st1, writes: writes37(E) }
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "移動武將與塔：戰鬥中停用；清波後的備戰（390×600、鍵盤）可以移動；暫停中停用，移位中暫停或開戰就取消；結算後晚到的「移動」不開始",
+    async (mk) => {
+      const E = await mk({
+        maps: MOVE_MAPS37,
+        enemies: [...ENEMIES, DUMMY],
+        viewport: { width: 390, height: 600 },
+      });
+      const p = await E.page({
+        storage: guestStorage([MA35, ZY35], GUEST_TEAM37),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, [4, 3], "馬超");
+      const t1 = await buildTower(p, [2, 1], "弓兵塔");
+      check(
+        "部署馬超到 (4,3)、在 (2,1) 建弓兵塔並標記",
+        d1.ok && t1.ok && (await mark37(p, "m")) === 2,
+        { d1, t1 }
+      );
+      check("開第 1 波", await startBattle(p));
+      const b1 = await unitPanel37(p, "hero", [4, 3]);
+      await closeUnitPanel37(p, "hero");
+      const b2 = await unitPanel37(p, "tower", [2, 1]);
+      await closeUnitPanel37(p, "tower");
+      const BATTLE_TEXT = "只有備戰時可以移動（戰鬥中不能移動）。";
+      check(
+        "戰鬥中：武將資訊與升級面板的「移動」都停用，說明「只有備戰時可以移動（戰鬥中不能移動）。」",
+        b1.ok &&
+          b1.disabled === true &&
+          b1.reason === BATTLE_TEXT &&
+          b2.ok &&
+          b2.disabled === true &&
+          b2.reason === BATTLE_TEXT,
+        { b1, b2 }
+      );
+      await forceWaveClear(p);
+      await sleep(1200);
+      const u0 = await units37(p);
+      check(
+        "受控清波回到備戰（第 1 波之後）",
+        u0.state === 1 && u0.wave === 1,
+        u0
+      );
+      const st0 = await storageOf(p);
+      const m1 = await startMove37(p, "hero", [4, 3], { keyboard: true });
+      check(
+        "鍵盤：焦點移到「移動」按 Enter，出現「移動武將：馬超」",
+        m1.ok && m1.title === "移動武將：馬超",
+        m1
+      );
+      const sel = p.locator('[data-testid="move-target-select"]');
+      await sel.focus();
+      await p.keyboard.press("ArrowDown");
+      await sleep(300);
+      const picked = await sel.inputValue();
+      const hl = (await units37(p)).highlight;
+      await p.keyboard.press("Tab");
+      const onConfirm = await p
+        .locator('[data-testid="move-confirm"]')
+        .evaluate((b) => document.activeElement === b);
+      await p.keyboard.press("Enter");
+      const g1 = await until(async () => !(await panelShown37(p)), 5000);
+      const u1 = await units37(p);
+      check(
+        "鍵盤：在目的格清單按 ↓ 選到「第 2 列、第 5 欄（建築位）」（畫布上綠色預覽），Tab 到「確認移動」按 Enter：同一個馬超移到 (4,1)",
+        picked === "4,1" &&
+          sameJson(hl, { col: 4, row: 1, valid: true }) &&
+          onConfirm &&
+          !!g1 &&
+          u1.heroes[0].mark === "m:hero_ma_chao" &&
+          sameJson(u1.heroes[0].cell, [4, 1]) &&
+          u1.heroes[0].occ &&
+          (await cell37(p, [4, 3])).occupant === null,
+        { picked, hl, onConfirm, heroes: u1.heroes }
+      );
+      const layout = await p.evaluate(() => ({
+        scrollW: document.documentElement.scrollWidth,
+        clientW: document.documentElement.clientWidth,
+      }));
+      check("390 寬沒有橫向捲動", layout.scrollW <= layout.clientW, layout);
+      const m2 = await startMove37(p, "tower", [2, 1], { keyboard: true });
+      await p.keyboard.press("Escape");
+      const g2 = await until(async () => !(await panelShown37(p)), 5000);
+      check(
+        "鍵盤 Esc：塔的移位關閉、沒有移動",
+        m2.ok &&
+          !!g2 &&
+          sameJson((await units37(p)).towers[0].cell, [2, 1]) &&
+          (await units37(p)).move === null,
+        m2
+      );
+      const m3 = await startMove37(p, "tower", [2, 1]);
+      const r3 = m3.ok ? await dropAt37(p, [6, 1]) : null;
+      const u3 = await units37(p);
+      check(
+        "清波後的備戰：塔（同一座）移到 (6,1)，投入與等級不變",
+        !!r3 &&
+          r3.ok &&
+          r3.notice === null &&
+          sameJson(u3.towers[0].cell, [6, 1]) &&
+          sameJson(
+            { ...u3.towers[0], cell: null },
+            { ...u0.towers[0], cell: null }
+          ),
+        { r3, before: u0.towers, after: u3.towers }
+      );
+      check("一般 UI 暫停", await pauseHud(p));
+      const b3 = await unitPanel37(p, "hero", [4, 1]);
+      await closeUnitPanel37(p, "hero");
+      const b4 = await unitPanel37(p, "tower", [6, 1]);
+      await closeUnitPanel37(p, "tower");
+      check(
+        "暫停中：武將與塔的「移動」都停用，說明「暫停中不能移動。」",
+        b3.ok &&
+          b3.disabled === true &&
+          b3.reason === "暫停中不能移動。" &&
+          b4.ok &&
+          b4.disabled === true &&
+          b4.reason === "暫停中不能移動。",
+        { b3, b4 }
+      );
+      check("一般 UI 繼續", await resumeHud(p));
+      const m5 = await startMove37(p, "hero", [4, 1]);
+      check("一般 UI 暫停（移位中）", m5.ok && (await pauseHud(p)), m5);
+      const g5 = await until(async () => !(await panelShown37(p)), 5000);
+      const u5 = await units37(p);
+      check(
+        "移位中暫停：移位面板關閉，說明「移動已取消：不在備戰、暫停了，或場上已經改變。」，馬超沒有移動",
+        !!g5 &&
+          (await text(p, MOVE_NOTICE37)) === INVALIDATED37 &&
+          sameJson(u5.heroes[0].cell, [4, 1]) &&
+          u5.move === null,
+        { u5, notice: await text(p, MOVE_NOTICE37) }
+      );
+      check("一般 UI 繼續", await resumeHud(p));
+      const m6 = await startMove37(p, "tower", [6, 1]);
+      await p.locator('[data-testid="hud-start-battle"]').click();
+      const g6 = await until(async () => !(await panelShown37(p)), 5000);
+      const u6 = await units37(p);
+      check(
+        "移位中按「迎戰」：進入第 2 波戰鬥，移位面板關閉並說明已取消，塔沒有移動",
+        m6.ok &&
+          !!g6 &&
+          u6.state === 2 &&
+          (await text(p, MOVE_NOTICE37)) === INVALIDATED37 &&
+          sameJson(u6.towers[0].cell, [6, 1]) &&
+          u6.move === null,
+        { m6, u6 }
+      );
+      const st1 = await storageOf(p);
+      check(
+        "清波後到開戰的移動前後：瀏覽器儲存逐字不變，沒有任何寫入",
+        sameJson(st1, st0) && sameJson(writes37(E), NO_WRITES37),
+        { st0, st1, writes: writes37(E) }
+      );
+      const i7 = await unitPanel37(p, "hero", [4, 1]);
+      const kept =
+        i7.ok && (await keepHandler37(p, '[data-testid="hero-move"]', "late"));
+      check("受控勝利結束", (await endWith(p, { win: true })) === "ok");
+      await sleep(1500);
+      const closed = (await p.locator(HERO_INFO).count()) === 0;
+      const called = kept && (await callKept37(p, "late"));
+      await sleep(400);
+      const u7 = await units37(p);
+      check(
+        "結算後（武將資訊已關閉）受控呼叫晚到的「移動」onClick：不開始移動，說明「只有備戰時可以移動。」，馬超不動",
+        closed &&
+          called &&
+          !(await panelShown37(p)) &&
+          u7.move === null &&
+          (await text(p, MOVE_NOTICE37)) === "只有備戰時可以移動。" &&
+          sameJson(u7.heroes[0].cell, [4, 1]),
+        { kept, closed, called, u7, notice: await text(p, MOVE_NOTICE37) }
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "移動武將與塔：共用帳號甲清波後移位中切換到乙，舊場的武將移動取消、之後停用（受控呼叫也不開始），塔照常；切回甲（新的世代）仍不能移動武將；沒有任何寫入",
+    async (mk) => {
+      const A = "k_m37_a";
+      const B = "k_m37_b";
+      const E = await mk({
+        seed: [
+          {
+            key: A,
+            data: NEW({
+              nickname: "甲",
+              capacity: 20,
+              team: [{ hero_id: "ma_chao", slot: 1 }],
+            }),
+            rev: 2,
+          },
+          {
+            key: B,
+            data: NEW({
+              nickname: "乙",
+              capacity: 20,
+              team: [{ hero_id: "huang_zhong", slot: 1 }],
+            }),
+            rev: 5,
+          },
+        ],
+        maps: MOVE_MAPS37,
+        enemies: [...ENEMIES, DUMMY],
+      });
+      const p = await E.page({ storage: { shenma_player_key: A } });
+      check("讀到甲", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, [4, 3], "馬超");
+      const t1 = await buildTower(p, [2, 1], "弓兵塔");
+      check(
+        "部署甲的馬超、建弓兵塔並標記",
+        d1.ok && t1.ok && (await mark37(p, "m")) === 2,
+        { d1, t1 }
+      );
+      check("開第 1 波", await startBattle(p));
+      await forceWaveClear(p);
+      await sleep(1200);
+      const u0 = await units37(p);
+      check(
+        "受控清波回到備戰（第 1 波之後）",
+        u0.state === 1 && u0.wave === 1,
+        u0
+      );
+      const m1 = await startMove37(p, "hero", [4, 3]);
+      check("甲自己的這一場：清波後可以開始移動馬超", m1.ok, m1);
+      check("移位中一般 UI 切換金鑰到乙", await switchKey(p, B, "乙"));
+      await sleep(800);
+      const u1 = await units37(p);
+      check(
+        "切換到乙：移位面板關閉，說明「這一場是換帳號前的出征，不能移動武將。」，馬超沒有移動、引擎沒有進行中的移動；同一場沒有重新載入",
+        !(await panelShown37(p)) &&
+          (await text(p, MOVE_NOTICE37)) === HERO_MOVE_BLOCKED37 &&
+          sameJson(u1.heroes[0].cell, [4, 3]) &&
+          u1.heroes[0].mark === "m:hero_ma_chao" &&
+          u1.move === null &&
+          u1.battleId === u0.battleId,
+        { u1, notice: await text(p, MOVE_NOTICE37) }
+      );
+      const b1 = await unitPanel37(p, "hero", [4, 3]);
+      check(
+        "乙的畫面上點甲的馬超：「移動」停用並說明換帳號前的出征",
+        b1.ok && b1.disabled === true && b1.reason === HERO_MOVE_BLOCKED37,
+        b1
+      );
+      const kept = await keepHandler37(p, '[data-testid="hero-move"]', "acct");
+      const called = kept && (await callKept37(p, "acct"));
+      await sleep(400);
+      const u2 = await units37(p);
+      check(
+        "受控呼叫停用的「移動」onClick：不開始移動（沒有移位面板、引擎沒有進行中的移動），說明換帳號前的出征",
+        called &&
+          !(await panelShown37(p)) &&
+          u2.move === null &&
+          (await text(p, MOVE_NOTICE37)) === HERO_MOVE_BLOCKED37 &&
+          sameJson(u2.heroes[0].cell, [4, 3]),
+        { kept, called, u2 }
+      );
+      await closeUnitPanel37(p, "hero");
+      const m2 = await startMove37(p, "tower", [2, 1]);
+      const r2 = m2.ok ? await dropAt37(p, [6, 1]) : null;
+      const u3 = await units37(p);
+      check(
+        "塔照常（塔不屬於帳號）：「移動」可以按，同一座塔移到 (6,1)",
+        m2.ok &&
+          m2.btn.reason === null &&
+          !!r2 &&
+          r2.ok &&
+          r2.notice === null &&
+          u3.towers[0].mark === u0.towers[0].mark &&
+          sameJson(u3.towers[0].cell, [6, 1]),
+        { m2, r2, towers: u3.towers }
+      );
+      check(
+        "一般 UI 切回甲（同一把金鑰、新的世代）",
+        await switchKey(p, A, "甲")
+      );
+      await sleep(800);
+      const b2 = await unitPanel37(p, "hero", [4, 3]);
+      await closeUnitPanel37(p, "hero");
+      check(
+        "切回甲之後：馬超的「移動」仍停用並說明（新的世代不算這一場的來源）",
+        b2.ok && b2.disabled === true && b2.reason === HERO_MOVE_BLOCKED37,
+        b2
+      );
+      check(
+        "沒有任何存檔、升級、結算的寫入",
+        sameJson(writes37(E), NO_WRITES37),
+        { writes: writes37(E), actions: E.gas.writes().map((w) => w.action) }
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "移動武將與塔：移位中選關換成新的一場（移動取消）；新的一場派同 ID 的馬超，舊面板晚到的「確認移動」與「移動」都不動新的馬超或新的移動；之後照常移動",
+    async (mk) => {
+      const E = await mk({ maps: MOVE_MAPS37, enemies: [...ENEMIES, DUMMY] });
+      const p = await E.page({
+        storage: guestStorage([MA35, ZY35], GUEST_TEAM37, {
+          max_stage: "chapter1_2",
+          cleared_stages: { chapter1_1: 3 },
+        }),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, [4, 3], "馬超");
+      check(
+        "部署馬超到 (4,3) 並標記為舊實例",
+        d1.ok && (await mark37(p, "old")) === 1,
+        d1
+      );
+      const stA0 = await storageOf(p);
+      const o1 = await unitPanel37(p, "hero", [4, 3]);
+      const keptMove =
+        o1.ok &&
+        (await keepHandler37(p, '[data-testid="hero-move"]', "oldMove"));
+      await p.locator('[data-testid="hero-move"]').first().click();
+      const shown1 = await until(
+        () => p.locator(MOVE_PANEL37).isVisible(),
+        5000
+      );
+      await p.locator('[data-testid="move-target-select"]').selectOption("8,3");
+      const keptConfirm = await keepHandler37(
+        p,
+        '[data-testid="move-confirm"]',
+        "oldConfirm"
+      );
+      const u0 = await units37(p);
+      check(
+        "舊的一場：開始移動馬超、選好 (8,3)，記下「移動」與「確認移動」的 onClick",
+        !!shown1 &&
+          keptMove &&
+          keptConfirm &&
+          !!u0.move &&
+          sameJson(u0.highlight, { col: 8, row: 3, valid: true }),
+        { o1, keptMove, keptConfirm, move: u0.move }
+      );
+      const bid0 = u0.battleId;
+      const stA1 = await storageOf(p);
+      await p.locator('button[title="切換關卡"]').click();
+      await until(() => modal(p).isVisible(), 10000);
+      const go = modal(p)
+        .locator(".card", { hasText: "接線測試第2關" })
+        .locator("button", { hasText: "開赴戰場" });
+      check("選關視窗有第 2 關的「開赴戰場」", (await go.count()) === 1);
+      await go.first().click();
+      await until(async () => (await modal(p).count()) === 0, 10000);
+      const bid1 = await nextBattle(p, bid0);
+      const u1 = await units37(p);
+      check(
+        "選關換成新的一場：舊的移動取消（移位面板關閉、說明已取消），新的一場沒有進行中的移動、場上沒有武將",
+        !!bid1 &&
+          !(await panelShown37(p)) &&
+          (await text(p, MOVE_NOTICE37)) === INVALIDATED37 &&
+          u1.move === null &&
+          u1.heroes.length === 0,
+        { bid0, bid1, u1, notice: await text(p, MOVE_NOTICE37) }
+      );
+      const d2 = await deployHero(p, [4, 3], "馬超");
+      check(
+        "新的一場在同一格 (4,3) 派同 ID 的馬超，標記為新實例",
+        d2.ok && (await mark37(p, "new")) === 1,
+        d2
+      );
+      const stB0 = await storageOf(p);
+      const c1 = await callKept37(p, "oldConfirm");
+      await sleep(400);
+      const u2 = await units37(p);
+      check(
+        "受控呼叫舊面板的「確認移動」：新的馬超不動、沒有開始任何移動",
+        c1 &&
+          u2.move === null &&
+          !(await panelShown37(p)) &&
+          u2.heroes[0].mark === "new:hero_ma_chao" &&
+          sameJson(u2.heroes[0].cell, [4, 3]),
+        { c1, u2 }
+      );
+      const m2 = await startMove37(p, "hero", [4, 3]);
+      const id2 = m2.ok ? (await units37(p)).move : null;
+      const c2 = await callKept37(p, "oldConfirm");
+      await sleep(400);
+      const u3 = await units37(p);
+      check(
+        "新的一場正在移動新的馬超時，再受控呼叫舊面板的「確認移動」（舊的移動編號）：新的移動仍在、移位面板還在，新的馬超不動",
+        m2.ok &&
+          !!id2 &&
+          id2.battleId === bid1 &&
+          c2 &&
+          sameJson(u3.move, id2) &&
+          (await panelShown37(p)) &&
+          sameJson(u3.heroes[0].cell, [4, 3]),
+        { id2, c2, u3 }
+      );
+      await p.locator('[data-testid="move-cancel"]').click();
+      await until(async () => !(await panelShown37(p)), 5000);
+      const c3 = await callKept37(p, "oldMove");
+      await sleep(400);
+      const u4 = await units37(p);
+      check(
+        "受控呼叫舊的一場武將資訊的「移動」（舊的馬超實例）：不開始移動，說明「請重新點選要移動的單位。」",
+        c3 &&
+          u4.move === null &&
+          !(await panelShown37(p)) &&
+          (await text(p, MOVE_NOTICE37)) === RESELECT37 &&
+          sameJson(u4.heroes[0].cell, [4, 3]),
+        { c3, u4, notice: await text(p, MOVE_NOTICE37) }
+      );
+      const m5 = await startMove37(p, "hero", [4, 3]);
+      const r5 = m5.ok ? await dropAt37(p, [8, 3]) : null;
+      const u5 = await units37(p);
+      check(
+        "之後照常：新的馬超移到 (8,3)（同一個新實例）",
+        !!r5 &&
+          r5.ok &&
+          r5.notice === null &&
+          u5.heroes[0].mark === "new:hero_ma_chao" &&
+          sameJson(u5.heroes[0].cell, [8, 3]) &&
+          u5.heroes[0].occ,
+        { m5, r5, heroes: u5.heroes }
+      );
+      const stB1 = await storageOf(p);
+      check(
+        "兩段移動操作（舊的一場、新的一場）前後：瀏覽器儲存逐字不變，沒有任何寫入",
+        sameJson(stA1, stA0) &&
+          sameJson(stB1, stB0) &&
+          sameJson(writes37(E), NO_WRITES37),
+        { stA0, stA1, stB0, stB1, writes: writes37(E) }
+      );
+      return E;
+    }
+  );
+
+  // 同一個實例重新打開面板（R100-1）：一般 UI 點選、移動、重開都是正常操作；「受控呼叫」是保留第一次面板按鈕的 React onClick 之後直接呼叫
+  // （等同舊面板的按鈕晚一拍還能按），只用在負向，不算自然競態
+  /** 保留面板上 × 按鈕的 React onClick（關閉） */
+  const keepClose37 = (p, kind, slot) =>
+    p
+      .locator(panelSel37(kind))
+      .locator("button", { hasText: "×" })
+      .first()
+      .evaluate((b, s) => {
+        const k = Object.keys(b).find((x) => x.startsWith("__reactProps$"));
+        if (!k || typeof b[k].onClick !== "function") return false;
+        window.__kept37 = window.__kept37 || {};
+        window.__kept37[s] = b[k].onClick;
+        return true;
+      }, slot)
+      .catch(() => false);
+  /** 引擎目前的虛影（移位中才有） */
+  const ghost37 = (p) =>
+    p.evaluate(() => {
+      const g = window.__testBridge.engine.dragGhost;
+      return g ? { type: g.type, name: g.name, x: g.x, y: g.y } : null;
+    });
+  /** 鍵盤選目的格：焦點到目的格清單按 ↓ 選第一格，Tab 到「確認移動」按 Enter，等移位面板結束 */
+  async function kbConfirm37(p) {
+    const sel = p.locator('[data-testid="move-target-select"]');
+    await sel.focus();
+    await p.keyboard.press("ArrowDown");
+    await sleep(300);
+    const picked = await sel.inputValue();
+    await p.keyboard.press("Tab");
+    const onConfirm = await p
+      .locator('[data-testid="move-confirm"]')
+      .evaluate((b) => document.activeElement === b);
+    await p.keyboard.press("Enter");
+    const gone = await until(async () => !(await panelShown37(p)), 5000);
+    return { picked, onConfirm, ok: !!gone };
+  }
+  /** 等畫布的位置、大小與格子大小連續幾次讀到都一樣（面板開關讓捲軸出現或消失時，頁面會重新調整畫布；調整完才算座標） */
+  async function settle37(p) {
+    let last = null;
+    let same = 0;
+    await until(async () => {
+      const g = await p.evaluate(() => {
+        const e = window.__testBridge.engine;
+        const r = e.canvas.getBoundingClientRect();
+        return [r.left, r.top, r.width, r.height, e.gameMap.tileSize].join(",");
+      });
+      same = g === last ? same + 1 : 0;
+      last = g;
+      return same >= 3;
+    }, 5000);
+    return last;
+  }
+  const panel37s = async (p, kind, cell) => (
+    await settle37(p), unitPanel37(p, kind, cell)
+  );
+  const drop37s = async (p, cell) => (await settle37(p), dropAt37(p, cell));
+  const start37s = async (p, kind, cell, opts) => (
+    await settle37(p), startMove37(p, kind, cell, opts)
+  );
+  /** 第一次面板的「移動」晚到（受控）前後要相同的：引擎的移動、虛影、移位面板標題、場上武將與塔 */
+  const live37 = async (p) => {
+    const u = await units37(p);
+    return {
+      move: u.move,
+      ghost: await ghost37(p),
+      panel: await text(p, '[data-testid="move-unit-title"]'),
+      heroes: u.heroes,
+      towers: u.towers,
+    };
+  };
+
+  await scenario(
+    "移動武將與塔：同一實例重開面板（1280 桌面）：第一次面板的「移動」晚到不影響新的移動；關閉後、開始成功後重播都不開始；舊面板的關閉不關新面板（武將與塔）",
+    async (mk) => {
+      const E = await mk({ maps: MOVE_MAPS37, enemies: [...ENEMIES, DUMMY] });
+      const p = await E.page({
+        storage: guestStorage([MA35, ZY35], GUEST_TEAM37),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, [4, 3], "馬超");
+      const t1 = await buildTower(p, [2, 1], "弓兵塔");
+      check(
+        "部署馬超到 (4,3)、在 (2,1) 建弓兵塔並標記",
+        d1.ok && t1.ok && (await mark37(p, "m")) === 2,
+        { d1, t1 }
+      );
+      const st0 = await storageOf(p);
+      for (const [kind, L, A, Bc, Cc] of [
+        ["hero", "武將", [4, 3], [8, 3], [10, 3]],
+        ["tower", "塔", [2, 1], [4, 1], [6, 1]],
+      ]) {
+        const o1 = await panel37s(p, kind, A);
+        const kept =
+          o1.ok &&
+          (await keepHandler37(p, `[data-testid="${kind}-move"]`, `${kind}1`));
+        await p.locator(`[data-testid="${kind}-move"]`).first().click();
+        const shown1 = await until(
+          () => p.locator(MOVE_PANEL37).isVisible(),
+          5000
+        );
+        const r1 = shown1 ? await drop37s(p, Bc) : null;
+        const u1 = await units37(p);
+        const at1 = kind === "hero" ? u1.heroes[0].cell : u1.towers[0].cell;
+        check(
+          `${L}：第一次面板（保留它的「移動」onClick）照常移到 (${Bc})`,
+          kept && !!r1 && r1.ok && r1.notice === null && sameJson(at1, Bc),
+          { o1, kept, r1, at1 }
+        );
+        const m2 = await start37s(p, kind, Bc);
+        const before = await live37(p);
+        const called = await callKept37(p, `${kind}1`);
+        await sleep(400);
+        const after = await live37(p);
+        check(
+          `${L}：同一實例在 (${Bc}) 重開面板並開始新的移動後，受控呼叫第一次面板的「移動」→ 新的移動編號、來源格、虛影與移位面板都不變，場上不動`,
+          m2.ok &&
+            called &&
+            !!before.move &&
+            sameJson(before.move.from, { col: Bc[0], row: Bc[1] }) &&
+            !!before.ghost &&
+            sameJson(after, before),
+          { m2, called, before, after }
+        );
+        const r2 = await drop37s(p, Cc);
+        const u2 = await units37(p);
+        const at2 = kind === "hero" ? u2.heroes[0].cell : u2.towers[0].cell;
+        check(
+          `${L}：新的移動之後照常完成，同一個實例到 (${Cc})`,
+          r2.ok && r2.notice === null && sameJson(at2, Cc) && u2.move === null,
+          { r2, at2 }
+        );
+        // 關閉後重播
+        const o3 = await panel37s(p, kind, Cc);
+        const k3 =
+          o3.ok &&
+          (await keepHandler37(p, `[data-testid="${kind}-move"]`, `${kind}3`));
+        const closed3 = await closeUnitPanel37(p, kind);
+        const called3 = k3 && (await callKept37(p, `${kind}3`));
+        await sleep(400);
+        const u3 = await units37(p);
+        const at3 = kind === "hero" ? u3.heroes[0].cell : u3.towers[0].cell;
+        check(
+          `${L}：關閉面板後受控呼叫它的「移動」→ 不開始移動（沒有移位面板、引擎沒有移動），說明「請重新點選要移動的單位。」，單位不動`,
+          closed3 &&
+            called3 &&
+            !(await panelShown37(p)) &&
+            u3.move === null &&
+            (await text(p, MOVE_NOTICE37)) === RESELECT37 &&
+            sameJson(at3, Cc),
+          { closed3, called3, u3, notice: await text(p, MOVE_NOTICE37) }
+        );
+        // 開始成功後重播
+        const o4 = await panel37s(p, kind, Cc);
+        const k4 =
+          o4.ok &&
+          (await keepHandler37(p, `[data-testid="${kind}-move"]`, `${kind}4`));
+        await p.locator(`[data-testid="${kind}-move"]`).first().click();
+        const shown4 = await until(
+          () => p.locator(MOVE_PANEL37).isVisible(),
+          5000
+        );
+        const before4 = await live37(p);
+        const called4 = k4 && (await callKept37(p, `${kind}4`));
+        await sleep(400);
+        const after4 = await live37(p);
+        check(
+          `${L}：「移動」開始成功後受控重播同一個 onClick → 不再開始，移動編號、虛影與移位面板不變`,
+          !!shown4 && called4 && !!before4.move && sameJson(after4, before4),
+          { shown4, called4, before4, after4 }
+        );
+        await p.locator('[data-testid="move-cancel"]').click();
+        await until(async () => !(await panelShown37(p)), 5000);
+        // 舊面板的關閉晚到
+        const o5 = await panel37s(p, kind, Cc);
+        const k5 = o5.ok && (await keepClose37(p, kind, `${kind}5`));
+        await closeUnitPanel37(p, kind);
+        const o6 = await panel37s(p, kind, Cc);
+        const called5 = k5 && (await callKept37(p, `${kind}5`));
+        await sleep(400);
+        const stillOpen = await p.locator(panelSel37(kind)).isVisible();
+        const m6 = o6.ok && stillOpen;
+        if (m6) await p.locator(`[data-testid="${kind}-move"]`).first().click();
+        const shown6 = await until(
+          () => p.locator(MOVE_PANEL37).isVisible(),
+          5000
+        );
+        const u6 = await units37(p);
+        check(
+          `${L}：受控呼叫已關閉的舊面板的關閉 → 不關重開的新面板；新面板的「移動」照常開始（目前的面板正向）`,
+          called5 &&
+            stillOpen &&
+            !!shown6 &&
+            !!u6.move &&
+            sameJson(u6.move.from, { col: Cc[0], row: Cc[1] }),
+          { k5, called5, stillOpen, shown6, move: u6.move }
+        );
+        await p.locator('[data-testid="move-cancel"]').click();
+        await until(async () => !(await panelShown37(p)), 5000);
+        // 新面板還沒按「移動」時，舊面板的「移動」晚到
+        const o7 = await panel37s(p, kind, Cc);
+        const k7 =
+          o7.ok &&
+          (await keepHandler37(p, `[data-testid="${kind}-move"]`, `${kind}7`));
+        await closeUnitPanel37(p, kind);
+        const o8 = await panel37s(p, kind, Cc);
+        const called7 = k7 && (await callKept37(p, `${kind}7`));
+        await sleep(400);
+        const u7 = await units37(p);
+        const stale7 = {
+          moveShown: await panelShown37(p),
+          move: u7.move,
+          panelOpen: await p.locator(panelSel37(kind)).isVisible(),
+        };
+        if (stale7.panelOpen)
+          await p.locator(`[data-testid="${kind}-move"]`).first().click();
+        const shown8 = await until(
+          () => p.locator(MOVE_PANEL37).isVisible(),
+          5000
+        );
+        const u8 = await units37(p);
+        check(
+          `${L}：關閉後重開的新面板還沒按「移動」時，受控呼叫舊面板的「移動」→ 不開始移動、新面板還開著；之後按新面板的「移動」照常開始`,
+          o8.ok &&
+            called7 &&
+            !stale7.moveShown &&
+            stale7.move === null &&
+            stale7.panelOpen &&
+            !!shown8 &&
+            !!u8.move &&
+            sameJson(u8.move.from, { col: Cc[0], row: Cc[1] }),
+          { o8, called7, stale7, shown8, move: u8.move }
+        );
+        await p.locator('[data-testid="move-cancel"]').click();
+        await until(async () => !(await panelShown37(p)), 5000);
+      }
+      const st1 = await storageOf(p);
+      check(
+        "整段前後：瀏覽器儲存逐字不變，沒有任何存檔、升級、結算的寫入",
+        sameJson(st1, st0) && sameJson(writes37(E), NO_WRITES37),
+        { st0, st1, writes: writes37(E) }
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "移動武將與塔：同一實例重開面板（390×600 鍵盤）：鍵盤開始與確認，第一次面板的「移動」晚到不影響新的移動（武將與塔）",
+    async (mk) => {
+      const E = await mk({
+        maps: MOVE_MAPS37,
+        enemies: [...ENEMIES, DUMMY],
+        viewport: { width: 390, height: 600 },
+      });
+      const p = await E.page({
+        storage: guestStorage([MA35, ZY35], GUEST_TEAM37),
+      });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d1 = await deployHero(p, [4, 3], "馬超");
+      const t1 = await buildTower(p, [2, 1], "弓兵塔");
+      check(
+        "部署馬超到 (4,3)、在 (2,1) 建弓兵塔並標記",
+        d1.ok && t1.ok && (await mark37(p, "m")) === 2,
+        { d1, t1 }
+      );
+      const st0 = await storageOf(p);
+      // 武將：(4,3) → 第一格 (4,1) → 第一格 (6,1)；塔：(2,1) → 第一格 (4,1) → 第一格 (2,1)
+      for (const [kind, L, A, Bc, Cc] of [
+        ["hero", "武將", [4, 3], [4, 1], [6, 1]],
+        ["tower", "塔", [2, 1], [4, 1], [2, 1]],
+      ]) {
+        const o1 = await panel37s(p, kind, A);
+        const kept =
+          o1.ok &&
+          (await keepHandler37(p, `[data-testid="${kind}-move"]`, `kb${kind}`));
+        const b = p.locator(`[data-testid="${kind}-move"]`).first();
+        await b.focus();
+        await p.keyboard.press("Enter");
+        const shown1 = await until(
+          () => p.locator(MOVE_PANEL37).isVisible(),
+          5000
+        );
+        const k1 = shown1 ? await kbConfirm37(p) : null;
+        const u1 = await units37(p);
+        const at1 = kind === "hero" ? u1.heroes[0].cell : u1.towers[0].cell;
+        check(
+          `${L}（鍵盤）：第一次面板 Enter 開始、↓ 選第一格 (${Bc})、Tab＋Enter 確認，同一個實例移到 (${Bc})`,
+          kept &&
+            !!k1 &&
+            k1.ok &&
+            k1.picked === `${Bc[0]},${Bc[1]}` &&
+            k1.onConfirm &&
+            sameJson(at1, Bc),
+          { kept, k1, at1 }
+        );
+        const m2 = await start37s(p, kind, Bc, { keyboard: true });
+        const before = await live37(p);
+        const called = await callKept37(p, `kb${kind}`);
+        await sleep(400);
+        const after = await live37(p);
+        check(
+          `${L}（鍵盤）：同一實例在 (${Bc}) 重開面板、Enter 開始新的移動後，受控呼叫第一次面板的「移動」→ 新的移動編號、來源格、虛影與移位面板都不變`,
+          m2.ok &&
+            called &&
+            !!before.move &&
+            sameJson(before.move.from, { col: Bc[0], row: Bc[1] }) &&
+            sameJson(after, before),
+          { m2, called, before, after }
+        );
+        const k2 = await kbConfirm37(p);
+        const u2 = await units37(p);
+        const at2 = kind === "hero" ? u2.heroes[0].cell : u2.towers[0].cell;
+        check(
+          `${L}（鍵盤）：新的移動用鍵盤選第一格 (${Cc}) 確認，照常完成`,
+          k2.ok && k2.picked === `${Cc[0]},${Cc[1]}` && sameJson(at2, Cc),
+          { k2, at2 }
+        );
+      }
+      const st1 = await storageOf(p);
+      check(
+        "整段前後：瀏覽器儲存逐字不變，沒有任何寫入",
+        sameJson(st1, st0) && sameJson(writes37(E), NO_WRITES37),
+        { st0, st1, writes: writes37(E) }
+      );
+      return E;
+    }
+  );
+
   // ═══ 18. 入口版面：1280 桌面、390×600、390×844 ═══
   for (const vp of [
     { width: 1280, height: 800 },

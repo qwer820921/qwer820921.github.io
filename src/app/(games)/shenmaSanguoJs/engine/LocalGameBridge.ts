@@ -7,11 +7,18 @@
 import {
   BattleEngine,
   HeroRosterInfo,
+  MoveBeginResult,
+  MoveCellPick,
+  MoveCommitResult,
+  MoveEndedInfo,
+  MoveTarget,
+  MoveUnitKind,
   StagePayload,
   TeamSyncResult,
   TowerSellRequest,
   TowerSellResult,
 } from "./BattleEngine";
+import { GridCoord } from "./GameMap";
 import { StatsSyncData, BattleResultData, GameState } from "./BattleManager";
 import { HeroStateData, HeroEntity } from "./entities/HeroEntity";
 import { TowerEntity } from "./entities/TowerEntity";
@@ -50,7 +57,15 @@ export class LocalGameBridge {
     tower: TowerEntity | null,
     context?: TowerPanelContext
   ) => void;
-  public onHeroInfoOpen?: (hero: HeroEntity | null) => void;
+  /** 打開武將資訊：context 是打開時的這一場（移位要用打開當時的場次與實例） */
+  public onHeroInfoOpen?: (
+    hero: HeroEntity | null,
+    context?: TowerPanelContext
+  ) => void;
+  /** 移位結束（移動、取消或失效） */
+  public onMoveEnded?: (info: MoveEndedInfo) => void;
+  /** 移位模式中點了畫布的某一格 */
+  public onMoveCellPicked?: (pick: MoveCellPick) => void;
   /** 武將陣亡（died）或隊伍同步更新／離場（removed）：這一場與還活著的武將識別碼（凍結的複本） */
   public onHeroRosterChanged?: (info: HeroRosterInfo) => void;
   public onBattleEnded?: (result: BattleResultData) => void;
@@ -88,7 +103,17 @@ export class LocalGameBridge {
     };
 
     this.engine.onShowHeroInfo = (hero) => {
-      this.onHeroInfoOpen?.(hero);
+      this.onHeroInfoOpen?.(hero, {
+        battleId: this.engine.battleManager.battleId,
+      });
+    };
+
+    this.engine.onMoveEnded = (info) => {
+      this.onMoveEnded?.(info);
+    };
+
+    this.engine.onMoveCellPicked = (pick) => {
+      this.onMoveCellPicked?.(pick);
     };
 
     this.engine.onHeroRosterChanged = (info) => {
@@ -173,6 +198,36 @@ export class LocalGameBridge {
   /** 同一場的隊伍同步（改隊伍或升級後）：只接受這一場、備戰或戰鬥中；不重新載入（見 BattleEngine.syncTeam） */
   public syncTeam(battleId: string, team: unknown): TeamSyncResult {
     return this.engine.syncTeam(battleId, team);
+  }
+
+  /** 移位：開始（帶面板打開時的這一場、單位實例與來源格）、預覽、合法目的格、提交與取消，都由引擎重核 */
+  public beginMove(
+    battleId: string,
+    kind: MoveUnitKind,
+    unit: HeroEntity | TowerEntity,
+    from: GridCoord
+  ): MoveBeginResult {
+    return this.engine.beginMove(battleId, kind, unit, from);
+  }
+
+  public previewMove(moveId: number, col: number, row: number): boolean {
+    return this.engine.previewMove(moveId, col, row);
+  }
+
+  public listMoveTargets(moveId: number): MoveTarget[] {
+    return this.engine.listMoveTargets(moveId);
+  }
+
+  public commitMove(
+    moveId: number,
+    col: unknown,
+    row: unknown
+  ): MoveCommitResult {
+    return this.engine.commitMove(moveId, col, row);
+  }
+
+  public cancelMove(moveId: number): boolean {
+    return this.engine.cancelMove(moveId);
   }
 
   public placeTower(col: number, row: number, towerTypeKey: string): boolean {

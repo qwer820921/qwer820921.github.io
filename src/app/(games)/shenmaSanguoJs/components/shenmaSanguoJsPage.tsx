@@ -19,7 +19,13 @@ import {
   GameState,
 } from "../engine/BattleManager";
 import { TowerEntity } from "../engine/entities/TowerEntity";
-import { TowerSellRequest, TowerSellResult } from "../engine/BattleEngine";
+import {
+  MoveRejectReason,
+  MoveTarget,
+  MoveUnitKind,
+  TowerSellRequest,
+  TowerSellResult,
+} from "../engine/BattleEngine";
 import { HeroEntity, HeroStateData } from "../engine/entities/HeroEntity";
 import {
   BUILTIN_STAGES,
@@ -41,6 +47,7 @@ import {
   guestRewardAllowed,
   heroDeployAllowed,
   HERO_DEPLOY_BLOCKED_TEXT,
+  isCurrentAccount,
   LOCAL_NOT_SAVED_TEXT,
 } from "../utils/battleAccountBoundary";
 import { useJsPlayerStore } from "../store/useJsPlayerStore";
@@ -56,6 +63,7 @@ import { UpgradePanelModal } from "./UpgradePanelModal";
 import { HeroInfoModal } from "./HeroInfoModal";
 import { BattleResultModal } from "./BattleResultModal";
 import { StageSelectorModal } from "./StageSelectorModal";
+import { MoveUnitPanel } from "./MoveUnitPanel";
 import { BattleTips } from "./BattleTips";
 import { NextWaveModal } from "./NextWaveModal";
 import styles from "../styles/shenmaSanguoJs.module.css";
@@ -149,6 +157,45 @@ const currentAccountOf = (s: TeamSourceState): CurrentAccount => ({
   epoch: s.getAccountEpoch(),
   isLoading: s.isLoading,
 });
+
+/** 換帳號後的舊場不能移動武將（塔不受帳號影響） */
+const MOVE_HERO_BLOCKED_TEXT = "這一場是換帳號前的出征，不能移動武將。";
+
+/**
+ * 武將資訊或塔的面板「這一次」打開時的固定快照：每次打開都是新的物件與編號（同一個實例、同一格重開也不同）。
+ * 只凍結快照本身（實例仍是場上的那一個），只在本機記憶體，不保存、不序列化
+ */
+interface MovePanelSnapshot {
+  readonly seq: number;
+  readonly kind: MoveUnitKind;
+  readonly unit: HeroEntity | TowerEntity;
+  readonly battleId: string;
+  readonly from: Readonly<{ col: number; row: number }>;
+}
+
+/** 移位沒有成功時給玩家看的簡短說明（不成功時什麼都沒移動） */
+function moveRejectText(reason: MoveRejectReason): string {
+  switch (reason) {
+    case "not_prep":
+      return "只有備戰時可以移動。";
+    case "paused":
+      return "暫停中不能移動。";
+    case "stale_battle":
+      return "這個單位不在目前這一場，請重新點選。";
+    case "not_found":
+      return "這個單位已經不在場上。";
+    case "source_changed":
+      return "這個單位的位置已經改變，請重新點選。";
+    case "stale_move":
+      return "這次移動已經結束，請重新點選。";
+    case "same_cell":
+      return "那是原本的格子，已取消移動。";
+    case "occupied":
+      return "那一格已經有單位，已取消移動。";
+    default:
+      return "那一格不能放，已取消移動。";
+  }
+}
 
 const ShenmaSanguoJsPage: React.FC = () => {
   const bridgeRef = useRef<LocalGameBridge | null>(null);
@@ -259,6 +306,22 @@ const ShenmaSanguoJsPage: React.FC = () => {
   );
   // 目前這一場的出征來源（battleCtxRef 的 owner 給畫面用的副本：部署選單的武將卡據此判斷能不能派）
   const [battleOwner, setBattleOwner] = useState<TeamOwner | null>(null);
+  // 移位：目前有效的那一次面板快照（打開面板時建立；關閉、開始移動成功、換場、該武將離場時消費）。
+  // 按鈕綁定的是打開那一次的快照（panelSnap），這個 ref 只用來核它是不是仍然有效
+  const panelUnitRef = useRef<MovePanelSnapshot | null>(null);
+  const panelSeqRef = useRef(0);
+  const [panelSnap, setPanelSnap] = useState<MovePanelSnapshot | null>(null);
+  // 進行中的移位（畫面用）：引擎給的移動編號、這一場、種類、名稱與合法目的格；ref 給回呼讀最新值
+  const [moveState, setMoveState] = useState<{
+    moveId: number;
+    battleId: string;
+    kind: MoveUnitKind;
+    name: string;
+    targets: MoveTarget[];
+  } | null>(null);
+  const moveStateRef = useRef<typeof moveState>(null);
+  // 移位沒有成功或被取消時的說明
+  const [moveNotice, setMoveNotice] = useState<string | null>(null);
   const [placedHeroIds, setPlacedHeroIds] = useState<string[]>([]);
 
   // 視窗 Modal 顯示狀態
@@ -465,6 +528,8 @@ const ShenmaSanguoJsPage: React.FC = () => {
       setPlacementMenu(null);
       setUpgradeTower(null);
       setHeroInfo(null);
+      panelUnitRef.current = null;
+      setPanelSnap(null);
       setBattleResult(null);
       setBattleReward(null);
       setLocalNotSavedReason(null);
@@ -473,6 +538,50 @@ const ShenmaSanguoJsPage: React.FC = () => {
       return loadBattle(stage, team);
     },
     [loadBattle]
+  );
+
+  /** 畫面上的移位狀態與 ref 一起更新 */
+  const applyMoveState = useCallback((next: typeof moveState) => {
+    moveStateRef.current = next;
+    setMoveState(next);
+  }, []);
+
+  /**
+   * 提交移位（畫布點的格子與鍵盤確認都走這裡）：只處理畫面上正在進行的這一次（移動編號不同的舊面板或晚到的點選不動新的移動）；
+   * 武將先用 store 當下的帳號核這一場的來源（和派武將相同的規則，換帳號、同一把金鑰的新世代、還沒選帳號、載入中都不移）；
+   * 之後由引擎全部重核。沒有移動就取消這次移動並說明原因
+   */
+  const commitMoveTo = useCallback(
+    (moveId: number, col: number, row: number) => {
+      const bridge = bridgeRef.current;
+      const ms = moveStateRef.current;
+      if (!bridge || !ms || ms.moveId !== moveId) return;
+      const ctx = battleCtxRef.current;
+      if (
+        ms.kind === "hero" &&
+        (!ctx ||
+          ctx.battleId !== ms.battleId ||
+          !isCurrentAccount(
+            ctx.owner,
+            currentAccountOf(useJsPlayerStore.getState())
+          ))
+      ) {
+        bridge.cancelMove(ms.moveId);
+        applyMoveState(null);
+        setMoveNotice(MOVE_HERO_BLOCKED_TEXT);
+        return;
+      }
+      const result = bridge.commitMove(ms.moveId, col, row);
+      if (result.ok) {
+        // 移動完成：引擎的移位結束通知會清掉畫面上的移位狀態
+        setMoveNotice(null);
+        return;
+      }
+      bridge.cancelMove(ms.moveId);
+      applyMoveState(null);
+      setMoveNotice(moveRejectText(result.reason));
+    },
+    [applyMoveState]
   );
 
   // 初始化 Bridge 實例（只在 mount 時建立一次，避免因 stats 或 currentStage 變更而重複重建）
@@ -521,11 +630,57 @@ const ShenmaSanguoJsPage: React.FC = () => {
       if (cur) bridge.closeDeployMenu(cur);
       setPlacementMenu(null);
     };
+    // 打開塔或武將的面板：建立這一次面板的新快照（這一場、這個實例與它當時的格子；移位只用這一份）
+    const openPanelSnapshot = (
+      kind: MoveUnitKind,
+      unit: HeroEntity | TowerEntity,
+      battleId: string
+    ) => {
+      const snap: MovePanelSnapshot = Object.freeze({
+        seq: ++panelSeqRef.current,
+        kind,
+        unit,
+        battleId,
+        from: Object.freeze({ col: unit.gridCell.col, row: unit.gridCell.row }),
+      });
+      panelUnitRef.current = snap;
+      setPanelSnap(snap);
+      setMoveNotice(null);
+    };
     bridge.onUpgradePanelOpen = (tw, context) => {
       setUpgradeTower(tw);
       setTowerPanelBattleId(tw && context ? context.battleId : null);
+      if (tw && context) {
+        openPanelSnapshot("tower", tw, context.battleId);
+      } else if (!tw && panelUnitRef.current?.kind === "tower") {
+        // 塔賣掉而關閉面板：消費塔的快照
+        panelUnitRef.current = null;
+        setPanelSnap(null);
+      }
     };
-    bridge.onHeroInfoOpen = (h) => setHeroInfo(h);
+    bridge.onHeroInfoOpen = (h, context) => {
+      setHeroInfo(h);
+      if (h && context) openPanelSnapshot("hero", h, context.battleId);
+    };
+    // 移位結束（移動、取消或失效）：只處理這個 bridge、目前畫面上的這次移動（舊的通知不清新的移動）
+    bridge.onMoveEnded = (info) => {
+      if (bridgeRef.current !== bridge) return;
+      const ms = moveStateRef.current;
+      if (!ms || ms.moveId !== info.moveId || ms.battleId !== info.battleId)
+        return;
+      applyMoveState(null);
+      if (info.reason === "invalidated") {
+        setMoveNotice("移動已取消：不在備戰、暫停了，或場上已經改變。");
+      }
+    };
+    // 移位模式中點了畫布的某一格：走同一個提交入口
+    bridge.onMoveCellPicked = (pick) => {
+      if (bridgeRef.current !== bridge) return;
+      const ms = moveStateRef.current;
+      if (!ms || ms.moveId !== pick.moveId || ms.battleId !== pick.battleId)
+        return;
+      commitMoveTo(pick.moveId, pick.col, pick.row);
+    };
     // 武將陣亡：只處理目前這個 bridge 與這一場（舊場次晚到的通知不改新場的名單）；部署選單的「已在場上」換成這一場還活著的武將，
     // 陣亡的那一位就能再派；武將資訊只在顯示的正是陣亡的那個實例時關閉。
     // 隊伍同步（數值更新或不在隊伍裡而離場）同樣只處理這一場：名單換新（也讓開著的武將資訊重新顯示更新後的數值），
@@ -542,6 +697,18 @@ const ShenmaSanguoJsPage: React.FC = () => {
         setHeroInfo((cur) => (cur === info.died ? null : cur));
       } else {
         setHeroInfo((cur) => (cur && info.removed.includes(cur) ? null : cur));
+      }
+      // 面板快照對應的武將陣亡或離場：這一次面板的「移動」失效
+      const snapNow = panelUnitRef.current;
+      if (
+        snapNow &&
+        snapNow.kind === "hero" &&
+        ("died" in info
+          ? snapNow.unit === info.died
+          : info.removed.some((h) => h === snapNow.unit))
+      ) {
+        panelUnitRef.current = null;
+        setPanelSnap(null);
       }
     };
 
@@ -633,8 +800,26 @@ const ShenmaSanguoJsPage: React.FC = () => {
       // 這個 bridge 的場次跟著結束：之後新建的 bridge 還沒有任何一場（首次內建展示照常判斷）
       battleCtxRef.current = null;
       setBattleOwner(null);
+      panelUnitRef.current = null;
+      setPanelSnap(null);
+      applyMoveState(null);
     };
-  }, [settleBattle, loadBattle]);
+  }, [settleBattle, loadBattle, applyMoveState, commitMoveTo]);
+
+  // 移動武將中換了帳號（或同一把金鑰的新世代、登出、載入中）：取消這次移動；塔的移動不受帳號影響
+  useEffect(
+    () =>
+      useJsPlayerStore.subscribe((s) => {
+        const ms = moveStateRef.current;
+        if (!ms || ms.kind !== "hero") return;
+        const ctx = battleCtxRef.current;
+        if (ctx && isCurrentAccount(ctx.owner, currentAccountOf(s))) return;
+        bridgeRef.current?.cancelMove(ms.moveId);
+        applyMoveState(null);
+        setMoveNotice(MOVE_HERO_BLOCKED_TEXT);
+      }),
+    [applyMoveState]
+  );
 
   // 出征隊伍改變時（改隊伍、升級、手動同步讀回、換帳號），只看目前載入的這一場：
   // - 還沒有任何一場（首次內建展示沒有載入，例如一開始就已經選了帳號）：來源可用時照原流程載入第一場
@@ -779,6 +964,109 @@ const ShenmaSanguoJsPage: React.FC = () => {
     return success;
   };
 
+  /**
+   * 開始移位（武將資訊或塔面板的「移動」）：snap 是按鈕所在那一次面板打開時的快照，請求的實例、場次與來源格都由它而來，
+   * 不用畫面的 stats、舊的隊伍快照或按下時的最新面板。快照要仍是目前有效的那一次（重開、關閉、開始成功後就換新或消費）：
+   * 過期的不開始、不取消目前的移動，正在移動時也不改說明。武將另外用 store 當下的帳號核這一場的來源。
+   * 引擎接受才消費這次快照、關掉原面板、進入移位模式（同一個按鈕重播不會再開始）
+   */
+  const handleMoveStart = (
+    kind: MoveUnitKind,
+    snap: MovePanelSnapshot | null
+  ) => {
+    const bridge = bridgeRef.current;
+    const ctx = battleCtxRef.current;
+    if (!snap || panelUnitRef.current !== snap || snap.kind !== kind) {
+      if (!moveStateRef.current) setMoveNotice("請重新點選要移動的單位。");
+      return;
+    }
+    const cap = snap;
+    if (!bridge || !ctx || cap.battleId !== ctx.battleId) {
+      setMoveNotice("請重新點選要移動的單位。");
+      return;
+    }
+    if (
+      kind === "hero" &&
+      !isCurrentAccount(
+        ctx.owner,
+        currentAccountOf(useJsPlayerStore.getState())
+      )
+    ) {
+      setMoveNotice(MOVE_HERO_BLOCKED_TEXT);
+      return;
+    }
+    const result = bridge.beginMove(cap.battleId, kind, cap.unit, cap.from);
+    if (!result.ok) {
+      setMoveNotice(moveRejectText(result.reason));
+      return;
+    }
+    panelUnitRef.current = null;
+    setPanelSnap(null);
+    if (kind === "hero") setHeroInfo(null);
+    else setUpgradeTower(null);
+    setMoveNotice(null);
+    applyMoveState({
+      moveId: result.moveId,
+      battleId: result.battleId,
+      kind,
+      name: result.name,
+      targets: bridge.listMoveTargets(result.moveId),
+    });
+  };
+
+  /**
+   * 關閉武將資訊或塔的面板：只關按鈕所在的那一次面板並消費它的快照；舊面板晚到的關閉不動新的面板與快照
+   */
+  const handleUnitPanelClose = (
+    kind: MoveUnitKind,
+    snap: MovePanelSnapshot | null
+  ) => {
+    if (snap && panelUnitRef.current !== snap) return;
+    if (snap) {
+      panelUnitRef.current = null;
+      setPanelSnap(null);
+    }
+    if (kind === "hero") setHeroInfo(null);
+    else setUpgradeTower(null);
+  };
+
+  /** 取消移位（不移動任何東西）；只取消畫面上正在進行的這一次 */
+  const handleMoveCancel = useCallback(
+    (moveId: number) => {
+      const ms = moveStateRef.current;
+      if (!ms || ms.moveId !== moveId) return;
+      bridgeRef.current?.cancelMove(ms.moveId);
+      applyMoveState(null);
+    },
+    [applyMoveState]
+  );
+
+  /**
+   * 鍵盤選了目的格：只預覽（只預覽畫面上正在進行的這一次）。武將選目的格時也用 store 當下的帳號核這一場的來源，
+   * 不是目前的帳號就取消這次移動並說明
+   */
+  const handleMovePreview = (moveId: number, col: number, row: number) => {
+    const bridge = bridgeRef.current;
+    const ms = moveStateRef.current;
+    if (!bridge || !ms || ms.moveId !== moveId) return;
+    const ctx = battleCtxRef.current;
+    if (
+      ms.kind === "hero" &&
+      (!ctx ||
+        ctx.battleId !== ms.battleId ||
+        !isCurrentAccount(
+          ctx.owner,
+          currentAccountOf(useJsPlayerStore.getState())
+        ))
+    ) {
+      bridge.cancelMove(ms.moveId);
+      applyMoveState(null);
+      setMoveNotice(MOVE_HERO_BLOCKED_TEXT);
+      return;
+    }
+    bridge.previewMove(ms.moveId, col, row);
+  };
+
   const handleUpgradeTower = (col: number, row: number) => {
     bridgeRef.current?.upgradeTower(col, row);
   };
@@ -851,6 +1139,31 @@ const ShenmaSanguoJsPage: React.FC = () => {
     )
       ? null
       : HERO_DEPLOY_BLOCKED_TEXT;
+  // 「移動」按鈕：只有這一場的備戰（第 0 波或清波後）、沒有暫停、還沒結算時可以按；武將另外要這一場的來源是目前的帳號
+  // （畫面可能晚一拍，真正開始與提交時引擎與 store 會再核一次）
+  const moveBlockedReasonFor = (kind: MoveUnitKind): string | null => {
+    if (
+      battleResult !== null ||
+      (stats.game_state !== GameState.PREP &&
+        stats.game_state !== GameState.BATTLE)
+    )
+      return "這一場已經結束，不能移動。";
+    if (stats.game_state !== GameState.PREP)
+      return "只有備戰時可以移動（戰鬥中不能移動）。";
+    if (stats.paused) return "暫停中不能移動。";
+    if (
+      kind === "hero" &&
+      !(
+        battleOwner &&
+        isCurrentAccount(
+          battleOwner,
+          currentAccountOf(useJsPlayerStore.getState())
+        )
+      )
+    )
+      return MOVE_HERO_BLOCKED_TEXT;
+    return null;
+  };
   const resultSettleView =
     mode === "shared" &&
     battleResult &&
@@ -931,7 +1244,9 @@ const ShenmaSanguoJsPage: React.FC = () => {
               onUpgrade={handleUpgradeTower}
               onSell={handleSellTower}
               onTargetModeChange={handleTargetModeChange}
-              onClose={() => setUpgradeTower(null)}
+              onClose={() => handleUnitPanelClose("tower", panelSnap)}
+              onMove={() => handleMoveStart("tower", panelSnap)}
+              moveBlockedReason={moveBlockedReasonFor("tower")}
             />
           )}
 
@@ -940,7 +1255,9 @@ const ShenmaSanguoJsPage: React.FC = () => {
             <HeroInfoModal
               show={heroInfo !== null}
               hero={heroInfo}
-              onClose={() => setHeroInfo(null)}
+              onClose={() => handleUnitPanelClose("hero", panelSnap)}
+              onMove={() => handleMoveStart("hero", panelSnap)}
+              moveBlockedReason={moveBlockedReasonFor("hero")}
             />
           )}
         </div>
@@ -1105,6 +1422,30 @@ const ShenmaSanguoJsPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* 移位面板（在畫布下方，不蓋住格子）：點畫布上的合法格或用鍵盤選目的格 */}
+      {moveState && (
+        <MoveUnitPanel
+          key={moveState.moveId}
+          show
+          name={moveState.name}
+          kindLabel={moveState.kind === "hero" ? "武將" : "防禦塔"}
+          targets={moveState.targets}
+          onPreview={(col, row) =>
+            handleMovePreview(moveState.moveId, col, row)
+          }
+          onConfirm={(col, row) => commitMoveTo(moveState.moveId, col, row)}
+          onCancel={() => handleMoveCancel(moveState.moveId)}
+        />
+      )}
+      {!moveState && moveNotice && (
+        <div
+          className="small text-warning bg-dark bg-opacity-75 px-2 py-1"
+          data-testid="move-notice"
+        >
+          {moveNotice}
+        </div>
+      )}
 
       {/* 共用帳號的說明：不能出征的原因與存檔的狀態（唯讀、衝突、結果待確認、不支援的資料） */}
       {mode === "shared" &&

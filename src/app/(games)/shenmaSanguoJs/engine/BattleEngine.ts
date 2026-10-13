@@ -7,7 +7,7 @@
  * 4. 產出解耦 BattleSnapshot 快照交由 IBattleRenderer 渲染
  */
 
-import { GameMap, TileType } from "./GameMap";
+import { GameMap, GridCoord, TileType } from "./GameMap";
 import {
   BattleManager,
   GameState,
@@ -99,6 +99,76 @@ export type TeamSyncResult =
   | { ok: true; updated: readonly string[]; removed: readonly string[] }
   | { ok: false; reason: "stale_battle" | "not_active" | "bad_team" };
 
+/** 移位的單位種類 */
+export type MoveUnitKind = "hero" | "tower";
+
+/** 移位不接受的原因（不接受時什麼都沒改） */
+export type MoveRejectReason =
+  | "stale_battle"
+  | "not_prep"
+  | "paused"
+  | "not_found"
+  | "source_changed"
+  | "stale_move"
+  | "invalid_cell"
+  | "same_cell"
+  | "occupied"
+  | "invalid_terrain";
+
+/** 開始移位的結果：成功時是這次移動的編號與顯示用的資料（單位實例只留在引擎內部） */
+export type MoveBeginResult =
+  | {
+      ok: true;
+      moveId: number;
+      battleId: string;
+      kind: MoveUnitKind;
+      name: string;
+      from: GridCoord;
+    }
+  | { ok: false; reason: MoveRejectReason };
+
+/** 提交移位的結果 */
+export type MoveCommitResult =
+  | {
+      ok: true;
+      moveId: number;
+      battleId: string;
+      from: GridCoord;
+      to: GridCoord;
+    }
+  | { ok: false; reason: MoveRejectReason };
+
+/** 一個合法的目的格（道路或建築位） */
+export interface MoveTarget {
+  col: number;
+  row: number;
+  terrain: "road" | "build";
+}
+
+/** 移位結束：moved 已移動；cancelled 取消；invalidated 階段、暫停、場次或單位變了而失效 */
+export interface MoveEndedInfo {
+  moveId: number;
+  battleId: string;
+  reason: "moved" | "cancelled" | "invalidated";
+}
+
+/** 移位模式中畫布被點的格子（由頁面決定要不要提交） */
+export interface MoveCellPick {
+  moveId: number;
+  battleId: string;
+  col: number;
+  row: number;
+}
+
+/** 引擎內部的移位上下文（不輸出：單位實例不離開引擎） */
+interface MoveContext {
+  moveId: number;
+  battleId: string;
+  kind: MoveUnitKind;
+  unit: HeroEntity | TowerEntity;
+  from: Readonly<GridCoord>;
+}
+
 export interface StagePayload {
   stageId: string;
   battleId: string;
@@ -167,6 +237,17 @@ export class BattleEngine {
   public onBattleEnded?: (result: BattleResultData) => void;
   public onWaveRejected?: (wave: number, reason: string) => void;
   public onCellClicked?: (col: number, row: number) => void;
+  /** 移位結束（移動、取消或失效） */
+  public onMoveEnded?: (info: MoveEndedInfo) => void;
+  /** 移位模式中點了畫布的某一格（不在引擎裡直接提交，交給頁面核對帳號後再提交） */
+  public onMoveCellPicked?: (pick: MoveCellPick) => void;
+
+  /**
+   * 進行中的移位（只在引擎內部）：開始時固定這一場、遞增的編號、確切的單位實例與來源格的凍結複本。
+   * 預覽與提交都對這份上下文全部重核；同一位武將重派、同 UID 的塔重建或舊面板都不會解析成這個單位
+   */
+  private moveCtx: MoveContext | null = null;
+  private moveSeq = 0;
 
   constructor(renderer?: IBattleRenderer) {
     this.gameMap = new GameMap();
@@ -249,6 +330,8 @@ export class BattleEngine {
    * 載入關卡資料與波次
    */
   public loadStage(payload: StagePayload): void {
+    // 換成新的一場：上一場還沒結束的移位失效（新的一場沒有任何移位）
+    this.endMove("invalidated");
     this.heroes = [];
     this.towers = [];
     this.visualFxs = [];
@@ -298,6 +381,8 @@ export class BattleEngine {
    */
   private gameLoop = (timestamp: number): void => {
     if (this.isDestroyed) return;
+    // 移位只在這一場的備戰、沒有暫停時有效：階段、暫停、場次或單位變了就清掉預覽
+    this.refreshMoveState();
 
     let delta = (timestamp - this.lastTimestamp) / 1000.0;
     this.lastTimestamp = timestamp;
@@ -537,6 +622,22 @@ export class BattleEngine {
       const clientY = e.clientY - rect.top;
 
       const grid = this.gameMap.worldToGrid(clientX, clientY);
+      // 移位模式：高亮只顯示這次移動的合法格，虛影跟著指標
+      if (this.moveCtx) {
+        this.highlightCell = this.gameMap.isValidCell(grid.col, grid.row)
+          ? {
+              col: grid.col,
+              row: grid.row,
+              valid:
+                this.moveRejectReason(this.moveCtx, grid.col, grid.row) ===
+                null,
+            }
+          : null;
+        if (this.dragGhost) {
+          this.dragGhost = { ...this.dragGhost, x: clientX, y: clientY };
+        }
+        return;
+      }
       if (this.gameMap.isValidCell(grid.col, grid.row)) {
         const canBuild = this.gameMap.canPlaceTower(grid.col, grid.row);
         const canHero = this.gameMap.canPlaceHero(grid.col, grid.row);
@@ -567,6 +668,16 @@ export class BattleEngine {
    */
   public handleCellClick(worldX: number, worldY: number): void {
     const grid = this.gameMap.worldToGrid(worldX, worldY);
+    // 移位模式：點擊只當作選目的格，交給頁面（核對帳號後才提交或取消）；不改選取、不開部署選單或單位面板
+    if (this.moveCtx) {
+      this.onMoveCellPicked?.({
+        moveId: this.moveCtx.moveId,
+        battleId: this.moveCtx.battleId,
+        col: grid.col,
+        row: grid.row,
+      });
+      return;
+    }
     if (!this.gameMap.isValidCell(grid.col, grid.row)) {
       this.selectedUnit = null;
       return;
@@ -953,11 +1064,248 @@ export class BattleEngine {
     }
   }
 
+  // ═══ 移位（和 Godot 版 Main._place_unit 相同：只在備戰、沒有暫停時；釋放舊格 → reposition → 佔用新格；不花費、不重建實例） ═══
+
+  /** 這個單位還在這一場的場上（武將活著、塔沒拆） */
+  private moveUnitPresent(
+    kind: MoveUnitKind,
+    unit: HeroEntity | TowerEntity
+  ): boolean {
+    if (kind === "hero") {
+      return (
+        unit instanceof HeroEntity && !unit.isDead && this.heroes.includes(unit)
+      );
+    }
+    return (
+      unit instanceof TowerEntity && !unit.sold && this.towers.includes(unit)
+    );
+  }
+
+  /** 開始或繼續移位的共同前提：這一場、備戰、沒有暫停、單位還在、來源格與開始時相同而且原格的占用者是它自己 */
+  private moveBaseRejectReason(
+    battleId: string,
+    kind: MoveUnitKind,
+    unit: HeroEntity | TowerEntity,
+    from: Readonly<GridCoord>
+  ): MoveRejectReason | null {
+    const bm = this.battleManager;
+    if (battleId !== bm.battleId) return "stale_battle";
+    if (bm.gameState !== GameState.PREP) return "not_prep";
+    if (bm.manualPaused) return "paused";
+    if (!this.moveUnitPresent(kind, unit)) return "not_found";
+    if (
+      unit.gridCell.col !== from.col ||
+      unit.gridCell.row !== from.row ||
+      this.gameMap.getOccupant(from.col, from.row) !== unit
+    ) {
+      return "source_changed";
+    }
+    return null;
+  }
+
+  /** 目的格能不能放（目的格要是有限整數、有效、不是原格、沒被占用；武將放道路或建築位，塔只放建築位）；字串不轉成座標 */
+  private moveRejectReason(
+    ctx: MoveContext,
+    col: unknown,
+    row: unknown
+  ): MoveRejectReason | null {
+    const base = this.moveBaseRejectReason(
+      ctx.battleId,
+      ctx.kind,
+      ctx.unit,
+      ctx.from
+    );
+    if (base) return base;
+    if (
+      typeof col !== "number" ||
+      typeof row !== "number" ||
+      !Number.isInteger(col) ||
+      !Number.isInteger(row) ||
+      !this.gameMap.isValidCell(col, row)
+    ) {
+      return "invalid_cell";
+    }
+    if (col === ctx.from.col && row === ctx.from.row) return "same_cell";
+    if (this.gameMap.isOccupied(col, row)) return "occupied";
+    const tile = this.gameMap.getTileType(col, row);
+    const ok =
+      ctx.kind === "hero"
+        ? tile === TileType.ROAD || tile === TileType.BUILD
+        : tile === TileType.BUILD;
+    return ok ? null : "invalid_terrain";
+  }
+
+  /** 結束目前的移位（清掉上下文、虛影與高亮），通知頁面；沒有進行中的移位就什麼都不做 */
+  private endMove(reason: MoveEndedInfo["reason"]): void {
+    const ctx = this.moveCtx;
+    if (!ctx) return;
+    this.moveCtx = null;
+    this.dragGhost = null;
+    this.highlightCell = null;
+    this.onMoveEnded?.({ moveId: ctx.moveId, battleId: ctx.battleId, reason });
+  }
+
+  /**
+   * 開始移位：用面板打開時捕捉的這一場、單位實例與來源格（不是到按下時才用識別碼找）。
+   * 通過才建立新的移動編號（之前還沒結束的移位視為取消）、選取這個單位並顯示虛影；不通過什麼都不改
+   */
+  public beginMove(
+    battleId: string,
+    kind: MoveUnitKind,
+    unit: HeroEntity | TowerEntity,
+    from: GridCoord
+  ): MoveBeginResult {
+    const frozen = Object.freeze({ col: from.col, row: from.row });
+    const reason = this.moveBaseRejectReason(battleId, kind, unit, frozen);
+    if (reason) return { ok: false, reason };
+    this.endMove("cancelled");
+    const moveId = ++this.moveSeq;
+    this.moveCtx = { moveId, battleId, kind, unit, from: frozen };
+    const isHero = unit instanceof HeroEntity;
+    const name = isHero ? unit.heroName : (unit as TowerEntity).towerName;
+    this.selectedUnit = {
+      type: kind,
+      id: isHero ? unit.heroId : (unit as TowerEntity).towerUid,
+      col: frozen.col,
+      row: frozen.row,
+    };
+    this.highlightCell = null;
+    this.dragGhost = {
+      type: kind,
+      name,
+      x: unit.x,
+      y: unit.y,
+      color: unit.bodyColor,
+      rangePx: isHero
+        ? unit.attackRange * unit.tileSize
+        : (unit as TowerEntity).rangeTiles * unit.tileSize,
+    };
+    return { ok: true, moveId, battleId, kind, name, from: { ...frozen } };
+  }
+
+  /** 預覽某一格（鍵盤選目的格時）：只改高亮與虛影的位置；回傳這一格現在合不合法 */
+  public previewMove(moveId: number, col: number, row: number): boolean {
+    const ctx = this.moveCtx;
+    if (!ctx || ctx.moveId !== moveId) return false;
+    const valid = this.moveRejectReason(ctx, col, row) === null;
+    if (this.gameMap.isValidCell(col, row)) {
+      this.highlightCell = { col, row, valid };
+      if (this.dragGhost) {
+        const pos = this.gameMap.gridToWorld(col, row);
+        this.dragGhost = { ...this.dragGhost, x: pos.x, y: pos.y };
+      }
+    }
+    return valid;
+  }
+
+  /** 這次移動現在所有合法的目的格（給鍵盤選擇用）；移動已結束或不是這個編號時是空的 */
+  public listMoveTargets(moveId: number): MoveTarget[] {
+    const ctx = this.moveCtx;
+    if (!ctx || ctx.moveId !== moveId) return [];
+    const out: MoveTarget[] = [];
+    for (let row = 0; row < this.gameMap.rows; row++) {
+      for (let col = 0; col < this.gameMap.cols; col++) {
+        if (this.moveRejectReason(ctx, col, row) !== null) continue;
+        out.push({
+          col,
+          row,
+          terrain:
+            this.gameMap.getTileType(col, row) === TileType.ROAD
+              ? "road"
+              : "build",
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 提交移位：先全部驗證（這個編號、這一場、備戰、沒有暫停、原單位還在、來源格沒變、目的格合法），不通過什麼都不改。
+   * 通過後依序：釋放原格 → 撤除移動者相關的光環來源（自己發出的、別的武將加在它身上的）→ reposition → 佔用新格 → 更新選取；
+   * 不花金幣、不改等級／數值／生命／冷卻／首擊紀錄／塔的投入與返還。提交一次就結束這個編號，不能再移第二次
+   */
+  public commitMove(
+    moveId: number,
+    col: unknown,
+    row: unknown
+  ): MoveCommitResult {
+    const ctx = this.moveCtx;
+    if (!ctx || ctx.moveId !== moveId)
+      return { ok: false, reason: "stale_move" };
+    const reason = this.moveRejectReason(ctx, col, row);
+    if (reason) return { ok: false, reason };
+    const to = { col: col as number, row: row as number };
+    const from = { col: ctx.from.col, row: ctx.from.row };
+    const worldPos = this.gameMap.gridToWorld(to.col, to.row);
+    this.gameMap.clearOccupied(from.col, from.row);
+    if (ctx.unit instanceof HeroEntity) {
+      const hero = ctx.unit;
+      hero.releaseAllAuras();
+      for (const other of this.heroes) {
+        if (other !== hero) other.releaseAurasOn(hero);
+      }
+      hero.reposition(
+        to,
+        worldPos,
+        this.gameMap.getTileType(to.col, to.row) === TileType.ROAD
+      );
+    } else {
+      ctx.unit.reposition(to, worldPos);
+    }
+    this.gameMap.setOccupied(to.col, to.row, ctx.unit);
+    const sel = this.selectedUnit;
+    if (
+      sel &&
+      sel.type === ctx.kind &&
+      sel.col === from.col &&
+      sel.row === from.row
+    ) {
+      this.selectedUnit = { ...sel, col: to.col, row: to.row };
+    }
+    this.endMove("moved");
+    return { ok: true, moveId, battleId: ctx.battleId, from, to };
+  }
+
+  /** 取消移位：只取消這個編號的移動（舊的取消不影響新的移動）；回傳有沒有取消 */
+  public cancelMove(moveId: number): boolean {
+    if (!this.moveCtx || this.moveCtx.moveId !== moveId) return false;
+    this.endMove("cancelled");
+    return true;
+  }
+
+  /** 目前進行中的移位（唯讀：編號、場次、種類與來源格；不給單位實例） */
+  public getMoveState(): {
+    moveId: number;
+    battleId: string;
+    kind: MoveUnitKind;
+    from: GridCoord;
+  } | null {
+    const ctx = this.moveCtx;
+    return ctx
+      ? {
+          moveId: ctx.moveId,
+          battleId: ctx.battleId,
+          kind: ctx.kind,
+          from: { ...ctx.from },
+        }
+      : null;
+  }
+
+  /** 每幀檢查進行中的移位還有效：階段、暫停、場次、單位或來源格變了就失效（清掉預覽並通知） */
+  public refreshMoveState(): void {
+    const ctx = this.moveCtx;
+    if (!ctx) return;
+    if (this.moveBaseRejectReason(ctx.battleId, ctx.kind, ctx.unit, ctx.from)) {
+      this.endMove("invalidated");
+    }
+  }
+
   /**
    * 銷毀引擎與資源釋放
    */
   public destroy(): void {
     this.isDestroyed = true;
+    this.moveCtx = null;
     if (this.animFrameId !== null) {
       cancelAnimationFrame(this.animFrameId);
       this.animFrameId = null;
