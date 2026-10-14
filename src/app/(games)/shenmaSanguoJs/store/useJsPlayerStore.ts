@@ -245,11 +245,12 @@ interface JsPlayerStoreState {
   heroCostOf: (heroId: string) => number | null;
 
   // 戰鬥結算與進度推進
-  /** 訪客的本機結算（共用帳號用 armSharedSettle／settleSharedBattle） */
+  /** 訪客的本機結算（共用帳號用 armSharedSettle／settleSharedBattle）；starsEarned 是這一場引擎凍結的星數（0～3 的整數才採用，省略時照城防比例） */
   settleBattle: (
     stageId: string,
     baseHp: number,
-    maxHp: number
+    maxHp: number,
+    starsEarned?: number
   ) => BattleRewardResult;
   /** 共用帳號：第一次進入戰鬥時固定這一場；不符合寫入條件時回 false，sortieNote 說明原因 */
   armSharedSettle: (sortie: SharedSortie) => boolean;
@@ -895,13 +896,22 @@ export const useJsPlayerStore = create<JsPlayerStoreState>((set, get) => {
   function guestSettle(
     stageId: string,
     baseHp: number,
-    maxHp: number
+    maxHp: number,
+    starsEarned?: number
   ): BattleRewardResult {
     const player = get().player as PlayerState;
     const hpRatio = baseHp / maxHp;
     let stars = 1;
     if (hpRatio >= 1.0) stars = 3;
     else if (hpRatio >= 0.5) stars = 2;
+    // 有這一場引擎凍結的星數（0～3 的整數，0 也算）就用它；沒給或不合法時照上面的城防比例
+    if (
+      typeof starsEarned === "number" &&
+      Number.isInteger(starsEarned) &&
+      starsEarned >= 0 &&
+      starsEarned <= 3
+    )
+      stars = starsEarned;
     const stageNum = stageToNum(stageId);
     const chapter = Math.floor(stageNum / 100) || 1;
     const stageIdx = stageNum % 100 || 1;
@@ -1492,7 +1502,8 @@ export const useJsPlayerStore = create<JsPlayerStoreState>((set, get) => {
     settleBattle: (
       stageId: string,
       baseHp: number,
-      maxHp: number
+      maxHp: number,
+      starsEarned?: number
     ): BattleRewardResult => {
       const s = get();
       if (!s.player)
@@ -1503,7 +1514,8 @@ export const useJsPlayerStore = create<JsPlayerStoreState>((set, get) => {
           leveledUp: false,
           newLevel: 1,
         };
-      if (s.mode === "guest") return guestSettle(stageId, baseHp, maxHp);
+      if (s.mode === "guest")
+        return guestSettle(stageId, baseHp, maxHp, starsEarned);
       // 星數只是這場戰鬥的顯示（JS 版原本的算法）；沒有寫入、沒有獎勵、沒有解鎖
       const hpRatio = baseHp / maxHp;
       const stars = hpRatio >= 1.0 ? 3 : hpRatio >= 0.5 ? 2 : 1;

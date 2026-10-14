@@ -16288,6 +16288,256 @@ module.exports = async function profileContractWeb(page) {
     }
   );
 
+  // ═══ 40. 訪客的本機結算星數：用這一場引擎凍結的星數（和 Godot、共用帳號同一個來源） ═══
+  // 一般 UI：選訪客、進戰場、重新挑戰、鍵盤按鈕。「受控」：用 endWith 直接把引擎這一場的城防設成指定值再 endBattle
+  // （不送同步，畫面的城防仍是舊值，正好重現「畫面晚一拍」），不是自然通關。
+  // 寫入分類：訪客只寫本機 localStorage（允許）；網路寫入必須 0；共用帳號的對照只寫 strict mock 的 save_result
+  const STARS40 = (n) => "★".repeat(n) + "☆".repeat(3 - n);
+  const cleared40 = (p) =>
+    p.evaluate(() => {
+      const g = JSON.parse(
+        localStorage.getItem("shenma_js_guest_state") || "null"
+      );
+      return g ? { cleared: g.cleared_stages, max: g.max_stage } : null;
+    });
+  /** 等結算畫面出現，回傳星星那一段與整張卡片的文字 */
+  async function result40(p) {
+    await until(
+      async () => (await p.locator('[data-testid="result-card"]').count()) > 0,
+      10000
+    );
+    await sleep(500);
+    const card = (await text(p, '[data-testid="result-card"]')) || "";
+    const m = card.match(/[★☆]{3}/);
+    return { stars: m ? m[0] : null, card };
+  }
+  const GUEST40 = () =>
+    guestStorage([MA35], [{ slot: 0, hero_id: "hero_ma_chao" }]);
+  /** 一般 UI 按結算畫面的「重新挑戰」，等新的一場出現「進入戰場」 */
+  async function retry40(p, keyboard = false) {
+    const old = await bm(p, "battleId");
+    const btn = p.locator('[data-testid="result-card"] button', {
+      hasText: "重新挑戰",
+    });
+    if (keyboard) await pressEnter(p, btn);
+    else await btn.first().click();
+    return until(
+      async () =>
+        (await bm(p, "battleId")) !== old &&
+        (await p.locator('[data-testid="enter-battle"]').count()) > 0,
+      10000
+    );
+  }
+
+  await scenario(
+    "訪客星數：1280 訪客一般 UI 進戰場，受控把引擎城防設成 19 再勝利（畫面的城防仍是 20）：結算三顆星、本機紀錄 3；重新整理後讀回同值",
+    async (mk) => {
+      const E = await mk({ maps: MAPS, enemies: ENEMIES });
+      const p = await E.page({ storage: GUEST40() });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      check("一般 UI 按「進入戰場」開戰", await startBattle(p));
+      check(
+        "受控：城防設成 19 後勝利",
+        (await endWith(p, { baseHp: 19 })) === "ok"
+      );
+      const r = await result40(p);
+      const c = await cleared40(p);
+      check(
+        "結算畫面三顆星（★★★）、本機紀錄 chapter1_1＝3、解鎖第二關",
+        r.stars === STARS40(3) &&
+          sameJson(c.cleared, { chapter1_1: 3 }) &&
+          c.max === "chapter1_2",
+        { r, c }
+      );
+      check(
+        "沒有任何網路寫入",
+        E.gas.writes().length === 0,
+        E.gas.writes().map((w) => w.action)
+      );
+      await p.reload();
+      check("重新整理後以訪客進入", await enterGuest(p));
+      const c2 = await cleared40(p);
+      check(
+        "重新整理後讀回同一份本機紀錄（chapter1_1＝3、進度第二關）",
+        sameJson(c2.cleared, { chapter1_1: 3 }) && c2.max === "chapter1_2",
+        c2
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "訪客星數：390×600 依序城防 9／10／17／18 勝利（「重新挑戰」用一般 UI）：結算 1／2／2／3 星、本機紀錄取最高；之後城防 9 再勝顯示 1 星、紀錄仍 3",
+    async (mk) => {
+      const E = await mk({
+        viewport: { width: 390, height: 600 },
+        maps: MAPS,
+        enemies: ENEMIES,
+      });
+      const p = await E.page({ storage: GUEST40() });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const got = [];
+      for (const [i, hp] of [9, 10, 17, 18, 9].entries()) {
+        if (i > 0) got.push({ retry: await retry40(p) });
+        const started = await startBattle(p);
+        await endWith(p, { baseHp: hp });
+        const r = await result40(p);
+        const c = await cleared40(p);
+        got.push({
+          hp,
+          started,
+          stars: r.stars,
+          cleared: c.cleared.chapter1_1,
+        });
+      }
+      const rows = got.filter((g) => g.hp !== undefined);
+      check(
+        "每一場：一般 UI 重新挑戰並開戰；結算星星依序 ★☆☆／★★☆／★★☆／★★★／★☆☆，本機紀錄依序 1／2／2／3／3",
+        got.filter((g) => g.retry !== undefined).every((g) => g.retry) &&
+          rows.every((g) => g.started) &&
+          sameJson(
+            rows.map((g) => g.stars),
+            [STARS40(1), STARS40(2), STARS40(2), STARS40(3), STARS40(1)]
+          ) &&
+          sameJson(
+            rows.map((g) => g.cleared),
+            [1, 2, 2, 3, 3]
+          ),
+        got
+      );
+      check(
+        "沒有任何網路寫入",
+        E.gas.writes().length === 0,
+        E.gas.writes().map((w) => w.action)
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "訪客星數：360×600 鍵盤：落敗（城防 0）不寫本機紀錄；鍵盤按「重新挑戰」「進入戰場」後城防 18 勝利 → 三顆星、紀錄 3",
+    async (mk) => {
+      const E = await mk({
+        viewport: { width: 360, height: 600 },
+        maps: MAPS,
+        enemies: ENEMIES,
+      });
+      const p = await E.page({ storage: GUEST40() });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const c0 = await cleared40(p);
+      await pressEnter(p, p.locator('[data-testid="enter-battle"]'));
+      check(
+        "鍵盤在「進入戰場」按 Enter 開戰",
+        !!(await until(async () => (await bm(p, "state")) === 2, 5000))
+      );
+      await endWith(p, { win: false, baseHp: 0 });
+      const r1 = await result40(p);
+      const c1 = await cleared40(p);
+      check(
+        "受控落敗（城防 0）：結算 ☆☆☆、本機紀錄與進度不變",
+        r1.stars === STARS40(0) && sameJson(c1, c0),
+        { r1, c0, c1 }
+      );
+      check("鍵盤在「重新挑戰」按 Enter，出現新的一場", await retry40(p, true));
+      await pressEnter(p, p.locator('[data-testid="enter-battle"]'));
+      check(
+        "鍵盤在「進入戰場」按 Enter 開戰（新的一場）",
+        !!(await until(async () => (await bm(p, "state")) === 2, 5000))
+      );
+      await endWith(p, { baseHp: 18 });
+      const r2 = await result40(p);
+      const c2 = await cleared40(p);
+      check(
+        "受控以城防 18 勝利：結算 ★★★、本機紀錄 chapter1_1＝3",
+        r2.stars === STARS40(3) && sameJson(c2.cleared, { chapter1_1: 3 }),
+        { r2, c2 }
+      );
+      check(
+        "沒有任何網路寫入",
+        E.gas.writes().length === 0,
+        E.gas.writes().map((w) => w.action)
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "訪客星數：1280 訪客戰鬥中一般 UI 登出、再選回訪客（新的世代），受控以城防 19 結束舊場：說明沒有寫入本機進度，紀錄不變",
+    async (mk) => {
+      const E = await mk({ maps: MAPS, enemies: ENEMIES });
+      const p = await E.page({ storage: GUEST40() });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      check("一般 UI 按「進入戰場」開戰", await startBattle(p));
+      const c0 = await cleared40(p);
+      check("戰鬥中一般 UI 登出", await logout35(p));
+      await p.locator('[data-testid="key-setup-guest"]').click();
+      check("在金鑰視窗選回訪客", await enterGuest(p));
+      await sleep(1000);
+      check(
+        "受控：城防設成 19 後結束舊場",
+        (await endWith(p, { baseHp: 19 })) === "ok"
+      );
+      await sleep(1000);
+      const r = await resultOf36(p);
+      const c1 = await cleared40(p);
+      check(
+        "舊場的結算說明沒有寫入本機進度；本機紀錄與進度不變",
+        r.notSaved === NOTSAVED36 && sameJson(c1, c0),
+        { r, c0, c1 }
+      );
+      check(
+        "沒有任何網路寫入",
+        E.gas.writes().length === 0,
+        E.gas.writes().map((w) => w.action)
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "訪客星數（對照）：共用帳號受控以城防 19 勝利 → 送出的 save_result 是引擎凍結的 3 星（strict mock），和訪客同一個來源",
+    async (mk) => {
+      const KEY = "k_s40_sh";
+      const E = await mk({
+        maps: MAPS,
+        enemies: ENEMIES,
+        seed: [
+          {
+            key: KEY,
+            data: NEW({ team: [{ hero_id: "ma_chao", slot: 1 }] }),
+            rev: 2,
+          },
+        ],
+      });
+      const p = await E.page({ storage: { shenma_player_key: KEY } });
+      check("讀到共用存檔", (await loadShared(p)) === "player");
+      await closeModal(p);
+      await waitRemoteStage(p, E);
+      check("一般 UI 按「進入戰場」開戰", await startBattle(p));
+      check(
+        "受控：城防設成 19 後勝利",
+        (await endWith(p, { baseHp: 19 })) === "ok"
+      );
+      const sent = await until(
+        () => E.gas.log.some((e) => e.action === "save_result"),
+        10000
+      );
+      const pay = E.gas.log.find((e) => e.action === "save_result");
+      check(
+        "save_result 只送一次、stars_earned＝3（引擎凍結的星數）",
+        !!sent &&
+          E.gas.log.filter((e) => e.action === "save_result").length === 1 &&
+          pay.payload.stars_earned === 3,
+        pay && pay.payload
+      );
+      return E;
+    }
+  );
+
   // ═══ 18. 入口版面：1280 桌面、390×600、390×844 ═══
   for (const vp of [
     { width: 1280, height: 800 },

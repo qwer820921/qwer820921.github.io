@@ -814,7 +814,8 @@ const ShenmaSanguoJsPage: React.FC = () => {
           const reward = settleBattle(
             currentStageRef.current.map_id,
             statsRef.current.hp,
-            statsRef.current.max_hp
+            statsRef.current.max_hp,
+            r.stars_earned
           );
           setBattleReward(reward);
         } else {

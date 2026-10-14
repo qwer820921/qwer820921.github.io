@@ -288,6 +288,7 @@ function runEnded({
   result = "WIN",
   battleId = "battle_1",
   ctxBattleId = "battle_1",
+  starsEarned,
 }) {
   const log = { settleBattle: [], reward: [], reason: [], result: [] };
   const deps = {
@@ -327,7 +328,11 @@ function runEnded({
     ...names,
     `${js(found.onBattleEnded[0])}\nreturn __f;`
   )(...names.map((n) => deps[n]));
-  f({ battle_id: battleId, result });
+  f(
+    starsEarned === undefined
+      ? { battle_id: battleId, result }
+      : { battle_id: battleId, result, stars_earned: starsEarned }
+  );
   return {
     log,
     sharedCalls: st.calls.settleSharedBattle,
@@ -339,12 +344,13 @@ function runEnded({
 const e1 = runEnded({
   ctxOwner: OWN("guest", "test_guest_a", 3),
   st: store("guest", "test_guest_a", 3),
+  starsEarned: 3,
 });
 check(
-  "結算回呼：訪客本人勝利 → 照舊呼叫 settleBattle 一次（關卡、城防），獎勵照舊、沒有說明",
+  "結算回呼：訪客本人勝利 → 呼叫 settleBattle 一次（關卡、城防、這場的星數），獎勵照舊、沒有說明",
   e1.log.settleBattle.length === 1 &&
     JSON.stringify(e1.log.settleBattle[0]) ===
-      JSON.stringify(["chapter1_1", 20, 20]) &&
+      JSON.stringify(["chapter1_1", 20, 20, 3]) &&
     e1.lastReward &&
     e1.lastReward.goldEarned === 200 &&
     e1.lastReason === null,
