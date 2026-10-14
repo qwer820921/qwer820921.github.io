@@ -824,6 +824,7 @@ function pressAuto(env, storeState, view = {}) {
     stats,
     statsRef: { current: stats },
     sortieBlockReason: view.sortieBlockReason ?? null,
+    stageBlockRef: { current: null },
   };
   const names = Object.keys(deps);
   const f = new Function(

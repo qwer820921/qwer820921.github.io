@@ -39,6 +39,7 @@ import {
   getNextStage,
   getStageDataProblem,
   isStageUnlocked,
+  stageDataProblemText,
 } from "../utils/stagePlayability";
 import { describePendingStage } from "../utils/sharedSettleDisplay";
 import { canvasHeroSkill } from "../utils/heroSkillBinding";
@@ -158,6 +159,52 @@ const currentAccountOf = (s: TeamSourceState): CurrentAccount => ({
   epoch: s.getAccountEpoch(),
   isLoading: s.isLoading,
 });
+
+/** 這一關的資料不完整、不能載入時的說明（關卡名稱＋既有的缺什麼說明） */
+const stageLoadRejectText = (
+  stage: StageData,
+  problem: NonNullable<ReturnType<typeof getStageDataProblem>>
+) =>
+  `「${stage.name}」${stageDataProblemText(problem)}，暫時不能出征，請改選已開放關卡。`;
+
+/**
+ * 載入這一關之前的資料檢查（沿用 getStageDataProblem，不重新定義完整）：這一份資料不完整，或後端已讀到的同一關不完整時，
+ * 回傳給玩家看的說明；完整時回傳 null。後端已知缺資料的關卡不改用同一個 ID 的內建代用資料載入
+ */
+const stageLoadProblemOf = (stage: StageData): string | null => {
+  const own = getStageDataProblem(stage);
+  if (own) return stageLoadRejectText(stage, own);
+  const remote = StageDataManager.getInstance().getStages();
+  if (remote === BUILTIN_STAGES) return null;
+  const backend = remote.find((s) => s.map_id === stage.map_id);
+  const problem =
+    backend && backend !== stage ? getStageDataProblem(backend) : null;
+  return backend && problem ? stageLoadRejectText(backend, problem) : null;
+};
+
+/** 這一關要載入的資料：manager 已有同 ID 就用那一份（能不能載入仍由 loadBattle 核對）；沒有同 ID 就沿用傳入的 */
+const latestStageOf = (stage: StageData): StageData => {
+  const remote = StageDataManager.getInstance().getStages();
+  if (remote === BUILTIN_STAGES) return stage;
+  return remote.find((s) => s.map_id === stage.map_id) ?? stage;
+};
+
+/** 開波被拒的說明（不顯示引擎的內部原因碼）：這一波的資料有問題，或其他原因 */
+const WAVE_CONFIG_REASONS = new Set([
+  "wave_missing",
+  "wave_empty",
+  "enemy_not_found",
+  "path_empty",
+  "flight_single_point",
+  "flight_same_endpoints",
+  "ground_single_point",
+  "ground_zero_length",
+  "count_invalid",
+]);
+const waveRejectText = (reason: unknown): string =>
+  typeof reason === "string" && WAVE_CONFIG_REASONS.has(reason)
+    ? "這一波的敵軍配置尚未完成，暫時無法開始，請改選已開放關卡。"
+    : "這一波暫時無法開始，請改選其他關卡或稍後再試。";
 
 /** 換帳號後的舊場不能移動武將（塔不受帳號影響） */
 const MOVE_HERO_BLOCKED_TEXT = "這一場是換帳號前的出征，不能移動武將。";
@@ -428,11 +475,23 @@ const ShenmaSanguoJsPage: React.FC = () => {
   } | null>(null);
   const battleSeqRef = useRef(0);
   const [settleRetryMsg, setSettleRetryMsg] = useState<string | null>(null);
+  // 關卡載入或開波被拒的說明（純文字）：成功載入新的一場才清掉
+  const [stageLoadNotice, setStageLoadNotice] = useState<string | null>(null);
+  // 這一場的資料阻擋：還沒開打的第 0 波（暫停中也算）收到後端同一關缺資料時記下（只屬於這個 battleId）；
+  // 開戰與新開自動都先核它，成功載入完整的一場才清掉
+  const stageBlockRef = useRef<{
+    battleId: string;
+    stageId: string;
+    reason: string;
+  } | null>(null);
+  const [stageBlock, setStageBlock] =
+    useState<typeof stageBlockRef.current>(null);
 
   /**
    * 載入一場（初始、遠端設定就緒、換關、換帳號時的第 0 波備戰、下一關、重新挑戰都經過這裡）：產生新的 battleId、
    * 記下這場是否用後端設定與是否為自由演練，以及出征隊伍與它的來源（同一份快照），放下上一場還沒結束的固定。
-   * 來源不是 store 目前的帳號（見 teamSourceUsable）就不載入、回傳 false：battleId、這一場、場上、名單、選單與固定都不動
+   * 來源不是 store 目前的帳號（見 teamSourceUsable）就不載入、回傳 false：battleId、這一場、場上、名單、選單與固定都不動。
+   * 關卡資料不完整（見 stageLoadProblemOf）同樣在任何副作用之前拒絕：只顯示原因並打開關卡選擇
    */
   const loadBattle = useCallback(
     (stage: StageData, team: TeamSource, builtin = false): boolean => {
@@ -447,6 +506,12 @@ const ShenmaSanguoJsPage: React.FC = () => {
         )
       )
         return false;
+      const rejected = stageLoadProblemOf(stage);
+      if (rejected) {
+        setStageLoadNotice(rejected);
+        setIsStageSelectorOpen(true);
+        return false;
+      }
       const mgr = StageDataManager.getInstance();
       const battleId = `battle_${Date.now()}_${++battleSeqRef.current}`;
       const st = useJsPlayerStore.getState();
@@ -480,11 +545,26 @@ const ShenmaSanguoJsPage: React.FC = () => {
           : mgr.getEnemiesConfig(),
         playerHeroes,
       });
+      // 這一場的開波被拒說明：只接這個 bridge 與這一場（換場時換成新一場的；舊的、結算後的回呼不改畫面）
+      bridge.onWaveRejected = (wave, reason) => {
+        if (bridgeRef.current !== bridge) return;
+        if (battleCtxRef.current?.battleId !== battleId) return;
+        const now = bridge.getStageLoadState();
+        if (now.battleId !== battleId) return;
+        if (now.phase !== GameState.PREP && now.phase !== GameState.BATTLE)
+          return;
+        if (wave !== now.wave + 1) return;
+        setStageLoadNotice(waveRejectText(reason));
+      };
       // 換成新的一場（場上沒有武將）：部署選單的「已在場上」名單與還開著的部署選單（指向上一場的格子）一起清掉
       setPlacedHeroIds([]);
       setPlacementMenu(null);
       placementMenuRef.current = null;
       setBattleOwner(team.owner);
+      // 成功載入完整的一場：清掉被拒的說明與資料阻擋
+      stageBlockRef.current = null;
+      setStageBlock(null);
+      setStageLoadNotice(null);
       return true;
     },
     []
@@ -502,20 +582,23 @@ const ShenmaSanguoJsPage: React.FC = () => {
     activeTeamRef.current = activeTeam;
   }, [activeTeam]);
 
-  // 載入關卡（由關卡選擇視窗、結算下一關或重新挑戰觸發）。出征隊伍的來源不是目前的帳號時不載入、什麼都不清（回傳 false）
+  // 載入關卡（由關卡選擇視窗、結算下一關或重新挑戰觸發）。出征隊伍的來源不是目前的帳號時不載入、什麼都不清（回傳 false）；
+  // 來源可用但關卡資料不完整時只說明原因並打開關卡選擇（不清場）
   const loadStageData = useCallback(
     (stage: StageData): boolean => {
-      if (getStageDataProblem(stage)) {
-        console.warn("[ShenmaSanguoJs] 嘗試載入未開放關卡:", stage.map_id);
-        setIsStageSelectorOpen(true);
-        return false;
-      }
       const team = activeTeamRef.current;
       if (
         !bridgeRef.current ||
         !teamSourceUsable(team.owner, useJsPlayerStore.getState(), false)
       )
         return false;
+      const rejected = stageLoadProblemOf(stage);
+      if (rejected) {
+        console.warn("[ShenmaSanguoJs] 嘗試載入未開放關卡:", stage.map_id);
+        setStageLoadNotice(rejected);
+        setIsStageSelectorOpen(true);
+        return false;
+      }
 
       setCurrentStage(stage);
       currentStageRef.current = stage;
@@ -762,24 +845,51 @@ const ShenmaSanguoJsPage: React.FC = () => {
     // 非同步讀取完整地圖庫清單以供關卡選擇
     const stageMgr = StageDataManager.getInstance();
     void stageMgr.loadAllStages().then((res) => {
+      // 晚到的結果：這個 bridge 已卸載或換成新的，就不改畫面
+      if (bridgeRef.current !== bridge) return;
       if (res.stages && res.stages.length > 0) {
         setAllStages(res.stages);
         const match = res.stages.find(
           (s) => s.map_id === currentStageRef.current.map_id
         );
         if (match) {
-          setCurrentStage(match);
-          // 遠端設定就緒：還沒開打時改用後端的資料重新載入這一關（新的 battleId）
-          const cur = statsRef.current;
-          if (
-            bridgeRef.current === bridge &&
-            cur.game_state === GameState.PREP &&
-            cur.wave === 0 &&
-            !cur.paused
-          ) {
-            currentStageRef.current = match;
-            loadBattle(match, activeTeamRef.current);
+          // 用 Bridge 當下的實際狀態判斷（畫面的 stats 可能晚一拍）：
+          // 仍是這一場這一關、還沒開打的第 0 波備戰（暫停中也算）
+          const now = bridge.getStageLoadState();
+          const ctx = battleCtxRef.current;
+          const pending =
+            !!ctx &&
+            ctx.battleId === now.battleId &&
+            ctx.stageId === match.map_id &&
+            now.phase === GameState.PREP &&
+            now.wave === 0;
+          const rejected = stageLoadProblemOf(match);
+          if (rejected) {
+            // 後端的這一關缺資料：不換成壞資料、不重新載入、不清場、不改暫停。還沒開打的這一場記下阻擋（開戰與新開自動都擋），
+            // 說明原因並打開關卡選擇；戰鬥中、清波後或結算後不動這一場
+            if (pending) {
+              const block = {
+                battleId: now.battleId,
+                stageId: match.map_id,
+                reason: rejected,
+              };
+              stageBlockRef.current = block;
+              setStageBlock(block);
+              setStageLoadNotice(rejected);
+              setIsStageSelectorOpen(true);
+            }
+            return;
           }
+          // 遠端設定就緒：還沒開打、沒有暫停時改用後端的資料重新載入這一關（新的 battleId）；
+          // 載入成功才換成這一關（來源不是目前的帳號而沒有載入時，目前的關卡與這一場都不動）
+          if (pending && !now.paused) {
+            if (loadBattle(match, activeTeamRef.current)) {
+              setCurrentStage(match);
+              currentStageRef.current = match;
+            }
+            return;
+          }
+          setCurrentStage(match);
         }
       }
     });
@@ -789,6 +899,7 @@ const ShenmaSanguoJsPage: React.FC = () => {
         delete (window as unknown as { __testBridge?: LocalGameBridge })
           .__testBridge;
       }
+      bridge.onWaveRejected = undefined;
       bridge.destroy();
       bridgeRef.current = null;
       // 這個 bridge 的場次跟著結束：之後新建的 bridge 還沒有任何一場（首次內建展示照常判斷）
@@ -822,12 +933,17 @@ const ShenmaSanguoJsPage: React.FC = () => {
   //   同一份隊伍不重複同步，不被接受時不記成已同步
   // - 來源不同（換了帳號或帳號世代）：只在這一場還沒開打（第 0 波備戰）時照原本的流程用新的來源重新載入一場
   //   （loadBattle 同樣先核來源）；清完一波回到備戰或戰鬥中不動（換帳號後舊戰場的處理另案）
+  // 載入第一場與來源不同的重新載入都用 manager 已讀到的同一關（latestStageOf），載入成功才換成這一關
   useEffect(() => {
     const bridge = bridgeRef.current;
     const ctx = battleCtxRef.current;
     if (!bridge) return;
     if (!ctx) {
-      loadBattle(currentStageRef.current, activeTeam);
+      const target = latestStageOf(currentStageRef.current);
+      if (loadBattle(target, activeTeam)) {
+        setCurrentStage(target);
+        currentStageRef.current = target;
+      }
       return;
     }
     if (stats.battle_id !== ctx.battleId) return;
@@ -838,7 +954,11 @@ const ShenmaSanguoJsPage: React.FC = () => {
       return;
     if (!sameOwner(activeTeam.owner, ctx.owner)) {
       if (stats.game_state === GameState.PREP && stats.wave === 0) {
-        loadBattle(currentStageRef.current, activeTeam);
+        const target = latestStageOf(currentStageRef.current);
+        if (loadBattle(target, activeTeam)) {
+          setCurrentStage(target);
+          currentStageRef.current = target;
+        }
       }
       return;
     }
@@ -877,7 +997,12 @@ const ShenmaSanguoJsPage: React.FC = () => {
   // 控制操作（共用帳號的隊伍不支援或沒有隊伍時不能出征）
   const handleStartBattle = () => {
     if (sortieBlockReason) return;
-    bridgeRef.current?.startBattle();
+    const bridge = bridgeRef.current;
+    if (!bridge) return;
+    // 這一場已知缺資料（同一關第 0 波重新載入被拒）：不開戰
+    const block = stageBlockRef.current;
+    if (block && block.battleId === bridge.getStageLoadState().battleId) return;
+    bridge.startBattle();
   };
 
   // 自動：開或關都用當下的實際狀態（Bridge 唯讀查詢）與 store 當下的帳號判斷，不用畫面的 stats 或這次 render 的出征原因。
@@ -890,7 +1015,8 @@ const ShenmaSanguoJsPage: React.FC = () => {
     if (
       !now.auto &&
       (now.phase === GameState.PREP || now.phase === GameState.BATTLE) &&
-      sortieBlockReasonOf(useJsPlayerStore.getState()) !== null
+      (sortieBlockReasonOf(useJsPlayerStore.getState()) !== null ||
+        stageBlockRef.current?.battleId === now.battleId)
     )
       return;
     bridge.toggleAuto();
@@ -1147,11 +1273,17 @@ const ShenmaSanguoJsPage: React.FC = () => {
       : HERO_DEPLOY_BLOCKED_TEXT;
   // 「自動」按鈕：還沒開時在備戰或戰鬥中，出征原因（和「迎戰」相同的兩項）有值就停用並在 title 顯示同一句；已開時（要關）不看出征原因
   // （畫面可能晚一拍，真正按下時 handleToggleAuto 會用當下的實際狀態與 store 再核一次）
+  // 這一場的資料阻擋（只屬於畫面上的這一場）；開戰的停用原因先看出征原因，再看資料阻擋
+  const stageBlockReason =
+    stageBlock && stageBlock.battleId === stats.battle_id
+      ? stageBlock.reason
+      : null;
+  const startBlockedReason = sortieBlockReason ?? stageBlockReason;
   const autoOpenBlockedReason =
     !stats.auto_mode &&
     (stats.game_state === GameState.PREP ||
       stats.game_state === GameState.BATTLE)
-      ? sortieBlockReason
+      ? startBlockedReason
       : null;
   // 「移動」按鈕：只有這一場的備戰（第 0 波或清波後）、沒有暫停、還沒結算時可以按；武將另外要這一場的來源是目前的帳號
   // （畫面可能晚一拍，真正開始與提交時引擎與 store 會再核一次）
@@ -1202,9 +1334,9 @@ const ShenmaSanguoJsPage: React.FC = () => {
               type="button"
               className={styles.centerEnterBattleBtn}
               onClick={handleStartBattle}
-              title={sortieBlockReason ?? "開始戰鬥"}
+              title={startBlockedReason ?? "開始戰鬥"}
               aria-label="進入戰場"
-              disabled={sortieBlockReason !== null}
+              disabled={startBlockedReason !== null}
               data-testid="enter-battle"
             >
               <div className={styles.centerEnterBattleInner}>
@@ -1358,9 +1490,9 @@ const ShenmaSanguoJsPage: React.FC = () => {
             disabled={
               stats.game_state !== GameState.PREP ||
               stats.paused ||
-              sortieBlockReason !== null
+              startBlockedReason !== null
             }
-            title={sortieBlockReason ?? undefined}
+            title={startBlockedReason ?? undefined}
             data-testid="hud-start-battle"
           >
             {stats.game_state === GameState.BATTLE ? "戰鬥中" : "迎戰"}
@@ -1438,6 +1570,21 @@ const ShenmaSanguoJsPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* 關卡載入或開波被拒的原因（純文字）；窄畫面右下角是全站的聊天按鈕，內容放左側 */}
+      {stageLoadNotice && (
+        <div
+          className="small text-warning bg-dark bg-opacity-75 px-2 py-1"
+          role="alert"
+          data-testid="stage-load-notice"
+        >
+          <Row className="g-0">
+            <Col xs={9} lg={12}>
+              {stageLoadNotice}
+            </Col>
+          </Row>
+        </div>
+      )}
 
       {/* 移位面板（在畫布下方，不蓋住格子）：點畫布上的合法格或用鍵盤選目的格 */}
       {moveState && (

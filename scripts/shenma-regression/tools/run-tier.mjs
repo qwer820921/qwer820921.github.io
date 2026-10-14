@@ -159,6 +159,11 @@ const QUICK = [
     ["src/app/(games)/shenmaSanguoJs/utils/battleAccountBoundary.test.mjs"],
   ],
   [
+    "JS 版缺資料關卡的載入守門與開波被拒說明（頁面實際的載入、遠端設定與開戰入口）",
+    "node",
+    ["src/app/(games)/shenmaSanguoJs/utils/stageRejection.test.mjs"],
+  ],
+  [
     "JS 版備戰時移動武將與塔（格子占用、過期守門、光環來源與帳號來源）",
     "node",
     ["src/app/(games)/shenmaSanguoJs/utils/unitMovement.test.mjs"],

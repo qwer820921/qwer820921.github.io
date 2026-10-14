@@ -15006,6 +15006,1288 @@ module.exports = async function profileContractWeb(page) {
     }
   );
 
+  // ═══ 39. 缺資料的關卡：後端設定較晚到時目前這一關缺路線／波次就不重新載入、說明原因並打開選關，關掉選關後也不能開戰或新開自動；開波被拒的說明 ═══
+  // 關卡資料只在這裡的測試記憶體裡做（fixture 回應的副本，不改產品設定）。延遲設定回應用 GAS 規則暫停 get_all_maps 到測試放行。
+  // 一般 UI（滑鼠、鍵盤）操作；按鈕停用時不硬點。「受控呼叫」是保留按鈕的 React onClick 或頁面掛的 bridge 回呼後直接呼叫，只用在負向檢查，另外標明。
+  // 訪客的進度在受控前置裡設到第 3 關（max_stage chapter1_3），才能用一般 UI 選另一個完整的關卡
+  const NOTICE39 = '[data-testid="stage-load-notice"]';
+  const NO_ROUTE_PJ39 = JSON.stringify({
+    cols: 14,
+    rows: 10,
+    base: [13, 3],
+    build_zones: [[2, 2]],
+  });
+  const MAP39 = (id, n, kind = "ok") => {
+    const m = MAP(id, n);
+    if (kind === "route") return { ...m, path_json: NO_ROUTE_PJ39 };
+    if (kind === "waves") return { ...m, waves: [] };
+    if (kind === "both") return { ...m, path_json: NO_ROUTE_PJ39, waves: [] };
+    if (kind === "enemy")
+      return {
+        ...m,
+        waves: [
+          {
+            wave: 1,
+            enemies: [
+              {
+                enemy_id: "ghost_unit",
+                count: 2,
+                interval: 1.5,
+                path: "path_a",
+              },
+            ],
+          },
+        ],
+      };
+    return m;
+  };
+  const T39 = {
+    route: (n) =>
+      `「測試第${n}關」關卡資料未完成：沒有可用的行軍路線，暫時不能出征，請改選已開放關卡。`,
+    waves: (n) =>
+      `「測試第${n}關」關卡資料未完成：沒有波次資料，暫時不能出征，請改選已開放關卡。`,
+    both: (n) =>
+      `「測試第${n}關」關卡資料未完成：沒有可用的行軍路線、沒有波次資料，暫時不能出征，請改選已開放關卡。`,
+    waveCfg: "這一波的敵軍配置尚未完成，暫時無法開始，請改選已開放關卡。",
+    waveOther: "這一波暫時無法開始，請改選其他關卡或稍後再試。",
+  };
+  const GUEST39 = () =>
+    guestStorage([MA35], [{ slot: 0, hero_id: "hero_ma_chao" }], {
+      max_stage: "chapter1_3",
+    });
+  /** 引擎目前的這一場：battleId、關卡、階段、波次、自動、暫停、場上敵人、武將數、戰場金幣、城防 */
+  const ctl39 = (p) =>
+    p.evaluate(() => {
+      const e = window.__testBridge.engine;
+      const b = e.battleManager;
+      return {
+        battleId: b.battleId,
+        stage: b.stageId,
+        state: b.gameState,
+        wave: b.currentWave,
+        auto: b.autoMode,
+        paused: b.manualPaused,
+        enemies: e.waveManager.activeEnemies.length,
+        heroes: e.heroes.length,
+        gold: b.battleGold,
+        hp: b.baseHp,
+      };
+    });
+  /** 說明：文字、role、裡面有沒有元素（純文字）、每一個字都在視窗內而且 elementFromPoint 是說明自己（不排除聊天按鈕） */
+  const notice39 = (p) =>
+    p.evaluate((sel) => {
+      const n = document.querySelector(sel);
+      if (!n) return { shown: false };
+      const blocked = [];
+      const offscreen = [];
+      let chars = 0;
+      const walker = document.createTreeWalker(n, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        for (let i = 0; i < node.textContent.length; i++) {
+          if (!node.textContent[i].trim()) continue;
+          const r = document.createRange();
+          r.setStart(node, i);
+          r.setEnd(node, i + 1);
+          const b = r.getBoundingClientRect();
+          if (!(b.width > 0 && b.height > 0)) continue;
+          chars++;
+          const x = b.left + b.width / 2;
+          const y = b.top + b.height / 2;
+          if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) {
+            offscreen.push(node.textContent[i]);
+            continue;
+          }
+          const el = document.elementFromPoint(x, y);
+          if (!el || !n.contains(el)) blocked.push(node.textContent[i]);
+        }
+      }
+      return {
+        shown: true,
+        text: n.innerText.trim(),
+        role: n.getAttribute("role"),
+        tags: [...n.querySelectorAll("*")]
+          .map((x) => x.tagName)
+          .filter((t) => t !== "DIV"),
+        chars,
+        blocked,
+        offscreen,
+      };
+    }, NOTICE39);
+  /** 開戰與自動按鈕：是否停用與 title（「進入戰場」只在備戰、沒暫停時出現） */
+  const buttons39 = (p) =>
+    p.evaluate(() => {
+      const q = (s) => document.querySelector(`[data-testid="${s}"]`);
+      const f = (b) =>
+        b ? { disabled: b.disabled, title: b.getAttribute("title") } : null;
+      return {
+        enter: f(q("enter-battle")),
+        start: f(q("hud-start-battle")),
+        auto: f(q("hud-auto")),
+      };
+    });
+  /** 一般 UI：打開選關、點某一關的按鈕（開赴戰場／重玩），等視窗關掉 */
+  async function pickStage39(p, name) {
+    if (!(await modal(p).count())) {
+      await p.locator('button[title="切換關卡"]').click();
+      await until(() => modal(p).isVisible(), 10000);
+    }
+    const btn = modal(p)
+      .locator(".card", { hasText: name })
+      .locator("button", { hasText: /開赴戰場|重玩關卡/ });
+    if ((await btn.count()) !== 1) return false;
+    await btn.first().click();
+    return !!(await until(async () => (await modal(p).count()) === 0, 10000));
+  }
+  /** 等這一場換成新的 battleId 並穩定 */
+  async function waitNewBattle39(p, oldId) {
+    let last = null;
+    let n = 0;
+    return until(async () => {
+      const id = (await ctl39(p)).battleId;
+      n = id && id !== oldId && id === last ? n + 1 : 0;
+      last = id;
+      return n >= 4 ? id : null;
+    }, 15000);
+  }
+
+  for (const [kind, vp, label] of [
+    ["route", { width: 1280, height: 800 }, "缺路線（1280 桌面）"],
+    ["waves", { width: 390, height: 600 }, "空波次（390×600）"],
+    ["both", { width: 360, height: 600 }, "路線與波次都缺（360×600）"],
+  ]) {
+    await scenario(
+      `缺資料的關卡：訪客第 0 波時後端設定較晚到、目前這一關${label}：不重新載入、說明原因並打開選關；關掉選關後不能從代用場開戰或新開自動；改選完整的另一關就清掉說明、照常開戰`,
+      async (mk) => {
+        const E = await mk({
+          viewport: vp,
+          maps: [
+            MAP39("chapter1_1", 1, kind),
+            MAP39("chapter1_2", 2),
+            MAP39("chapter1_3", 3),
+          ],
+          enemies: ENEMIES,
+        });
+        const hold = E.gas.rule("get_all_maps", "hold");
+        const p = await E.page({ storage: GUEST39() });
+        check("以訪客進入", await enterGuest(p));
+        await until(() => E.gas.count("get_all_maps") > 0, 15000);
+        // 設定還沒回來：內建的代用場在第 0 波備戰
+        let lastId = null;
+        let stable = 0;
+        await until(async () => {
+          const id = (await ctl39(p)).battleId;
+          stable = id && id === lastId ? stable + 1 : 0;
+          lastId = id;
+          return stable >= 6;
+        }, 15000);
+        check("開始旁錄載入", await watchLoads35(p));
+        const c0 = await ctl39(p);
+        const st0 = await storageOf(p);
+        check(
+          "設定回應暫停中：代用場在第 0 波備戰、沒有說明",
+          c0.state === 1 && c0.wave === 0 && !(await notice39(p)).shown,
+          c0
+        );
+        check("放行 get_all_maps 的回應", hold.release() === 1);
+        const shown = await until(async () => (await notice39(p)).shown, 10000);
+        await sleep(600);
+        const n1 = await notice39(p);
+        const want = T39[kind](1);
+        check(
+          `說明逐字是「${want}」、role="alert"、純文字`,
+          !!shown &&
+            n1.text === want &&
+            n1.role === "alert" &&
+            n1.tags.length === 0,
+          n1
+        );
+        const selectorOpen = await until(
+          async () =>
+            (await modal(p).count()) > 0 &&
+            /關卡代碼/.test(await modal(p).innerText()),
+          5000
+        );
+        const c1 = await ctl39(p);
+        check(
+          "自動打開選關；這一場沒有重新載入（同一個 battleId、第 0 波備戰、載入 0 次、沒有出兵）",
+          !!selectorOpen &&
+            c1.battleId === c0.battleId &&
+            c1.state === 1 &&
+            c1.wave === 0 &&
+            c1.enemies === 0 &&
+            sameJson(await loads35(p), []),
+          { c0, c1, loads: await loads35(p) }
+        );
+        await closeModal(p);
+        const n2 = await notice39(p);
+        const b2 = await buttons39(p);
+        check(
+          "關掉選關後說明還在；「進入戰場」「迎戰」「自動」都停用，title 是同一句",
+          n2.text === want &&
+            b2.enter &&
+            b2.enter.disabled &&
+            b2.enter.title === want &&
+            b2.start.disabled &&
+            b2.start.title === want &&
+            b2.auto.disabled &&
+            b2.auto.title === want,
+          { n2, b2 }
+        );
+        check(
+          "說明每一個字都在視窗內、沒有被聊天按鈕或其他東西遮住",
+          n2.chars > 0 && n2.blocked.length === 0 && n2.offscreen.length === 0,
+          { chars: n2.chars, blocked: n2.blocked, offscreen: n2.offscreen }
+        );
+        // 受控呼叫：保留三顆按鈕的 onClick 後直接呼叫（等同畫面晚一拍、舊按鈕還能按）
+        const kept = [];
+        for (const [sel, slot] of [
+          ['[data-testid="enter-battle"]', "s39e"],
+          ['[data-testid="hud-start-battle"]', "s39s"],
+          ['[data-testid="hud-auto"]', "s39a"],
+        ])
+          kept.push(
+            (await keepHandler37(p, sel, slot)) && (await callKept37(p, slot))
+          );
+        await sleep(800);
+        const c3 = await ctl39(p);
+        check(
+          "受控呼叫三顆按鈕的 onClick：都不開戰、不開自動（第 0 波備戰、沒有出兵、同一場、金幣 5000、城防 20）",
+          kept.every(Boolean) &&
+            c3.battleId === c0.battleId &&
+            c3.state === 1 &&
+            c3.wave === 0 &&
+            c3.auto === false &&
+            c3.enemies === 0 &&
+            c3.gold === 5000 &&
+            c3.hp === 20,
+          { kept, c3 }
+        );
+        // 設定放行後 StageDataManager 照原本把設定寫進快取（shenma_static_config／shenma_static_ts）：不是遊戲進度，比較時拿掉
+        const noCache39 = (st) => {
+          const ls = { ...st.ls };
+          delete ls.shenma_static_config;
+          delete ls.shenma_static_ts;
+          return { ls, ss: st.ss };
+        };
+        const st3 = await storageOf(p);
+        check(
+          "整段：訪客存檔與其他瀏覽器儲存逐字不變（只多了既有的設定快取）、沒有任何寫入",
+          sameJson(noCache39(st3), noCache39(st0)) &&
+            st3.ls.shenma_js_guest_state === st0.ls.shenma_js_guest_state &&
+            E.gas.writes().length === 0,
+          {
+            writes: E.gas.writes().map((w) => w.action),
+            keys: Object.keys(st3.ls),
+          }
+        );
+        // 改選完整的另一關（一般 UI）
+        check("一般 UI 選「測試第2關」", await pickStage39(p, "測試第2關"));
+        const id4 = await waitNewBattle39(p, c0.battleId);
+        const c4 = await ctl39(p);
+        const b4 = await buttons39(p);
+        check(
+          "完整的另一關載入成功：新的一場（chapter1_2）、說明清掉、「進入戰場」可以按",
+          !!id4 &&
+            c4.stage === "chapter1_2" &&
+            !(await notice39(p)).shown &&
+            b4.enter &&
+            !b4.enter.disabled &&
+            b4.enter.title === "開始戰鬥",
+          { c4, b4 }
+        );
+        check("一般 UI 按「進入戰場」開戰", await startBattle(p));
+        const c5 = await ctl39(p);
+        check(
+          "照常開戰（戰鬥中第 1 波、出兵）",
+          c5.state === 2 && c5.wave === 1,
+          c5
+        );
+        await shot(p, `stage-reject-${kind}-${vp.width}`);
+        return E;
+      }
+    );
+  }
+
+  await scenario(
+    "缺資料的關卡：共用帳號甲第 0 波時後端設定較晚到、目前這一關缺路線；切換到乙（第 0 波換帳號會重新載入）也不改用同一關的代用資料載入：同一場、說明還在、仍不能開戰",
+    async (mk) => {
+      const KA = "k_s39_a";
+      const KB = "k_s39_b";
+      const E = await mk({
+        maps: [
+          MAP39("chapter1_1", 1, "route"),
+          MAP39("chapter1_2", 2),
+          MAP39("chapter1_3", 3),
+        ],
+        enemies: ENEMIES,
+        seed: [
+          {
+            key: KA,
+            data: NEW({
+              nickname: "甲",
+              team: [{ hero_id: "ma_chao", slot: 1 }],
+            }),
+            rev: 2,
+          },
+          {
+            key: KB,
+            data: NEW({
+              nickname: "乙",
+              team: [{ hero_id: "ma_chao", slot: 1 }],
+            }),
+            rev: 2,
+          },
+        ],
+      });
+      const hold = E.gas.rule("get_all_maps", "hold");
+      const p = await E.page({ storage: { shenma_player_key: KA } });
+      check("讀到甲", (await loadShared(p)) === "player");
+      await closeModal(p);
+      let lastId = null;
+      let stable = 0;
+      await until(async () => {
+        const id = (await ctl39(p)).battleId;
+        stable = id && id === lastId ? stable + 1 : 0;
+        lastId = id;
+        return stable >= 6;
+      }, 15000);
+      check("放行 get_all_maps 的回應", hold.release() === 1);
+      await until(async () => (await notice39(p)).shown, 10000);
+      await sleep(600);
+      await closeModal(p);
+      const c0 = await ctl39(p);
+      const want = T39.route(1);
+      check(
+        "甲：說明是缺路線、第 0 波備戰",
+        (await notice39(p)).text === want && c0.state === 1 && c0.wave === 0,
+        c0
+      );
+      check("開始旁錄載入", await watchLoads35(p));
+      check("一般 UI 切換到乙", await switchKey(p, KB, "乙"));
+      await sleep(1500);
+      await closeModal(p);
+      const c1 = await ctl39(p);
+      const n1 = await notice39(p);
+      const b1 = await buttons39(p);
+      check(
+        "換帳號後：沒有改用同一關的代用資料載入（同一場、載入 0 次）、說明還在、「進入戰場」「迎戰」「自動」仍停用",
+        c1.battleId === c0.battleId &&
+          sameJson(await loads35(p), []) &&
+          n1.text === want &&
+          b1.enter &&
+          b1.enter.disabled &&
+          b1.start.disabled &&
+          b1.auto.disabled,
+        { c0, c1, n1, b1, loads: await loads35(p) }
+      );
+      check(
+        "沒有任何寫入",
+        E.gas.writes().length === 0,
+        E.gas.writes().map((w) => w.action)
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "缺資料的關卡：目前在完整的關卡時選另一個缺資料的關被拒絕，原本這一場（battleId、武將）不變、照常可以開戰（不被另一關的理由封鎖）",
+    async (mk) => {
+      const E = await mk({
+        maps: [
+          MAP39("chapter1_1", 1),
+          MAP39("chapter1_2", 2, "waves"),
+          MAP39("chapter1_3", 3),
+        ],
+        enemies: ENEMIES,
+      });
+      const p = await E.page({ storage: GUEST39() });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const d = await deployHero(p, [4, 3], "馬超");
+      check("部署馬超到 (4,3)", d.ok, d);
+      const c0 = await ctl39(p);
+      await p.locator('button[title="切換關卡"]').click();
+      await until(() => modal(p).isVisible(), 10000);
+      const card = modal(p).locator(".card", { hasText: "測試第2關" });
+      check(
+        "選關裡「測試第2關」標示尚未開放",
+        /尚未開放/.test((await card.innerText()) || "")
+      );
+      await card.first().click();
+      await sleep(500);
+      await closeModal(p);
+      const c1 = await ctl39(p);
+      check(
+        "點缺資料的關卡後：同一場、武將還在、第 0 波備戰；沒有載入說明",
+        c1.battleId === c0.battleId &&
+          c1.heroes === 1 &&
+          c1.state === 1 &&
+          !(await notice39(p)).shown,
+        { c0, c1 }
+      );
+      check("一般 UI 按「進入戰場」照常開戰", await startBattle(p));
+      check("戰鬥中第 1 波", (await ctl39(p)).wave === 1);
+      return E;
+    }
+  );
+
+  for (const [who, vp] of [
+    ["訪客", { width: 1280, height: 800 }],
+    ["共用帳號", { width: 390, height: 600 }],
+  ]) {
+    await scenario(
+      `開波被拒：${who}，路線與波次都在、但第 1 波的敵人 ID 在敵人設定裡找不到：按「迎戰」與「自動」都被引擎拒絕，說明「這一波的敵軍配置尚未完成…」，波次不前進、不出兵、不結算、沒有寫入；有效的另一關照常開始`,
+      async (mk) => {
+        const KEY = "k_wr39";
+        const E = await mk({
+          viewport: vp,
+          maps: [
+            MAP39("chapter1_1", 1, "enemy"),
+            MAP39("chapter1_2", 2),
+            MAP39("chapter1_3", 3),
+          ],
+          enemies: ENEMIES,
+          seed:
+            who === "共用帳號"
+              ? [
+                  {
+                    key: KEY,
+                    data: NEW({
+                      max_stage: "chapter1_3",
+                      team: [{ hero_id: "ma_chao", slot: 1 }],
+                    }),
+                    rev: 2,
+                  },
+                ]
+              : [],
+        });
+        const p = await E.page({
+          storage: who === "共用帳號" ? { shenma_player_key: KEY } : GUEST39(),
+        });
+        if (who === "共用帳號") {
+          check("讀到共用存檔", (await loadShared(p)) === "player");
+          await closeModal(p);
+        } else check("以訪客進入", await enterGuest(p));
+        await waitRemoteStage(p, E);
+        const c0 = await ctl39(p);
+        const st0 = await storageOf(p);
+        check(
+          "後端資料完整（資料檢查放行）：第 0 波備戰、沒有說明、「迎戰」可以按",
+          c0.state === 1 &&
+            c0.wave === 0 &&
+            !(await notice39(p)).shown &&
+            !(await buttons39(p)).start.disabled,
+          c0
+        );
+        await p.locator('[data-testid="hud-start-battle"]').first().click();
+        const shown = await until(async () => (await notice39(p)).shown, 5000);
+        const n1 = await notice39(p);
+        const c1 = await ctl39(p);
+        check(
+          "一般 UI 按「迎戰」：引擎拒絕第 1 波，說明逐字是「這一波的敵軍配置尚未完成…」（不顯示原因碼）；仍是第 0 波備戰、沒有出兵",
+          !!shown &&
+            n1.text === T39.waveCfg &&
+            n1.role === "alert" &&
+            c1.state === 1 &&
+            c1.wave === 0 &&
+            c1.enemies === 0 &&
+            c1.battleId === c0.battleId,
+          { n1, c1 }
+        );
+        await p.locator('[data-testid="hud-auto"]').first().click();
+        await sleep(800);
+        const c2 = await ctl39(p);
+        check(
+          "一般 UI 按「自動」：同樣被拒（自動被引擎關掉、仍是第 0 波備戰、沒有出兵），說明不變",
+          c2.auto === false &&
+            c2.state === 1 &&
+            c2.wave === 0 &&
+            c2.enemies === 0 &&
+            (await notice39(p)).text === T39.waveCfg,
+          c2
+        );
+        check(
+          "沒有結算畫面、沒有任何寫入（save_result 0）、瀏覽器儲存逐字不變",
+          (await p.locator('[data-testid="result-card"]').count()) === 0 &&
+            E.gas.writes().length === 0 &&
+            E.gas.count("save_result") === 0 &&
+            sameJson(await storageOf(p), st0),
+          { writes: E.gas.writes().map((w) => w.action) }
+        );
+        const n2 = await notice39(p);
+        check(
+          "說明每一個字都在視窗內、沒有被遮住",
+          n2.chars > 0 && n2.blocked.length === 0 && n2.offscreen.length === 0,
+          n2
+        );
+        check("一般 UI 選「測試第2關」", await pickStage39(p, "測試第2關"));
+        await waitNewBattle39(p, c0.battleId);
+        check("載入有效的另一關：說明清掉", !(await notice39(p)).shown);
+        await p.locator('[data-testid="hud-start-battle"]').first().click();
+        const ok = await until(async () => (await ctl39(p)).state === 2, 5000);
+        const c3 = await ctl39(p);
+        check(
+          "對照：有效的波次照常開始（戰鬥中第 1 波、出兵、沒有說明）",
+          !!ok && c3.wave === 1 && !(await notice39(p)).shown,
+          c3
+        );
+        return E;
+      }
+    );
+  }
+
+  await scenario(
+    "開波被拒的說明（受控呼叫頁面掛的回呼）：未知或 HTML 原因只顯示安全的通用句；換場後持有的舊回呼不改說明；說明在有效的新載入時才清掉；鍵盤照常走得到選關",
+    async (mk) => {
+      const E = await mk({
+        maps: [
+          MAP39("chapter1_1", 1),
+          MAP39("chapter1_2", 2),
+          MAP39("chapter1_3", 3),
+        ],
+        enemies: ENEMIES,
+      });
+      const p = await E.page({ storage: GUEST39() });
+      check("以訪客進入", await enterGuest(p));
+      await waitRemoteStage(p, E);
+      const c0 = await ctl39(p);
+      // 受控：保留目前這一場的回呼，再呼叫它
+      const r1 = await p.evaluate(() => {
+        const b = window.__testBridge;
+        window.__kept39 = b.onWaveRejected;
+        if (typeof b.onWaveRejected !== "function")
+          return typeof b.onWaveRejected;
+        b.onWaveRejected(1, '<img src=x onerror="window.__xss39=1">');
+        return typeof window.__kept39;
+      });
+      await sleep(300);
+      const n1 = await notice39(p);
+      check(
+        "受控呼叫（HTML 原因）：說明是安全的通用句、純文字（沒有 img）、沒有執行任何腳本",
+        r1 === "function" &&
+          n1.text === T39.waveOther &&
+          n1.tags.length === 0 &&
+          (await p.evaluate(() => window.__xss39)) === undefined,
+        n1
+      );
+      const r2 = await p.evaluate(() => {
+        const h = window.__testBridge.onWaveRejected;
+        if (typeof h !== "function") return false;
+        h(1, 12345);
+        return true;
+      });
+      await sleep(200);
+      check(
+        "受控呼叫（非字串原因）：同樣是通用句",
+        r2 && (await notice39(p)).text === T39.waveOther,
+        { r2 }
+      );
+      // 鍵盤：Tab 走得到「切換關卡」，Enter 打開選關
+      let reached = false;
+      for (let i = 0; i < 40 && !reached; i++) {
+        await p.keyboard.press("Tab");
+        reached = await p.evaluate(
+          () =>
+            document.activeElement &&
+            document.activeElement.getAttribute("title") === "切換關卡"
+        );
+      }
+      if (reached) await p.keyboard.press("Enter");
+      const opened = reached && (await until(() => modal(p).isVisible(), 5000));
+      check(
+        "說明顯示時，鍵盤 Tab 走得到「切換關卡」、Enter 打開選關",
+        !!opened,
+        { reached }
+      );
+      const btn = modal(p)
+        .locator(".card", { hasText: "測試第2關" })
+        .locator("button", { hasText: /開赴戰場|重玩關卡/ });
+      await btn.first().click();
+      await until(async () => (await modal(p).count()) === 0, 10000);
+      await waitNewBattle39(p, c0.battleId);
+      check("有效的新載入：說明清掉", !(await notice39(p)).shown);
+      const r3 = await p.evaluate(() => {
+        if (typeof window.__kept39 !== "function") return false;
+        window.__kept39(1, "wave_empty");
+        return true;
+      });
+      await sleep(300);
+      check(
+        "受控呼叫換場前保留的舊回呼：說明不出現（舊場的回呼不改新場）",
+        r3 && !(await notice39(p)).shown,
+        { r3 }
+      );
+      return E;
+    }
+  );
+
+  // 第 39 段補充：第 0 波先用一般 UI 暫停，後端設定較晚到、目前這一關缺資料。暫停中仍是還沒開打的這一場：記下阻擋、說明原因並打開選關，
+  // 不重新載入、不清場、暫停保持；一般 UI 恢復後「進入戰場」「迎戰」「自動」仍停用。三種缺資料由單元全覆蓋，這裡跑訪客 390×600（空波次）
+  // 與共用帳號 1280 桌面（缺路線）。「受控呼叫」是保留按鈕的 React onClick 後直接呼叫，只用在負向檢查
+  /** 目前地圖上可以放武將的道路格（不含建築位，建築位的部署選單預設是防禦塔分頁；離地圖中心近的先） */
+  const heroCells39 = (p) =>
+    p.evaluate(() => {
+      const m = window.__testBridge.engine.gameMap;
+      const out = [];
+      for (let r = 0; r < m.rows; r++)
+        for (let c = 0; c < m.cols; c++)
+          if (m.canPlaceHero(c, r) && !m.canPlaceTower(c, r)) out.push([c, r]);
+      const cc = (m.cols - 1) / 2;
+      const cr = (m.rows - 1) / 2;
+      const d = (a) => Math.hypot(a[0] - cc, a[1] - cr);
+      return out.sort((a, b) => d(a) - d(b));
+    });
+  for (const [who, vp, kind] of [
+    ["訪客", { width: 390, height: 600 }, "waves"],
+    ["共用帳號", { width: 1280, height: 800 }, "route"],
+  ]) {
+    await scenario(
+      `缺資料的關卡：${who}第 0 波先用一般 UI 暫停，後端設定較晚到、目前這一關${kind === "waves" ? "空波次" : "缺路線"}：不重新載入、不清場、暫停保持，說明原因並打開選關；一般 UI 恢復後「進入戰場」「迎戰」「自動」仍停用、受控按也不開波；改選完整的另一關恢復原本能力`,
+      async (mk) => {
+        const KEY = "k_s39_p";
+        const E = await mk({
+          viewport: vp,
+          maps: [
+            MAP39("chapter1_1", 1, kind),
+            MAP39("chapter1_2", 2),
+            MAP39("chapter1_3", 3),
+          ],
+          enemies: ENEMIES,
+          seed:
+            who === "共用帳號"
+              ? [
+                  {
+                    key: KEY,
+                    data: NEW({
+                      max_stage: "chapter1_3",
+                      team: [{ hero_id: "ma_chao", slot: 1 }],
+                    }),
+                    rev: 2,
+                  },
+                ]
+              : [],
+        });
+        const hold = E.gas.rule("get_all_maps", "hold");
+        const p = await E.page({
+          storage: who === "共用帳號" ? { shenma_player_key: KEY } : GUEST39(),
+        });
+        if (who === "共用帳號") {
+          check("讀到共用存檔", (await loadShared(p)) === "player");
+          await closeModal(p);
+        } else check("以訪客進入", await enterGuest(p));
+        await until(() => E.gas.count("get_all_maps") > 0, 15000);
+        let lastId = null;
+        let stable = 0;
+        await until(async () => {
+          const id = (await ctl39(p)).battleId;
+          stable = id && id === lastId ? stable + 1 : 0;
+          lastId = id;
+          return stable >= 6;
+        }, 15000);
+        // 設定還沒回來：在代用場的第 0 波備戰部署一位武將（之後比對場上沒被清掉）
+        let d = { ok: false, step: "none" };
+        for (const cell of (await heroCells39(p)).slice(0, 6)) {
+          d = await deployHero(p, cell, "馬超");
+          if (d.ok || d.step !== "cell") break;
+        }
+        check("一般 UI 在第 0 波備戰部署馬超", d.ok, d);
+        check("開始旁錄載入", await watchLoads35(p));
+        const st0 = await storageOf(p);
+        await p.locator("button", { hasText: "⏸ 暫停" }).first().click();
+        const paused = await until(
+          async () =>
+            (await ctl39(p)).paused === true &&
+            (await p.locator("button", { hasText: "▶ 繼續" }).count()) > 0,
+          5000
+        );
+        const c0 = await ctl39(p);
+        check(
+          "一般 UI 按「⏸ 暫停」：第 0 波備戰、已暫停、武將 1、沒有說明",
+          !!paused &&
+            c0.state === 1 &&
+            c0.wave === 0 &&
+            c0.heroes === 1 &&
+            !(await notice39(p)).shown,
+          c0
+        );
+        check("放行 get_all_maps 的回應", hold.release() === 1);
+        const shown = await until(async () => (await notice39(p)).shown, 10000);
+        await sleep(600);
+        const n1 = await notice39(p);
+        const want = T39[kind](1);
+        check(
+          `說明逐字是「${want}」、role="alert"、純文字`,
+          !!shown &&
+            n1.text === want &&
+            n1.role === "alert" &&
+            n1.tags.length === 0,
+          n1
+        );
+        const selectorOpen = await until(
+          async () =>
+            (await modal(p).count()) > 0 &&
+            /關卡代碼/.test(await modal(p).innerText()),
+          5000
+        );
+        const c1 = await ctl39(p);
+        check(
+          "自動打開選關；沒有重新載入、沒有清場：同一個 battleId、第 0 波備戰、暫停保持、武將 1、金幣與城防不變、載入 0 次、沒有出兵",
+          !!selectorOpen &&
+            c1.battleId === c0.battleId &&
+            c1.state === 1 &&
+            c1.wave === 0 &&
+            c1.paused === true &&
+            c1.heroes === 1 &&
+            c1.gold === c0.gold &&
+            c1.hp === c0.hp &&
+            c1.enemies === 0 &&
+            sameJson(await loads35(p), []),
+          { c0, c1, loads: await loads35(p) }
+        );
+        await closeModal(p);
+        const b1 = await buttons39(p);
+        check(
+          "關掉選關後說明還在；暫停中「迎戰」「自動」停用、title 是同一句",
+          (await notice39(p)).text === want &&
+            b1.start.disabled &&
+            b1.start.title === want &&
+            b1.auto.disabled &&
+            b1.auto.title === want,
+          b1
+        );
+        await p.locator("button", { hasText: "▶ 繼續" }).first().click();
+        const resumed = await until(
+          async () =>
+            (await ctl39(p)).paused === false &&
+            (await p.locator("button", { hasText: "⏸ 暫停" }).count()) > 0,
+          5000
+        );
+        await sleep(600);
+        const c2 = await ctl39(p);
+        check(
+          "一般 UI 按「▶ 繼續」：恢復（沒有暫停）、同一場、仍是第 0 波備戰、武將／金幣／城防不變、沒有出兵",
+          !!resumed &&
+            c2.battleId === c0.battleId &&
+            c2.state === 1 &&
+            c2.wave === 0 &&
+            c2.heroes === 1 &&
+            c2.gold === c0.gold &&
+            c2.hp === c0.hp &&
+            c2.enemies === 0,
+          c2
+        );
+        const n2 = await notice39(p);
+        const b2 = await buttons39(p);
+        check(
+          "恢復後說明還在；「進入戰場」「迎戰」「自動」都停用，title 是同一句",
+          n2.text === want &&
+            b2.enter &&
+            b2.enter.disabled &&
+            b2.enter.title === want &&
+            b2.start.disabled &&
+            b2.start.title === want &&
+            b2.auto.disabled &&
+            b2.auto.title === want,
+          { n2, b2 }
+        );
+        check(
+          "說明每一個字都在視窗內、沒有被聊天按鈕或其他東西遮住",
+          n2.chars > 0 && n2.blocked.length === 0 && n2.offscreen.length === 0,
+          { chars: n2.chars, blocked: n2.blocked, offscreen: n2.offscreen }
+        );
+        // 受控呼叫：保留三顆按鈕的 onClick 後直接呼叫（等同畫面晚一拍、舊按鈕還能按）
+        const kept = [];
+        for (const [sel, slot] of [
+          ['[data-testid="enter-battle"]', "s39pe"],
+          ['[data-testid="hud-start-battle"]', "s39ps"],
+          ['[data-testid="hud-auto"]', "s39pa"],
+        ])
+          kept.push(
+            (await keepHandler37(p, sel, slot)) && (await callKept37(p, slot))
+          );
+        await sleep(800);
+        const c3 = await ctl39(p);
+        check(
+          "受控呼叫三顆按鈕保留的 onClick：都不開戰、不開自動（同一場、第 0 波備戰、沒有出兵、武將／金幣／城防不變）",
+          kept.every(Boolean) &&
+            c3.battleId === c0.battleId &&
+            c3.state === 1 &&
+            c3.wave === 0 &&
+            c3.auto === false &&
+            c3.enemies === 0 &&
+            c3.heroes === 1 &&
+            c3.gold === c0.gold &&
+            c3.hp === c0.hp,
+          { kept, c3 }
+        );
+        if (who === "共用帳號") {
+          const nk = await nickEdit(p);
+          check(
+            "這一場沒有固定出征：主公資訊的「改暱稱」仍可按、沒有「出征中」說明",
+            !!nk && nk.disabled === false && !/出征中/.test(nk.title),
+            nk
+          );
+        }
+        // 設定放行後 StageDataManager 照原本把設定寫進快取（shenma_static_config／shenma_static_ts）：不是遊戲進度，比較時拿掉
+        const noCache = (st) => {
+          const ls = { ...st.ls };
+          delete ls.shenma_static_config;
+          delete ls.shenma_static_ts;
+          return { ls, ss: st.ss };
+        };
+        const st3 = await storageOf(p);
+        check(
+          "整段：沒有任何寫入；瀏覽器儲存逐字不變（只多了既有的設定快取）",
+          E.gas.writes().length === 0 && sameJson(noCache(st3), noCache(st0)),
+          {
+            writes: E.gas.writes().map((w) => w.action),
+            keys: Object.keys(st3.ls),
+          }
+        );
+        check("一般 UI 選「測試第2關」", await pickStage39(p, "測試第2關"));
+        const id4 = await waitNewBattle39(p, c0.battleId);
+        const c4 = await ctl39(p);
+        const b4 = await buttons39(p);
+        check(
+          "完整的另一關載入成功：新的一場（chapter1_2）、說明清掉、「進入戰場」「迎戰」「自動」都可以按",
+          !!id4 &&
+            c4.stage === "chapter1_2" &&
+            !(await notice39(p)).shown &&
+            b4.enter &&
+            !b4.enter.disabled &&
+            b4.enter.title === "開始戰鬥" &&
+            !b4.start.disabled &&
+            !b4.auto.disabled,
+          { c4, b4 }
+        );
+        check("一般 UI 按「進入戰場」開戰", await startBattle(p));
+        const c5 = await ctl39(p);
+        check("照常開戰（戰鬥中第 1 波）", c5.state === 2 && c5.wave === 1, c5);
+        await shot(p, `stage-reject-paused-${vp.width}`);
+        return E;
+      }
+    );
+  }
+
+  // 第 39 段補充（來源恢復）：後端設定先讀完、出征來源當時還不能用（還沒選帳號或登入讀取中），之後來源可以用時的重新載入要用已讀到的後端這一關，
+  // 成功後才換成這一關；同一關缺資料仍被拒。時序用這個頁面自己的 GAS 規則暫停 get_all_maps／get_profile 再放行，並以快取寫入與請求次數確認先後，不靠快慢。
+  // 「受控唯讀」是從 React 內部讀頁面兩個 ref（這一場的來源與 configReady、目前關卡），不改任何東西；只用來核一般 UI 看不到的狀態
+  const refs39r = (p) =>
+    p.evaluate(() => {
+      const el = document.querySelector('[data-testid="hud-start-battle"]');
+      const k =
+        el && Object.keys(el).find((x) => x.startsWith("__reactFiber$"));
+      let f = k ? el[k] : null;
+      let ctx;
+      let cur;
+      while (f && (ctx === undefined || cur === undefined)) {
+        for (
+          let h = f.memoizedState;
+          h && typeof h === "object" && "next" in h;
+          h = h.next
+        ) {
+          const v = h.memoizedState;
+          if (!v || typeof v !== "object" || !("current" in v)) continue;
+          const c = v.current;
+          if (
+            ctx === undefined &&
+            c &&
+            typeof c === "object" &&
+            "configReady" in c &&
+            "battleId" in c
+          )
+            ctx = {
+              battleId: c.battleId,
+              stageId: c.stageId,
+              configReady: c.configReady,
+              owner: c.owner,
+            };
+          if (
+            cur === undefined &&
+            c &&
+            typeof c === "object" &&
+            "map_id" in c &&
+            "path_json" in c
+          )
+            cur = {
+              map_id: c.map_id,
+              name: c.name,
+              waves: Array.isArray(c.waves) ? c.waves.length : null,
+            };
+        }
+        f = f.return;
+      }
+      return { ctx: ctx ?? null, cur: cur ?? null };
+    });
+  const base39r = (p) =>
+    p.evaluate(() => {
+      const m = window.__testBridge && window.__testBridge.engine.gameMap;
+      return m ? [m.basePos.col, m.basePos.row] : null;
+    });
+  /** 設定讀完：StageDataManager 照原本把設定寫進快取（shenma_static_ts） */
+  const configCached39r = (p) =>
+    until(
+      () => p.evaluate(() => !!localStorage.getItem("shenma_static_ts")),
+      10000
+    );
+  async function stable39r(p) {
+    let last = null;
+    let n = 0;
+    return until(async () => {
+      const id = (await ctl39(p)).battleId;
+      n = id && id === last ? n + 1 : 0;
+      last = id;
+      return n >= 6 ? id : null;
+    }, 15000);
+  }
+
+  await scenario(
+    "缺資料的關卡：來源恢復（沒有帳號、內建展示場第 0 波）：設定先讀完才用一般 UI 選訪客，改用已讀到的後端這一關重新載入，從後端的道路格派出武將、沒有寫入",
+    async (mk) => {
+      const E = await mk({
+        maps: [
+          MAP39("chapter1_1", 1),
+          MAP39("chapter1_2", 2),
+          MAP39("chapter1_3", 3),
+        ],
+        enemies: ENEMIES,
+      });
+      const hold = E.gas.rule("get_all_maps", "hold");
+      const p = await E.page({ storage: {} });
+      check("沒有金鑰：出現金鑰視窗", (await waitLoaded(p)) === "key-setup");
+      await until(() => E.gas.count("get_all_maps") > 0, 15000);
+      await stable39r(p);
+      check("開始旁錄載入", await watchLoads35(p));
+      const c0 = await ctl39(p);
+      const f0 = await refs39r(p);
+      check(
+        "設定回應暫停中：內建展示場第 0 波（城池不在第 13 欄第 3 列）；這一場的來源是還沒選帳號、configReady false（受控唯讀）",
+        c0.state === 1 &&
+          c0.wave === 0 &&
+          !sameJson(await base39r(p), [13, 3]) &&
+          !!f0.ctx &&
+          f0.ctx.owner.mode === "none" &&
+          f0.ctx.configReady === false,
+        { c0, f0 }
+      );
+      check("放行 get_all_maps 的回應", hold.release() === 1);
+      const cached = await configCached39r(p);
+      await sleep(800);
+      const c1 = await ctl39(p);
+      const f1 = await refs39r(p);
+      check(
+        "設定讀完（快取已寫入）時來源還不能用：沒有重新載入（同一場、載入 0 次、仍是內建關卡）；目前關卡的 ref 仍不是後端那一份（受控唯讀）",
+        !!cached &&
+          c1.battleId === c0.battleId &&
+          sameJson(await loads35(p), []) &&
+          !sameJson(await base39r(p), [13, 3]) &&
+          !!f1.cur &&
+          f1.cur.name !== "測試第1關",
+        { c1, f1, loads: await loads35(p) }
+      );
+      await p.locator('[data-testid="key-setup-guest"]').click();
+      check("一般 UI：訪客一鍵試玩", await enterGuest(p));
+      const id2 = await waitNewBattle39(p, c0.battleId);
+      const c2 = await ctl39(p);
+      const f2 = await refs39r(p);
+      const loads = await loads35(p);
+      check(
+        "選訪客後：用已讀到的後端這一關重新載入一次（城池在第 13 欄第 3 列、1 波）、新的一場第 0 波；configReady true、來源是訪客、目前關卡的 ref 是「測試第1關」（受控唯讀）",
+        !!id2 &&
+          loads.length === 1 &&
+          loads[0].stage === "chapter1_1" &&
+          loads[0].battleId === c2.battleId &&
+          sameJson(await base39r(p), [13, 3]) &&
+          c2.state === 1 &&
+          c2.wave === 0 &&
+          !!f2.ctx &&
+          f2.ctx.configReady === true &&
+          f2.ctx.owner.mode === "guest" &&
+          !!f2.cur &&
+          f2.cur.name === "測試第1關" &&
+          f2.cur.waves === 1,
+        { c2, f2, loads }
+      );
+      const d = await deployHero(p, [4, 3], "馬超");
+      check("一般 UI 從後端的道路格 (4,3) 派出馬超", d.ok, d);
+      check(
+        "沒有任何寫入（create／save／upgrade／result 都沒有）",
+        E.gas.writes().length === 0,
+        E.gas.writes().map((w) => w.action)
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "缺資料的關卡：來源恢復（共用帳號登入讀取中）：設定先讀完、再放行讀取完成登入，改用已讀到的後端這一關重新載入，從後端的道路格派出帳號的武將、沒有寫入",
+    async (mk) => {
+      const KEY = "k_s39_r";
+      const E = await mk({
+        maps: [
+          MAP39("chapter1_1", 1),
+          MAP39("chapter1_2", 2),
+          MAP39("chapter1_3", 3),
+        ],
+        enemies: ENEMIES,
+        seed: [
+          {
+            key: KEY,
+            data: NEW({ team: [{ hero_id: "ma_chao", slot: 1 }] }),
+            rev: 2,
+          },
+        ],
+      });
+      const holdMaps = E.gas.rule("get_all_maps", "hold");
+      const p = await E.page({ storage: {} });
+      check("沒有金鑰：出現金鑰視窗", (await waitLoaded(p)) === "key-setup");
+      await until(() => E.gas.count("get_all_maps") > 0, 15000);
+      await stable39r(p);
+      check("開始旁錄載入", await watchLoads35(p));
+      const c0 = await ctl39(p);
+      const holdProfile = E.gas.rule("get_profile", "hold");
+      await p.locator('[data-testid="key-setup-input"]').fill(KEY);
+      await p.locator('[data-testid="key-setup-login"]').click();
+      const asked = await until(() => E.gas.count("get_profile") > 0, 10000);
+      check("一般 UI 登入共用帳號：讀取存檔的請求已送出、回應暫停中", !!asked);
+      check("放行 get_all_maps 的回應", holdMaps.release() === 1);
+      const cached = await configCached39r(p);
+      await sleep(800);
+      const c1 = await ctl39(p);
+      const f1 = await refs39r(p);
+      check(
+        "設定讀完（快取已寫入）時登入還在讀取：沒有重新載入（同一場、載入 0 次、仍是內建關卡）；這一場的來源仍是還沒選帳號（受控唯讀）",
+        !!cached &&
+          c1.battleId === c0.battleId &&
+          sameJson(await loads35(p), []) &&
+          !sameJson(await base39r(p), [13, 3]) &&
+          !!f1.ctx &&
+          f1.ctx.owner.mode === "none",
+        { c1, f1, loads: await loads35(p) }
+      );
+      check("放行 get_profile 的回應", holdProfile.release() >= 1);
+      check(
+        "登入完成",
+        await until(
+          async () =>
+            (await p.locator('[data-testid="key-setup"]').count()) === 0,
+          15000
+        )
+      );
+      const id2 = await waitNewBattle39(p, c0.battleId);
+      const c2 = await ctl39(p);
+      const f2 = await refs39r(p);
+      const loads = await loads35(p);
+      check(
+        "登入完成後：用已讀到的後端這一關重新載入一次（城池在第 13 欄第 3 列、1 波）、新的一場第 0 波；configReady true、來源是這個共用帳號、目前關卡的 ref 是「測試第1關」（受控唯讀）",
+        !!id2 &&
+          loads.length === 1 &&
+          loads[0].stage === "chapter1_1" &&
+          loads[0].battleId === c2.battleId &&
+          sameJson(await base39r(p), [13, 3]) &&
+          c2.state === 1 &&
+          c2.wave === 0 &&
+          !!f2.ctx &&
+          f2.ctx.configReady === true &&
+          f2.ctx.owner.mode === "shared" &&
+          f2.ctx.owner.key === KEY &&
+          !!f2.cur &&
+          f2.cur.name === "測試第1關",
+        { c2, f2, loads }
+      );
+      await closeModal(p);
+      const d = await deployHero(p, [4, 3], "馬超");
+      check("一般 UI 從後端的道路格 (4,3) 派出帳號隊伍的馬超", d.ok, d);
+      check(
+        "沒有任何寫入（create／save／upgrade／result 都沒有）",
+        E.gas.writes().length === 0,
+        E.gas.writes().map((w) => w.action)
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "缺資料的關卡：來源恢復（記住的共用帳號、開頁就在讀取、內建展示場第 0 波）：設定先讀完、再放行讀取，改用已讀到的後端這一關重新載入",
+    async (mk) => {
+      const KEY = "k_s39_n";
+      const E = await mk({
+        maps: [
+          MAP39("chapter1_1", 1),
+          MAP39("chapter1_2", 2),
+          MAP39("chapter1_3", 3),
+        ],
+        enemies: ENEMIES,
+        seed: [
+          {
+            key: KEY,
+            data: NEW({ team: [{ hero_id: "ma_chao", slot: 1 }] }),
+            rev: 2,
+          },
+        ],
+      });
+      const holdMaps = E.gas.rule("get_all_maps", "hold");
+      const holdProfile = E.gas.rule("get_profile", "hold");
+      const p = await E.page({ storage: { shenma_player_key: KEY } });
+      const asked = await until(
+        () => E.gas.count("get_profile") > 0 && E.gas.count("get_all_maps") > 0,
+        15000
+      );
+      await sleep(1500);
+      const c0 = await ctl39(p);
+      const f0 = await refs39r(p);
+      check(
+        "開頁：讀取存檔與設定的請求都已送出、回應暫停中；內建展示場第 0 波、這一場的來源是還沒選帳號（受控唯讀）",
+        !!asked &&
+          !!c0.battleId &&
+          c0.state === 1 &&
+          c0.wave === 0 &&
+          !sameJson(await base39r(p), [13, 3]) &&
+          !!f0.ctx &&
+          f0.ctx.owner.mode === "none",
+        { c0, f0 }
+      );
+      check("開始旁錄載入", await watchLoads35(p));
+      check("放行 get_all_maps 的回應", holdMaps.release() === 1);
+      const cached = await configCached39r(p);
+      await sleep(800);
+      const c1 = await ctl39(p);
+      check(
+        "設定讀完（快取已寫入）時存檔還在讀取：沒有重新載入（同一場、載入 0 次、仍是內建關卡）",
+        !!cached &&
+          c1.battleId === c0.battleId &&
+          sameJson(await loads35(p), []) &&
+          !sameJson(await base39r(p), [13, 3]),
+        { c1, loads: await loads35(p) }
+      );
+      check("放行 get_profile 的回應", holdProfile.release() >= 1);
+      const id2 = await waitNewBattle39(p, c0.battleId);
+      const c2 = await ctl39(p);
+      const f2 = await refs39r(p);
+      const loads = await loads35(p);
+      check(
+        "讀取完成後：用已讀到的後端這一關重新載入一次（城池在第 13 欄第 3 列）、新的一場第 0 波；configReady true、來源是這個共用帳號、目前關卡的 ref 是「測試第1關」（受控唯讀）",
+        !!id2 &&
+          loads.length === 1 &&
+          loads[0].stage === "chapter1_1" &&
+          loads[0].battleId === c2.battleId &&
+          sameJson(await base39r(p), [13, 3]) &&
+          c2.state === 1 &&
+          c2.wave === 0 &&
+          !!f2.ctx &&
+          f2.ctx.configReady === true &&
+          f2.ctx.owner.key === KEY &&
+          !!f2.cur &&
+          f2.cur.name === "測試第1關",
+        { c2, f2, loads }
+      );
+      check(
+        "沒有任何寫入",
+        E.gas.writes().length === 0,
+        E.gas.writes().map((w) => w.action)
+      );
+      return E;
+    }
+  );
+
+  await scenario(
+    "缺資料的關卡：來源恢復（390×600、後端這一關缺路線）：設定先讀完才選訪客，重新載入仍被拒、不從內建展示場出征",
+    async (mk) => {
+      const E = await mk({
+        viewport: { width: 390, height: 600 },
+        maps: [
+          MAP39("chapter1_1", 1, "route"),
+          MAP39("chapter1_2", 2),
+          MAP39("chapter1_3", 3),
+        ],
+        enemies: ENEMIES,
+      });
+      const hold = E.gas.rule("get_all_maps", "hold");
+      const p = await E.page({ storage: {} });
+      check("沒有金鑰：出現金鑰視窗", (await waitLoaded(p)) === "key-setup");
+      await until(() => E.gas.count("get_all_maps") > 0, 15000);
+      await stable39r(p);
+      check("開始旁錄載入", await watchLoads35(p));
+      const c0 = await ctl39(p);
+      check("放行 get_all_maps 的回應", hold.release() === 1);
+      const cached = await configCached39r(p);
+      const want = T39.route(1);
+      const shown = await until(async () => (await notice39(p)).shown, 10000);
+      await sleep(600);
+      check(
+        "設定讀完（快取已寫入）：說明逐字是缺路線、同一場、載入 0 次",
+        !!cached &&
+          !!shown &&
+          (await notice39(p)).text === want &&
+          (await ctl39(p)).battleId === c0.battleId &&
+          sameJson(await loads35(p), []),
+        { notice: await notice39(p), loads: await loads35(p) }
+      );
+      await closeModal(p);
+      await p.locator('[data-testid="key-setup-guest"]').click();
+      check("一般 UI：訪客一鍵試玩", await enterGuest(p));
+      await sleep(1500);
+      await closeModal(p);
+      const c1 = await ctl39(p);
+      const st1 = await storageOf(p);
+      const n1 = await notice39(p);
+      const b1 = await buttons39(p);
+      check(
+        "選訪客後重新載入仍被拒：同一場（內建展示場第 0 波）、載入 0 次、說明還在；「進入戰場」「迎戰」「自動」停用、title 是同一句",
+        c1.battleId === c0.battleId &&
+          c1.state === 1 &&
+          c1.wave === 0 &&
+          sameJson(await loads35(p), []) &&
+          n1.text === want &&
+          b1.enter &&
+          b1.enter.disabled &&
+          b1.enter.title === want &&
+          b1.start.disabled &&
+          b1.start.title === want &&
+          b1.auto.disabled &&
+          b1.auto.title === want,
+        { c1, n1, b1, loads: await loads35(p) }
+      );
+      check(
+        "說明每一個字都在視窗內、沒有被聊天按鈕或其他東西遮住",
+        n1.chars > 0 && n1.blocked.length === 0 && n1.offscreen.length === 0,
+        { chars: n1.chars, blocked: n1.blocked, offscreen: n1.offscreen }
+      );
+      const kept = [];
+      for (const [sel, slot] of [
+        ['[data-testid="enter-battle"]', "s39re"],
+        ['[data-testid="hud-start-battle"]', "s39rs"],
+        ['[data-testid="hud-auto"]', "s39ra"],
+      ])
+        kept.push(
+          (await keepHandler37(p, sel, slot)) && (await callKept37(p, slot))
+        );
+      await sleep(800);
+      const c2 = await ctl39(p);
+      check(
+        "受控呼叫三顆按鈕保留的 onClick：都不開戰、不開自動（同一場、第 0 波備戰、沒有出兵、武將／金幣／城防不變）",
+        kept.every(Boolean) &&
+          c2.battleId === c0.battleId &&
+          c2.state === 1 &&
+          c2.wave === 0 &&
+          c2.auto === false &&
+          c2.enemies === 0 &&
+          c2.heroes === c1.heroes &&
+          c2.gold === c1.gold &&
+          c2.hp === c1.hp,
+        { kept, c2 }
+      );
+      check(
+        "沒有任何寫入；選訪客之後的瀏覽器儲存逐字不變",
+        E.gas.writes().length === 0 && sameJson(await storageOf(p), st1),
+        E.gas.writes().map((w) => w.action)
+      );
+      await shot(p, "stage-recover-route-390");
+      return E;
+    }
+  );
+
   // ═══ 18. 入口版面：1280 桌面、390×600、390×844 ═══
   for (const vp of [
     { width: 1280, height: 800 },

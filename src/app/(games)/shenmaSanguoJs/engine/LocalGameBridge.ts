@@ -287,6 +287,22 @@ export class LocalGameBridge {
     return this.engine.battleManager.gameState;
   }
 
+  /** 目前這一場的載入判斷用狀態（唯讀：每次回傳新的純值，直接取 BattleManager 當下的這一場、階段、波次與暫停；不改任何狀態） */
+  public getStageLoadState(): {
+    battleId: string;
+    phase: GameState;
+    wave: number;
+    paused: boolean;
+  } {
+    const bm = this.engine.battleManager;
+    return {
+      battleId: bm.battleId,
+      phase: bm.gameState,
+      wave: bm.currentWave,
+      paused: bm.manualPaused,
+    };
+  }
+
   /** 目前這一場的控制狀態（唯讀：每次回傳新的純值；不給 BattleManager 或引擎物件、不改任何狀態） */
   public getControlState(): {
     battleId: string;
