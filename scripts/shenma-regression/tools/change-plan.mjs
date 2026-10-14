@@ -524,7 +524,7 @@ export const RULES = [
   },
   // 神馬三國與地圖編輯器底下沒有對應規則的檔案不在這裡，會落到「未分類」
   {
-    test: /^src\/app\/\((games|tools|general|investment|media|auth)\)\/(?!shenmaSanguo\/|mapEditor\/)/,
+    test: /^src\/app\/\((games|tools|general|investment|media|auth)\)\/(?!shenmaSanguo(?:Js)?\/|mapEditor\/)/,
     why: "其他頁面（不是神馬三國或地圖編輯器）",
     none: true,
   },

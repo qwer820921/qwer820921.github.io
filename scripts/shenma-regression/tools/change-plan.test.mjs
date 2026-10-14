@@ -451,6 +451,56 @@ try {
   }
 }
 
+// ── JS 版（Canvas）的路徑不能被「其他頁面」規則當成不用測（和 Godot 版合併後的守門）──
+// 期待值手寫：五個 Canvas 路徑都是未分類，plan 因此結束碼 3、changed 不執行；不是默默以 0 支瀏覽器腳本成功。
+// Canvas 的完整契約要另外跑（FULL 是 Godot 版的清單）；其他頁面、Godot 版網頁、地圖編輯器與文件的分類不變
+{
+  const CV = "src/app/(games)/shenmaSanguoJs/";
+  const canvasPaths = [
+    CV + "components/shenmaSanguoJsPage.tsx",
+    CV + "store/useJsPlayerStore.ts",
+    CV + "tests/profile-contract-web.js",
+    CV + "utils/guestStars.test.mjs",
+    CV + "styles/shenmaSanguoJs.module.css",
+  ];
+  check(
+    "Canvas：頁面、store、瀏覽器契約、單元、CSS 五個路徑都是未分類（不落到「其他頁面」而不跑測試）",
+    canvasPaths.every((p) => classify(p) === null),
+    canvasPaths.map((p) => [p, classify(p)?.why ?? null])
+  );
+  const canvasPlan = makePlan(
+    canvasPaths.map((p) => ({ status: "M", path: p })),
+    opts()
+  );
+  check(
+    "Canvas：只改這五個路徑時計畫把它們都列為未分類、瀏覽器腳本 0 支、不要求完整一次（run-tier 的 plan 因此結束碼 3、changed 不執行）",
+    same(canvasPlan.unknown, canvasPaths) &&
+      canvasPlan.browser.scripts.length === 0 &&
+      canvasPlan.browser.full === false,
+    { unknown: canvasPlan.unknown, browser: canvasPlan.browser }
+  );
+  check(
+    "Canvas 的文件仍是「文件」、不用測",
+    classify(CV + "doc/project-guidelines.md")?.why === "文件",
+    classify(CV + "doc/project-guidelines.md")
+  );
+  const OTHER = "其他頁面（不是神馬三國或地圖編輯器）";
+  check(
+    "其他頁面、Godot 版網頁、地圖編輯器、回歸工具的分類不變",
+    classify("src/app/(tools)/eatWhat/page.tsx")?.why === OTHER &&
+      classify("src/app/(games)/game2048/page.tsx")?.why === OTHER &&
+      classify("src/app/(general)/about/page.tsx")?.why === OTHER &&
+      classify(SG + "utils/heroSkills.ts")?.why === "武將技能的定義與說明" &&
+      classify(SG + "utils/gameRelease.json")?.why ===
+        "網站入口指標（兩個入口開哪一個遊戲目錄；發布與回退）" &&
+      classify("src/app/(tools)/mapEditor/components/mapTab.tsx")?.why ===
+        "地圖編輯器" &&
+      classify("scripts/shenma-regression/tools/game-release.mjs")?.why ===
+        "回歸工具（快速一層執行或核對）",
+    null
+  );
+}
+
 const failed = results.filter((r) => !r.pass).length;
 console.log("RESULT_JSON " + JSON.stringify({ total: results.length, failed }));
 process.exit(failed ? 1 : 0);

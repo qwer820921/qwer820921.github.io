@@ -36,13 +36,13 @@ const CASES = [
     "首頁關於連結的預先載入 404（(general) 群組）",
     NOT_FOUND,
     `${L}/about/__next.!KGdlbmVyYWwp.about.__PAGE__.txt?_rsc=hhyzRTNnoygmEk_c`,
-    true,
+    false,
   ],
   [
     "首頁部落格根目錄連結的預先載入 404（(general) 群組）",
     NOT_FOUND,
     `${L}/blog/__next.!KGdlbmVyYWwp.blog.txt?_rsc=mcgnBHfOxH2oZuNM`,
-    true,
+    false,
   ],
   [
     "神馬三國（(games) 群組）的預先載入 404 不略過",
@@ -122,13 +122,13 @@ const CASES = [
     "首頁聯絡連結的預先載入 404（靜態匯出）",
     NOT_FOUND,
     `${L}/contact/__next.!KGdlbmVyYWwp.contact.__PAGE__.txt?_rsc=p50BYc_-qoS2cVPF`,
-    true,
+    false,
   ],
   [
     "首頁小說連結的預先載入 404（靜態匯出）",
     NOT_FOUND,
     `${L}/novels/__next.!KGdlbmVyYWwp.novels.txt?_rsc=1XQ3YexBALBL0-IL`,
-    true,
+    false,
   ],
   [
     "神馬三國遊戲目錄的 404 不略過",
