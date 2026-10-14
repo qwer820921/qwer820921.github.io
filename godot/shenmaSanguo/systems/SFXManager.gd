@@ -31,6 +31,24 @@ var _cooldowns:  Dictionary               = {}
 # Web AudioContext 是否已解鎖（影響所有 AudioStreamPlayer）
 var _audio_unlocked: bool = false
 
+# ── 背景音樂的下載（網頁版）──────────────────────────────────
+# 網頁版的資料包不含背景音樂（匯出設定排除 audio/bgm，啟動時不必下載）；第一次要播放（玩家點擊後、音效開著）時
+# 才從遊戲目錄下載同一個檔案。下載中不重複送出，失敗不影響遊戲，也不自動重試（下一次要播放時才再試，最多 BGM_MAX_TRIES 次）
+## 遊戲目錄裡的背景音樂檔（和 index.html 並排；匯出後由 tools/postexport.mjs 從 audio/bgm 複製）
+const BGM_FILE: String = "bgm_battle.ogg"
+const BGM_MAX_TRIES: int = 2
+## 資料包裡沒有背景音樂、要下載
+var _bgm_remote: bool = false
+## 目前應該播放（play_bgm 之後、stop_bgm 之前）：下載完成時只在仍然需要時播放
+var _bgm_wanted: bool = false
+## 下載中（同時只有一個）
+var _bgm_pending: bool = false
+var _bgm_http: HTTPRequest = null
+## 送出的下載次數（這次開啟）
+var _bgm_tries: int = 0
+## 下載的方式：有設定時改用它（測試用），參數是完成時呼叫的 Callable(ok: bool, body: PackedByteArray)
+var bgm_fetcher: Callable = Callable()
+
 # ═══════════════════════════════════════════
 #  初始化
 # ═══════════════════════════════════════════
@@ -59,6 +77,9 @@ func _load_streams() -> void:
 	var bgm_path: String = "res://audio/bgm/bgm_battle.ogg"
 	if ResourceLoader.exists(bgm_path):
 		_streams["bgm_battle"] = load(bgm_path)
+	elif OS.has_feature("web"):
+		_bgm_remote = true
+		print("[SFXManager] bgm: not in pck, download on first play: ", BGM_FILE)
 	else:
 		print("[SFXManager] missing bgm: ", bgm_path)
 
@@ -138,15 +159,20 @@ func play(sfx_key: String) -> void:
 func play_bgm() -> void:
 	if not sfx_enabled:
 		return
+	_bgm_wanted = true
 	var stream: AudioStream = _streams.get("bgm_battle")
 	if stream == null:
-		print("[SFXManager] play_bgm: stream not found")
+		if _bgm_remote:
+			_request_bgm()
+		else:
+			print("[SFXManager] play_bgm: stream not found")
 		return
 	_bgm_player.stream = stream
 	_bgm_player.play()
 	print("[SFXManager] BGM playing")
 
 func stop_bgm() -> void:
+	_bgm_wanted = false
 	if _bgm_player:
 		_bgm_player.stop()
 
@@ -167,3 +193,42 @@ func _get_free_player() -> AudioStreamPlayer:
 func _on_bgm_finished() -> void:
 	if sfx_enabled and _bgm_player.stream != null:
 		_bgm_player.play()
+
+## 下載背景音樂（網頁版第一次要播放時）：下載中或已用完次數時不送出
+func _request_bgm() -> void:
+	if _bgm_pending or _bgm_tries >= BGM_MAX_TRIES:
+		return
+	_bgm_pending = true
+	_bgm_tries += 1
+	print("[SFXManager] BGM download start (try %d)" % _bgm_tries)
+	if bgm_fetcher.is_valid():
+		bgm_fetcher.call(_on_bgm_fetched)
+		return
+	_bgm_http = HTTPRequest.new()
+	add_child(_bgm_http)
+	_bgm_http.request_completed.connect(
+		func(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+			_on_bgm_fetched(result == HTTPRequest.RESULT_SUCCESS and code == 200, body))
+	var url: String = str(JavaScriptBridge.eval("new URL('%s', location.href).href" % BGM_FILE, true))
+	if _bgm_http.request(url) != OK:
+		_on_bgm_fetched(false, PackedByteArray())
+
+## 下載完成：成功時記住（之後不再下載），仍然需要播放、音效開著而且還沒在播時才開始播放
+func _on_bgm_fetched(ok: bool, body: PackedByteArray) -> void:
+	_bgm_pending = false
+	if _bgm_http != null:
+		_bgm_http.queue_free()
+		_bgm_http = null
+	var stream: AudioStream = null
+	if ok and not body.is_empty():
+		stream = AudioStreamOggVorbis.load_from_buffer(body)
+	if stream == null:
+		print("[SFXManager] BGM download failed (try %d), game continues without BGM" % _bgm_tries)
+		return
+	_streams["bgm_battle"] = stream
+	_bgm_remote = false
+	print("[SFXManager] BGM downloaded: ", body.size(), " bytes")
+	if _bgm_wanted and sfx_enabled and not _bgm_player.playing:
+		_bgm_player.stream = stream
+		_bgm_player.play()
+		print("[SFXManager] BGM playing")

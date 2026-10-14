@@ -128,8 +128,9 @@ async (page) => {
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { card, detail };
     out.A_shot = await H.shot(page, "r15-a-skill-detail");
-    run.check("A-1 主頁武將視窗：周瑜的卡片顯示「技能：火攻」；詳情寫明每 1 秒一次、共 3 次、命中當下攻擊力的 20%、第一次在命中 1 秒後、不疊加，以及目前攻擊力 122 時每次 24.4",
-      /技能：火攻/.test(card) && /每 1 秒/.test(detail) && /共 3 次/.test(detail) && /20%/.test(detail) && /命中 1 秒後/.test(detail) && /不會疊加/.test(detail) && /目前攻擊力 122：每次灼燒 24\.4/.test(detail),
+    run.check("A-1 主頁武將視窗：周瑜的卡片顯示「技能：火攻」；詳情是短版說明：每 1 秒 1 次、共 3 次、命中時攻擊力的 20%（目前攻擊力 122 時每次 24.4）、再次命中重設成 3 次不疊加",
+      /技能：火攻/.test(card) &&
+        detail.includes("普通攻擊命中後灼燒：每 1 秒 1 次、共 3 次，每次是命中時攻擊力的 20%（目前 24.4）。再次命中重設成 3 次、不疊加。"),
       out.A_modal);
     await page.locator('button[class*="modalClose"]').last().click();
     await H.sleep(300);

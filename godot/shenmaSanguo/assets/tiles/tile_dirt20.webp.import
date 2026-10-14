@@ -15,9 +15,9 @@ dest_files=["res://.godot/imported/tile_dirt20.webp-e698ccc8d77b0cd6e9959f389fb4
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.9
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

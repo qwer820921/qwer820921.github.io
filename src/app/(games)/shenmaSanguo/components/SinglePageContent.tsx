@@ -17,7 +17,7 @@ import {
 } from "../utils/stagePlayability";
 import { describePlayerError } from "../utils/playerErrors";
 import { BattleSession, isBattleResultMessage } from "../utils/battleSession";
-import { heroSkillPayload } from "../utils/heroSkills";
+import { baseGuardHudPercent, heroSkillPayload } from "../utils/heroSkills";
 import { toBattleRecord } from "../utils/battleReward";
 import {
   panelAfterSellResult,
@@ -27,6 +27,7 @@ import {
 } from "../utils/towerSell";
 import {
   EngineStatus,
+  GAME_ENTRY,
   activateLatestGameWorker,
   isCompatibleEngine,
 } from "../utils/gameEngine";
@@ -54,6 +55,9 @@ import SpeedToggle from "../battle/components/SpeedToggle";
 import PauseToggle, { PauseBadge } from "../battle/components/PauseToggle";
 import NextWaveEntry from "./NextWaveEntry";
 import { BattleTipsPanel, BattleTipsToggle } from "./BattleTips";
+import { BattleLivePanel, BattleLiveToggle } from "./BattleLivePanel";
+import { ObservationTracker, isCurrentPanel } from "../utils/battleObservation";
+import { publishObservation } from "../store/battleObservationStore";
 import { NextWaveBattle } from "../utils/nextWave";
 import StageSelectModal from "./modals/StageSelectModal";
 import TeamEditModal from "./modals/TeamEditModal";
@@ -78,6 +82,8 @@ interface BattleStats {
   deploy_slow?: boolean;
   /** 手動暫停：Godot 已確認的狀態 */
   paused?: boolean;
+  /** 守護（孫權）：這一場此刻生效的漏城傷害倍率（沒有生效的守護時是 1；舊版遊戲沒有這個欄位） */
+  base_guard_mult?: number;
 }
 
 const GameState = { WAITING: 0, PREP: 1, BATTLE: 2, RESULT: 3 };
@@ -472,6 +478,11 @@ export default function SinglePageContent() {
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   const [swUpdateReady, setSwUpdateReady] = useState(false);
   const [payloadSent, setPayloadSent] = useState(false);
+  // 隊伍更新（update_team）只在已經送出關卡資料、遊戲裡有這一場時才送；還沒送出時，送出的關卡資料就會用最新的隊伍
+  const payloadSentRef = useRef(false);
+  useEffect(() => {
+    payloadSentRef.current = payloadSent;
+  }, [payloadSent]);
   const [currentMapId, setCurrentMapId] = useState<string>("");
   const [battleStats, setBattleStats] = useState<BattleStats | null>(null);
   const [placementMenu, setPlacementMenu] = useState<{
@@ -496,6 +507,14 @@ export default function SinglePageContent() {
   const [placedHeroIds, setPlacedHeroIds] = useState<string[]>([]);
   // 目前 Godot 關卡的戰鬥：記下屬於哪個帳號、能不能採用結算（見 utils/battleSession）
   const sessionRef = useRef(new BattleSession());
+  // 戰況觀測（新版遊戲的 battle_observation，見 utils/battleObservation）：只採用目前 iframe、目前這一場、比較新的一份
+  const obsRef = useRef(new ObservationTracker());
+  const [obsCapable, setObsCapable] = useState(false);
+  // 戰況（武將技能與敵軍）：開關在 HUD，收起時焦點還給開關
+  const [liveOpen, setLiveOpen] = useState(false);
+  const liveBtnRef = useRef<HTMLButtonElement>(null);
+  // 離開頁面：這一頁的觀測不留給下一個戰鬥入口
+  useEffect(() => () => publishObservation(null), []);
 
   // ── Modal 狀態 ─────────────────────────────────────────────
   const [showStageModal, setShowStageModal] = useState(false);
@@ -643,6 +662,11 @@ export default function SinglePageContent() {
       setBattleResult(null);
       setPlacedHeroIds([]);
       setCurrentMapId("");
+      // 舊的一場作廢：它的單位面板與戰況不再顯示
+      setUpgradePanel(null);
+      setTowerSell(null);
+      obsRef.current.reset();
+      publishObservation(null);
     });
     return () => {
       unsubscribe();
@@ -660,6 +684,10 @@ export default function SinglePageContent() {
     switch (event.data.type) {
       case "game_ready":
         setIframeLoading(false);
+        // 可選的功能（戰況觀測）：舊版遊戲沒有宣告時不顯示即時資料
+        obsRef.current.onReady(event.data);
+        setObsCapable(obsRef.current.capable);
+        publishObservation(null);
         // 協定版本不同（舊版遊戲）：不送出關卡資料、不開戰，顯示更新提示
         if (!isCompatibleEngine(event.data)) {
           setEngineStatus("incompatible");
@@ -724,8 +752,20 @@ export default function SinglePageContent() {
         setPlacementMenu(null);
         break;
       case "show_upgrade_panel":
+        // 只顯示目前這一場的面板（換關後晚到的上一場面板不顯示；舊版遊戲的武將面板沒有 battle_id，照舊顯示）
+        if (!isCurrentPanel(event.data, sessionRef.current.owner?.id ?? null))
+          break;
         setUpgradePanel(event.data);
         break;
+      case "battle_observation": {
+        // 戰況觀測：只採用目前這一場、比目前新的一份（見 utils/battleObservation）
+        const o = obsRef.current.accept(
+          event.data,
+          sessionRef.current.owner?.id ?? null
+        );
+        if (o) publishObservation(o);
+        break;
+      }
       case "hide_upgrade_panel":
         setUpgradePanel(null);
         setTowerSell(null);
@@ -804,8 +844,12 @@ export default function SinglePageContent() {
     const ticket = usePlayerStore.getState().beginBattle();
     if (!ticket) return;
     sessionRef.current.begin(ticket);
-    // 新的一場：上一場的拒絕開戰提示不適用
+    // 新的一場：上一場的拒絕開戰提示、單位面板與戰況不適用
     setWaveReject(null);
+    setUpgradePanel(null);
+    setTowerSell(null);
+    obsRef.current.reset();
+    publishObservation(null);
     setNextWaveBattle({
       battleId: ticket.id,
       map,
@@ -877,8 +921,9 @@ export default function SinglePageContent() {
     );
   };
 
-  // 隊伍更新後同步給 Godot
+  // 隊伍更新後同步給 Godot（引擎還在載入、還沒送出關卡資料時不送：之後送出的關卡資料會帶最新的隊伍）
   const sendTeamUpdate = useCallback(() => {
+    if (!payloadSentRef.current) return;
     const latestPlayer = usePlayerStore.getState().player;
     if (!latestPlayer || !staticConfig || !iframeRef.current?.contentWindow)
       return;
@@ -921,6 +966,11 @@ export default function SinglePageContent() {
     setTowerSell(null);
     setWaveReject(null);
     setNextWaveBattle(null);
+    // 換新的 iframe：等它的 game_ready 才知道有沒有戰況觀測
+    obsRef.current.reset(false);
+    setObsCapable(false);
+    publishObservation(null);
+    setLiveOpen(false);
     await activateLatestGameWorker();
     setEngineStatus("loading");
     setIframeLoading(true);
@@ -961,6 +1011,11 @@ export default function SinglePageContent() {
     setPlacedHeroIds([]);
     setWaveReject(null);
     setShowStageModal(false);
+    // 上一場的單位面板與戰況不留到新的一場（Godot 換關時不另外送關閉面板）
+    setUpgradePanel(null);
+    setTowerSell(null);
+    obsRef.current.reset();
+    publishObservation(null);
     // 明確離開目前的戰鬥：舊的一場作廢，解除它的帳號切換鎖
     leaveBattle(sessionRef.current);
 
@@ -1171,6 +1226,30 @@ export default function SinglePageContent() {
               ?.name ?? player?.max_stage,
         })
       : null;
+  // 引擎還沒就緒、還沒送出關卡資料，但目前帳號的存檔與遊戲設定已經讀好：先顯示頂欄（D177）。
+  // 可以看武將、隊伍、玩家資訊與選關；戰鬥相關的按鈕要有戰況才出現，選的關卡照原本的流程在 game_ready 之後才送出。
+  // 只在引擎正常載入中才提早顯示：讀取失敗、設定讀不到、正在輸入金鑰，以及引擎無法啟動、版本不符、載入逾時時照舊不顯示（各自有說明與出口）；
+  // 存檔要屬於目前的金鑰，不顯示其他帳號的舊資料
+  const preEngineHud =
+    !payloadSent &&
+    hasKey &&
+    !!player &&
+    !!staticConfig &&
+    player.key === getPlayerKey() &&
+    !keyEntryVisible &&
+    !playerLoadFailed &&
+    !configFailed &&
+    engineStatus === "loading" &&
+    !engineFailed &&
+    !loadTimedOut;
+  // 頂欄為什麼出現（data-hud-phase，測試用來分辨）：battle＝已送出關卡資料、hold＝寫入限制、blocked＝這一關不能出征、preload＝引擎還在載入
+  const hudPhase = payloadSent
+    ? "battle"
+    : writeHold && !!player
+      ? "hold"
+      : stageBlocked
+        ? "blocked"
+        : "preload";
   const latestPlayable = stageBlocked
     ? latestPlayableStage(staticConfig?.maps, player?.max_stage)
     : null;
@@ -1334,7 +1413,7 @@ export default function SinglePageContent() {
           <iframe
             key={iframeKey}
             ref={iframeRef}
-            src="/games/shenmaSanguo/index.html"
+            src={GAME_ENTRY}
             className={styles.gameIframe}
             onLoad={() => setIframeLoading(false)}
             allow="autoplay; fullscreen"
@@ -1388,12 +1467,19 @@ export default function SinglePageContent() {
         </div>
       </div>
 
-      {/* HUD 疊加層：寫入限制中沒有開戰，仍顯示 HUD 供查看武將、隊伍與玩家資訊（戰鬥按鈕要有戰況才出現） */}
-      {(payloadSent || (writeHold && !!player) || stageBlocked) &&
+      {/* HUD 疊加層：寫入限制中沒有開戰、引擎還在載入（preEngineHud）時也顯示，供查看武將、隊伍、玩家資訊與選關（戰鬥按鈕要有戰況才出現） */}
+      {(payloadSent ||
+        (writeHold && !!player) ||
+        stageBlocked ||
+        preEngineHud) &&
         !battleResult && (
           <>
             {/* 頂欄 */}
-            <div className={styles.hudTopBar}>
+            <div
+              className={styles.hudTopBar}
+              data-stage-reserve="top"
+              data-hud-phase={hudPhase}
+            >
               <button
                 ref={playerBtnRef}
                 className={styles.hudAvatar}
@@ -1449,6 +1535,16 @@ export default function SinglePageContent() {
                       >
                         {battleStats.hp}/{battleStats.max_hp}
                       </span>
+                      {baseGuardHudPercent(battleStats.base_guard_mult) > 0 && (
+                        <span
+                          className={styles.hudBaseGuard}
+                          data-testid="hud-base-guard"
+                          title={`守護：敵人漏到城池的傷害減少 ${baseGuardHudPercent(battleStats.base_guard_mult)}%（累計後無條件進位才扣城防）`}
+                        >
+                          守護 −
+                          {baseGuardHudPercent(battleStats.base_guard_mult)}%
+                        </span>
+                      )}
                     </span>
                   </>
                 )}
@@ -1456,6 +1552,14 @@ export default function SinglePageContent() {
               {payloadSent && battleStats && (
                 <BattleTipsToggle
                   buttonRef={tipsBtnRef}
+                  className={styles.hudStageBtn}
+                />
+              )}
+              {payloadSent && battleStats && obsCapable && (
+                <BattleLiveToggle
+                  open={liveOpen}
+                  onToggle={() => setLiveOpen((o) => !o)}
+                  buttonRef={liveBtnRef}
                   className={styles.hudStageBtn}
                 />
               )}
@@ -1470,7 +1574,7 @@ export default function SinglePageContent() {
             </div>
 
             {/* 操作按鈕列（top bar 下方，左右分組） */}
-            <div className={styles.hudActionBar}>
+            <div className={styles.hudActionBar} data-stage-reserve="top">
               <div className={styles.hudActionBarLeft}>
                 {battleStats && battleStats.game_state !== GameState.RESULT && (
                   <>
@@ -1546,6 +1650,19 @@ export default function SinglePageContent() {
           stageRef={stageRef}
           toggleRef={tipsBtnRef}
           hudReserve={82}
+        />
+      )}
+
+      {/* 戰況（武將技能與敵軍）：新版遊戲才有；只是查看，不疊在遊戲畫面上（右側夠寬時固定在右側，否則接在戰場下方） */}
+      {payloadSent && battleStats && !battleResult && obsCapable && (
+        <BattleLivePanel
+          open={liveOpen}
+          onClose={() => setLiveOpen(false)}
+          stageRef={stageRef}
+          toggleRef={liveBtnRef}
+          battleId={nextWaveBattle?.battleId ?? null}
+          enemiesConfig={nextWaveBattle?.enemies}
+          heroesConfig={staticConfig?.heroesConfig}
         />
       )}
 

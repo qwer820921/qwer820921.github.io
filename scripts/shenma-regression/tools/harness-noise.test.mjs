@@ -33,6 +33,30 @@ const L = "http://localhost:3000";
 // [名稱, console 文字, 網址, 是否應略過]
 const CASES = [
   [
+    "首頁關於連結的預先載入 404（(general) 群組）",
+    NOT_FOUND,
+    `${L}/about/__next.!KGdlbmVyYWwp.about.__PAGE__.txt?_rsc=hhyzRTNnoygmEk_c`,
+    true,
+  ],
+  [
+    "首頁部落格根目錄連結的預先載入 404（(general) 群組）",
+    NOT_FOUND,
+    `${L}/blog/__next.!KGdlbmVyYWwp.blog.txt?_rsc=mcgnBHfOxH2oZuNM`,
+    true,
+  ],
+  [
+    "神馬三國（(games) 群組）的預先載入 404 不略過",
+    NOT_FOUND,
+    `${L}/shenmaSanguo/__next.!KGdhbWVzKQ.shenmaSanguo.txt?_rsc=x`,
+    false,
+  ],
+  [
+    "(general) 群組的其他 404（不是預先載入）不略過",
+    NOT_FOUND,
+    `${L}/about/__next.!KGdlbmVyYWwp.about.js`,
+    false,
+  ],
+  [
     "部落格子路徑的預先載入 404（靜態匯出）",
     NOT_FOUND,
     `${L}/blog/example/__next.a.b.txt`,
@@ -82,6 +106,42 @@ const CASES = [
     false,
   ],
   ["首頁聯絡卡片封面 404", NOT_FOUND, `${L}/images/cover/contact.webp`, true],
+  [
+    "首頁 bobaSurvivors 卡片封面 404",
+    NOT_FOUND,
+    `${L}/images/cover/bobaSurvivors.webp`,
+    true,
+  ],
+  [
+    "首頁神馬三國卡片封面 404",
+    NOT_FOUND,
+    `${L}/images/cover/shenmaSanguo.webp`,
+    true,
+  ],
+  [
+    "首頁聯絡連結的預先載入 404（靜態匯出）",
+    NOT_FOUND,
+    `${L}/contact/__next.!KGdlbmVyYWwp.contact.__PAGE__.txt?_rsc=p50BYc_-qoS2cVPF`,
+    true,
+  ],
+  [
+    "首頁小說連結的預先載入 404（靜態匯出）",
+    NOT_FOUND,
+    `${L}/novels/__next.!KGdlbmVyYWwp.novels.txt?_rsc=1XQ3YexBALBL0-IL`,
+    true,
+  ],
+  [
+    "神馬三國遊戲目錄的 404 不略過",
+    NOT_FOUND,
+    `${L}/games/shenmaSanguo-v/0123456789abcdef/index.pck`,
+    false,
+  ],
+  [
+    "小說的其他 404（不是預先載入）不略過",
+    NOT_FOUND,
+    `${L}/novels/main.js`,
+    false,
+  ],
   ["其他圖片 404 不略過", NOT_FOUND, `${L}/images/cover/other.webp`, false],
   [
     "GA 被網路防線擋下",

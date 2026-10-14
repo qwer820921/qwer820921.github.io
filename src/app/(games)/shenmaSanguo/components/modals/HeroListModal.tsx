@@ -8,13 +8,18 @@ import { HeroState, HeroConfig } from "../../types";
 import HeroSkillInfo from "../HeroSkillInfo";
 import HeroAntiAir from "../HeroAntiAir";
 import HeroFilterBar from "../HeroFilterBar";
+import HeroCompareBar from "../HeroCompareBar";
+import HeroCompareDialog from "./HeroCompareDialog";
 import { useDialogFocus } from "../useDialogFocus";
+import { useHeroCompare } from "../useHeroCompare";
+import { compareColumns } from "../../utils/heroCompare";
 import { attackIntervalSec, formatSec } from "../../utils/heroStats";
 import {
   DEFAULT_HERO_FILTER,
   HeroFilterCriteria,
   filterAndSortHeroes,
   resolveHeroState,
+  teamHeroIdSet,
 } from "../../utils/heroFilter";
 import { jobInfo, rarityInfo } from "../../utils/heroCategories";
 import styles from "../../styles/shenmaSanguo.module.css";
@@ -495,6 +500,11 @@ export default function HeroListModal({
   const onKeyDown = useDialogFocus(panelRef, closeRef, onClose, {
     fallbackFocus: () => fallbackFocusRef?.current ?? null,
   });
+  // 兩位武將的比較（比較模式中點卡片是選取，不開升級）；切換存檔時清掉
+  const compare = useHeroCompare(
+    player?.key ?? null,
+    staticConfig?.heroesConfig ?? null
+  );
 
   const ready = !!player && !!staticConfig;
   const header = (
@@ -547,14 +557,19 @@ export default function HeroListModal({
     );
   }
 
-  const teamHeroIds = new Set((player.team || []).map((s) => s.hero_id));
+  // 目前存檔出陣隊伍裡的武將（「在隊中」標示與上陣篩選共用；設定沒有的 id 不算）
+  const teamHeroIds = teamHeroIdSet(player.team, staticConfig.heroesConfig);
 
   // 每次都用目前的玩家資料計算（升級、切換帳號後立即反映）；在隊中的武將也照常顯示
   const listed = filterAndSortHeroes(
     staticConfig.heroesConfig,
     player.heroes,
-    criteria
+    criteria,
+    teamHeroIds
   );
+  const heroName = (id: string) =>
+    staticConfig.heroesConfig.find((c) => c.hero_id === id)?.name ?? id;
+  const shownIds = new Set(listed.items.map((e) => e.config.hero_id));
 
   const selectedConfig = selectedHeroId
     ? (staticConfig.heroesConfig.find((c) => c.hero_id === selectedHeroId) ??
@@ -587,6 +602,19 @@ export default function HeroListModal({
               onChange={setCriteria}
               matched={listed.matched}
               total={listed.total}
+              statusFilters
+              teamUnknown={listed.teamUnknown}
+            />
+            <HeroCompareBar
+              active={compare.active}
+              names={compare.selected.map(heroName)}
+              hiddenNames={compare.selected
+                .filter((id) => !shownIds.has(id))
+                .map(heroName)}
+              refused={compare.refused}
+              onToggle={compare.toggleMode}
+              onStart={compare.start}
+              onClear={compare.clear}
             />
 
             {/* Hero grid */}
@@ -597,24 +625,36 @@ export default function HeroListModal({
                 const color = rarity.color;
                 const jColor = job.color;
                 const isSelected = config.hero_id === selectedHeroId;
-                const inTeam = teamHeroIds.has(config.hero_id);
+                const inTeam = !!teamHeroIds?.has(config.hero_id);
                 const canAfford = player.gold >= upgradeCost;
+                const picked = compare.selected.includes(config.hero_id);
                 return (
                   <Col xs={6} sm={4} key={config.hero_id}>
                     <button
                       type="button"
                       className={`${styles.heroCard} ${styles.heroCardButton}`}
                       data-hero-id={config.hero_id}
-                      aria-haspopup="dialog"
+                      data-compare-picked={
+                        compare.active ? String(picked) : undefined
+                      }
+                      aria-haspopup={compare.active ? undefined : "dialog"}
+                      aria-pressed={compare.active ? picked : undefined}
                       style={{
                         flexDirection: "column",
                         borderTopColor: color,
                         borderTopWidth: "3px",
-                        outline: isSelected
-                          ? `2px solid ${color}55`
-                          : undefined,
+                        outline:
+                          compare.active && picked
+                            ? "3px solid var(--sg-blue)"
+                            : isSelected
+                              ? `2px solid ${color}55`
+                              : undefined,
                       }}
-                      onClick={() => setSelectedHeroId(config.hero_id)}
+                      onClick={() =>
+                        compare.active
+                          ? compare.pick(config.hero_id)
+                          : setSelectedHeroId(config.hero_id)
+                      }
                     >
                       <span
                         className={styles.heroCardImg}
@@ -698,12 +738,20 @@ export default function HeroListModal({
                         <HeroSkillInfo heroId={config.hero_id} variant="tag" />
                         <span
                           className={
-                            canAfford
-                              ? styles.heroHintAffordable
-                              : styles.heroHint
+                            compare.active
+                              ? styles.heroHint
+                              : canAfford
+                                ? styles.heroHintAffordable
+                                : styles.heroHint
                           }
                         >
-                          {canAfford ? `可升級 (-${upgradeCost})` : "點擊升級"}
+                          {compare.active
+                            ? picked
+                              ? "已選比較（再點取消）"
+                              : "點選加入比較"
+                            : canAfford
+                              ? `可升級 (-${upgradeCost})`
+                              : "點擊升級"}
                         </span>
                       </span>
                     </button>
@@ -723,6 +771,19 @@ export default function HeroListModal({
           onClose={closeDetail}
           onUpgrade={() => upgradeHero(selectedHero.hero_id, selectedConfig)}
           onUpgraded={onHeroUpgraded}
+          listPanelRef={panelRef}
+          listCloseRef={closeRef}
+        />
+      )}
+
+      {compare.open && (
+        <HeroCompareDialog
+          columns={compareColumns(
+            compare.selected,
+            staticConfig.heroesConfig,
+            player.heroes
+          )}
+          onClose={compare.close}
           listPanelRef={panelRef}
           listCloseRef={closeRef}
         />

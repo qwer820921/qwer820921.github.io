@@ -2629,8 +2629,8 @@ await test("R12-S1", async () => {
       payload.skill?.first_attack_multiplier === ma.firstAttackMultiplier &&
       JSON.stringify(Object.keys(payload.skill).sort()) ===
         '["first_attack_multiplier","id"]' &&
-      describeHeroSkill(ma).includes(`${ma.firstAttackMultiplier} 倍`) &&
-      describeHeroSkill(ma).includes("x2!") &&
+      describeHeroSkill(ma) ===
+        "每場戰鬥第一次命中的普通攻擊造成 2 倍傷害，之後恢復普通攻擊；換波次或移動位置不會再觸發。" &&
       heroSkillOf("no_skill_hero") === null &&
       !("skill" in none),
     { ma, payload, none }
@@ -2662,9 +2662,10 @@ await test("R14-S1", async () => {
       effectiveRange(huang, 5) === 7.5 &&
       effectiveRange(huang, 5.03) === 7.545 &&
       effectiveRange(null, 5) === 5 &&
-      lv1.includes(`${huang.rangeMultiplier} 倍`) &&
-      lv1.includes("射程 5 格，戰場上是 7.5 格") &&
-      lv2.includes("射程 5.03 格，戰場上是 7.545 格"),
+      lv1 ===
+        "戰場上的有效射程是屬性射程的 1.5 倍（升級的射程成長也一起乘）：目前 5 格，戰場上 7.5 格。傷害與攻擊間隔不變。" &&
+      lv2 ===
+        "戰場上的有效射程是屬性射程的 1.5 倍（升級的射程成長也一起乘）：目前 5.03 格，戰場上 7.545 格。傷害與攻擊間隔不變。",
     { huang, payload, zhaoPayload, lv1, lv2 }
   );
 });
@@ -2707,10 +2708,8 @@ await test("R15-S1", async () => {
       burnTickDamage(zhou, 122) === 24.4 &&
       burnTickDamage(heroSkillOf("zhao_yun"), 100) === 0 &&
       effectiveRange(zhou, 4) === 4 &&
-      text.includes("每 1 秒受到一次傷害，共 3 次") &&
-      text.includes("20%") &&
-      text.includes("目前攻擊力 122：每次灼燒 24.4") &&
-      text.includes("不會疊加"),
+      text ===
+        "普通攻擊命中後灼燒：每 1 秒 1 次、共 3 次，每次是命中時攻擊力的 20%（目前 24.4）。再次命中重設成 3 次、不疊加。",
     { zhou, payload, others, text }
   );
 });
@@ -2731,7 +2730,7 @@ await test("減速光環-S1", async () => {
   const text = describeHeroSkill(guan, 3.5, 160);
   const plain = describeHeroSkill(guan);
   check(
-    "減速光環-S1 關羽的減速光環：送進 Godot 的參數（slow_aura、slow_mult 0.9，只有這兩個欄位、沒有橫掃欄位）與說明文字出自同一份定義；說明寫出降低 10%（變成 90%）、目前範圍半徑、地面限制、飛行與免疫不受影響、取最強不疊加；射程與其他技能的計算不受影響",
+    "減速光環-S1 關羽的減速光環：送進 Godot 的參數（slow_aura、slow_mult 0.9，只有這兩個欄位、沒有橫掃欄位）與說明文字出自同一份定義；說明是短版整句：射程內（目前 3.5 格）地面敵人移速 −10%、飛行與免疫減速不受影響、和其他減速取最強不疊加，沒有提供射程時不寫半徑；射程與其他技能的計算不受影響",
     guan?.id === "slow_aura" &&
       guan.name === "減速光環" &&
       guan.speedMultiplier === 0.9 &&
@@ -2744,15 +2743,10 @@ await test("減速光環-S1", async () => {
       slowAuraPercent(null) === 0 &&
       burnTickDamage(guan, 100) === 0 &&
       effectiveRange(guan, 3.5) === 3.5 &&
-      text.includes("移動速度降低 10%（變成原本的 90%）") &&
-      text.includes("目前等級的範圍半徑是 3.5 格") &&
-      text.includes("所有地面敵人") &&
-      text.includes("含邊界") &&
-      text.includes("飛行敵人與免疫減速的敵人不受影響") &&
-      text.includes("取最強的一個，不會疊加") &&
-      text.includes("不需要普通攻擊的目標") &&
-      !text.includes("橫掃") &&
-      !plain.includes("範圍半徑是"),
+      text ===
+        "射程內（目前 3.5 格）的地面敵人移動速度 −10%；飛行與免疫減速的敵人不受影響。和其他減速取最強、不疊加，但文士塔的減速另外計算。" &&
+      plain ===
+        "射程內的地面敵人移動速度 −10%；飛行與免疫減速的敵人不受影響。和其他減速取最強、不疊加，但文士塔的減速另外計算。",
     { guan, payload, text }
   );
 });
@@ -2780,14 +2774,7 @@ await test("閃避-S1", async () => {
       JSON.stringify(Object.keys(payload.skill).sort()) ===
         '["dodge_chance","id"]' &&
       !("first_attack_multiplier" in payload.skill) &&
-      text.includes("15% 的機率閃避") &&
-      text.includes("這一擊不扣血") &&
-      text.includes("「MISS」") &&
-      text.includes("照原本的防禦計算扣血") &&
-      text.includes("沒有冷卻、不會疊加") &&
-      text.includes("敵人的攻擊間隔照常") &&
-      text.includes("升級、移動位置、換波次都維持同樣的機率") &&
-      !text.includes("目前攻擊力") &&
+      text === "受到敵人攻擊時，每一擊有 15% 機率閃避、不扣血。" &&
       effectiveRange(zhao, 3) === 3 &&
       burnTickDamage(zhao, 100) === 0 &&
       slowAuraPercent(zhao) === 0,
@@ -2813,7 +2800,7 @@ await test("防禦光環-S1", async () => {
   const text = describeHeroSkill(liu, 3.5, 120);
   const plain = describeHeroSkill(liu);
   check(
-    "防禦光環-S1 劉備的防禦光環：送進 Godot 的參數（def_aura、def_mult 1.2，只有這兩個欄位）與說明文字出自同一份定義；說明寫出提升 20%、目前範圍半徑、不含自己與防禦塔、照防禦公式計算（50 → 約 45.5，不是直接少扣）、取最強不疊加、只在戰場、不改存檔，沒有治療；其他技能的計算不受影響",
+    "防禦光環-S1 劉備的防禦光環：送進 Godot 的參數（def_aura、def_mult 1.2，只有這兩個欄位）與說明文字出自同一份定義；說明是短版整句：射程內（目前 3.5 格）其他友軍防禦 +20%、不含自己、防禦塔與城池、取最強不疊加，沒有提供射程時不寫半徑；其他技能的計算不受影響",
     liu?.id === "def_aura" &&
       liu.name === "防禦光環" &&
       liu.defenseMultiplier === 1.2 &&
@@ -2829,19 +2816,10 @@ await test("防禦光環-S1", async () => {
       slowAuraPercent(liu) === 0 &&
       burnTickDamage(liu, 100) === 0 &&
       effectiveRange(liu, 3.5) === 3.5 &&
-      text.includes("其他友軍武將防禦力提升 20%") &&
-      text.includes("含邊界") &&
-      text.includes("目前等級的範圍半徑是 3.5 格") &&
-      text.includes("不含自己，防禦塔與城池不受影響") &&
-      text.includes("不是直接少扣 20% 的傷害") &&
-      text.includes("從扣 50 變成扣約 45.5") &&
-      text.includes("趙雲的閃避照常先判定") &&
-      text.includes("取最強的一個，不會疊加") &&
-      text.includes("只在戰場生效") &&
-      text.includes("存檔與屬性表的防禦不會提高") &&
-      !text.includes("治療") &&
-      !text.includes("恢復") &&
-      !plain.includes("範圍半徑是"),
+      text ===
+        "射程內（目前 3.5 格）的其他友軍武將防禦力 +20%（不含自己、防禦塔與城池）；多個防禦光環取最強、不疊加。" &&
+      plain ===
+        "射程內的其他友軍武將防禦力 +20%（不含自己、防禦塔與城池）；多個防禦光環取最強、不疊加。",
     { liu, payload, text }
   );
 });
@@ -2862,7 +2840,7 @@ await test("暈眩-S1", async () => {
   const payload = heroSkillPayload("zhang_fei");
   const text = describeHeroSkill(zhang, 1.5, 150);
   check(
-    "暈眩-S1 張飛的暈眩：送進 Godot 的參數（stun、stun_sec 0.5，只有這兩個欄位）與說明文字出自同一份定義；說明寫出每次命中、0.5 秒、停止移動與攻擊、照常受傷、刷新不累加也不縮短、免疫減速也會暈眩、張飛離開不提早解除、打不到飛行、只在戰場、不影響存檔；射程與其他技能的計算不受影響",
+    "暈眩-S1 張飛的暈眩：送進 Godot 的參數（stun、stun_sec 0.5，只有這兩個欄位）與說明文字出自同一份定義；說明是短版整句：命中且敵人還活著時暈眩 0.5 秒、不能移動也不能攻擊、刷新不累加、免疫減速也會暈眩；射程與其他技能的計算不受影響",
     zhang?.id === "stun" &&
       zhang.name === "暈眩" &&
       zhang.stunSec === 0.5 &&
@@ -2872,20 +2850,8 @@ await test("暈眩-S1", async () => {
       burnTickDamage(zhang, 150) === 0 &&
       slowAuraPercent(zhang) === 0 &&
       defAuraPercent(zhang) === 0 &&
-      text.includes(
-        "每次普通攻擊命中、而且敵人被打後還活著時，這個敵人暈眩 0.5 秒（遊戲時間）"
-      ) &&
-      text.includes("暈眩中停止移動，也不能攻擊擋住它的武將") &&
-      text.includes("照常受到傷害") &&
-      text.includes("再次命中時剩餘時間刷新成 0.5 秒，不會累加") &&
-      text.includes("不會縮短") &&
-      text.includes("免疫減速的敵人也會暈眩") &&
-      text.includes("恢復後最多先打一下") &&
-      text.includes("已經造成的暈眩照樣持續到時間結束") &&
-      text.includes("步兵打不到飛行敵人") &&
-      text.includes("黃色星星") &&
-      text.includes("只在戰場生效，不影響存檔") &&
-      !text.includes("150"),
+      text ===
+        "普通攻擊命中、敵人還活著時，讓它暈眩 0.5 秒：不能移動也不能攻擊。再次命中刷新成 0.5 秒、不累加，也不會縮短剩下更久的暈眩；免疫減速的敵人也會暈眩。",
     { zhang, payload, text }
   );
 });
@@ -2917,7 +2883,7 @@ await test("吸血-S1", async () => {
     "gan_ning",
   ].filter((id) => heroSkillOf(id)?.id === "lifesteal");
   check(
-    "吸血-S1 魏延的吸血：送進 Godot 的參數（lifesteal、lifesteal_ratio 0.15，只有這兩個欄位）與說明文字出自同一份定義；說明寫出 15%、打掉 100 恢復 15、致死也恢復但溢出不算（剩 30 時恢復 4.5）、不超過最大生命、不復活、只算自己的普通攻擊（灼燒、其他武將與防禦塔不算）、綠色提示、面板是選取時的生命、只在戰場不影響存檔；射程與其他技能的計算不受影響；其他武將沒有吸血",
+    "吸血-S1 魏延的吸血：送進 Godot 的參數（lifesteal、lifesteal_ratio 0.15，只有這兩個欄位）與說明文字出自同一份定義；說明是短版整句：恢復這一擊實際扣掉敵人生命的 15%、溢出不算、不超過最大生命、只算自己普通攻擊的直接傷害；射程與其他技能的計算不受影響；其他武將沒有吸血",
     wei?.id === "lifesteal" &&
       wei.name === "吸血" &&
       wei.lifestealRatio === 0.15 &&
@@ -2930,21 +2896,8 @@ await test("吸血-S1", async () => {
       burnTickDamage(wei, 130) === 0 &&
       slowAuraPercent(wei) === 0 &&
       defAuraPercent(wei) === 0 &&
-      text.includes(
-        "恢復這一擊實際造成傷害的 15% 生命（例如打掉 100 恢復 15）"
-      ) &&
-      text.includes("打倒敵人的那一擊也會恢復") &&
-      text.includes("敵人只剩 30 時恢復 4.5，不是 15") &&
-      text.includes("不會超過最大生命") &&
-      text.includes("不會因此復活") &&
-      text.includes("灼燒、其他武將與防禦塔造成的傷害也不算") &&
-      text.includes("職業打不到飛行敵人") &&
-      text.includes("沒有另外計時的回血") &&
-      text.includes("綠色的「+恢復量」") &&
-      text.includes("重新點選武將可以看到恢復後的生命") &&
-      text.includes("只在戰場生效") &&
-      text.includes("不影響存檔") &&
-      !text.includes("130") &&
+      text ===
+        "普通攻擊命中後，恢復這一擊實際扣掉敵人生命的 15%（超過敵人剩餘生命的部分不算），不超過最大生命；只算自己普通攻擊的直接傷害。" &&
       others.length === 0,
     { wei, payload, text, others }
   );
@@ -2981,7 +2934,7 @@ await test("指揮-S1", async () => {
     "gan_ning",
   ].filter((id) => heroSkillOf(id)?.id === "atk_speed_aura");
   check(
-    "指揮-S1 曹操的攻速光環：送進 Godot 的參數（atk_speed_aura、atk_speed_mult 1.15，只有這兩個欄位）與說明文字出自同一份定義；加成後的間隔是除以 1.15（1 秒約 0.8696 秒，不是 0.85 秒）；說明寫出 15%、每秒攻擊次數 1.15 倍、目前的範圍半徑、不含自己與防禦塔、正在倒數的冷卻照原本的時間不補打、取最強不疊加、淡紫色、面板是選取時的數值、存檔不變；其他技能的計算不受影響；其他武將沒有攻速光環",
+    "指揮-S1 曹操的攻速光環：送進 Godot 的參數（atk_speed_aura、atk_speed_mult 1.15，只有這兩個欄位）與說明文字出自同一份定義；加成後的間隔是除以 1.15（1 秒約 0.8696 秒，不是 0.85 秒）；說明是短版整句：射程內（目前 3.5 格）其他友軍攻速 +15%（間隔 1 ÷ 1.15）、不含自己、取最強不疊加，沒有提供射程時不寫半徑；其他技能的計算不受影響；其他武將沒有攻速光環",
     cao?.id === "atk_speed_aura" &&
       cao.name === "指揮" &&
       cao.attackSpeedMultiplier === 1.15 &&
@@ -2999,18 +2952,10 @@ await test("指揮-S1", async () => {
       slowAuraPercent(cao) === 0 &&
       defAuraPercent(cao) === 0 &&
       lifestealPercent(cao) === 0 &&
-      text.includes("其他友軍武將攻擊速度提升 15%") &&
-      text.includes("每秒攻擊次數變成 1.15 倍") &&
-      text.includes("1 秒變成約 0.87 秒，不是直接少 15%") &&
-      text.includes("目前等級的範圍半徑是 3.5 格") &&
-      !noRange.includes("範圍半徑是") &&
-      text.includes("不含自己，防禦塔與城池不受影響") &&
-      text.includes("正在倒數的冷卻照原本的時間打完，不會立刻補打") &&
-      text.includes("取最強的一個，不會疊加") &&
-      text.includes("淡紫色") &&
-      text.includes("選取當時的數值") &&
-      text.includes("存檔與屬性表的攻擊間隔不會改變") &&
-      !text.includes("130") &&
+      text ===
+        "射程內（目前 3.5 格）的其他友軍武將攻擊速度 +15%（攻擊間隔變成 1 ÷ 1.15，不含自己）；多個攻速光環取最強、不疊加。" &&
+      noRange ===
+        "射程內的其他友軍武將攻擊速度 +15%（攻擊間隔變成 1 ÷ 1.15，不含自己）；多個攻速光環取最強、不疊加。" &&
       others.length === 0,
     { cao, payload, text, others }
   );
@@ -3049,7 +2994,7 @@ await test("反擊-S1", async () => {
     "xiahou_dun",
   ].filter((id) => heroSkillOf(id)?.id === "counter");
   check(
-    "反擊-S1 夏侯惇（xia_hou_dun）的反擊：送進 Godot 的參數（counter、counter_ratio 0.2，只有這兩個欄位）與說明文字出自同一份定義；說明寫出 20%、以防禦計算後的實扣為準不是敵人攻擊力（扣 50 反彈 10；防禦光環裡扣約 45.45、反彈約 9.09）、不替自己減傷、自己要活著、閃避與致死與沒有攻擊者都不反彈、只反彈給攻擊自己的敵人、可以打倒攻擊者且擊殺只算一次、免疫減速照樣受到、不引發其他技能也不來回反彈、洋紅色數字、面板是選取時的生命、只在戰場不影響存檔；其他技能的計算不受影響；其他武將沒有反擊",
+    "反擊-S1 夏侯惇（xia_hou_dun）的反擊：送進 Godot 的參數（counter、counter_ratio 0.2，只有這兩個欄位）與說明文字出自同一份定義；說明是短版整句：扣血後自己還活著時反彈這一擊實際扣血的 20%、閃避或被打倒的那一擊不反彈、反彈不引發其他技能；其他技能的計算不受影響；其他武將沒有反擊",
     xhd?.id === "counter" &&
       xhd.name === "反擊" &&
       xhd.counterRatio === 0.2 &&
@@ -3065,24 +3010,8 @@ await test("反擊-S1", async () => {
       defAuraPercent(xhd) === 0 &&
       lifestealPercent(xhd) === 0 &&
       atkSpeedAuraPercent(xhd) === 0 &&
-      text.includes("實際扣血後自己仍然活著時") &&
-      text.includes("這一擊實際扣血 20% 的傷害") &&
-      text.includes("不是敵人攻擊力的 20%") &&
-      text.includes("扣 50、反彈 10") &&
-      text.includes("扣約 45.45、反彈約 9.09") &&
-      text.includes("反彈不會替自己減少傷害") &&
-      text.includes(
-        "閃避（沒有扣血）、打倒自己的那一擊、沒有攻擊者的扣血都不反彈"
-      ) &&
-      text.includes("只反彈給這次攻擊自己、仍然活著的敵人") &&
-      text.includes("擊殺與金幣照常只算一次") &&
-      text.includes("免疫減速的敵人照樣會受到反彈") &&
-      text.includes("不會來回反彈") &&
-      text.includes("洋紅色") &&
-      text.includes("重新點選武將可以看到最新的生命") &&
-      text.includes("只在戰場生效") &&
-      text.includes("不影響存檔") &&
-      !text.includes("149") &&
+      text ===
+        "受到敵人的直接攻擊、扣血後自己還活著時，對攻擊者反彈這一擊實際扣血的 20%。閃避或被打倒的那一擊不反彈；反彈不會再引發其他技能。" &&
       others.length === 0,
     { xhd, payload, text, others }
   );
@@ -3122,7 +3051,7 @@ await test("堅韌-S1", async () => {
     "liaohua",
   ].filter((id) => heroSkillOf(id)?.id === "tenacity");
   check(
-    "堅韌-S1 廖化（liao_hua）的堅韌：送進 Godot 的參數（tenacity、low_hp_ratio 0.3、damage_mult 0.8，只有這三個欄位）與說明文字出自同一份定義；說明寫出受傷前生命不高於 30%（含剛好 30%）、防禦計算後降低 20%、301 扣 50 變成 251 下一擊扣 40、剛好 300 扣 40、不是提高防禦（防禦光環裡約 45.45 變成約 36.36）、生命回到超過 30% 不減傷、升級照新的最大生命、閃避不扣血、致死照常倒下不保底不復活、古銅色外框與小盾牌、面板是選取時的狀態、只在戰場不影響存檔；其他技能的計算不受影響；其他武將沒有堅韌",
+    "堅韌-S1 廖化（liao_hua）的堅韌：送進 Godot 的參數（tenacity、low_hp_ratio 0.3、damage_mult 0.8，只有這三個欄位）與說明文字出自同一份定義；說明是短版整句：受傷前生命不高於最大生命的 30% 時，防禦計算後再減少 20%、致命的一擊照常倒下；其他技能的計算不受影響；其他武將沒有堅韌",
     lh?.id === "tenacity" &&
       lh.name === "堅韌" &&
       lh.lowHpRatio === 0.3 &&
@@ -3144,23 +3073,8 @@ await test("堅韌-S1", async () => {
       lifestealPercent(lh) === 0 &&
       atkSpeedAuraPercent(lh) === 0 &&
       counterPercent(lh) === 0 &&
-      text.includes("受傷前生命不高於最大生命的 30%（含剛好 30%）") &&
-      text.includes("先照防禦計算，再降低 20%（變成 80%）") &&
-      text.includes(
-        "生命 301 時扣 50 變成 251（這一擊不減傷），下一擊只扣 40"
-      ) &&
-      text.includes("生命剛好 300 時就只扣 40") &&
-      text.includes("不是提高防禦") &&
-      text.includes("扣約 45.45 的一擊變成約 36.36") &&
-      text.includes("生命回到超過 30% 時就不減傷") &&
-      text.includes("升級後照新的最大生命計算") &&
-      text.includes("閃避的一擊不扣血") &&
-      text.includes("不會留下 1 點生命，也不會復活") &&
-      text.includes("古銅色外框與小盾牌") &&
-      text.includes("選取當時是否生效，重新點選武將可以更新") &&
-      text.includes("只在戰場生效") &&
-      text.includes("存檔都不變") &&
-      !text.includes("85") &&
+      text ===
+        "受傷前生命不高於最大生命的 30% 時，受到的傷害（照防禦計算後）再減少 20%。致命的一擊照常倒下。" &&
       others.length === 0,
     { lh, payload, text, others }
   );
@@ -3203,7 +3117,7 @@ await test("威壓-S1", async () => {
     "yanliang",
   ].filter((id) => heroSkillOf(id)?.id === "atk_down_aura");
   check(
-    "威壓-S1 顏良（yan_liang）的威壓：送進 Godot 的參數（atk_down_aura、atk_mult 0.9，只有這兩個欄位）與說明文字出自同一份定義；說明寫出目前射程內（含邊界）所有敵人攻擊武將的直接攻擊力降低 10%（變成 90%）、目前的範圍半徑、地面飛行與免疫減速都算、防禦照常計算（攻擊力 100 打防禦 100 從扣 50 變成扣 45）、取最強不疊加、離開範圍或移位移除陣亡就恢復、移動速度與攻擊間隔不變、漏到城池扣的城防不會減少、暗紅色的範圍圈與向下箭頭、只在戰場不影響存檔；沒有射程時不寫範圍半徑；其他技能的計算不受影響；其他武將沒有威壓",
+    "威壓-S1 顏良（yan_liang）的威壓：送進 Godot 的參數（atk_down_aura、atk_mult 0.9，只有這兩個欄位）與說明文字出自同一份定義；說明是短版整句：射程內（目前 2 格）所有敵人（含飛行）攻擊武將的攻擊力 −10%、取最強不疊加、移動速度與漏城扣的城防不變，沒有提供射程時不寫半徑；沒有射程時不寫範圍半徑；其他技能的計算不受影響；其他武將沒有威壓",
     yl?.id === "atk_down_aura" &&
       yl.name === "威壓" &&
       yl.attackMultiplier === 0.9 &&
@@ -3221,21 +3135,10 @@ await test("威壓-S1", async () => {
       counterPercent(yl) === 0 &&
       JSON.stringify(tenacityPercents(yl)) ===
         JSON.stringify({ threshold: 0, reduction: 0 }) &&
-      text.includes(
-        "目前射程內（含邊界）的所有敵人攻擊武將的直接攻擊力降低 10%（變成原本的 90%）"
-      ) &&
-      text.includes("目前等級的範圍半徑是 2 格") &&
-      !noRange.includes("範圍半徑是") &&
-      text.includes("地面、飛行與免疫減速的敵人都算") &&
-      text.includes("從扣 50 變成扣 45") &&
-      text.includes("取最強的一個，不會疊加") &&
-      text.includes("移位、被移除、陣亡時就恢復") &&
-      text.includes("敵人的移動速度與攻擊間隔不變") &&
-      text.includes("漏到城池時扣的城防也不會減少") &&
-      text.includes("暗紅色的範圍圈") &&
-      text.includes("暗紅色的向下箭頭") &&
-      text.includes("只在戰場生效，不影響存檔") &&
-      !text.includes("102") &&
+      text ===
+        "射程內（目前 2 格）所有敵人（含飛行）攻擊武將的攻擊力 −10%；多個威壓取最強、不疊加。敵人的移動速度與漏城扣的城防不變。" &&
+      noRange ===
+        "射程內所有敵人（含飛行）攻擊武將的攻擊力 −10%；多個威壓取最強、不疊加。敵人的移動速度與漏城扣的城防不變。" &&
       others.length === 0,
     { yl, payload, text, noRange, others }
   );
@@ -3281,7 +3184,7 @@ await test("連射-S1", async () => {
     "Sun_Shang_Xiang",
   ].filter((id) => heroSkillOf(id)?.id === "double_shot");
   check(
-    "連射-S1 孫尚香（sun_shang_xiang）的連射：送進 Godot 的參數（double_shot、double_shot_chance 0.2，只有這兩個欄位）與說明文字出自同一份定義；說明寫出 20% 機率、敵人被打過後還活著時在同一次攻擊對同一個敵人再打一擊（攻擊力的 100%）、金色的「+1」、目前攻擊力的追加傷害、每次最多追加一擊且不再連射、不換目標不打其他敵人、第一擊打倒敵人時不連射、打不到的敵人不判定、擊殺與金幣只算一次、不引發其他技能、攻擊間隔不變、只在戰場不影響存檔；沒有攻擊力時不寫目前攻擊力；其他技能的計算不受影響；其他武將（含寫錯的 id）沒有連射",
+    "連射-S1 孫尚香（sun_shang_xiang）的連射：送進 Godot 的參數（double_shot、double_shot_chance 0.2，只有這兩個欄位）與說明文字出自同一份定義；說明是短版整句：命中且敵人還活著時 20% 機率對同一個敵人再打一擊（攻擊力的 100%，目前 92）、不再連射、攻擊間隔不變，沒有提供攻擊力時不寫目前的數值；沒有攻擊力時不寫目前攻擊力；其他技能的計算不受影響；其他武將（含寫錯的 id）沒有連射",
     ss?.id === "double_shot" &&
       ss.name === "連射" &&
       ss.doubleShotChance === 0.2 &&
@@ -3302,22 +3205,793 @@ await test("連射-S1", async () => {
       atkDownAuraPercent(ss) === 0 &&
       JSON.stringify(tenacityPercents(ss)) ===
         JSON.stringify({ threshold: 0, reduction: 0 }) &&
-      text.includes(
-        "有 20% 的機率在同一次攻擊對同一個敵人再打一擊，傷害是這次普通攻擊的攻擊力（100%）"
-      ) &&
-      text.includes("敵人被這一擊打過後還活著時") &&
-      text.includes("金色的「+1」") &&
-      text.includes("目前攻擊力 92：連射時同一個敵人在這次攻擊受到 92 ＋ 92") &&
-      !noAtk.includes("目前攻擊力") &&
-      text.includes("最多追加一擊，追加的一擊不會再連射") &&
-      text.includes("不換目標，也不會打到其他敵人") &&
-      text.includes("第一擊就打倒敵人時不會連射") &&
-      text.includes("擊殺與金幣只算一次") &&
-      text.includes("追加的一擊不會引發其他技能") &&
-      text.includes("攻擊間隔不變") &&
-      text.includes("只在戰場生效，不影響存檔") &&
+      text ===
+        "普通攻擊命中、敵人還活著時，有 20% 機率對同一個敵人再打一擊（攻擊力的 100%，目前 92）。追加的一擊不會再連射，攻擊間隔不變。" &&
+      noAtk ===
+        "普通攻擊命中、敵人還活著時，有 20% 機率對同一個敵人再打一擊（攻擊力的 100%）。追加的一擊不會再連射，攻擊間隔不變。" &&
       others.length === 0,
     { ss, payload, text, noAtk, others }
+  );
+});
+
+await test("連環計-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    slowAuraPercent,
+    defAuraPercent,
+    lifestealPercent,
+    atkSpeedAuraPercent,
+    counterPercent,
+    tenacityPercents,
+    atkDownAuraPercent,
+    doubleShotPercent,
+    chainPercents,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const pt = heroSkillOf("pang_tong");
+  const payload = heroSkillPayload("pang_tong");
+  const text = describeHeroSkill(pt, 4, 101);
+  const noAtk = describeHeroSkill(pt);
+  const oneJump = describeHeroSkill(
+    {
+      id: "chain",
+      name: "連環計",
+      chainRadius: 2,
+      chainRatio: 0.4,
+      chainMaxJumps: 1,
+    },
+    4,
+    100
+  );
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "cao_cao",
+    "gan_ning",
+    "xia_hou_dun",
+    "liao_hua",
+    "yan_liang",
+    "sun_shang_xiang",
+    "zhuge_liang",
+    "pangtong",
+    "Pang_Tong",
+  ].filter((id) => heroSkillOf(id)?.id === "chain");
+  check(
+    "連環計-S1 龐統（pang_tong）的連環計：送進 Godot 的參數（chain、chain_radius 1.5、chain_ratio 0.5、chain_max_jumps 2，只有這四個欄位）與說明文字出自同一份定義；每次傳遞的百分比是 50、25；說明是短版整句：傷害傳給 1.5 格內最近、還沒被打過的敵人，最多 2 次、依序 50%、25%（目前 50.5、25.25），每次從上一個被傳到的敵人往外找；沒有提供攻擊力時不寫目前的數值，只傳 1 次的設定照實寫；沒有攻擊力時不寫目前攻擊力；1 次、40%、2 格的定義照樣寫出；其他技能的計算不受影響；其他武將（含寫錯的 id）沒有連環計",
+    pt?.id === "chain" &&
+      pt.name === "連環計" &&
+      pt.chainRadius === 1.5 &&
+      pt.chainRatio === 0.5 &&
+      pt.chainMaxJumps === 2 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: {
+            id: "chain",
+            chain_radius: 1.5,
+            chain_ratio: 0.5,
+            chain_max_jumps: 2,
+          },
+        }) &&
+      JSON.stringify(chainPercents(pt)) === "[50,25]" &&
+      JSON.stringify(chainPercents(null)) === "[]" &&
+      JSON.stringify(chainPercents(heroSkillOf("sun_shang_xiang"))) === "[]" &&
+      doubleShotPercent(pt) === 0 &&
+      effectiveRange(pt, 4) === 4 &&
+      burnTickDamage(pt, 101) === 0 &&
+      slowAuraPercent(pt) === 0 &&
+      defAuraPercent(pt) === 0 &&
+      lifestealPercent(pt) === 0 &&
+      atkSpeedAuraPercent(pt) === 0 &&
+      counterPercent(pt) === 0 &&
+      atkDownAuraPercent(pt) === 0 &&
+      JSON.stringify(tenacityPercents(pt)) ===
+        JSON.stringify({ threshold: 0, reduction: 0 }) &&
+      text ===
+        "普通攻擊打到敵人後，傷害傳給 1.5 格內最近、還沒被打過的敵人，最多 2 次，依序是攻擊傷害的 50%、25%（目前 50.5、25.25）；每次從上一個被傳到的敵人往外找。" &&
+      noAtk ===
+        "普通攻擊打到敵人後，傷害傳給 1.5 格內最近、還沒被打過的敵人，最多 2 次，依序是攻擊傷害的 50%、25%；每次從上一個被傳到的敵人往外找。" &&
+      oneJump ===
+        "普通攻擊打到敵人後，傷害傳給 2 格內最近、還沒被打過的敵人，最多 1 次，依序是攻擊傷害的 40%（目前 40）；每次從上一個被傳到的敵人往外找。" &&
+      others.length === 0,
+    { pt, payload, text, noAtk, oneJump, others }
+  );
+});
+
+await test("呼風喚雨-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    slowAuraPercent,
+    defAuraPercent,
+    lifestealPercent,
+    atkSpeedAuraPercent,
+    counterPercent,
+    tenacityPercents,
+    atkDownAuraPercent,
+    doubleShotPercent,
+    chainPercents,
+    stormPercent,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const zg = heroSkillOf("zhu_ge_liang");
+  const payload = heroSkillPayload("zhu_ge_liang");
+  const text = describeHeroSkill(zg, 5, 118);
+  const noAtk = describeHeroSkill(zg);
+  const small = describeHeroSkill(
+    {
+      id: "storm",
+      name: "呼風喚雨",
+      stormRadius: 1.5,
+      stormRatio: 0.3,
+      stormMaxTargets: 2,
+    },
+    5,
+    100
+  );
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "cao_cao",
+    "gan_ning",
+    "xia_hou_dun",
+    "liao_hua",
+    "yan_liang",
+    "sun_shang_xiang",
+    "pang_tong",
+    "zhuge_liang",
+    "zhu_ge",
+    "Zhu_Ge_Liang",
+  ].filter((id) => heroSkillOf(id)?.id === "storm");
+  check(
+    "呼風喚雨-S1 諸葛亮（zhu_ge_liang）的呼風喚雨：送進 Godot 的參數（storm、storm_radius 2、storm_ratio 0.5、storm_max_targets 4，只有這四個欄位）與說明文字出自同一份定義；範圍內每一名的百分比是 50；說明是短版整句：以被打中的敵人為中心 2 格內最多 4 名其他敵人各受 50%（目前 59）、主要目標不重複、不往外傳；沒有提供攻擊力時不寫目前的數值，其他設定照實寫；沒有攻擊力時不寫目前攻擊力；1.5 格、30%、2 名的定義照樣寫出；其他技能的計算不受影響；其他武將（含寫錯的 id）沒有呼風喚雨",
+    zg?.id === "storm" &&
+      zg.name === "呼風喚雨" &&
+      zg.stormRadius === 2 &&
+      zg.stormRatio === 0.5 &&
+      zg.stormMaxTargets === 4 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: {
+            id: "storm",
+            storm_radius: 2,
+            storm_ratio: 0.5,
+            storm_max_targets: 4,
+          },
+        }) &&
+      stormPercent(zg) === 50 &&
+      stormPercent(null) === 0 &&
+      stormPercent(heroSkillOf("pang_tong")) === 0 &&
+      JSON.stringify(chainPercents(zg)) === "[]" &&
+      doubleShotPercent(zg) === 0 &&
+      effectiveRange(zg, 5) === 5 &&
+      burnTickDamage(zg, 118) === 0 &&
+      slowAuraPercent(zg) === 0 &&
+      defAuraPercent(zg) === 0 &&
+      lifestealPercent(zg) === 0 &&
+      atkSpeedAuraPercent(zg) === 0 &&
+      counterPercent(zg) === 0 &&
+      atkDownAuraPercent(zg) === 0 &&
+      JSON.stringify(tenacityPercents(zg)) ===
+        JSON.stringify({ threshold: 0, reduction: 0 }) &&
+      text ===
+        "普通攻擊打到敵人後，以它為中心 2 格內最多 4 名其他敵人各受攻擊傷害的 50%（目前 59）。主要目標不重複受傷，也不會再往外傳。" &&
+      noAtk ===
+        "普通攻擊打到敵人後，以它為中心 2 格內最多 4 名其他敵人各受攻擊傷害的 50%。主要目標不重複受傷，也不會再往外傳。" &&
+      small ===
+        "普通攻擊打到敵人後，以它為中心 1.5 格內最多 2 名其他敵人各受攻擊傷害的 30%（目前 30）。主要目標不重複受傷，也不會再往外傳。" &&
+      others.length === 0,
+    { zg, payload, text, noAtk, small, others }
+  );
+});
+
+await test("戰神-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    doubleShotPercent,
+    chainPercents,
+    stormPercent,
+    berserkPercents,
+    berserkAttack,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const lb = heroSkillOf("lv_bu");
+  const payload = heroSkillPayload("lv_bu");
+  const text = describeHeroSkill(lb, 2, 125);
+  const noAtk = describeHeroSkill(lb);
+  const small = describeHeroSkill(
+    { id: "berserk", name: "戰神", berserkRatio: 0.1, berserkMaxStacks: 3 },
+    2,
+    100
+  );
+  // 有效攻擊力：加法疊加（125 × (1 + 0.05 × n)），不是連乘（125 × 1.05^n）
+  const atks = [0, 1, 2, 10].map((n) => berserkAttack(125, 0.05, n));
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "cao_cao",
+    "gan_ning",
+    "xia_hou_dun",
+    "liao_hua",
+    "yan_liang",
+    "sun_shang_xiang",
+    "pang_tong",
+    "zhu_ge_liang",
+    "lvbu",
+    "lu_bu",
+    "Lv_Bu",
+  ].filter((id) => heroSkillOf(id)?.id === "berserk");
+  check(
+    "戰神-S1 呂布（lv_bu）的戰神：送進 Godot 的參數（berserk、berserk_ratio 0.05、berserk_max_stacks 10，只有這三個欄位）與說明文字出自同一份定義；每層 5%、最多 50%；有效攻擊力是加法疊加（Lv1 125 → 1 層 131.25、2 層 137.5、10 層 187.5）；說明是短版整句：自己的普通攻擊打倒敵人後下一擊起 +5%、最多 10 層（+50%，目前最高 187.5）、只在這一場保留、新的一場從 0 開始；沒有提供攻擊力時不寫目前的數值，其他設定照實寫；有攻擊力時寫出各層數的例子並說明每場從 0 層開始（不把最大值當目前），沒有攻擊力時不寫；10%、3 層的定義照樣寫出；其他技能的計算不受影響；其他武將（含寫錯的 id）沒有戰神",
+    lb?.id === "berserk" &&
+      lb.name === "戰神" &&
+      lb.berserkRatio === 0.05 &&
+      lb.berserkMaxStacks === 10 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: { id: "berserk", berserk_ratio: 0.05, berserk_max_stacks: 10 },
+        }) &&
+      JSON.stringify(berserkPercents(lb)) ===
+        JSON.stringify({ perStack: 5, max: 50 }) &&
+      JSON.stringify(berserkPercents(null)) ===
+        JSON.stringify({ perStack: 0, max: 0 }) &&
+      JSON.stringify(berserkPercents(heroSkillOf("zhu_ge_liang"))) ===
+        JSON.stringify({ perStack: 0, max: 0 }) &&
+      atks[0] === 125 &&
+      Math.abs(atks[1] - 131.25) < 1e-9 &&
+      Math.abs(atks[2] - 137.5) < 1e-9 &&
+      Math.abs(atks[3] - 187.5) < 1e-9 &&
+      stormPercent(lb) === 0 &&
+      JSON.stringify(chainPercents(lb)) === "[]" &&
+      doubleShotPercent(lb) === 0 &&
+      effectiveRange(lb, 2) === 2 &&
+      burnTickDamage(lb, 125) === 0 &&
+      text ===
+        "自己的普通攻擊打倒敵人後，從下一擊起攻擊力 +5%，最多 10 層（+50%，目前最高 187.5）。層數只在這一場保留，新的一場從 0 開始。" &&
+      noAtk ===
+        "自己的普通攻擊打倒敵人後，從下一擊起攻擊力 +5%，最多 10 層（+50%）。層數只在這一場保留，新的一場從 0 開始。" &&
+      small ===
+        "自己的普通攻擊打倒敵人後，從下一擊起攻擊力 +10%，最多 3 層（+30%，目前最高 130）。層數只在這一場保留，新的一場從 0 開始。" &&
+      others.length === 0,
+    { lb, payload, text, noAtk, small, atks, others }
+  );
+});
+
+await test("補給-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    berserkPercents,
+    stormPercent,
+    supplyKillGold,
+    supplyPercent,
+    BASE_KILL_GOLD,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const ls = heroSkillOf("lu_su");
+  const payload = heroSkillPayload("lu_su");
+  const text = describeHeroSkill(ls, 5, 73);
+  const strong = describeHeroSkill(
+    { id: "supply", name: "補給", goldMultiplier: 1.5 },
+    5,
+    73
+  );
+  // 每次擊殺的金幣：基礎 5 × 倍率，向下取整（和 Godot 的 BattleManager.kill_gold 相同）
+  const golds = [1.2, 1.3, 1.5, 2].map((m) =>
+    supplyKillGold({ id: "supply", name: "補給", goldMultiplier: m })
+  );
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "cao_cao",
+    "gan_ning",
+    "xia_hou_dun",
+    "liao_hua",
+    "yan_liang",
+    "sun_shang_xiang",
+    "pang_tong",
+    "zhu_ge_liang",
+    "lv_bu",
+    "lusu",
+    "lu_shu",
+    "Lu_Su",
+  ].filter((id) => heroSkillOf(id)?.id === "supply");
+  check(
+    "補給-S1 魯肅（lu_su）的補給：送進 Godot 的參數（supply、supply_gold_multiplier 1.2，只有這兩個欄位）與說明文字出自同一份定義；增加 20%、每次擊殺 5 → 6（向下取整：1.3 → 6、1.5 → 7、2 → 10；沒有補給是 5）；說明是短版整句：部署在戰場上時全隊每次擊殺的戰鬥金幣 +20%（5 → 6）、陣亡或移出隊伍就恢復、多個補給取最高不疊加；1.5 倍時是 +50%（5 → 7）；1.5 的定義照樣寫出 50%、5 → 7；其他技能的計算不受影響；其他武將（含寫錯的 id）沒有補給",
+    ls?.id === "supply" &&
+      ls.name === "補給" &&
+      ls.goldMultiplier === 1.2 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: { id: "supply", supply_gold_multiplier: 1.2 },
+        }) &&
+      BASE_KILL_GOLD === 5 &&
+      supplyPercent(ls) === 20 &&
+      supplyPercent(null) === 0 &&
+      supplyPercent(heroSkillOf("lv_bu")) === 0 &&
+      supplyKillGold(ls) === 6 &&
+      supplyKillGold(null) === 5 &&
+      supplyKillGold(heroSkillOf("lv_bu")) === 5 &&
+      JSON.stringify(golds) === "[6,6,7,10]" &&
+      JSON.stringify(berserkPercents(ls)) ===
+        JSON.stringify({ perStack: 0, max: 0 }) &&
+      stormPercent(ls) === 0 &&
+      effectiveRange(ls, 5) === 5 &&
+      burnTickDamage(ls, 73) === 0 &&
+      text ===
+        "部署在戰場上時，全隊每次擊殺的戰鬥金幣 +20%（5 → 6）。陣亡或移出隊伍就恢復；多個補給取最高、不疊加。" &&
+      strong ===
+        "部署在戰場上時，全隊每次擊殺的戰鬥金幣 +50%（5 → 7）。陣亡或移出隊伍就恢復；多個補給取最高、不疊加。" &&
+      others.length === 0,
+    { ls, payload, text, strong, golds, others }
+  );
+});
+
+await test("怪力-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    burnTickDamage,
+    berserkPercents,
+    supplyKillGold,
+    stormPercent,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const xc = heroSkillOf("xu_chu");
+  const payload = heroSkillPayload("xu_chu");
+  const text = describeHeroSkill(xc, 1, 103);
+  const other = describeHeroSkill(
+    { id: "knockback", name: "怪力", knockbackTiles: 1, cooldownSec: 5 },
+    1,
+    103
+  );
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "cao_cao",
+    "gan_ning",
+    "xia_hou_dun",
+    "liao_hua",
+    "yan_liang",
+    "sun_shang_xiang",
+    "pang_tong",
+    "zhu_ge_liang",
+    "lv_bu",
+    "lu_su",
+    "zhou_cang",
+    "xuchu",
+    "xu_chuu",
+    "Xu_Chu",
+  ].filter((id) => heroSkillOf(id)?.id === "knockback");
+  check(
+    "怪力-S1 許褚（xu_chu）的怪力：送進 Godot 的參數（knockback、knockback_distance 0.5、knockback_cooldown 3，只有這三個欄位）與說明文字出自同一份定義；說明是短版整句：打中且目標還活著時把這名地面敵人沿原路往回推 0.5 格、成功推動後冷卻 3 秒、飛行敵人不受影響；其他設定照實寫；1 格、5 秒的定義照樣寫出；其他技能的計算不受影響；其他武將（含周倉與寫錯的 id）沒有怪力",
+    xc?.id === "knockback" &&
+      xc.name === "怪力" &&
+      xc.knockbackTiles === 0.5 &&
+      xc.cooldownSec === 3 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: {
+            id: "knockback",
+            knockback_distance: 0.5,
+            knockback_cooldown: 3,
+          },
+        }) &&
+      effectiveRange(xc, 1) === 1 &&
+      burnTickDamage(xc, 103) === 0 &&
+      stormPercent(xc) === 0 &&
+      supplyKillGold(xc) === 5 &&
+      JSON.stringify(berserkPercents(xc)) ===
+        JSON.stringify({ perStack: 0, max: 0 }) &&
+      text ===
+        "普通攻擊打中、目標還活著時，把這名地面敵人沿原路往回推 0.5 格；成功推動後冷卻 3 秒。飛行敵人不受影響。" &&
+      other ===
+        "普通攻擊打中、目標還活著時，把這名地面敵人沿原路往回推 1 格；成功推動後冷卻 5 秒。飛行敵人不受影響。" &&
+      others.length === 0,
+    { xc, payload, text, other, others }
+  );
+});
+
+await test("護衛-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    guardSharePercent,
+    guardShareSplit,
+    supplyKillGold,
+    effectiveRange,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const dw = heroSkillOf("dian_wei");
+  const payload = heroSkillPayload("dian_wei");
+  const text = describeHeroSkill(dw, 1, 149);
+  const other = describeHeroSkill(
+    { id: "guard_share", name: "護衛", shareRatio: 0.3, radiusTiles: 3 },
+    1,
+    149
+  );
+  const splits = [
+    guardShareSplit(100, 0.2, 1000),
+    guardShareSplit(100, 0.2, 5),
+    guardShareSplit(10000, 0.2, 5000),
+    guardShareSplit(100, 0.2, 0),
+  ];
+  const others = [
+    "ma_chao",
+    "zhao_yun",
+    "liu_bei",
+    "xia_hou_dun",
+    "liao_hua",
+    "lu_su",
+    "xu_chu",
+    "sun_quan",
+    "dianwei",
+    "dian_weii",
+    "Dian_Wei",
+  ].filter((id) => heroSkillOf(id)?.id === "guard_share");
+  check(
+    "護衛-S1 典韋（dian_wei）的護衛：送進 Godot 的參數（guard_share、guard_share_ratio 0.2、guard_radius 2，只有這三個欄位）與說明文字出自同一份定義；說明是短版整句：替 2 格內其他友軍承擔敵人直接攻擊的 20%、不超過自己剩下的生命、不含自己與城池、多名護衛只由一名承擔；其他設定照實寫；分攤的計算（100 → 80／20、典韋只剩 5 → 95／5、10000 → 8000／2000、典韋 0 → 100／0）；0.3、3 格的定義照樣寫出；其他技能的計算不受影響；其他武將（含孫權與寫錯的 id）沒有護衛",
+    dw?.id === "guard_share" &&
+      dw.name === "護衛" &&
+      dw.shareRatio === 0.2 &&
+      dw.radiusTiles === 2 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: { id: "guard_share", guard_share_ratio: 0.2, guard_radius: 2 },
+        }) &&
+      guardSharePercent(dw) === 20 &&
+      guardSharePercent(heroSkillOf("lu_su")) === 0 &&
+      JSON.stringify(splits) ===
+        JSON.stringify([
+          { ally: 80, guard: 20 },
+          { ally: 95, guard: 5 },
+          { ally: 8000, guard: 2000 },
+          { ally: 100, guard: 0 },
+        ]) &&
+      effectiveRange(dw, 1) === 1 &&
+      supplyKillGold(dw) === 5 &&
+      text ===
+        "部署在戰場上時，替 2 格內的其他友軍武將承擔敵人直接攻擊的 20%（不超過自己剩下的生命，不含自己與城池）；多名護衛時只由一名承擔。" &&
+      other ===
+        "部署在戰場上時，替 3 格內的其他友軍武將承擔敵人直接攻擊的 30%（不超過自己剩下的生命，不含自己與城池）；多名護衛時只由一名承擔。" &&
+      others.length === 0,
+    { dw, payload, splits, text, other, others }
+  );
+});
+
+await test("守護-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    baseGuardPercent,
+    baseGuardLosses,
+    baseGuardHudPercent,
+    supplyKillGold,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const sq = heroSkillOf("sun_quan");
+  const payload = heroSkillPayload("sun_quan");
+  const text = describeHeroSkill(sq, 1, 115);
+  const other = describeHeroSkill(
+    { id: "base_guard", name: "守護", baseDamageMultiplier: 0.5 },
+    1,
+    115
+  );
+  const seq = {
+    five: baseGuardLosses(0.8, 5),
+    ten: baseGuardLosses(0.8, 10),
+    none: baseGuardLosses(1, 20),
+    half: baseGuardLosses(0.5, 4),
+  };
+  const hud = [0.8, 0.5, 1, 0.4999, NaN, "0.8", undefined, null].map((v) =>
+    baseGuardHudPercent(v)
+  );
+  const others = [
+    "ma_chao",
+    "lu_su",
+    "xu_chu",
+    "dian_wei",
+    "sunquan",
+    "sun_quann",
+    "Sun_Quan",
+  ].filter((id) => heroSkillOf(id)?.id === "base_guard");
+  check(
+    "守護-S1 孫權（sun_quan）的守護：送進 Godot 的參數（base_guard、base_damage_mult 0.8，只有這兩個欄位）與說明文字出自同一份定義；說明是短版整句：漏城傷害 −20%（每隻 1 → 0.8，這一場累計後無條件進位：漏 5 隻扣 4）、多個守護取最強不疊加；0.5 倍時照實寫；每隻扣損的計算（0.8：5 隻 [1,1,1,1,0]、10 隻共 8；沒有守護 20 隻每隻 1；0.5：[1,0,1,0]）；城防旁的百分比只接受 0.5 以上、小於 1 的數字；0.5 的定義照樣寫出；其他技能的計算不受影響；其他武將（含典韋與寫錯的 id）沒有守護",
+    sq?.id === "base_guard" &&
+      sq.name === "守護" &&
+      sq.baseDamageMultiplier === 0.8 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: { id: "base_guard", base_damage_mult: 0.8 },
+        }) &&
+      baseGuardPercent(sq) === 20 &&
+      baseGuardPercent(heroSkillOf("dian_wei")) === 0 &&
+      JSON.stringify(seq.five) === "[1,1,1,1,0]" &&
+      seq.ten.reduce((a, b) => a + b, 0) === 8 &&
+      seq.none.every((x) => x === 1) &&
+      JSON.stringify(seq.half) === "[1,0,1,0]" &&
+      JSON.stringify(hud) === "[20,50,0,0,0,0,0,0]" &&
+      supplyKillGold(sq) === 5 &&
+      text ===
+        "部署在戰場上時，敵人漏到城池的傷害 −20%（每隻 1 → 0.8，這一場累計後無條件進位：漏 5 隻扣 4）；多個守護取最強、不疊加。" &&
+      other ===
+        "部署在戰場上時，敵人漏到城池的傷害 −50%（每隻 1 → 0.5，這一場累計後無條件進位：漏 5 隻扣 3）；多個守護取最強、不疊加。" &&
+      others.length === 0,
+    { sq, payload, seq, hud, text, other, others }
+  );
+});
+
+await test("奇襲-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    supplyKillGold,
+    burnTickDamage,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const gn = heroSkillOf("gan_ning");
+  const payload = heroSkillPayload("gan_ning");
+  const text = describeHeroSkill(gn, 5, 122);
+  const others = [
+    "ma_chao",
+    "zhou_cang",
+    "xu_chu",
+    "sun_quan",
+    "ganning",
+    "gan_ning_",
+    "Gan_Ning",
+  ].filter((id) => heroSkillOf(id)?.id === "assassinate");
+  check(
+    "奇襲-S1 甘寧（gan_ning）的奇襲：送進 Godot 的參數只有 {id: assassinate}（每場一次是固定規則，沒有倍率或次數欄位）與說明文字出自同一份定義；說明是短版整句：每場第一次有效的普通攻擊必定打倒主要目標、每場只有一次、換波次移位升級都不恢復；其他技能的計算不受影響；其他武將（含周倉與寫錯的 id）沒有奇襲",
+    gn?.id === "assassinate" &&
+      gn.name === "奇襲" &&
+      Object.keys(gn).sort().join(",") === "id,name" &&
+      JSON.stringify(payload) ===
+        JSON.stringify({ skill: { id: "assassinate" } }) &&
+      effectiveRange(gn, 5) === 5 &&
+      supplyKillGold(gn) === 5 &&
+      burnTickDamage(gn, 122) === 0 &&
+      text ===
+        "每場戰鬥第一次有效的普通攻擊必定打倒主要目標。每場只有一次，換波次、移動位置或升級都不會恢復。" &&
+      others.length === 0,
+    { gn, payload, text, others }
+  );
+});
+
+await test("魅惑-S1", async () => {
+  const {
+    heroSkillOf,
+    heroSkillPayload,
+    describeHeroSkill,
+    effectiveRange,
+    supplyKillGold,
+  } = require(join(GAME, "utils/heroSkills.ts"));
+  const dc = heroSkillOf("diao_chan");
+  const payload = heroSkillPayload("diao_chan");
+  const text = describeHeroSkill(dc, 4, 131);
+  const other = describeHeroSkill(
+    {
+      id: "charm",
+      name: "魅惑",
+      durationSec: 5,
+      cooldownSec: 10,
+      attackRadiusTiles: 2,
+    },
+    4,
+    131
+  );
+  const others = [
+    "ma_chao",
+    "zhang_fei",
+    "gan_ning",
+    "zhou_cang",
+    "diaochan",
+    "diao_chan_",
+    "Diao_Chan",
+  ].filter((id) => heroSkillOf(id)?.id === "charm");
+  check(
+    "魅惑-S1 貂蟬（diao_chan）的魅惑：送進 Godot 的參數（charm、charm_duration 2、charm_cooldown 6、charm_attack_radius 1，只有這四個欄位）與說明文字出自同一份定義；說明是短版整句：打中且目標還活著時讓這名地面敵人受控 2 秒、停在原地改打 1 格內其他地面敵人、成功後冷卻 6 秒、飛行敵人不受控；其他設定照實寫；5 秒、10 秒、2 格的定義照樣寫出；其他技能的計算不受影響；其他武將（含張飛、甘寧與寫錯的 id）沒有魅惑",
+    dc?.id === "charm" &&
+      dc.name === "魅惑" &&
+      dc.durationSec === 2 &&
+      dc.cooldownSec === 6 &&
+      dc.attackRadiusTiles === 1 &&
+      JSON.stringify(payload) ===
+        JSON.stringify({
+          skill: {
+            id: "charm",
+            charm_duration: 2,
+            charm_cooldown: 6,
+            charm_attack_radius: 1,
+          },
+        }) &&
+      effectiveRange(dc, 4) === 4 &&
+      supplyKillGold(dc) === 5 &&
+      text ===
+        "普通攻擊打中、目標還活著時，讓這名地面敵人受控 2 秒：停在原地，改打 1 格內的其他地面敵人。成功後冷卻 6 秒；飛行敵人不受控。" &&
+      other ===
+        "普通攻擊打中、目標還活著時，讓這名地面敵人受控 5 秒：停在原地，改打 2 格內的其他地面敵人。成功後冷卻 10 秒；飛行敵人不受控。" &&
+      others.length === 0,
+    { dc, payload, text, other, others }
+  );
+});
+
+// 技能說明短版（武將詳情與武將比較共用 describeHeroSkill）：22 位武將的說明都在 140 字內、沒有 NaN／undefined；
+// 射程與攻擊力是 0 時照算（不是當成沒有提供）；重要的例外都在：光環不含自己、減速不影響飛行與免疫減速、吸血只算實際扣血、
+// 堅韌看受傷前的生命、反擊要活著、連環計與呼風喚雨的範圍與上限、戰神的層數上限與新的一場重置、奇襲每場一次、魅惑只控制地面與冷卻
+await test("D183-S1", async () => {
+  const { heroSkillOf, describeHeroSkill } = require(
+    join(GAME, "utils/heroSkills.ts")
+  );
+  const HEROES = [
+    "ma_chao",
+    "zhao_yun",
+    "huang_zhong",
+    "zhou_yu",
+    "guan_yu",
+    "liu_bei",
+    "zhang_fei",
+    "wei_yan",
+    "cao_cao",
+    "xia_hou_dun",
+    "liao_hua",
+    "yan_liang",
+    "sun_shang_xiang",
+    "pang_tong",
+    "zhu_ge_liang",
+    "lv_bu",
+    "lu_su",
+    "xu_chu",
+    "dian_wei",
+    "sun_quan",
+    "gan_ning",
+    "diao_chan",
+  ];
+  const len = (s) => [...s].length;
+  const all = HEROES.map((h) => {
+    const s = heroSkillOf(h);
+    return [
+      h,
+      describeHeroSkill(s),
+      describeHeroSkill(s, 3, 100),
+      describeHeroSkill(s, 0, 0),
+    ];
+  });
+  check(
+    "D183-S1 技能說明短版：22 位武將（沒有提供、射程 3 與攻擊 100、射程 0 與攻擊 0）的說明都在 140 字內，沒有 NaN、undefined 或 Infinity",
+    all.length === 22 &&
+      all.every(([, ...t]) =>
+        t.every(
+          (x) =>
+            typeof x === "string" &&
+            len(x) > 0 &&
+            len(x) <= 140 &&
+            !/NaN|undefined|Infinity/.test(x)
+        )
+      ),
+    all.map(([h, a, b, c]) => [h, len(a), len(b), len(c)])
+  );
+  const zero = (h) => describeHeroSkill(heroSkillOf(h), 0, 0);
+  check(
+    "D183-S2 射程與攻擊力是 0 時照算（寫出目前 0 格、目前 0），不是當成沒有提供",
+    zero("huang_zhong") ===
+      "戰場上的有效射程是屬性射程的 1.5 倍（升級的射程成長也一起乘）：目前 0 格，戰場上 0 格。傷害與攻擊間隔不變。" &&
+      zero("zhou_yu") ===
+        "普通攻擊命中後灼燒：每 1 秒 1 次、共 3 次，每次是命中時攻擊力的 20%（目前 0）。再次命中重設成 3 次、不疊加。" &&
+      zero("guan_yu") ===
+        "射程內（目前 0 格）的地面敵人移動速度 −10%；飛行與免疫減速的敵人不受影響。和其他減速取最強、不疊加，但文士塔的減速另外計算。" &&
+      zero("liu_bei") ===
+        "射程內（目前 0 格）的其他友軍武將防禦力 +20%（不含自己、防禦塔與城池）；多個防禦光環取最強、不疊加。" &&
+      zero("cao_cao") ===
+        "射程內（目前 0 格）的其他友軍武將攻擊速度 +15%（攻擊間隔變成 1 ÷ 1.15，不含自己）；多個攻速光環取最強、不疊加。" &&
+      zero("yan_liang") ===
+        "射程內（目前 0 格）所有敵人（含飛行）攻擊武將的攻擊力 −10%；多個威壓取最強、不疊加。敵人的移動速度與漏城扣的城防不變。" &&
+      zero("sun_shang_xiang") ===
+        "普通攻擊命中、敵人還活著時，有 20% 機率對同一個敵人再打一擊（攻擊力的 100%，目前 0）。追加的一擊不會再連射，攻擊間隔不變。" &&
+      zero("pang_tong") ===
+        "普通攻擊打到敵人後，傷害傳給 1.5 格內最近、還沒被打過的敵人，最多 2 次，依序是攻擊傷害的 50%、25%（目前 0、0）；每次從上一個被傳到的敵人往外找。" &&
+      zero("zhu_ge_liang") ===
+        "普通攻擊打到敵人後，以它為中心 2 格內最多 4 名其他敵人各受攻擊傷害的 50%（目前 0）。主要目標不重複受傷，也不會再往外傳。" &&
+      zero("lv_bu") ===
+        "自己的普通攻擊打倒敵人後，從下一擊起攻擊力 +5%，最多 10 層（+50%，目前最高 0）。層數只在這一場保留，新的一場從 0 開始。",
+    HEROES.map(zero)
+  );
+  const t = (h) => describeHeroSkill(heroSkillOf(h), 3, 100);
+  check(
+    "D183-S3 重要的例外都在：減速不影響飛行與免疫減速、防禦與攻速光環不含自己、吸血只算實際扣血、堅韌看受傷前的生命、反擊要自己還活著、連環計 1.5 格內最多 2 次、呼風喚雨 2 格內最多 4 名、戰神最多 10 層且新的一場從 0 開始、奇襲每場只有一次、魅惑只控制地面敵人且冷卻 6 秒",
+    t("guan_yu").includes("飛行與免疫減速的敵人不受影響") &&
+      t("liu_bei").includes("不含自己") &&
+      t("cao_cao").includes("不含自己") &&
+      t("wei_yan").includes("實際扣掉敵人生命") &&
+      t("liao_hua").includes("受傷前生命不高於最大生命的 30%") &&
+      t("xia_hou_dun").includes("自己還活著時") &&
+      t("pang_tong").includes("1.5 格內") &&
+      t("pang_tong").includes("最多 2 次") &&
+      t("zhu_ge_liang").includes("2 格內最多 4 名") &&
+      t("lv_bu").includes("最多 10 層") &&
+      t("lv_bu").includes("新的一場從 0 開始") &&
+      t("gan_ning").includes("每場只有一次") &&
+      t("diao_chan").includes("地面敵人") &&
+      t("diao_chan").includes("冷卻 6 秒") &&
+      t("diao_chan").includes("飛行敵人不受控"),
+    HEROES.map(t)
+  );
+});
+
+// 短版說明裡兩個容易被「取最強、不疊加」「刷新」帶過的例外，和 Godot 的實際規則原文一起核對：
+// 文士塔的減速是另外相乘的疊加減速（Enemy.gd：移動速度＝基速 × 倍率減速 × (1 − 文士塔的疊加減速)，倍率減速才取最強）；
+// 暈眩再次命中時取剩餘時間與新時間較長的一個（apply_stun 用 maxf），所以不會縮短
+await test("D183-S4", async () => {
+  const { heroSkillOf, describeHeroSkill } = require(
+    join(GAME, "utils/heroSkills.ts")
+  );
+  const enemy = readFileSync(
+    join(ROOT, "godot/shenmaSanguo/entities/enemy/Enemy.gd"),
+    "utf8"
+  );
+  const tower = readFileSync(
+    join(ROOT, "godot/shenmaSanguo/entities/tower/Tower.gd"),
+    "utf8"
+  );
+  const slow = [undefined, 3, 0].map((r) =>
+    describeHeroSkill(heroSkillOf("guan_yu"), r)
+  );
+  check(
+    "D183-S4 減速光環寫明文士塔的減速另外計算：Godot 的移動速度是基速 × 倍率減速（取最強）× (1 − 文士塔的疊加減速)；說明在「和其他減速取最強、不疊加」後面接著寫文士塔另外計算（沒有射程、射程 3、射程 0 都一樣）",
+    enemy.includes("base_speed * speed_mult * (1.0 - _stack_slow_amount)") &&
+      tower.includes('"stack_slow_amount": 0.05') &&
+      slow.every((s) =>
+        s.endsWith("和其他減速取最強、不疊加，但文士塔的減速另外計算。")
+      ),
+    slow
+  );
+  const stun = describeHeroSkill(heroSkillOf("zhang_fei"));
+  check(
+    "D183-S5 暈眩寫明不會縮短剩下更久的暈眩：Godot 的 apply_stun 取剩餘時間與新時間較長的一個；說明寫再次命中刷新成 0.5 秒、不累加，也不會縮短剩下更久的暈眩",
+    enemy.includes("_stun_left = maxf(_stun_left, duration)") &&
+      stun.includes("再次命中刷新成 0.5 秒、不累加，也不會縮短剩下更久的暈眩"),
+    stun
   );
 });
 
@@ -3325,7 +3999,12 @@ await test("連射-S1", async () => {
 // 關羽是減速光環（「周圍敵人減速10%」）；劉備是防禦光環（「光環：提升友軍防禦」）；張飛是暈眩（「攻擊使敵人暈眩」）；
 // 魏延是吸血（「吸血：恢復生命」）；曹操是攻速光環（「指揮：提升友軍攻速」）；夏侯惇是反擊（「反擊：受傷時反彈傷害」）；
 // 廖化是堅韌（「堅韌：低血量減傷」）；顏良是威壓（「威壓：降低敵軍攻擊」）；孫尚香是連射（「連射：有機率二次攻擊」）；
-// 甘寧（「奇襲：首擊必殺」，意思還沒決定）沒有技能
+// 龐統是連環計（「連環計：傳遞傷害」，鏈式傳遞，不是橫掃）；諸葛亮是呼風喚雨（「呼風喚雨：大範圍傷害」，以被打中的敵人為中心的範圍，不是橫掃原型）；
+// 呂布是戰神（「戰神：攻擊力隨殺敵增加」，自己普通攻擊的擊殺疊層）；魯肅是補給（「補給：增加資源獲取」，在場時全隊擊殺的戰鬥金幣增加）；
+// 許褚是怪力（「怪力：擊退效果」，普通攻擊沿原路推回主目標）；典韋是護衛（「護衛：替隊友分擔傷害」，範圍內友軍受到的直接攻擊分攤一部分）；
+// 孫權是守護（「守護：提升基地防禦」，城池沒有防禦屬性，改成在場時漏城傷害減少、累計後進位）；
+// 甘寧是奇襲（「奇襲：首擊必殺」，每場第一次有效的普通攻擊必殺主要目標，不是兩倍傷害）；
+// 貂蟬是魅惑（「魅惑：控制敵人」，打中的地面敵人受控：停下來改打附近的其他敵人）
 await test("技能對照-S1", async () => {
   const { heroSkillOf, heroSkillPayload } = require(
     join(GAME, "utils/heroSkills.ts")
@@ -3345,6 +4024,14 @@ await test("技能對照-S1", async () => {
     "liao_hua",
     "yan_liang",
     "sun_shang_xiang",
+    "pang_tong",
+    "zhu_ge_liang",
+    "lv_bu",
+    "lu_su",
+    "xu_chu",
+    "dian_wei",
+    "sun_quan",
+    "diao_chan",
   ];
   const got = Object.fromEntries(
     ids.map((id) => [id, heroSkillOf(id)?.id ?? null])
@@ -3353,7 +4040,7 @@ await test("技能對照-S1", async () => {
     (id) => heroSkillPayload(id).skill?.id === "first_strike"
   );
   check(
-    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）、顏良 atk_down_aura（威壓）、孫尚香 double_shot（連射）；甘寧沒有技能；沒有武將綁定橫掃；只有馬超帶首擊加倍",
+    "技能對照-S1 技能綁定：馬超 first_strike（衝鋒）、趙雲 dodge（閃避）、黃忠 long_range、周瑜 burn、關羽 slow_aura（減速光環）、劉備 def_aura（防禦光環）、張飛 stun（暈眩）、魏延 lifesteal（吸血）、曹操 atk_speed_aura（指揮）、夏侯惇 counter（反擊）、廖化 tenacity（堅韌）、顏良 atk_down_aura（威壓）、孫尚香 double_shot（連射）、龐統 chain（連環計）、諸葛亮 storm（呼風喚雨）、呂布 berserk（戰神）、魯肅 supply（補給）、許褚 knockback（怪力）、典韋 guard_share（護衛）、孫權 base_guard（守護）、甘寧 assassinate（奇襲，只帶 id）、貂蟬 charm（魅惑）；沒有武將綁定橫掃；只有馬超帶首擊加倍",
     JSON.stringify(got) ===
       JSON.stringify({
         ma_chao: "first_strike",
@@ -3361,7 +4048,7 @@ await test("技能對照-S1", async () => {
         huang_zhong: "long_range",
         zhou_yu: "burn",
         guan_yu: "slow_aura",
-        gan_ning: null,
+        gan_ning: "assassinate",
         liu_bei: "def_aura",
         zhang_fei: "stun",
         wei_yan: "lifesteal",
@@ -3370,10 +4057,19 @@ await test("技能對照-S1", async () => {
         liao_hua: "tenacity",
         yan_liang: "atk_down_aura",
         sun_shang_xiang: "double_shot",
+        pang_tong: "chain",
+        zhu_ge_liang: "storm",
+        lv_bu: "berserk",
+        lu_su: "supply",
+        xu_chu: "knockback",
+        dian_wei: "guard_share",
+        sun_quan: "base_guard",
+        diao_chan: "charm",
       }) &&
       JSON.stringify(firstStrike) === '["ma_chao"]' &&
       !Object.values(got).includes("sweep") &&
-      !("skill" in heroSkillPayload("gan_ning")) &&
+      JSON.stringify(heroSkillPayload("gan_ning")) ===
+        '{"skill":{"id":"assassinate"}}' &&
       heroSkillPayload("liu_bei").skill?.id === "def_aura",
     { got, firstStrike }
   );

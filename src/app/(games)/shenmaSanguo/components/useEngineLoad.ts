@@ -30,14 +30,18 @@ const INITIAL: EngineLoad = {
 /**
  * 遊戲引擎的載入進度（見 utils/engineLoad）：active 時每半秒讀一次遊戲 iframe 外殼頁的狀態。
  * 階段或已下載的位元組改變就算有進展；外殼頁一直沒有開始下載時，檢查一次瀏覽器缺少的功能。
- * frameKey 改變（換了新的遊戲 iframe）時從頭計算
+ * frameKey 改變（換了新的遊戲 iframe）時從頭計算：舊 iframe 的計時器在換之前清掉，沒有進展的秒數從換的時候重新算；
+ * 狀態跟著 frameKey 保存，新的 iframe 第一次讀取前回傳初始狀態，不會先顯示舊 iframe 的停住、啟動中或下載大小
  */
 export function useEngineLoad(
   frameRef: RefObject<HTMLIFrameElement | null>,
   active: boolean,
   frameKey: number
 ): EngineLoad {
-  const [load, setLoad] = useState<EngineLoad>(INITIAL);
+  const [saved, setSaved] = useState<{ key: number; load: EngineLoad }>({
+    key: frameKey,
+    load: INITIAL,
+  });
 
   useEffect(() => {
     if (!active) return;
@@ -63,15 +67,16 @@ export function useEngineLoad(
         s.phase === "starting" ? ENGINE_START_STALL_SEC : ENGINE_STALL_SEC;
       const stalled =
         s.phase !== "failed" && s.phase !== "unsupported" && idleSec >= limit;
-      setLoad((prev) =>
-        prev.phase === s.phase &&
-        prev.loaded === s.loaded &&
-        prev.total === s.total &&
-        prev.notice === s.notice &&
-        prev.idleSec === idleSec &&
-        prev.stalled === stalled
+      setSaved((prev) =>
+        prev.key === frameKey &&
+        prev.load.phase === s.phase &&
+        prev.load.loaded === s.loaded &&
+        prev.load.total === s.total &&
+        prev.load.notice === s.notice &&
+        prev.load.idleSec === idleSec &&
+        prev.load.stalled === stalled
           ? prev
-          : { ...s, idleSec, stalled }
+          : { key: frameKey, load: { ...s, idleSec, stalled } }
       );
     };
     const first = setTimeout(poll, 0);
@@ -82,5 +87,5 @@ export function useEngineLoad(
     };
   }, [frameRef, active, frameKey]);
 
-  return load;
+  return saved.key === frameKey ? saved.load : INITIAL;
 }

@@ -4,8 +4,7 @@ async (page) => {
   // 不含自己與防禦塔；取最強不疊加；只影響之後新開始的攻擊冷卻；只在戰鬥中
   // - 測試資料（只在這支腳本加進 mock 名單，__shenma_cmd_fixture）：曹操（射程 1.5 格）、合成的弓手（mock_spd_ally：沒有技能、射程 3 格、攻擊間隔 1 秒）、
   //   合成的遠弓（mock_spd_far：沒有技能、射程 6 格、攻擊間隔 1 秒），關卡「Mock CMD 指揮」：直線路線（第 5 列），一個不會移動、血量很多的地面兵（在起點 (0,5)）
-  // - A：技能說明（主頁的武將視窗、獨立的武將頁）：技能名稱「指揮」、15%、每秒攻擊次數 1.15 倍、1 秒約 0.87 秒（不是少 15%）、範圍半徑 1.5 格、
-  //      不含自己與防禦塔、正在倒數的冷卻不補打、取最強不疊加、只在戰場；390×844 說明在畫面寬度內、字級至少 12px
+  // - A：技能說明（主頁的武將視窗、獨立的武將頁）：技能名稱「指揮」、短版說明（只寫效果、目前的數值與主要例外，和整句比對）；390×844 說明在畫面寬度內、字級至少 12px
   // - B：主頁用部署選單（真的部署 UI）把弓手放在 (1,4)、遠弓放在 (5,6)、曹操放在 (2,4)：遊戲 iframe 收到的曹操 skill 正好是
   //      {id: atk_speed_aura, atk_speed_mult: 1.15}、兩位友軍沒有 skill；備戰時光環不作用、沒有加成。
   //      開戰後只用快照觀察：弓手（距離 1 格）1.15、每次冷卻 1 ÷ 1.15、預定時間差都是前一次的間隔，同一段遊戲時間的次數＝時間 × 1.15（差不到 1 下）；
@@ -28,7 +27,8 @@ async (page) => {
   const CELLS = { ally: [1, 4], far: [5, 6], cao: [2, 4] };
   const SKILL = { id: "atk_speed_aura", atk_speed_mult: 1.15 };
   const BUFFED = 1 / 1.15;
-  const SNAP_TEXT = "生命值與防禦是選取時的數值，重新點選武將可更新";
+  // 生命值與防禦是選取時的快照；有戰況觀測（新版遊戲）時生命值改為即時，說明寫明防禦與攻擊間隔仍是選取時的數值
+  const SNAP_TEXTS = ["生命值與防禦是選取時的數值，重新點選武將可更新", "生命值與技能狀態是目前的戰況（遊戲每 0.25 秒更新）；防禦與攻擊間隔是選取時的數值，重新點選武將可更新"];
 
   const ROW = 5;
   const zones = [];
@@ -236,10 +236,9 @@ async (page) => {
       } catch { /* 沒有視窗可關 */ }
     }
   };
+  // 技能說明是短版（只寫效果、目前的數值與主要例外）：整句寫在這裡，數值是這支腳本的 mock 武將（射程、攻擊力）算出的
   const RULES = (t) =>
-    /技能：指揮/.test(t) && /其他友軍武將攻擊速度提升 15%/.test(t) && /每秒攻擊次數變成 1\.15 倍/.test(t) && /1 秒變成約 0\.87 秒，不是直接少 15%/.test(t) &&
-    /目前等級的範圍半徑是 1\.5 格/.test(t) && /不含自己，防禦塔與城池不受影響/.test(t) && /不會立刻補打/.test(t) && /取最強的一個，不會疊加/.test(t) &&
-    /只在戰場生效/.test(t) && /存檔與屬性表的攻擊間隔不會改變/.test(t);
+    /技能：指揮/.test(t) && t.includes("射程內（目前 1.5 格）的其他友軍武將攻擊速度 +15%（攻擊間隔變成 1 ÷ 1.15，不含自己）；多個攻速光環取最強、不疊加。");
 
   // ── 準備 ──
   let profile0 = null;
@@ -270,7 +269,7 @@ async (page) => {
     await page.locator('[class*="heroName"]', { hasText: "曹操" }).first().click();
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { card, allyCard, detail, shot: await H.shot(page, "atkspeed-a-skill-detail") };
-    run.check("A-1 主頁武將視窗：曹操的卡片是「技能：指揮」（弓手沒有技能）；詳情寫明其他友軍武將攻擊速度提升 15%、每秒攻擊次數 1.15 倍、1 秒約 0.87 秒（不是少 15%）、範圍半徑 1.5 格、不含自己與防禦塔、正在倒數的冷卻不補打、取最強不疊加、只在戰場不改存檔",
+    run.check("A-1 主頁武將視窗：曹操的卡片是「技能：指揮」（弓手沒有技能）；詳情是短版說明：射程內（目前 1.5 格）其他友軍攻速 +15%（間隔 1 ÷ 1.15）、不含自己、取最強不疊加",
       /技能：指揮/.test(card) && !/技能：/.test(allyCard) && RULES(detail), out.A_modal);
     await page.locator('button[class*="modalClose"]').last().click();
     await H.sleep(300);
@@ -363,7 +362,7 @@ async (page) => {
     out.B_panel = { paused, pAlly, pFar, p390, panelShot, panelShot390 };
     run.check("B-3 暫停後在戰場點弓手：攻擊間隔是「1 → 0.87秒」（原本與加成後分開列出），有「指揮」的說明（選取時、只在範圍內、不改存檔）與選取時數值的說明；點遠弓是「1秒」、沒有指揮的說明；390×844 面板與說明在畫面內、沒有橫向溢出",
       paused && /弓手/.test(pAlly.name || "") && pAlly.text === "1 → 0.87秒" && pAlly.spd === 1 && near(pAlly.eff, 1.15, 1e-9) && /指揮/.test(pAlly.note || "") &&
-        /0\.87秒/.test(pAlly.note || "") && /原本 1秒/.test(pAlly.note || "") && /不改存檔/.test(pAlly.note || "") && pAlly.noteVisible && pAlly.snap === SNAP_TEXT &&
+        /0\.87秒/.test(pAlly.note || "") && /原本 1秒/.test(pAlly.note || "") && /不改存檔/.test(pAlly.note || "") && pAlly.noteVisible && SNAP_TEXTS.includes(pAlly.snap) &&
         /遠弓/.test(pFar.name || "") && pFar.text === "1秒" && pFar.note === null && p390.text === "1 → 0.87秒" && p390.inView && p390.noOverflow && p390.noteVisible,
       out.B_panel);
 

@@ -1,3 +1,5 @@
+import release from "./gameRelease.json";
+
 /**
  * Web ↔ Godot 橋接協定的版本（和 Godot WebBridge.gd 的 BRIDGE_PROTOCOL 相同）
  * Godot 的 game_ready 帶這個版本；版本相同才送出關卡資料
@@ -31,8 +33,21 @@ export function isCompatibleEngine(data: { protocol?: unknown }): boolean {
   return data.protocol === BRIDGE_PROTOCOL;
 }
 
-/** 遊戲（Godot 匯出）的 Service Worker 範圍：它用快取提供遊戲檔案 */
-const GAME_SW_SCOPE = "/games/shenmaSanguo/";
+/**
+ * 遊戲（Godot 匯出）目前入口的目錄：gameRelease.json 的 entry 是版本時是版本目錄 /games/shenmaSanguo-v/<版本>/
+ * （每一版一個目錄，發布後內容不變），"legacy" 時是舊正式版的 /games/shenmaSanguo/（回退用）。
+ * 發布與回退見 scripts/shenma-regression/tools/game-release.mjs
+ */
+export const GAME_DIR =
+  release.entry === "legacy"
+    ? "/games/shenmaSanguo/"
+    : `/games/shenmaSanguo-v/${release.entry}/`;
+
+/** 兩個入口（主頁、獨立戰鬥頁）的遊戲 iframe 網址 */
+export const GAME_ENTRY = `${GAME_DIR}index.html`;
+
+/** 遊戲的 Service Worker 範圍（遊戲目錄）：它用快取提供遊戲檔案 */
+const GAME_SW_SCOPE = GAME_DIR;
 
 const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T | "timeout"> =>
   Promise.race([

@@ -1,27 +1,30 @@
 // 回歸工具自我測試：用刻意製造的 fixture 確認 verify-export.mjs 與 check-log.mjs
 // 「該失敗時一定失敗、允許的差異才放行」。不需要 Godot，也不會修改傳入的目錄。
-// 用法：node selftest.mjs <交付產物目錄，例如 public/games/shenmaSanguo>
+// 用法：node selftest.mjs <交付產物目錄，例如 public/games/shenmaSanguo-v/<版本>> [--keep-temp]
 // 結束碼：0 = 每個 fixture 的結果都符合預期；1 = 有工具誤判
+// fixture 放在這次建立的暫存目錄：全部符合預期而且結果已存到 EVIDENCE_DIR 時刪除，其他情況保留（見 temp-dir.mjs）
 import { spawnSync } from "node:child_process";
-import {
-  cpSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { maskNodeIds, parsePck } from "./pck.mjs";
+import { createTempDir, finishTempDir } from "./temp-dir.mjs";
+import {
+  VERSION_PLACEHOLDER,
+  htmlVersionOf,
+  maskHtmlVersion,
+  versionOf,
+} from "./postexport.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const publicDir = process.argv[2];
+const publicDir = process.argv.slice(2).find((a) => a !== "--keep-temp");
 if (!publicDir) {
   console.error("用法：node selftest.mjs <交付產物目錄>");
   process.exit(2);
 }
-const root = mkdtempSync(join(tmpdir(), "shenma-selftest-"));
+const tmp = createTempDir("shenma-selftest-");
+const root = tmp.dir;
 const base = join(root, "base");
 cpSync(publicDir, base, { recursive: true });
 
@@ -42,6 +45,53 @@ function patchPck(dir, entryTest, offsetOf) {
   return name;
 }
 const nodeIdsStart = (data) => maskNodeIds(data).hits[0].start;
+// 經過匯出後處理的 Service Worker 記錄了 index.pck 的 sha256，版本（外殼頁與 Service Worker）也由它決定：
+// 照 postexport.mjs 的方式跟著更新（真正重新匯出時也是這樣；Service Worker 的 VERSION 與 CACHE_VERSION 都是版本）。
+// withVersion=false 時只更新 EXPECTED、版本不動
+function syncExpectedPck(dir, withVersion = true) {
+  const sw = join(dir, "index.service.worker.js");
+  const text = readFileSync(sw, "utf8");
+  const m = text.match(/^const EXPECTED = (\{.*\});$/m);
+  if (!m) return;
+  const exp = JSON.parse(m[1]);
+  exp["index.pck"].sha256 = createHash("sha256")
+    .update(readFileSync(join(dir, "index.pck")))
+    .digest("hex");
+  let out = text.replace(
+    m[0],
+    () => "const EXPECTED = " + JSON.stringify(exp) + ";"
+  );
+  const htmlPath = join(dir, "index.html");
+  const html = readFileSync(htmlPath, "utf8");
+  if (withVersion && htmlVersionOf(html)) {
+    const version = versionOf(maskHtmlVersion(html), exp);
+    const newHtml = maskHtmlVersion(html).replace(
+      `'${VERSION_PLACEHOLDER}'`,
+      `'${version}'`
+    );
+    writeFileSync(htmlPath, newHtml);
+    const data = Buffer.from(newHtml, "utf8");
+    exp["index.html"] = {
+      ...exp["index.html"],
+      bytes: data.length,
+      sha256: createHash("sha256").update(data).digest("hex"),
+    };
+    out = out
+      .replace(
+        /^const EXPECTED = \{.*\};$/m,
+        () => "const EXPECTED = " + JSON.stringify(exp) + ";"
+      )
+      .replace(
+        /^const VERSION = '[0-9a-f]{16}';$/m,
+        () => `const VERSION = '${version}';`
+      )
+      .replace(
+        /^const CACHE_VERSION = '[^'\n]*';$/m,
+        () => `const CACHE_VERSION = '${version}';`
+      );
+  }
+  writeFileSync(sw, out);
+}
 
 let n = 0;
 function variant(label, mutate) {
@@ -60,18 +110,63 @@ const editText = (dir, file, fn) =>
 const exportCases = [
   [variant("完全相同", () => {}), 0],
   [
-    variant("只改 SW 的 CACHE_VERSION", (d) =>
-      editText(d, "index.service.worker.js", (s) =>
-        s.replace(/CACHE_VERSION = '[^']*'/, "CACHE_VERSION = 'selftest|1'")
-      )
+    variant(
+      "SW 的 CACHE_VERSION 不是這一版的版本（例如匯出時間戳，沒有經過現在的匯出後處理）",
+      (d) =>
+        editText(d, "index.service.worker.js", (s) =>
+          s.replace(/CACHE_VERSION = '[^']*'/, "CACHE_VERSION = 'selftest|1'")
+        )
+    ),
+    1,
+  ],
+  [
+    variant(
+      "只改 .scn 的 node_ids（Service Worker 記錄的 index.pck sha256 與版本都照匯出後處理跟著更新）",
+      (d) => {
+        const name = patchPck(d, (x) => x.endsWith("Main.scn"), nodeIdsStart);
+        syncExpectedPck(d);
+        return name;
+      }
     ),
     0,
   ],
   [
-    variant("只改 .scn 的 node_ids", (d) =>
-      patchPck(d, (x) => x.endsWith("Main.scn"), nodeIdsStart)
+    variant(
+      "只改 .scn 的 node_ids，但 Service Worker 記錄的 index.pck sha256 沒有更新",
+      (d) => patchPck(d, (x) => x.endsWith("Main.scn"), nodeIdsStart)
     ),
-    0,
+    1,
+  ],
+  [
+    variant(
+      "只改 .scn 的 node_ids，EXPECTED 跟著更新但版本（外殼頁與 Service Worker）沒有重算",
+      (d) => {
+        const name = patchPck(d, (x) => x.endsWith("Main.scn"), nodeIdsStart);
+        syncExpectedPck(d, false);
+        return name;
+      }
+    ),
+    1,
+  ],
+  [
+    variant("外殼頁的版本和 Service Worker 不同", (d) =>
+      editText(d, "index.html", (h) =>
+        h.replace(
+          /^(\tconst VERSION = ')[0-9a-f]{16}(';)$/m,
+          "$10123456789abcdef$2"
+        )
+      )
+    ),
+    1,
+  ],
+  [
+    variant("背景音樂改一個 byte", (d) => {
+      const p = join(d, "bgm_battle.ogg");
+      const b = readFileSync(p);
+      b[100] ^= 0xff;
+      writeFileSync(p, b);
+    }),
+    1,
   ],
   [
     variant("index.js 只有換行不同（CRLF 與 LF 互換）", (d) =>
@@ -271,4 +366,27 @@ console.log(
     ? `自我測試：失敗（${bad} 個 fixture 被誤判）`
     : `自我測試：通過（${rows.length} 個 fixture 都符合預期）`
 );
+// 證據：交付產物的指紋（檔名＋sha256）與每個 fixture 的結果
+const packageFiles = readdirSync(base)
+  .sort()
+  .map((f) => [
+    f,
+    createHash("sha256")
+      .update(readFileSync(join(base, f)))
+      .digest("hex"),
+  ]);
+finishTempDir(tmp, {
+  passed: bad === 0,
+  name: "selftest",
+  result: {
+    package: publicDir,
+    packageFingerprint: createHash("sha256")
+      .update(JSON.stringify(packageFiles))
+      .digest("hex"),
+    packageFiles,
+    fixtures: rows.length,
+    bad,
+    rows,
+  },
+});
 process.exit(bad ? 1 : 0);

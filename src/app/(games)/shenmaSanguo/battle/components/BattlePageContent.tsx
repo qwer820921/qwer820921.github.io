@@ -17,10 +17,11 @@ import {
 } from "../../utils/battleSession";
 import {
   EngineStatus,
+  GAME_ENTRY,
   activateLatestGameWorker,
   isCompatibleEngine,
 } from "../../utils/gameEngine";
-import { heroSkillPayload } from "../../utils/heroSkills";
+import { baseGuardHudPercent, heroSkillPayload } from "../../utils/heroSkills";
 import {
   isPlayable,
   stageAccess,
@@ -56,6 +57,15 @@ import SpeedToggle from "./SpeedToggle";
 import PauseToggle, { PauseBadge } from "./PauseToggle";
 import NextWaveEntry from "../../components/NextWaveEntry";
 import { BattleTipsPanel, BattleTipsToggle } from "../../components/BattleTips";
+import {
+  BattleLivePanel,
+  BattleLiveToggle,
+} from "../../components/BattleLivePanel";
+import {
+  ObservationTracker,
+  isCurrentPanel,
+} from "../../utils/battleObservation";
+import { publishObservation } from "../../store/battleObservationStore";
 import { NextWaveBattle } from "../../utils/nextWave";
 
 interface BattleStats {
@@ -73,6 +83,8 @@ interface BattleStats {
   deploy_slow?: boolean;
   /** 手動暫停：Godot 已確認的狀態 */
   paused?: boolean;
+  /** 守護（孫權）：這一場此刻生效的漏城傷害倍率（沒有生效的守護時是 1；舊版遊戲沒有這個欄位） */
+  base_guard_mult?: number;
 }
 
 const GameState = {
@@ -139,6 +151,14 @@ export default function BattlePageContent() {
   );
   // 這一關的戰鬥：記下屬於哪個帳號、能不能採用結算（見 utils/battleSession）
   const sessionRef = useRef(new BattleSession());
+  // 戰況觀測（新版遊戲的 battle_observation，見 utils/battleObservation）：只採用目前 iframe、目前這一場、比較新的一份
+  const obsRef = useRef(new ObservationTracker());
+  const [obsCapable, setObsCapable] = useState(false);
+  // 戰況（武將技能與敵軍）：開關在頂部，收起時焦點還給開關
+  const [liveOpen, setLiveOpen] = useState(false);
+  const liveBtnRef = useRef<HTMLButtonElement>(null);
+  // 離開頁面：這一頁的觀測不留給下一個戰鬥入口
+  useEffect(() => () => publishObservation(null), []);
 
   // 離開頁面：這一關作廢，只解除這一場自己的鎖（不影響之後新頁面的那一場）
   useEffect(() => {
@@ -186,8 +206,12 @@ export default function BattlePageContent() {
     const ticket = usePlayerStore.getState().beginBattle();
     if (!ticket) return;
     sessionRef.current.begin(ticket);
-    // 新的一場：上一場的拒絕開戰提示不適用
+    // 新的一場：上一場的拒絕開戰提示、單位面板與戰況不適用
     setWaveReject(null);
+    setUpgradePanel(null);
+    setTowerSell(null);
+    obsRef.current.reset();
+    publishObservation(null);
     setNextWaveBattle({
       battleId: ticket.id,
       map,
@@ -226,6 +250,10 @@ export default function BattlePageContent() {
     // 收到 Godot 的 Ready 訊號：協定版本相同才標記 Godot 已準備好
     if (event.data.type === "game_ready") {
       setIframeLoading(false);
+      // 可選的功能（戰況觀測）：舊版遊戲沒有宣告時不顯示即時資料
+      obsRef.current.onReady(event.data);
+      setObsCapable(obsRef.current.capable);
+      publishObservation(null);
       // 協定版本不同（舊版遊戲）：不送出關卡資料、不開戰，顯示更新提示
       if (!isCompatibleEngine(event.data)) {
         setEngineStatus("incompatible");
@@ -301,7 +329,20 @@ export default function BattlePageContent() {
     }
 
     if (event.data.type === "show_upgrade_panel") {
+      // 只顯示目前這一場的面板（舊版遊戲的武將面板沒有 battle_id，照舊顯示）
+      if (!isCurrentPanel(event.data, sessionRef.current.owner?.id ?? null))
+        return;
       setUpgradePanel(event.data);
+      return;
+    }
+
+    if (event.data.type === "battle_observation") {
+      // 戰況觀測：只採用目前這一場、比目前新的一份（見 utils/battleObservation）
+      const o = obsRef.current.accept(
+        event.data,
+        sessionRef.current.owner?.id ?? null
+      );
+      if (o) publishObservation(o);
       return;
     }
 
@@ -385,6 +426,11 @@ export default function BattlePageContent() {
     setUpgradePanel(null);
     setWaveReject(null);
     setNextWaveBattle(null);
+    // 換新的 iframe：等它的 game_ready 才知道有沒有戰況觀測
+    obsRef.current.reset(false);
+    setObsCapable(false);
+    publishObservation(null);
+    setLiveOpen(false);
     await activateLatestGameWorker();
     setEngineStatus("loading");
     setIframeLoading(true);
@@ -684,6 +730,16 @@ export default function BattlePageContent() {
                   className={styles.topBtn}
                 />
               )}
+              {battleStats &&
+                battleStats.game_state !== GameState.RESULT &&
+                obsCapable && (
+                  <BattleLiveToggle
+                    open={liveOpen}
+                    onToggle={() => setLiveOpen((o) => !o)}
+                    buttonRef={liveBtnRef}
+                    className={styles.topBtn}
+                  />
+                )}
             </Col>
             {battleStats && (
               <Col xs="auto">
@@ -711,6 +767,16 @@ export default function BattlePageContent() {
                     >
                       {battleStats.hp}/{battleStats.max_hp}
                     </span>
+                    {baseGuardHudPercent(battleStats.base_guard_mult) > 0 && (
+                      <span
+                        className={styles.statBaseGuard}
+                        data-testid="hud-base-guard"
+                        title={`守護：敵人漏到城池的傷害減少 ${baseGuardHudPercent(battleStats.base_guard_mult)}%（累計後無條件進位才扣城防）`}
+                      >
+                        守護 −{baseGuardHudPercent(battleStats.base_guard_mult)}
+                        %
+                      </span>
+                    )}
                     <div
                       className={styles.hpBarMini}
                       style={
@@ -790,6 +856,19 @@ export default function BattlePageContent() {
           <BattleTipsPanel stageRef={stageRef} toggleRef={tipsBtnRef} />
         )}
 
+        {/* 戰況（武將技能與敵軍）：新版遊戲才有；只是查看，不疊在遊戲畫面上。DOM 排在戰場前面（畫面上排在後面），從開關往後按 Tab 就到 */}
+        {payloadSent && battleStats && !battleResult && obsCapable && (
+          <BattleLivePanel
+            open={liveOpen}
+            onClose={() => setLiveOpen(false)}
+            stageRef={stageRef}
+            toggleRef={liveBtnRef}
+            battleId={nextWaveBattle?.battleId ?? null}
+            enemiesConfig={nextWaveBattle?.enemies}
+            heroesConfig={staticConfig?.heroesConfig}
+          />
+        )}
+
         {/* 遊戲 iframe：固定 540:720，放進戰場區域的實際寬高（D22）；data-game-stage 是面板定位的可見範圍 */}
         <div ref={stageRef} className={styles.gamePortraitWrap} data-game-stage>
           {/* 部署選單開著時，戰場的留邊（D24）和選單外一樣是關閉區：只蓋住遊戲畫面以外的留邊，點了照一般的取消關閉 */}
@@ -856,7 +935,7 @@ export default function BattlePageContent() {
             <iframe
               key={iframeKey}
               ref={iframeRef}
-              src="/games/shenmaSanguo/index.html"
+              src={GAME_ENTRY}
               className={styles.gameIframe}
               onLoad={handleIframeLoad}
               allow="autoplay; fullscreen"

@@ -210,7 +210,7 @@ async (page) => {
         .evaluate(() => ({
           url: location.pathname + location.search,
           phase: window.__siteIsolation ? window.__siteIsolation.phase : "none",
-          hud: !!document.querySelector('[title="切換關卡"]'),
+          hud: (() => { const b = document.querySelector('[title="切換關卡"]'); const bar = b && b.closest("[data-hud-phase]"); return !!b && (!bar || bar.dataset.hudPhase !== "preload"); })(),
         }))
         .catch(() => null);
       if (st) {

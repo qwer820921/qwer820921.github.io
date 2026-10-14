@@ -1,10 +1,12 @@
 import { HeroConfig, HeroState, JobClass } from "../types";
+import { heroCanHitAir } from "./antiAir";
 import { HERO_JOBS, isKnownJob } from "./heroCategories";
 
 /**
  * 武將列表的搜尋、職業篩選與排序（主頁武將視窗、獨立武將頁與兩個隊伍編排入口共用）
  * - 只影響畫面顯示：不改玩家存檔、隊伍或靜態設定，條件由呼叫端放在元件的 state
  * - 數值一律用目前玩家資料與設定計算（不是畫面上格式化過的文字）；攻擊力是存檔裡的基礎攻擊，不含戰場技能加成
+ * - 對空與上陣篩選只有武將列表（主頁武將視窗、獨立武將頁）顯示；隊伍編排沿用預設的「全部」
  */
 
 export type HeroSortKey = "default" | "level" | "atk" | "cost" | "deploy";
@@ -13,19 +15,61 @@ export type HeroSortKey = "default" | "level" | "atk" | "cost" | "deploy";
 export const OTHER_JOB = "other";
 export type HeroJobFilter = JobClass | typeof OTHER_JOB;
 
+/** 對空：全部／可以對空（和戰場同一套規則 heroCanHitAir：弓兵、法師）／只打地面（其他職業，包含遊戲不認得的） */
+export type HeroAirFilter = "all" | "air" | "ground";
+/** 上陣：全部／已上陣／未上陣（目前存檔的出陣隊伍 player.team，不是戰場上這一場已部署的武將） */
+export type HeroTeamFilter = "all" | "in" | "out";
+
 export interface HeroFilterCriteria {
   /** 名稱或 hero_id 的部分文字；比對前去掉頭尾空白、英文字母不分大小寫 */
   query: string;
   /** null＝全部職業；OTHER_JOB＝遊戲不認得的職業 */
   job: HeroJobFilter | null;
+  air: HeroAirFilter;
+  team: HeroTeamFilter;
   sort: HeroSortKey;
 }
 
 export const DEFAULT_HERO_FILTER: HeroFilterCriteria = {
   query: "",
   job: null,
+  air: "all",
+  team: "all",
   sort: "default",
 };
+
+export const HERO_AIR_OPTIONS: { value: HeroAirFilter; label: string }[] = [
+  { value: "all", label: "全部" },
+  { value: "air", label: "可以對空" },
+  { value: "ground", label: "只打地面" },
+];
+
+export const HERO_TEAM_OPTIONS: { value: HeroTeamFilter; label: string }[] = [
+  { value: "all", label: "全部" },
+  { value: "in", label: "已上陣" },
+  { value: "out", label: "未上陣" },
+];
+
+/**
+ * 目前存檔出陣隊伍裡的武將：隊伍格子的 hero_id 是文字、而且設定裡有這位武將才算（去掉重複；設定沒有的 id 不造卡片）。
+ * 隊伍資料不是陣列（還沒讀到）時是 null：不能判斷，不能當成全部未上陣
+ */
+export function teamHeroIdSet(
+  team: unknown,
+  configs: readonly HeroConfig[]
+): Set<string> | null {
+  if (!Array.isArray(team)) return null;
+  const known = new Set(configs.map((c) => c.hero_id));
+  const ids = new Set<string>();
+  for (const slot of team) {
+    const id =
+      slot && typeof slot === "object"
+        ? (slot as { hero_id?: unknown }).hero_id
+        : undefined;
+    if (typeof id === "string" && known.has(id)) ids.add(id);
+  }
+  return ids;
+}
 
 export type HeroSortOption = { value: HeroSortKey; label: string };
 
@@ -59,8 +103,16 @@ export const HERO_JOB_OPTIONS: {
 export const matchesJob = (job: unknown, filter: HeroJobFilter | null) =>
   filter === null || (filter === OTHER_JOB ? !isKnownJob(job) : job === filter);
 
+/** 這位武將是否符合對空篩選 */
+export const matchesAir = (job: unknown, filter: HeroAirFilter) =>
+  filter === "all" || (filter === "air") === heroCanHitAir(job);
+
 export const isDefaultHeroFilter = (c: HeroFilterCriteria) =>
-  c.query.trim() === "" && c.job === null && c.sort === "default";
+  c.query.trim() === "" &&
+  c.job === null &&
+  c.air === "all" &&
+  c.team === "all" &&
+  c.sort === "default";
 
 /** 玩家還沒有這位武將的升級紀錄時，視為 Lv1、基礎屬性 */
 export function resolveHeroState(
@@ -95,6 +147,8 @@ export interface HeroFilterResult {
   matched: number;
   /** 設定裡的武將總數 */
   total: number;
+  /** 選了上陣篩選、但沒有隊伍資料（不能判斷）：這時沒有武將符合，畫面要說明原因 */
+  teamUnknown: boolean;
 }
 
 /** 排序用的數值：有限的數字（或內容是數字的文字）；其他一律排在最後 */
@@ -108,12 +162,21 @@ function sortValue(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * 篩選與排序。teamIds 是目前存檔出陣隊伍的武將（teamHeroIdSet）；只有選了上陣篩選時才用到，
+ * 沒有（null／undefined）時上陣篩選不能判斷：沒有武將符合、teamUnknown＝true，不會把全部當成未上陣
+ */
 export function filterAndSortHeroes(
   configs: HeroConfig[],
   playerHeroes: HeroState[],
-  criteria: HeroFilterCriteria
+  criteria: HeroFilterCriteria,
+  teamIds?: ReadonlySet<string> | null
 ): HeroFilterResult {
   const q = criteria.query.trim().toLowerCase();
+  const teamUnknown = criteria.team !== "all" && !teamIds;
+  const matchesTeam = (id: string) =>
+    criteria.team === "all" ||
+    (!!teamIds && teamIds.has(id) === (criteria.team === "in"));
   const rows = configs.map((config, index) => {
     const hero = resolveHeroState(config, playerHeroes);
     return { config, hero, cost: heroUpgradeCost(config, hero), index };
@@ -121,6 +184,8 @@ export function filterAndSortHeroes(
   const matchedRows = rows.filter(
     ({ config }) =>
       matchesJob(config.job, criteria.job) &&
+      matchesAir(config.job, criteria.air) &&
+      matchesTeam(config.hero_id) &&
       (q === "" ||
         String(config.name).toLowerCase().includes(q) ||
         String(config.hero_id).toLowerCase().includes(q))
@@ -149,5 +214,6 @@ export function filterAndSortHeroes(
     items: sorted.map(({ config, hero, cost }) => ({ config, hero, cost })),
     matched: matchedRows.length,
     total: configs.length,
+    teamUnknown,
   };
 }

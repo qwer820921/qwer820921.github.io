@@ -27,7 +27,8 @@ async (page) => {
   // 加入暫停之前的遊戲（協定 5；歷史中沒有協定 5 的提交時用協定 4）：依 README 用 git show 取出到這個目錄（已在 .gitignore）
   const PROTO5 = "scripts/shenma-regression/.legacy/proto5-godot";
   const ENGINE_DIR = page.context().__shenmaEngineDir || "";
-  const GAME_FILE = /\/games\/shenmaSanguo\/(index\.(?:html|pck|service\.worker\.js))(?:\?[^#]*)?$/;
+  // 只攔網站入口的遊戲目錄（H.GAME_DIR，gameRelease.json）
+  const GAME_FILE = new RegExp(H.GAME_DIR.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&") + "(index\\.(?:html|pck|service\\.worker\\.js))(?:\\?[^#]*)?$");
   const serveFrom = (dir, hits) => async (rt) => {
     const name = (rt.request().url().match(GAME_FILE) || [])[1];
     if (!name) return rt.fallback();

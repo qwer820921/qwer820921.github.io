@@ -1,7 +1,7 @@
 import { HeroSkillPayload } from "../types";
 
 /**
- * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」、廖化「堅韌」、顏良「威壓」、孫尚香「連射」）
+ * 武將技能（馬超「衝鋒」、趙雲「閃避」、黃忠「百步穿楊」、周瑜「火攻」、關羽「減速光環」、劉備「防禦光環」、張飛「暈眩」、魏延「吸血」、曹操「指揮」、夏侯惇「反擊」、廖化「堅韌」、顏良「威壓」、孫尚香「連射」、龐統「連環計」、諸葛亮「呼風喚雨」、呂布「戰神」、魯肅「補給」、許褚「怪力」、典韋「護衛」、孫權「守護」、甘寧「奇襲」、貂蟬「魅惑」）
  * 這裡是技能規則的唯一來源：武將列表／詳情的說明，與隨出征資料送進 Godot 的參數都由這裡產生。
  * 技能是戰場效果：不寫進玩家存檔，也不需要後端（GAS）支援。
  * 每種技能只帶自己的參數；Godot 不認得的技能 id 一律當作普通攻擊。
@@ -132,6 +132,113 @@ export type HeroSkill =
       name: string;
       /** 每次普通攻擊追加一擊的機率（0.2＝20%；0～1 之間、不含兩端） */
       doubleShotChance: number;
+    }
+  | {
+      /**
+       * 連環計：每次普通攻擊實際打到主目標後，從主目標被打中的位置開始，依序傳給「前一個被打中的敵人」附近範圍內最近、這次還沒被打過的敵人。
+       * 第 k 次傳遞的傷害是這次普通攻擊的傷害 × chainRatio 的 k 次方；找不到下一個敵人就停止；傳遞不引發其他技能、不算一次攻擊；只在戰場
+       */
+      id: "chain";
+      name: string;
+      /** 每一跳找下一個敵人的範圍（格，含邊界），以前一個被打中的敵人為中心 */
+      chainRadius: number;
+      /** 每跳的傷害比例（0.5＝第一次 50%、第二次 25%；0～1 之間、不含兩端） */
+      chainRatio: number;
+      /** 最多傳遞幾次（1 或 2） */
+      chainMaxJumps: number;
+    }
+  | {
+      /**
+       * 呼風喚雨：每次普通攻擊實際打到主目標後，以主目標被打中的位置為中心、stormRadius 格內（含邊界），
+       * 最多 stormMaxTargets 名其他敵人各受這次普通攻擊傷害 × stormRatio（由近到遠，距離相同時先出現的優先）。
+       * 主目標不會再被範圍打一次；每一名都是同樣的比例（不遞減、不傳遞）；範圍傷害不引發其他技能、不算一次攻擊；只在戰場
+       */
+      id: "storm";
+      name: string;
+      /** 範圍半徑（格，含邊界），以主目標被打中的位置為中心（不是武將的位置） */
+      stormRadius: number;
+      /** 範圍內每一名受到的傷害比例（0.5＝這次普通攻擊傷害的 50%；0～1 之間、不含兩端） */
+      stormRatio: number;
+      /** 最多幾名其他敵人（1～4） */
+      stormMaxTargets: number;
+    }
+  | {
+      /**
+       * 戰神：這位武將自己的普通攻擊打倒一名敵人後，從下一擊起攻擊力增加一層（每層＝目前等級攻擊力 × berserkRatio，加法疊加），
+       * 最多 berserkMaxStacks 層。只算自己普通攻擊的最後一擊；層數只在這一場保留（跨波、移位、升級、移出再放回都保留），新的一場從 0 開始；只在戰場
+       */
+      id: "berserk";
+      name: string;
+      /** 每層的攻擊力加成（0.05＝目前等級攻擊力的 5%；0～1 之間、不含兩端） */
+      berserkRatio: number;
+      /** 最多幾層（1～10 的整數） */
+      berserkMaxStacks: number;
+    }
+  | {
+      /**
+       * 補給：這位武將部署在戰場上、還活著時，全隊每次有效擊殺得到的戰鬥金幣乘上 goldMultiplier（向下取整），任何方式打倒的敵人都算。
+       * 只在隊伍裡、陣亡、移出隊伍時不生效；多個補給取最高的倍率、不疊加；只增加這一場的戰鬥金幣，花費、返還與玩家的獎勵都不變
+       */
+      id: "supply";
+      name: string;
+      /** 每次擊殺戰鬥金幣的倍率（1.2＝增加 20%，5 變成 6；大於 1、不超過 2） */
+      goldMultiplier: number;
+    }
+  | {
+      /**
+       * 怪力：這位武將自己的普通攻擊打中主目標、實際扣到生命、目標還活著時，把這個地面敵人沿它自己走過的路線往回推 knockbackTiles 格，
+       * 成功推動後冷卻 cooldownSec 秒（戰鬥中的遊戲時間）。傷害照普通攻擊，不另外加傷害；冷卻在同一場保留，新的一場重新開始；只在戰場
+       */
+      id: "knockback";
+      name: string;
+      /** 往回推的距離（格；大於 0、不超過 1） */
+      knockbackTiles: number;
+      /** 成功推動後的冷卻（秒；大於 0、不超過 10） */
+      cooldownSec: number;
+    }
+  | {
+      /**
+       * 護衛：這位武將部署在戰場上、還活著時，radiusTiles 格內（兩人中心的距離、含邊界）其他友軍武將受到敵人的直接攻擊，
+       * 照友軍自己的閃避、防禦與堅韌算出要扣的生命後，由這位武將直接承擔其中的 shareRatio（不超過自己剩下的生命）。只在戰場
+       */
+      id: "guard_share";
+      name: string;
+      /** 承擔的比例（0.2＝20%；大於 0、不超過 0.5） */
+      shareRatio: number;
+      /** 保護範圍（格；大於 0、不超過 5） */
+      radiusTiles: number;
+    }
+  | {
+      /**
+       * 守護：這位武將部署在戰場上、還活著時，敵人漏到城池的傷害乘上 baseDamageMultiplier，和部署的位置無關。
+       * 城防仍是整數：這一場累計的漏城傷害無條件進位後才是扣掉的城防（0.8 時漏 5 隻扣 4）。只在戰場
+       */
+      id: "base_guard";
+      name: string;
+      /** 漏城傷害的倍率（0.8＝每隻 0.8 點；0.5 以上、小於 1） */
+      baseDamageMultiplier: number;
+    }
+  | {
+      /**
+       * 奇襲：每場戰鬥這位武將第一次有效的普通攻擊必殺主要目標（先照普通攻擊扣血，沒有打倒時把剩下的生命補扣完），每場只有一次；
+       * 不是兩倍傷害。換波次、移位、升級、移出再放回都不恢復，新的一場才恢復；沒有參數；只在戰場
+       */
+      id: "assassinate";
+      name: string;
+    }
+  | {
+      /**
+       * 魅惑：這位武將自己的普通攻擊打中仍活著的地面主要目標時，讓它受控 durationSec 秒（戰鬥中的遊戲時間）：停在原地、不前進也不攻擊武將，
+       * 改打 attackRadiusTiles 格內最近的其他地面敵人；受控的敵人仍算在這一波裡，但武將與防禦塔不選它。成功後冷卻 cooldownSec 秒；只在戰場
+       */
+      id: "charm";
+      name: string;
+      /** 受控的時間（秒，戰鬥中的遊戲時間；大於 0、不超過 5） */
+      durationSec: number;
+      /** 成功控制後的冷卻（秒，戰鬥中的遊戲時間；大於 0、不超過 10） */
+      cooldownSec: number;
+      /** 受控的敵人攻擊其他敵人的範圍（格，中心距離、含邊界；大於 0、不超過 2） */
+      attackRadiusTiles: number;
     };
 
 const HERO_SKILLS: Record<string, HeroSkill> = {
@@ -186,6 +293,78 @@ const HERO_SKILLS: Record<string, HeroSkill> = {
   // 敵人還活著時有 20% 的機率在同一次攻擊對同一個敵人再打一擊（這次攻擊力的 100%）；第一擊打倒敵人時不連射、不換目標、不再連射、
   // 攻擊間隔不變；追加的一擊不引發其他技能；只在戰鬥中、不改屬性與存檔
   sun_shang_xiang: { id: "double_shot", name: "連射", doubleShotChance: 0.2 },
+  // 正式設定表的被動描述「連環計：傳遞傷害」沒有寫範圍、比例與次數。第一版的設計值，尚未做過平衡：普通攻擊實際打到主目標後，
+  // 從主目標被打中的位置找 1.5 格內（含邊界）最近、這次還沒被打過的敵人受 50%，再從它的位置找下一個受 25%（最多 2 次，不是以主目標為中心的範圍）；
+  // 傳遞不引發其他技能、不算一次攻擊、攻擊間隔不變；只在戰鬥中、不改屬性與存檔
+  pang_tong: {
+    id: "chain",
+    name: "連環計",
+    chainRadius: 1.5,
+    chainRatio: 0.5,
+    chainMaxJumps: 2,
+  },
+  // 正式設定表的被動描述「呼風喚雨：大範圍傷害」沒有寫範圍、比例、人數與觸發方式。第一版的設計值，尚未做過平衡：普通攻擊實際打到主目標後，
+  // 以主目標被打中的位置為中心、2 格內（含邊界）最多 4 名其他敵人各受這次普通攻擊傷害的 50%（由近到遠，主目標不重複；不遞減、不傳遞，不是連環計）；
+  // 自動觸發、沒有手動施放與冷卻；範圍傷害不引發其他技能、不算一次攻擊、攻擊間隔不變；只在戰鬥中、不改屬性與存檔
+  zhu_ge_liang: {
+    id: "storm",
+    name: "呼風喚雨",
+    stormRadius: 2,
+    stormRatio: 0.5,
+    stormMaxTargets: 4,
+  },
+  // 正式設定表的被動描述「戰神：攻擊力隨殺敵增加」沒有寫倍率、上限、擊殺歸屬與保留時間。第一版的設計值，尚未做過平衡：
+  // 呂布自己的普通攻擊打倒一名敵人後，下一擊起攻擊力增加目前等級攻擊力的 5%（加法疊加），最多 10 層（+50%）；打倒敵人的那一擊不提前加成；
+  // 其他武將、防禦塔、灼燒、反擊、範圍與傳遞造成的擊殺、敵人漏到城池都不算；層數只在這一場保留，新的一場從 0 開始；只在戰鬥中、不改屬性與存檔
+  lv_bu: {
+    id: "berserk",
+    name: "戰神",
+    berserkRatio: 0.05,
+    berserkMaxStacks: 10,
+  },
+  // 正式設定表的被動描述「補給：增加資源獲取」沒有寫資源種類、倍率與生效條件。第一版的設計值，尚未做過平衡：
+  // 魯肅部署在戰場上、還活著時，全隊每次有效擊殺的戰鬥金幣 × 1.2（5 → 6，向下取整），任何方式打倒的敵人都算、擊殺數只算一次；
+  // 多個補給取最高的倍率、不疊加；只增加這一場的戰鬥金幣：建造與升級的花費、拆除的返還、結算的戰場點數與玩家的金幣、經驗、存檔都不變
+  lu_su: { id: "supply", name: "補給", goldMultiplier: 1.2 },
+  // 正式設定表的被動描述「怪力：擊退效果」沒有寫距離、觸發條件、冷卻與免疫。第一版的設計值，尚未做過平衡：
+  // 許褚自己的普通攻擊實際扣到主目標的生命、目標還活著（不是這一擊打倒的）時，把這個地面敵人沿它自己走過的路線往回推 0.5 格，
+  // 成功推動後冷卻 3 秒（戰鬥中的遊戲時間）；已在路線起點推不動時不用掉冷卻。傷害、攻擊間隔與選目標不變；免疫減速的敵人照樣被推，
+  // 打不到飛行敵人（步兵不能對空）；冷卻在同一場保留（換波次、移位、升級、移出再放回），新的一場重新開始
+  xu_chu: {
+    id: "knockback",
+    name: "怪力",
+    knockbackTiles: 0.5,
+    cooldownSec: 3,
+  },
+  // 正式設定表的被動描述「護衛：替隊友分擔傷害」沒有寫比例、範圍、扣血順序與多名護衛的規則。第一版的設計值，尚未做過平衡：
+  // 典韋部署在戰場上、還活著時，2 格內（兩人中心的距離、含邊界）其他友軍武將受到敵人的直接攻擊，先照友軍自己的閃避、防禦與堅韌算出要扣的生命，
+  // 典韋直接承擔其中的 20%（不再用典韋的防禦減少，也不超過典韋剩下的生命）、友軍扣其餘的部分；不保護自己、防禦塔與城池；
+  // 同時有幾名護衛時只由一名承擔（比例高、距離近的優先），不疊加、承擔的部分不再轉給別人；只在戰鬥中、不改屬性與存檔
+  dian_wei: {
+    id: "guard_share",
+    name: "護衛",
+    shareRatio: 0.2,
+    radiusTiles: 2,
+  },
+  // 正式設定表的被動描述「守護：提升基地防禦」沒有寫數值；遊戲的城池也沒有防禦屬性（城防 20 點、每隻漏城扣 1）。第一版的設計值，尚未做過平衡：
+  // 孫權部署在戰場上、還活著時，敵人漏到城池的傷害 × 0.8（和部署位置無關）；城防仍是整數，這一場累計的漏城傷害無條件進位後才是扣掉的城防
+  // （漏 5 隻扣 4、10 隻扣 8），不增加城防上限、不回復；累計在這一場保留，新的一場歸零；多個守護取最強、不疊加；不改結算公式與存檔
+  sun_quan: { id: "base_guard", name: "守護", baseDamageMultiplier: 0.8 },
+  // 正式設定表的被動描述「奇襲：首擊必殺」沒有寫每場、每波還是每個目標，也沒有寫有沒有免疫。第一版的設計值，尚未做過平衡：
+  // 每場戰鬥甘寧第一次有效的普通攻擊（戰鬥中、目標活著、打得到、真的扣到生命）必殺主要目標：先照普通攻擊扣血，沒有打倒時補扣剩下的生命，
+  // 不是兩倍傷害；每場只有一次，換波次、移位、升級、移出再放回都不恢復，新的一場才恢復；沒有免疫（設定表沒有首領分類）；只對主要目標，擊殺與金幣只算一次
+  gan_ning: { id: "assassinate", name: "奇襲" },
+  // 正式設定表的被動描述「魅惑：控制敵人」沒有寫時間、冷卻、範圍與受控後的行為。第一版的設計值，尚未做過平衡：
+  // 貂蟬自己的普通攻擊打中仍活著的地面主要目標時，讓它受控 2 秒（戰鬥中的遊戲時間）：停在原地、不前進也不攻擊武將，改用自己的攻擊力打 1 格內最近的其他地面敵人
+  // （照它原本 1 秒一次的攻擊間隔）；受控的敵人仍算在這一波裡（不會提早清波），但武將與防禦塔不選它，範圍、傳遞與新的減速也不算它；成功後冷卻 6 秒；
+  // 打倒目標、飛行敵人、已經受控的敵人都不控制也不用掉冷卻；貂蟬陣亡、移出隊伍時控制立刻結束；不疊加、不刷新；冷卻在同一場保留，新的一場重新開始
+  diao_chan: {
+    id: "charm",
+    name: "魅惑",
+    durationSec: 2,
+    cooldownSec: 6,
+    attackRadiusTiles: 1,
+  },
 };
 
 export const heroSkillOf = (heroId: string): HeroSkill | null =>
@@ -265,6 +444,115 @@ export function doubleShotPercent(skill: HeroSkill | null): number {
   return skill?.id === "double_shot" ? round3(skill.doubleShotChance * 100) : 0;
 }
 
+/** 連環計每一次傳遞的傷害百分比（0.5、2 次 → [50, 25]；沒有連環計時是空陣列） */
+export function chainPercents(skill: HeroSkill | null): number[] {
+  if (skill?.id !== "chain") return [];
+  const out: number[] = [];
+  for (let k = 1; k <= skill.chainMaxJumps; k++) {
+    out.push(round3(skill.chainRatio ** k * 100));
+  }
+  return out;
+}
+
+/** 呼風喚雨範圍內每一名受到的傷害百分比（0.5 → 50；沒有呼風喚雨時是 0） */
+export function stormPercent(skill: HeroSkill | null): number {
+  return skill?.id === "storm" ? round3(skill.stormRatio * 100) : 0;
+}
+
+/** 戰神每層與上限的攻擊力加成百分比（0.05、10 層 → 5、50；沒有戰神時都是 0） */
+export function berserkPercents(skill: HeroSkill | null): {
+  perStack: number;
+  max: number;
+} {
+  return skill?.id === "berserk"
+    ? {
+        perStack: round3(skill.berserkRatio * 100),
+        max: round3(skill.berserkRatio * skill.berserkMaxStacks * 100),
+      }
+    : { perStack: 0, max: 0 };
+}
+
+/** 每次有效擊殺的戰鬥金幣（和 Godot 的 BattleManager.GOLD_PER_KILL 相同） */
+export const BASE_KILL_GOLD = 5;
+
+/**
+ * 補給在場時每次擊殺的戰鬥金幣（和 Godot 相同）：基礎 × 倍率，向下取整（加上很小的容許誤差，避免小數乘法差一點點時少算 1）；
+ * 沒有補給時是基礎的 5
+ */
+export function supplyKillGold(skill: HeroSkill | null): number {
+  if (skill?.id !== "supply") return BASE_KILL_GOLD;
+  return Math.floor(BASE_KILL_GOLD * skill.goldMultiplier + 1e-6);
+}
+
+/** 補給讓每次擊殺戰鬥金幣增加的百分比（1.2 → 20；沒有補給時是 0） */
+export function supplyPercent(skill: HeroSkill | null): number {
+  return skill?.id === "supply" ? round3((skill.goldMultiplier - 1) * 100) : 0;
+}
+
+/** 護衛承擔的百分比（0.2 → 20；沒有護衛時是 0） */
+export function guardSharePercent(skill: HeroSkill | null): number {
+  return skill?.id === "guard_share" ? round3(skill.shareRatio * 100) : 0;
+}
+
+/**
+ * 護衛的分攤（和 Godot 相同）：damage 是友軍照自己的閃避、防禦與堅韌算完後要扣的生命，guardHp 是護衛剩下的生命。
+ * 護衛承擔 min(damage × 比例, 護衛剩下的生命)，友軍扣其餘的部分（用完整的傷害分攤，不先截成友軍剩下的生命）
+ */
+export function guardShareSplit(
+  damage: number,
+  ratio: number,
+  guardHp: number
+): { ally: number; guard: number } {
+  const guard = Math.max(0, Math.min(damage * ratio, guardHp));
+  return { ally: damage - guard, guard };
+}
+
+/** 守護讓漏城傷害減少的百分比（0.8 → 20；沒有守護時是 0） */
+export function baseGuardPercent(skill: HeroSkill | null): number {
+  return skill?.id === "base_guard"
+    ? round3((1 - skill.baseDamageMultiplier) * 100)
+    : 0;
+}
+
+/**
+ * 戰場上方城防旁顯示的守護減傷百分比：Godot update_stats 的 base_guard_mult（這一場此刻生效的漏城傷害倍率）。
+ * 不是 0.5 以上、小於 1 的有限數字（沒有生效的守護、舊版遊戲沒有這個欄位）時是 0，不顯示
+ */
+export function baseGuardHudPercent(mult: unknown): number {
+  return typeof mult === "number" &&
+    Number.isFinite(mult) &&
+    mult >= 0.5 &&
+    mult < 1
+    ? round3((1 - mult) * 100)
+    : 0;
+}
+
+/**
+ * 連續漏城時每一隻實際扣掉的城防（和 Godot 的 BattleManager 相同）：累計的漏城傷害 T 每隻加上倍率，
+ * 目標扣損＝ceil(T − 1e-6)，這一隻扣「目標扣損 − 已經扣掉的」。0.8 時 5 隻是 [1, 1, 1, 1, 0]
+ */
+export function baseGuardLosses(mult: number, count: number): number[] {
+  const out: number[] = [];
+  let total = 0;
+  let lost = 0;
+  for (let i = 0; i < count; i++) {
+    total += mult;
+    const target = Math.ceil(total - 1e-6);
+    out.push(target - lost);
+    lost = target;
+  }
+  return out;
+}
+
+/** 戰神的有效攻擊力（和 Godot 相同）：目前等級的攻擊力 ×（1 ＋ 每層比例 × 層數），加法疊加、不是連乘 */
+export function berserkAttack(
+  atk: number,
+  ratio: number,
+  stacks: number
+): number {
+  return atk * (1 + ratio * stacks);
+}
+
 /**
  * 攻速光環加成後的攻擊間隔（秒）：攻擊間隔 ÷ 倍率（和 Godot 相同）。
  * 是除以倍率、不是減少同樣的百分比：1.15 倍時 1 秒變成約 0.8696 秒，不是 0.85 秒
@@ -285,199 +573,112 @@ export function damageAfterDefense(atk: number, def: number): number {
 }
 
 /**
- * 技能的完整規則（顯示在武將詳情）
- * - rawRange：這位武將目前等級屬性表上的射程；有提供時，射程技能會寫出戰場上的實際射程，減速光環、防禦光環、攻速光環與威壓會寫出目前的範圍半徑
- * - atk：這位武將目前的攻擊力；有提供時，火攻會寫出每次灼燒的傷害，連射會寫出追加一擊的傷害
+ * 技能說明（顯示在武將詳情與武將比較）：短版，只寫效果、目前的數值與主要的例外；完整的規則在上面各技能的型別註解與 HERO_SKILLS 的註解
+ * - rawRange：這位武將目前等級屬性表上的射程；有提供時，射程技能寫出戰場上的實際射程，光環與威壓寫出目前的範圍半徑
+ * - atk：這位武將目前的攻擊力；有提供時，火攻、連射、連環計、呼風喚雨與戰神寫出目前的傷害或攻擊力
+ * 數值都由技能參數與這兩個值計算（0 也照算），沒有提供時只寫倍率或比例
  */
 export function describeHeroSkill(
   skill: HeroSkill,
   rawRange?: number,
   atk?: number
 ): string {
+  // 光環類的範圍：有射程時寫出目前的半徑
+  const radius =
+    rawRange === undefined
+      ? ""
+      : `（目前 ${effectiveRange(skill, rawRange)} 格）`;
   if (skill.id === "long_range") {
     const m = skill.rangeMultiplier;
     const current =
       rawRange === undefined
         ? ""
-        : `目前等級：射程 ${round3(rawRange)} 格，戰場上是 ${effectiveRange(skill, rawRange)} 格。`;
-    return (
-      `戰場上的有效射程是屬性射程的 ${m} 倍，等級提升的射程成長也一起乘上 ${m} 倍；普通攻擊的傷害與攻擊間隔不變。` +
-      current +
-      "只在戰場生效，存檔與屬性表的「範圍」仍是原本的數值；在戰場選取武將時，射程圈顯示的是實際射程。" +
-      "移動位置、調整隊伍或重新放置都不會重複加成。"
-    );
+        : `：目前 ${round3(rawRange)} 格，戰場上 ${effectiveRange(skill, rawRange)} 格`;
+    return `戰場上的有效射程是屬性射程的 ${m} 倍（升級的射程成長也一起乘）${current}。傷害與攻擊間隔不變。`;
   }
   if (skill.id === "slow_aura") {
-    const pct = slowAuraPercent(skill);
-    const current =
-      rawRange === undefined
-        ? ""
-        : `目前等級的範圍半徑是 ${effectiveRange(skill, rawRange)} 格。`;
-    return (
-      `戰鬥中，以這位武將為中心、目前射程內（含邊界）的所有地面敵人移動速度降低 ${pct}%（變成原本的 ${round3(skill.speedMultiplier * 100)}%）。` +
-      current +
-      "範圍跟著射程：升級射程變長時範圍一起變大。不需要普通攻擊的目標，也不改變普通攻擊的傷害與攻擊間隔。" +
-      "飛行敵人與免疫減速的敵人不受影響（普通攻擊照常打得到地面上免疫減速的敵人）。" +
-      "敵人離開範圍，或武將移位、被移除、陣亡時減速就解除；和其他減速（武將在道路上的阻擋、步兵塔、另一個減速光環）同時作用時取最強的一個，不會疊加，文士塔的減速另外計算。" +
-      "戰鬥中武將周圍會顯示淺藍色的範圍圈，被減速的敵人有淺藍色的虛線外圈。只在戰場生效，不影響存檔。"
-    );
+    return `射程內${radius}的地面敵人移動速度 −${slowAuraPercent(skill)}%；飛行與免疫減速的敵人不受影響。和其他減速取最強、不疊加，但文士塔的減速另外計算。`;
   }
   if (skill.id === "def_aura") {
-    const pct = defAuraPercent(skill);
-    const m = skill.defenseMultiplier;
-    const current =
-      rawRange === undefined
-        ? ""
-        : `目前等級的範圍半徑是 ${effectiveRange(skill, rawRange)} 格。`;
-    const plain = round3(damageAfterDefense(100, 100));
-    const boosted = Number(damageAfterDefense(100, 100 * m).toFixed(1));
-    return (
-      `戰鬥中，以這位武將為中心、目前射程內（含邊界）的其他友軍武將防禦力提升 ${pct}%（乘在該武將目前等級的防禦上，變成 ${m} 倍）。` +
-      current +
-      "不含自己，防禦塔與城池不受影響；友軍的職業不限，也不需要普通攻擊的目標。範圍跟著射程：升級射程變長時範圍一起變大。" +
-      `受到攻擊時照原本的防禦公式、用提升後的防禦計算，不是直接少扣 ${pct}% 的傷害（例如防禦 100 的友軍被攻擊力 100 的敵人打一下，從扣 ${plain} 變成扣約 ${boosted}）；趙雲的閃避照常先判定。` +
-      "同時在幾個防禦光環範圍內時取最強的一個，不會疊加。友軍離開範圍，或這位武將移位、被移除、陣亡、戰鬥結束時加成就解除。" +
-      "戰鬥中武將周圍會顯示淺綠色的範圍圈，受到加成的友軍有淺綠色的外框；在戰場上選取友軍時會分開列出原本的防禦與加成後的防禦。" +
-      "只在戰場生效：存檔與屬性表的防禦不會提高。"
-    );
+    return `射程內${radius}的其他友軍武將防禦力 +${defAuraPercent(skill)}%（不含自己、防禦塔與城池）；多個防禦光環取最強、不疊加。`;
   }
   if (skill.id === "stun") {
     const sec = skill.stunSec;
-    return (
-      `每次普通攻擊命中、而且敵人被打後還活著時，這個敵人暈眩 ${sec} 秒（遊戲時間）：暈眩中停止移動，也不能攻擊擋住它的武將，但照常受到傷害、可以被打倒。` +
-      `再次命中時剩餘時間刷新成 ${sec} 秒，不會累加；已經有更長的暈眩時不會縮短。普通攻擊的傷害與攻擊間隔不變，沒有機率、不波及其他敵人；打倒敵人的那一擊與灼燒都不會引發暈眩。` +
-      "暈眩不是減速：免疫減速的敵人也會暈眩；暈眩期間減速與灼燒照常計時，結束後恢復當時的移動速度，敵人的攻擊冷卻照常倒數但不會累積，恢復後最多先打一下。" +
-      "這位武將移位、被移除或陣亡時，已經造成的暈眩照樣持續到時間結束；暈眩不會讓武將打得到原本打不到的敵人（步兵打不到飛行敵人）。" +
-      "暈眩中的敵人頭上有轉動的黃色星星。只在戰場生效，不影響存檔。"
-    );
+    return `普通攻擊命中、敵人還活著時，讓它暈眩 ${sec} 秒：不能移動也不能攻擊。再次命中刷新成 ${sec} 秒、不累加，也不會縮短剩下更久的暈眩；免疫減速的敵人也會暈眩。`;
   }
   if (skill.id === "lifesteal") {
-    const pct = lifestealPercent(skill);
-    const full = round3(100 * skill.lifestealRatio);
-    const kill = round3(30 * skill.lifestealRatio);
-    return (
-      `每次普通攻擊命中敵人後，這位武將恢復這一擊實際造成傷害的 ${pct}% 生命（例如打掉 100 恢復 ${full}）。` +
-      `只算實際扣掉的生命：打倒敵人的那一擊也會恢復，但超過敵人剩餘生命的部分不算（敵人只剩 30 時恢復 ${kill}，不是 ${full}）。` +
-      "恢復後不會超過最大生命，滿血時不恢復；已經陣亡的武將不會因此復活。" +
-      "只算這位武將自己普通攻擊的直接傷害：沒有命中（沒有目標、職業打不到飛行敵人）就不恢復，灼燒、其他武將與防禦塔造成的傷害也不算；" +
-      "普通攻擊的傷害、攻擊間隔與射程不變，也沒有另外計時的回血。" +
-      "恢復時武將上方出現綠色的「+恢復量」；戰場上的單位面板顯示的是選取當時的生命，重新點選武將可以看到恢復後的生命。" +
-      "只在戰場生效：恢復的是這場戰鬥中的生命，最大生命與屬性不變，不影響存檔。"
-    );
+    return `普通攻擊命中後，恢復這一擊實際扣掉敵人生命的 ${lifestealPercent(skill)}%（超過敵人剩餘生命的部分不算），不超過最大生命；只算自己普通攻擊的直接傷害。`;
   }
   if (skill.id === "atk_speed_aura") {
-    const pct = atkSpeedAuraPercent(skill);
     const m = skill.attackSpeedMultiplier;
-    const current =
-      rawRange === undefined
-        ? ""
-        : `目前等級的範圍半徑是 ${effectiveRange(skill, rawRange)} 格。`;
-    const oneSec = boostedAttackInterval(1, m).toFixed(2);
-    return (
-      `戰鬥中，以這位武將為中心、目前射程內（含邊界）的其他友軍武將攻擊速度提升 ${pct}%：每秒攻擊次數變成 ${m} 倍，攻擊間隔變成原本的 1 ÷ ${m}（例如 1 秒變成約 ${oneSec} 秒，不是直接少 ${pct}%）。` +
-      current +
-      "不含自己，防禦塔與城池不受影響；友軍的職業不限，也不需要普通攻擊的目標。範圍跟著射程：升級射程變長時範圍一起變大。友軍的攻擊力與射程不變。" +
-      "加成只用在之後開始的攻擊冷卻：進入範圍時正在倒數的冷卻照原本的時間打完，不會立刻補打；離開範圍，或這位武將移位、被移除、陣亡、戰鬥結束時加成解除，正在倒數的冷卻同樣照原本的時間。" +
-      "同時在幾個攻速光環範圍內時取最強的一個，不會疊加。" +
-      "戰鬥中武將周圍會顯示淡紫色的範圍圈，受到加成的友軍有淡紫色的外框；在戰場上選取友軍時會分開列出原本與加成後的攻擊間隔（選取當時的數值）。" +
-      "只在戰場生效：存檔與屬性表的攻擊間隔不會改變。"
-    );
+    return `射程內${radius}的其他友軍武將攻擊速度 +${atkSpeedAuraPercent(skill)}%（攻擊間隔變成 1 ÷ ${m}，不含自己）；多個攻速光環取最強、不疊加。`;
   }
   if (skill.id === "counter") {
-    const pct = counterPercent(skill);
-    const r = skill.counterRatio;
-    const plain = round3(damageAfterDefense(100, 100));
-    const aura = damageAfterDefense(100, 120);
-    return (
-      `受到敵人的直接攻擊（目前是被武將擋在路上的敵人）、實際扣血後自己仍然活著時，對這次攻擊自己的敵人造成這一擊實際扣血 ${pct}% 的傷害。` +
-      `以防禦計算後實際扣掉的生命為準，不是敵人攻擊力的 ${pct}%：例如防禦 100 的武將被攻擊力 100 的敵人打一下扣 ${plain}、反彈 ${round3(plain * r)}；` +
-      `在劉備的防禦光環裡（防禦 120）扣約 ${aura.toFixed(2)}、反彈約 ${(aura * r).toFixed(2)}。反彈不會替自己減少傷害。` +
-      "閃避（沒有扣血）、打倒自己的那一擊、沒有攻擊者的扣血都不反彈；只反彈給這次攻擊自己、仍然活著的敵人，不會波及其他敵人。" +
-      "反彈可以打倒攻擊者（擊殺與金幣照常只算一次），免疫減速的敵人照樣會受到反彈；反彈不會再引發吸血、暈眩、灼燒等其他技能，也不會來回反彈。" +
-      "反彈的傷害數字是洋紅色。普通攻擊的傷害、攻擊間隔與射程不變；戰場上的單位面板顯示的是選取當時的生命，重新點選武將可以看到最新的生命。" +
-      "只在戰場生效，不影響存檔。"
-    );
+    return `受到敵人的直接攻擊、扣血後自己還活著時，對攻擊者反彈這一擊實際扣血的 ${counterPercent(skill)}%。閃避或被打倒的那一擊不反彈；反彈不會再引發其他技能。`;
   }
   if (skill.id === "tenacity") {
     const { threshold, reduction } = tenacityPercents(skill);
-    const m = skill.damageMultiplier;
-    const plain = round3(damageAfterDefense(100, 100));
-    const low = round3(plain * m);
-    const hpAt = round3(1000 * skill.lowHpRatio);
-    const aura = damageAfterDefense(100, 120);
-    return (
-      `受傷前生命不高於最大生命的 ${threshold}%（含剛好 ${threshold}%）時，受到的傷害先照防禦計算，再降低 ${reduction}%（變成 ${round3(m * 100)}%）。` +
-      `例如最大生命 1000、防禦 100 的廖化被攻擊力 100 的敵人打一下：生命 ${hpAt + 1} 時扣 ${plain} 變成 ${round3(hpAt + 1 - plain)}（這一擊不減傷），下一擊只扣 ${low}；生命剛好 ${hpAt} 時就只扣 ${low}。` +
-      `是防禦計算之後再少扣，不是提高防禦：在劉備的防禦光環裡扣約 ${aura.toFixed(2)} 的一擊變成約 ${(aura * m).toFixed(2)}。` +
-      `用受傷前的生命判斷，生命回到超過 ${threshold}% 時就不減傷；升級後照新的最大生命計算。` +
-      "閃避的一擊不扣血；減傷後仍然不夠的一擊照常倒下，不會留下 1 點生命，也不會復活。" +
-      "生效時武將的血條有古銅色外框與小盾牌；戰場上的單位面板顯示選取當時是否生效，重新點選武將可以更新。" +
-      "只在戰場生效：防禦、最大生命與存檔都不變。"
-    );
+    return `受傷前生命不高於最大生命的 ${threshold}% 時，受到的傷害（照防禦計算後）再減少 ${reduction}%。致命的一擊照常倒下。`;
   }
   if (skill.id === "atk_down_aura") {
-    const pct = atkDownAuraPercent(skill);
-    const m = skill.attackMultiplier;
-    const current =
-      rawRange === undefined
-        ? ""
-        : `目前等級的範圍半徑是 ${effectiveRange(skill, rawRange)} 格。`;
-    const plain = round3(damageAfterDefense(100, 100));
-    const lowered = round3(damageAfterDefense(100 * m, 100));
-    return (
-      `戰鬥中，以這位武將為中心、目前射程內（含邊界）的所有敵人攻擊武將的直接攻擊力降低 ${pct}%（變成原本的 ${round3(m * 100)}%）。` +
-      current +
-      "範圍跟著射程：升級射程變長時範圍一起變大；地面、飛行與免疫減速的敵人都算，也不需要普通攻擊的目標。" +
-      `被打的武將照常用防禦計算：例如攻擊力 100 的敵人打防禦 100 的武將，從扣 ${plain} 變成扣 ${lowered}。` +
-      "同時在幾個威壓範圍內時取最強的一個，不會疊加；敵人離開範圍，或這位武將移位、被移除、陣亡時就恢復。" +
-      "只降低直接攻擊：敵人的移動速度與攻擊間隔不變，漏到城池時扣的城防也不會減少。" +
-      "戰鬥中武將周圍有暗紅色的範圍圈，受到威壓的敵人血條右上方有暗紅色的向下箭頭（白色描邊）。只在戰場生效，不影響存檔。"
-    );
+    return `射程內${radius}所有敵人（含飛行）攻擊武將的攻擊力 −${atkDownAuraPercent(skill)}%；多個威壓取最強、不疊加。敵人的移動速度與漏城扣的城防不變。`;
   }
   if (skill.id === "double_shot") {
-    const pct = doubleShotPercent(skill);
+    const current = atk === undefined ? "" : `，目前 ${round3(atk)}`;
+    return `普通攻擊命中、敵人還活著時，有 ${doubleShotPercent(skill)}% 機率對同一個敵人再打一擊（攻擊力的 100%${current}）。追加的一擊不會再連射，攻擊間隔不變。`;
+  }
+  if (skill.id === "chain") {
+    const pcts = chainPercents(skill);
     const current =
       atk === undefined
         ? ""
-        : `目前攻擊力 ${round3(atk)}：連射時同一個敵人在這次攻擊受到 ${round3(atk)} ＋ ${round3(atk)}。`;
-    return (
-      `每次普通攻擊命中敵人、而且敵人被這一擊打過後還活著時，有 ${pct}% 的機率在同一次攻擊對同一個敵人再打一擊，傷害是這次普通攻擊的攻擊力（100%）；武將上方會出現金色的「+1」。` +
-      current +
-      "每次普通攻擊各自判定一次、最多追加一擊，追加的一擊不會再連射；不換目標，也不會打到其他敵人。" +
-      "第一擊就打倒敵人時不會連射（不會改打旁邊的敵人）；沒有目標、或打不到的敵人（飛行敵人要能對空的職業才打得到）不會判定。" +
-      "追加的一擊照常可以打倒敵人，擊殺與金幣只算一次；追加的一擊不會引發其他技能。" +
-      "攻擊間隔不變：連射不會讓下一次攻擊提早或延後。只在戰場生效，不影響存檔。"
-    );
+        : `（目前 ${pcts.map((p) => round3((atk * p) / 100)).join("、")}）`;
+    return `普通攻擊打到敵人後，傷害傳給 ${skill.chainRadius} 格內最近、還沒被打過的敵人，最多 ${skill.chainMaxJumps} 次，依序是攻擊傷害的 ${pcts.map((p) => `${p}%`).join("、")}${current}；每次從上一個被傳到的敵人往外找。`;
+  }
+  if (skill.id === "storm") {
+    const pct = stormPercent(skill);
+    const current =
+      atk === undefined ? "" : `（目前 ${round3((atk * pct) / 100)}）`;
+    return `普通攻擊打到敵人後，以它為中心 ${skill.stormRadius} 格內最多 ${skill.stormMaxTargets} 名其他敵人各受攻擊傷害的 ${pct}%${current}。主要目標不重複受傷，也不會再往外傳。`;
+  }
+  if (skill.id === "berserk") {
+    const { perStack, max } = berserkPercents(skill);
+    const n = skill.berserkMaxStacks;
+    const current =
+      atk === undefined
+        ? ""
+        : `，目前最高 ${round3(berserkAttack(atk, skill.berserkRatio, n))}`;
+    return `自己的普通攻擊打倒敵人後，從下一擊起攻擊力 +${perStack}%，最多 ${n} 層（+${max}%${current}）。層數只在這一場保留，新的一場從 0 開始。`;
+  }
+  if (skill.id === "supply") {
+    return `部署在戰場上時，全隊每次擊殺的戰鬥金幣 +${supplyPercent(skill)}%（${BASE_KILL_GOLD} → ${supplyKillGold(skill)}）。陣亡或移出隊伍就恢復；多個補給取最高、不疊加。`;
+  }
+  if (skill.id === "knockback") {
+    return `普通攻擊打中、目標還活著時，把這名地面敵人沿原路往回推 ${skill.knockbackTiles} 格；成功推動後冷卻 ${skill.cooldownSec} 秒。飛行敵人不受影響。`;
+  }
+  if (skill.id === "guard_share") {
+    return `部署在戰場上時，替 ${skill.radiusTiles} 格內的其他友軍武將承擔敵人直接攻擊的 ${guardSharePercent(skill)}%（不超過自己剩下的生命，不含自己與城池）；多名護衛時只由一名承擔。`;
+  }
+  if (skill.id === "base_guard") {
+    const m = skill.baseDamageMultiplier;
+    const five = baseGuardLosses(m, 5).reduce((a, b) => a + b, 0);
+    return `部署在戰場上時，敵人漏到城池的傷害 −${baseGuardPercent(skill)}%（每隻 1 → ${round3(m)}，這一場累計後無條件進位：漏 5 隻扣 ${five}）；多個守護取最強、不疊加。`;
+  }
+  if (skill.id === "charm") {
+    return `普通攻擊打中、目標還活著時，讓這名地面敵人受控 ${skill.durationSec} 秒：停在原地，改打 ${skill.attackRadiusTiles} 格內的其他地面敵人。成功後冷卻 ${skill.cooldownSec} 秒；飛行敵人不受控。`;
+  }
+  if (skill.id === "assassinate") {
+    return "每場戰鬥第一次有效的普通攻擊必定打倒主要目標。每場只有一次，換波次、移動位置或升級都不會恢復。";
   }
   if (skill.id === "dodge") {
-    const pct = round3(skill.dodgeChance * 100);
-    return (
-      `敵人攻擊這位武將時（目前是被武將擋在路上的敵人），每一擊有 ${pct}% 的機率閃避：這一擊不扣血，武將上方出現藍白色的「MISS」；沒有閃避時照原本的防禦計算扣血。` +
-      "每一擊各自判定，沒有冷卻、不會疊加；閃避不會讓敵人馬上再打一次，敵人的攻擊間隔照常。" +
-      "升級、移動位置、換波次都維持同樣的機率。只在戰場生效，不影響存檔。"
-    );
+    return `受到敵人攻擊時，每一擊有 ${round3(skill.dodgeChance * 100)}% 機率閃避、不扣血。`;
   }
   if (skill.id === "burn") {
-    const sec = skill.burnIntervalSec;
-    const n = skill.burnTicks;
-    const pct = round3(skill.burnRatio * 100);
     const current =
-      atk === undefined
-        ? ""
-        : `目前攻擊力 ${round3(atk)}：每次灼燒 ${burnTickDamage(skill, atk)}。`;
-    return (
-      `每次普通攻擊命中後，敵人開始灼燒：每 ${sec} 秒受到一次傷害，共 ${n} 次，每次是命中當下攻擊力的 ${pct}%（第一次在命中 ${sec} 秒後），普通攻擊的傷害不變。` +
-      current +
-      `同一個敵人只有一份灼燒：再次命中時剩餘次數回到 ${n} 次、傷害換成這次命中的攻擊力，不會疊加，下一次灼燒的時間也不會重新計算。` +
-      "敵人離開射程或武將被移除後仍會燒完；敵人被打倒或抵達基地就停止，灼燒不會再引發火攻。" +
-      "灼燒中的敵人有橘色外圈，灼燒的傷害數字是橘色。只在戰場生效，不影響存檔。"
-    );
+      atk === undefined ? "" : `（目前 ${burnTickDamage(skill, atk)}）`;
+    return `普通攻擊命中後灼燒：每 ${skill.burnIntervalSec} 秒 1 次、共 ${skill.burnTicks} 次，每次是命中時攻擊力的 ${round3(skill.burnRatio * 100)}%${current}。再次命中重設成 ${skill.burnTicks} 次、不疊加。`;
   }
-  return (
-    `每場戰鬥中，第一次命中敵人的普通攻擊造成 ${skill.firstAttackMultiplier} 倍傷害（武將上方會出現金色的「x${skill.firstAttackMultiplier}!」），之後恢復普通攻擊。` +
-    "沒有目標時不會用掉；同一場戰鬥裡換波次、移動位置、調整隊伍或移除後重新放置都不會再觸發，" +
-    "切換關卡或重新開始才會重置。"
-  );
+  return `每場戰鬥第一次命中的普通攻擊造成 ${skill.firstAttackMultiplier} 倍傷害，之後恢復普通攻擊；換波次或移動位置不會再觸發。`;
 }
 
 /** 隨出征資料送進 Godot 的技能參數（team_list[].skill）；沒有技能的武將不帶這個欄位 */
@@ -537,6 +738,76 @@ export function heroSkillPayload(heroId: string): { skill?: HeroSkillPayload } {
   if (skill.id === "double_shot") {
     return {
       skill: { id: skill.id, double_shot_chance: skill.doubleShotChance },
+    };
+  }
+  if (skill.id === "chain") {
+    return {
+      skill: {
+        id: skill.id,
+        chain_radius: skill.chainRadius,
+        chain_ratio: skill.chainRatio,
+        chain_max_jumps: skill.chainMaxJumps,
+      },
+    };
+  }
+  if (skill.id === "storm") {
+    return {
+      skill: {
+        id: skill.id,
+        storm_radius: skill.stormRadius,
+        storm_ratio: skill.stormRatio,
+        storm_max_targets: skill.stormMaxTargets,
+      },
+    };
+  }
+  if (skill.id === "berserk") {
+    return {
+      skill: {
+        id: skill.id,
+        berserk_ratio: skill.berserkRatio,
+        berserk_max_stacks: skill.berserkMaxStacks,
+      },
+    };
+  }
+  if (skill.id === "supply") {
+    return {
+      skill: { id: skill.id, supply_gold_multiplier: skill.goldMultiplier },
+    };
+  }
+  if (skill.id === "knockback") {
+    return {
+      skill: {
+        id: skill.id,
+        knockback_distance: skill.knockbackTiles,
+        knockback_cooldown: skill.cooldownSec,
+      },
+    };
+  }
+  if (skill.id === "guard_share") {
+    return {
+      skill: {
+        id: skill.id,
+        guard_share_ratio: skill.shareRatio,
+        guard_radius: skill.radiusTiles,
+      },
+    };
+  }
+  if (skill.id === "base_guard") {
+    return {
+      skill: { id: skill.id, base_damage_mult: skill.baseDamageMultiplier },
+    };
+  }
+  if (skill.id === "assassinate") {
+    return { skill: { id: skill.id } };
+  }
+  if (skill.id === "charm") {
+    return {
+      skill: {
+        id: skill.id,
+        charm_duration: skill.durationSec,
+        charm_cooldown: skill.cooldownSec,
+        charm_attack_radius: skill.attackRadiusTiles,
+      },
     };
   }
   return {

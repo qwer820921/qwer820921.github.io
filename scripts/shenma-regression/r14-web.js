@@ -128,8 +128,9 @@ async (page) => {
     const detail = await page.locator('[data-testid="hero-skill-detail"]').first().innerText();
     out.A_modal = { card, detail };
     out.A_shot = await H.shot(page, "r14-a-skill-detail");
-    run.check("A-1 主頁武將視窗：黃忠的卡片顯示「技能：百步穿楊」；詳情寫明射程 1.5 倍、傷害與攻擊間隔不變，以及目前等級在戰場上的實際射程（5 格 → 7.5 格）",
-      /技能：百步穿楊/.test(card) && /1\.5 倍/.test(detail) && /傷害與攻擊間隔不變/.test(detail) && /射程 5 格，戰場上是 7\.5 格/.test(detail) && /不會重複加成/.test(detail),
+    run.check("A-1 主頁武將視窗：黃忠的卡片顯示「技能：百步穿楊」；詳情是短版說明：射程 1.5 倍（升級的成長也一起乘）、目前等級 5 格在戰場上是 7.5 格、傷害與攻擊間隔不變",
+      /技能：百步穿楊/.test(card) &&
+        detail.includes("戰場上的有效射程是屬性射程的 1.5 倍（升級的射程成長也一起乘）：目前 5 格，戰場上 7.5 格。傷害與攻擊間隔不變。"),
       out.A_modal);
     await page.locator('button[class*="modalClose"]').last().click();
     await H.sleep(300);

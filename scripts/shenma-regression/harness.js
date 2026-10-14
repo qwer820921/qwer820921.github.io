@@ -21,6 +21,9 @@ async (page) => {
   const BASE = "http://localhost:3000";
   // 證據目錄：tools/run-browser.mjs 可用 EVIDENCE_DIR 指定（context.__shenmaEvidence），避免不同批次互相覆寫
   const EVIDENCE = context.__shenmaEvidence || ".handoff/evidence/round-18";
+  // 網站入口目前的遊戲目錄（tools/run-browser.mjs 由 gameRelease.json 設定）：版本目錄或舊正式版目錄
+  const GAME_DIR = context.__shenmaGameDir;
+  if (!GAME_DIR) return { error: "沒有遊戲目錄（context.__shenmaGameDir）：請用 tools/run-browser.mjs 執行" };
 
   // ── mock 靜態設定：14×11 地圖，第 5 列直線道路，上下兩列建築格 ──
   const ROW = 5;
@@ -186,12 +189,20 @@ async (page) => {
     window.__SHENMA_MOCK_GAS__ = true;
 
     window.__bridgeLog = [];
+    // 戰況觀測（battle_observation，遊戲每 0.25 秒一份）另外存在 __obsLog（只留最近 400 份），不放進 __bridgeLog：
+    // 既有腳本掃描 __bridgeLog 的時間與記憶體不受影響
+    window.__obsLog = [];
     // 測試用：__bridgeWithhold 設成陣列時，Godot 的結算訊息改存進這個陣列，不交給頁面
     // （這個監聽比頁面早註冊，stopImmediatePropagation 讓頁面收不到）。之後把這筆由 Godot 實際產生的結算
     // 原封不動重送，用來模擬「舊場次的結算晚到」，不需要自己組出一筆假的結算
     window.__bridgeWithhold = null;
     window.addEventListener("message", (e) => {
       const d = e.data;
+      if (d && typeof d === "object" && d.__godot_bridge === true && d.type === "battle_observation") {
+        window.__obsLog.push({ ...d, __t: performance.now() });
+        if (window.__obsLog.length > 400) window.__obsLog.splice(0, window.__obsLog.length - 400);
+        return;
+      }
       if (d && typeof d === "object" && d.__godot_bridge === true) {
         window.__bridgeLog.push({ ...d, __t: performance.now() });
         if (Array.isArray(window.__bridgeWithhold) && d.type === undefined && typeof d.result === "string") {
@@ -348,9 +359,9 @@ async (page) => {
         /^http:\/\/localhost:3000\/_next\/static\/chunks\/src_components_common_[0-9a-z_-]+\._\.js$/i.test(c.url),
     },
     {
-      why: "網站首頁「聯絡」卡片的封面 /images/cover/contact.webp 不存在（public/ 沒有這個檔案，和神馬三國無關；Round 13 的測試會經過首頁）",
+      why: "網站首頁卡片的封面不存在（public/images/cover/ 沒有 contact、bobaSurvivors、shenmaSanguo 這三張，和遊戲無關；經過首頁的測試會遇到，封面是 lazy 載入，哪幾張被要求依捲動與時間而定）",
       test: (c) => /^Failed to load resource: the server responded with a status of 404/.test(c.text) &&
-        /^http:\/\/localhost:3000\/images\/cover\/contact\.webp$/.test(c.url),
+        /^http:\/\/localhost:3000\/images\/cover\/(?:contact|bobaSurvivors|shenmaSanguo)\.webp$/.test(c.url),
     },
     {
       why: "Windows 靜態建置的巢狀路徑（__next.<區段>/<區段>.txt）和 Linux 的扁平網址（__next.<區段>.<區段>.txt）不同，目前釘選的正式產物含扁平檔；本機 resolver（tools/serve-out.mjs）修正後應消除這個來源；只略過已觀察到的部落格與登入路徑，遊戲與其他路徑的同類錯誤仍須失敗",
@@ -365,6 +376,7 @@ async (page) => {
   const H = {
     BASE,
     EVIDENCE,
+    GAME_DIR,
     sleep: (ms) => page.waitForTimeout(ms),
     async shot(p, name) {
       await p.screenshot({ path: `${EVIDENCE}/${name}.png` });
@@ -378,7 +390,7 @@ async (page) => {
     async resetOrigin(p, { keepMockDb = false } = {}) {
       const passes = [];
       for (let i = 0; i < 2; i++) {
-        await p.goto(BASE + "/games/shenmaSanguo/index.offline.html");
+        await p.goto(BASE + GAME_DIR + "index.offline.html");
         passes.push(await p.evaluate(async (keep) => {
           const regs = await navigator.serviceWorker.getRegistrations();
           await Promise.all(regs.map((r) => r.unregister()));
@@ -423,8 +435,13 @@ async (page) => {
       for (const e of entries) c[e.action] = (c[e.action] || 0) + 1;
       return c;
     },
+    // 等頂欄出現：已送出關卡資料、寫入限制或這一關不能出征時的頂欄（引擎還在載入時提早顯示的 data-hud-phase＝preload 不算，
+    // 那時遊戲還沒有這一場；要等提早顯示的頂欄用 waitPreloadHud）
     async waitHud(p, timeout = 120000) {
-      await p.waitForFunction(() => document.querySelector('[title="切換關卡"]') !== null, null, { timeout });
+      await p.waitForFunction(() => (() => { const b = document.querySelector('[title="切換關卡"]'); const bar = b && b.closest("[data-hud-phase]"); return !!b && (!bar || bar.dataset.hudPhase !== "preload"); })(), null, { timeout });
+    },
+    async waitPreloadHud(p, timeout = 120000) {
+      await p.waitForFunction(() => document.querySelector('[data-hud-phase="preload"] [title="切換關卡"]') !== null, null, { timeout });
     },
     async hud(p) {
       return p.evaluate(() => {

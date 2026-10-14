@@ -43,6 +43,8 @@ var _selected_unit: Node       = null  # 選中的塔/武將
 var _tower_seq: int             = 0
 var _moving_unit: Node         = null  # 正在重新佈置的單位
 var _game_time: float          = 0.0   # 累計遊戲時間（受 time_scale 影響、手動暫停時不前進），供測試快照比對計時器
+## 武將識別碼的流水號（只增不減、不重用）：戰況觀測與武將面板用它對應同一位已部署的武將（移位不換；撤除或陣亡後重新部署是新的）
+var _hero_seq: int             = 0
 
 # ═══════════════════════════════════════════
 #  _ready
@@ -178,6 +180,7 @@ func _do_initial_setup(payload: Dictionary) -> void:
 	# 初始化 BattleManager
 	var total_waves: int = _count_waves(_waves)
 	battle_manager.initialize(total_waves, stage_id, wave_manager, web_bridge, battle_id)
+	_reset_observation()
 
 	# 音效設定（從 payload 的 sound_settings 欄位讀取）
 	var snd: Dictionary = payload.get("sound_settings", {})
@@ -217,6 +220,7 @@ func _count_waves(waves: Array) -> int:
 # ═══════════════════════════════════════════
 func _on_state_changed(state: int) -> void:
 	battle_hud.set_game_state(state)
+	_mark_observation()
 
 func _on_base_hp_changed(hp: int, max_hp: int) -> void:
 	battle_hud.update_base_hp(hp, max_hp)
@@ -253,11 +257,20 @@ func _on_auto_btn_pressed() -> void:
 # ═══════════════════════════════════════════
 #  敵人事件：WaveManager → BattleManager
 # ═══════════════════════════════════════════
-func _on_enemy_killed(_enemy: Node) -> void:
-	battle_manager.on_enemy_killed()
+func _on_enemy_killed(enemy: Node) -> void:
+	battle_manager.on_enemy_killed(enemy)
 
-func _on_enemy_leaked(_enemy: Node) -> void:
-	battle_manager.on_enemy_reached_base()
+## 漏城：BattleManager 計算這一次扣的城防（守護累計後進位）。守護保住城防（這一隻沒有扣）時在敵人抵達的地方顯示 SHIELD
+func _on_enemy_leaked(enemy: Node) -> void:
+	var loss: int = battle_manager.on_enemy_reached_base(enemy)
+	if loss == 0 and enemy != null and is_instance_valid(enemy):
+		var ft = load("res://ui/FloatingText.gd").new()
+		units_layer.add_child(ft)
+		ft.setup(BASE_GUARD_TEXT, BASE_GUARD_COLOR, enemy.global_position + Vector2(0, -16))
+
+## 守護保住城防時顯示的英文標記（Godot 專案沒有中文字型，技能說明裡寫明這個標記）與顏色（青綠色）
+const BASE_GUARD_TEXT: String = "SHIELD"
+const BASE_GUARD_COLOR: Color = Color(0.45, 0.95, 0.8)
 
 func _on_wave_cleared(_wave_num: int) -> void:
 	battle_manager.on_wave_all_enemies_dead()
@@ -438,6 +451,7 @@ func _place_unit(cell: Vector2i) -> void:
 			
 		game_map.set_occupied(cell, _moving_unit) # 佔用新格子
 		_moving_unit = null
+		_mark_observation()
 		return
 
 	match _drag_type:
@@ -459,6 +473,9 @@ func _place_hero(cell: Vector2i, world_pos: Vector2) -> void:
 
 	game_map.set_occupied(cell, hero)
 	_placed_heroes[str(_drag_hero_data.get("hero_id", ""))] = hero
+	_hero_seq += 1
+	hero.set_meta(OBS_UID_META, "hero-%d" % _hero_seq)
+	_mark_observation()
 	_sfx("hero_place")
 
 func _place_tower(cell: Vector2i, world_pos: Vector2) -> void:
@@ -500,7 +517,8 @@ func _on_hero_died(hero: Node) -> void:
 	
 	var cell: Vector2i = hero.get_cell()
 	game_map.clear_occupied(cell)
-	
+	_mark_observation()
+
 	if _selected_unit == hero:
 		_deselect_unit()
 
@@ -514,6 +532,9 @@ func _on_hero_clicked(hero: Node) -> void:
 	var info: Dictionary = {
 		"unit_type": "hero",
 		"hero_id": hero.hero_id,
+		# 這一場的 battle_id 與這位武將的識別碼：Web 只採用目前這一場的面板，戰況觀測（battle_observation）用識別碼對應同一位武將
+		"battle_id": battle_manager.battle_id,
+		"hero_uid": str(hero.get_meta(OBS_UID_META, "")),
 		"name": hero.hero_name,
 		"level": hero.hero_level,
 		"atk": hero.atk,
@@ -533,7 +554,45 @@ func _on_hero_clicked(hero: Node) -> void:
 	if hero.tenacity_hp_ratio > 0.0:
 		info["tenacity"] = {"active": hero.tenacity_on(), "low_hp_ratio": hero.tenacity_hp_ratio, "damage_mult": hero.tenacity_damage_mult,
 			"max_hp": hero.max_hp}
+	# 連環計（龐統）：Godot 實際讀到的每跳範圍（格）、傳遞比例與最多跳數；沒有啟用這個技能的武將不帶這個欄位
+	if hero.chain_ratio > 0.0:
+		info["chain"] = {"radius": hero.chain_radius, "ratio": hero.chain_ratio, "max_jumps": hero.chain_max_jumps}
+	# 呼風喚雨（諸葛亮）：Godot 實際讀到的範圍半徑（格）、傷害比例與最多人數；沒有啟用這個技能的武將不帶這個欄位
+	if hero.storm_ratio > 0.0:
+		info["storm"] = {"radius": hero.storm_radius, "ratio": hero.storm_ratio, "max_targets": hero.storm_max_targets}
+	# 戰神（呂布）：Godot 實際讀到的每層比例與上限、選取當下這一場的層數、基礎攻擊力（atk）與目前的有效攻擊力；沒有啟用這個技能的武將不帶這個欄位
+	if hero.berserk_ratio > 0.0:
+		info["berserk"] = {"ratio": hero.berserk_ratio, "max_stacks": hero.berserk_max_stacks, "stacks": hero.berserk_stacks(),
+			"base_atk": hero.atk, "effective_atk": hero.berserk_atk()}
+	# 補給（魯肅）：Godot 實際讀到的倍率、選取當下這位武將能不能提供、基礎與這位武將提供時每次擊殺的金幣、
+	# 這一場此刻每次擊殺的金幣與最強的來源（全場取最高的倍率）；沒有啟用這個技能的武將不帶這個欄位
+	if hero.supply_gold_multiplier > 1.0:
+		var src: Dictionary = battle_manager.supply_source()
+		info["supply"] = {"multiplier": hero.supply_gold_multiplier, "active": hero.supply_active(), "base_gold": BattleManager.GOLD_PER_KILL,
+			"hero_kill_gold": BattleManager.kill_gold(hero.supply_gold_multiplier), "kill_gold": BattleManager.kill_gold(float(src.mult)),
+			"source": src.hero_id}
+	# 怪力（許褚）：Godot 實際讀到的距離（格）與冷卻（秒）、選取當下剩下的冷卻（秒，戰鬥時間）；沒有啟用這個技能的武將不帶這個欄位
+	if hero.knockback_distance > 0.0:
+		info["knockback"] = {"distance": hero.knockback_distance, "cooldown": hero.knockback_cooldown,
+			"remaining": battle_manager.knockback_remaining(hero.hero_id)}
+	# 護衛（典韋）：Godot 實際讀到的比例與範圍（格）、選取當下能不能提供、範圍內其他友軍的 hero_id；沒有啟用這個技能的武將不帶這個欄位
+	if hero.guard_share_ratio > 0.0:
+		info["guard_share"] = {"ratio": hero.guard_share_ratio, "radius": hero.guard_radius, "active": hero.guard_available(),
+			"allies": hero.guard_allies()}
+	# 守護（孫權）：Godot 實際讀到的倍率、選取當下這位武將能不能提供、這一場此刻生效的倍率（全場取最強）；沒有啟用這個技能的武將不帶這個欄位
+	if hero.base_guard_mult < 1.0:
+		info["base_guard"] = {"mult": hero.base_guard_mult, "active": hero.base_guard_active(),
+			"effective_mult": float(battle_manager.base_guard_source().mult)}
+	# 奇襲（甘寧）：選取當下這一場用過了沒有、剩下的次數（0 或 1）；沒有啟用這個技能的武將不帶這個欄位
+	if hero.assassinate_on:
+		var used: bool = not battle_manager.assassinate_ready(hero.hero_id)
+		info["assassinate"] = {"used": used, "remaining": 0 if used else 1}
+	# 魅惑（貂蟬）：Godot 實際讀到的控制時間（秒）、冷卻（秒）、攻擊範圍（格）與選取當下剩下的冷卻（秒，戰鬥時間）；沒有啟用這個技能的武將不帶這個欄位
+	if hero.charm_duration > 0.0:
+		info["charm"] = {"duration": hero.charm_duration, "cooldown": hero.charm_cooldown, "radius": hero.charm_attack_radius,
+			"remaining": battle_manager.charm_remaining(hero.hero_id)}
 	web_bridge.send_show_upgrade_panel(info)
+	_mark_observation()
 
 func _on_tower_clicked(tower: Node) -> void:
 	_deselect_unit()
@@ -585,6 +644,7 @@ func _deselect_unit() -> void:
 		_selected_unit.set_selected(false)
 	_selected_unit = null
 	web_bridge.send_hide_upgrade_panel()
+	_mark_observation()
 
 # ═══════════════════════════════════════════
 #  部署選單的暫時慢速與戰鬥速度
@@ -635,6 +695,7 @@ func _on_pause_changed(paused: bool) -> void:
 	var mode: int = Node.PROCESS_MODE_DISABLED if paused else Node.PROCESS_MODE_INHERIT
 	for n in [units_layer, wave_manager, battle_manager]:
 		n.process_mode = mode
+	_mark_observation()
 	if paused and (_is_dragging or _pressed_unit != null):
 		# 進行中的拖曳（放置、移位）一律取消：暫停時不能部署或移位
 		_end_drag()
@@ -872,6 +933,7 @@ func _process(delta: float) -> void:
 	# 手動暫停時遊戲時間不前進（Main 本身不停：它要處理輸入與命令）
 	if not battle_manager.manual_paused:
 		_game_time += delta
+	_tick_observation()
 
 func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 依 enemy_id 統計仍在場上的敵人節點；另外列出每個敵人目前的血量（測試用來算每一擊的實際傷害）
@@ -887,11 +949,23 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	# 飛行敵人：每個敵人的移動方式、到終點的剩餘路程（格；地面沿路線、飛行直線）
 	var enemy_move: Dictionary = {}
 	var enemy_remaining: Dictionary = {}
+	# 怪力：每個敵人在路線上的進度（下一個路點索引、剩餘路程像素、位置）
+	var enemy_path: Dictionary = {}
 	# 文士塔的疊加減速：每個敵人目前的減速量（0 表示沒有）；測試用來看文士塔減速的是哪一個敵人
 	var enemy_slow: Dictionary = {}
 	# 每個敵人攻擊阻路武將的次數（包括被閃避的）；場上還在顯示的「MISS」數（閃避提示）
 	var enemy_blocker_attacks: Dictionary = {}
 	var dodge_texts: int = 0
+	# 怪力：還在顯示的推動標記（PUSH）數
+	var push_texts: int = 0
+	# 護衛：還在顯示的承擔標記（GUARD）數；守護：還在顯示的保住城防標記（SHIELD）數
+	var guard_texts: int = 0
+	var shield_texts: int = 0
+	# 奇襲：還在顯示的必殺標記（KILL）數；魅惑：還在顯示的控制標記（CHARM）數
+	var kill_texts: int = 0
+	var charm_texts: int = 0
+	# 魅惑：每個敵人是否受控、來源、剩下的戰鬥時間、生成序號、受控與攻擊的次數、最近幾筆紀錄
+	var enemy_charm: Dictionary = {}
 	# 場上還在顯示的吸血恢復提示（綠色的「+恢復量」）
 	var heal_texts: Array = []
 	# 場上還在顯示的連射提示（金色的「+1」，不算在吸血的恢復提示裡）
@@ -930,8 +1004,20 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			enemy_seq[str(child.get_instance_id())] = child.spawn_seq
 			enemy_move[str(child.get_instance_id())] = child.movement_type
 			enemy_remaining[str(child.get_instance_id())] = child.get_remaining_distance() / float(child.tile_size)
+			enemy_path[str(child.get_instance_id())] = child.path_state()
 			enemy_slow[str(child.get_instance_id())] = child._stack_slow_amount
 			enemy_blocker_attacks[str(child.get_instance_id())] = child.blocker_attacks
+			enemy_charm[str(child.get_instance_id())] = child.charm_state()
+		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == Hero.KNOCKBACK_TEXT:
+			push_texts += 1
+		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == Hero.GUARD_TEXT:
+			guard_texts += 1
+		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == BASE_GUARD_TEXT:
+			shield_texts += 1
+		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == Hero.ASSASSINATE_TEXT:
+			kill_texts += 1
+		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == Hero.CHARM_TEXT:
+			charm_texts += 1
 		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == "MISS":
 			dodge_texts += 1
 		elif child is FloatingText and not child.is_queued_for_deletion() and child._label != null and child._label.text == "+1" \
@@ -977,6 +1063,27 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 	var hero_atk_down: Dictionary = {}
 	# 連射（孫尚香）：Godot 實際讀到的機率（沒有啟用時不列出）、抽亂數與追加的次數、追加的一擊實際扣掉的生命總量、普通攻擊的次數與最近幾次的抽樣
 	var hero_double_shot: Dictionary = {}
+	# 連環計（龐統）：Godot 實際讀到的半徑、比例與跳數（沒有啟用時不列出）、有傳遞的攻擊次數、追加命中的次數與實際扣掉的生命總量、
+	# 普通攻擊的次數、還在顯示的連線效果數與最近幾次傳遞的每一跳
+	var hero_chain: Dictionary = {}
+	# 呼風喚雨（諸葛亮）：Godot 實際讀到的半徑、比例與人數（沒有啟用時不列出）、有範圍傷害的攻擊次數、範圍命中的次數與實際扣掉的生命總量、
+	# 普通攻擊的次數、還在顯示的風雨圈數與最近幾次的中心與每一名
+	var hero_storm: Dictionary = {}
+	# 戰神（呂布）：Godot 實際讀到的每層比例與上限（沒有啟用時不列出）、這一場的層數與倍率、基礎與有效攻擊力、加層提示的次數、
+	# 普通攻擊的次數與最近幾次自己的擊殺（生成序號、這一擊的傷害、實扣、加層前後）
+	var hero_berserk: Dictionary = {}
+	# 補給（魯肅）：Godot 實際讀到的倍率（沒有啟用時不列出）、此刻能不能提供、這位武將提供時每次擊殺的金幣
+	var hero_supply: Dictionary = {}
+	# 怪力（許褚）：Godot 實際讀到的距離與冷卻（沒有啟用時不列出）、這一場成功推動的次數、此刻剩下的冷卻、普通攻擊的次數與最近幾次推動
+	var hero_knockback: Dictionary = {}
+	# 護衛（典韋）：Godot 實際讀到的比例與範圍（沒有啟用時不列出）、此刻能不能提供、範圍內的友軍、承擔的次數與總量、最近幾次的紀錄
+	var hero_guard: Dictionary = {}
+	# 守護（孫權）：Godot 實際讀到的倍率（沒有啟用時不列出）與此刻能不能提供（全場生效的倍率與累計在 BattleManager 的 base_guard）
+	var hero_base_guard: Dictionary = {}
+	# 奇襲（甘寧）：Godot 實際讀到的開關（沒有啟用時不列出）、這一場剩下的次數、是否用過與那一次的紀錄
+	var hero_assassinate: Dictionary = {}
+	# 魅惑（貂蟬）：Godot 實際讀到的時間、冷卻與範圍（沒有啟用時不列出）、成功控制的次數、此刻剩下的冷卻、普通攻擊的次數與最近幾次
+	var hero_charm: Dictionary = {}
 	for hid in _placed_heroes:
 		var hero: Node = _placed_heroes[hid]
 		if not is_instance_valid(hero):
@@ -997,6 +1104,24 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 			hero_atk_down[hid] = hero.atk_down_state()
 		if hero.double_shot_chance > 0.0:
 			hero_double_shot[hid] = hero.double_shot_state()
+		if hero.chain_ratio > 0.0:
+			hero_chain[hid] = hero.chain_state()
+		if hero.storm_ratio > 0.0:
+			hero_storm[hid] = hero.storm_state()
+		if hero.berserk_ratio > 0.0:
+			hero_berserk[hid] = hero.berserk_state()
+		if hero.supply_gold_multiplier > 1.0:
+			hero_supply[hid] = hero.supply_state()
+		if hero.knockback_distance > 0.0:
+			hero_knockback[hid] = hero.knockback_state()
+		if hero.guard_share_ratio > 0.0:
+			hero_guard[hid] = hero.guard_state()
+		if hero.base_guard_mult < 1.0:
+			hero_base_guard[hid] = {"mult": hero.base_guard_mult, "active": hero.base_guard_active()}
+		if hero.assassinate_on:
+			hero_assassinate[hid] = hero.assassinate_state()
+		if hero.charm_duration > 0.0:
+			hero_charm[hid] = hero.charm_state()
 		hero_ranges[hid] = hero.attack_range
 		hero_hp[hid] = hero.current_hp
 		hero_slow[hid] = hero.slow_state()
@@ -1088,9 +1213,193 @@ func _on_debug_snapshot_requested(request_id: String) -> void:
 		# 連射（孫尚香）
 		"hero_double_shot":  hero_double_shot,
 		"double_shot_texts": double_shot_texts,
+		# 連環計（龐統）
+		"hero_chain":        hero_chain,
+		# 呼風喚雨（諸葛亮）
+		"hero_storm":        hero_storm,
+		"hero_berserk":      hero_berserk,
+		"hero_supply":       hero_supply,
+		# 怪力（許褚）與每個敵人在路線上的進度（下一個路點索引、剩餘路程、位置）
+		"hero_knockback":    hero_knockback,
+		"enemy_path":        enemy_path,
+		"push_texts":        push_texts,
+		# 護衛（典韋）與守護（孫權）
+		"hero_guard":        hero_guard,
+		"guard_texts":       guard_texts,
+		"hero_base_guard":   hero_base_guard,
+		"shield_texts":      shield_texts,
+		# 奇襲（甘寧）
+		"hero_assassinate":  hero_assassinate,
+		"kill_texts":        kill_texts,
+		# 魅惑（貂蟬）
+		"hero_charm":        hero_charm,
+		"enemy_charm":       enemy_charm,
+		"charm_texts":       charm_texts,
 	}
 	snapshot.merge(battle_manager.get_debug_state())
 	web_bridge.send_debug_snapshot(snapshot)
+
+# ═══════════════════════════════════════════
+#  戰況觀測（battle_observation）：Web 的即時武將技能狀態與敵軍查看用的精簡唯讀資料
+# ═══════════════════════════════════════════
+## 武將節點上記識別碼的 meta 名稱（_place_hero 設定；面板的 hero_uid 與觀測的 uid 相同）
+const OBS_UID_META: String = "obs_uid"
+## 戰況觀測最短的送出間隔（毫秒，牆鐘）：備戰與戰鬥中照這個間隔送；新的一場、狀態改變、暫停／繼續、部署、移位、陣亡、
+## 撤除、選取改變時下一幀立刻送（同一幀合併成一次）。剩下的時間都是 BattleManager 的戰鬥時間，暫停與備戰時不前進
+const OBS_INTERVAL_MS: int = 250
+## 這一場已送出的觀測數（seq）：每一場從 1 開始嚴格遞增
+var _obs_seq: int = 0
+var _obs_last_ms: int = -1000000
+var _obs_force: bool = false
+
+## 新的一場：seq 從頭算，下一幀送出這一場的第一份觀測（還沒有武將與敵人）
+func _reset_observation() -> void:
+	_obs_seq = 0
+	_obs_last_ms = -1000000
+	_obs_force = true
+
+## 戰況有變化：下一幀立刻送一份（不等間隔）
+func _mark_observation() -> void:
+	_obs_force = true
+
+## 每一幀檢查要不要送：還沒有關卡（或沒有 battle_id）不送；結算後只送狀態改變時的那一份（終態），之後不再定時送
+func _tick_observation() -> void:
+	var st: int = battle_manager.game_state
+	if st == BattleManager.GameState.WAITING_PAYLOAD or battle_manager.battle_id == "":
+		return
+	var now: int = Time.get_ticks_msec()
+	var live: bool = st == BattleManager.GameState.PREP or st == BattleManager.GameState.BATTLE
+	if not _obs_force and not (live and now - _obs_last_ms >= OBS_INTERVAL_MS):
+		return
+	_obs_force = false
+	_obs_last_ms = now
+	_obs_seq += 1
+	web_bridge.send_battle_observation(battle_observation())
+
+## 這一刻的戰況（唯讀，不改任何狀態）：武將的生命與技能狀態、場上活著的敵人（含受控的）。
+## 不帶歷史紀錄、路線陣列、玩家資料。enemy_total 是 WaveManager 目前計入波次的敵人數，enemies 依生成序號排序
+func battle_observation() -> Dictionary:
+	var heroes: Array = []
+	for hid in _placed_heroes:
+		var hero: Node = _placed_heroes[hid]
+		if not is_instance_valid(hero) or hero.is_queued_for_deletion():
+			continue
+		var cell: Vector2i = hero.get_cell()
+		heroes.append({"uid": str(hero.get_meta(OBS_UID_META, "")), "hero_id": str(hid), "cell": [cell.x, cell.y],
+			"hp": hero.current_hp, "max_hp": hero.max_hp, "skill": _hero_skill_observation(hero)})
+	var enemies: Array = []
+	var gen: int = wave_manager.get_generation()
+	for e in wave_manager.get_active_enemies():
+		if not is_instance_valid(e) or e.is_queued_for_deletion() or e.is_dead():
+			continue
+		enemies.append(_enemy_observation(e, gen))
+	enemies.sort_custom(func(a, b): return int(a.seq) < int(b.seq))
+	return {
+		"battle_id": battle_manager.battle_id,
+		"lifecycle": battle_manager.lifecycle(),
+		"generation": gen,
+		"seq": _obs_seq,
+		"state": battle_manager.game_state,
+		"paused": battle_manager.manual_paused,
+		"wave": battle_manager.current_wave,
+		"heroes": heroes,
+		"enemies": enemies,
+		"enemy_total": wave_manager.get_active_enemy_count(),
+		# 本波出兵進度（可選欄位：舊版網頁不認得時忽略；協定不變）
+		"spawn": wave_manager.get_spawn_progress(),
+	}
+
+## 一位武將的技能此刻的實際狀態（技能 id 由 Godot 實際讀到的參數判斷；沒有啟用任何技能時是空字典）。
+## 有冷卻或次數的技能帶剩下的戰鬥時間或次數，光環、補給、護衛、守護帶此刻是不是生效與來源；其他技能只帶 id（常駐或命中時觸發，沒有冷卻）
+func _hero_skill_observation(hero: Node) -> Dictionary:
+	var hid: String = hero.hero_id
+	if hero.first_strike_multiplier > 1.0:
+		return {"id": "first_strike", "used": battle_manager.first_strike_used(hid)}
+	if hero.range_multiplier > 1.0:
+		return {"id": "long_range"}
+	if hero.burn_ratio > 0.0:
+		return {"id": "burn"}
+	if hero.slow_aura_mult < 1.0:
+		var ss: Dictionary = hero.slow_state()
+		return {"id": "slow_aura", "active": bool(ss.aura_active), "affected": ss.aura.size()}
+	if hero.dodge_chance > 0.0:
+		return {"id": "dodge"}
+	if hero.def_aura_mult > 1.0:
+		var ds: Dictionary = hero.def_state()
+		return {"id": "def_aura", "active": bool(ds.aura_active), "affected": ds.buffed.size()}
+	if hero.stun_duration > 0.0:
+		return {"id": "stun"}
+	if hero.lifesteal_ratio > 0.0:
+		return {"id": "lifesteal"}
+	if hero.atk_speed_aura_mult > 1.0:
+		return {"id": "atk_speed_aura", "active": bool(hero._atk_speed_aura_shown), "affected": hero._atk_speed_buffed.size()}
+	if hero.counter_ratio > 0.0:
+		return {"id": "counter"}
+	if hero.tenacity_hp_ratio > 0.0:
+		return {"id": "tenacity", "active": hero.tenacity_on()}
+	if hero.atk_down_aura_mult < 1.0:
+		var ads: Dictionary = hero.atk_down_state()
+		return {"id": "atk_down_aura", "active": bool(ads.aura_active), "affected": ads.affected.size()}
+	if hero.double_shot_chance > 0.0:
+		return {"id": "double_shot"}
+	if hero.chain_ratio > 0.0:
+		return {"id": "chain"}
+	if hero.storm_ratio > 0.0:
+		return {"id": "storm"}
+	if hero.berserk_ratio > 0.0:
+		return {"id": "berserk", "stacks": hero.berserk_stacks(), "max_stacks": hero.berserk_max_stacks, "atk": hero.berserk_atk()}
+	if hero.supply_gold_multiplier > 1.0:
+		var sup: Dictionary = battle_manager.supply_source()
+		return {"id": "supply", "active": hero.supply_active(), "source": str(sup.hero_id) == hid,
+			"kill_gold": BattleManager.kill_gold(float(sup.mult))}
+	if hero.knockback_distance > 0.0:
+		return {"id": "knockback", "remaining": battle_manager.knockback_remaining(hid), "cooldown": hero.knockback_cooldown}
+	if hero.guard_share_ratio > 0.0:
+		return {"id": "guard_share", "active": hero.guard_available(), "allies": hero.guard_allies().size()}
+	if hero.base_guard_mult < 1.0:
+		var bg: Dictionary = battle_manager.base_guard_source()
+		return {"id": "base_guard", "active": hero.base_guard_active(), "source": str(bg.hero_id) == hid, "effective_mult": float(bg.mult)}
+	if hero.assassinate_on:
+		var spent: bool = not battle_manager.assassinate_ready(hid)
+		return {"id": "assassinate", "used": spent, "remaining": 0 if spent else 1}
+	if hero.charm_duration > 0.0:
+		return {"id": "charm", "remaining": battle_manager.charm_remaining(hid), "cooldown": hero.charm_cooldown}
+	return {}
+
+## 一個敵人此刻的狀態。uid 是「WaveManager 世代-生成序號」（同一個 iframe 裡不會重複）；atk 是設定的對阻路武將攻擊力
+## （沒有設定時 20），atk_eff 含威壓（不是漏城傷害）；speed 是設定的移速（像素／秒），speed_eff 含減速；
+## 灼燒、暈眩、威壓、減速、受控的剩下時間都是戰鬥時間（秒），沒有時是 0
+func _enemy_observation(e: Node, gen: int) -> Dictionary:
+	var burn_left: float = 0.0
+	if e._burn_ticks_left > 0:
+		burn_left = e._burn_timer + float(e._burn_ticks_left - 1) * e._burn_interval
+	var atk_down_left: float = 0.0
+	for s in e._atk_down_sources:
+		atk_down_left = maxf(atk_down_left, float(e._atk_down_sources[s].left))
+	var slow_left: float = e._stack_slow_timer if e._stack_slow_amount > 0.0 else 0.0
+	for s in e._slow_sources:
+		slow_left = maxf(slow_left, float(e._slow_sources[s].left))
+	var charmed: bool = e.is_charmed()
+	return {
+		"uid": "%d-%d" % [gen, e.spawn_seq],
+		"seq": e.spawn_seq,
+		"enemy_id": e.enemy_id,
+		"hp": e.current_hp,
+		"max_hp": e.max_hp,
+		"flying": e.is_flying(),
+		"charmed": charmed,
+		"charm_left": e.charm_remaining() if charmed else 0.0,
+		"charm_source": e._charm_hero_id if charmed else "",
+		"atk": e.blocker_atk,
+		"atk_eff": e.effective_blocker_atk(),
+		"atk_down_left": atk_down_left if e.atk_mult < 1.0 else 0.0,
+		"speed": e.base_speed,
+		"speed_eff": e.get_effective_speed(),
+		"slow_left": slow_left if e.get_effective_speed() < e.base_speed else 0.0,
+		"immune_slow": e.immune_slow,
+		"stun_left": e._stun_left if e.is_stunned() else 0.0,
+		"burn_left": burn_left,
+	}
 
 # ═══════════════════════════════════════════
 #  Helpers
@@ -1125,6 +1434,7 @@ func _remove_heroes_not_in_team(new_team: Array) -> void:
 		_placed_heroes.erase(hero_id)
 	if not to_remove.is_empty():
 		print("[Main] 移除不在隊伍中的武將：", to_remove)
+		_mark_observation()
 
 func _on_splash_dismissed() -> void:
 	# 用戶點擊 splash → AudioContext 已解鎖，BGM 此時可正常播放

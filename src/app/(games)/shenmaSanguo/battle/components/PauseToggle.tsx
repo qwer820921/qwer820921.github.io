@@ -1,6 +1,8 @@
 "use client";
+import { useEffect } from "react";
 import { PauseFill, PlayFill } from "react-bootstrap-icons";
 import { SpeedStats, canTogglePause, isPaused } from "../../utils/gameSpeed";
+import { STAGE_RESERVE_EVENT } from "../../utils/stageAnchor";
 import styles from "../../styles/shenmaSanguo.module.css";
 
 interface PauseToggleProps {
@@ -53,12 +55,22 @@ interface PauseBadgeProps {
 
 /**
  * 戰場上的「已暫停」：只在 Godot 確認暫停後出現，放在遊戲畫面下方中央，旁邊有「繼續」。
- * 只有這一小塊擋住點擊：暫停中仍可點地圖上的單位查看資訊
+ * 只有這一小塊擋住點擊：暫停中仍可點地圖上的單位查看資訊。
+ * 它是戰場下方的保留區（data-stage-reserve="bottom"）：開著的選取面板不蓋住它，出現與消失時通知面板重新定位
  */
 export function PauseBadge({ stats, onSet }: PauseBadgeProps) {
-  if (!isPaused(stats)) return null;
+  const paused = isPaused(stats);
+  useEffect(() => {
+    window.dispatchEvent(new Event(STAGE_RESERVE_EVENT));
+  }, [paused]);
+  if (!paused) return null;
   return (
-    <div className={styles.pauseBadge} role="status" data-testid="pause-badge">
+    <div
+      className={styles.pauseBadge}
+      role="status"
+      data-testid="pause-badge"
+      data-stage-reserve="bottom"
+    >
       <span className={styles.pauseBadgeText}>已暫停</span>
       <button
         type="button"

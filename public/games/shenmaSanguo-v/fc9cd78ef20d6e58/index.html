@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+		<title>shenmaSanguo</title>
+		<style>
+html, body, #canvas {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+body {
+	color: white;
+	background-color: black;
+	overflow: hidden;
+	touch-action: none;
+}
+
+#canvas {
+	display: block;
+}
+
+#canvas:focus {
+	outline: none;
+}
+
+#status, #status-splash, #status-progress {
+	position: absolute;
+	left: 0;
+	right: 0;
+}
+
+#status, #status-splash {
+	top: 0;
+	bottom: 0;
+}
+
+#status {
+	background-color: #242424;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	align-items: center;
+	visibility: hidden;
+}
+
+#status-splash {
+	max-height: 100%;
+	max-width: 100%;
+	margin: auto;
+}
+
+#status-splash.show-image--false {
+	display: none;
+}
+
+#status-splash.fullsize--true {
+	height: 100%;
+	width: 100%;
+	object-fit: contain;
+}
+
+#status-splash.use-filter--false {
+	image-rendering: pixelated;
+}
+
+#status-progress, #status-notice {
+	display: none;
+}
+
+#status-progress {
+	bottom: 10%;
+	width: 50%;
+	margin: 0 auto;
+}
+
+#status-notice {
+	background-color: #5b3943;
+	border-radius: 0.5rem;
+	border: 1px solid #9b3943;
+	color: #e0e0e0;
+	font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
+	line-height: 1.3;
+	margin: 0 2rem;
+	overflow: hidden;
+	padding: 1rem;
+	text-align: center;
+	z-index: 1;
+}
+		</style>
+		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+<link rel="manifest" href="index.manifest.json">
+
+	</head>
+	<body>
+		<canvas id="canvas">
+			Your browser does not support the canvas tag.
+		</canvas>
+
+		<noscript>
+			Your browser does not support JavaScript.
+		</noscript>
+
+		<div id="status">
+			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png" alt="">
+			<progress id="status-progress"></progress>
+			<div id="status-notice"></div>
+		</div>
+
+		<script>
+// 神馬三國：版本守門（tools/postexport.mjs）
+// 這一版的外殼頁只和同一版的 Service Worker 一起載入：網址加上 shenma_ver=<版本>（Service Worker 依此只交付這一版的檔案），
+// 確認控制這個頁面的 Service Worker 是同一版（不是就讓同一版接手；伺服器上沒有這一版時重新載入一次，仍不行就說明）之後，
+// 才載入 index.js、開始下載引擎與資料包。Service Worker 下載與核對時送來進度（顯示在進度條），拒絕交付時在這裡說明
+window.__shenmaGuard = (function () {
+	const VERSION = 'fc9cd78ef20d6e58';
+	const PARAM = 'shenma_ver';
+	// 自動重新載入的時間（sessionStorage）：一分鐘內只自動重新載入一次，避免一直重新載入
+	const RELOAD_KEY = 'shenma_sw_reload';
+	const RELOAD_GAP_MS = 60000;
+	const UPDATING = '遊戲正在更新，伺服器上的檔案還不是同一個版本。請稍候一分鐘再重新載入。';
+	const sw = 'serviceWorker' in navigator ? navigator.serviceWorker : null;
+	const swLoaded = {};
+	let godot = { current: 0, total: 0 };
+	let refused = null;
+	let recovering = false;
+	// 診斷用：確認版本花的時間、是否由 Service Worker 控制、結果（載入量測會讀）；
+	// 引擎啟動時有沒有把焦點交給遊戲畫面（嵌入的網頁正在用焦點時是 false）
+	const stats = { ensureMs: null, controlled: null, ok: null, focusedAtStart: null };
+	try {
+		const url = new URL(location.href);
+		if (url.searchParams.get(PARAM) !== VERSION) {
+			url.searchParams.set(PARAM, VERSION);
+			history.replaceState(history.state, '', url.href);
+		}
+	} catch (e) {
+		// 網址改不了：Service Worker 不知道這個頁面的版本，會拒絕交付並送來原因
+	}
+	const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+	/** 問 Service Worker 的版本（沒有回答的舊版本是 null） */
+	function ask(worker) {
+		return new Promise((resolve) => {
+			if (!worker) {
+				resolve(null);
+				return;
+			}
+			const channel = new MessageChannel();
+			const timer = setTimeout(() => resolve(null), 1500);
+			channel.port1.onmessage = (event) => {
+				clearTimeout(timer);
+				resolve((event.data && event.data.version) || null);
+			};
+			try {
+				worker.postMessage({ type: 'shenma-version' }, [channel.port2]);
+			} catch (e) {
+				clearTimeout(timer);
+				resolve(null);
+			}
+		});
+	}
+
+	/** 等安裝中的 Service Worker 裝好或失敗 */
+	function settle(worker, ms) {
+		return new Promise((resolve) => {
+			if (!worker || worker.state !== 'installing') {
+				resolve();
+				return;
+			}
+			const timer = setTimeout(resolve, ms);
+			worker.addEventListener('statechange', () => {
+				if (worker.state !== 'installing') {
+					clearTimeout(timer);
+					resolve();
+				}
+			});
+		});
+	}
+
+	/**
+	 * 請 worker 接手這個頁面，等到控制這個頁面的就是它（或逾時）。已經是它時不送：
+	 * 第一次開啟時它啟用就會接手，在那之後才記「原本的」控制者會一直等不到改變
+	 */
+	async function claimBy(worker, ms) {
+		if (sw.controller === worker) {
+			return;
+		}
+		worker.postMessage({ type: 'shenma-claim' });
+		const end = Date.now() + ms;
+		while (Date.now() < end && sw.controller !== worker) {
+			await sleep(50);
+		}
+	}
+
+	/** 讓同一版的 Service Worker 控制這個頁面；做不到（伺服器上的 Service Worker 是別的版本、裝不起來）時是 false */
+	async function ensure() {
+		if (!sw) {
+			return true;
+		}
+		let registration;
+		try {
+			registration = await sw.register('index.service.worker.js');
+		} catch (e) {
+			// 不能使用 Service Worker（例如瀏覽器設定）：照常從網路載入
+			return true;
+		}
+		for (let round = 0; round < 2; round++) {
+			if (sw.controller && (await ask(sw.controller)) === VERSION) {
+				return true;
+			}
+			await settle(registration.installing, 30000);
+			let mine = null;
+			for (const worker of [registration.waiting, registration.active]) {
+				if (!mine && worker && (await ask(worker)) === VERSION) {
+					mine = worker;
+				}
+			}
+			if (mine) {
+				await claimBy(mine, 15000);
+				continue;
+			}
+			if (round === 0) {
+				try {
+					await registration.update();
+				} catch (e) {
+					// 檢查不到新版本：照下面判斷
+				}
+			}
+		}
+		return !!sw.controller && (await ask(sw.controller)) === VERSION;
+	}
+
+	/** 自動重新載入（一分鐘內只一次）；不能重新載入時是 false */
+	function reloadOnce() {
+		let last = 0;
+		try {
+			last = Number(sessionStorage.getItem(RELOAD_KEY)) || 0;
+			if (Date.now() - last < RELOAD_GAP_MS) {
+				return false;
+			}
+			sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
+		} catch (e) {
+			return false;
+		}
+		location.reload();
+		return true;
+	}
+
+	/** 在外殼頁的狀態區顯示說明（網站的載入畫面會讀到它） */
+	function show(text) {
+		const status = document.getElementById('status');
+		const notice = document.getElementById('status-notice');
+		const progress = document.getElementById('status-progress');
+		if (!status || !notice) {
+			return;
+		}
+		while (notice.lastChild) {
+			notice.removeChild(notice.lastChild);
+		}
+		notice.appendChild(document.createTextNode(text));
+		if (progress) {
+			progress.style.display = 'none';
+		}
+		notice.style.display = 'block';
+		status.style.visibility = 'visible';
+	}
+
+	/** Service Worker 拒絕交付的原因 → 說明（檔名照原文） */
+	function describe(r) {
+		const file = r && r.file ? ' ' + r.file + ' ' : '';
+		switch (r && r.reason) {
+			case 'network':
+				return '下載遊戲檔案' + file + '失敗：網路連線中斷或伺服器沒有回應。請確認網路後重新載入。';
+			case 'status':
+				return '伺服器沒有提供遊戲檔案' + file + '（HTTP ' + r.status + '）。請稍後再重新載入。';
+			case 'size':
+				return '遊戲檔案' + file + '沒有下載完整。請重新載入。';
+			case 'mismatch':
+				return '遊戲剛更新，伺服器上的遊戲檔案' + file + '和這次載入的版本不同。請稍候一分鐘再重新載入。';
+			default:
+				return '這個頁面和目前的遊戲版本不同（' + (r && r.file) + '）。請重新載入。';
+		}
+	}
+
+	/** 拒絕交付是版本不同：換成伺服器上的版本並重新載入一次；不行就說明 */
+	async function recover() {
+		if (recovering) {
+			return;
+		}
+		recovering = true;
+		try {
+			const registration = await sw.getRegistration();
+			if (registration) {
+				try {
+					await registration.update();
+				} catch (e) {
+					// 檢查不到新版本：仍重新載入一次
+				}
+				await settle(registration.installing, 30000);
+				const waiting = registration.waiting;
+				if (waiting && (await ask(waiting)) !== null) {
+					await claimBy(waiting, 15000);
+				}
+			}
+		} catch (e) {
+			// 換不了：照下面重新載入或說明
+		}
+		if (!reloadOnce()) {
+			show(describe(refused));
+		}
+	}
+
+	function onMessage(event) {
+		const data = event.data;
+		if (!data || typeof data !== 'object') {
+			return;
+		}
+		if (data.type === 'shenma-sw-progress' && typeof data.loaded === 'number') {
+			swLoaded[data.file] = data.loaded;
+			paint();
+		} else if (data.type === 'shenma-sw-refused') {
+			refused = data;
+			console.warn('Service Worker refused ' + data.file + ': ' + data.reason); // eslint-disable-line no-console
+			if (data.reason === 'mismatch' || data.reason === 'page-version' || data.reason === 'no-page-version') {
+				recover();
+			}
+		}
+	}
+
+	const swTotal = () => Object.keys(swLoaded).reduce((sum, key) => sum + swLoaded[key], 0);
+
+	/** Service Worker 下載中（核對完才交給 Godot）也顯示已下載的位元組 */
+	function paint() {
+		const bar = document.getElementById('status-progress');
+		if (!bar || bar.style.display !== 'block' || !(godot.total > 0)) {
+			return;
+		}
+		const current = Math.min(Math.max(godot.current, swTotal()), godot.total);
+		if (current > 0) {
+			bar.value = current;
+			bar.max = godot.total;
+		}
+	}
+
+	/** Godot 的進度（onProgress）：顯示 Godot 與 Service Worker 已下載的較大者 */
+	function progress(current, total) {
+		godot = { current, total };
+		return total > 0 ? Math.max(current, Math.min(swTotal(), total)) : current;
+	}
+
+	/** Godot 載入失敗（displayFailureNotice）：版本守門已經在處理或知道原因時由這裡說明，回傳 true */
+	function handleFailure() {
+		if (recovering) {
+			return true;
+		}
+		if (refused) {
+			show(describe(refused));
+			return true;
+		}
+		return false;
+	}
+
+	/** 引擎啟動（外殼頁的 #status 移除）後執行；沒有啟動（失敗、還在說明）時不執行 */
+	function whenStarted(callback) {
+		if (!document.getElementById('status')) {
+			callback();
+			return;
+		}
+		const observer = new MutationObserver(() => {
+			if (!document.getElementById('status')) {
+				observer.disconnect();
+				callback();
+			}
+		});
+		observer.observe(document.body, { childList: true, subtree: true });
+	}
+
+	/**
+	 * 把焦點交給遊戲畫面，但嵌入的網頁正在用焦點時不搶（網頁開著視窗、正在輸入）：網頁的焦點在頁面本身、
+	 * 或已經在這個 iframe 上時才交。Godot 預設在啟動時直接 focus 遊戲畫面（focusCanvas），會把網頁視窗裡的焦點搶走
+	 */
+	function focusWhenFree() {
+		const canvas = document.getElementById('canvas');
+		if (!canvas) {
+			return;
+		}
+		let free = true;
+		try {
+			if (window.parent !== window) {
+				const doc = window.parent.document;
+				const active = doc.activeElement;
+				free = !active || active === doc.body || active === doc.documentElement || active === window.frameElement;
+			}
+		} catch (e) {
+			// 跨來源嵌入（看不到網頁的焦點）：照 Godot 原本的行為
+			free = true;
+		}
+		stats.focusedAtStart = free;
+		if (free) {
+			canvas.focus();
+		}
+	}
+
+	function loadScript(src) {
+		return new Promise((resolve, reject) => {
+			const script = document.createElement('script');
+			script.src = src;
+			script.onload = () => resolve();
+			script.onerror = () => reject(new Error('Failed loading file ' + src));
+			document.body.appendChild(script);
+		});
+	}
+
+	/** 確認版本後載入 index.js，再執行原本的啟動程式（start） */
+	async function boot(start) {
+		if (sw) {
+			sw.addEventListener('message', onMessage);
+			sw.startMessages();
+		}
+		let ok = true;
+		const t0 = Date.now();
+		try {
+			ok = await ensure();
+		} catch (e) {
+			ok = true;
+		}
+		stats.ensureMs = Date.now() - t0;
+		stats.controlled = !!(sw && sw.controller);
+		stats.ok = ok;
+		if (!ok) {
+			if (!reloadOnce()) {
+				show(UPDATING);
+			}
+			return;
+		}
+		try {
+			await loadScript('index.js');
+		} catch (e) {
+			// 拒絕的原因可能稍後才送到
+			await sleep(500);
+			if (!recovering) {
+				show(refused ? describe(refused) : '無法載入遊戲的載入程式（index.js）。請確認網路後重新載入。');
+			}
+			return;
+		}
+		// 啟動時不讓 Godot 直接 focus 遊戲畫面，改成啟動後由 focusWhenFree 判斷
+		try {
+			GODOT_CONFIG.focusCanvas = false;
+		} catch (e) {
+			// 沒有設定物件：照 Godot 原本的行為
+		}
+		whenStarted(focusWhenFree);
+		start();
+	}
+
+	return { boot, progress, handleFailure, stats };
+}());
+		</script>
+		<script>
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":3099044,"index.wasm":24230597},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
+const GODOT_THREADS_ENABLED = false;
+window.__shenmaGuard.boot(function () {
+const engine = new Engine(GODOT_CONFIG);
+
+(function () {
+	const statusOverlay = document.getElementById('status');
+	const statusProgress = document.getElementById('status-progress');
+	const statusNotice = document.getElementById('status-notice');
+
+	let initializing = true;
+	let statusMode = '';
+
+	function setStatusMode(mode) {
+		if (statusMode === mode || !initializing) {
+			return;
+		}
+		if (mode === 'hidden') {
+			statusOverlay.remove();
+			initializing = false;
+			return;
+		}
+		statusOverlay.style.visibility = 'visible';
+		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
+		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
+		statusMode = mode;
+	}
+
+	function setStatusNotice(text) {
+		while (statusNotice.lastChild) {
+			statusNotice.removeChild(statusNotice.lastChild);
+		}
+		const lines = text.split('\n');
+		lines.forEach((line) => {
+			statusNotice.appendChild(document.createTextNode(line));
+			statusNotice.appendChild(document.createElement('br'));
+		});
+	}
+
+	function displayFailureNotice(err) {
+		if (window.__shenmaGuard.handleFailure(err)) {
+			initializing = false;
+			return;
+		}
+		console.error(err);
+		if (err instanceof Error) {
+			setStatusNotice(err.message);
+		} else if (typeof err === 'string') {
+			setStatusNotice(err);
+		} else {
+			setStatusNotice('An unknown error occurred.');
+		}
+		setStatusMode('notice');
+		initializing = false;
+	}
+
+	const missing = Engine.getMissingFeatures({
+		threads: GODOT_THREADS_ENABLED,
+	});
+
+	if (missing.length !== 0) {
+		if (GODOT_CONFIG['serviceWorker'] && GODOT_CONFIG['ensureCrossOriginIsolationHeaders'] && 'serviceWorker' in navigator) {
+			let serviceWorkerRegistrationPromise;
+			try {
+				serviceWorkerRegistrationPromise = navigator.serviceWorker.getRegistration();
+			} catch (err) {
+				serviceWorkerRegistrationPromise = Promise.reject(new Error('Service worker registration failed.'));
+			}
+			// There's a chance that installing the service worker would fix the issue
+			Promise.race([
+				serviceWorkerRegistrationPromise.then((registration) => {
+					if (registration != null) {
+						return Promise.reject(new Error('Service worker already exists.'));
+					}
+					return registration;
+				}).then(() => engine.installServiceWorker()),
+				// For some reason, `getRegistration()` can stall
+				new Promise((resolve) => {
+					setTimeout(() => resolve(), 2000);
+				}),
+			]).then(() => {
+				// Reload if there was no error.
+				window.location.reload();
+			}).catch((err) => {
+				console.error('Error while registering service worker:', err);
+			});
+		} else {
+			// Display the message as usual
+			const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
+			displayFailureNotice(missingMsg + missing.join('\n'));
+		}
+	} else {
+		setStatusMode('progress');
+		engine.startGame({
+			'onProgress': function (current, total) {
+				current = window.__shenmaGuard.progress(current, total);
+				if (current > 0 && total > 0) {
+					statusProgress.value = current;
+					statusProgress.max = total;
+				} else {
+					statusProgress.removeAttribute('value');
+					statusProgress.removeAttribute('max');
+				}
+			},
+		}).then(() => {
+			setStatusMode('hidden');
+		}, displayFailureNotice);
+	}
+}());
+});
+		</script>
+	</body>
+</html>
+

@@ -50,6 +50,61 @@ var _auto_wave_pending: bool = false
 ## 跨波次、移位、更新隊伍、同場移除再放回都不會重新取得；initialize（新的一場、新的 battle_id）才清空
 var _first_strike_used: Dictionary = {}
 
+# ── 武將技能：戰神（berserk，呂布）──────────────────────────
+## 這一場每位武將自己普通攻擊打倒敵人累積的層數：hero_id → {"stacks": 層數, "kills": 擊殺次數, "log": 最近 BERSERK_LOG_MAX 次擊殺}。
+## 和首擊加倍一樣記在這裡：跨波次、移位、升級、同場移除再放回都保留；initialize（新的一場、新的 battle_id）才清空，不寫存檔
+var _berserk: Dictionary = {}
+const BERSERK_LOG_MAX: int = 40
+
+# ── 武將技能：補給（supply，魯肅）──────────────────────────
+## 有補給技能的武將（instance id → WeakRef）：武將讀到補給時登記、換成其他技能時取消；initialize（新的一場）清空。
+## 只是候選名單：每次擊殺結算的當下才逐一確認（supply_source），失效、正要被移除、陣亡、不在場上、技能已經不是補給的都不算，
+## 不靠下一幀才更新的快取。只影響有效擊殺的戰鬥金幣（on_enemy_killed），不經過 earn_gold
+var _supply_sources: Dictionary = {}
+## 最近 KILL_GOLD_LOG_MAX 次有效擊殺的戰鬥金幣結算（測試用唯讀紀錄，新的一場清空）
+var _kill_gold_log: Array = []
+const KILL_GOLD_LOG_MAX: int = 40
+## 補給的倍率乘上每次擊殺的金幣後向下取整：加上很小的容許誤差，避免小數乘法差一點點時少算 1（5 × 1.2 是 6）
+const SUPPLY_EPS: float = 1e-6
+
+# ── 武將技能：怪力（knockback，許褚）────────────────────────
+## 這一場每位武將的擊退冷卻與紀錄：hero_id → {"ready_at": 下次可以推的戰鬥時間（battle_time）, "count": 成功次數, "log": 最近 KNOCKBACK_LOG_MAX 次}。
+## 冷卻用 battle_time（只在戰鬥中、照時間倍率前進，手動暫停與備戰不前進）。和首擊加倍、戰神一樣記在這裡：
+## 跨波次、移位、升級、同場移除再放回、重新讀技能都保留；initialize（新的一場、新的 battle_id）才清空，不寫存檔
+var _knockback: Dictionary = {}
+const KNOCKBACK_LOG_MAX: int = 40
+
+# ── 武將技能：守護（base_guard，孫權）────────────────────────
+## 有守護技能的武將（instance id → WeakRef）：武將讀到守護時登記、換成其他技能時取消；initialize（新的一場）清空。
+## 只是候選名單：每次敵人抵達城池的當下才逐一確認（base_guard_source）：失效、正要被移除、陣亡、不在場上、技能已經不是守護的都不算
+var _base_guard_sources: Dictionary = {}
+## 這一場累計的漏城傷害 T（每次有效抵達加上當下生效的倍率，沒有守護時 1）與已經扣掉的城防 A（整數）。
+## 這一次扣「ceil(T − LEAK_EPS) − A」：城防仍是整數，倍率 0.8 時連續 5 次扣 1、1、1、1、0（共 4），不會每次無條件捨去成 0。
+## T 與 A 跨波次、移位、升級、守護陣亡或移出隊伍、重新部署都保留（不回補、不追扣先前的折扣），新的一場（initialize）才歸零
+var _leak_total: float = 0.0
+var _leak_lost: int = 0
+## 最近 LEAK_LOG_MAX 次有效抵達（測試用唯讀紀錄，新的一場清空）：敵人的生成序號、倍率與來源、累計前後的 T、這一次扣的城防、扣完的城防
+var _leak_log: Array = []
+const LEAK_LOG_MAX: int = 40
+## 進位用的容許誤差：0.8 累加 5 次的浮點誤差不會讓 4 變成 5
+const LEAK_EPS: float = 1e-6
+var _base_guard_sync_pending: bool = false
+
+# ── 武將技能：奇襲（assassinate，甘寧）────────────────────────
+## 這一場已用過奇襲的武將：hero_id → 那一次的紀錄（見 Hero._assassinate）。和首擊加倍一樣記在這裡：跨波次、移位、升級、
+## 同場移除再放回、重新讀技能或換成其他技能再換回都不恢復；initialize（新的一場、新的 battle_id）才清空，不寫存檔
+var _assassinate_used: Dictionary = {}
+## 這一場最近 ASSASSINATE_LOG_MAX 次奇襲（所有武將，測試用唯讀紀錄）
+var _assassinate_log: Array = []
+const ASSASSINATE_LOG_MAX: int = 40
+
+# ── 武將技能：魅惑（charm，貂蟬）────────────────────────────
+## 這一場每位武將的魅惑冷卻與紀錄：hero_id → {"ready_at": 下次可以控制的戰鬥時間（battle_time）, "count": 成功次數, "log": 最近 CHARM_LOG_MAX 次}。
+## 和怪力一樣用 battle_time（只在戰鬥中、照時間倍率前進，手動暫停與備戰不前進），跨波次、移位、升級、同場移除再放回、重新讀技能都保留；
+## initialize（新的一場）才清空。受控的時間也用 battle_time（見 Enemy.apply_charm），新的一場的敵人都是新的節點
+var _charm: Dictionary = {}
+const CHARM_LOG_MAX: int = 40
+
 # ── 戰鬥速度 ──────────────────────────────────────────────
 # Engine.time_scale 只由 _apply_time_scale 寫入：實際倍率＝部署選單開著時固定 DEPLOY_TIME_SCALE，否則是玩家選的速度。
 # 敵人移動、攻擊冷卻、灼燒、減速、出兵間隔、自動下一波都照這個倍率推進；傷害、費用、獎勵不受影響
@@ -79,6 +134,19 @@ func initialize(p_total_waves: int, p_stage_id: String, wave_mgr: Node, bridge: 
 	stage_id       = p_stage_id
 	battle_id      = p_battle_id
 	_first_strike_used.clear()
+	_berserk.clear()
+	_supply_sources.clear()
+	_kill_gold_log.clear()
+	_knockback.clear()
+	_base_guard_sources.clear()
+	_leak_total = 0.0
+	_leak_lost = 0
+	_leak_log.clear()
+	# 奇襲：新的一場每位武將恢復一次
+	_assassinate_used.clear()
+	_assassinate_log.clear()
+	# 魅惑：新的一場冷卻清空
+	_charm.clear()
 	# 新的一場：清掉上一場的部署慢速與手動暫停，速度回到 1 倍
 	_reset_speed()
 	_reset_pause()
@@ -156,20 +224,44 @@ func refund_gold(amount: int) -> void:
 	_sync_stats_to_web()
 
 # ── 敵人事件（由 Main.gd 轉接）────────────────────────────────
-func on_enemy_reached_base() -> void:
+## 敵人抵達城池（漏城）：累計的漏城傷害 T 加上當下生效的倍率（守護，見 base_guard_source；沒有時 1），城防扣「ceil(T − LEAK_EPS) − 已經扣掉的」。
+## 回傳這一次扣掉的城防（守護保住時是 0）；結算後的抵達不處理，回傳 -1。enemy 只用來在紀錄裡寫生成序號。
+## 城防一律是整數：base_hp_changed 與 update_stats 送出實際的城防，星數與戰場點數照實際的城防計算
+func on_enemy_reached_base(enemy: Node = null) -> int:
 	if game_state == GameState.RESULT:
-		return
-	base_hp -= 1
+		return -1
+	var src: Dictionary = base_guard_source()
+	var before: float = _leak_total
+	_leak_total += float(src.mult)
+	var target: int = int(ceil(_leak_total - LEAK_EPS))
+	var loss: int = maxi(0, target - _leak_lost)
+	_leak_lost += loss
+	base_hp -= loss
+	var seq: Variant = enemy.get("spawn_seq") if enemy != null and is_instance_valid(enemy) else null
+	_leak_log.append({"seq": int(seq) if seq != null else -1, "mult": float(src.mult), "source": str(src.hero_id),
+		"t_before": before, "t_after": _leak_total, "loss": loss, "lost": _leak_lost, "hp": base_hp})
+	if _leak_log.size() > LEAK_LOG_MAX:
+		_leak_log.pop_front()
 	base_hp_changed.emit(base_hp, MAX_BASE_HP)
 	_sync_stats_to_web()
 	if base_hp <= 0:
 		_end_battle(false)
+	return loss
 
-func on_enemy_killed() -> void:
+## 有效擊殺：擊殺 +1、戰鬥金幣 + 每次擊殺的金幣。補給在結算這一次擊殺的當下確認來源（只改這個入口）；
+## enemy 是被打倒的敵人（只用來在紀錄裡寫生成序號，沒有傳入時是 -1）
+func on_enemy_killed(enemy: Node = null) -> void:
 	if game_state == GameState.RESULT:
 		return
 	kills += 1
-	earn_gold(GOLD_PER_KILL)
+	var src: Dictionary = supply_source()
+	var gold: int = kill_gold(float(src.mult))
+	var seq: Variant = enemy.get("spawn_seq") if enemy != null and is_instance_valid(enemy) else null
+	_kill_gold_log.append({"seq": int(seq) if seq != null else -1, "kills": kills, "base": GOLD_PER_KILL, "gold": gold,
+		"mult": float(src.mult), "source": str(src.hero_id)})
+	if _kill_gold_log.size() > KILL_GOLD_LOG_MAX:
+		_kill_gold_log.pop_front()
+	earn_gold(gold)
 
 # ── 波次完成（由 WaveManager 通知）────────────────────────────
 func on_wave_all_enemies_dead() -> void:
@@ -326,6 +418,8 @@ func _sync_stats_to_web() -> void:
 		"deploy_slow": deploy_menu_id != 0,
 		# 手動暫停：已確認的狀態。暫停中 time_scale 仍是繼續後會用的倍率
 		"paused": manual_paused,
+		# 守護（孫權）：此刻生效的漏城傷害倍率（沒有生效的守護時是 1）；只是顯示用，城防由 Godot 計算
+		"base_guard_mult": float(base_guard_source().mult),
 	}
 	_web_bridge.send_stats(stats)
 
@@ -413,10 +507,243 @@ func consume_first_strike(hero_id: String, damage: float) -> bool:
 	_first_strike_used[hero_id] = damage
 	return true
 
+## 戰神：這位武將在這一場目前的層數（沒有紀錄時是 0）
+func berserk_stacks(hero_id: String) -> int:
+	return int(_berserk.get(hero_id, {}).get("stacks", 0))
+
+## 戰神：記下這位武將自己打倒的一名敵人（seq 是敵人的生成序號、damage 是這一擊的傷害、dealt 是實扣），層數加一但不超過 max_stacks。
+## 回傳加層前後的層數（已經是上限時相同）
+func add_berserk_kill(hero_id: String, max_stacks: int, seq: int, damage: float, dealt: float) -> Dictionary:
+	if hero_id == "":
+		return {"before": 0, "after": 0}
+	var rec: Dictionary = _berserk.get(hero_id, {"stacks": 0, "kills": 0, "log": []})
+	var before: int = int(rec.stacks)
+	var after: int = before + 1 if before < max_stacks else before
+	rec.stacks = after
+	rec.kills = int(rec.kills) + 1
+	rec.log.append({"seq": seq, "damage": damage, "dealt": dealt, "before": before, "after": after})
+	if rec.log.size() > BERSERK_LOG_MAX:
+		rec.log.pop_front()
+	_berserk[hero_id] = rec
+	return {"before": before, "after": after}
+
+## 戰神：清掉這位武將在這一場的層數與紀錄（換成其他技能時）
+func clear_berserk(hero_id: String) -> void:
+	_berserk.erase(hero_id)
+
+## 戰神：這位武將在這一場的紀錄（唯讀的複本；沒有時是空字典）
+func berserk_record(hero_id: String) -> Dictionary:
+	return _berserk.get(hero_id, {}).duplicate(true)
+
+## 補給：每次有效擊殺的戰鬥金幣＝基礎 × 倍率（向下取整）；倍率不大於 1（沒有補給）時就是基礎
+static func kill_gold(mult: float) -> int:
+	if not (mult > 1.0 and is_finite(mult)):
+		return GOLD_PER_KILL
+	return int(floor(float(GOLD_PER_KILL) * mult + SUPPLY_EPS))
+
+## 補給：登記／取消有補給技能的武將（Hero 讀完技能時呼叫）
+func register_supply(hero: Node) -> void:
+	if hero != null:
+		_supply_sources[hero.get_instance_id()] = weakref(hero)
+
+func unregister_supply(hero: Node) -> void:
+	if hero != null:
+		_supply_sources.erase(hero.get_instance_id())
+
+## 補給：此刻有效的來源 [{hero_id, mult}]（登記的順序）。逐一確認：節點仍有效、在場景樹裡、沒有正要被移除、生命大於 0、
+## 技能仍是補給且倍率合理（Hero.supply_active）。只讀，不改登記
+func supply_active_sources() -> Array:
+	var out: Array = []
+	for key in _supply_sources:
+		var h: Variant = _supply_sources[key].get_ref()
+		if h == null or not is_instance_valid(h) or not h.supply_active():
+			continue
+		out.append({"hero_id": str(h.hero_id), "mult": float(h.supply_gold_multiplier)})
+	return out
+
+## 補給：此刻最強的來源 {hero_id, mult}：多個來源只取最高的倍率（不相乘、不相加），倍率相同時取先登記的；沒有時 hero_id 是空字串、mult 是 1
+func supply_source() -> Dictionary:
+	var best: Dictionary = {"hero_id": "", "mult": 1.0}
+	for s in supply_active_sources():
+		if float(s.mult) > float(best.mult):
+			best = s
+	return best
+
+## 補給（測試用唯讀資訊）：此刻有效的來源與最強的一個、基礎與有效的每次擊殺金幣、最近幾次擊殺的金幣結算
+## （生成序號、結算後的擊殺數、基礎、實得、倍率、來源）
+func supply_debug() -> Dictionary:
+	var src: Dictionary = supply_source()
+	return {"hero_id": src.hero_id, "mult": src.mult, "base_gold": GOLD_PER_KILL, "kill_gold": kill_gold(float(src.mult)),
+		"sources": supply_active_sources(), "log": _kill_gold_log.duplicate(true)}
+
+## 戰鬥中而且沒有手動暫停（只在這時候生效的技能用它判斷；單獨建立的 BattleManager 由測試設定狀態）
+func combat_active() -> bool:
+	return game_state == GameState.BATTLE and not manual_paused
+
+## 奇襲：這位武將在這一場還沒用過
+func assassinate_ready(hero_id: String) -> bool:
+	return hero_id != "" and not _assassinate_used.has(hero_id)
+
+## 奇襲：記下這位武將在這一場用掉了（entry 是那一次的紀錄）；已經用過時不改
+func record_assassinate(hero_id: String, entry: Dictionary) -> void:
+	if hero_id == "" or _assassinate_used.has(hero_id):
+		return
+	var e: Dictionary = entry.duplicate(true)
+	e["hero_id"] = hero_id
+	e["t"] = battle_time
+	_assassinate_used[hero_id] = e
+	_assassinate_log.append(e.duplicate(true))
+	if _assassinate_log.size() > ASSASSINATE_LOG_MAX:
+		_assassinate_log.pop_front()
+
+## 奇襲：這位武將在這一場用掉的那一次（唯讀的複本；還沒用過時是空字典）
+func assassinate_record(hero_id: String) -> Dictionary:
+	return _assassinate_used.get(hero_id, {}).duplicate(true)
+
+## 奇襲（測試用唯讀資訊）：這一場用過的武將與最近幾次的紀錄
+func assassinate_debug() -> Dictionary:
+	var used: Array = _assassinate_used.keys()
+	used.sort()
+	return {"used": used, "log": _assassinate_log.duplicate(true)}
+
+## 這一場的生命週期編號（每次 initialize 加一）：受控的敵人用它確認來源仍屬於同一場
+func lifecycle() -> int:
+	return _lifecycle
+
+## 魅惑：這位武將此刻能不能控制（這一場還沒控制過，或冷卻已經結束）
+func charm_ready(hero_id: String) -> bool:
+	return hero_id != "" and battle_time >= float(_charm.get(hero_id, {}).get("ready_at", 0.0))
+
+## 魅惑：這位武將此刻剩下的冷卻（秒，戰鬥時間；沒有在冷卻時是 0）
+func charm_remaining(hero_id: String) -> float:
+	return maxf(0.0, float(_charm.get(hero_id, {}).get("ready_at", 0.0)) - battle_time)
+
+## 魅惑：記下這位武將成功控制一次（entry 是紀錄），冷卻 cooldown 秒（從此刻的戰鬥時間起算，不累積）
+func record_charm(hero_id: String, cooldown: float, entry: Dictionary) -> void:
+	if hero_id == "":
+		return
+	var rec: Dictionary = _charm.get(hero_id, {"ready_at": 0.0, "count": 0, "log": []})
+	rec["ready_at"] = battle_time + cooldown
+	rec["count"] = int(rec.count) + 1
+	var e: Dictionary = entry.duplicate(true)
+	e["t"] = battle_time
+	rec.log.append(e)
+	if rec.log.size() > CHARM_LOG_MAX:
+		rec.log.pop_front()
+	_charm[hero_id] = rec
+
+## 魅惑：這位武將在這一場的紀錄（唯讀的複本；沒有時是空字典）
+func charm_record(hero_id: String) -> Dictionary:
+	return _charm.get(hero_id, {}).duplicate(true)
+
+func _charm_summary() -> Dictionary:
+	var out: Dictionary = {}
+	for hid in _charm:
+		out[hid] = {"count": int(_charm[hid].count), "remaining": charm_remaining(hid)}
+	return out
+
+## 怪力：這位武將此刻能不能推（這一場還沒推過，或冷卻已經結束）
+func knockback_ready(hero_id: String) -> bool:
+	return hero_id != "" and battle_time >= float(_knockback.get(hero_id, {}).get("ready_at", 0.0))
+
+## 怪力：這位武將此刻剩下的冷卻（秒，戰鬥時間；沒有在冷卻時是 0）
+func knockback_remaining(hero_id: String) -> float:
+	return maxf(0.0, float(_knockback.get(hero_id, {}).get("ready_at", 0.0)) - battle_time)
+
+## 怪力：記下這位武將成功推動一次（entry 是推動的紀錄），冷卻 cooldown 秒（從此刻的戰鬥時間起算，不累積）
+func record_knockback(hero_id: String, cooldown: float, entry: Dictionary) -> void:
+	if hero_id == "":
+		return
+	var rec: Dictionary = _knockback.get(hero_id, {"ready_at": 0.0, "count": 0, "log": []})
+	rec.ready_at = battle_time + cooldown
+	rec.count = int(rec.count) + 1
+	var e: Dictionary = entry.duplicate(true)
+	e["t"] = battle_time
+	rec.log.append(e)
+	if rec.log.size() > KNOCKBACK_LOG_MAX:
+		rec.log.pop_front()
+	_knockback[hero_id] = rec
+
+## 怪力：這位武將在這一場的紀錄（唯讀的複本；沒有時是空字典）
+func knockback_record(hero_id: String) -> Dictionary:
+	return _knockback.get(hero_id, {}).duplicate(true)
+
+## 守護：登記／取消有守護技能的武將（Hero 讀完技能時呼叫）；之後把目前生效的倍率重新送給網頁（戰場上方的城防旁）
+func register_base_guard(hero: Node) -> void:
+	if hero != null:
+		_base_guard_sources[hero.get_instance_id()] = weakref(hero)
+		notify_base_guard_changed()
+
+func unregister_base_guard(hero: Node) -> void:
+	if hero != null and _base_guard_sources.erase(hero.get_instance_id()):
+		notify_base_guard_changed()
+
+## 守護的來源可能改變了（登記、取消、來源離開場上）：在這一幀的最後把狀態重新送給網頁一次（同一幀多次只送一次；
+## 延後是為了讓陣亡或被移除的武將先離開場上，送出的倍率才是之後生效的數值）
+func notify_base_guard_changed() -> void:
+	if _base_guard_sync_pending:
+		return
+	_base_guard_sync_pending = true
+	call_deferred("_flush_base_guard_sync")
+
+func _flush_base_guard_sync() -> void:
+	_base_guard_sync_pending = false
+	_sync_stats_to_web()
+
+## 守護：此刻有效的來源 [{hero_id, mult}]（登記的順序）。逐一確認：節點仍有效、在場景樹裡、沒有正要被移除、生命大於 0、
+## 技能仍是守護且倍率合理（Hero.base_guard_active）。只讀，不改登記
+func base_guard_active_sources() -> Array:
+	var out: Array = []
+	for key in _base_guard_sources:
+		var h: Variant = _base_guard_sources[key].get_ref()
+		if h == null or not is_instance_valid(h) or not h.base_guard_active():
+			continue
+		out.append({"hero_id": str(h.hero_id), "mult": float(h.base_guard_mult)})
+	return out
+
+## 守護：此刻最強的來源 {hero_id, mult}：多個來源只取倍率最小的一個（不相乘、不相加），倍率相同時取先登記的；沒有時 hero_id 是空字串、mult 是 1
+func base_guard_source() -> Dictionary:
+	var best: Dictionary = {"hero_id": "", "mult": 1.0}
+	for s in base_guard_active_sources():
+		if float(s.mult) < float(best.mult):
+			best = s
+	return best
+
+## 守護（測試用唯讀資訊）：此刻有效的來源與最強的一個、這一場累計的漏城傷害 T 與已經扣掉的城防 A、目前的城防、最近幾次抵達的紀錄
+func base_guard_debug() -> Dictionary:
+	var src: Dictionary = base_guard_source()
+	return {"hero_id": src.hero_id, "mult": src.mult, "sources": base_guard_active_sources(), "total": _leak_total, "lost": _leak_lost,
+		"base_hp": base_hp, "log": _leak_log.duplicate(true)}
+
+func _knockback_summary() -> Dictionary:
+	var out: Dictionary = {}
+	for hid in _knockback:
+		out[hid] = {"count": int(_knockback[hid].count), "remaining": knockback_remaining(hid)}
+	return out
+
+func _berserk_summary() -> Dictionary:
+	var out: Dictionary = {}
+	for hid in _berserk:
+		out[hid] = {"stacks": int(_berserk[hid].stacks), "kills": int(_berserk[hid].kills)}
+	return out
+
 ## 測試用唯讀狀態（debug_snapshot）
 func get_debug_state() -> Dictionary:
 	return {
 		"first_strike_used": _first_strike_used.duplicate(),
+		# 戰神：這一場每位武將的層數與擊殺次數（不含紀錄；武將移出隊伍時也看得到保留的層數）
+		"berserk_stacks": _berserk_summary(),
+		# 補給：此刻有效的來源、每次擊殺的金幣與最近幾次擊殺的金幣結算
+		"supply": supply_debug(),
+		# 怪力：這一場每位武將成功推動的次數與此刻剩下的冷卻（武將移出隊伍時也看得到保留的冷卻）、戰鬥時間
+		"knockback": _knockback_summary(),
+		# 守護：此刻有效的來源、這一場累計的漏城傷害與已經扣掉的城防、最近幾次抵達
+		"base_guard": base_guard_debug(),
+		# 奇襲：這一場用過的武將與最近幾次的紀錄
+		"assassinate": assassinate_debug(),
+		# 魅惑：這一場每位武將成功控制的次數與此刻剩下的冷卻
+		"charm": _charm_summary(),
+		"battle_time": battle_time,
 		"lifecycle": _lifecycle,
 		"auto_wave_token": _auto_wave_token,
 		"auto_next_wave_pending": _auto_wave_pending,
@@ -435,3 +762,7 @@ func _sfx(key: String) -> void:
 func _sfx_stop_bgm() -> void:
 	if get_tree() and get_tree().root.has_node("SFXManager"):
 		get_tree().root.get_node("SFXManager").stop_bgm()
+
+## 首擊加倍：這位武將在這一場用過了沒有（戰況觀測用，唯讀）
+func first_strike_used(hero_id: String) -> bool:
+	return hero_id != "" and _first_strike_used.has(hero_id)

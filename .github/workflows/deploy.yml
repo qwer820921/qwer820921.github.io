@@ -8,6 +8,14 @@ on:
 permissions:
   contents: write
 
+# 正式 Pages 發布排隊：參與 pages-production-deploy 這一組的執行一次只跑一個，其他依開始等待的順序排隊（最多 100 個等待，
+# 超過的會被取消），不取消進行中的發布。只約束同一組的執行：沒有這段的舊版 workflow、手動推 gh-pages（npm run deploy）
+# 不受約束，仍靠下面的遠端漂移檢查（unchanged）在核對後停止
+concurrency:
+  group: pages-production-deploy
+  queue: max
+  cancel-in-progress: false
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -28,6 +36,15 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
+
+      # 神馬三國正式保留核對：釘選遠端 gh-pages 的完整 SHA 當正式基準，已發布的遊戲版本目錄必須原樣保留在 out/；
+      # 發布前再讀一次遠端，基準已變（核對後有其他發布）就停止。讀不到基準、核對失敗、遠端漂移都不發布
+      - name: Check published game versions are retained 🛡️
+        shell: bash
+        run: |
+          sha=$(node scripts/shenma-regression/tools/deploy-guard.mjs pin)
+          node scripts/shenma-regression/tools/game-release.mjs check-published "$sha" --out
+          node scripts/shenma-regression/tools/deploy-guard.mjs unchanged "$sha"
 
       - name: Deploy 🚀
         uses: JamesIves/github-pages-deploy-action@v4

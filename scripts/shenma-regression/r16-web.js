@@ -230,9 +230,9 @@ async (page) => {
     out.P1 = { text, w1, groups1, w2, collapsed, expanded1, shot: await H.shot(page, "r16-p1-preview-main") };
     run.check("P-1 主頁關卡視窗的敵軍預覽：共 2 波、全關 8 隻；路線 path_a、path_b；第 1 波 6 隻分 3 組（步兵 ×3 path_a、步兵 ×2 path_b、B 步兵 ×1 path_b），血量、移動速度、間隔取自設定；第 2 波 C 快騎 ×2（0.5 秒）；波次可收合",
       /共 2 波，全關 8 隻敵人/.test(text) && /路線：path_a、path_b/.test(text) && /第 1 波.*6 隻/.test(w1) &&
-        groups1.length === 3 && /第 1 組 步兵 ×3 路線 path_a 血量 20｜移動速度 60｜每隻間隔 1 秒/.test(groups1[0]) &&
+        groups1.length === 3 && /第 1 組 步兵 ×3 路線 path_a 血量 20｜移動速度 60｜設定間隔 1 秒/.test(groups1[0]) &&
         /第 2 組 步兵 ×2 路線 path_b/.test(groups1[1]) && /第 3 組 B 步兵 ×1 路線 path_b/.test(groups1[2]) &&
-        /第 2 波.*2 隻/.test(w2) && /C 快騎 ×2 路線 path_a 血量 99999｜移動速度 400｜每隻間隔 0\.5 秒/.test(w2) &&
+        /第 2 波.*2 隻/.test(w2) && /C 快騎 ×2 路線 path_a 血量 99999｜移動速度 400｜設定間隔 0\.5 秒/.test(w2) &&
         !/資料不完整/.test(text) && collapsed === 0 && expanded1 === "false",
       out.P1);
     // 關閉：回到關卡列表；沒有切換關卡、battle_id 不變、沒有任何寫入

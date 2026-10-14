@@ -2060,7 +2060,7 @@
 
 /* ── 神馬三國的視窗開啟時，暫時隱藏全站浮動入口（說明、聊天；標記 data-floating-entry） ──
    浮動入口的層級高於遊戲視窗，會蓋住視窗文字、搶走點擊。只要頁面上有神馬三國的視窗
-   （modalBackdrop、結算、金鑰設定、戰場上的選取面板與部署選單，或神馬頁面裡的 react-bootstrap Modal）
+   （modalBackdrop、結算、金鑰設定、戰場上的選取面板與部署選單、接在戰場下方的戰況，或神馬頁面裡的 react-bootstrap Modal）
    就隱藏，關閉後自動恢復；其他網站頁面沒有這些元素，不受影響。新的視窗沿用 modalBackdrop 就會一起套用，
    不需要再調 z-index */
 :global(body):has(
@@ -2068,7 +2068,8 @@
     .resultOverlay,
     .keySetupOverlay,
     .upgradePanel,
-    .placementOverlay
+    .placementOverlay,
+    .battleLiveBelow:not([hidden])
   )
   :global([data-floating-entry]),
 :global(body.modal-open):has(.gameBody) :global([data-floating-entry]) {
@@ -2689,6 +2690,136 @@
   color: #f3c98b;
 }
 
+/* 連環計（龐統）：選取面板的傳遞規則；顏色和戰場上的紫色連線一致 */
+.chainNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(158, 107, 255, 0.12);
+  border: 1px solid rgba(158, 107, 255, 0.45);
+  color: #d8c6ff;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* 呼風喚雨（諸葛亮）：選取面板的範圍規則；顏色和戰場上的淡藍色風雨圈一致 */
+.stormNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(115, 184, 255, 0.12);
+  border: 1px solid rgba(115, 184, 255, 0.45);
+  color: #cfe6ff;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* 戰神（呂布）：橘紅色，和 Godot 裡加層提示的顏色相同 */
+.berserkNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 115, 51, 0.12);
+  border: 1px solid rgba(255, 115, 51, 0.45);
+  color: #ffd2bd;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* 補給（魯肅）：金色，和戰鬥金幣的顏色一致 */
+.supplyNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 204, 64, 0.12);
+  border: 1px solid rgba(255, 204, 64, 0.45);
+  color: #ffe9a8;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* 單位面板的怪力（許褚）：選取時剩下的冷卻（淺藍，和遊戲裡的 PUSH 標記同色系） */
+.knockbackNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(150, 210, 255, 0.12);
+  border: 1px solid rgba(150, 210, 255, 0.45);
+  color: #d6ecff;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* 單位面板的護衛（典韋）：選取時能否提供與範圍內的友軍（銀灰色，和遊戲裡的 GUARD 標記同色系） */
+.guardNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(210, 215, 225, 0.12);
+  border: 1px solid rgba(210, 215, 225, 0.45);
+  color: #eef1f6;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* 單位面板的守護（孫權）：選取時是否生效與這一場的漏城傷害倍率（青綠色，和遊戲裡的 SHIELD 標記同色系） */
+.baseGuardNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(110, 230, 200, 0.12);
+  border: 1px solid rgba(110, 230, 200, 0.45);
+  color: #d4fbef;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* 單位面板的奇襲（甘寧）：選取時這一場用過了沒有（緋紅色，和遊戲裡的 KILL 標記同色系） */
+.assassinateNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 90, 105, 0.12);
+  border: 1px solid rgba(255, 90, 105, 0.45);
+  color: #ffd9dd;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* 單位面板的魅惑（貂蟬）：選取時剩下的冷卻（粉紅色，和遊戲裡的 CHARM 標記同色系） */
+.charmNote {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 128, 216, 0.12);
+  border: 1px solid rgba(255, 128, 216, 0.45);
+  color: #ffe0f6;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* 戰場上方城防旁的守護（孫權）：目前生效的漏城減傷（Godot 的 update_stats，隨部署、陣亡、移出隊伍更新） */
+.hudBaseGuard {
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(110, 230, 200, 0.18);
+  color: #9ff3dc;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+/* 獨立戰鬥頁的上方列是淺色底：同樣的標示改用深青綠色字 */
+.statBaseGuard {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(13, 148, 136, 0.12);
+  color: #0f766e;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .lockNotice {
   margin-bottom: 8px;
   padding: 4px 8px;
@@ -3089,4 +3220,241 @@
 .battleTipsNote {
   margin: 4px 0 0;
   color: rgba(255, 255, 255, 0.72);
+}
+
+/* ── 戰況（BattleLivePanel）：武將技能與敵軍，只是查看；不疊在遊戲畫面上 ─────────── */
+/* 遊戲畫面右邊的空間夠寬（桌面）時固定在視窗右側（下方留給全站的聊天按鈕）；否則接在戰場區域下方，遊戲畫面依剩下的空間縮放。
+   接在下方時排在戰場與玩法提示後面（order），字級不小於 12px，內容超過時只有清單捲動 */
+.battleLive {
+  z-index: 8;
+  background: rgba(10, 15, 35, 0.9);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 6px 10px 8px;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+.battleLiveBelow {
+  position: relative;
+  order: 2;
+  flex: none;
+  align-self: stretch;
+  margin: 4px 8px calc(8px + var(--sg-bottom-notices-h, 0px));
+  max-height: 42dvh;
+  display: flex;
+  flex-direction: column;
+}
+/* 主頁的 HUD 疊在戰場區域上方：戰況接在下方時遊戲畫面往下讓出 HUD 的高度（同玩法提示），格子不會被 HUD 蓋住 */
+.singlePage:has(.battleLiveBelow:not([hidden])) .gamePortraitWrap {
+  padding-top: 82px;
+}
+.battleLiveSide {
+  position: fixed;
+  right: 12px;
+  top: 96px;
+  bottom: calc(84px + var(--sg-bottom-notices-h, 0px));
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+}
+.battleLiveTab {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.battleLiveTab:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* 敵軍的搜尋框（字級至少 12px） */
+.battleLiveSearch {
+  width: 100%;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  color: #fff;
+  padding: 3px 8px;
+  font-size: 0.8rem;
+}
+.battleLiveSearch::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+.battleLiveTabOn {
+  background: rgba(99, 102, 241, 0.55);
+  border-color: rgba(165, 180, 252, 0.8);
+  font-weight: 700;
+}
+.battleLiveStatus {
+  margin: 4px 0;
+  color: #fcd34d;
+}
+.battleLiveBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.battleLiveEmpty,
+.battleLiveSummary,
+.battleLiveMuted {
+  color: rgba(255, 255, 255, 0.72);
+}
+.battleLiveList {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+.battleLiveItem {
+  padding: 4px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.battleLiveName {
+  font-weight: 700;
+}
+.battleLiveHp {
+  font-weight: 400;
+  margin-left: 0.5em;
+  color: rgba(255, 255, 255, 0.85);
+}
+.battleLiveSkill {
+  color: rgba(255, 255, 255, 0.9);
+}
+.battleLiveRow {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-top-color: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  padding: 3px 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.battleLiveRow:focus-visible {
+  outline: 2px solid #fcd34d;
+  outline-offset: -2px;
+}
+.battleLiveRowOn {
+  background: rgba(99, 102, 241, 0.35);
+  border-color: rgba(165, 180, 252, 0.7);
+}
+.battleLiveCell {
+  overflow-wrap: anywhere;
+}
+.battleLiveDetail {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* ── 兩位武將比較表：項目欄固定寬度、標題不換行，兩位武將平分其餘寬度（窄手機也不會把項目欄擠成一個字寬） ── */
+.compareTable {
+  table-layout: fixed;
+  width: 100%;
+}
+.compareLabelCol {
+  width: 5.75em;
+}
+.compareTable th[scope="row"] {
+  white-space: nowrap;
+}
+.compareTable td {
+  overflow-wrap: anywhere;
+}
+
+/* ── 敵軍預覽的路線預覽（唯讀小地圖；StageRoutePreview）── */
+/* 寬度跟著視窗，高度依地圖比例；很高的地圖限制高度（等比例縮小），手機不溢出 */
+.routeMapSvg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 320px;
+  margin: 0 auto 0.5rem;
+}
+
+.routeMapGround {
+  fill: var(--sg-surface2);
+}
+
+.routeMapGrid line {
+  stroke: rgba(0, 0, 0, 0.14);
+  stroke-width: 0.03;
+}
+
+.routeMapMarkerText {
+  fill: #ffffff;
+  font-weight: 700;
+}
+
+.routeLegend {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  color: var(--sg-text);
+}
+
+.routeLegendItem {
+  padding: 0.3rem 0;
+  border-bottom: 1px dashed var(--sg-border);
+  overflow-wrap: anywhere;
+}
+
+.routeLegendItem:last-of-type {
+  border-bottom: none;
+}
+
+.routeSwatch {
+  width: 30px;
+  height: 10px;
+  vertical-align: middle;
+  margin-right: 0.35rem;
+}
+
+/* ── 敵軍預覽的波次導覽（PreviewWaveNav）── */
+.waveNav {
+  border: 1px solid var(--sg-border);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  margin-bottom: 0.6rem;
+  background: var(--sg-surface);
+}
+
+/* ── 敵軍預覽逐波內容的設定出兵節奏（PreviewWaveBody showRhythm）── */
+.previewRhythm {
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--sg-border);
+  border-radius: 8px;
+  font-size: 0.76rem;
+  color: var(--sg-text);
+  overflow-wrap: anywhere;
+}
+
+.previewRhythmTitle {
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+
+.previewRhythmList {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.72rem;
+  color: var(--sg-muted);
+}
+
+/* 依路線查看逐波時，其他路線的資料問題（全波資料提醒） */
+.previewRouteOther {
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px dashed #f59e0b;
+  border-radius: 8px;
+  font-size: 0.76rem;
+  color: var(--sg-text);
+  overflow-wrap: anywhere;
 }
